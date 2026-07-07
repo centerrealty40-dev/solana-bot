@@ -47,7 +47,7 @@ function toInt(v) {
   return Math.trunc(n);
 }
 
-/** True when Birdeye market `source` matches our lane (`raydium`, `meteora`, `pumpswap`, ...). */
+/** True when Birdeye market `source` matches our lane (`raydium`, `meteora`, `pumpswap`, …). */
 export function birdeyeMarketMatchesDexSource(marketSource, dexSource) {
   const src = String(marketSource ?? '').toLowerCase();
   const lane = String(dexSource ?? '').toLowerCase();
@@ -89,6 +89,55 @@ export function normalizeBirdeyeMarketRow(market, bucketTs, dexSource, tokenOver
   };
 }
 
+export function normalizeBirdeyeTokenOnlyRow(token, pairAddress, quoteMint, bucketTs, dexSource) {
+  if (!token?.address || !pairAddress || !quoteMint) return null;
+  return {
+    ts: bucketTs,
+    source: dexSource,
+    pair_address: pairAddress,
+    base_mint: token.address,
+    quote_mint: quoteMint,
+    price_usd: toNum(token.price),
+    liquidity_usd: toNum(token.liquidity),
+    volume_5m: toNum(token.volume_5m_usd),
+    volume_1h: toNum(token.volume_1h_usd),
+    buys_5m: null,
+    sells_5m: null,
+    fdv_usd: toNum(token.fdv),
+    market_cap_usd: toNum(token.market_cap),
+    base_symbol: token.symbol ?? null,
+    base_name: token.name ?? null,
+    launch_ts: token.recent_listing_time ? new Date(token.recent_listing_time) : null,
+  };
+}
+
+/** DexScreener-shaped pair for paper2 enrich `normalizeDexPair` hooks. */
+export function birdeyeMarketToDexPairShape(market, tradeData = null) {
+  const td = tradeData ?? {};
+  return {
+    chainId: 'solana',
+    dexId: String(market?.source ?? '').toLowerCase().replace(/\s+/g, '_'),
+    pairAddress: market?.address,
+    baseToken: { address: market?.base_mint, symbol: td.symbol, name: td.name },
+    quoteToken: { address: market?.quote_mint },
+    priceUsd: td.price ?? market?.price,
+    liquidity: { usd: market?.liquidity },
+    volume: {
+      m5: td.volume_5m_usd,
+      h1: td.volume_1h_usd,
+    },
+    txns: {
+      m5: {
+        buys: td.buy_5m,
+        sells: td.sell_5m,
+      },
+    },
+    fdv: td.fdv,
+    marketCap: td.market_cap,
+    pairCreatedAt: td.creation_time ? Date.parse(td.creation_time) : null,
+  };
+}
+
 function birdeyeUrl(path, params = {}) {
   const u = new URL(`${BIRDEYE_API_BASE}${path}`);
   for (const [k, v] of Object.entries(params)) {
@@ -119,6 +168,17 @@ function extractSearchMarkets(json) {
   for (const block of items) {
     if (block?.type !== 'market' || !Array.isArray(block?.result)) continue;
     for (const m of block.result) out.push(m);
+  }
+  return out;
+}
+
+function extractSearchTokens(json) {
+  const items = json?.data?.items;
+  if (!Array.isArray(items)) return [];
+  const out = [];
+  for (const block of items) {
+    if (block?.type !== 'token' || !Array.isArray(block?.result)) continue;
+    for (const t of block.result) out.push(t);
   }
   return out;
 }
@@ -180,6 +240,15 @@ export async function birdeyeTokenListPage({
   const json = await birdeyeFetchJson(url, fetchJsonWithRetry, retryTag);
   const items = json?.data?.items;
   return Array.isArray(items) ? items : [];
+}
+
+export async function birdeyeTradeDataSingle({ mint, fetchJsonWithRetry, retryTag = 'birdeye-trade-data' }) {
+  const url = birdeyeUrl('/defi/v3/token/trade-data/single', {
+    address: mint,
+    frames: '5m,1h',
+  });
+  const json = await birdeyeFetchJson(url, fetchJsonWithRetry, retryTag);
+  return json?.data ?? null;
 }
 
 export function pickBestBirdeyeMarket(markets, dexSource) {
@@ -263,4 +332,47 @@ export async function fetchBirdeyePrimaryRows({
   }
 
   return allRows;
+}
+
+/** Enrich open/pin mints via Birdeye search (+ optional trade-data for 5m vol). */
+export async function fetchBirdeyePairsForMint({
+  mint,
+  markets,
+  dexSource,
+  bucketTs,
+  fetchJsonWithRetry,
+  withTradeData = true,
+}) {
+  const mkts = await birdeyeSearchMarketsByMint({
+    mint,
+    markets,
+    fetchJsonWithRetry,
+    retryTag: 'birdeye-enrich-mint',
+  });
+  const best = pickBestBirdeyeMarket(mkts, dexSource);
+  if (!best) return [];
+
+  let trade = null;
+  if (withTradeData) {
+    try {
+      trade = await birdeyeTradeDataSingle({ mint, fetchJsonWithRetry, retryTag: 'birdeye-enrich-trade' });
+    } catch {
+      trade = null;
+    }
+  }
+
+  const overlay = trade
+    ? {
+        price: trade.price,
+        volume_5m_usd: trade.volume_5m_usd,
+        volume_1h_usd: trade.volume_1h_usd,
+        buy_5m: trade.buy_5m,
+        sell_5m: trade.sell_5m,
+        fdv: trade.fdv,
+        market_cap: trade.market_cap,
+      }
+    : {};
+
+  const row = normalizeBirdeyeMarketRow(best, bucketTs, dexSource, overlay);
+  return row ? [row] : [];
 }

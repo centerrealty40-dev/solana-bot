@@ -4,7 +4,7 @@
  * Env:
  * - `BIRDEYE_GLOBAL_RATE_LIMIT=0` — disable gate.
  * - `BIRDEYE_GLOBAL_RATE_LIMIT=1` — force enable (default when API key set).
- * - `BIRDEYE_GLOBAL_MAX_RPS` — shared requests/sec (default 12; Lite plan ~=15 rps).
+ * - `BIRDEYE_GLOBAL_MAX_RPS` — shared requests/sec (default 12; Lite plan ≈15 rps).
  * - `BIRDEYE_GLOBAL_GATE_PATH` — state file (default `data/birdeye-api-gate.json`).
  */
 import fs from 'node:fs';

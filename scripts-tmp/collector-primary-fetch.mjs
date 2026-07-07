@@ -1,5 +1,5 @@
 /**
- * Shared primary snapshot fetch: Birdeye -> DexScreener -> GeckoTerminal.
+ * Shared primary snapshot fetch: Birdeye → DexScreener → GeckoTerminal.
  */
 import {
   BIRDEYE_DEX_MARKETS,
@@ -9,9 +9,9 @@ import {
 
 /**
  * @param {object} opts
- * @param {string} opts.dexSource - lane id (`raydium`, `meteora`, ...)
+ * @param {string} opts.dexSource — lane id (`raydium`, `meteora`, …)
  * @param {Date} opts.bucketTs
- * @param {string[]} opts.searchTerms - DexScreener / Birdeye fuzzy terms
+ * @param {string[]} opts.searchTerms — DexScreener / Birdeye fuzzy terms
  * @param {function} opts.fetchFromDexScreener
  * @param {function} opts.fetchFromGeckoTrending
  * @param {function} [opts.fetchFromGeckoNewPools]
