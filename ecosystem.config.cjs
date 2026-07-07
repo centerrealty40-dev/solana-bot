@@ -2202,7 +2202,9 @@ const PM2_APPS = [
         KNIFE_WATCHLIST_WARMUP_SEC: process.env.KNIFE_WATCHLIST_WARMUP_SEC || '25',
         KNIFE_CROSS_SOURCE_MAX_PCT: process.env.KNIFE_CROSS_SOURCE_MAX_PCT || '25',
         KNIFE_MAX_TICK_MOVE_PCT: process.env.KNIFE_MAX_TICK_MOVE_PCT || '25',
-        KNIFE_MAX_EXIT_MOVE_PCT: process.env.KNIFE_MAX_EXIT_MOVE_PCT || '50',
+        KNIFE_MAX_EXIT_MOVE_PCT: process.env.KNIFE_MAX_EXIT_MOVE_PCT || '15',
+        KNIFE_MAX_TP_TICK_MOVE_PCT: process.env.KNIFE_MAX_TP_TICK_MOVE_PCT || '6',
+        KNIFE_MIN_HOLD_BEFORE_TP_SEC: process.env.KNIFE_MIN_HOLD_BEFORE_TP_SEC || '20',
         /** Jupiter buy-quote poll (KNIFE_LEG_USD notional) — primary trusted price source. */
         KNIFE_JUPITER_POLL_SEC: process.env.KNIFE_JUPITER_POLL_SEC || '2',
         KNIFE_JUPITER_SLIPPAGE_BPS: process.env.KNIFE_JUPITER_SLIPPAGE_BPS || '300',

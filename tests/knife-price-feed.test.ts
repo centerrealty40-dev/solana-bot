@@ -5,6 +5,7 @@ import {
   crossSourceDivPct,
   getKnifeTrustedPrice,
   isKnifeExitPriceSane,
+  isKnifeTpTickSane,
   priceMovePct,
   tryAdoptKnifeSwapPrice,
 } from '../src/scripts/knife-price-feed.js';
@@ -55,8 +56,13 @@ describe('knife-price-feed', () => {
   });
 
   it('blocks insane exit vs avg entry', () => {
-    expect(isKnifeExitPriceSane(10, 0.35, 50)).toBe(false);
-    expect(isKnifeExitPriceSane(0.4, 0.35, 50)).toBe(true);
+    expect(isKnifeExitPriceSane(10, 0.35, 15)).toBe(false);
+    expect(isKnifeExitPriceSane(0.4, 0.35, 15)).toBe(true);
+  });
+
+  it('blocks TP tick jump vs last mark', () => {
+    expect(isKnifeTpTickSane(0.41, 0.336, 6)).toBe(false);
+    expect(isKnifeTpTickSane(0.342, 0.336, 6)).toBe(true);
   });
 
   it('computes cross-source and move pct', () => {

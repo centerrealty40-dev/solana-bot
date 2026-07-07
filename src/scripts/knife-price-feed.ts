@@ -116,6 +116,12 @@ export function isKnifeExitPriceSane(price: number, avgEntry: number, maxExitMov
   return priceMovePct(avgEntry, price) <= maxExitMovePct;
 }
 
+/** TP/trail: reject single-tick spike vs last in-position Jupiter mark. */
+export function isKnifeTpTickSane(price: number, lastMarkPrice: number, maxTpTickMovePct: number): boolean {
+  if (!(lastMarkPrice > 0)) return true;
+  return priceMovePct(lastMarkPrice, price) <= maxTpTickMovePct;
+}
+
 export interface KnifeJupiterPollConfig {
   legUsd: number;
   pollIntervalMs: number;

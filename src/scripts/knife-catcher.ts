@@ -34,8 +34,10 @@ import {
 import {
   getKnifeTrustedPrice,
   isKnifeExitPriceSane,
+  isKnifeTpTickSane,
   startKnifeJupiterPoll,
   tryAdoptKnifeSwapPrice,
+  type KnifePriceSource,
 } from './knife-price-feed.js';
 import {
   buildKnifeGuardPaperCfg,
@@ -93,6 +95,8 @@ interface KnifeConfig {
   crossSourceMaxPct: number;
   maxTickMovePct: number;
   maxExitMovePct: number;
+  maxTpTickMovePct: number;
+  minHoldBeforeTpMs: number;
   legUsd: number;
   positionUsd: number;
   avgDropPct: number;
@@ -135,7 +139,9 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     watchlistWarmupMs: Math.round(envNum(env.KNIFE_WATCHLIST_WARMUP_SEC, 25) * 1000),
     crossSourceMaxPct: envNum(env.KNIFE_CROSS_SOURCE_MAX_PCT, 25),
     maxTickMovePct: envNum(env.KNIFE_MAX_TICK_MOVE_PCT, 25),
-    maxExitMovePct: envNum(env.KNIFE_MAX_EXIT_MOVE_PCT, 50),
+    maxExitMovePct: envNum(env.KNIFE_MAX_EXIT_MOVE_PCT, 15),
+    maxTpTickMovePct: envNum(env.KNIFE_MAX_TP_TICK_MOVE_PCT, 6),
+    minHoldBeforeTpMs: Math.round(envNum(env.KNIFE_MIN_HOLD_BEFORE_TP_SEC, 20) * 1000),
     legUsd,
     positionUsd,
     avgDropPct: envNum(env.KNIFE_AVG_DROP_PCT, 8),
@@ -196,6 +202,10 @@ interface MintState {
   trailArmed: boolean;
   trailPeak: number;
   rungsFired: number;
+  lastMarkPrice: number;
+  totalSoldQty: number;
+  totalProceedsUsd: number;
+  sellSummary: Array<{ reason: string; price: number; qty: number }>;
 }
 
 const states = new Map<string, MintState>();
@@ -259,6 +269,10 @@ function getOrCreateState(mint: string): MintState {
       trailArmed: false,
       trailPeak: 0,
       rungsFired: 0,
+      lastMarkPrice: 0,
+      totalSoldQty: 0,
+      totalProceedsUsd: 0,
+      sellSummary: [],
     };
     states.set(mint, s);
   }
@@ -287,16 +301,21 @@ function fillLeg(s: MintState, legUsd: number, price: number): void {
 }
 
 function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: string): void {
+  const exitVwap = s.totalSoldQty > 0 ? s.totalProceedsUsd / s.totalSoldQty : s.lastMarkPrice;
+  const holdSec = s.entryTs > 0 ? (nowMs - s.entryTs) / 1000 : 0;
   appendJournal(cfg, {
     kind: 'knife_close',
     mint: s.mint,
     reason,
     legs: s.legs,
     avgEntry: s.avgEntry,
+    exitVwap,
+    holdSec: Number(holdSec.toFixed(1)),
     investedUsd: Number(s.investedUsd.toFixed(2)),
     realizedUsd: Number(s.realizedUsd.toFixed(2)),
     totalPnlPct:
       s.investedUsd > 0 ? Number(((s.realizedUsd / s.investedUsd) * 100).toFixed(3)) : 0,
+    sells: s.sellSummary,
   });
   const pnlPct = s.investedUsd > 0 ? (s.realizedUsd / s.investedUsd) * 100 : 0;
   notifyHtml(
@@ -307,9 +326,12 @@ function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: st
       reason,
       legs: s.legs,
       avgEntry: s.avgEntry,
+      exitVwap,
+      holdSec,
       investedUsd: s.investedUsd,
       realizedUsd: s.realizedUsd,
       pnlPct,
+      sells: s.sellSummary,
     }),
   );
   log.info(
@@ -331,14 +353,31 @@ function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: st
   s.trailArmed = false;
   s.trailPeak = 0;
   s.rungsFired = 0;
+  s.lastMarkPrice = 0;
+  s.totalSoldQty = 0;
+  s.totalProceedsUsd = 0;
+  s.sellSummary = [];
 }
 
-function sellChunk(cfg: KnifeConfig, s: MintState, price: number, reason: string): void {
+function sellChunk(
+  cfg: KnifeConfig,
+  s: MintState,
+  price: number,
+  reason: string,
+  opts: { forTp?: boolean } = {},
+): void {
   if (s.qty <= EPS) return;
   if (!isKnifeExitPriceSane(price, s.avgEntry, cfg.maxExitMovePct)) {
     log.debug(
       { mint: s.mint, price, avgEntry: s.avgEntry, reason },
       'knife sell skipped — exit price outside sane corridor',
+    );
+    return;
+  }
+  if (opts.forTp && !isKnifeTpTickSane(price, s.lastMarkPrice, cfg.maxTpTickMovePct)) {
+    log.debug(
+      { mint: s.mint, price, lastMark: s.lastMarkPrice, reason },
+      'knife sell skipped — TP tick jump vs last Jupiter mark',
     );
     return;
   }
@@ -349,6 +388,9 @@ function sellChunk(cfg: KnifeConfig, s: MintState, price: number, reason: string
   const cost = soldQty * s.avgEntry;
   s.realizedUsd += proceeds - cost;
   s.qty -= soldQty;
+  s.totalSoldQty += soldQty;
+  s.totalProceedsUsd += proceeds;
+  s.sellSummary.push({ reason, price, qty: soldQty });
   appendJournal(cfg, {
     kind: 'knife_sell',
     mint: s.mint,
@@ -440,6 +482,7 @@ function tryWhaleDumpEntry(
   s.leg1Price = price;
   s.entryTs = tsMs;
   s.peak = price;
+  s.lastMarkPrice = price;
   globalLastEntryAtMs = tsMs;
 
   const dump = s.pendingDump;
@@ -478,7 +521,16 @@ function tryWhaleDumpEntry(
   );
 }
 
-function onPriceInPosition(cfg: KnifeConfig, s: MintState, price: number, tsMs: number): void {
+function onPriceInPosition(
+  cfg: KnifeConfig,
+  s: MintState,
+  price: number,
+  tsMs: number,
+  source: KnifePriceSource,
+): void {
+  if (source !== 'jupiter') return;
+
+  s.lastMarkPrice = price;
   if (price > s.peak) s.peak = price;
 
   if (s.legs < 2 && price <= s.leg1Price * (1 - cfg.avgDropPct / 100)) {
@@ -513,23 +565,31 @@ function onPriceInPosition(cfg: KnifeConfig, s: MintState, price: number, tsMs: 
     return;
   }
 
-  while (
+  const holdMs = tsMs - s.entryTs;
+  const tpAllowed = holdMs >= cfg.minHoldBeforeTpMs;
+
+  if (
+    tpAllowed &&
     s.rungsFired < cfg.tpLadderPct.length &&
     price >= s.avgEntry * (1 + cfg.tpLadderPct[s.rungsFired]! / 100)
   ) {
-    sellChunk(cfg, s, price, `tp_${cfg.tpLadderPct[s.rungsFired]}pct`);
-    s.rungsFired += 1;
-    if (s.rungsFired >= cfg.tpLadderPct.length) {
-      s.trailArmed = true;
-      s.trailPeak = price;
+    const reason = `tp_${cfg.tpLadderPct[s.rungsFired]}pct`;
+    const qtyBefore = s.qty;
+    sellChunk(cfg, s, price, reason, { forTp: true });
+    if (s.qty < qtyBefore - EPS) {
+      s.rungsFired += 1;
+      if (s.rungsFired >= cfg.tpLadderPct.length) {
+        s.trailArmed = true;
+        s.trailPeak = price;
+      }
     }
   }
 
-  if (s.trailArmed && s.qty > EPS) {
+  if (s.trailArmed && s.qty > EPS && tpAllowed) {
     if (price > s.trailPeak) {
       s.trailPeak = price;
     } else if (price <= s.trailPeak * (1 - cfg.trailPct / 100)) {
-      sellChunk(cfg, s, price, 'trail');
+      sellChunk(cfg, s, price, 'trail', { forTp: true });
       s.trailPeak = price;
     }
   }
@@ -545,7 +605,13 @@ function onPriceInPosition(cfg: KnifeConfig, s: MintState, price: number, tsMs: 
   }
 }
 
-function onTrustedPriceTick(cfg: KnifeConfig, mint: string, price: number, tsMs: number): void {
+function onTrustedPriceTick(
+  cfg: KnifeConfig,
+  mint: string,
+  price: number,
+  tsMs: number,
+  source: KnifePriceSource,
+): void {
   const s = getOrCreateState(mint);
   s.obsCount += 1;
   s.buf.push({ t: tsMs, p: price });
@@ -556,11 +622,12 @@ function onTrustedPriceTick(cfg: KnifeConfig, mint: string, price: number, tsMs:
     if (tsMs < s.cooldownUntilMs) return;
     if (tsMs - s.watchlistJoinedAtMs < cfg.watchlistWarmupMs) return;
     if (s.obsCount < cfg.minObs) return;
+    if (s.pendingDump && source !== 'jupiter') return;
     tryWhaleDumpEntry(cfg, s, price, tsMs);
     return;
   }
 
-  onPriceInPosition(cfg, s, price, tsMs);
+  onPriceInPosition(cfg, s, price, tsMs, source);
 }
 
 function onWhaleSellSwap(
@@ -635,7 +702,7 @@ function onStreamSwap(
     cfg.maxTickMovePct,
   );
   if (adopted.ok) {
-    onTrustedPriceTick(cfg, mint, adopted.tick.priceUsd, tsMs);
+    onTrustedPriceTick(cfg, mint, adopted.tick.priceUsd, tsMs, adopted.tick.source);
   } else if (adopted.reason !== 'no_jupiter_anchor') {
     log.debug({ mint, reason: adopted.reason, streamPrice }, 'knife swap price rejected');
   }
@@ -798,7 +865,7 @@ async function main(): Promise<void> {
     getWatchedMints,
     (mint, priceUsd, streamTsMs) => {
       try {
-        onTrustedPriceTick(cfg, mint, priceUsd, streamTsMs);
+        onTrustedPriceTick(cfg, mint, priceUsd, streamTsMs, 'jupiter');
       } catch (e) {
         log.debug({ mint, err: (e as Error).message }, 'jupiter onPrice failed');
       }
