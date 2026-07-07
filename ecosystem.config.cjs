@@ -5,6 +5,8 @@ require('dotenv').config({ path: path.join(root, '.env') });
 /** Проброс в `env` каждого PM2-приложения, чтобы ключ был в `process.env` даже если дочерний процесс не подхватил `.env` так, как ожидается. */
 const JUPITER_API_KEY_PM2 = (process.env.JUPITER_API_KEY || '').trim();
 const PM2_JUPITER_KEY_ENV = JUPITER_API_KEY_PM2 ? { JUPITER_API_KEY: JUPITER_API_KEY_PM2 } : {};
+const BIRDEYE_API_KEY_PM2 = (process.env.BIRDEYE_API_KEY || '').trim();
+const PM2_BIRDEYE_KEY_ENV = BIRDEYE_API_KEY_PM2 ? { BIRDEYE_API_KEY: BIRDEYE_API_KEY_PM2 } : {};
 /** Alchemy (или иной primary) из `.env` — ключ не в git; перекрывает stale PM2 QN URL при reload. */
 const SA_RPC_HTTP_URL_PM2 = (process.env.SA_RPC_HTTP_URL || '').trim();
 const LIVE_RPC_HTTP_URL_PM2 = (process.env.LIVE_RPC_HTTP_URL || SA_RPC_HTTP_URL_PM2).trim();
@@ -79,17 +81,11 @@ const BIRDEYE_REST_ENV = {
   BIRDEYE_COLLECTOR_INTER_MINT_DELAY_MS: '120',
 };
 
-/**
- * DEX snapshot collectors (sa-raydium/meteora/pumpswap): Birdeye enrich OFF.
- * live-oscar: BIRDEYE_PRIMARY_ENABLED=0 (2026-07) — DexScreener → PG; collector enrich OFF on all processes.
- */
-const COLLECTOR_BIRDEYE_ENV = {
+/** DexScreener-only collector enrich (Birdeye OFF on collectors — Lera parity 2026-07). */
+const BIRDEYE_COLLECTOR_ENV = {
   BIRDEYE_COLLECTOR_ENABLED: '0',
-};
-
-/** Cap per-mint Dex enrich per collector tick (#300 regression: ~70 mints → 15min ticks). */
-const COLLECTOR_ENRICH_ENV = {
-  COLLECTOR_ENRICH_MAX_MINTS_PER_TICK: '6',
+  BIRDEYE_GLOBAL_RATE_LIMIT: '0',
+  ...PM2_BIRDEYE_KEY_ENV,
 };
 
 /** Advice / health / ALERT (live-oscar, collector-watch, snapshot stale, pg coverage). */
@@ -426,13 +422,12 @@ const PM2_APPS = [
         RAYDIUM_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
+        PAPER2_SNAPSHOT_LIVE_SOLO_FETCH_MAX_PER_TICK: '4',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
+        ...BIRDEYE_COLLECTOR_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...COLLECTOR_BIRDEYE_ENV,
-        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -451,17 +446,15 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         METEORA_COLLECTOR_INTERVAL_MS: '120000',
-        METEORA_COLLECTOR_START_OFFSET_MS: '40000',
+        METEORA_COLLECTOR_START_OFFSET_MS: '10000',
         METEORA_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
+        ...BIRDEYE_COLLECTOR_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...COLLECTOR_BIRDEYE_ENV,
-        ...COLLECTOR_ENRICH_ENV,
       },
     },
     // sa-orca disabled 2026-05-26: orca-collector runaway CPU since 2025-05-24; negligible for live-oscar (pumpswap lane).
@@ -481,17 +474,15 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         MOONSHOT_COLLECTOR_INTERVAL_MS: '120000',
-        MOONSHOT_COLLECTOR_START_OFFSET_MS: '80000',
+        MOONSHOT_COLLECTOR_START_OFFSET_MS: '20000',
         MOONSHOT_COLLECTOR_ENRICH_MAX_RETRIES: '1',
         PAPER2_SNAPSHOT_DS_DELAY_MS: '500',
         PAPER2_SNAPSHOT_SOLO_FETCH_MAX_PER_TICK: '6',
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
+        ...BIRDEYE_COLLECTOR_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...COLLECTOR_BIRDEYE_ENV,
-        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
@@ -517,10 +508,8 @@ const PM2_APPS = [
         PAPER2_SNAPSHOT_BATCH_CHUNKS_MAX_PER_TICK: '8',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         ...DEXSCREENER_GATE_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
+        ...BIRDEYE_COLLECTOR_ENV,
         ...DISCOVERY_COLLECTOR_PIN_ENV,
-        ...COLLECTOR_BIRDEYE_ENV,
-        ...COLLECTOR_ENRICH_ENV,
       },
     },
     {
