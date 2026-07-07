@@ -241,7 +241,7 @@ export async function attemptE2Dip10BackfillFromPg(
 export function reconcileE2StagedAvgThreshold(ot: OpenTrade, cfg: PaperTraderConfig): boolean {
   if (!isLiveOscarTradingStrategyId(cfg.strategyId)) return false;
   const st = ot.liveStagedEntry;
-  if (!st?.entrySplitV2 || st.mintFirstProbe) return false;
+  if (!st?.entrySplitV2 || st.mintFirstProbe || st.copyLeaderAdoptStagedPlan) return false;
   if (!stagedAveragingConfigured(st)) return false;
 
   reconcileEntrySplitV2FromLegs(ot);

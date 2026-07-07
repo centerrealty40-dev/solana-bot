@@ -502,6 +502,8 @@ export interface LiveStagedEntryState {
   thirdLegDone?: boolean;
   /** Первый live-вход по mint: без staged avg, kill `killDropPct` обычно 7. */
   mintFirstProbe?: boolean;
+  /** Copy-adopt: avg legs = % of initial open leg; skip canonical sizing on restore. */
+  copyLeaderAdoptStagedPlan?: boolean;
 }
 
 /** Параметры отложенной докупки второй ноги (Live Oscar, Jupiter-коридор к якорю первой ноги). */
