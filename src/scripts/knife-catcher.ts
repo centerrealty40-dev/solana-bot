@@ -4,8 +4,8 @@
  * Event-driven whale-dump entry: detect large sell swaps that print a fast dump from a recent local
  * high, enter the dip within a short window, scalp out on an escalating TP ladder + trail.
  *
- * Price path: Shyft gRPC swap_decode (per-swap balance deltas) + Jupiter buy-quote poll with
- * cross-source sanity — avoids vault-heuristic garbage prices.
+ * Price path: Jupiter buy-quote (trusted anchor) + stream swap_decode only when it agrees
+ * with fresh Jupiter and passes tick-move guards. Raw stream prices never reach buffer/PnL.
  *
  * ISOLATION CONTRACT:
  *  - Own PM2 process. Never imported by live-oscar / papertrader hot path.
@@ -34,9 +34,10 @@ import {
   buildKnifeSummaryTelegram,
 } from './knife-telegram-format.js';
 import {
-  getKnifeCrossSourceTick,
-  recordKnifePrice,
+  getKnifeTrustedPrice,
+  isKnifeExitPriceSane,
   startKnifeJupiterPoll,
+  tryAdoptKnifeSwapPrice,
 } from './knife-price-feed.js';
 import { sendTagged } from '../core/telegram/sender.js';
 
@@ -83,6 +84,8 @@ interface KnifeConfig {
   minObs: number;
   watchlistWarmupMs: number;
   crossSourceMaxPct: number;
+  maxTickMovePct: number;
+  maxExitMovePct: number;
   legUsd: number;
   positionUsd: number;
   avgDropPct: number;
@@ -123,7 +126,9 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     globalEntryGapMs: Math.round(envNum(env.KNIFE_GLOBAL_ENTRY_GAP_SEC, 45) * 1000),
     minObs: Math.round(Number(env.KNIFE_MIN_OBS ?? 3)),
     watchlistWarmupMs: Math.round(envNum(env.KNIFE_WATCHLIST_WARMUP_SEC, 25) * 1000),
-    crossSourceMaxPct: envNum(env.KNIFE_CROSS_SOURCE_MAX_PCT, 30),
+    crossSourceMaxPct: envNum(env.KNIFE_CROSS_SOURCE_MAX_PCT, 25),
+    maxTickMovePct: envNum(env.KNIFE_MAX_TICK_MOVE_PCT, 25),
+    maxExitMovePct: envNum(env.KNIFE_MAX_EXIT_MOVE_PCT, 50),
     legUsd,
     positionUsd,
     avgDropPct: envNum(env.KNIFE_AVG_DROP_PCT, 8),
@@ -140,10 +145,10 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
       path.join('data', 'knife-catcher', 'knife-catcher.jsonl'),
     shyftEndpoint: env.SHYFT_GRPC_ENDPOINT?.trim() || 'https://grpc.fra.shyft.to',
     shyftToken: env.SHYFT_GRPC_TOKEN?.trim() ?? '',
-    jupiterPollIntervalMs: Math.round(envNum(env.KNIFE_JUPITER_POLL_SEC, 15) * 1000),
+    jupiterPollIntervalMs: Math.round(envNum(env.KNIFE_JUPITER_POLL_SEC, 2) * 1000),
     jupiterSlippageBps: Math.round(Number(env.KNIFE_JUPITER_SLIPPAGE_BPS ?? 300)),
     jupiterTimeoutMs: Math.round(envNum(env.KNIFE_JUPITER_TIMEOUT_SEC, 8) * 1000),
-    jupiterMaxMintsPerTick: Math.round(envNum(env.KNIFE_JUPITER_MAX_MINTS_PER_TICK, 5)),
+    jupiterMaxMintsPerTick: Math.round(envNum(env.KNIFE_JUPITER_MAX_MINTS_PER_TICK, 15)),
   };
 }
 
@@ -322,6 +327,13 @@ function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: st
 
 function sellChunk(cfg: KnifeConfig, s: MintState, price: number, reason: string): void {
   if (s.qty <= EPS) return;
+  if (!isKnifeExitPriceSane(price, s.avgEntry, cfg.maxExitMovePct)) {
+    log.debug(
+      { mint: s.mint, price, avgEntry: s.avgEntry, reason },
+      'knife sell skipped — exit price outside sane corridor',
+    );
+    return;
+  }
   const chunk = cfg.tpSellFrac * s.qtyFilled;
   const soldQty = Math.min(s.qty, chunk);
   if (soldQty <= EPS) return;
@@ -509,6 +521,104 @@ function onPriceInPosition(cfg: KnifeConfig, s: MintState, price: number, tsMs: 
   }
 }
 
+function onTrustedPriceTick(cfg: KnifeConfig, mint: string, price: number, tsMs: number): void {
+  const s = getOrCreateState(mint);
+  s.obsCount += 1;
+  s.buf.push({ t: tsMs, p: price });
+  const cutoff = tsMs - cfg.bufferMs;
+  while (s.buf.length > 0 && s.buf[0]!.t < cutoff) s.buf.shift();
+
+  if (s.phase === 'idle') {
+    if (tsMs < s.cooldownUntilMs) return;
+    if (tsMs - s.watchlistJoinedAtMs < cfg.watchlistWarmupMs) return;
+    if (s.obsCount < cfg.minObs) return;
+    tryWhaleDumpEntry(cfg, s, price, tsMs);
+    return;
+  }
+
+  onPriceInPosition(cfg, s, price, tsMs);
+}
+
+function onWhaleSellSwap(
+  cfg: KnifeConfig,
+  mint: string,
+  tsMs: number,
+  meta: ShyftObservationMeta,
+): void {
+  if (meta.side !== 'sell' || !(meta.amountUsd >= cfg.minSellUsd)) return;
+
+  const trusted = getKnifeTrustedPrice(mint, tsMs);
+  if (!trusted) {
+    appendJournal(cfg, {
+      kind: 'knife_price_skip',
+      mint,
+      reason: 'no_trusted_price_for_dump',
+      sellUsd: meta.amountUsd,
+    });
+    return;
+  }
+
+  const s = getOrCreateState(mint);
+  if (s.phase !== 'idle') return;
+  if (tsMs < s.cooldownUntilMs) return;
+  if (tsMs - s.watchlistJoinedAtMs < cfg.watchlistWarmupMs) return;
+  if (s.obsCount < cfg.minObs) return;
+
+  const dump = detectWhaleDump(s.buf, trusted.priceUsd, tsMs, meta, cfg);
+  if (!dump) return;
+
+  s.pendingDump = dump;
+  appendJournal(cfg, {
+    kind: 'knife_dump_detected',
+    mint,
+    preDumpHigh: dump.preDumpHigh,
+    dumpLow: dump.dumpLow,
+    dumpPct: dump.dumpPct,
+    sellUsd: dump.sellUsd,
+    signature: dump.signature,
+    source: dump.source,
+    priceSource: trusted.source,
+  });
+  notifyHtml(
+    cfg,
+    buildKnifeDumpTelegram({
+      mode: cfg.mode,
+      mint,
+      dump,
+      priceUsd: trusted.priceUsd,
+      maxEntryAfterDumpSec: Math.round(cfg.maxEntryAfterDumpMs / 1000),
+      maxBouncePct: cfg.maxBounceFromDumpPct,
+    }),
+  );
+  log.info(
+    { mint, dumpPct: dump.dumpPct, sellUsd: dump.sellUsd, priceSource: trusted.source },
+    'knife whale dump detected',
+  );
+}
+
+function onStreamSwap(
+  cfg: KnifeConfig,
+  mint: string,
+  streamPrice: number,
+  tsMs: number,
+  meta?: ShyftObservationMeta,
+): void {
+  const adopted = tryAdoptKnifeSwapPrice(
+    mint,
+    streamPrice,
+    tsMs,
+    cfg.crossSourceMaxPct,
+    cfg.maxTickMovePct,
+  );
+  if (adopted.ok) {
+    onTrustedPriceTick(cfg, mint, adopted.tick.priceUsd, tsMs);
+  } else if (adopted.reason !== 'no_jupiter_anchor') {
+    log.debug({ mint, reason: adopted.reason, streamPrice }, 'knife swap price rejected');
+  }
+
+  if (meta?.side === 'sell') onWhaleSellSwap(cfg, mint, tsMs, meta);
+}
+
 function onPrice(
   cfg: KnifeConfig,
   mint: string,
@@ -517,60 +627,7 @@ function onPrice(
   meta?: ShyftObservationMeta,
 ): void {
   if (!(price > 0) || !Number.isFinite(price)) return;
-
-  if (meta) recordKnifePrice(mint, price, tsMs, meta);
-
-  const tick = getKnifeCrossSourceTick(mint, cfg.crossSourceMaxPct, tsMs);
-  const effectivePrice = tick?.priceUsd ?? price;
-
-  const s = getOrCreateState(mint);
-  s.obsCount += 1;
-  s.buf.push({ t: tsMs, p: effectivePrice });
-  const cutoff = tsMs - cfg.bufferMs;
-  while (s.buf.length > 0 && s.buf[0]!.t < cutoff) s.buf.shift();
-
-  if (s.phase === 'idle') {
-    if (tsMs < s.cooldownUntilMs) return;
-    if (tsMs - s.watchlistJoinedAtMs < cfg.watchlistWarmupMs) return;
-    if (s.obsCount < cfg.minObs) return;
-
-    if (meta?.side === 'sell') {
-      const dump = detectWhaleDump(s.buf, effectivePrice, tsMs, meta, cfg);
-      if (dump) {
-        s.pendingDump = dump;
-        appendJournal(cfg, {
-          kind: 'knife_dump_detected',
-          mint,
-          preDumpHigh: dump.preDumpHigh,
-          dumpLow: dump.dumpLow,
-          dumpPct: dump.dumpPct,
-          sellUsd: dump.sellUsd,
-          signature: dump.signature,
-          source: dump.source,
-        });
-        notifyHtml(
-          cfg,
-          buildKnifeDumpTelegram({
-            mode: cfg.mode,
-            mint,
-            dump,
-            priceUsd: effectivePrice,
-            maxEntryAfterDumpSec: Math.round(cfg.maxEntryAfterDumpMs / 1000),
-            maxBouncePct: cfg.maxBounceFromDumpPct,
-          }),
-        );
-        log.info(
-          { mint, dumpPct: dump.dumpPct, sellUsd: dump.sellUsd },
-          'knife whale dump detected',
-        );
-      }
-    }
-
-    tryWhaleDumpEntry(cfg, s, effectivePrice, tsMs);
-    return;
-  }
-
-  onPriceInPosition(cfg, s, effectivePrice, tsMs);
+  onStreamSwap(cfg, mint, price, tsMs, meta);
 }
 
 async function refreshWatchlist(cfg: KnifeConfig): Promise<string[]> {
@@ -664,13 +721,12 @@ async function main(): Promise<void> {
       pollIntervalMs: cfg.jupiterPollIntervalMs,
       slippageBps: cfg.jupiterSlippageBps,
       timeoutMs: cfg.jupiterTimeoutMs,
-      crossSourceMaxPct: cfg.crossSourceMaxPct,
       maxMintsPerTick: cfg.jupiterMaxMintsPerTick,
     },
     getWatchedMints,
     (mint, priceUsd, streamTsMs) => {
       try {
-        onPrice(cfg, mint, priceUsd, streamTsMs);
+        onTrustedPriceTick(cfg, mint, priceUsd, streamTsMs);
       } catch (e) {
         log.debug({ mint, err: (e as Error).message }, 'jupiter onPrice failed');
       }
@@ -687,9 +743,9 @@ async function main(): Promise<void> {
     {
       onObservation: (mint, priceUsd, streamTsMs, meta) => {
         try {
-          onPrice(cfg, mint, priceUsd, streamTsMs, meta);
+          onStreamSwap(cfg, mint, priceUsd, streamTsMs, meta);
         } catch (e) {
-          log.debug({ mint, err: (e as Error).message }, 'onPrice failed');
+          log.debug({ mint, err: (e as Error).message }, 'onStreamSwap failed');
         }
       },
       onStatus: (status, detail) =>

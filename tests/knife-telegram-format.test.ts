@@ -3,7 +3,6 @@ import {
   buildKnifeCloseTelegram,
   buildKnifeDumpTelegram,
   buildKnifeEntryTelegram,
-  isKnifeShadowPnlSuspicious,
 } from '../src/scripts/knife-telegram-format.js';
 
 describe('knife telegram format', () => {
@@ -47,8 +46,7 @@ describe('knife telegram format', () => {
     expect(text).toContain('shadow');
   });
 
-  it('flags suspicious close PnL', () => {
-    expect(isKnifeShadowPnlSuspicious(216097, 5, 4_000_000)).toBe(true);
+  it('builds close HTML with trusted PnL line', () => {
     const text = buildKnifeCloseTelegram({
       mode: 'shadow',
       mint: '9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump',
@@ -56,10 +54,11 @@ describe('knife telegram format', () => {
       legs: 1,
       avgEntry: 0.347,
       investedUsd: 5,
-      realizedUsd: 216097,
-      pnlPct: 4_000_000,
+      realizedUsd: 0.18,
+      pnlPct: 3.6,
     });
-    expect(text).toContain('подозрительный');
-    expect(text).toContain('артефакт');
+    expect(text).toContain('ЗАКРЫТИЕ');
+    expect(text).not.toContain('артефакт');
+    expect(text).toContain('PnL (shadow)');
   });
 });

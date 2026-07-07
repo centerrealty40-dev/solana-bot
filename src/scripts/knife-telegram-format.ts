@@ -47,11 +47,6 @@ export function knifeCloseReasonRu(reason: string): string {
   return CLOSE_REASON_RU[reason] ?? reason;
 }
 
-export function isKnifeShadowPnlSuspicious(pnlUsd: number, investedUsd: number, pnlPct: number): boolean {
-  if (!(investedUsd > 0)) return false;
-  return Math.abs(pnlPct) > 200 || Math.abs(pnlUsd) > investedUsd * 25;
-}
-
 function header(mode: 'shadow' | 'live', title: string): string {
   const tag = mode === 'shadow' ? 'knife_shadow' : 'knife_live';
   return `<b>[REPORT][${tag}]</b>\n<b>${escapeKnifeHtml(title)}</b>`;
@@ -137,17 +132,14 @@ export function buildKnifeCloseTelegram(args: {
   pnlPct: number;
 }): string {
   const { mode, mint, reason, legs, avgEntry, investedUsd, realizedUsd, pnlPct } = args;
-  const suspicious = isKnifeShadowPnlSuspicious(realizedUsd, investedUsd, pnlPct);
   const pnlSign = pnlPct >= 0 ? '+' : '';
   const usdSign = realizedUsd >= 0 ? '+' : '';
   const lines = [
-    header(mode, suspicious ? '⚠️ ЗАКРЫТИЕ (подозрительный PnL)' : '✅ ЗАКРЫТИЕ'),
+    header(mode, '✅ ЗАКРЫТИЕ'),
     mintBlock(mint),
     `Причина: <b>${escapeKnifeHtml(knifeCloseReasonRu(reason))}</b>`,
     `Вложено: <b>${fmtKnifeUsd(investedUsd)}</b> · ног: <b>${legs}</b> · avg entry: <b>${fmtKnifePrice(avgEntry)}</b>`,
-    suspicious
-      ? `PnL (shadow): <b>${pnlSign}${pnlPct.toFixed(1)}%</b> (${usdSign}${fmtKnifeUsd(realizedUsd)}) — <b>вероятно артефакт цены</b>, не доверять без проверки GMGN`
-      : `PnL (shadow): <b>${pnlSign}${pnlPct.toFixed(1)}%</b> (${usdSign}${fmtKnifeUsd(realizedUsd)})`,
+    `PnL (shadow): <b>${pnlSign}${pnlPct.toFixed(1)}%</b> (${usdSign}${fmtKnifeUsd(realizedUsd)})`,
     mode === 'shadow' ? `Режим: <b>shadow</b> — смотри цену на GMGN, сравни с журналом.` : '',
   ].filter(Boolean);
   return `${lines.join('\n')}\n`;
@@ -168,7 +160,7 @@ export function buildKnifeSummaryTelegram(args: {
     header(mode, '📊 СВОДКА knife-catcher'),
     `Слежу: <b>${watched}</b> mint · открыто: <b>${open}</b> · pending dump: <b>${pendingDumps}</b>`,
     `Реализ. PnL (shadow): <b>${realizedSign}${fmtKnifeUsd(realizedUsd)}</b> (за период ${deltaSign}${fmtKnifeUsd(periodDeltaUsd)})`,
-    `Стратегия: whale-dump → вход ≤50с · цены: swap_decode + Jupiter`,
+    `Стратегия: whale-dump → вход ≤50с · цены: Jupiter + swap (валидированный)`,
     mode === 'shadow' ? `Режим: <b>shadow</b> — все цифры симуляция.` : '',
   ].filter(Boolean);
   return `${lines.join('\n')}\n`;

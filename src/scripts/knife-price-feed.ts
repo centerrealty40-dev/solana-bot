@@ -1,90 +1,119 @@
 /**
- * Knife-catcher price feed — swap-decode ticks + Jupiter buy-quote poll with cross-source sanity.
+ * Knife-catcher trusted price feed.
+ *
+ * Contract: position logic, buffer, entries, exits, and PnL use **trusted** prices only.
+ * - Jupiter buy-quote (leg notional) is the primary trusted source.
+ * - Stream swap_decode may adopt a tick only when fresh Jupiter agrees within crossSourceMaxPct
+ *   and the move vs last trusted tick is within maxTickMovePct.
+ * - Raw stream prices never reach the trading buffer or sellChunk.
  */
 import { child } from '../core/logger.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { jupiterQuoteBuyPriceUsd } from '../papertrader/pricing/price-verify.js';
-import type { ShyftObservationMeta } from '../papertrader/stream/shyft-shadow-consumer.js';
 
 const log = child('knife-price-feed');
 
-/** Swap tick considered "fresh" for Jupiter cross-source comparison. */
-const SWAP_FRESH_MS = 120_000;
+export const KNIFE_JUPITER_MAX_AGE_MS = 25_000;
 
-export type KnifePriceTick = {
+export type KnifePriceSource = 'jupiter' | 'swap_validated';
+
+export type KnifeTrustedTick = {
   priceUsd: number;
   tsMs: number;
-  source: 'swap' | 'jupiter';
-  meta?: ShyftObservationMeta;
+  source: KnifePriceSource;
 };
 
-interface MintPriceState {
-  lastSwap?: KnifePriceTick;
-  lastJupiter?: KnifePriceTick;
-}
+export type KnifePriceRejectReason =
+  | 'invalid_number'
+  | 'no_jupiter_anchor'
+  | 'jupiter_stale'
+  | 'cross_source_divergence'
+  | 'tick_jump';
+
+type MintPriceState = {
+  lastJupiter?: KnifeTrustedTick;
+  lastTrusted?: KnifeTrustedTick;
+};
 
 const mintState = new Map<string, MintPriceState>();
 
-export function recordKnifePrice(
-  mint: string,
-  priceUsd: number,
-  tsMs: number,
-  meta?: ShyftObservationMeta,
-): void {
-  if (!(priceUsd > 0) || !Number.isFinite(priceUsd)) return;
-  const s = mintState.get(mint) ?? {};
-  s.lastSwap = { priceUsd, tsMs, source: 'swap', meta };
-  mintState.set(mint, s);
-}
-
-function recordKnifeJupiterPrice(mint: string, priceUsd: number, tsMs: number): void {
-  if (!(priceUsd > 0) || !Number.isFinite(priceUsd)) return;
-  const s = mintState.get(mint) ?? {};
-  s.lastJupiter = { priceUsd, tsMs, source: 'jupiter' };
-  mintState.set(mint, s);
-}
-
-function freshSwap(state: MintPriceState | undefined, nowMs: number): KnifePriceTick | null {
-  const swap = state?.lastSwap;
-  if (!swap || nowMs - swap.tsMs > SWAP_FRESH_MS) return null;
-  return swap;
-}
-
-function crossSourceDivPct(a: number, b: number): number {
+export function crossSourceDivPct(a: number, b: number): number {
   if (!(b > 0)) return Infinity;
   return (Math.abs(a - b) / b) * 100;
 }
 
-/**
- * Best price tick for knife logic. Prefers fresh swap; rejects Jupiter when > crossSourceMaxPct off fresh swap.
- */
-export function getKnifeCrossSourceTick(
+export function priceMovePct(prev: number, next: number): number {
+  if (!(prev > 0)) return Infinity;
+  return (Math.abs(next - prev) / prev) * 100;
+}
+
+function freshJupiter(state: MintPriceState | undefined, nowMs: number): KnifeTrustedTick | null {
+  const j = state?.lastJupiter;
+  if (!j || nowMs - j.tsMs > KNIFE_JUPITER_MAX_AGE_MS) return null;
+  return j;
+}
+
+export function adoptKnifeJupiterPrice(mint: string, priceUsd: number, tsMs: number): boolean {
+  if (!(priceUsd > 0) || !Number.isFinite(priceUsd)) return false;
+  const s = mintState.get(mint) ?? {};
+  const tick: KnifeTrustedTick = { priceUsd, tsMs, source: 'jupiter' };
+  s.lastJupiter = tick;
+  s.lastTrusted = tick;
+  mintState.set(mint, s);
+  return true;
+}
+
+export function tryAdoptKnifeSwapPrice(
   mint: string,
-  crossSourceMaxPct = 30,
-  nowMs = Date.now(),
-): KnifePriceTick | null {
-  const state = mintState.get(mint);
-  if (!state) return null;
-
-  const swapNow = freshSwap(state, nowMs);
-  const jup = state.lastJupiter;
-
-  if (swapNow && jup) {
-    if (crossSourceDivPct(jup.priceUsd, swapNow.priceUsd) > crossSourceMaxPct) {
-      return swapNow;
-    }
-    return swapNow;
-  }
-  if (swapNow) return swapNow;
-
-  if (jup && state.lastSwap) {
-    if (crossSourceDivPct(jup.priceUsd, state.lastSwap.priceUsd) > crossSourceMaxPct) {
-      return state.lastSwap;
-    }
-    return jup;
+  priceUsd: number,
+  tsMs: number,
+  crossSourceMaxPct: number,
+  maxTickMovePct: number,
+): { ok: true; tick: KnifeTrustedTick } | { ok: false; reason: KnifePriceRejectReason } {
+  if (!(priceUsd > 0) || !Number.isFinite(priceUsd)) {
+    return { ok: false, reason: 'invalid_number' };
   }
 
-  return jup ?? state.lastSwap ?? null;
+  const s = mintState.get(mint) ?? {};
+  const jup = freshJupiter(s, tsMs);
+  if (!jup) return { ok: false, reason: 'no_jupiter_anchor' };
+
+  if (crossSourceDivPct(priceUsd, jup.priceUsd) > crossSourceMaxPct) {
+    return { ok: false, reason: 'cross_source_divergence' };
+  }
+
+  const prev = s.lastTrusted;
+  if (prev && priceMovePct(prev.priceUsd, priceUsd) > maxTickMovePct) {
+    return { ok: false, reason: 'tick_jump' };
+  }
+
+  const tick: KnifeTrustedTick = { priceUsd, tsMs, source: 'swap_validated' };
+  s.lastTrusted = tick;
+  mintState.set(mint, s);
+  return { ok: true, tick };
+}
+
+/** Latest trusted tick for trading (Jupiter or swap validated against Jupiter). */
+export function getKnifeTrustedPrice(mint: string, nowMs = Date.now()): KnifeTrustedTick | null {
+  const s = mintState.get(mint);
+  const trusted = s?.lastTrusted;
+  if (!trusted) return null;
+  if (trusted.source === 'jupiter') {
+    return nowMs - trusted.tsMs <= KNIFE_JUPITER_MAX_AGE_MS ? trusted : null;
+  }
+  const jup = freshJupiter(s, nowMs);
+  if (!jup) return null;
+  if (crossSourceDivPct(trusted.priceUsd, jup.priceUsd) > 50) return null;
+  return trusted;
+}
+
+export function getKnifeFreshJupiterPrice(mint: string, nowMs = Date.now()): KnifeTrustedTick | null {
+  return freshJupiter(mintState.get(mint), nowMs);
+}
+
+export function isKnifeExitPriceSane(price: number, avgEntry: number, maxExitMovePct: number): boolean {
+  if (!(price > 0) || !(avgEntry > 0)) return false;
+  return priceMovePct(avgEntry, price) <= maxExitMovePct;
 }
 
 export interface KnifeJupiterPollConfig {
@@ -92,14 +121,13 @@ export interface KnifeJupiterPollConfig {
   pollIntervalMs: number;
   slippageBps: number;
   timeoutMs: number;
-  crossSourceMaxPct: number;
   maxMintsPerTick: number;
 }
 
 export function startKnifeJupiterPoll(
   cfg: KnifeJupiterPollConfig,
   getWatchedMints: () => string[],
-  onTick?: (mint: string, priceUsd: number, tsMs: number) => void,
+  onTrustedTick: (mint: string, priceUsd: number, tsMs: number) => void,
 ): { stop: () => void } {
   let stopped = false;
   let roundRobin = 0;
@@ -114,38 +142,29 @@ export function startKnifeJupiterPoll(
 
     const startIdx = roundRobin % mints.length;
     roundRobin += 1;
+    const limit = Math.max(1, Math.min(mints.length, cfg.maxMintsPerTick));
     let polled = 0;
 
-    for (let i = 0; i < mints.length && polled < cfg.maxMintsPerTick; i += 1) {
+    for (let i = 0; i < mints.length && polled < limit; i += 1) {
       const mint = mints[(startIdx + i) % mints.length]!;
       polled += 1;
       try {
-        const swapRef = getKnifeCrossSourceTick(mint, cfg.crossSourceMaxPct);
-        const snapshotPx = swapRef?.priceUsd ?? 1;
+        const anchor = getKnifeTrustedPrice(mint) ?? getKnifeFreshJupiterPrice(mint);
+        const snapshotPx = anchor?.priceUsd ?? 0;
         const q = await jupiterQuoteBuyPriceUsd({
           mint,
           outMintDecimals: 6,
           sizeUsd: cfg.legUsd,
           solUsd,
-          snapshotPriceUsd: snapshotPx,
+          snapshotPriceUsd: snapshotPx > 0 ? snapshotPx : 1,
           slippageBps: cfg.slippageBps,
           timeoutMs: cfg.timeoutMs,
         });
         if (q.kind !== 'ok' || q.jupiterPriceUsd == null || !(q.jupiterPriceUsd > 0)) continue;
 
         const now = Date.now();
-        const fresh = freshSwap(mintState.get(mint), now);
-        if (fresh && crossSourceDivPct(q.jupiterPriceUsd, fresh.priceUsd) > cfg.crossSourceMaxPct) {
-          log.debug(
-            { mint, jupiter: q.jupiterPriceUsd, swap: fresh.priceUsd },
-            'knife jupiter rejected — cross-source divergence',
-          );
-          continue;
-        }
-
-        recordKnifeJupiterPrice(mint, q.jupiterPriceUsd, now);
-        const tick = getKnifeCrossSourceTick(mint, cfg.crossSourceMaxPct, now);
-        if (tick) onTick?.(mint, tick.priceUsd, now);
+        if (!adoptKnifeJupiterPrice(mint, q.jupiterPriceUsd, now)) continue;
+        onTrustedTick(mint, q.jupiterPriceUsd, now);
       } catch (e) {
         log.debug({ mint, err: (e as Error).message }, 'knife jupiter poll failed');
       }

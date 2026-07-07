@@ -2200,12 +2200,14 @@ const PM2_APPS = [
         KNIFE_GLOBAL_ENTRY_GAP_SEC: process.env.KNIFE_GLOBAL_ENTRY_GAP_SEC || '45',
         KNIFE_MIN_OBS: process.env.KNIFE_MIN_OBS || '3',
         KNIFE_WATCHLIST_WARMUP_SEC: process.env.KNIFE_WATCHLIST_WARMUP_SEC || '25',
-        KNIFE_CROSS_SOURCE_MAX_PCT: process.env.KNIFE_CROSS_SOURCE_MAX_PCT || '30',
-        /** Jupiter buy-quote poll (KNIFE_LEG_USD notional) for cross-source price sanity. */
-        KNIFE_JUPITER_POLL_SEC: process.env.KNIFE_JUPITER_POLL_SEC || '15',
+        KNIFE_CROSS_SOURCE_MAX_PCT: process.env.KNIFE_CROSS_SOURCE_MAX_PCT || '25',
+        KNIFE_MAX_TICK_MOVE_PCT: process.env.KNIFE_MAX_TICK_MOVE_PCT || '25',
+        KNIFE_MAX_EXIT_MOVE_PCT: process.env.KNIFE_MAX_EXIT_MOVE_PCT || '50',
+        /** Jupiter buy-quote poll (KNIFE_LEG_USD notional) — primary trusted price source. */
+        KNIFE_JUPITER_POLL_SEC: process.env.KNIFE_JUPITER_POLL_SEC || '2',
         KNIFE_JUPITER_SLIPPAGE_BPS: process.env.KNIFE_JUPITER_SLIPPAGE_BPS || '300',
         KNIFE_JUPITER_TIMEOUT_SEC: process.env.KNIFE_JUPITER_TIMEOUT_SEC || '8',
-        KNIFE_JUPITER_MAX_MINTS_PER_TICK: process.env.KNIFE_JUPITER_MAX_MINTS_PER_TICK || '5',
+        KNIFE_JUPITER_MAX_MINTS_PER_TICK: process.env.KNIFE_JUPITER_MAX_MINTS_PER_TICK || '15',
         /** 2-leg entry: $25 on signal + $25 avg-down if it falls a further AVG_DROP_PCT. */
         KNIFE_LEG_USD: process.env.KNIFE_LEG_USD || '25',
         KNIFE_POSITION_USD: process.env.KNIFE_POSITION_USD || '50',
