@@ -459,6 +459,7 @@ export async function adoptCopyLeaderExitOpens(args: {
 
     if (args.open.has(mint)) {
       skippedAlreadyOpen.push(mint);
+      args.open.get(mint)!.copyToOscarPromoted = true;
       continue;
     }
 
