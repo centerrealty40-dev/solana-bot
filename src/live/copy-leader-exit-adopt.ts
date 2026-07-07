@@ -7,10 +7,12 @@ import type { PaperTraderConfig } from '../papertrader/config.js';
 import { applyEntryCosts } from '../papertrader/costs.js';
 import { applyWaveBGridOverrides } from '../papertrader/executor/exit-policy-wave-b.js';
 import {
-  buildLiveStagedEntryState,
-  markEntrySplitLeg1Filled,
-} from '../papertrader/executor/live-staged-entry-gates.js';
-import { applyCanonicalOpenLegUsd } from '../papertrader/live-oscar-entry-sizing.js';
+  ENTRY_SPLIT_LEG_COUNT,
+  setEntrySplitLegDone,
+  type EntrySplitLegIndex,
+} from '../papertrader/entry-split-legs.js';
+import { markEntrySplitLeg1Filled } from '../papertrader/executor/live-staged-entry-gates.js';
+import type { LiveStagedEntryState } from '../papertrader/types.js';
 import {
   resolveLiveOscarMcapTier,
   type LiveOscarMcapTier,
@@ -116,6 +118,129 @@ function copyLeaderLiveStagedEntryActive(cfg: PaperTraderConfig): boolean {
   return isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveStagedEntryEnabled;
 }
 
+export function copyLeaderAdoptStagedEntryEnabled(cfg: PaperTraderConfig): boolean {
+  return (
+    copyLeaderLiveStagedEntryActive(cfg) &&
+    envBool(process.env.LIVE_COPY_LEADER_ADOPT_STAGED_ENTRY_ENABLED, true)
+  );
+}
+
+/** % of initial copy-adopt notional per staged avg leg (default 25 → −10% + −20% add 50% total). */
+export function resolveCopyLeaderAdoptAvgLegPct(): number {
+  const raw = process.env.LIVE_COPY_LEADER_ADOPT_AVG_LEG_PCT;
+  if (raw === undefined || raw === null || String(raw).trim() === '') return 25;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0 || n > 100) return 25;
+  return n;
+}
+
+function resolveCopyLeaderAdoptInitialUsd(ot: OpenTrade): number {
+  const openUsd = ot.legs.filter((l) => l.reason === 'open').reduce((s, l) => s + l.sizeUsd, 0);
+  return openUsd > 0 ? openUsd : ot.totalInvestedUsd;
+}
+
+/** Staged avg at −10% / −20% from adopt signal; each leg = 25% of initial open notional. */
+export function buildCopyLeaderAdoptStagedEntryState(
+  cfg: PaperTraderConfig,
+  args: {
+    signalTs: number;
+    signalPriceUsd: number;
+    initialInvestedUsd: number;
+  },
+): LiveStagedEntryState {
+  const legPct = resolveCopyLeaderAdoptAvgLegPct();
+  const avgUsd = Math.round((args.initialInvestedUsd * legPct) / 100 * 100) / 100;
+  const drop10 = cfg.liveStagedEntrySecondDropPct;
+  const drop20 = cfg.liveStagedEntryThirdDropPct;
+  const st: LiveStagedEntryState = {
+    signalTs: args.signalTs,
+    signalPriceUsd: args.signalPriceUsd,
+    copyLeaderAdoptStagedPlan: true,
+    firstDropPct: 0,
+    firstLegUsd: args.initialInvestedUsd,
+    killDropPct: cfg.liveStagedEntryKillDropPct,
+    entrySplitV2: true,
+    entrySplitLegUsd: args.initialInvestedUsd,
+    entrySplitLeg2Usd: 0,
+    entrySplitLeg3Usd: 0,
+    entrySplitLeg4Usd: 0,
+    entrySplitLeg5Usd: 0,
+    entrySplitLeg6Usd: 0,
+    entrySplitLeg7Usd: 0,
+    entrySplitLeg8Usd: 0,
+    entrySplitDelayMs: cfg.liveStagedEntryEntrySplitDelayMs,
+    entrySplitMaxUpPct: cfg.liveStagedEntryEntrySplitMaxUpPct,
+    entrySplitMaxDownPct: cfg.liveStagedEntryEntrySplitMaxDownPct,
+    entrySplitTargetDropPct: 0,
+    entrySplitAnchorUsd: args.signalPriceUsd,
+    entrySplitLeg1Ts: args.signalTs,
+    entrySplitLeg2Done: true,
+    entrySplitLeg3Done: true,
+    entrySplitLeg4Done: true,
+    entrySplitLeg5Done: true,
+    entrySplitLeg6Done: true,
+    entrySplitLeg7Done: true,
+    entrySplitLeg8Done: true,
+    avgSecondDropPct: drop10,
+    avgSecondLegUsd: avgUsd,
+    avgThirdDropPct: drop20,
+    avgThirdLegUsd: avgUsd,
+    avgFirstCooldownMs: cfg.liveStagedEntryAvgCooldownMs,
+    avgSecondCooldownMs: cfg.liveStagedEntryAvgSecondCooldownMs,
+    avgFirstLegDone: false,
+    avgSecondLegDone: false,
+    secondDropPct: drop10,
+    secondLegUsd: avgUsd,
+    thirdDropPct: drop20,
+    thirdLegUsd: avgUsd,
+    secondLegDone: false,
+    thirdLegDone: false,
+  };
+  for (let i = 2; i <= ENTRY_SPLIT_LEG_COUNT; i++) {
+    setEntrySplitLegDone(st, i as EntrySplitLegIndex, true);
+  }
+  return st;
+}
+
+/** Attach copy-adopt staged avg plan (leg1 = adopt open; −10% / −20% adds 25% each of initial). */
+export function attachCopyLeaderAdoptStagedEntry(ot: OpenTrade, paperCfg: PaperTraderConfig): boolean {
+  if (!copyLeaderAdoptStagedEntryEnabled(paperCfg)) return false;
+  if (!ot.copyToOscarPromoted || ot.liveStagedEntry) return false;
+  const signalPriceUsd = ot.avgEntryMarket ?? ot.avgEntry ?? ot.entryMcUsd ?? 0;
+  if (!(signalPriceUsd > 0)) return false;
+  const initialUsd = resolveCopyLeaderAdoptInitialUsd(ot);
+  if (!(initialUsd > 0)) return false;
+
+  ot.liveStagedEntry = buildCopyLeaderAdoptStagedEntryState(paperCfg, {
+    signalTs: ot.entryTs,
+    signalPriceUsd,
+    initialInvestedUsd: initialUsd,
+  });
+  markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
+  return true;
+}
+
+/** Heal open copy-adopt positions missing staged-entry plan (e.g. after PM2 reload). */
+export function reconcileCopyLeaderAdoptStagedEntryPlans(
+  open: Map<string, OpenTrade>,
+  paperCfg: PaperTraderConfig,
+  journalLiveStrategy?: (body: Record<string, unknown>) => void,
+): string[] {
+  const attached: string[] = [];
+  for (const [mint, ot] of open) {
+    if (!attachCopyLeaderAdoptStagedEntry(ot, paperCfg)) continue;
+    attached.push(mint);
+    journalLiveStrategy?.({
+      kind: 'live_staged_entry_attached',
+      mint,
+      symbol: ot.symbol,
+      entryPath: 'copy_leader_adopt_staged_heal',
+      openTrade: serializeOpenTrade(ot),
+    });
+  }
+  return attached;
+}
+
 function stampCopyLeaderAdoptTierFields(
   ot: OpenTrade,
   args: { entryMcapUsd: number; tradeTier: LiveOscarTradeTier },
@@ -128,8 +253,7 @@ function stampCopyLeaderAdoptTierFields(
 }
 
 /**
- * Copy-adopted half position later passes discovery independently → attach tier staged-entry plan.
- * Copy open leg counts as entry-split leg 1; legs 2+ execute via normal tracker lifecycle.
+ * Fallback when adopt-time plan was missing: discovery pass attaches the same copy-adopt avg plan.
  */
 export function attachCopyLeaderDiscoveryStagedEntryTopUp(
   ot: OpenTrade,
@@ -141,7 +265,7 @@ export function attachCopyLeaderDiscoveryStagedEntryTopUp(
     tradeTier: LiveOscarTradeTier;
   },
 ): boolean {
-  if (!copyLeaderLiveStagedEntryActive(args.paperCfg)) return false;
+  if (!copyLeaderAdoptStagedEntryEnabled(args.paperCfg)) return false;
   if (!ot.copyToOscarPromoted || ot.liveStagedEntry) return false;
   const signalPriceUsd =
     args.entryPriceUsd > 0 ? args.entryPriceUsd : ot.avgEntryMarket ?? ot.avgEntry ?? 0;
@@ -152,13 +276,13 @@ export function attachCopyLeaderDiscoveryStagedEntryTopUp(
     tradeTier: args.tradeTier,
   });
 
-  ot.liveStagedEntry = buildLiveStagedEntryState(
-    args.paperCfg,
-    { signalTs: args.entryTs, signalPriceUsd },
-    { marketCapUsd: args.entryMcapUsd },
-  );
+  const initialUsd = resolveCopyLeaderAdoptInitialUsd(ot);
+  ot.liveStagedEntry = buildCopyLeaderAdoptStagedEntryState(args.paperCfg, {
+    signalTs: args.entryTs,
+    signalPriceUsd,
+    initialInvestedUsd: initialUsd,
+  });
   markEntrySplitLeg1Filled(ot.liveStagedEntry, ot);
-  applyCanonicalOpenLegUsd(args.paperCfg, ot);
   return true;
 }
 
@@ -237,6 +361,8 @@ function buildOpenFromCopyLeader(args: {
     entryMcapUsd: args.entryMcapUsd,
     tradeTier: tier,
   });
+
+  attachCopyLeaderAdoptStagedEntry(ot, args.paperCfg);
 
   return ot;
 }
@@ -383,7 +509,18 @@ export async function adoptCopyLeaderExitOpens(args: {
         copyLeaderExitAdopted: true,
       },
     });
+    if (ot.liveStagedEntry) {
+      args.journalLiveStrategy?.({
+        kind: 'live_staged_entry_attached',
+        mint,
+        symbol: ot.symbol,
+        entryPath: 'copy_leader_exit_adopt',
+        openTrade: serializeOpenTrade(ot),
+      });
+    }
   }
+
+  reconcileCopyLeaderAdoptStagedEntryPlans(args.open, args.paperCfg, args.journalLiveStrategy);
 
   return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
 }
