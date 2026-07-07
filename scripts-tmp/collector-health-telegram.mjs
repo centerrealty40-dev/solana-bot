@@ -341,7 +341,9 @@ async function gather(pool, state) {
 
   const shyftParsed = parseLastShyftStatusFromJsonlTail(tailText(path.resolve(LIVE_JSONL), JSONL_TAIL_BYTES), nowMs);
   const shyft = assessShyftStatus({
-    shadowEnabled: envBool('PAPER_LIVE_LERA_SHYFT_SHADOW_ENABLED', false),
+    shadowEnabled:
+      envBool('SHYFT_SHADOW_ENABLED', false) ||
+      envBool('PAPER_LIVE_OSCAR_SHYFT_SHADOW_ENABLED', false),
     primaryEnabled: envBool('SHYFT_PRICE_PRIMARY_ENABLED', false),
     defiMcapEnabled: envBool('SHYFT_DEFI_MCAP_ENABLED', false),
     lastStatus: shyftParsed.status,
