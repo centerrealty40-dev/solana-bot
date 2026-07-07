@@ -21,6 +21,8 @@ import {
   waveBRemainderValueNetUsd,
   waveBTrailSellFractionForRemainder,
   waveBAdjustSellFractionForRemainder,
+  shouldApplyRemainderFlushOnPartialSell,
+  resolveWaveBRemainderFlushUsd,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
   waveBBreakevenAtZeroExitEligible,
@@ -92,6 +94,17 @@ describe('exit-policy-wave-b', () => {
     expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([
       ...WAVE_B_V1_TP_GRID_NO_AVG.gridSellFractionByStep,
     ]);
+  });
+
+  it('stamps wave_b for live-lera and live-lera10 when wave B enabled', () => {
+    for (const strategyId of ['live-lera', 'live-lera10'] as const) {
+      const ot = baseOt();
+      stampLiveOscarExitPolicyOnOpen(
+        ot,
+        cfg({ strategyId, liveOscarExitPolicyWaveBEnabled: true }),
+      );
+      expect(isWaveBExitPolicy(ot)).toBe(true);
+    }
   });
 
   it('stamps averaging-branch profile when open already has staged_avg leg', () => {
@@ -204,6 +217,25 @@ describe('exit-policy-wave-b', () => {
     /** Buttcoin-style tail: ~$111 × 10% would leave <$100 — sell 100% now. */
     expect(waveBAdjustSellFractionForRemainder(111, 0.1, c)).toBe(1);
     expect(waveBAdjustSellFractionForRemainder(123, 0.1, c)).toBeCloseTo(0.1);
+  });
+
+  it('shouldApplyRemainderFlushOnPartialSell covers Lera family and wave B opens', () => {
+    const ot = { liveExitPolicyId: 'legacy_grid' } as import('../src/papertrader/types.js').OpenTrade;
+    expect(shouldApplyRemainderFlushOnPartialSell('live-lera', ot)).toBe(true);
+    expect(shouldApplyRemainderFlushOnPartialSell('live-lera10', ot)).toBe(true);
+    expect(shouldApplyRemainderFlushOnPartialSell('live-oscar-risky', ot)).toBe(false);
+    ot.liveExitPolicyId = 'wave_b_v1';
+    expect(shouldApplyRemainderFlushOnPartialSell('live-oscar-risky', ot)).toBe(true);
+  });
+
+  it('resolveWaveBRemainderFlushUsd prefers LIVE_TAIL_FLUSH_THRESHOLD_USD', () => {
+    expect(resolveWaveBRemainderFlushUsd({ liveTailFlushThresholdUsd: 75 })).toBe(75);
+    expect(resolveWaveBRemainderFlushUsd({ liveTailFlushThresholdUsd: 0 })).toBe(
+      WAVE_B_TRAIL_FLUSH_REMAIN_USD,
+    );
+    expect(resolveWaveBRemainderFlushUsd(null)).toBe(WAVE_B_TRAIL_FLUSH_REMAIN_USD);
+    expect(waveBAdjustSellFractionForRemainder(80, 0.1, cfg(), 75)).toBe(1);
+    expect(waveBAdjustSellFractionForRemainder(90, 0.1, cfg(), 75)).toBeCloseTo(0.1);
   });
 
   it('waveBRemainderValueNetUsd scales with remainingFraction and price', () => {

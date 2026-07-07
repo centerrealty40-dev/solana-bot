@@ -123,6 +123,8 @@ import {
   waveBMaybeResetTpImpulse,
   waveBOnTpGridRungExecuted,
   stampLiveOscarExitPolicyOnOpen,
+  shouldApplyRemainderFlushOnPartialSell,
+  resolveWaveBRemainderFlushUsd,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_FLAT_TP_HALF8_RUNNER,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
@@ -1124,8 +1126,9 @@ async function tryExecuteTpPartialSell(args: {
   }
   const remainUsdForFlush = waveBRemainderValueNetUsd(ot, marketSell);
   let sellFraction = Math.min(1, rawSellFrac);
-  if (isLiveOscarTradingStrategyId(cfg.strategyId) || isWaveBExitPolicy(ot)) {
-    sellFraction = waveBAdjustSellFractionForRemainder(remainUsdForFlush, sellFraction, cfg);
+  if (shouldApplyRemainderFlushOnPartialSell(cfg.strategyId, ot)) {
+    const flushUsd = resolveWaveBRemainderFlushUsd(liveOscarCfg);
+    sellFraction = waveBAdjustSellFractionForRemainder(remainUsdForFlush, sellFraction, cfg, flushUsd);
   }
   const remainingFractionBeforePartial = ot.remainingFraction;
   /** Cost basis of the slice we intend to peel off (fraction of remaining invested USD). */
@@ -1698,7 +1701,8 @@ async function tryWaveBTrailPartialSells(args: {
   );
   if (level == null) return;
   const remainingValueNet = waveBRemainderValueNetUsd(ot, curMetric);
-  const sellFraction = waveBTrailSellFractionForRemainder(remainingValueNet, cfg);
+  const flushUsd = resolveWaveBRemainderFlushUsd(liveOscarCfg);
+  const sellFraction = waveBTrailSellFractionForRemainder(remainingValueNet, cfg, flushUsd);
   const trailFlush = sellFraction >= 1 - 1e-12;
   const r = await tryExecuteTpPartialSell({
     mint,
