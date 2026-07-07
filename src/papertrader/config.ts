@@ -657,11 +657,11 @@ const ConfigSchema = z.object({
   /** Total PG lookback window (hours). */
   oldMintDormantVolSpikeLookbackHours: z.coerce.number().int().min(48).max(168).default(48),
   /** Baseline window start (hours ago), e.g. 48. */
-  oldMintDormantVolSpikeBaselineStartHoursAgo: z.coerce.number().int().min(24).max(144).default(48),
+  oldMintDormantVolSpikeBaselineStartHoursAgo: z.coerce.number().int().min(24).max(168).default(48),
   /** Baseline window end (hours ago), e.g. 24. */
   oldMintDormantVolSpikeBaselineEndHoursAgo: z.coerce.number().int().min(6).max(120).default(24),
   /** @deprecated Use baselineStartHoursAgo; kept for env backward compatibility. */
-  oldMintDormantVolSpikeDormantLookbackHours: z.coerce.number().int().min(24).max(144).default(48),
+  oldMintDormantVolSpikeDormantLookbackHours: z.coerce.number().int().min(24).max(168).default(48),
   /** Recent hours where spike is measured (excluded from baseline). */
   oldMintDormantVolSpikeRecentHours: z.coerce.number().int().min(3).max(24).default(6),
   /** Hour counts as dormant when max vol1h in hour <= this (USD). */
