@@ -122,6 +122,40 @@ const LiveOscarConfigSchema = z
     liveBtcRecoverySkipLongWindowsEnabled: z.boolean().default(true),
     /** Минимальный ret1h (%) для recovery short-circuit. Default `0` = час в плюсе. */
     liveBtcRecoveryMinRet1hPct: z.coerce.number().min(-20).max(20).default(0),
+
+    /**
+     * Memecoin-segment liquidity **regime gate** (jul 6–8 drain RCA). Blocks **new** `buy_open`
+     * in live when our own runner universe is in a broad risk-off (breadth/momentum on
+     * `*_pair_snapshots`). Detects drains that BTC/SOL gates miss (retail rotating into
+     * newly-launched external memecoins). Default OFF; `shadow` observes/journals only, `gate` blocks.
+     */
+    liveMemRegimeEnabled: z.boolean().default(false),
+    liveMemRegimeMode: z.enum(['off', 'shadow', 'gate']).default('off'),
+    /** Background refresh cadence (s) for the regime index. Off the buy hot path. */
+    liveMemRegimeRefreshSec: z.coerce.number().int().min(20).max(600).default(60),
+    /** Momentum lookback (min): compare latest price vs latest ≤ now−lookback. */
+    liveMemRegimeLookbackMin: z.coerce.number().int().min(15).max(180).default(60),
+    /** Extra minutes of snapshots to fetch beyond lookback so the baseline point has data. */
+    liveMemRegimeBaselineTolMin: z.coerce.number().int().min(5).max(60).default(20),
+    /** A mint counts as a runner when its peak rolling 1h volume ≥ this (USD). */
+    liveMemRegimeMinRunnerV1hUsd: z.coerce.number().min(0).max(10_000_000).default(10_000),
+    /** Below this many runners the index is treated as insufficient data (never blocks). */
+    liveMemRegimeMinRunners: z.coerce.number().int().min(1).max(2000).default(20),
+    /** Signal 1: share of red runners (%) ≥ this. */
+    liveMemRegimeBreadthRedPct: z.coerce.number().min(0).max(100).default(58),
+    /** Signal 2: equal-weight mean return ≤ −this (percent points). */
+    liveMemRegimeEwDropPct: z.coerce.number().min(0).max(100).default(1),
+    /** Signal 3: median runner return ≤ −this (percent points). */
+    liveMemRegimeMedDropPct: z.coerce.number().min(0).max(100).default(0.8),
+    /** Risk-off requires at least this many of the 3 signals. */
+    liveMemRegimeRequiredSignals: z.coerce.number().int().min(1).max(3).default(2),
+    /** Hysteresis: consecutive refresh windows required before flipping the confirmed regime. */
+    liveMemRegimeConfirmWindows: z.coerce.number().int().min(1).max(10).default(2),
+    /** If cached regime older than this (s), gate fails open (kind `unknown`, no block). */
+    liveMemRegimeMaxStaleSec: z.coerce.number().int().min(60).max(3600).default(300),
+    /** Periodic regime snapshot cadence to the live journal (`risk_note`), s. */
+    liveMemRegimeJournalEverySec: z.coerce.number().int().min(60).max(3600).default(600),
+
     liveEntryNotionalUsd: z.coerce.number().positive().optional(),
     liveEntryMinFreeMult: z.coerce.number().positive().default(2),
     /**
@@ -718,6 +752,25 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number(s);
       return Number.isFinite(n) ? Math.min(20, Math.max(-20, n)) : 0;
     })(),
+
+    liveMemRegimeEnabled: envBool(process.env.LIVE_MEM_REGIME_ENABLED, false),
+    liveMemRegimeMode: (() => {
+      const s = (process.env.LIVE_MEM_REGIME_MODE ?? 'off').trim().toLowerCase();
+      return s === 'shadow' || s === 'gate' ? s : 'off';
+    })(),
+    liveMemRegimeRefreshSec: process.env.LIVE_MEM_REGIME_REFRESH_SEC,
+    liveMemRegimeLookbackMin: process.env.LIVE_MEM_REGIME_LOOKBACK_MIN,
+    liveMemRegimeBaselineTolMin: process.env.LIVE_MEM_REGIME_BASELINE_TOL_MIN,
+    liveMemRegimeMinRunnerV1hUsd: process.env.LIVE_MEM_REGIME_MIN_RUNNER_V1H_USD,
+    liveMemRegimeMinRunners: process.env.LIVE_MEM_REGIME_MIN_RUNNERS,
+    liveMemRegimeBreadthRedPct: process.env.LIVE_MEM_REGIME_BREADTH_RED_PCT,
+    liveMemRegimeEwDropPct: process.env.LIVE_MEM_REGIME_EW_DROP_PCT,
+    liveMemRegimeMedDropPct: process.env.LIVE_MEM_REGIME_MED_DROP_PCT,
+    liveMemRegimeRequiredSignals: process.env.LIVE_MEM_REGIME_REQUIRED_SIGNALS,
+    liveMemRegimeConfirmWindows: process.env.LIVE_MEM_REGIME_CONFIRM_WINDOWS,
+    liveMemRegimeMaxStaleSec: process.env.LIVE_MEM_REGIME_MAX_STALE_SEC,
+    liveMemRegimeJournalEverySec: process.env.LIVE_MEM_REGIME_JOURNAL_EVERY_SEC,
+
     liveEntryNotionalUsd: optionalPositiveEnv('LIVE_ENTRY_NOTIONAL_USD'),
     liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,
     livePhase5FreeSolGateEnabled: envBool(process.env.LIVE_PHASE5_FREE_SOL_GATE_ENABLED, false),

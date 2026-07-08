@@ -5,6 +5,7 @@ import type { OpenTrade } from '../papertrader/types.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { resolveLiveBtcGateStatus } from './btc-gate.js';
 import { tickLiveBtcGateTelegram } from './btc-gate-telegram.js';
+import { resolveMemRegimeGateStatus } from './mem-regime.js';
 import { lamportsFromGetBalanceResult, qnCall } from '../core/rpc/qn-client.js';
 import { liveFetchBuyQuote } from './jupiter.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
@@ -244,6 +245,25 @@ export async function phase5AllowIncreaseExposure(args: {
         },
       });
       return false;
+    }
+
+    // Memecoin-segment liquidity regime gate (broad risk-off inside our own runner
+    // universe — the jul 6–8 drain BTC/SOL gates missed). Shadow journals only; gate blocks.
+    const memGate = resolveMemRegimeGateStatus(liveCfg);
+    if (memGate.kind === 'risk-off') {
+      const detail = {
+        signals: memGate.signals,
+        runnerCount: memGate.runnerCount,
+        breadthRedPct: memGate.breadthRedPct,
+        ewReturnPct: memGate.ewReturnPct,
+        medReturnPct: memGate.medReturnPct,
+        mode: memGate.mode,
+      };
+      if (memGate.blocked) {
+        appendLiveJsonlEvent({ kind: 'risk_block', limit: 'mem_regime_risk_off', detail });
+        return false;
+      }
+      appendLiveJsonlEvent({ kind: 'risk_note', reason: 'mem_regime_shadow_would_block', detail });
     }
 
     const minEq = liveCfg.liveMinWalletSolEquityUsd;

@@ -88,6 +88,22 @@
 
 ---
 
+## [1.11.559] — 2026-07-08
+
+**Тег:** `sa-alpha-1.11.559`
+
+### Live Oscar — мем-режимный гейт ликвидности (RCA слива 6–8 июля; shadow, trading unchanged)
+
+- **Проблема (RCA):** 6–8 июля SOL стоял, а вся runner-вселенная мемкоинов просела ~−20% (пик→дно), breadth 55–71% красных. BTC/SOL-гейты молчали — отток был **внутри** мем-сегмента (ритейл ушёл в новые внешние мемкоины на Robinhood). Внешний источник не виден, но **следствие** — синхронный broad risk-off — видно в наших же `*_pair_snapshots`.
+- **Модуль:** `src/live/mem-regime.ts` — equal-weight breadth/импульс-индекс по 5 DEX-снапшот-таблицам на **фоновом** интервале (вне hot-path покупок), синхронный резолвер гейта читает кэш. Сигналы risk-off (≥2 из 3): доля красных раннеров ≥ `BREADTH_RED_PCT`, equal-weight средний доход ≤ −`EW_DROP_PCT`, median ≤ −`MED_DROP_PCT`; гистерезис `CONFIRM_WINDOWS`; fail-open при устаревании кэша.
+- **Интеграция:** `phase5-gates.ts` — рядом с BTC-гейтом, только для **новых** `buy_open` в live. `gate` → `risk_block` (`limit:'mem_regime_risk_off'`); `shadow` → `risk_note` (`mem_regime_shadow_would_block`); периодические/переходные снимки — `risk_note` (`mem_regime_tick`/`mem_regime_transition`). Новых JSONL-kind не добавлялось (переиспользуем `risk_note`/`risk_block`).
+- **Конфиг:** `LIVE_MEM_REGIME_*` в `src/live/config.ts` + `.env.example`; в `ecosystem.config.cjs` раскатано в **`shadow`** (наблюдение/журнал, без блокировки сделок). Переход в `gate` — после ≥48h shadow.
+- **Тесты:** `tests/live-mem-regime.test.ts` (чистая логика: метрики/классификация/гистерезис/резолвер).
+
+**Откат:** `LIVE_MEM_REGIME_ENABLED=0` (или `LIVE_MEM_REGIME_MODE=off`) + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`; либо redeploy `sa-alpha-1.11.558` / `git revert` коммита.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
 ## [1.11.558] — 2026-07-06
 
 **Тег:** `sa-alpha-1.11.558`
