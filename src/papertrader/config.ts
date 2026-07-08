@@ -317,7 +317,7 @@ const ConfigSchema = z.object({
   liveOscarMicroMcapMinUsd: z.coerce.number().nonnegative().default(500_000),
   liveOscarMicroMcapMaxUsd: z.coerce.number().nonnegative().default(1_300_000),
   liveOscarMicroMcapDipMinDropPct: z.coerce.number().default(-30),
-  liveOscarMicroMcapVol1hMinUsd: z.coerce.number().nonnegative().default(60_000),
+  liveOscarMicroMcapVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
   liveOscarMicroMcapEntrySplitLegUsd: z.coerce.number().positive().default(150),
   liveOscarMicroMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(150),
   liveOscarMicroMcapPositionUsd: z.coerce.number().positive().default(300),
@@ -331,7 +331,7 @@ const ConfigSchema = z.object({
   liveOscarLowMcapMinUsd: z.coerce.number().nonnegative().default(2_000_000),
   liveOscarLowMcapMaxUsd: z.coerce.number().nonnegative().default(3_000_000),
   liveOscarLowMcapDipMinDropPct: z.coerce.number().default(-30),
-  liveOscarLowMcapVol1hMinUsd: z.coerce.number().nonnegative().default(60_000),
+  liveOscarLowMcapVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
   /** Prod tier (mcap ≥ maxUsd): near-miss runner corridor — dip −18%, vol1h ≥$100k. */
   liveOscarProdMcapDipMinDropPct: z.coerce.number().default(-18),
   liveOscarProdMcapVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
@@ -373,7 +373,7 @@ const ConfigSchema = z.object({
   liveOscarScalpWaveDipMinDropPct: z.coerce.number().default(-15),
   liveOscarScalpWaveDipMaxDropPct: z.coerce.number().default(-8),
   liveOscarScalpWaveMinImpulsePct: z.coerce.number().nonnegative().default(8),
-  liveOscarScalpWaveVol1hMinUsd: z.coerce.number().nonnegative().default(60_000),
+  liveOscarScalpWaveVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
   liveOscarScalpWavePositionUsd: z.coerce.number().positive().default(300),
   liveOscarScalpWaveMaxConcurrent: z.coerce.number().int().min(1).max(10).default(3),
   liveOscarScalpWaveTpPct: z.coerce.number().min(0.01).max(1).default(0.1),
@@ -397,8 +397,8 @@ const ConfigSchema = z.object({
   runnerProbeDipMinDropPct: z.coerce.number().default(-20),
   runnerProbeDipMaxDropPct: z.coerce.number().default(-45),
   runnerProbeMinImpulsePct: z.coerce.number().nonnegative().default(12),
-  runnerProbeVol1hMinUsd: z.coerce.number().nonnegative().default(60_000),
-  runnerProbeMinVol1hUsd: z.coerce.number().nonnegative().default(60_000),
+  runnerProbeVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
+  runnerProbeMinVol1hUsd: z.coerce.number().nonnegative().default(100_000),
   runnerProbeMinVol12hUsd: z.coerce.number().nonnegative().default(400_000),
   runnerProbeVelocityMinX: z.coerce.number().nonnegative().default(1.5),
   runnerProbeMinVol5mPeak1hUsd: z.coerce.number().nonnegative().default(20_000),
@@ -435,8 +435,8 @@ const ConfigSchema = z.object({
   runnerLiteDipMinDropPct: z.coerce.number().default(-20),
   runnerLiteDipMaxDropPct: z.coerce.number().default(-45),
   runnerLiteMinImpulsePct: z.coerce.number().nonnegative().default(10),
-  runnerLiteVol1hMinUsd: z.coerce.number().nonnegative().default(60_000),
-  runnerLiteMinVol1hUsd: z.coerce.number().nonnegative().default(60_000),
+  runnerLiteVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
+  runnerLiteMinVol1hUsd: z.coerce.number().nonnegative().default(100_000),
   runnerLiteMinVol12hUsd: z.coerce.number().nonnegative().default(200_000),
   runnerLiteVelocityMinX: z.coerce.number().nonnegative().default(1.0),
   runnerLiteMinVol5mPeak1hUsd: z.coerce.number().nonnegative().default(10_000),
@@ -507,7 +507,7 @@ const ConfigSchema = z.object({
    * Fails if hour volume missing/below floor or vol_5m exceeds (vol_1h/12)*mult (spike vs flat hour).
    */
   vol5m1hGuardEnabled: z.boolean().default(false),
-  vol1hMinUsd: z.coerce.number().nonnegative().default(60_000),
+  vol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
   /** 0 = no cap. When >0, reject rows whose `volume_1h` **exceeds** this (stay strictly below live tier). */
   vol1hMaxUsd: z.coerce.number().nonnegative().default(0),
   vol5mSpikeMaxMult: z.coerce.number().min(1.01).max(48).default(7),
@@ -758,7 +758,7 @@ const ConfigSchema = z.object({
   /** Min PG-строк за 24ч для надёжной оценки velocity. Меньше = coverage skip. */
   runnerMinPgSamples24h: z.coerce.number().int().min(0).default(36),
   /** Объём за 1ч (USD) — минимум, чтобы вообще считать «есть интерес сейчас». */
-  runnerMinVol1hUsd: z.coerce.number().nonnegative().default(60_000),
+  runnerMinVol1hUsd: z.coerce.number().nonnegative().default(100_000),
   /** Объём за 12ч (USD). */
   runnerMinVol12hUsd: z.coerce.number().nonnegative().default(400_000),
   /** vol_1h / (vol_24h/24) — часовая velocity (1.5 = в 1.5× выше средней). */
