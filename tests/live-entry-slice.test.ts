@@ -140,4 +140,43 @@ describe('runSlicedSolToTokenPipeline', () => {
     expect(r.executedUsdNotional).toBe(1200);
     expect(r.confirmedBuyTxSignatures).toEqual(['sig-0', 'sig-1', 'sig-2']);
   });
+
+  it('partial fill: keeps confirmed slices when a later slice fails (no orphaned buys)', async () => {
+    let call = 0;
+    const runOne = async (
+      _cfg: LiveOscarConfig,
+      a: { usdNotional: number },
+    ): Promise<LiveBuyPipelineResult> => {
+      const idx = call++;
+      // slice-0 confirms on-chain; slice-1 fails.
+      if (idx === 0) {
+        return {
+          ok: true,
+          anchorMode: 'chain',
+          executedUsdNotional: a.usdNotional,
+          confirmedBuyTxSignature: 'sig-0',
+        };
+      }
+      return { ok: false, anchorMode: 'chain', terminalKind: 'sim_err' };
+    };
+    const r = await runSlicedSolToTokenPipeline(baseCfg, args, runOne);
+    // Must NOT be treated as a total failure: the $500 already on-chain is real.
+    expect(r.ok).toBe(true);
+    expect(r.partial).toBe(true);
+    expect(r.executedUsdNotional).toBe(500);
+    expect(r.confirmedBuyTxSignatures).toEqual(['sig-0']);
+    expect(call).toBe(2);
+  });
+
+  it('total failure: first slice fails → ok:false, nothing recorded', async () => {
+    const runOne = async (): Promise<LiveBuyPipelineResult> => ({
+      ok: false,
+      anchorMode: 'chain',
+      terminalKind: 'sim_err',
+    });
+    const r = await runSlicedSolToTokenPipeline(baseCfg, args, runOne);
+    expect(r.ok).toBe(false);
+    expect(r.partial).toBeUndefined();
+    expect(r.executedUsdNotional).toBeUndefined();
+  });
 });

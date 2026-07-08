@@ -10,6 +10,7 @@ import type { LiveOscarPhase4Tracker } from '../../live/phase4-types.js';
 import type { LiveBuyPipelineResult } from '../../live/phase4-types.js';
 import { appendLiveBuyAnchorsAfterDca, executedBuyUsd } from '../../live/live-buy-anchor.js';
 import { entryBuySliceEligibleForOpen } from '../../live/entry-slice.js';
+import { resolveLiveOscarPositionCeilingUsd } from '../live-oscar-entry-sizing.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import {
@@ -77,6 +78,9 @@ async function pushBuyLeg(args: {
       usdNotional: addUsd,
       intentKind: reason === 'entry_split' ? 'buy_scale_in' : 'dca_add',
       entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
+      positionCeilingUsd: resolveLiveOscarPositionCeilingUsd(cfg, ot),
+      tokenDecimals: ot.tokenDecimals,
+      dexSource: ot.source,
     });
     if (!buyRes.ok) return false;
   }

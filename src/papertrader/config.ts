@@ -339,6 +339,13 @@ const ConfigSchema = z.object({
   liveOscarProdMcapBand12MUsd: z.coerce.number().positive().default(12_000_000),
   liveOscarProdMcapMaxUsd3_12: z.coerce.number().positive().default(5_000),
   liveOscarProdMcapMaxUsd12Plus: z.coerce.number().positive().default(5_000),
+  /**
+   * Optional GLOBAL hard per-position notional ceiling (USD), tier-independent.
+   * `0` = off → the per-position cap is the tier plan max. When `> 0`, the effective
+   * ceiling is `min(tier plan max, this)` — a blunt lever to cap ALL positions regardless
+   * of tier (e.g. force a strict $2–3k max without re-enabling the low-mcap lane).
+   */
+  liveOscarHardPositionMaxUsd: z.coerce.number().nonnegative().default(0),
   liveOscarLowMcapEntrySplitLegUsd: z.coerce.number().positive().default(1000),
   liveOscarLowMcapEntrySplitLeg2Usd: z.coerce.number().nonnegative().default(1000),
   /** Low tier: optional third entry-split leg; prod uses `liveStagedEntryEntrySplitLeg3Usd`. */
@@ -1634,6 +1641,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarProdMcapBand12MUsd: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD,
     liveOscarProdMcapMaxUsd3_12: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD,
     liveOscarProdMcapMaxUsd12Plus: process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD,
+    liveOscarHardPositionMaxUsd: process.env.PAPER_LIVE_OSCAR_HARD_POSITION_MAX_USD,
     snapshotCandidateLimit: process.env.PAPER_SNAPSHOT_CANDIDATE_LIMIT,
     discoveryReevalSec: process.env.PAPER_DISCOVERY_REEVAL_SEC,
     entryRecheckDelayMs: process.env.PAPER_ENTRY_RECHECK_DELAY_MS,
