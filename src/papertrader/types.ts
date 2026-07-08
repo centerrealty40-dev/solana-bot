@@ -5,6 +5,8 @@ export type ExitReason =
   | 'SL'
   | 'TRAIL'
   | 'TIMEOUT'
+  /** Hard profit-agnostic time-stop: force full exit once position age ≥ configured hours (downhill capital rotation). */
+  | 'TIME_STOP'
   | 'NO_DATA'
   | 'KILLSTOP'
   /** Wave B: full exit at ≤0% avg after TP ≥+7.5% (no staged add path). */

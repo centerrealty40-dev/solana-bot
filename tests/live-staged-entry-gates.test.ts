@@ -17,6 +17,7 @@ import {
   resolveEntrySplitFastPollIntervalMsFromOpen,
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
+  stagedAvgDownhillAddBlocked,
 } from '../src/papertrader/executor/live-staged-entry-gates.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import type { LiveStagedEntryState, OpenTrade, PartialSell } from '../src/papertrader/types.js';
@@ -58,6 +59,56 @@ describe('liveStagedEntrySignalTtl', () => {
     const signalTs = 1_000_000;
     expect(liveStagedEntrySignalTimeWindowOpen(cfg, signalTs, signalTs + 59_000)).toBe(true);
     expect(liveStagedEntrySignalTtlExpired(cfg, signalTs, signalTs + 61_000)).toBe(true);
+  });
+});
+
+describe('stagedAvgDownhillAddBlocked (anti downhill runner)', () => {
+  const MAX_AGE = 4 * 3_600_000; // 4h
+  const MAX_DEPTH = 20;
+
+  it('allows a shallow, early averaging-down add', () => {
+    const st = baseSt();
+    const now = st.entrySplitLeg1Ts! + 30 * 60_000; // 30m later
+    const r = stagedAvgDownhillAddBlocked({ st, signalDropPct: -12, nowMs: now, maxAgeMs: MAX_AGE, maxDepthPct: MAX_DEPTH });
+    expect(r.blocked).toBe(false);
+  });
+
+  it('blocks a late add (older than max age) even if shallow', () => {
+    const st = baseSt();
+    const now = st.entrySplitLeg1Ts! + 5 * 3_600_000; // 5h later
+    const r = stagedAvgDownhillAddBlocked({ st, signalDropPct: -12, nowMs: now, maxAgeMs: MAX_AGE, maxDepthPct: MAX_DEPTH });
+    expect(r.blocked).toBe(true);
+    expect(r.reason).toContain('stale');
+  });
+
+  it('blocks a deep add (at/beyond depth floor) even if early', () => {
+    const st = baseSt();
+    const now = st.entrySplitLeg1Ts! + 10 * 60_000; // 10m later
+    const r = stagedAvgDownhillAddBlocked({ st, signalDropPct: -22, nowMs: now, maxAgeMs: MAX_AGE, maxDepthPct: MAX_DEPTH });
+    expect(r.blocked).toBe(true);
+    expect(r.reason).toContain('deep');
+  });
+
+  it('exactly at −20% depth floor is blocked (the killer 2nd staged leg)', () => {
+    const st = baseSt();
+    const now = st.entrySplitLeg1Ts! + 10 * 60_000;
+    const r = stagedAvgDownhillAddBlocked({ st, signalDropPct: -20, nowMs: now, maxAgeMs: MAX_AGE, maxDepthPct: MAX_DEPTH });
+    expect(r.blocked).toBe(true);
+  });
+
+  it('both limits 0 disables the guard entirely', () => {
+    const st = baseSt();
+    const now = st.entrySplitLeg1Ts! + 48 * 3_600_000; // 2 days later
+    const r = stagedAvgDownhillAddBlocked({ st, signalDropPct: -40, nowMs: now, maxAgeMs: 0, maxDepthPct: 0 });
+    expect(r.blocked).toBe(false);
+  });
+
+  it('falls back to signalTs when entrySplitLeg1Ts missing', () => {
+    const st = { ...baseSt(), entrySplitLeg1Ts: undefined };
+    const now = st.signalTs + 5 * 3_600_000;
+    const r = stagedAvgDownhillAddBlocked({ st, signalDropPct: -5, nowMs: now, maxAgeMs: MAX_AGE, maxDepthPct: MAX_DEPTH });
+    expect(r.blocked).toBe(true);
+    expect(r.reason).toContain('stale');
   });
 });
 

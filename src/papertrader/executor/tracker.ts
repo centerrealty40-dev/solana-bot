@@ -357,6 +357,7 @@ function exitReasonToPartialSellReason(exitReason: ExitReason): PartialSell['rea
     case 'SL':
       return 'KILLSTOP';
     case 'TIMEOUT':
+    case 'TIME_STOP':
       return 'TIMEOUT';
     case 'FLASH_CRASH_KILL':
       return 'FLASH_CRASH_KILL';
@@ -868,6 +869,9 @@ function buildExitContext(args: {
       } else {
         triggerLabel = `DCA killstop ${(killEff * 100).toFixed(0)}% (cur ${closePnlPct.toFixed(1)}% vs avg, ${dcaLegsAdded} DCA legs)`;
       }
+      break;
+    case 'TIME_STOP':
+      triggerLabel = `hard time-stop ${cfg.liveOscarHardTimeStopHours}h (capital rotation — profit-agnostic full exit)`;
       break;
     case 'NO_DATA':
       triggerLabel = `no-data ${cfg.timeoutHours}h (price stream gone — hard close)`;
@@ -5445,6 +5449,19 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ageH >= cfg.liveOscarWaveBTimeStopHours
     )
       exitReason = 'TIMEOUT';
+    /**
+     * Hard profit-agnostic time-stop (downhill capital rotation): once a position is older than the
+     * configured hours, force a real full exit regardless of exit policy, PnL, or progress. Fires only
+     * after TP/kill/trail were evaluated above, so wins still exit on their own signal within the window.
+     * `TIME_STOP` is policy-allowed (executes on-chain sell, unlike journal-only TIMEOUT). `0` disables.
+     */
+    if (
+      !exitReason &&
+      curMetric > 0 &&
+      cfg.liveOscarHardTimeStopHours > 0 &&
+      ageH >= cfg.liveOscarHardTimeStopHours
+    )
+      exitReason = 'TIME_STOP';
     if (!exitReason && liveOscarCfg) {
       const reconcileMinUsd = liveWalletBalanceReconcileMinUsd(liveOscarCfg);
       const journalZero = ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS;
@@ -5526,8 +5543,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         context: 'close',
         journalAppend,
         stats,
-        /** TIMEOUT bypasses verify immediately; other reasons escalate after `priceVerifyExitMaxDefersEscalation` defers. */
-        ignoreBlockOnFail: escalateCloseVerify || exitReason === 'TIMEOUT',
+        /** TIMEOUT / TIME_STOP bypass verify immediately; other reasons escalate after `priceVerifyExitMaxDefersEscalation` defers. */
+        ignoreBlockOnFail: escalateCloseVerify || exitReason === 'TIMEOUT' || exitReason === 'TIME_STOP',
       });
       if (exitPvClose.defer) {
         const n = (exitCloseVerifyDefersByMint.get(mint) ?? 0) + 1;

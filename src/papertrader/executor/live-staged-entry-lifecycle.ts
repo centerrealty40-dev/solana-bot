@@ -16,6 +16,7 @@ import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
+  stagedAvgDownhillAddBlocked,
   reconcileEntrySplitV2FromLegs,
   stagedAveragingConfigured,
   usesLegacyStagedAdds,
@@ -207,6 +208,24 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
   const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;
   const drop7 = st.avgSecondDropPct ?? st.secondDropPct;
   const drop14 = st.avgThirdDropPct ?? st.thirdDropPct;
+
+  /** Anti «downhill runner»: skip averaging-down legs that are too late or too deep. */
+  const downhillAdd = stagedAvgDownhillAddBlocked({
+    st,
+    signalDropPct,
+    nowMs: now,
+    maxAgeMs: args.cfg.liveStagedAvgMaxAgeMs,
+    maxDepthPct: args.cfg.liveStagedAvgMaxDepthPct,
+  });
+  if (downhillAdd.blocked) {
+    args.journalLiveStrategy?.({
+      kind: 'risk_note',
+      reason: 'staged_avg_downhill_blocked',
+      mint: args.mint,
+      detail: { symbol: args.ot.symbol, why: downhillAdd.reason, signalDropPct: +signalDropPct.toFixed(2) },
+    });
+    return;
+  }
 
   if (
     stagedAvgFirstEligible({ st, signalDropPct, nowMs: now }) &&

@@ -743,6 +743,13 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
+        /**
+         * Down-add discipline (anti «downhill runner»): block averaging-down legs that are too late
+         * (>4h from first entry) or too deep (drop vs signal ≤ −20%). Keeps initial entry + shallow
+         * recovery adds; cuts the deep/late adds that historically rode to killstop. 0 = off each.
+         */
+        PAPER_LIVE_STAGED_AVG_MAX_AGE_MS: '14400000',
+        PAPER_LIVE_STAGED_AVG_MAX_DEPTH_PCT: '20',
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '1000',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
         PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '1000',
@@ -1266,6 +1273,12 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_FRACTION: '0.5',
         PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_SIGNAL_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
+        /**
+         * Hard profit-agnostic time-stop (hours) — any exit policy. Frees capital from stale
+         * «downhill runner» positions instead of sitting to −50% killstop for days. Real on-chain
+         * full exit (TIME_STOP, policy-allowed). Backtest 2mo: ×3 capital efficiency @ 24h. 0 = off.
+         */
+        PAPER_LIVE_OSCAR_HARD_TIME_STOP_HOURS: '24',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED: '1',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT: '5',
