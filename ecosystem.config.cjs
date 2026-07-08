@@ -1458,6 +1458,22 @@ const PM2_APPS = [
         PAPER_LIQ_WATCH_DISCOVERY_QUOTE: '1',
 
         /**
+         * VOL_COLLAPSE — rolling-volume drain kill-stop (sibling of LIQ_DRAIN). Backtest (60d, 2819
+         * dip-buy entries): sustained collapse predicts ~-10..-12%% forward decline, ~2x capital
+         * efficiency. Recommended thresholds COLLAPSE_PCT=90 (vol ≤10%% of baseline), SUSTAIN_HOURS=3.
+         * ENFORCED (owner-approved 2026-07-08): ENABLED=1 + FORCE_CLOSE=1 → real on-chain full exit.
+         * Rollback: set ENABLED=0 (or FORCE_CLOSE=0 for shadow-only).
+         */
+        PAPER_VOL_WATCH_ENABLED: '1',
+        PAPER_VOL_WATCH_FORCE_CLOSE: '1',
+        PAPER_VOL_WATCH_COLLAPSE_PCT: '90',
+        PAPER_VOL_WATCH_SUSTAIN_HOURS: '3',
+        PAPER_VOL_WATCH_MIN_BASELINE_USD: '2000',
+        PAPER_VOL_WATCH_MIN_AGE_MIN: '30',
+        PAPER_VOL_WATCH_SNAPSHOT_MAX_AGE_MS: '120000',
+        PAPER_VOL_WATCH_STAMP_ON_TRACK: '1',
+
+        /**
          * 1.11.309 — flash crash kill (aggressive): velocity + post-fill guard; blocks DCA after trigger.
          * 1.11.418 — disabled on live-oscar (premature SPCX exit at −1.85%%).
          * Fractions negative in env (e.g. -0.06 = −6%%). Not a static avg stop.

@@ -12,6 +12,8 @@ export type ExitReason =
   /** Wave B: full exit at ≤0% avg after TP ≥+7.5% (no staged add path). */
   | 'BREAKEVEN_EXIT'
   | 'LIQ_DRAIN'
+  /** Volume-collapse kill-stop: rolling 1h volume fell >= threshold vs baseline, sustained >= N hours. */
+  | 'VOL_COLLAPSE'
   | 'FLASH_CRASH_KILL'
   /** Journal replay expected tokens but boot reconcile reported wallet raw balance 0 (live). */
   | 'RECONCILE_ORPHAN'
@@ -256,6 +258,16 @@ export interface OpenTrade {
   liqWatchConsecutiveFailures?: number;
   liqWatchLastLiqUsd?: number | null;
   liqWatchLastDropPct?: number | null;
+  /** VOL_COLLAPSE — rolling 1h volume USD at entry (baseline seed for collapse detection). */
+  entryVol1hUsd?: number | null;
+  /** VOL_COLLAPSE — high-water baseline: max(entry vol1h, peak observed vol1h). */
+  volWatchBaselineUsd?: number | null;
+  /** VOL_COLLAPSE — epoch ms when the current sustained collapse streak began (null = not collapsed). */
+  volWatchCollapseSinceTs?: number | null;
+  /** VOL_COLLAPSE — last observed rolling 1h volume USD (for journal/telemetry). */
+  volWatchLastVolUsd?: number | null;
+  /** VOL_COLLAPSE — last computed drop% vs baseline. */
+  volWatchLastDropPct?: number | null;
   /** W7.5 — last good snapshot price from tracker (for emergency LIQ_DRAIN exit). */
   lastObservedPriceUsd?: number | null;
   /** Flash-kill ring buffer (min(Jupiter, snapshot) MTM samples). */
@@ -1151,6 +1163,47 @@ export type LiqWatchVerdict =
       pgLiqUsd?: number;
       referenceLiqUsd?: number;
       disagreementPct?: number;
+    };
+
+/**
+ * VOL_COLLAPSE — rolling-volume drain verdict. Mirrors {@link LiqWatchVerdict}: pure state machine
+ * evaluated each tracker tick. `collapseSinceTs` carries the streak anchor forward across ticks.
+ */
+export type VolWatchVerdict =
+  | {
+      /** Volume above collapse threshold — healthy; streak reset. */
+      kind: 'ok';
+      currentVolUsd: number;
+      baselineUsd: number;
+      dropPct: number;
+      collapseSinceTs: null;
+      ts: number;
+    }
+  | {
+      /** Collapsed but not yet sustained long enough (or no fresh volume this tick). */
+      kind: 'pending';
+      currentVolUsd: number | null;
+      baselineUsd: number | null;
+      dropPct: number | null;
+      collapseSinceTs: number | null;
+      sustainedMs: number | null;
+      ts: number;
+    }
+  | {
+      kind: 'force-close';
+      reason: 'VOL_COLLAPSE';
+      currentVolUsd: number;
+      baselineUsd: number;
+      dropPct: number;
+      collapseSinceTs: number;
+      sustainedMs: number;
+      ts: number;
+    }
+  | {
+      kind: 'skipped';
+      reason: 'feature-disabled' | 'pre-min-age' | 'baseline-too-small';
+      collapseSinceTs: number | null;
+      ts: number;
     };
 
 /** Wrapped SOL mint — Jupiter quote `inputMint` for SOL → token. */

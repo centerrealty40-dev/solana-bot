@@ -13,6 +13,8 @@ const POLICY_ALLOWED_FULL_EXITS = new Set<ExitReason>([
   'BREAKEVEN_EXIT',
   /** Hard time-stop is a real defensive full exit (must sell on-chain, not journal-only). */
   'TIME_STOP',
+  /** Volume-collapse kill-stop is a real defensive full exit (on-chain sell, not journal-only). */
+  'VOL_COLLAPSE',
 ]);
 
 const POLICY_ALLOWED_PARTIAL_SELLS = new Set<PartialSell['reason']>([

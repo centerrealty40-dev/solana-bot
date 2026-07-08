@@ -1193,6 +1193,28 @@ const ConfigSchema = z.object({
   liqWatchDiscoveryQuote: z.boolean().default(true),
 
   /**
+   * VOL_COLLAPSE — rolling-volume drain kill-stop (1h volume vs high-water baseline). Mirrors liq-watch.
+   * Backtest (60d, 2819 dip-buy entries): sustained collapse predicts ~-10..-12% forward decline and
+   * ~2x capital efficiency. Shipped OFF/shadow by default — enable only after owner signs off thresholds.
+   * Env: `PAPER_VOL_WATCH_*`.
+   */
+  volWatchEnabled: z.boolean().default(false),
+  /** `false` = shadow (journal-only, never sells); `true` = enforce real full exit. */
+  volWatchForceClose: z.boolean().default(false),
+  /** Collapse when current 1h vol dropped >= this % vs baseline (90 = current ≤ 10% of baseline). */
+  volWatchCollapsePct: z.coerce.number().min(50).max(99).default(90),
+  /** Collapse must persist >= this many hours before force-close (debounce vs noisy dips). */
+  volWatchSustainHours: z.coerce.number().min(0.5).max(48).default(3),
+  /** Ignore positions whose baseline 1h volume is below this (noise-level, no signal). */
+  volWatchMinBaselineUsd: z.coerce.number().min(0).max(1_000_000).default(2_000),
+  /** Don't evaluate before position is this old (need volume history to establish baseline). */
+  volWatchMinAgeMin: z.coerce.number().min(0).max(240).default(30),
+  /** Max age of PG pair snapshot to treat rolling volume as fresh. */
+  volWatchSnapshotMaxAgeMs: z.coerce.number().int().min(15_000).max(15 * 60 * 1000).default(120_000),
+  /** Journal a `vol_watch_tick` verdict on every evaluated tick (telemetry/backtest calibration). */
+  volWatchStampOnTrack: z.boolean().default(false),
+
+  /**
    * Flash crash kill — velocity / post-fill drawdown (live-oscar). Fractions are negative (e.g. -0.06 = −6%).
    * Env: `PAPER_FLASH_CRASH_KILL_*`.
    */
@@ -2054,6 +2076,14 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liqWatchStampOnTrack: process.env.PAPER_LIQ_WATCH_STAMP_ON_TRACK === '1',
     liqWatchDisagreementPct: process.env.PAPER_LIQ_WATCH_DISAGREEMENT_PCT,
     liqWatchDiscoveryQuote: envBool(process.env.PAPER_LIQ_WATCH_DISCOVERY_QUOTE, true),
+    volWatchEnabled: process.env.PAPER_VOL_WATCH_ENABLED === '1',
+    volWatchForceClose: process.env.PAPER_VOL_WATCH_FORCE_CLOSE === '1',
+    volWatchCollapsePct: process.env.PAPER_VOL_WATCH_COLLAPSE_PCT,
+    volWatchSustainHours: process.env.PAPER_VOL_WATCH_SUSTAIN_HOURS,
+    volWatchMinBaselineUsd: process.env.PAPER_VOL_WATCH_MIN_BASELINE_USD,
+    volWatchMinAgeMin: process.env.PAPER_VOL_WATCH_MIN_AGE_MIN,
+    volWatchSnapshotMaxAgeMs: process.env.PAPER_VOL_WATCH_SNAPSHOT_MAX_AGE_MS,
+    volWatchStampOnTrack: process.env.PAPER_VOL_WATCH_STAMP_ON_TRACK === '1',
     flashCrashKillEnabled: process.env.PAPER_FLASH_CRASH_KILL_ENABLED === '1',
     flashCrashKillDrop30sPct: process.env.PAPER_FLASH_CRASH_KILL_DROP_30S_PCT,
     flashCrashKillDrop60sPct: process.env.PAPER_FLASH_CRASH_KILL_DROP_60S_PCT,
