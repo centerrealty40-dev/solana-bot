@@ -201,6 +201,13 @@ const ConfigSchema = z.object({
   /** Stage 1.3 TTL (ms) for the DeFi mcap/liq in-memory cache (limits req/s burst). */
   shyftDefiMcapTtlMs: z.coerce.number().int().positive().default(12_000),
   /**
+   * Shyft Token API holder-count fallback when QN live resolve fails or per-tick budget is exhausted.
+   * `GET /sol/v1/token/get_owners` with `SHYFT_API_KEY`. Default ON when min holder gate is used.
+   */
+  shyftHoldersEnabled: z.boolean().default(true),
+  shyftHoldersTtlMs: z.coerce.number().int().positive().default(90_000),
+  shyftHoldersTimeoutMs: z.coerce.number().int().positive().default(4_000),
+  /**
    * Birdeye REST primary for discovery eval price/mcap/vol (Birdeye → DexScreener → PG).
    * Default OFF; needs `BIRDEYE_API_KEY`. Independent of Shyft stream-primary.
    */
@@ -1424,6 +1431,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     shyftMaxStaleMs: process.env.SHYFT_MAX_STALE_MS,
     shyftDefiMcapEnabled: envBool(process.env.SHYFT_DEFI_MCAP_ENABLED, false),
     shyftDefiMcapTtlMs: process.env.SHYFT_DEFI_MCAP_TTL_MS,
+    shyftHoldersEnabled: envBool(process.env.SHYFT_HOLDERS_ENABLED, true),
+    shyftHoldersTtlMs: process.env.SHYFT_HOLDERS_TTL_MS,
+    shyftHoldersTimeoutMs: process.env.SHYFT_HOLDERS_TIMEOUT_MS,
     birdeyePrimaryEnabled: envBool(process.env.BIRDEYE_PRIMARY_ENABLED, false),
     birdeyeMarketTtlMs: process.env.BIRDEYE_MARKET_TTL_MS,
     birdeyeMaxStaleMs: process.env.BIRDEYE_MAX_STALE_MS,

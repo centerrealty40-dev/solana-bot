@@ -1024,8 +1024,8 @@ const PM2_APPS = [
         /** Global vol1h floor — no buys below $100k/h (all tiers). */
         PAPER_VOL_1H_MIN_USD: '100000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
-        /** `0` — без порога по holders в globalGate / dip-clones (код не трогаем). */
-        PAPER_MIN_HOLDER_COUNT: '0',
+        /** Global holder floor — live QN resolve + Shyft fallback; block when unknown. */
+        PAPER_MIN_HOLDER_COUNT: '3000',
 
         PAPER_DIP_LOOKBACK_MIN: '120',
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
@@ -1314,22 +1314,23 @@ const PM2_APPS = [
          *   - `SNAPSHOT_WARMUP_MAX=0` (как раньше) — не прогреваем holders для всех snapshot rows.
          */
         /**
-         * 1.11.232 — holders ВЫКЛЮЧЕНЫ полностью.
-         * Решение пользователя: «не нужен нам никакой holder count» — этот сигнал
-         * неточный (live-резолв давал n/a, GPA дорогой и шумный), решения принимаются
-         * по ликвидности/объёмам/буй-флоу. Все pipeline-вызовы становятся no-op.
+         * Holders gate ON: min 3000, live QN resolve, Shyft fallback on fail/budget, block when unknown.
+         * Telegram: `live_holders_unknown_block` when candidate passed all gates except holder count.
          */
-        PAPER_HOLDERS_LIVE_ENABLED: '0',
+        PAPER_HOLDERS_LIVE_ENABLED: '1',
         PAPER_HOLDERS_USE_QN_ADDON: '0',
         PAPER_HOLDERS_TTL_MS: '90000',
         PAPER_HOLDERS_NEG_TTL_MS: '15000',
-        PAPER_HOLDERS_MAX_PER_TICK: '0',
+        PAPER_HOLDERS_MAX_PER_TICK: '8',
         PAPER_HOLDERS_TIMEOUT_MS: '4000',
         PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
-        PAPER_HOLDERS_ON_FAIL: 'warn',
-        PAPER_HOLDERS_DB_WRITEBACK: '0',
+        PAPER_HOLDERS_ON_FAIL: 'block',
+        PAPER_HOLDERS_DB_WRITEBACK: '1',
         PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX: '0',
         PAPER_HOLDERS_GPA_CREDITS_PER_CALL: '100',
+        SHYFT_HOLDERS_ENABLED: '1',
+        SHYFT_HOLDERS_TTL_MS: '90000',
+        SHYFT_HOLDERS_TIMEOUT_MS: '4000',
         /**
          * 1.11.232 — Runner Mode (параллельный путь к dip-windows).
          *

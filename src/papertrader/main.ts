@@ -173,6 +173,10 @@ import {
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
 import { recordDiscoveryHealthSample } from './discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
+import {
+  buildHoldersUnknownTelegramText,
+  shouldNotifyHoldersUnknownBlock,
+} from './holders/holders-unknown-telegram.js';
 import { isEntryPriceStale, snapshotPriceAgeMs } from './stale-price.js';
 import { buildShadowPriceEvent } from './stream/shadow-price.js';
 import { buildShyftVsDexQuoteObservation } from './stream/shyft-shadow-observe.js';
@@ -406,6 +410,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const localHighVetoTelegramLastMs = new Map<string, number>();
   const liveOscarIntelBlockNotified: LiveOscarIntelBlockNotifyCache = new Map();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
+  const holdersUnknownTelegramLastMs = new Map<string, number>();
   const dataCoverageTelegramLastMs = new Map<string, number>();
   const stalePriceTelegramLastMs = new Map<string, number>();
   let pgCoverageModeTelegramLastMs = 0;
@@ -717,8 +722,54 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       skipQuietHours: true,
       telegramBotToken: token,
       telegramChatId: chat,
-    }    ).catch((e) =>
+    }).catch((e) =>
       logger.warn({ err: String(e), mint: d.mint }, 'live volume-ephemeral telegram failed'),
+    );
+  }
+
+  function notifyLiveHoldersUnknownBlock(d: EvalDecision): void {
+    if (!isLiveOscarFamilyTradingStrategyId(cfg.strategyId)) return;
+    if (!shouldNotifyHoldersUnknownBlock(d)) return;
+    if (process.env.LIVE_HOLDERS_UNKNOWN_TELEGRAM_ENABLED === '0') return;
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
+    const cooldownMs = Math.max(
+      0,
+      Number(process.env.LIVE_HOLDERS_UNKNOWN_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000),
+    );
+    const now = Date.now();
+    const prev = holdersUnknownTelegramLastMs.get(d.mint) ?? 0;
+    if (cooldownMs > 0 && now - prev < cooldownMs) return;
+    holdersUnknownTelegramLastMs.set(d.mint, now);
+
+    const token =
+      process.env.LIVE_HOLDERS_UNKNOWN_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_OSCAR_INTEL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_HOLDERS_UNKNOWN_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_OSCAR_INTEL_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: d.mint }, 'live holders-unknown telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const text = buildHoldersUnknownTelegramText({
+      d,
+      escapeHtml: escapeHtmlPlain,
+      mintHrefHtml: gmgnMintHrefHtml,
+      fmtUsd: fmtUsdCompact,
+    });
+
+    void sendTagged('ADVICE', 'live_holders_unknown_block', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: d.mint }, 'live holders-unknown telegram failed'),
     );
   }
 
@@ -1660,6 +1711,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         if (!d.pass && isOnlyDataCoverageBlock(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarDataCoverageSkip(d);
+        }
+        if (!d.pass && shouldNotifyHoldersUnknownBlock(d)) {
+          notifyLiveHoldersUnknownBlock(d);
         }
         const intelTradeLane = resolveLiveOscarIntelTradeLane(d);
         if (intelTradeLane && shouldJournalLiveOscarIntel(d.oscarIntel)) {
