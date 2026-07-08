@@ -35,6 +35,8 @@ describe('policy-only-exits', () => {
     expect(isPolicyAllowedFullExitReason('TP', cfg)).toBe(true);
     expect(isPolicyAllowedFullExitReason('BREAKEVEN_EXIT', cfg)).toBe(true);
     expect(isPolicyAllowedFullExitReason('SL', cfg)).toBe(true);
+    /** Hard time-stop must actually sell on-chain (not journal-only like TIMEOUT). */
+    expect(isPolicyAllowedFullExitReason('TIME_STOP', cfg)).toBe(true);
 
     expect(isPolicyAllowedFullExitReason('TIMEOUT', cfg)).toBe(false);
     expect(isPolicyAllowedFullExitReason('FLASH_CRASH_KILL', cfg)).toBe(false);

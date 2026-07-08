@@ -228,6 +228,33 @@ export function stagedAvgSecondEligible(args: {
   return signalDropPct <= -drop14;
 }
 
+/**
+ * Down-add discipline (anti «downhill runner»): block a staged averaging-down leg when the add would
+ * be too late (older than `maxAgeMs` from the first entry leg) or too deep (drop vs signal at/beyond
+ * `maxDepthPct`). Keeps the initial entry + shallow/early adds; cuts the deep/late adds that
+ * historically rode positions to the −50% killstop. Either limit `0` disables that check.
+ */
+export function stagedAvgDownhillAddBlocked(args: {
+  st: LiveStagedEntryState;
+  signalDropPct: number;
+  nowMs: number;
+  maxAgeMs: number;
+  maxDepthPct: number;
+}): { blocked: boolean; reason: string | null } {
+  const { st, signalDropPct, nowMs, maxAgeMs, maxDepthPct } = args;
+  if (maxAgeMs > 0) {
+    const leg1Ts = st.entrySplitLeg1Ts ?? st.signalTs;
+    const ageMs = nowMs - leg1Ts;
+    if (ageMs > maxAgeMs) {
+      return { blocked: true, reason: `downhill_add_stale_${(ageMs / 3_600_000).toFixed(1)}h>${(maxAgeMs / 3_600_000).toFixed(1)}h` };
+    }
+  }
+  if (maxDepthPct > 0 && signalDropPct <= -maxDepthPct) {
+    return { blocked: true, reason: `downhill_add_deep_${signalDropPct.toFixed(1)}%<=-${maxDepthPct}%` };
+  }
+  return { blocked: false, reason: null };
+}
+
 export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
   return (
     (st.avgSecondLegUsd ?? st.secondLegUsd) > 0 || ((st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0) > 0)

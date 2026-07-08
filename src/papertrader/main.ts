@@ -1322,6 +1322,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       SL: 0,
       TRAIL: 0,
       TIMEOUT: 0,
+      TIME_STOP: 0,
       NO_DATA: 0,
       KILLSTOP: 0,
       BREAKEVEN_EXIT: 0,

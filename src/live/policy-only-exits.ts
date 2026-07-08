@@ -11,6 +11,8 @@ const POLICY_ALLOWED_FULL_EXITS = new Set<ExitReason>([
   'TRAIL',
   'TP',
   'BREAKEVEN_EXIT',
+  /** Hard time-stop is a real defensive full exit (must sell on-chain, not journal-only). */
+  'TIME_STOP',
 ]);
 
 const POLICY_ALLOWED_PARTIAL_SELLS = new Set<PartialSell['reason']>([

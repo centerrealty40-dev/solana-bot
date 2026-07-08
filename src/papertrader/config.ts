@@ -218,6 +218,19 @@ const ConfigSchema = z.object({
   /** Min ms after first staged avg before second avg (−14%). */
   liveStagedEntryAvgSecondCooldownMs: z.coerce.number().int().nonnegative().default(300_000),
   /**
+   * Down-add discipline (anti «downhill runner»): block staged averaging-down legs once the position
+   * is older than this many ms from the first entry leg. Prevents throwing fresh capital into a coin
+   * that has been bleeding for hours (backtest: deep/late adds are the main money pit). `0` disables.
+   * Env `PAPER_LIVE_STAGED_AVG_MAX_AGE_MS` (default 14400000 = 4h).
+   */
+  liveStagedAvgMaxAgeMs: z.coerce.number().int().nonnegative().default(14_400_000),
+  /**
+   * Down-add discipline depth floor: block staged averaging-down when drop vs signal is at or beyond
+   * this %. Keeps shallow recovery adds, cuts the deep adds (−20%+) that historically rode to killstop.
+   * `0` disables. Env `PAPER_LIVE_STAGED_AVG_MAX_DEPTH_PCT` (default 20).
+   */
+  liveStagedAvgMaxDepthPct: z.coerce.number().min(0).max(95).default(20),
+  /**
    * Shadow-only: compute a proposed dynamic kill-stop + midpoint DCA from PG `*_pair_snapshots` history.
    * Does **not** affect tracker exits yet — only stamps `OpenTrade.dynamicKillstopShadow` + JSONL mirror fields.
    */
@@ -977,6 +990,15 @@ const ConfigSchema = z.object({
   liveOscarWaveBTimeStopHours: z.coerce.number().min(0).max(720).default(12),
 
   /**
+   * Hard profit-agnostic time-stop (hours). Applies to ANY exit policy: once position age ≥ this,
+   * force a real full exit (`TIME_STOP`, policy-allowed on-chain sell) regardless of PnL/progress —
+   * frees capital tied up in stale «downhill runner» positions instead of sitting to −50% killstop.
+   * Fires only after TP/kill/trail were evaluated, so genuine winners still exit on their own signal.
+   * `0` disables. Env `PAPER_LIVE_OSCAR_HARD_TIME_STOP_HOURS` (default 24).
+   */
+  liveOscarHardTimeStopHours: z.coerce.number().min(0).max(720).default(24),
+
+  /**
    * Live Oscar Variant A (v1): discrete TP ladder + moon +50% + peak retrace trail + smart48/salvage24.
    * Env: `PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A=1` (disables wave B for new opens).
    */
@@ -1380,6 +1402,8 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     birdeyeBatchEnabled: envBool(process.env.BIRDEYE_USE_BATCH ?? process.env.BIRDEYE_BATCH_ENABLED, false),
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
+    liveStagedAvgMaxAgeMs: process.env.PAPER_LIVE_STAGED_AVG_MAX_AGE_MS,
+    liveStagedAvgMaxDepthPct: process.env.PAPER_LIVE_STAGED_AVG_MAX_DEPTH_PCT,
     dynamicKillstopShadowEnabled: envBool(process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_ENABLED, false),
     dynamicKillstopShadowWindowDays: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_WINDOW_DAYS,
     dynamicKillstopShadowBufferPct: process.env.PAPER_DYNAMIC_KILLSTOP_SHADOW_BUFFER_PCT,
@@ -1895,6 +1919,7 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarWaveBFlatTpMode:
       process.env.PAPER_LIVE_OSCAR_WAVE_B_FLAT_TP_MODE === 'flat' ? 'flat' : 'half8_runner',
     liveOscarWaveBTimeStopHours: process.env.PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS,
+    liveOscarHardTimeStopHours: process.env.PAPER_LIVE_OSCAR_HARD_TIME_STOP_HOURS,
     liveOscarExitPolicyVariantAEnabled: envBool(process.env.PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A, false),
     liveOscarVariantAMoonTargetPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_MOON_TARGET_PCT,
     liveOscarVariantATrailArmPct: process.env.PAPER_LIVE_OSCAR_VARIANT_A_TRAIL_ARM_PCT,
