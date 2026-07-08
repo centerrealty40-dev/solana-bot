@@ -1808,6 +1808,36 @@ const PM2_APPS = [
         /** Периодический снимок режима в live-журнал (`risk_note`), с. */
         LIVE_MEM_REGIME_JOURNAL_EVERY_SEC: '600',
 
+        /**
+         * Чёрный лебедь (RCA просадок 4–5 июня и 6–7 июля): РЕДКОЕ (~1–2×/мес) событие, когда
+         * топ-раннеры по объёму льются одновременно и глубоко. На триггере — ликвидация ВСЕХ
+         * открытых позиций (не гейт входов; это делает LIVE_MEM_REGIME_*). Бэктест 609 реальных
+         * позиций Оскара (цены из `*_pair_snapshots`): порог equal-weight ≤ −16% за 6h ловит
+         * 4 события (1 ложное), нетто +$5.8k…+$14k за 2 мес; частые/отложенные варианты — в минус.
+         * Раскатка по канону: сначала `shadow` (журналит, какие позиции ЗАКРЫЛ БЫ — без продаж),
+         * после наблюдения на живых данных — `liquidate`. Выключить: `LIVE_MEM_SWAN_ENABLED=0`.
+         */
+        LIVE_MEM_SWAN_ENABLED: '1',
+        LIVE_MEM_SWAN_MODE: 'shadow',
+        /** Фон обновления индекса (с) — вне hot-path. */
+        LIVE_MEM_SWAN_REFRESH_SEC: '60',
+        /** Окно равновзвешенного возврата вселенной раннеров (мин) + запас на baseline. */
+        LIVE_MEM_SWAN_ROLL_MIN: '360',
+        LIVE_MEM_SWAN_BASELINE_TOL_MIN: '30',
+        /** Вселенная: топ-N по пиковому 1h-объёму (активные раннеры Оскара, не blue chips). */
+        LIVE_MEM_SWAN_TOP_N: '80',
+        LIVE_MEM_SWAN_MIN_RUNNER_V1H_USD: '10000',
+        /** Анти-фантом: < MIN_RUNNERS валидных раннеров = слепые данные, НЕ ликвидируем. */
+        LIVE_MEM_SWAN_MIN_RUNNERS: '40',
+        /** Триггер: equal-weight падение ≥ этих % (мгновенно, без breadth/подтверждения). */
+        LIVE_MEM_SWAN_EW_DROP_PCT: '16',
+        /** Кэш старше (с) — статус unknown, НЕ ликвидируем (fail-safe). */
+        LIVE_MEM_SWAN_MAX_STALE_SEC: '900',
+        /** Сброс active после N мин валидного затишья (для журнала/повторного эпизода). */
+        LIVE_MEM_SWAN_RESUME_MIN: '180',
+        /** Периодический снимок индекса лебедя в live-журнал (`risk_note`), с. */
+        LIVE_MEM_SWAN_JOURNAL_EVERY_SEC: '600',
+
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
         LIVE_RECONCILE_BLOCK_MAX_MS: '0',
         /** Live `buy_open`: не покупать mint, если на кошельке уже ≥ этой оценки USD (баланс × цена). 0 = выкл. */
