@@ -1818,7 +1818,7 @@ const PM2_APPS = [
          * после наблюдения на живых данных — `liquidate`. Выключить: `LIVE_MEM_SWAN_ENABLED=0`.
          */
         LIVE_MEM_SWAN_ENABLED: '1',
-        LIVE_MEM_SWAN_MODE: 'shadow',
+        LIVE_MEM_SWAN_MODE: 'liquidate',
         /** Фон обновления индекса (с) — вне hot-path. */
         LIVE_MEM_SWAN_REFRESH_SEC: '60',
         /** Окно равновзвешенного возврата вселенной раннеров (мин) + запас на baseline. */
