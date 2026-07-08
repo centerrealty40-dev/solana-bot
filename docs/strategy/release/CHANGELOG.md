@@ -88,6 +88,23 @@
 
 ---
 
+## [1.11.563] — 2026-07-09
+
+**Тег:** `sa-alpha-1.11.563`
+
+### Live Oscar — единый prod tier от $2M: 6×$500 entry, avg −10%/$500 + −20%/$1000
+
+- **Тиры:** micro / low / scalp_wave / runner_probe / runner_lite — **OFF** (без изменений). Discovery min mcap **$2M** — единый prod tier от $2M (low lane OFF).
+- **Entry split:** `3×$1000` → **`6×$500`** @ 10s (+3/−5% corridor) = **$3000** на вход (`PAPER_POSITION_USD`).
+- **Усреднение (единственные докупки после entry):** −10% → **$500**, −20% → **$1000** (было $1000/$1000).
+- **Max cap:** `LIVE_MAX_POSITION_USD` и prod band caps **$5000 → $4500** ($3000 entry + $500 + $1000 avg).
+- **Без прочих докупок:** `PAPER_DCA_LEVELS` пуст, `LIVE_ENTRY_SCALE_IN_ENABLED=0` (без изменений).
+- **Файлы:** `ecosystem.config.cjs` (live-oscar PM2 env), `tests/live-oscar-entry-sizing.test.ts`.
+
+**Откат:** redeploy `sa-alpha-1.11.562` или вернуть `3×$1000` / avg `$1000/$1000` / max `$5000` в `ecosystem.config.cjs` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+Без cross-product изменений. Platform VERSION не менялся.
+
 ## [1.11.562] — 2026-07-08
 
 **Тег:** `sa-alpha-1.11.562`

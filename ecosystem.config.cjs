@@ -285,11 +285,12 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.554 — prod ≥$3M: 4×$1000 entry split @10s (+3/−5% corridor); avg −10% $1500, −20% $2000; max $7500.
  * 1.11.555 — prod ≥$3M: 3×$1000 entry split @10s (+3/−5% corridor); avg −10% $1000, −20% $1000; max $5000.
  * 1.11.555 — low $2M–$3M: 2×$1000 @ 10s (+3/−5% corridor), avg −10% $500 + −20% $500 (max $3000); prod unchanged below.
+ * 1.11.563 — prod from $2M (low/micro OFF): 6×$500 entry split @10s (+3/−5% corridor); avg −10% $500, −20% $1000; max $4500; no DCA/scale-in.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
 const LIVE_OSCAR_ENTRY_SPLIT_USD = '3000';
-const LIVE_OSCAR_MAX_POSITION_USD = '5000';
+const LIVE_OSCAR_MAX_POSITION_USD = '4500';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -722,18 +723,18 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.555 — prod ≥$3M: 3×$1000 entry split @10s (+3/−5% corridor); avg −10% $1000, −20% $1000; max $5000.
+         * 1.11.563 — prod from $2M (low lane OFF): 6×$500 entry split @10s (+3/−5% corridor); avg −10% $500, −20% $1000; max $4500.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '1000',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '1000',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '1000',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
@@ -750,9 +751,9 @@ const PM2_APPS = [
          */
         PAPER_LIVE_STAGED_AVG_MAX_AGE_MS: '14400000',
         PAPER_LIVE_STAGED_AVG_MAX_DEPTH_PCT: '20',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '1000',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
@@ -828,8 +829,7 @@ const PM2_APPS = [
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.95',
         /**
-         * Discovery SQL pool: от $2M (min tradeable mcap). Prod — mcap ≥ $3M; low $2M–$3M.
-         * Micro/scalp_wave lanes disabled (1.11.500).
+         * Discovery SQL pool: от $2M (min tradeable mcap). Low/micro/scalp_wave/runner lanes OFF — единый prod tier ≥$2M.
          */
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
         /** Не сканировать discovery pool / eval для mcap > $500M (экономия PG/CPU). Открытые позиции — исключение. */
@@ -1018,8 +1018,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '100000',
         /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '5000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '5000',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '4500',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '4500',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         /** Global vol1h floor — no buys below $100k/h (all tiers). */
         PAPER_VOL_1H_MIN_USD: '100000',
