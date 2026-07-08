@@ -139,18 +139,37 @@ export async function runSlicedSolToTokenPipeline(
     });
 
     if (!r.ok) {
+      /**
+       * Partial fill: one or more EARLIER slices already confirmed on-chain. Those buys are
+       * real (tokens are in the wallet), so we must NOT discard them — return `ok:true`
+       * with the executed notional + all confirmed signatures so the caller records the
+       * leg (and stops re-firing the whole add). Only a fill of ZERO slices is a real failure.
+       */
+      const anyFilled = totalExecutedUsd > 0 || allTxSigs.length > 0;
       appendLiveJsonlEvent({
         kind: 'entry_slice_result',
         mint: args.mint.slice(0, 12),
         sliceIndex: i,
         sliceCount: plan.length,
-        ok: false,
+        ok: anyFilled,
+        partial: anyFilled,
         slicesCompleted: i,
+        executedUsdNotional: +totalExecutedUsd.toFixed(4),
       });
+      if (anyFilled) {
+        return {
+          ok: true,
+          partial: true,
+          anchorMode,
+          confirmedBuyTxSignature: lastTxSig ?? r.confirmedBuyTxSignature,
+          confirmedBuyTxSignatures: allTxSigs.length > 0 ? allTxSigs : undefined,
+          executedUsdNotional: totalExecutedUsd,
+        };
+      }
       return {
         ...r,
-        executedUsdNotional: totalExecutedUsd > 0 ? totalExecutedUsd : r.executedUsdNotional,
-        confirmedBuyTxSignature: lastTxSig ?? r.confirmedBuyTxSignature,
+        executedUsdNotional: r.executedUsdNotional,
+        confirmedBuyTxSignature: r.confirmedBuyTxSignature,
         anchorMode,
       };
     }

@@ -1536,14 +1536,68 @@ function createDiscovery(liveCfg: LiveOscarConfig): LiveOscarPhase4Discovery {
 
 function createTracker(liveCfg: LiveOscarConfig): LiveOscarPhase4Tracker {
   return {
-    trySolToTokenBuy(args) {
+    async trySolToTokenBuy(args) {
+      const intentKind = args.intentKind === 'buy_scale_in' ? 'buy_scale_in' : 'dca_add';
+      let usdNotional = args.usdNotional;
+
+      /**
+       * Hard per-position ceiling by REAL wallet holding (wallet is the source of truth).
+       * Prevents the cumulative-buy runaway seen when sliced adds re-fired and orphaned
+       * confirmed buys past the tier plan cap. Live mode only (simulate/paper have no wallet).
+       */
+      if (
+        liveCfg.executionMode === 'live' &&
+        (args.positionCeilingUsd ?? 0) > 0 &&
+        (args.tokenDecimals ?? 0) > 0
+      ) {
+        const ceiling = args.positionCeilingUsd!;
+        const heldUsd = await estimateLiveWalletMintHoldingGrossUsd({
+          liveCfg,
+          mint: args.mint,
+          tokenDecimals: args.tokenDecimals!,
+          dexSource: args.dexSource,
+        });
+        if (heldUsd != null) {
+          const room = ceiling - heldUsd;
+          if (room <= 1e-6) {
+            appendLiveJsonlEvent({
+              kind: 'execution_skip',
+              reason: 'position_ceiling_reached',
+              detail: JSON.stringify({
+                mint: args.mint.slice(0, 12),
+                intentKind,
+                heldUsd: +heldUsd.toFixed(2),
+                ceilingUsd: +ceiling.toFixed(2),
+                plannedUsd: +usdNotional.toFixed(2),
+              }).slice(0, 500),
+            });
+            return { ok: false, anchorMode: pipelineAnchorMode(liveCfg), terminalKind: 'gate', terminalMessage: 'position_ceiling_reached' };
+          }
+          if (usdNotional > room + 1e-6) {
+            appendLiveJsonlEvent({
+              kind: 'execution_skip',
+              reason: 'position_ceiling_clamp',
+              detail: JSON.stringify({
+                mint: args.mint.slice(0, 12),
+                intentKind,
+                heldUsd: +heldUsd.toFixed(2),
+                ceilingUsd: +ceiling.toFixed(2),
+                plannedUsd: +usdNotional.toFixed(2),
+                clampedUsd: +room.toFixed(2),
+              }).slice(0, 500),
+            });
+            usdNotional = room;
+          }
+        }
+      }
+
       return runSlicedSolToTokenPipeline(
         liveCfg,
         {
           mint: args.mint,
           symbol: args.symbol,
-          usdNotional: args.usdNotional,
-          intentKind: args.intentKind === 'buy_scale_in' ? 'buy_scale_in' : 'dca_add',
+          usdNotional,
+          intentKind,
           entryBuySliceEligible: args.entryBuySliceEligible,
         },
         runSolToTokenPipeline,

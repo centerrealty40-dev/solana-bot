@@ -1020,6 +1020,13 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
         PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '5000',
         PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '5000',
+        /**
+         * Global hard per-position notional ceiling (USD), tier-independent. Enforced against the
+         * REAL wallet holding before every add so cumulative on-chain buys can never exceed it,
+         * even if the ledger desyncs (fixes the sliced-add over-buy: $7.5k on E2ueKQ3E…).
+         * `0` = off (use tier plan max). Owner cap = max $2–3k/position → set to 3000.
+         */
+        PAPER_LIVE_OSCAR_HARD_POSITION_MAX_USD: '3000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         /** 1.11.476: 36000→35000 (owner approved volume expansion; prod tier vol 25000 unchanged). */
         PAPER_VOL_1H_MIN_USD: '60000',

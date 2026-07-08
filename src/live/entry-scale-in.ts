@@ -12,6 +12,7 @@ import type { LiveOscarConfig } from './config.js';
 import type { LiveOscarPhase4Tracker } from './phase4-types.js';
 import { appendLiveBuyAnchorsAfterDca } from './live-buy-anchor.js';
 import { entryBuySliceEligibleForOpen } from './entry-slice.js';
+import { resolveLiveOscarPositionCeilingUsd } from '../papertrader/live-oscar-entry-sizing.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { getPriorityFeeUsd } from '../papertrader/pricing/priority-fee.js';
 import { serializeOpenTrade } from './strategy-snapshot.js';
@@ -229,6 +230,9 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
     usdNotional: pending.secondLegUsd,
     intentKind: 'buy_scale_in',
     entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
+    positionCeilingUsd: resolveLiveOscarPositionCeilingUsd(cfg, ot),
+    tokenDecimals: ot.tokenDecimals,
+    dexSource: ot.source,
   });
 
   if (!buyRes.ok) {

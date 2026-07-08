@@ -487,6 +487,22 @@ export function applyCanonicalOpenLegUsd(cfg: PaperTraderConfig, ot: OpenTrade):
   }
 }
 
+/**
+ * Hard per-position notional ceiling (USD) for a live-oscar position: the tier plan max,
+ * optionally tightened by the global `liveOscarHardPositionMaxUsd` lever. Fed to the live
+ * buy pipeline so cumulative on-chain buys are gated/clamped against the REAL wallet holding
+ * (source of truth), preventing sliced-add runaways that over-buy past the plan cap.
+ */
+export function resolveLiveOscarPositionCeilingUsd(cfg: PaperTraderConfig, ot: OpenTrade): number {
+  const tier = resolveLiveOscarTradeTierFromOpen(cfg, ot);
+  const planMax = resolveLiveOscarStagedEntryMaxUsd(cfg, tier, ot.entryMarketCapUsd);
+  const hardMax = cfg.liveOscarHardPositionMaxUsd ?? 0;
+  if (hardMax > 0) {
+    return planMax > 0 ? Math.min(planMax, hardMax) : hardMax;
+  }
+  return planMax;
+}
+
 /** Resolve trade tier from signal mcap at staged-entry build time. */
 export function resolveLiveOscarTradeTierFromMcap(
   cfg: PaperTraderConfig,
