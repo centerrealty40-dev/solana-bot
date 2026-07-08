@@ -1749,6 +1749,36 @@ const PM2_APPS = [
         LIVE_BTC_RECOVERY_MIN_RET_1H_PCT: '0',
         /** Telegram в канал дайвов (`LIVE_MINT_WHITELIST_TELEGRAM_*`): блок/снятие BTC gate. `0` = выкл. */
         LIVE_BTC_GATE_TELEGRAM_ENABLED: '1',
+
+        /**
+         * Мем-режимный гейт (RCA слива 6–8 июля): блок НОВЫХ `buy_open` при широком risk-off
+         * в нашей же runner-вселенной (breadth/импульс по `*_pair_snapshots`). Ловит отток,
+         * который BTC/SOL-гейты не видят (ритейл ушёл в новые внешние мемкоины на Robinhood).
+         * Раскатка по канону: сначала `shadow` (только журналит `risk_note`, не блокирует),
+         * после ≥48h наблюдения — `gate`. Выключить: `LIVE_MEM_REGIME_ENABLED=0`.
+         */
+        LIVE_MEM_REGIME_ENABLED: '1',
+        LIVE_MEM_REGIME_MODE: 'shadow',
+        /** Фон обновления индекса (с) — вне hot-path покупок. */
+        LIVE_MEM_REGIME_REFRESH_SEC: '60',
+        /** Импульс: latest price vs latest ≤ now−lookback (мин) + запас на baseline. */
+        LIVE_MEM_REGIME_LOOKBACK_MIN: '60',
+        LIVE_MEM_REGIME_BASELINE_TOL_MIN: '20',
+        /** Раннер = пиковый 1h-объём ≥ этого (USD); тонкая вселенная (< MIN_RUNNERS) = insufficient data. */
+        LIVE_MEM_REGIME_MIN_RUNNER_V1H_USD: '10000',
+        LIVE_MEM_REGIME_MIN_RUNNERS: '20',
+        /** Сигналы risk-off (нужно ≥ REQUIRED_SIGNALS из 3): breadth красных %, equal-weight падение п.п., median падение п.п. */
+        LIVE_MEM_REGIME_BREADTH_RED_PCT: '58',
+        LIVE_MEM_REGIME_EW_DROP_PCT: '1',
+        LIVE_MEM_REGIME_MED_DROP_PCT: '0.8',
+        LIVE_MEM_REGIME_REQUIRED_SIGNALS: '2',
+        /** Гистерезис: сколько подряд окон подтверждают смену режима. */
+        LIVE_MEM_REGIME_CONFIRM_WINDOWS: '2',
+        /** Если кэш режима старше (с) — гейт fail-open (unknown, без блока). */
+        LIVE_MEM_REGIME_MAX_STALE_SEC: '300',
+        /** Периодический снимок режима в live-журнал (`risk_note`), с. */
+        LIVE_MEM_REGIME_JOURNAL_EVERY_SEC: '600',
+
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
         LIVE_RECONCILE_BLOCK_MAX_MS: '0',
         /** Live `buy_open`: не покупать mint, если на кошельке уже ≥ этой оценки USD (баланс × цена). 0 = выкл. */
