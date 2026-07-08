@@ -1838,6 +1838,30 @@ const PM2_APPS = [
         /** Периодический снимок индекса лебедя в live-журнал (`risk_note`), с. */
         LIVE_MEM_SWAN_JOURNAL_EVERY_SEC: '600',
 
+        /**
+         * OWN-BOOK лебедь / портфельный стоп: независимый домен отказа от индекса топ-80 выше.
+         * Считает equal-weight просадку НАШИХ открытых позиций по их живым маркам (snapshot→Jupiter),
+         * поэтому срабатывает даже когда внешний индекс «ослеп» (сбой коллекторов). Триггер:
+         * EW ≤ −25% за 6h при ≥8 участвующих позициях → ликвидация ВСЕХ. Бэктест 608 позиций:
+         * ≈6/мес, ликвидация vs холд +$13.5k. История марок в памяти → после рестарта ~6h прогрев
+         * (в это окно прикрывает внешний индекс с PG-бэкфиллом). Откат: LIVE_MEM_SWAN_PORT_ENABLED=0.
+         */
+        LIVE_MEM_SWAN_PORT_ENABLED: '1',
+        LIVE_MEM_SWAN_PORT_MODE: 'liquidate',
+        /** Окно equal-weight просадки нашего портфеля (мин) + запас на baseline. */
+        LIVE_MEM_SWAN_PORT_ROLL_MIN: '360',
+        LIVE_MEM_SWAN_PORT_BASELINE_TOL_MIN: '30',
+        /** Триггер: EW нашего book ≤ −этих %. */
+        LIVE_MEM_SWAN_PORT_EW_DROP_PCT: '25',
+        /** Анти-фантом: < этого числа участвующих позиций = не ликвидируем (в т.ч. прогрев). */
+        LIVE_MEM_SWAN_PORT_MIN_POSITIONS: '8',
+        /** Кэш тика старше (с) — не ликвидируем (fail-safe). */
+        LIVE_MEM_SWAN_PORT_MAX_STALE_SEC: '180',
+        /** Сброс active после N мин валидного затишья. */
+        LIVE_MEM_SWAN_PORT_RESUME_MIN: '120',
+        /** Периодический снимок own-book индекса в live-журнал, с. */
+        LIVE_MEM_SWAN_PORT_JOURNAL_EVERY_SEC: '600',
+
         /** 0 = выкл. Иначе снять exposure block (parity) после N мс — см. `LIVE_RECONCILE_BLOCK_MAX_MS` в config. */
         LIVE_RECONCILE_BLOCK_MAX_MS: '0',
         /** Live `buy_open`: не покупать mint, если на кошельке уже ≥ этой оценки USD (баланс × цена). 0 = выкл. */

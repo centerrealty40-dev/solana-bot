@@ -189,6 +189,24 @@ const LiveOscarConfigSchema = z
     /** Periodic swan snapshot cadence to the live journal (`risk_note`), s. */
     liveMemSwanJournalEverySec: z.coerce.number().int().min(60).max(3600).default(600),
 
+    /**
+     * OWN-BOOK swan / portfolio-bleed liquidation (independent failure domain from the external
+     * index above). Keys off our own open positions' live marks (snapshot→Jupiter), so it fires
+     * even when the external top-N index goes blind. Equal-weight return of open positions over
+     * `RollMin` (~6h); trigger EW ≤ −`EwDropPct` (~−25%) with ≥ `MinPositions` contributing.
+     * Backtest (608 real positions): ≈6/mo, liquidate-vs-hold +$13.5k. In-memory history →
+     * ~`RollMin` warmup after restart (external index covers that window). Default OFF.
+     */
+    liveMemSwanPortEnabled: z.boolean().default(false),
+    liveMemSwanPortMode: z.enum(['off', 'shadow', 'liquidate']).default('off'),
+    liveMemSwanPortRollMin: z.coerce.number().int().min(30).max(1440).default(360),
+    liveMemSwanPortBaselineTolMin: z.coerce.number().int().min(5).max(120).default(30),
+    liveMemSwanPortEwDropPct: z.coerce.number().min(1).max(90).default(25),
+    liveMemSwanPortMinPositions: z.coerce.number().int().min(2).max(500).default(8),
+    liveMemSwanPortMaxStaleSec: z.coerce.number().int().min(30).max(3600).default(180),
+    liveMemSwanPortResumeMin: z.coerce.number().int().min(15).max(1440).default(120),
+    liveMemSwanPortJournalEverySec: z.coerce.number().int().min(60).max(3600).default(600),
+
     liveEntryNotionalUsd: z.coerce.number().positive().optional(),
     liveEntryMinFreeMult: z.coerce.number().positive().default(2),
     /**
@@ -819,6 +837,18 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveMemSwanMaxStaleSec: process.env.LIVE_MEM_SWAN_MAX_STALE_SEC,
     liveMemSwanResumeMin: process.env.LIVE_MEM_SWAN_RESUME_MIN,
     liveMemSwanJournalEverySec: process.env.LIVE_MEM_SWAN_JOURNAL_EVERY_SEC,
+    liveMemSwanPortEnabled: envBool(process.env.LIVE_MEM_SWAN_PORT_ENABLED, false),
+    liveMemSwanPortMode: (() => {
+      const s = (process.env.LIVE_MEM_SWAN_PORT_MODE ?? 'off').trim().toLowerCase();
+      return s === 'shadow' || s === 'liquidate' ? s : 'off';
+    })(),
+    liveMemSwanPortRollMin: process.env.LIVE_MEM_SWAN_PORT_ROLL_MIN,
+    liveMemSwanPortBaselineTolMin: process.env.LIVE_MEM_SWAN_PORT_BASELINE_TOL_MIN,
+    liveMemSwanPortEwDropPct: process.env.LIVE_MEM_SWAN_PORT_EW_DROP_PCT,
+    liveMemSwanPortMinPositions: process.env.LIVE_MEM_SWAN_PORT_MIN_POSITIONS,
+    liveMemSwanPortMaxStaleSec: process.env.LIVE_MEM_SWAN_PORT_MAX_STALE_SEC,
+    liveMemSwanPortResumeMin: process.env.LIVE_MEM_SWAN_PORT_RESUME_MIN,
+    liveMemSwanPortJournalEverySec: process.env.LIVE_MEM_SWAN_PORT_JOURNAL_EVERY_SEC,
 
     liveEntryNotionalUsd: optionalPositiveEnv('LIVE_ENTRY_NOTIONAL_USD'),
     liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,

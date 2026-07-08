@@ -230,6 +230,7 @@ import {
 } from '../../live/policy-only-exits.js';
 import { isOscarHandoffClosedMint } from '../../live/copy-leader-attribution.js';
 import { runMemSwanLiquidationSweep } from '../../live/mem-swan-liquidate.js';
+import { recordMemSwanPortfolioMark, runMemSwanPortfolioSweep } from '../../live/mem-swan-portfolio.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
@@ -3364,32 +3365,37 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     await args.processPresetCScalpDeferredEntries();
   }
 
-  // Black-swan liquidation sweep: on the rising edge of a confirmed swan (top volume runners
-  // dumping deeply, fresh data) force-close every open position (or shadow-journal the list).
-  // Fires once per episode (rising edge consumed); cheap no-op otherwise.
-  if (liveOscarCfg?.executionMode === 'live' && liveOscarCfg.liveMemSwanEnabled) {
-    await runMemSwanLiquidationSweep({
-      liveCfg: liveOscarCfg,
-      open,
-      forceExitLive: async (openKey: string, marketSell: number) =>
-        trackerForceFullExitLive({
-          cfg,
-          open,
-          closed,
-          tpLadder,
-          stats,
-          btcCtx,
-          journalAppend,
-          journalLiveStrategy,
-          livePhase4,
-          liveOscarCfg,
-          onMintFullClose: args.onMintFullClose,
-          mint: openKey,
-          marketSell,
-          exitReason: 'KILLSTOP',
-          bypassPolicyBlock: true,
-        }),
-    });
+  // Black-swan liquidation sweeps (rising edge → force-close every open position, once per
+  // episode; cheap no-op otherwise). Two independent detectors:
+  //   1. mem-swan: external top-N runner index over PG snapshots (market-wide swan).
+  //   2. mem-swan-portfolio: OUR own open book's equal-weight drawdown (fires when our capital
+  //      is bleeding hard; independent of the PG runner universe / collector health). Uses marks
+  //      collected during the *previous* tick's loop.
+  if (liveOscarCfg?.executionMode === 'live' && (liveOscarCfg.liveMemSwanEnabled || liveOscarCfg.liveMemSwanPortEnabled)) {
+    const forceExitLive = async (openKey: string, marketSell: number): Promise<boolean> =>
+      trackerForceFullExitLive({
+        cfg,
+        open,
+        closed,
+        tpLadder,
+        stats,
+        btcCtx,
+        journalAppend,
+        journalLiveStrategy,
+        livePhase4,
+        liveOscarCfg,
+        onMintFullClose: args.onMintFullClose,
+        mint: openKey,
+        marketSell,
+        exitReason: 'KILLSTOP',
+        bypassPolicyBlock: true,
+      });
+    if (liveOscarCfg.liveMemSwanEnabled) {
+      await runMemSwanLiquidationSweep({ liveCfg: liveOscarCfg, open, forceExitLive });
+    }
+    if (liveOscarCfg.liveMemSwanPortEnabled) {
+      await runMemSwanPortfolioSweep({ liveCfg: liveOscarCfg, open, forceExitLive });
+    }
   }
 
   if (open.size === 0) {
@@ -4019,6 +4025,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ot.lastObservedPriceUsd = resolveObservedPriceUsdForJournal(rawTrackerPriceUsd, exitMtmForJournal);
       if (cfg.flashCrashKillEnabled && isLiveOscarTradingStrategyId(cfg.strategyId)) {
         appendFlashKillPriceSample(ot, Date.now(), curMetric);
+      }
+      // Own-book swan detector: record this fresh mark (consumed at the next tick top).
+      if (
+        liveOscarCfg?.executionMode === 'live' &&
+        liveOscarCfg.liveMemSwanPortEnabled &&
+        curMetric > 0
+      ) {
+        recordMemSwanPortfolioMark(mint, curMetric);
       }
     }
 
