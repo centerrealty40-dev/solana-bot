@@ -54,7 +54,14 @@ export function applyLiveBuyAnchorsAfterOpen(ot: OpenTrade, res: LiveBuyPipeline
 }
 
 export function appendLiveBuyAnchorsAfterDca(ot: OpenTrade, res: LiveBuyPipelineResult): void {
-  if (!res.ok) return;
+  /**
+   * Record confirmed on-chain buys even on a non-ok partial result: any slice that landed
+   * on-chain is a real fill and must be attached to the position (no orphaned buys).
+   */
+  const hasChainFill =
+    res.anchorMode === 'chain' &&
+    ((res.confirmedBuyTxSignatures?.length ?? 0) > 0 || !!res.confirmedBuyTxSignature);
+  if (!res.ok && !hasChainFill) return;
   if (res.executedUsdNotional != null) {
     const last = ot.legs[ot.legs.length - 1];
     if (last) reconcileLegExecutedUsd(ot, last, res.executedUsdNotional);

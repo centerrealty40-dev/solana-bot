@@ -39,6 +39,12 @@ export interface LiveBuyPipelineResult {
   confirmedBuyTxSignature?: string | null;
   /** Actual USD notional executed when partial wallet slice applied (1.11.506). */
   executedUsdNotional?: number;
+  /**
+   * True when a sliced buy filled some — but not all — slices on-chain (partial success).
+   * Callers MUST still record `executedUsdNotional` / `confirmedBuyTxSignatures` into the
+   * ledger (no orphaned on-chain buys) and must NOT re-fire the whole add.
+   */
+  partial?: boolean;
   /** Terminal failure class (set only when `ok === false`). */
   terminalKind?: LiveBuyTerminalKind;
   /** Optional short message tail for diagnostics (≤200 chars). */
@@ -137,6 +143,16 @@ export interface LiveOscarPhase4Tracker {
     intentKind?: 'dca_add' | 'buy_scale_in';
     /** low/prod mcap tier at entry — enables Jupiter buy slicing for staged adds. */
     entryBuySliceEligible?: boolean;
+    /**
+     * Hard per-position notional ceiling (USD) for this mint. When set (live mode),
+     * the add is clamped/blocked against the REAL wallet holding so cumulative buys
+     * never exceed the tier plan cap even if the ledger is out of sync.
+     */
+    positionCeilingUsd?: number;
+    /** Token decimals — required to value the on-chain wallet holding for the ceiling gate. */
+    tokenDecimals?: number | null;
+    /** Dex source — used to pick the snapshot price feed when valuing wallet holding. */
+    dexSource?: string;
   }): Promise<LiveBuyPipelineResult>;
 
   tryTokenToSolSell(args: {
