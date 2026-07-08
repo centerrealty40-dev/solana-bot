@@ -44,6 +44,8 @@ import {
 
   resolveLiveOscarTradeTierFromMcap,
 
+  resolveLiveOscarPositionCeilingUsd,
+
 } from '../src/papertrader/live-oscar-entry-sizing.js';
 
 import type { OpenTrade } from '../src/papertrader/types.js';
@@ -139,6 +141,8 @@ describe('live-oscar-entry-sizing', () => {
       'PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD',
 
       'PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS',
+
+      'PAPER_LIVE_OSCAR_HARD_POSITION_MAX_USD',
 
     ];
 
@@ -281,6 +285,21 @@ describe('live-oscar-entry-sizing', () => {
   });
 
 
+
+  it('resolveLiveOscarPositionCeilingUsd: tier plan max, tightened by global hard cap', () => {
+    const cfg = loadPaperTraderConfig();
+    const prodOt = { entryMarketCapUsd: 5_000_000 } as OpenTrade;
+    const lowOt = { entryMarketCapUsd: 2_500_000 } as OpenTrade;
+    // No global hard cap → ceiling equals tier plan max.
+    expect(resolveLiveOscarPositionCeilingUsd(cfg, prodOt)).toBe(5000);
+    expect(resolveLiveOscarPositionCeilingUsd(cfg, lowOt)).toBe(3000);
+
+    // Global hard cap tightens every tier to min(plan, hardCap).
+    process.env.PAPER_LIVE_OSCAR_HARD_POSITION_MAX_USD = '2500';
+    const capped = loadPaperTraderConfig();
+    expect(resolveLiveOscarPositionCeilingUsd(capped, prodOt)).toBe(2500);
+    expect(resolveLiveOscarPositionCeilingUsd(capped, lowOt)).toBe(2500);
+  });
 
   it('throws when low-mcap position is not leg1..leg5 sum', () => {
 

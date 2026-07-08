@@ -36,7 +36,9 @@ import {
   getStressKillReentryContext,
 } from './stress-kill-reentry.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
+import { evaluateHolderGate } from '../holders/holder-gate-eval.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
+import type { HoldersDecisionMeta } from '../holders/holder-types.js';
 import { impulsePgSnapTriggerOk } from '../pricing/impulse-confirm.js';
 import { filterSnapshotTaggedByMintBlacklist, isMintBlacklisted } from './mint-blacklist-file.js';
 import {
@@ -154,14 +156,7 @@ function syncDiscoveryCollectorPin(cfg: PaperTraderConfig, priorityMintSet: Read
   }
 }
 
-export interface HoldersDecisionMeta {
-  holders_db: number;
-  holders_live: number | null;
-  holders_source: 'qn_addon' | 'qn_gpa' | 'cache_pos' | 'db' | 'none';
-  holders_age_ms: number | null;
-  holders_fail_reason?: string;
-  holders_used_for_gate: number;
-}
+export type { HoldersDecisionMeta } from '../holders/holder-types.js';
 
 export interface EvalDecision {
   lane: Lane;
@@ -1496,64 +1491,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const cheapPass = preHoldersReasons.length === 0;
 
     let holdersMeta: HoldersDecisionMeta | undefined;
-    const holderReasons: string[] = [];
-
-    if (liveHoldersForObservability && cheapPass) {
-      const dbHolders = Number(row.holder_count ?? 0);
-      if (liveHoldersThisTick >= cfg.holdersMaxPerTick) {
-        holdersMeta = {
-          holders_db: dbHolders,
-          holders_live: null,
-          holders_source: 'none',
-          holders_age_ms: null,
-          holders_fail_reason: 'budget_per_tick',
-          holders_used_for_gate: dbHolders,
-        };
-        if (liveHoldersForGate) {
-          if (cfg.holdersOnFail === 'block') {
-            holderReasons.push('holders_unknown:budget_per_tick');
-          } else if (cfg.holdersOnFail === 'db_fallback') {
-            if (dbHolders < cfg.globalMinHolderCount) {
-              holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
-            }
-          }
-        }
-      } else {
-        liveHoldersThisTick += 1;
-        const r = await resolveHolderCount(cfg, row.mint);
-        if (r.ok) {
-          holdersMeta = {
-            holders_db: dbHolders,
-            holders_live: r.count,
-            holders_source: r.source,
-            holders_age_ms: r.ageMs,
-            holders_used_for_gate: r.count,
-          };
-          if (liveHoldersForGate && r.count < cfg.globalMinHolderCount) {
-            holderReasons.push(`holders<${cfg.globalMinHolderCount}`);
-          }
-        } else {
-          holdersMeta = {
-            holders_db: dbHolders,
-            holders_live: null,
-            holders_source: 'none',
-            holders_age_ms: null,
-            holders_fail_reason: r.reason,
-            holders_used_for_gate: dbHolders,
-          };
-          if (liveHoldersForGate) {
-            if (cfg.holdersOnFail === 'block') {
-              holderReasons.push(`holders_unknown:${r.reason}`);
-            } else if (cfg.holdersOnFail === 'db_fallback') {
-              holdersMeta.holders_source = 'db';
-              if (dbHolders < cfg.globalMinHolderCount) {
-                holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
-              }
-            }
-          }
-        }
-      }
-    }
+    const holderGate = await evaluateHolderGate({
+      cfg,
+      mint: row.mint,
+      dbHolders: Number(row.holder_count ?? 0),
+      cheapPass,
+      liveHoldersForObservability,
+      liveHoldersForGate,
+      liveHoldersThisTick,
+    });
+    liveHoldersThisTick = holderGate.liveHoldersThisTick;
+    holdersMeta = holderGate.holdersMeta;
+    const holderReasons = holderGate.holderReasons;
 
     /**
      * 1.11.232: если runner не прошёл и dip не прошёл — добавляем runnerReasons в

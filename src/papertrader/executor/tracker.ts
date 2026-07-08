@@ -2,6 +2,7 @@ import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import { parseDcaLevels } from '../config.js';
 import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
+import { resolveLiveOscarPositionCeilingUsd } from '../live-oscar-entry-sizing.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
 import { isRunnerProbeTrade, mintFromOpenMapKey } from '../live-oscar-runner-probe.js';
 import { isRunnerLiteTrade } from '../live-oscar-runner-lite.js';
@@ -3237,6 +3238,9 @@ async function tryPresetCScalpDcaLeg(args: {
         symbol: ot.symbol,
         usdNotional: leg.addUsd,
         entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
+        positionCeilingUsd: resolveLiveOscarPositionCeilingUsd(cfg, ot),
+        tokenDecimals: ot.tokenDecimals,
+        dexSource: ot.source,
       });
       if (!dcaBuyRes.ok) return;
     }
@@ -4789,6 +4793,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             symbol: ot.symbol,
             usdNotional: addUsd,
             entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
+            positionCeilingUsd: resolveLiveOscarPositionCeilingUsd(cfg, ot),
+            tokenDecimals: ot.tokenDecimals,
+            dexSource: ot.source,
           });
           if (!dcaBuyRes.ok) return false;
         }
@@ -4973,6 +4980,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             symbol: ot.symbol,
             usdNotional: addUsd,
             entryBuySliceEligible: entryBuySliceEligibleForOpen(cfg, ot),
+            positionCeilingUsd: resolveLiveOscarPositionCeilingUsd(cfg, ot),
+            tokenDecimals: ot.tokenDecimals,
+            dexSource: ot.source,
           });
           if (!dcaBuyRes.ok) continue;
         }

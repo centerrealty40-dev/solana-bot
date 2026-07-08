@@ -5,6 +5,7 @@ import type { Lane, SnapshotCandidateRow, SnapshotFeatures, WhaleAnalysis } from
 import { evaluateSnapshotSmartLottery } from '../filters/snapshot-filter.js';
 import { globalGate } from '../filters/global-gate.js';
 import { fetchWhaleAnalysis } from '../whale-analysis.js';
+import { evaluateHolderGate } from '../holders/holder-gate-eval.js';
 import { resolveHolderCount } from '../holders/holders-resolve.js';
 import {
   appendPostExitReentryGateReasons,
@@ -200,7 +201,8 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
   let evaluated = 0;
   let passed = 0;
   let liveHoldersThisTick = 0;
-  const liveHoldersEnabled = cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
+  const liveHoldersForObservability = cfg.holdersLiveEnabled;
+  const liveHoldersForGate = cfg.holdersLiveEnabled && cfg.globalMinHolderCount > 0;
 
   for (const { row, lane } of snapshotTagged) {
     if (!shouldEvaluate(row.mint, reevalAfterSec)) continue;
@@ -208,7 +210,7 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
 
     const v = evaluateSnapshotSmartLottery(cfg, row, lane);
     const globalReasons = globalGate(cfg, row.token_age_min, row.holder_count, {
-      skipHolderCheck: liveHoldersEnabled,
+      skipHolderCheck: liveHoldersForGate,
     });
     const baseReasons = [...v.reasons, ...globalReasons];
     const snapshotPass = baseReasons.length === 0;
@@ -264,60 +266,18 @@ export async function runSmartLotteryDiscovery(cfg: PaperTraderConfig): Promise<
     const cheapPass = preHoldersReasons.length === 0;
 
     let holdersMeta: HoldersDecisionMeta | undefined;
-    const holderReasons: string[] = [];
-
-    if (liveHoldersEnabled && cheapPass) {
-      const dbHolders = Number(row.holder_count ?? 0);
-      if (liveHoldersThisTick >= cfg.holdersMaxPerTick) {
-        holdersMeta = {
-          holders_db: dbHolders,
-          holders_live: null,
-          holders_source: 'none',
-          holders_age_ms: null,
-          holders_fail_reason: 'budget_per_tick',
-          holders_used_for_gate: dbHolders,
-        };
-        if (cfg.holdersOnFail === 'block') {
-          holderReasons.push('holders_unknown:budget_per_tick');
-        } else if (cfg.holdersOnFail === 'db_fallback') {
-          if (dbHolders < cfg.globalMinHolderCount) {
-            holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
-          }
-        }
-      } else {
-        liveHoldersThisTick += 1;
-        const r = await resolveHolderCount(cfg, row.mint);
-        if (r.ok) {
-          holdersMeta = {
-            holders_db: dbHolders,
-            holders_live: r.count,
-            holders_source: r.source,
-            holders_age_ms: r.ageMs,
-            holders_used_for_gate: r.count,
-          };
-          if (r.count < cfg.globalMinHolderCount) {
-            holderReasons.push(`holders<${cfg.globalMinHolderCount}`);
-          }
-        } else {
-          holdersMeta = {
-            holders_db: dbHolders,
-            holders_live: null,
-            holders_source: 'none',
-            holders_age_ms: null,
-            holders_fail_reason: r.reason,
-            holders_used_for_gate: dbHolders,
-          };
-          if (cfg.holdersOnFail === 'block') {
-            holderReasons.push(`holders_unknown:${r.reason}`);
-          } else if (cfg.holdersOnFail === 'db_fallback') {
-            holdersMeta.holders_source = 'db';
-            if (dbHolders < cfg.globalMinHolderCount) {
-              holderReasons.push(`holders<${cfg.globalMinHolderCount}:db_fallback`);
-            }
-          }
-        }
-      }
-    }
+    const holderGate = await evaluateHolderGate({
+      cfg,
+      mint: row.mint,
+      dbHolders: Number(row.holder_count ?? 0),
+      cheapPass,
+      liveHoldersForObservability,
+      liveHoldersForGate,
+      liveHoldersThisTick,
+    });
+    liveHoldersThisTick = holderGate.liveHoldersThisTick;
+    holdersMeta = holderGate.holdersMeta;
+    const holderReasons = holderGate.holderReasons;
 
     const preIntelReasons = [...preHoldersReasons, ...holderReasons];
     const intelReasons: string[] = [];
