@@ -8,3 +8,5 @@ E6ifp2mJy8cYQehUGUtFvrXriRKxRuonLmrvTFypump
 5Jr9hGmJgxBRjjF8XGcGgQzXUdsbpZNNMpigEv8Wpump
 # BIRB — ручной permanent block по запросу оператора (2026-07-04).
 G7vQWurMkMMm2dU3iZpXYFTHT9Biio4F4gZCrwFpKNwG
+# E2ueKQ3E — over-buy $7.5k incident; permanent block all strategies (2026-07-09).
+E2ueKQ3EDTTmCkUA17j3KeTb2u6VT91xiyECdKRzpump
