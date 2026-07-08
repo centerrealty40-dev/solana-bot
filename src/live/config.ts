@@ -156,6 +156,39 @@ const LiveOscarConfigSchema = z
     /** Periodic regime snapshot cadence to the live journal (`risk_note`), s. */
     liveMemRegimeJournalEverySec: z.coerce.number().int().min(60).max(3600).default(600),
 
+    /**
+     * Memecoin **black-swan liquidation** (distinct from the entry gate above). Fires rarely
+     * (~1–2×/month) when the **top volume runners dump simultaneously and deeply** — the
+     * jul 6–7 drain profile. Backtest (609 real Oscar positions, may–jul 2026, snapshot
+     * prices): liquidating open positions at the trigger nets +$5.8k…+$14k over 2 months;
+     * broad/frequent or delayed variants were net-negative. Fires on **depth immediately**
+     * (no breadth gate / no confirmation delay — delay sells at the bottom). Anti-phantom:
+     * never liquidates on blind (`< minRunners`) or stale (`> maxStaleSec`) data.
+     * `off` = disabled; `shadow` = journals `mem_swan_would_liquidate` only; `liquidate` = sells.
+     */
+    liveMemSwanEnabled: z.boolean().default(false),
+    liveMemSwanMode: z.enum(['off', 'shadow', 'liquidate']).default('off'),
+    /** Background refresh cadence (s). Off any hot path. */
+    liveMemSwanRefreshSec: z.coerce.number().int().min(20).max(600).default(60),
+    /** Rolling window (min) for the equal-weight return (baseline = now − rollMin). Default 6h. */
+    liveMemSwanRollMin: z.coerce.number().int().min(60).max(1440).default(360),
+    /** Extra minutes of snapshots fetched beyond rollMin so the baseline point has data. */
+    liveMemSwanBaselineTolMin: z.coerce.number().int().min(5).max(120).default(30),
+    /** Universe size: top-N runners by peak 1h volume. */
+    liveMemSwanTopN: z.coerce.number().int().min(10).max(500).default(80),
+    /** A mint is an eligible runner when its peak rolling 1h volume ≥ this (USD). */
+    liveMemSwanMinRunnerV1hUsd: z.coerce.number().min(0).max(10_000_000).default(10_000),
+    /** Anti-phantom: below this many contributing runners the index is blind (never liquidates). */
+    liveMemSwanMinRunners: z.coerce.number().int().min(5).max(500).default(40),
+    /** Trigger: equal-weight return over rollMin ≤ −this (percent points). Backtest sweet spot 16–18. */
+    liveMemSwanEwDropPct: z.coerce.number().min(1).max(90).default(16),
+    /** Anti-phantom: if cached metrics older than this (s), never liquidate. */
+    liveMemSwanMaxStaleSec: z.coerce.number().int().min(60).max(3600).default(900),
+    /** Resume: minutes of valid, non-triggered windows before the swan clears (trading resumes). */
+    liveMemSwanResumeMin: z.coerce.number().int().min(30).max(1440).default(180),
+    /** Periodic swan snapshot cadence to the live journal (`risk_note`), s. */
+    liveMemSwanJournalEverySec: z.coerce.number().int().min(60).max(3600).default(600),
+
     liveEntryNotionalUsd: z.coerce.number().positive().optional(),
     liveEntryMinFreeMult: z.coerce.number().positive().default(2),
     /**
@@ -770,6 +803,22 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveMemRegimeConfirmWindows: process.env.LIVE_MEM_REGIME_CONFIRM_WINDOWS,
     liveMemRegimeMaxStaleSec: process.env.LIVE_MEM_REGIME_MAX_STALE_SEC,
     liveMemRegimeJournalEverySec: process.env.LIVE_MEM_REGIME_JOURNAL_EVERY_SEC,
+
+    liveMemSwanEnabled: envBool(process.env.LIVE_MEM_SWAN_ENABLED, false),
+    liveMemSwanMode: (() => {
+      const s = (process.env.LIVE_MEM_SWAN_MODE ?? 'off').trim().toLowerCase();
+      return s === 'shadow' || s === 'liquidate' ? s : 'off';
+    })(),
+    liveMemSwanRefreshSec: process.env.LIVE_MEM_SWAN_REFRESH_SEC,
+    liveMemSwanRollMin: process.env.LIVE_MEM_SWAN_ROLL_MIN,
+    liveMemSwanBaselineTolMin: process.env.LIVE_MEM_SWAN_BASELINE_TOL_MIN,
+    liveMemSwanTopN: process.env.LIVE_MEM_SWAN_TOP_N,
+    liveMemSwanMinRunnerV1hUsd: process.env.LIVE_MEM_SWAN_MIN_RUNNER_V1H_USD,
+    liveMemSwanMinRunners: process.env.LIVE_MEM_SWAN_MIN_RUNNERS,
+    liveMemSwanEwDropPct: process.env.LIVE_MEM_SWAN_EW_DROP_PCT,
+    liveMemSwanMaxStaleSec: process.env.LIVE_MEM_SWAN_MAX_STALE_SEC,
+    liveMemSwanResumeMin: process.env.LIVE_MEM_SWAN_RESUME_MIN,
+    liveMemSwanJournalEverySec: process.env.LIVE_MEM_SWAN_JOURNAL_EVERY_SEC,
 
     liveEntryNotionalUsd: optionalPositiveEnv('LIVE_ENTRY_NOTIONAL_USD'),
     liveEntryMinFreeMult: process.env.LIVE_ENTRY_MIN_FREE_MULT,

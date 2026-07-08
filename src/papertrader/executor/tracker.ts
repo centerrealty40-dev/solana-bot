@@ -229,6 +229,7 @@ import {
   recordPostHealChurnBlock,
 } from '../../live/policy-only-exits.js';
 import { isOscarHandoffClosedMint } from '../../live/copy-leader-attribution.js';
+import { runMemSwanLiquidationSweep } from '../../live/mem-swan-liquidate.js';
 import { tokenUsdFromBuyQuoteFitDecimals } from '../../live/phase5-gates.js';
 import { scheduleMtmShadowTrackerProbe } from '../../live/mtm-shadow.js';
 import {
@@ -2951,6 +2952,10 @@ export async function trackerForceFullExitLive(args: {
   onMintFullClose?: TrackerArgs['onMintFullClose'];
   mint: string;
   marketSell: number;
+  /** Exit reason to record (default `PERIODIC_HEAL`). Callers like mem-swan pass a policy-allowed reason. */
+  exitReason?: ExitReason;
+  /** When true, skip the LIVE_POLICY_ONLY_EXITS guard (defensive regime liquidation). */
+  bypassPolicyBlock?: boolean;
 }): Promise<boolean> {
   const {
     cfg,
@@ -2966,10 +2971,11 @@ export async function trackerForceFullExitLive(args: {
     mint,
     marketSell,
   } = args;
+  const reason: ExitReason = args.exitReason ?? 'PERIODIC_HEAL';
   const ot = open.get(mint);
   if (!ot || !(marketSell > 0)) return false;
   if (!livePhase4) return false;
-  if (livePolicyBlocksHealSyncSells(args.liveOscarCfg)) {
+  if (!args.bypassPolicyBlock && livePolicyBlocksHealSyncSells(args.liveOscarCfg)) {
     log.warn(
       { mint: mint.slice(0, 8), symbol: ot.symbol },
       'trackerForceFullExitLive blocked (LIVE_POLICY_ONLY_EXITS — no PERIODIC_HEAL on-chain sell)',
@@ -2996,7 +3002,7 @@ export async function trackerForceFullExitLive(args: {
     ot,
     marketSell,
     effectiveSell,
-    exitReason: 'PERIODIC_HEAL',
+    exitReason: reason,
     ageH,
     networkFeeUsdPerTx: perTxClose,
   });
@@ -3027,7 +3033,7 @@ export async function trackerForceFullExitLive(args: {
     ot,
     closePnlPct: ct.pnlPct,
     ageH,
-    exitReason: 'PERIODIC_HEAL',
+    exitReason: reason,
     curMetric: marketSell,
     xAvg,
     tpLadder,
@@ -3038,7 +3044,7 @@ export async function trackerForceFullExitLive(args: {
   clearExitPartialDeferForMint(mint);
   open.delete(mint);
   closed.push(ct);
-  if (stats.closed.PERIODIC_HEAL != null) stats.closed.PERIODIC_HEAL++;
+  if (stats.closed[reason] != null) stats.closed[reason]++;
   const mcUsdLive_close = await getLiveMcUsd(
     mint,
     ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
@@ -3055,7 +3061,7 @@ export async function trackerForceFullExitLive(args: {
     mcUsdLive: mcUsdLive_close,
     priorityFee: pfClose,
     exitContext: exitContextMain,
-    periodicHeal: true,
+    ...(reason === 'PERIODIC_HEAL' ? { periodicHeal: true } : {}),
     ...(liqWatchExit ? { liqWatch: liqWatchExit } : {}),
   });
   journalLiveStrategy?.({
@@ -3083,11 +3089,11 @@ export async function trackerForceFullExitLive(args: {
     ot.tokenDecimals ?? 6,
     marketSell,
     ot.source,
-    'PERIODIC_HEAL',
+    reason,
   );
   peakStateByMint.delete(mint);
   console.log(
-    `[PERIODIC_HEAL] ${mint.slice(0, 8)} $${ot.symbol} pnl_net=${ct.pnlPct >= 0 ? '+' : ''}${ct.pnlPct.toFixed(1)}% age=${ageH.toFixed(1)}h`,
+    `[${reason}] ${mint.slice(0, 8)} $${ot.symbol} pnl_net=${ct.pnlPct >= 0 ? '+' : ''}${ct.pnlPct.toFixed(1)}% age=${ageH.toFixed(1)}h`,
   );
   return true;
 }
@@ -3356,6 +3362,34 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
   if (args.processPresetCScalpDeferredEntries) {
     await args.processPresetCScalpDeferredEntries();
+  }
+
+  // Black-swan liquidation sweep: on the rising edge of a confirmed swan (top volume runners
+  // dumping deeply, fresh data) force-close every open position (or shadow-journal the list).
+  // Fires once per episode (rising edge consumed); cheap no-op otherwise.
+  if (liveOscarCfg?.executionMode === 'live' && liveOscarCfg.liveMemSwanEnabled) {
+    await runMemSwanLiquidationSweep({
+      liveCfg: liveOscarCfg,
+      open,
+      forceExitLive: async (openKey: string, marketSell: number) =>
+        trackerForceFullExitLive({
+          cfg,
+          open,
+          closed,
+          tpLadder,
+          stats,
+          btcCtx,
+          journalAppend,
+          journalLiveStrategy,
+          livePhase4,
+          liveOscarCfg,
+          onMintFullClose: args.onMintFullClose,
+          mint: openKey,
+          marketSell,
+          exitReason: 'KILLSTOP',
+          bypassPolicyBlock: true,
+        }),
+    });
   }
 
   if (open.size === 0) {
