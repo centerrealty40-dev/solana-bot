@@ -174,6 +174,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
         o.pairAddress != null && String(o.pairAddress).trim() ? String(o.pairAddress) : null,
       entryLiqUsd:
         typeof o.entryLiqUsd === 'number' && Number(o.entryLiqUsd) > 0 ? Number(o.entryLiqUsd) : null,
+      entryVol1hUsd:
+        typeof o.entryVol1hUsd === 'number' && Number(o.entryVol1hUsd) > 0 ? Number(o.entryVol1hUsd) : null,
       lastObservedPriceUsd:
         typeof o.lastObservedPriceUsd === 'number' && Number(o.lastObservedPriceUsd) > 0
           ? Number(o.lastObservedPriceUsd)
@@ -491,6 +493,10 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
     const ltvs = rawPayload.liveThinVolStreak;
     if (typeof ltvs === 'number' && Number.isFinite(ltvs) && ltvs >= 0) ot.liveThinVolStreak = ltvs;
     if (Boolean(rawPayload.liveThinVolFlushDone)) ot.liveThinVolFlushDone = true;
+    const vwb = rawPayload.volWatchBaselineUsd;
+    if (typeof vwb === 'number' && Number.isFinite(vwb) && vwb > 0) ot.volWatchBaselineUsd = vwb;
+    const vwc = rawPayload.volWatchCollapseSinceTs;
+    if (typeof vwc === 'number' && Number.isFinite(vwc) && vwc > 0) ot.volWatchCollapseSinceTs = vwc;
 
     const lepi = rawPayload.liveExitPolicyId;
     if (

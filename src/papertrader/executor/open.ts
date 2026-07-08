@@ -77,6 +77,8 @@ export function makeOpenTradeFromEntry(args: MakeOpenArgs): OpenTrade {
         : null,
     liveThinVolEntryVol5mUsd:
       typeof row.volume_5m === 'number' && Number(row.volume_5m) > 0 ? Number(row.volume_5m) : undefined,
+    entryVol1hUsd:
+      typeof row.volume_1h === 'number' && Number(row.volume_1h) > 0 ? Number(row.volume_1h) : null,
   };
   stampFlashKillLastBuyLeg(ot, marketPrice, ts);
   return ot;

@@ -80,6 +80,19 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
       ? { liveThinVolStreak: ot.liveThinVolStreak }
       : {}),
     ...(ot.liveThinVolFlushDone ? { liveThinVolFlushDone: true } : {}),
+    ...(typeof ot.entryVol1hUsd === 'number' && Number.isFinite(ot.entryVol1hUsd) && ot.entryVol1hUsd > 0
+      ? { entryVol1hUsd: ot.entryVol1hUsd }
+      : {}),
+    ...(typeof ot.volWatchBaselineUsd === 'number' &&
+    Number.isFinite(ot.volWatchBaselineUsd) &&
+    ot.volWatchBaselineUsd > 0
+      ? { volWatchBaselineUsd: ot.volWatchBaselineUsd }
+      : {}),
+    ...(typeof ot.volWatchCollapseSinceTs === 'number' &&
+    Number.isFinite(ot.volWatchCollapseSinceTs) &&
+    ot.volWatchCollapseSinceTs > 0
+      ? { volWatchCollapseSinceTs: ot.volWatchCollapseSinceTs }
+      : {}),
     ...(ot.liveExitPolicyId ? { liveExitPolicyId: ot.liveExitPolicyId } : {}),
     ...(typeof ot.liveWaveMaxExecutedTpFrac === 'number' &&
     Number.isFinite(ot.liveWaveMaxExecutedTpFrac)

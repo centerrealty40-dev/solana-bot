@@ -74,6 +74,11 @@ import {
   loadLiqWatchLiqUsd,
   refreshOpenTradeEntryLiqAfterDca,
 } from '../pricing/liq-watch.js';
+import {
+  evaluateVolCollapseState,
+  loadCurrentVol1hUsd,
+  refreshVolBaseline,
+} from '../pricing/vol-watch.js';
 import { applyEntryCosts, applyExitCosts, buildCloseCosts } from '../costs.js';
 import type {
   LiveBuyPipelineResult,
@@ -359,6 +364,8 @@ function exitReasonToPartialSellReason(exitReason: ExitReason): PartialSell['rea
     case 'TIMEOUT':
     case 'TIME_STOP':
       return 'TIMEOUT';
+    case 'VOL_COLLAPSE':
+      return 'THIN_VOL_FLUSH';
     case 'FLASH_CRASH_KILL':
       return 'FLASH_CRASH_KILL';
     case 'BREAKEVEN_EXIT':
@@ -798,8 +805,9 @@ function buildExitContext(args: {
   xAvg: number;
   tpLadder: TpLadderLevel[];
   liqDrop?: { dropPct: number; entryLiqUsd: number; currentLiqUsd: number; ageMs: number } | null;
+  volDrop?: { dropPct: number; baselineUsd: number; currentVolUsd: number; sustainedMs: number } | null;
 }): ExitContext {
-  const { cfg, ot, closePnlPct, ageH, exitReason, curMetric, xAvg, tpLadder, liqDrop } = args;
+  const { cfg, ot, closePnlPct, ageH, exitReason, curMetric, xAvg, tpLadder, liqDrop, volDrop } = args;
   const killEff = dcaKillstopEffective(ot, cfg);
   const peak = ot.peakPnlPct;
   const retraceFromPeakPct =
@@ -882,6 +890,14 @@ function buildExitContext(args: {
         triggerLabel = `liq drop ${liqDrop.dropPct.toFixed(1)}% ($${Math.round(liqDrop.entryLiqUsd).toLocaleString()} → $${Math.round(liqDrop.currentLiqUsd).toLocaleString()}, snapshot ${ageS}s old)`;
       } else {
         triggerLabel = `liq drain (no detail)`;
+      }
+      break;
+    case 'VOL_COLLAPSE':
+      if (volDrop) {
+        const sustainedH = (volDrop.sustainedMs / 3_600_000).toFixed(1);
+        triggerLabel = `vol collapse ${volDrop.dropPct.toFixed(1)}% ($${Math.round(volDrop.baselineUsd).toLocaleString()} → $${Math.round(volDrop.currentVolUsd).toLocaleString()} 1h vol, sustained ${sustainedH}h)`;
+      } else {
+        triggerLabel = `vol collapse (no detail)`;
       }
       break;
     case 'FLASH_CRASH_KILL':
@@ -4241,6 +4257,182 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           kind: 'liq_watch_tick',
           mint,
           verdict,
+        });
+      }
+    }
+
+    // ----- VOL_COLLAPSE — rolling-volume drain watch (sibling of LIQ_DRAIN) -----
+    if (cfg.volWatchEnabled && ot.pairAddress) {
+      const positionAgeMsVol = Math.max(0, Date.now() - ot.entryTs);
+      const volLoad = await loadCurrentVol1hUsd({
+        pairAddress: ot.pairAddress,
+        source: ot.source as DexSource,
+        cfg,
+      });
+      const baselineSeed = ot.volWatchBaselineUsd ?? ot.entryVol1hUsd ?? null;
+      const baselineUsd = refreshVolBaseline(baselineSeed, volLoad.volUsd);
+      ot.volWatchBaselineUsd = baselineUsd;
+      const volVerdict = evaluateVolCollapseState({
+        cfg,
+        baselineUsd,
+        currentVolUsd: volLoad.volUsd,
+        collapseSinceTs: ot.volWatchCollapseSinceTs ?? null,
+        positionAgeMs: positionAgeMsVol,
+      });
+      ot.volWatchCollapseSinceTs = volVerdict.collapseSinceTs;
+      if (volVerdict.kind !== 'skipped' && volVerdict.currentVolUsd != null) {
+        ot.volWatchLastVolUsd = volVerdict.currentVolUsd;
+        ot.volWatchLastDropPct = volVerdict.dropPct ?? null;
+      }
+
+      if (volVerdict.kind === 'force-close' && cfg.volWatchForceClose) {
+        const rawPx =
+          ot.lastObservedPriceUsd ??
+          ot.legs[0]?.marketPrice ??
+          ot.avgEntryMarket ??
+          ot.avgEntry ??
+          0;
+        const marketSell = Number(rawPx) > 0 ? Number(rawPx) : ot.avgEntry > 0 ? ot.avgEntry : 0;
+        const investedRemaining = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
+        const { effectivePrice: effectiveSell } = applyExitCosts(
+          cfg,
+          marketSell,
+          ot.dex,
+          Math.max(1, investedRemaining),
+          null,
+        );
+        const exitSwaps = await fetchContextSwaps(cfg, mint, Date.now());
+        const pfClose = getPriorityFeeUsd(cfg, getSolUsd() ?? 0);
+        const perTxClose = pfClose.usd > 0 ? pfClose.usd : cfg.networkFeeUsd;
+        const ct = buildClosedTrade({
+          cfg,
+          ot,
+          marketSell,
+          effectiveSell,
+          exitReason: 'VOL_COLLAPSE',
+          ageH,
+          networkFeeUsdPerTx: perTxClose,
+        });
+        let volSellOut: LiveTokenToSolSellResult = { ok: true };
+        if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
+          volSellOut = await livePhase4.tryTokenToSolSell({
+            mint,
+            symbol: ot.symbol,
+            usdNotional: investedRemaining,
+            priceUsdPerToken: marketSell,
+            referencePriceUsd: liveSellReferencePriceUsd(ot),
+            decimals: ot.tokenDecimals ?? 6,
+            intentKind: 'sell_full',
+          });
+          if (!volSellOut.ok) continue;
+        }
+        applyLiveFullCloseProceedsFromChain({
+          ct,
+          ot,
+          cfg,
+          sellOut: volSellOut,
+          marketSell,
+          networkFeeUsdPerTx: perTxClose,
+        });
+        stampFullExitTxSignature(ct, volSellOut);
+        const volDrop = {
+          dropPct: volVerdict.dropPct,
+          baselineUsd: volVerdict.baselineUsd,
+          currentVolUsd: volVerdict.currentVolUsd,
+          sustainedMs: volVerdict.sustainedMs,
+        };
+        const exitContext = buildExitContext({
+          cfg: effCfg,
+          ot,
+          closePnlPct: ct.pnlPct,
+          ageH,
+          exitReason: 'VOL_COLLAPSE',
+          curMetric: marketSell,
+          xAvg: ot.avgEntry > 0 ? marketSell / ot.avgEntry : 1,
+          tpLadder,
+          volDrop,
+        });
+        ct.exitContext = exitContext;
+        clearExitCloseDeferForMint(mint);
+        clearExitPartialDeferForMint(mint);
+        open.delete(openKey);
+        closed.push(ct);
+        stats.closed.VOL_COLLAPSE++;
+        const mcUsdLive_close = await getLiveMcUsd(
+          mint,
+          ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,
+        );
+        journalAppend({
+          kind: 'close',
+          ...ct,
+          peak_pnl_pct: +ot.peakPnlPct.toFixed(2),
+          btc_exit: btcCtx(),
+          exit_market_price: marketSell,
+          exit_effective_price: ct.effective_exit_price,
+          exit_swaps: exitSwaps,
+          mcUsdLive: mcUsdLive_close,
+          priorityFee: pfClose,
+          exitContext,
+          volWatch: {
+            source: volLoad.from,
+            baselineUsd: volVerdict.baselineUsd,
+            entryVol1hUsd: ot.entryVol1hUsd ?? null,
+            currentVolUsd: volVerdict.currentVolUsd,
+            dropPct: volVerdict.dropPct,
+            sustainedMs: volVerdict.sustainedMs,
+            ageMs: volLoad.ageMs,
+            ts: volVerdict.ts,
+          },
+        });
+        journalLiveStrategy?.({
+          kind: 'live_position_close',
+          mint,
+          closedTrade: serializeClosedTrade(ct),
+        });
+        afterFullCloseReentryGate(args, cfg, ct);
+        hookLiveWhitelistAfterFullClose(
+          liveOscarCfg,
+          cfg,
+          mint,
+          ot.symbol,
+          ct.netPnlUsd,
+          ot.liveMintFirstProbe === true,
+          ot.liveMintFirstProbeKillDropPct ?? ot.liveStagedEntry?.killDropPct,
+          ot.liveVariantAExitTag,
+          ot,
+          ct.effective_exit_price > 0 ? ct.effective_exit_price : ct.theoretical_exit_price,
+        );
+        scheduleTailAfterLiveClose(
+          liveOscarCfg,
+          mint,
+          ot.symbol,
+          ot.tokenDecimals ?? 6,
+          marketSell,
+          ot.source,
+          'VOL_COLLAPSE',
+        );
+        peakStateByMint.delete(mint);
+        console.log(
+          `[VOL_COLLAPSE] ${mint.slice(0, 8)} $${ot.symbol} drop=${volVerdict.dropPct.toFixed(1)}% vol1h=$${volVerdict.currentVolUsd.toFixed(0)} sustained=${(volVerdict.sustainedMs / 3_600_000).toFixed(1)}h`,
+        );
+        continue;
+      } else if (volVerdict.kind === 'force-close' && !cfg.volWatchForceClose) {
+        log.warn(
+          {
+            mint: mint.slice(0, 8),
+            dropPct: volVerdict.dropPct,
+            currentVolUsd: volVerdict.currentVolUsd,
+            sustainedH: +(volVerdict.sustainedMs / 3_600_000).toFixed(2),
+          },
+          'vol-watch force-close suppressed (shadow)',
+        );
+      }
+
+      if (cfg.volWatchStampOnTrack) {
+        journalAppend({
+          kind: 'vol_watch_tick',
+          mint,
+          verdict: volVerdict,
         });
       }
     }
