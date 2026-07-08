@@ -285,11 +285,12 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.554 — prod ≥$3M: 4×$1000 entry split @10s (+3/−5% corridor); avg −10% $1500, −20% $2000; max $7500.
  * 1.11.555 — prod ≥$3M: 3×$1000 entry split @10s (+3/−5% corridor); avg −10% $1000, −20% $1000; max $5000.
  * 1.11.555 — low $2M–$3M: 2×$1000 @ 10s (+3/−5% corridor), avg −10% $500 + −20% $500 (max $3000); prod unchanged below.
+ * 1.11.563 — prod from $2M (low/micro OFF): 6×$500 entry split @10s (+3/−5% corridor); avg −10% $500, −20% $1000; max $4500; no DCA/scale-in.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
 const LIVE_OSCAR_ENTRY_SPLIT_USD = '3000';
-const LIVE_OSCAR_MAX_POSITION_USD = '5000';
+const LIVE_OSCAR_MAX_POSITION_USD = '4500';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -722,18 +723,18 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.555 — prod ≥$3M: 3×$1000 entry split @10s (+3/−5% corridor); avg −10% $1000, −20% $1000; max $5000.
+         * 1.11.563 — prod from $2M (low lane OFF): 6×$500 entry split @10s (+3/−5% corridor); avg −10% $500, −20% $1000; max $4500.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
         PAPER_LIVE_STAGED_ENTRY_ENABLED: '1',
         PAPER_LIVE_STAGED_ENTRY_FIRST_DROP_PCT: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '1000',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '1000',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '1000',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG2_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG3_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD: '0',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
@@ -750,9 +751,9 @@ const PM2_APPS = [
          */
         PAPER_LIVE_STAGED_AVG_MAX_AGE_MS: '14400000',
         PAPER_LIVE_STAGED_AVG_MAX_DEPTH_PCT: '20',
-        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '1000',
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '1000',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
@@ -828,8 +829,7 @@ const PM2_APPS = [
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.95',
         /**
-         * Discovery SQL pool: от $2M (min tradeable mcap). Prod — mcap ≥ $3M; low $2M–$3M.
-         * Micro/scalp_wave lanes disabled (1.11.500).
+         * Discovery SQL pool: от $2M (min tradeable mcap). Low/micro/scalp_wave/runner lanes OFF — единый prod tier ≥$2M.
          */
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
         /** Не сканировать discovery pool / eval для mcap > $500M (экономия PG/CPU). Открытые позиции — исключение. */
@@ -839,7 +839,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_MIN_USD: '500000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '60000',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '100000',
         /** 1.11.516 — micro (lane OFF): 2×$150 entry; avg −10% $210 (max staged $510); TP2 = global DIP10_FIRST_TP5. */
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '150',
@@ -853,7 +853,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
-        PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '60000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '100000',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '1000',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '1000',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '0',
@@ -873,7 +873,7 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MIN_DROP_PCT: '-15',
         PAPER_LIVE_OSCAR_SCALP_WAVE_DIP_MAX_DROP_PCT: '-8',
         PAPER_LIVE_OSCAR_SCALP_WAVE_MIN_IMPULSE_PCT: '8',
-        PAPER_LIVE_OSCAR_SCALP_WAVE_VOL_1H_MIN_USD: '60000',
+        PAPER_LIVE_OSCAR_SCALP_WAVE_VOL_1H_MIN_USD: '100000',
         PAPER_LIVE_OSCAR_SCALP_WAVE_POSITION_USD: '300',
         PAPER_LIVE_OSCAR_SCALP_WAVE_MAX_CONCURRENT: '3',
         PAPER_LIVE_OSCAR_SCALP_WAVE_TP_PCT: '0.1',
@@ -892,8 +892,8 @@ const PM2_APPS = [
         PAPER_RUNNER_PROBE_DIP_MIN_DROP_PCT: '-20',
         PAPER_RUNNER_PROBE_DIP_MAX_DROP_PCT: '-45',
         PAPER_RUNNER_PROBE_MIN_IMPULSE_PCT: '12',
-        PAPER_RUNNER_PROBE_VOL_1H_MIN_USD: '60000',
-        PAPER_RUNNER_PROBE_MIN_VOL_1H_USD: '60000',
+        PAPER_RUNNER_PROBE_VOL_1H_MIN_USD: '100000',
+        PAPER_RUNNER_PROBE_MIN_VOL_1H_USD: '100000',
         PAPER_RUNNER_PROBE_MIN_VOL_12H_USD: '400000',
         PAPER_RUNNER_PROBE_VELOCITY_MIN_X: '1.5',
         PAPER_RUNNER_PROBE_MIN_VOL_5M_PEAK_1H_USD: '20000',
@@ -925,8 +925,8 @@ const PM2_APPS = [
         PAPER_RUNNER_LITE_DIP_MIN_DROP_PCT: '-20',
         PAPER_RUNNER_LITE_DIP_MAX_DROP_PCT: '-45',
         PAPER_RUNNER_LITE_MIN_IMPULSE_PCT: '10',
-        PAPER_RUNNER_LITE_VOL_1H_MIN_USD: '60000',
-        PAPER_RUNNER_LITE_MIN_VOL_1H_USD: '60000',
+        PAPER_RUNNER_LITE_VOL_1H_MIN_USD: '100000',
+        PAPER_RUNNER_LITE_MIN_VOL_1H_USD: '100000',
         PAPER_RUNNER_LITE_MIN_VOL_12H_USD: '200000',
         PAPER_RUNNER_LITE_VELOCITY_MIN_X: '1.0',
         PAPER_RUNNER_LITE_MIN_VOL_5M_PEAK_1H_USD: '10000',
@@ -952,8 +952,8 @@ const PM2_APPS = [
         PAPER_PERVYY_VYSTREL_ANCHOR_MIN_MCAP_USD: '100000',
         PAPER_PERVYY_VYSTREL_ANCHOR_MAX_MCAP_USD: '250000',
         PAPER_PERVYY_VYSTREL_ENTRY_MAX_MCAP_USD: '1000000',
-        PAPER_PERVYY_VYSTREL_MIN_VOL_1H_USD: '45000',
-        PAPER_PERVYY_VYSTREL_SURVEILLANCE_MIN_VOL_1H_USD: '45000',
+        PAPER_PERVYY_VYSTREL_MIN_VOL_1H_USD: '100000',
+        PAPER_PERVYY_VYSTREL_SURVEILLANCE_MIN_VOL_1H_USD: '100000',
         PAPER_PERVYY_VYSTREL_MIN_AGE_MIN: '360',
         PAPER_PERVYY_VYSTREL_MAX_AGE_MIN: '2880',
         PAPER_PERVYY_VYSTREL_DUMP_MIN_PCT: '40',
@@ -1018,11 +1018,11 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '100000',
         /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '5000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '5000',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '4500',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '4500',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
-        /** 1.11.476: 36000→35000 (owner approved volume expansion; prod tier vol 25000 unchanged). */
-        PAPER_VOL_1H_MIN_USD: '60000',
+        /** Global vol1h floor — no buys below $100k/h (all tiers). */
+        PAPER_VOL_1H_MIN_USD: '100000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         /** `0` — без порога по holders в globalGate / dip-clones (код не трогаем). */
         PAPER_MIN_HOLDER_COUNT: '0',
@@ -1343,7 +1343,7 @@ const PM2_APPS = [
          */
         PAPER_RUNNER_MODE_ENABLED: '0',
         PAPER_RUNNER_MIN_PG_SAMPLES_24H: '36',
-        PAPER_RUNNER_MIN_VOL_1H_USD: '60000',
+        PAPER_RUNNER_MIN_VOL_1H_USD: '100000',
         PAPER_RUNNER_MIN_VOL_12H_USD: '400000',
         PAPER_RUNNER_VELOCITY_MIN_X: '1.5',
         PAPER_RUNNER_MIN_VOL_5M_PEAK_1H_USD: '20000',
