@@ -36,6 +36,13 @@ import {
   shouldForceCloseJournalZeroChainTail,
   WALLET_RECONCILE_REMAINING_EPS,
 } from './wallet-balance-exit-reconcile.js';
+import {
+  liveHotTickProbeQuoteSanity,
+} from './sell-price-sanity.js';
+import {
+  buildHotTickPriceAnchors,
+  summarizeHotTickAnchorChecks,
+} from './hot-tick-price-anchors.js';
 
 const log = child('open-position-hot-tick');
 
@@ -285,6 +292,39 @@ export function startLiveOpenPositionHotTick(ctx: LiveOpenPositionHotTickContext
             userPublicKey: pk,
           });
           if (!probe) continue;
+
+          const anchors = await buildHotTickPriceAnchors({ mint, ot, paperCfg });
+          const probeSanity = liveHotTickProbeQuoteSanity({
+            quotePriceUsd: probe.sellUsd,
+            anchors,
+          });
+          if (!probeSanity.ok) {
+            const anchorSummary = summarizeHotTickAnchorChecks(probeSanity.anchorChecks);
+            appendLiveJsonlEvent({
+              kind: 'live_hot_tick_quote_reject',
+              mint,
+              quotePriceUsd: probe.sellUsd,
+              matchedAnchor: null,
+              anchorChecks: probeSanity.anchorChecks,
+              observedRefUsd: anchorSummary.observedRefUsd,
+              shyftRefUsd: anchorSummary.shyftRefUsd,
+              pgRefUsd: anchorSummary.pgRefUsd,
+              dexRefUsd: anchorSummary.dexRefUsd,
+              probeTokenRaw: probe.tokenRaw,
+              quoteAgeMs: probe.quoteAgeMs,
+            });
+            log.warn(
+              {
+                mint: mint.slice(0, 8),
+                symbol: ot.symbol,
+                quotePriceUsd: probe.sellUsd,
+                anchorChecks: probeSanity.anchorChecks,
+              },
+              'hot tick: rejected ghost sell probe (cross-check vs independent anchors)',
+            );
+            continue;
+          }
+
           setOpenPositionExecSellUsd(mint, {
             mint,
             sellUsdPerToken: probe.sellUsd,

@@ -92,9 +92,14 @@ import type {
 } from '../../live/phase4-types.js';
 import {
   isGhostMtmExitTick,
+  liveHotTickProbeQuoteSanity,
   resolveLiveSellReferencePriceUsd,
   resolveObservedPriceUsdForJournal,
 } from '../../live/sell-price-sanity.js';
+import {
+  collectTrackerHotTickAnchors,
+  summarizeHotTickAnchorChecks,
+} from '../../live/hot-tick-price-anchors.js';
 import { fetchContextSwaps } from './context-swaps.js';
 import {
   collectFiredLadderPnls,
@@ -3964,33 +3969,34 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (liveOscarCfg && isOpenPositionExecSellFresh(mint, liveOscarCfg.liveOpenHotExecPriceMaxAgeMs)) {
       const execSell = getOpenPositionExecSellUsd(mint);
       if (execSell != null && execSell > 0) {
-        const refPx =
-          ot.lastObservedPriceUsd != null && ot.lastObservedPriceUsd > 0
-            ? ot.lastObservedPriceUsd
-            : ot.avgEntryMarket > 0
-              ? ot.avgEntryMarket
-              : ot.avgEntry;
-        if (refPx > 0) {
-          const ratio = execSell / refPx;
-          if (ratio >= 0.25 && ratio <= 4) {
-            curMetric = execSell;
-            ot.liveFlashLastJupiterPx = execSell;
-          } else {
-            log.warn(
-              {
-                mint: mint.slice(0, 8),
-                symbol: ot.symbol,
-                execSellUsd: execSell,
-                refPxUsd: refPx,
-                ratio,
-              },
-              'live tracker: ignoring ghost hot-tick exec sell price',
-            );
-            clearOpenPositionExecSellUsd(mint);
-          }
-        } else {
+        const execSanity = liveHotTickProbeQuoteSanity({
+          quotePriceUsd: execSell,
+          anchors: collectTrackerHotTickAnchors({
+            lastObservedPriceUsd: ot.lastObservedPriceUsd,
+            avgEntryMarket: ot.avgEntryMarket,
+            avgEntry: ot.avgEntry,
+            tickMtmUsd: snapPx > 0 ? snapPx : null,
+            shyftStreamRefUsd: getShyftShadowStreamPrice(mint)?.priceUsd ?? null,
+          }),
+        });
+        if (execSanity.ok) {
           curMetric = execSell;
           ot.liveFlashLastJupiterPx = execSell;
+        } else {
+          const anchorSummary = summarizeHotTickAnchorChecks(execSanity.anchorChecks);
+          log.warn(
+            {
+              mint: mint.slice(0, 8),
+              symbol: ot.symbol,
+              execSellUsd: execSell,
+              anchorChecks: execSanity.anchorChecks,
+              observedRefUsd: anchorSummary.observedRefUsd,
+              pgRefUsd: anchorSummary.pgRefUsd,
+              dexRefUsd: anchorSummary.dexRefUsd,
+            },
+            'live tracker: ignoring ghost hot-tick exec sell price',
+          );
+          clearOpenPositionExecSellUsd(mint);
         }
       }
     }

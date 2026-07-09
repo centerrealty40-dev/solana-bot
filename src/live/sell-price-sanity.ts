@@ -43,6 +43,81 @@ export type LiveSellQuoteSanityResult =
       deviationFrac: number;
     };
 
+export type LiveHotTickAnchorKind =
+  | 'observed'
+  | 'entry_market'
+  | 'entry_avg'
+  | 'pg_snapshot'
+  | 'dex_quote'
+  | 'tick_mtm'
+  | 'shyft';
+
+export interface LiveHotTickPriceAnchor {
+  kind: LiveHotTickAnchorKind;
+  priceUsd: number;
+}
+
+export interface LiveHotTickAnchorCheck {
+  kind: LiveHotTickAnchorKind;
+  priceUsd: number;
+  deviationFrac: number;
+}
+
+export type LiveHotTickProbeSanityResult =
+  | { ok: true; matchedAnchor: LiveHotTickAnchorKind | 'floor_only' }
+  | {
+      ok: false;
+      reason: 'ghost_price_quote_rejected';
+      quotePriceUsd: number;
+      anchorChecks: LiveHotTickAnchorCheck[];
+    };
+
+/**
+ * Hot-tick sell probe must agree with at least one independent anchor.
+ * Shyft is optional — PG / Dex / lastObserved carry the gate when stream is off.
+ */
+export function liveHotTickProbeQuoteSanity(args: {
+  quotePriceUsd: number;
+  anchors: LiveHotTickPriceAnchor[];
+  maxDeviationFrac?: number;
+}): LiveHotTickProbeSanityResult {
+  const maxDev = args.maxDeviationFrac ?? LIVE_SELL_GHOST_QUOTE_MAX_DEVIATION_FRAC;
+  const quotePriceUsd = args.quotePriceUsd;
+  if (!liveSellPriceUsdSane(quotePriceUsd)) {
+    return {
+      ok: false,
+      reason: 'ghost_price_quote_rejected',
+      quotePriceUsd,
+      anchorChecks: [],
+    };
+  }
+
+  const anchors = args.anchors.filter((a) => a.priceUsd > 0 && Number.isFinite(a.priceUsd));
+  if (anchors.length === 0) {
+    return { ok: true, matchedAnchor: 'floor_only' };
+  }
+
+  const anchorChecks: LiveHotTickAnchorCheck[] = [];
+  for (const anchor of anchors) {
+    const deviationFrac = Math.abs(quotePriceUsd - anchor.priceUsd) / anchor.priceUsd;
+    anchorChecks.push({
+      kind: anchor.kind,
+      priceUsd: anchor.priceUsd,
+      deviationFrac,
+    });
+    if (deviationFrac <= maxDev + 1e-12) {
+      return { ok: true, matchedAnchor: anchor.kind };
+    }
+  }
+
+  return {
+    ok: false,
+    reason: 'ghost_price_quote_rejected',
+    quotePriceUsd,
+    anchorChecks,
+  };
+}
+
 export function liveSellQuotePriceSanity(args: {
   quotePriceUsd: number;
   referencePriceUsd?: number | null;
