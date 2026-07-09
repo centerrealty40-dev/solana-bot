@@ -291,6 +291,16 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
                 avgFirstLegDone: Boolean(p.avgFirstLegDone ?? p.secondLegDone),
                 avgSecondLegDone: Boolean(p.avgSecondLegDone ?? p.thirdLegDone),
                 avgFirstLegTs: Number.isFinite(Number(p.avgFirstLegTs)) ? Number(p.avgFirstLegTs) : undefined,
+                avgSplitV2: Boolean(p.avgSplitV2),
+                avgSplitLeg2Usd: Number.isFinite(Number(p.avgSplitLeg2Usd)) ? Number(p.avgSplitLeg2Usd) : undefined,
+                avgSplitLeg3Usd: Number.isFinite(Number(p.avgSplitLeg3Usd)) ? Number(p.avgSplitLeg3Usd) : undefined,
+                avgSplitLeg4Usd: Number.isFinite(Number(p.avgSplitLeg4Usd)) ? Number(p.avgSplitLeg4Usd) : undefined,
+                avgSplitLeg2Done: Boolean(p.avgSplitLeg2Done),
+                avgSplitLeg3Done: Boolean(p.avgSplitLeg3Done),
+                avgSplitLeg4Done: Boolean(p.avgSplitLeg4Done),
+                avgSplitLeg2Ts: Number.isFinite(Number(p.avgSplitLeg2Ts)) ? Number(p.avgSplitLeg2Ts) : undefined,
+                avgSplitLeg3Ts: Number.isFinite(Number(p.avgSplitLeg3Ts)) ? Number(p.avgSplitLeg3Ts) : undefined,
+                avgSplitLeg4Ts: Number.isFinite(Number(p.avgSplitLeg4Ts)) ? Number(p.avgSplitLeg4Ts) : undefined,
               }
             : {}),
         };
@@ -508,7 +518,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       lepi === 'scalp_wave_v1' ||
       lepi === 'runner_probe_v1' ||
       lepi === 'runner_lite_v1' ||
-      lepi === 'preset_c_scalp_v1'
+      lepi === 'preset_c_scalp_v1' ||
+      lepi === 'fast_dip_scalp_v1'
     ) {
       ot.liveExitPolicyId = lepi;
     }
@@ -517,7 +528,13 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveOscarMcapTier = lomt;
     }
     const lotl = rawPayload.liveOscarTradeLane;
-    if (lotl === 'prod' || lotl === 'scalp_wave' || lotl === 'runner_probe' || lotl === 'runner_lite') {
+    if (
+      lotl === 'prod' ||
+      lotl === 'scalp_wave' ||
+      lotl === 'runner_probe' ||
+      lotl === 'runner_lite' ||
+      lotl === 'fast_dip_scalp'
+    ) {
       ot.liveOscarTradeLane = lotl;
     }
     const ps = rawPayload.positionSource;
