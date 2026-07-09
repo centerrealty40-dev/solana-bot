@@ -17,6 +17,8 @@ import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
+  stagedAvgSplitLeg1Eligible,
+  avgSplitTimedLegEligible,
   stagedAvgAveragingUpBlocked,
   stagedAvgDownhillAddBlocked,
   reconcileEntrySplitV2FromLegs,
@@ -25,7 +27,15 @@ import {
   entrySplitTimedLegEligible,
   entrySplitCorridorBlocked,
   cancelPendingEntrySplitLegs,
+  cancelPendingAvgSplitLegs,
 } from './live-staged-entry-gates.js';
+import {
+  avgSplitLegDoneFromState,
+  avgSplitLegUsdFromState,
+  setAvgSplitLegDone,
+  setAvgSplitLegTs,
+  type AvgSplitLegIndex,
+} from '../avg-split-legs.js';
 import {
   entrySplitLegDoneFromState,
   entrySplitLegUsdFromState,
@@ -168,6 +178,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
 
   if (entrySplitCorridorBlocked(args.ot)) {
     cancelPendingEntrySplitLegs(st);
+    cancelPendingAvgSplitLegs(st);
   } else {
     for (const legIndex of entrySplitTimedLegIndices()) {
       const legUsd = entrySplitLegUsdFromState(st, legIndex);
@@ -250,6 +261,76 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
       mint: args.mint,
       detail: { symbol: args.ot.symbol, why: downhillAdd.reason, signalDropPct: +signalDropPct.toFixed(2) },
     });
+    return;
+  }
+
+  const avgSplitLegCount = st.avgSplitV2
+    ? ([1, 2, 3, 4] as const).filter((i) => avgSplitLegUsdFromState(st, i) > 0).length
+    : 0;
+
+  const fireAvgSplitLeg = async (legIndex: AvgSplitLegIndex, legUsd: number, triggerPct: number) => {
+    const ok = await pushBuyLeg({
+      cfg: args.cfg,
+      ot: args.ot,
+      mint: args.mint,
+      addUsd: legUsd,
+      marketBuy: stagedAvgPx,
+      reason: 'staged_avg',
+      triggerPct,
+      livePhase4: args.livePhase4,
+      journalAppend: args.journalAppend,
+      journalLiveStrategy: args.journalLiveStrategy,
+      timelineLabelRu: stagedAvgTimelineLabel({
+        which: 1,
+        usd: legUsd,
+        signalDropPct,
+        drop7,
+        drop14: drop14 ?? 14,
+        sliceIndex: st.avgSplitV2 ? legIndex : undefined,
+        sliceTotal: st.avgSplitV2 ? avgSplitLegCount : undefined,
+      }),
+      logTag: legIndex === 1 ? 'STAGED_AVG_1' : `STAGED_AVG_SPLIT_${legIndex}`,
+    });
+    if (ok) {
+      setAvgSplitLegDone(st, legIndex, true);
+      setAvgSplitLegTs(st, legIndex, now);
+      if (legIndex === 1) {
+        st.secondLegDone = true;
+        cancelPendingEntrySplitLegs(st);
+      }
+    }
+    return ok;
+  };
+
+  if (st.avgSplitV2) {
+    if (entrySplitCorridorBlocked(args.ot)) {
+      cancelPendingAvgSplitLegs(st);
+      return;
+    }
+    for (let i = 1; i <= 4; i++) {
+      const legIndex = i as AvgSplitLegIndex;
+      const legUsd = avgSplitLegUsdFromState(st, legIndex);
+      if (legUsd <= 0 || avgSplitLegDoneFromState(st, legIndex)) continue;
+      if (legIndex > 1 && !avgSplitLegDoneFromState(st, (legIndex - 1) as AvgSplitLegIndex)) continue;
+
+      let eligible = false;
+      let triggerPct = -drop7 / 100;
+      if (legIndex === 1) {
+        eligible = stagedAvgSplitLeg1Eligible({ st, signalDropPct, nowMs: now });
+      } else {
+        const leg = avgSplitTimedLegEligible({
+          st,
+          nowMs: now,
+          entrySplitPx: stagedAvgPx,
+          anchorUsd: anchor,
+          legIndex,
+        });
+        eligible = leg.ok;
+        triggerPct = leg.triggerPct;
+      }
+      if (!eligible || !(drop7 > 0)) continue;
+      await fireAvgSplitLeg(legIndex, legUsd, triggerPct);
+    }
     return;
   }
 

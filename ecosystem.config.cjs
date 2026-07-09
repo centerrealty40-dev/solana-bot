@@ -285,6 +285,9 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.554 — prod ≥$3M: 4×$1000 entry split @10s (+3/−5% corridor); avg −10% $1500, −20% $2000; max $7500.
  * 1.11.555 — prod ≥$3M: 3×$1000 entry split @10s (+3/−5% corridor); avg −10% $1000, −20% $1000; max $5000.
  * 1.11.555 — low $2M–$3M: 2×$1000 @ 10s (+3/−5% corridor), avg −10% $500 + −20% $500 (max $3000); prod unchanged below.
+ * 1.11.568 — prod avg @ −10%: 3×$500 slices; −20% avg OFF; −10% = 50% entry-split; LOW lane ON 2×$500.
+ * 1.11.567 — avg @ −10% = 50% of tier entry-split total (all strategies); prod max $4500; Lera max $750.
+ * 1.11.566 — prod+low+micro: avg −10% only; −20% second avg leg OFF all tiers; max prod $3500, low $1500.
  * 1.11.563 — prod from $2M (low/micro OFF): 6×$500 entry split @10s (+3/−5% corridor); avg −10% $500, −20% $1000; max $4500; no DCA/scale-in.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
@@ -723,7 +726,7 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.563 — prod from $2M (low lane OFF): 6×$500 entry split @10s (+3/−5% corridor); avg −10% $500, −20% $1000; max $4500.
+         * 1.11.566 — prod ≥$3M + LOW $2M–$3M: prod 6×$500 + avg −10% $500; LOW 2×$500 + avg −10% $500.
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
@@ -753,9 +756,10 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_AVG_MAX_DEPTH_PCT: '20',
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '500',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '20',
-        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '1000',
+        /** avg @ −10%: resolver = 50% of entry-split total ($1500 on 6×$500). Env is legacy/doc. */
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '1500',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
+        PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
         PAPER_LIVE_STAGED_ENTRY_KILL_DROP_PCT: '50',
         PAPER_LIVE_STAGED_ENTRY_SIGNAL_TTL_MS: '0',
@@ -829,7 +833,7 @@ const PM2_APPS = [
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.95',
         /**
-         * Discovery SQL pool: от $2M (min tradeable mcap). Low/micro/scalp_wave/runner lanes OFF — единый prod tier ≥$2M.
+         * Discovery SQL pool: от $2M (LOW lane ON). Prod ≥$3M; LOW $2M–$3M.
          */
         PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
         /** Не сканировать discovery pool / eval для mcap > $500M (экономия PG/CPU). Открытые позиции — исключение. */
@@ -840,30 +844,29 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_MAX_USD: '1300000',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_MICRO_MCAP_VOL_1H_MIN_USD: '100000',
-        /** 1.11.516 — micro (lane OFF): 2×$150 entry; avg −10% $210 (max staged $510); TP2 = global DIP10_FIRST_TP5. */
+        /** 1.11.567 — micro (lane OFF): 2×$150 entry; avg −10% = 50% entry ($150); max $450. */
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_ENTRY_SPLIT_LEG2_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_POSITION_USD: '300',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '210',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.555 — low $2M–$3M: 2×$1000 @ 10s (+3/−5% corridor), avg −10% $500 + −20% $500 (max $3000); TP2 = global DIP10_FIRST_TP5. */
-        /** Low $2M–$3M lane OFF — prod-only from $2M (LERA parity; runner/micro/scalp_wave also OFF). */
-        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '0',
+        /** 1.11.565 — LOW $2M–$3M ON: 2×$500 @ 10s (+3/−5%), avg −10% = 50% entry ($500, max $1500); dip −30%. */
+        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
         PAPER_LIVE_OSCAR_LOW_MCAP_VOL_1H_MIN_USD: '100000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '1000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '1000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG_USD: '500',
+        PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG2_USD: '500',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG3_USD: '0',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG4_USD: '0',
         PAPER_LIVE_OSCAR_LOW_MCAP_ENTRY_SPLIT_LEG5_USD: '0',
-        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '2000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_POSITION_USD: '1000',
         PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_LEG_USD: '500',
-        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_DROP_PCT: '20',
-        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_LEG_USD: '500',
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_DROP_PCT: '0',
+        PAPER_LIVE_OSCAR_LOW_MCAP_STAGED_AVG_SECOND_LEG_USD: '0',
         PAPER_LIVE_OSCAR_LOW_MCAP_DCA_LEVELS: '',
         /** 1.11.500 — scalp_wave lane OFF. */
         PAPER_LIVE_OSCAR_SCALP_WAVE_LANE_ENABLED: '0',
@@ -939,7 +942,7 @@ const PM2_APPS = [
         PAPER_RUNNER_LITE_MIN_PG_SAMPLES_24H: '24',
         /** runner_lite: hard intel gate when tier gates pass (same as runner_probe). */
         LIVE_OSCAR_INTEL_MODE_RUNNER_LITE: 'gate',
-        /** Tier «Первый выстрел» — OFF for prod-only LERA parity ($2M SQL floor).
+        /** Tier «Первый выстрел» — OFF for prod-only LERA parity ($3M SQL floor).
          *  shadow widens discovery SQL to anchorMinMcap $100k → eval storm + discovery tick timeout. */
         PAPER_PERVYY_VYSTREL_ENABLED: '0',
         PAPER_PERVYY_VYSTREL_MODE: 'off',

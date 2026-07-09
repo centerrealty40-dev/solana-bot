@@ -149,13 +149,19 @@ export function stagedAvgTimelineLabel(args: {
   signalDropPct: number;
   drop7: number;
   drop14: number;
+  sliceIndex?: number;
+  sliceTotal?: number;
 }): string {
-  const { which, usd, signalDropPct, drop7, drop14 } = args;
+  const { which, usd, signalDropPct, drop7, drop14, sliceIndex, sliceTotal } = args;
   const dropStr = signalDropPct.toFixed(2);
+  const sliceSuffix =
+    sliceIndex != null && sliceTotal != null && sliceTotal > 1
+      ? ` · slice ${sliceIndex}/${sliceTotal}`
+      : '';
   if (which === 1) {
-    return `Усреднение · 1-е: ${fmtUsd(usd)} при ${dropStr}% от сигнала (зона −${fmtDropPct(drop7)}%…−${fmtDropPct(drop14)}%, не сплит)`;
+    return `Усреднение · 1-е: ${fmtUsd(usd)} при ${dropStr}% от сигнала (зона −${fmtDropPct(drop7)}%…−${fmtDropPct(drop14)}%, не сплит)${sliceSuffix}`;
   }
-  return `Усреднение · 2-е: ${fmtUsd(usd)} при ${dropStr}% от сигнала (≤ −${fmtDropPct(drop14)}%, не сплит)`;
+  return `Усреднение · 2-е: ${fmtUsd(usd)} при ${dropStr}% от сигнала (≤ −${fmtDropPct(drop14)}%, не сплит)${sliceSuffix}`;
 }
 
 /** Label for live_position_dca replay when `timelineLabelRu` missing on row. */
