@@ -17,6 +17,7 @@ import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
+  stagedAvgAveragingUpBlocked,
   stagedAvgDownhillAddBlocked,
   reconcileEntrySplitV2FromLegs,
   stagedAveragingConfigured,
@@ -160,6 +161,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
     args.entrySplitMetricUsd != null && args.entrySplitMetricUsd > 0
       ? args.entrySplitMetricUsd
       : curMetric;
+  const stagedAvgPx = entrySplitPx;
   const now = Date.now();
   const anchor = st.entrySplitAnchorUsd ?? st.signalPriceUsd;
   const signalDropPct = signalDropPctFromState(st, curMetric);
@@ -208,6 +210,26 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
   if (signalDropPct == null) return;
   if (st.mintFirstProbe === true || !stagedAveragingConfigured(st)) return;
 
+  const avgUpBlock = stagedAvgAveragingUpBlocked({
+    tradablePx: stagedAvgPx,
+    avgEntryMarket: args.ot.avgEntryMarket,
+  });
+  if (avgUpBlock.blocked) {
+    args.journalLiveStrategy?.({
+      kind: 'risk_note',
+      reason: 'staged_avg_averaging_up_blocked',
+      mint: args.mint,
+      detail: {
+        symbol: args.ot.symbol,
+        why: avgUpBlock.reason,
+        tradablePx: +stagedAvgPx.toFixed(8),
+        avgEntryMarket: +args.ot.avgEntryMarket.toFixed(8),
+        signalDropPct: signalDropPct != null ? +signalDropPct.toFixed(2) : null,
+      },
+    });
+    return;
+  }
+
   const avg1Usd = st.avgSecondLegUsd ?? st.secondLegUsd;
   const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;
   const drop7 = st.avgSecondDropPct ?? st.secondDropPct;
@@ -241,7 +263,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
       ot: args.ot,
       mint: args.mint,
       addUsd: avg1Usd,
-      marketBuy: curMetric,
+      marketBuy: stagedAvgPx,
       reason: 'staged_avg',
       triggerPct: -drop7 / 100,
       livePhase4: args.livePhase4,
@@ -275,7 +297,7 @@ export async function tryLiveStagedEntryV2TrackerStep(args: {
       ot: args.ot,
       mint: args.mint,
       addUsd: avg2Usd,
-      marketBuy: curMetric,
+      marketBuy: stagedAvgPx,
       reason: 'staged_avg',
       triggerPct: -drop14 / 100,
       livePhase4: args.livePhase4,

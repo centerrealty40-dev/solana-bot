@@ -31,6 +31,22 @@ describe('liveTrackerMtmUsdSnapJupiterSymmetricBand', () => {
     expect(r.useUsd).toBe(snap);
   });
 
+  it('Cupsey regression: stale-low PG below entry while Jupiter is above entry → trust Jupiter for TP', () => {
+    const anchor = 0.006326;
+    const snap = 0.00584;
+    const jup = 0.0074;
+    const r = liveTrackerMtmUsdSnapJupiterSymmetricBand({
+      snapPx: snap,
+      jupiterPx: jup,
+      maxPremiumOverSnapshotPct: 6,
+      anchorPx: anchor,
+    });
+    expect(r.bandClamp).toBe('anchor_stale_low');
+    expect(r.useUsd).toBe(jup);
+    const pnlFrac = r.useUsd / anchor - 1;
+    expect(pnlFrac).toBeGreaterThan(0.08);
+  });
+
   it('uses Jupiter when below symmetric discount floor (stale high PG snapshot)', () => {
     const snap = 0.00569;
     const jup = 0.00527;

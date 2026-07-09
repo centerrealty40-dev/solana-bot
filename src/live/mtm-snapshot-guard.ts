@@ -12,8 +12,17 @@ export function liveTrackerMtmUsdSnapJupiterSymmetricBand(args: {
   snapPx: number;
   jupiterPx: number;
   maxPremiumOverSnapshotPct: number;
-}): { useUsd: number; clampedFromJupiter: boolean; bandClamp: 'high' | 'low' | null } {
-  const { snapPx, jupiterPx, maxPremiumOverSnapshotPct } = args;
+  /**
+   * Avg entry / open anchor. When Jupiter is above anchor but PG snapshot is below anchor,
+   * PG is stale-low (Cupsey 2026-07-09) — trust Jupiter for TP instead of capping to snapshot.
+   */
+  anchorPx?: number;
+}): {
+  useUsd: number;
+  clampedFromJupiter: boolean;
+  bandClamp: 'high' | 'low' | 'anchor_stale_low' | null;
+} {
+  const { snapPx, jupiterPx, maxPremiumOverSnapshotPct, anchorPx } = args;
   if (!(jupiterPx > 0)) {
     return { useUsd: snapPx > 0 ? snapPx : 0, clampedFromJupiter: false, bandClamp: null };
   }
@@ -22,6 +31,14 @@ export function liveTrackerMtmUsdSnapJupiterSymmetricBand(args: {
   }
   const capMult = 1 + maxPremiumOverSnapshotPct / 100;
   if (jupiterPx > snapPx * capMult) {
+    if (
+      anchorPx != null &&
+      anchorPx > 0 &&
+      jupiterPx >= anchorPx - 1e-18 &&
+      snapPx < anchorPx * (1 - 0.005)
+    ) {
+      return { useUsd: jupiterPx, clampedFromJupiter: true, bandClamp: 'anchor_stale_low' };
+    }
     return { useUsd: snapPx, clampedFromJupiter: true, bandClamp: 'high' };
   }
   if (jupiterPx < snapPx / capMult) {
