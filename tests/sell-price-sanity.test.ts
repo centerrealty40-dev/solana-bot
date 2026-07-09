@@ -5,6 +5,7 @@ import {
   capPartialSellTokenRaw,
   fractionOfTokenRaw,
   isGhostMtmExitTick,
+  liveHotTickProbeQuoteSanity,
   liveSellPriceUsdSane,
   liveSellQuotePriceSanity,
   resolveLiveSellReferencePriceUsd,
@@ -127,6 +128,60 @@ describe('isGhostMtmExitTick', () => {
         clampedUsd: 0.013,
       }),
     ).toBe(false);
+  });
+});
+
+describe('liveHotTickProbeQuoteSanity', () => {
+  it('rejects DONALT-class ghost probe disagreeing with all anchors', () => {
+    const r = liveHotTickProbeQuoteSanity({
+      quotePriceUsd: 0.000184,
+      anchors: [
+        { kind: 'observed', priceUsd: 0.002426 },
+        { kind: 'pg_snapshot', priceUsd: 0.00186 },
+        { kind: 'dex_quote', priceUsd: 0.00186 },
+      ],
+    });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.reason).toBe('ghost_price_quote_rejected');
+      expect(r.anchorChecks.length).toBe(3);
+      for (const check of r.anchorChecks) {
+        expect(check.deviationFrac).toBeGreaterThan(LIVE_SELL_GHOST_QUOTE_MAX_DEVIATION_FRAC);
+      }
+    }
+  });
+
+  it('accepts probe when dex/pg agrees even if lastObserved is stale at entry', () => {
+    const r = liveHotTickProbeQuoteSanity({
+      quotePriceUsd: 0.0018,
+      anchors: [
+        { kind: 'observed', priceUsd: 0.002426 },
+        { kind: 'pg_snapshot', priceUsd: 0.00186 },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.matchedAnchor).toBe('pg_snapshot');
+  });
+
+  it('accepts probe within band of lastObserved when external quotes unavailable', () => {
+    const r = liveHotTickProbeQuoteSanity({
+      quotePriceUsd: 0.00235,
+      anchors: [{ kind: 'observed', priceUsd: 0.002426 }],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.matchedAnchor).toBe('observed');
+  });
+
+  it('works without shyft anchor when other sources are present', () => {
+    const r = liveHotTickProbeQuoteSanity({
+      quotePriceUsd: 0.0018,
+      anchors: [
+        { kind: 'observed', priceUsd: 0.002426 },
+        { kind: 'pg_snapshot', priceUsd: 0.00186 },
+      ],
+    });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(['pg_snapshot', 'observed']).toContain(r.matchedAnchor);
   });
 });
 

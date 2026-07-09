@@ -88,6 +88,21 @@
 
 ---
 
+## [1.11.564] — 2026-07-09
+
+**Тег:** `sa-alpha-1.11.564`
+
+### Live — hot-tick sell probe: cross-check vs independent price anchors (DONALT RCA)
+
+- **Проблема:** ghost Jupiter sell-probe на hot-tick пути триггерил killstop/prearm без проверки (DONALT lera10: −92% в журнале при реальном −23%).
+- **Фикс:** перед exec-кэшем, killstop и prearm — probe должен согласоваться **хотя бы с одним** якорем (±25%): `lastObserved`, entry market/avg, **PG snapshot**, **DexScreener/Birdeye**, tick MTM; Shyft — **опциональный** якорь, не обязателен.
+- **Журнал:** `live_hot_tick_quote_reject` с `anchorChecks[]`.
+- **Файлы:** `hot-tick-price-anchors.ts`, `sell-price-sanity.ts`, `open-position-hot-tick.ts`, `tracker.ts`.
+
+**Откат:** redeploy `sa-alpha-1.11.563`; hot-tick без cross-check (риск ложного killstop на ghost quote).
+
+---
+
 ## [1.11.563] — 2026-07-09
 
 **Тег:** `sa-alpha-1.11.563`

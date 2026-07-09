@@ -986,6 +986,31 @@ export const LiveKillstopPrearmSchema = z.object({
   ttlMs: z.number().int().nonnegative().optional(),
 });
 
+/** Hot tick ghost Jupiter sell probe rejected before killstop / exec cache. */
+export const LiveHotTickQuoteRejectSchema = z.object({
+  kind: z.literal('live_hot_tick_quote_reject'),
+  mint: z.string().min(1).max(64),
+  quotePriceUsd: z.number().finite().optional(),
+  matchedAnchor: z.string().nullable().optional(),
+  anchorChecks: z
+    .array(
+      z.object({
+        kind: z.string(),
+        priceUsd: z.number().finite(),
+        deviationFrac: z.number().finite(),
+      }),
+    )
+    .optional(),
+  observedRefUsd: z.number().finite().nullable().optional(),
+  shyftRefUsd: z.number().finite().nullable().optional(),
+  pgRefUsd: z.number().finite().nullable().optional(),
+  dexRefUsd: z.number().finite().nullable().optional(),
+  observedDeviationFrac: z.number().finite().nullable().optional(),
+  shyftDeviationFrac: z.number().finite().nullable().optional(),
+  probeTokenRaw: z.string().optional(),
+  quoteAgeMs: z.number().int().nonnegative().optional(),
+});
+
 export const LiveSellQuotePrearmArmedSchema = z.object({
   kind: z.literal('live_sell_quote_prearm_armed'),
   mint: z.string().min(1).max(64),
@@ -1086,6 +1111,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   EntrySliceAttemptSchema,
   EntrySliceResultSchema,
   LiveKillstopPrearmSchema,
+  LiveHotTickQuoteRejectSchema,
   LiveSellQuotePrearmArmedSchema,
   LiveSellQuotePrearmExpiredSchema,
   LiveSellQuotePrearmConsumedSchema,
