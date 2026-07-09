@@ -18,6 +18,8 @@ import {
   stagedAvgFirstEligible,
   stagedAvgSecondEligible,
   stagedAvgDownhillAddBlocked,
+  stagedAvgAveragingUpBlocked,
+  resolveStagedEntryTradableUsd,
 } from '../src/papertrader/executor/live-staged-entry-gates.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import type { LiveStagedEntryState, OpenTrade, PartialSell } from '../src/papertrader/types.js';
@@ -624,5 +626,30 @@ describe('reconcileEntrySplitV2FromLegs', () => {
     } as unknown as OpenTrade;
     reconcileEntrySplitV2FromLegs(ot);
     expect(st.entrySplitLeg2Done).toBe(true);
+  });
+});
+
+describe('resolveStagedEntryTradableUsd', () => {
+  it('prefers Jupiter probe over stale PG snapshot', () => {
+    expect(
+      resolveStagedEntryTradableUsd({
+        snapPx: 0.00584,
+        rawTrackerPriceUsd: 0.00584,
+        entrySplitJupiterPx: 0.0074,
+        fallbackCurMetric: 0.00571,
+      }),
+    ).toBe(0.0074);
+  });
+});
+
+describe('stagedAvgAveragingUpBlocked', () => {
+  it('blocks when tradable price is at or above avg entry market', () => {
+    const r = stagedAvgAveragingUpBlocked({ tradablePx: 0.0074, avgEntryMarket: 0.00614 });
+    expect(r.blocked).toBe(true);
+    expect(r.reason).toMatch(/averaging_up/);
+  });
+
+  it('allows when tradable price is below avg entry', () => {
+    expect(stagedAvgAveragingUpBlocked({ tradablePx: 0.0055, avgEntryMarket: 0.00614 }).blocked).toBe(false);
   });
 });

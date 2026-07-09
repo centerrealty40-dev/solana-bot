@@ -187,6 +187,37 @@ export function pctFromAnchor(anchorUsd: number, priceUsd: number): number | nul
   return (priceUsd / anchorUsd - 1) * 100;
 }
 
+/**
+ * Tradable USD for staged entry / averaging — Jupiter buy-probe first, not stale PG snapshot.
+ * Mirrors `resolveEntrySplitMetricUsd` in entry-split-fast-poll (Cupsey 2026-07-09).
+ */
+export function resolveStagedEntryTradableUsd(args: {
+  snapPx: number;
+  rawTrackerPriceUsd: number;
+  entrySplitJupiterPx?: number;
+  fallbackCurMetric: number;
+}): number {
+  const { snapPx, rawTrackerPriceUsd, entrySplitJupiterPx, fallbackCurMetric } = args;
+  if (entrySplitJupiterPx != null && entrySplitJupiterPx > 0) return entrySplitJupiterPx;
+  if (rawTrackerPriceUsd > 0) return rawTrackerPriceUsd;
+  if (snapPx > 0) return snapPx;
+  return fallbackCurMetric;
+}
+
+/** Block staged averaging when tradable price is at/above avg entry (averaging up). */
+export function stagedAvgAveragingUpBlocked(args: {
+  tradablePx: number;
+  avgEntryMarket: number;
+}): { blocked: boolean; reason: string | null } {
+  const { tradablePx, avgEntryMarket } = args;
+  if (!(tradablePx > 0) || !(avgEntryMarket > 0)) return { blocked: false, reason: null };
+  if (tradablePx >= avgEntryMarket - 1e-18) {
+    const premPct = ((tradablePx / avgEntryMarket - 1) * 100).toFixed(2);
+    return { blocked: true, reason: `staged_avg_averaging_up_${premPct}%` };
+  }
+  return { blocked: false, reason: null };
+}
+
 export function signalDropPctFromState(st: LiveStagedEntryState, curMetric: number): number | null {
   if (!(st.signalPriceUsd > 0)) return null;
   return (curMetric / st.signalPriceUsd - 1) * 100;

@@ -1,6 +1,9 @@
 import type { PaperTraderConfig, DcaLevel, TpLadderLevel } from '../config.js';
 import { parseDcaLevels } from '../config.js';
-import { isLiveOscarTradingStrategyId } from '../../preset-c/live-oscar-family.js';
+import {
+  isLiveOscarFamilyTradingStrategyId,
+  isLiveOscarTradingStrategyId,
+} from '../../preset-c/live-oscar-family.js';
 import { liveOscarTierDcaLevelsSpec } from '../live-oscar-mcap-tier.js';
 import { resolveLiveOscarPositionCeilingUsd } from '../live-oscar-entry-sizing.js';
 import { isLiveOscarScalpWaveTrade } from '../live-oscar-scalp-wave.js';
@@ -210,6 +213,7 @@ import {
   liveStagedEntryAddWindowOpen,
   liveStagedEntryTtlPreservesPlan,
   liveStagedEntrySignalTtlExpired,
+  resolveStagedEntryTradableUsd,
 } from './live-staged-entry-gates.js';
 import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-staged-entry-lifecycle.js';
 import { reconcileE2OpenOnTrackerTick } from './live-oscar-e2-open-reconcile.js';
@@ -3597,7 +3601,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (
       cfg.shyftPricePrimaryEnabled &&
       cfg.shyftPricePrimaryMtmEnabled &&
-      isLiveOscarTradingStrategyId(cfg.strategyId) &&
+      isLiveOscarFamilyTradingStrategyId(cfg.strategyId) &&
       isShyftShadowEnabled()
     ) {
       shyftPrimaryTickMs = Date.now();
@@ -3779,6 +3783,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                   snapPx,
                   jupiterPx: jpx,
                   maxPremiumOverSnapshotPct: maxPrem,
+                  anchorPx,
                 });
                 curMetric = mtmPick;
                 ot.liveFlashLastSnapshotPx = snapPx;
@@ -3924,7 +3929,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     if (
       cfg.shyftPricePrimaryEnabled &&
       cfg.shyftPricePrimaryMtmEnabled &&
-      isLiveOscarTradingStrategyId(cfg.strategyId) &&
+      isLiveOscarFamilyTradingStrategyId(cfg.strategyId) &&
       isShyftShadowEnabled() &&
       shyftPrimaryTickMs != null
     ) {
@@ -4745,8 +4750,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       ot.remainingFraction > 0 &&
       !liveOscarNoDcaInModeA;
 
-    const stagedEntryPriceUsd =
-      snapPx > 0 ? snapPx : rawTrackerPriceUsd > 0 ? rawTrackerPriceUsd : curMetric;
+    const stagedEntryPriceUsd = resolveStagedEntryTradableUsd({
+      snapPx,
+      rawTrackerPriceUsd,
+      entrySplitJupiterPx,
+      fallbackCurMetric: curMetric,
+    });
     const st = ot.liveStagedEntry;
     if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, stagedEntryPriceUsd)) {
       if (st.entrySplitV2) {
