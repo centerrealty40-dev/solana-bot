@@ -14,6 +14,7 @@ import {
 } from './exit-policy-variant-a.js';
 import { stampScalpWaveExitPolicyOnOpen } from './exit-policy-scalp-wave.js';
 import { stampRunnerProbeExitPolicyOnOpen } from './exit-policy-runner-probe.js';
+import { stampFastDipScalpExitPolicyOnOpen } from './exit-policy-fast-dip-scalp.js';
 import { stampRunnerLiteExitPolicyOnOpen } from './exit-policy-runner-lite.js';
 import { stampPresetCScalpExitPolicyOnOpen, isPresetCScalpExitPolicy } from './exit-policy-preset-c-scalp.js';
 
@@ -592,6 +593,7 @@ export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderCo
   if (stampPresetCScalpExitPolicyOnOpen(ot, cfg, ot.presetCScalpAnchorPriceUsd)) return;
   if (stampRunnerLiteExitPolicyOnOpen(ot, cfg)) return;
   if (stampRunnerProbeExitPolicyOnOpen(ot, cfg)) return;
+  if (stampFastDipScalpExitPolicyOnOpen(ot, cfg)) return;
   if (stampScalpWaveExitPolicyOnOpen(ot, cfg)) return;
   if (stampVariantAOnOpen(ot, cfg)) return;
   if (cfg.liveOscarExitPolicyWaveBEnabled) {

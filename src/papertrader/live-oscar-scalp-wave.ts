@@ -13,7 +13,8 @@ export type LiveOscarTradeLane =
   | 'scalp_wave'
   | 'runner_probe'
   | 'runner_lite'
-  | 'pervyy_vystrel';
+  | 'pervyy_vystrel'
+  | 'fast_dip_scalp';
 
 export type ScalpWaveEntryPath = 'dip_windows';
 
@@ -36,6 +37,8 @@ export function resolveLiveOscarTradeLaneFromOpen(
   if (ot.positionSource === 'pervyy_vystrel') return 'pervyy_vystrel';
   if (ot.liveOscarTradeLane === 'pervyy_vystrel') return 'pervyy_vystrel';
   if (ot.liveExitPolicyId === 'pervyy_vystrel_v1') return 'pervyy_vystrel';
+  if (ot.liveOscarTradeLane === 'fast_dip_scalp') return 'fast_dip_scalp';
+  if (ot.liveExitPolicyId === 'fast_dip_scalp_v1') return 'fast_dip_scalp';
   if (ot.liveOscarTradeLane === 'scalp_wave') return 'scalp_wave';
   if (ot.liveOscarMcapTier === 'scalp_wave') return 'scalp_wave';
   if (ot.liveExitPolicyId === 'scalp_wave_v1') return 'scalp_wave';
@@ -165,6 +168,7 @@ export function stampLiveOscarTradeLaneOnOpen(ot: OpenTrade, tradeLane: LiveOsca
   if (tradeLane === 'scalp_wave') {
     ot.liveOscarMcapTier = 'scalp_wave';
   }
+  /** fast_dip_scalp is identified via liveOscarTradeLane / liveExitPolicyId, not the mcap-tier axis. */
 }
 
 export function liveOscarMintOpenSkipReason(args: {

@@ -387,6 +387,39 @@ const ConfigSchema = z.object({
   liveOscarScalpWaveKillPct: z.coerce.number().min(0.01).max(0.5).default(0.1),
   liveOscarScalpWaveTimeStopHours: z.coerce.number().min(0.5).max(24).default(3),
   /**
+   * Fast-dip scalp lane (1.11.x) — DISABLED by default. Backtest (60d, pumpswap 60s bars):
+   * entry ≤ −25% vs short rolling-high window, single-shot (no DCA), hard SL, 30m time-stop,
+   * front-loaded TP ladder + small trailing runner. Net ≈ +4.4%/trade @2% round-trip, win ~55%.
+   * Only pumpswap has the 60s cadence needed; other lanes' 120s bars are too coarse.
+   */
+  liveOscarFastDipScalpLaneEnabled: z.boolean().default(false),
+  /** Short rolling-high dip window (min) — the window our prod detector lacks (prod = 120/360/720). */
+  liveOscarFastDipScalpDipWindowMin: z.coerce.number().int().min(1).max(60).default(15),
+  /** Entry: current price must be at/below this % vs short-window high (deep, fast flush). */
+  liveOscarFastDipScalpDipMinDropPct: z.coerce.number().default(-25),
+  /** Reject bottomless knives deeper than this. */
+  liveOscarFastDipScalpDipMaxDropPct: z.coerce.number().default(-60),
+  liveOscarFastDipScalpMinImpulsePct: z.coerce.number().nonnegative().default(0),
+  liveOscarFastDipScalpMinMcapUsd: z.coerce.number().nonnegative().default(3_000_000),
+  liveOscarFastDipScalpMaxMcapUsd: z.coerce.number().positive().default(1_000_000_000),
+  liveOscarFastDipScalpVol1hMinUsd: z.coerce.number().nonnegative().default(100_000),
+  /** No 48h prod age gate here — fast flushes happen on fresh momentum coins too. */
+  liveOscarFastDipScalpMinAgeMin: z.coerce.number().nonnegative().default(60),
+  liveOscarFastDipScalpPositionUsd: z.coerce.number().positive().default(500),
+  liveOscarFastDipScalpMaxConcurrent: z.coerce.number().int().min(1).max(10).default(2),
+  /** Hard SL as positive fraction (0.15 = −15% from entry). */
+  liveOscarFastDipScalpKillPct: z.coerce.number().min(0.01).max(0.9).default(0.15),
+  /** Time-stop (min): exit if no TP rung hit by this age. */
+  liveOscarFastDipScalpTimeStopMin: z.coerce.number().min(1).max(240).default(30),
+  /** TP ladder rungs as fraction gains (e.g. 0.10,0.22). */
+  liveOscarFastDipScalpTpRungsPct: z.string().default('0.10,0.22'),
+  /** Sell fraction per rung, aligned to rungs (e.g. 0.50,0.30); remainder trails. */
+  liveOscarFastDipScalpTpSellFracs: z.string().default('0.50,0.30'),
+  /** Trailing runner on remainder: arm at +% gain, exit on step-% drop from peak. */
+  liveOscarFastDipScalpTrailArmPct: z.coerce.number().min(0.01).max(2).default(0.18),
+  liveOscarFastDipScalpTrailStepPct: z.coerce.number().min(0.01).max(1).default(0.06),
+  liveOscarFastDipScalpCooldownMin: z.coerce.number().nonnegative().default(30),
+  /**
    * Live Oscar runner_probe lane (tier 2): mcap **≥ $1M** (up to $30M), age 12–48h (720–2880 min),
    * strict runner guards + dip entry, wallet-intel gate, $500 entry parallel to prod.
    * **Tier routing is mcap-first:** strong vol/liq below $1M stays on runner_lite — never promoted here.
@@ -1344,12 +1377,22 @@ const ConfigSchema = z.object({
   const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
   const dipRecoveryVetoWindowsMin = resolveRecoveryVetoWindows(dipRecoveryVetoWindowsCsv);
   const dipLocalHighVetoWindowsMin = resolveRecoveryVetoWindows(dipLocalHighVetoWindowsCsv);
+  const fastDipScalpWindows =
+    rest.liveOscarFastDipScalpLaneEnabled && rest.liveOscarFastDipScalpDipWindowMin > 0
+      ? [rest.liveOscarFastDipScalpDipWindowMin]
+      : [];
   const dipAggregationWindowsMin =
     (rest.dipRecoveryVetoEnabled && dipRecoveryVetoWindowsMin.length > 0) ||
-    (rest.dipLocalHighVetoEnabled && dipLocalHighVetoWindowsMin.length > 0)
-      ? [...new Set([...dipLookbackWindowsMin, ...dipRecoveryVetoWindowsMin, ...dipLocalHighVetoWindowsMin])].sort(
-          (a, b) => a - b,
-        )
+    (rest.dipLocalHighVetoEnabled && dipLocalHighVetoWindowsMin.length > 0) ||
+    fastDipScalpWindows.length > 0
+      ? [
+          ...new Set([
+            ...dipLookbackWindowsMin,
+            ...dipRecoveryVetoWindowsMin,
+            ...dipLocalHighVetoWindowsMin,
+            ...fastDipScalpWindows,
+          ]),
+        ].sort((a, b) => a - b)
       : dipLookbackWindowsMin;
   return {
     ...rest,
@@ -1538,6 +1581,24 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveOscarScalpWaveTpPct: process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_TP_PCT,
     liveOscarScalpWaveKillPct: process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_KILL_PCT,
     liveOscarScalpWaveTimeStopHours: process.env.PAPER_LIVE_OSCAR_SCALP_WAVE_TIME_STOP_HOURS,
+    liveOscarFastDipScalpLaneEnabled: envBool(process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_LANE_ENABLED, false),
+    liveOscarFastDipScalpDipWindowMin: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_WINDOW_MIN,
+    liveOscarFastDipScalpDipMinDropPct: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_MIN_DROP_PCT,
+    liveOscarFastDipScalpDipMaxDropPct: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_MAX_DROP_PCT,
+    liveOscarFastDipScalpMinImpulsePct: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_MIN_IMPULSE_PCT,
+    liveOscarFastDipScalpMinMcapUsd: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_MIN_MCAP_USD,
+    liveOscarFastDipScalpMaxMcapUsd: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_MAX_MCAP_USD,
+    liveOscarFastDipScalpVol1hMinUsd: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_VOL_1H_MIN_USD,
+    liveOscarFastDipScalpMinAgeMin: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_MIN_AGE_MIN,
+    liveOscarFastDipScalpPositionUsd: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_POSITION_USD,
+    liveOscarFastDipScalpMaxConcurrent: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_MAX_CONCURRENT,
+    liveOscarFastDipScalpKillPct: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_KILL_PCT,
+    liveOscarFastDipScalpTimeStopMin: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_TIME_STOP_MIN,
+    liveOscarFastDipScalpTpRungsPct: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_TP_RUNGS_PCT,
+    liveOscarFastDipScalpTpSellFracs: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_TP_SELL_FRACS,
+    liveOscarFastDipScalpTrailArmPct: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_TRAIL_ARM_PCT,
+    liveOscarFastDipScalpTrailStepPct: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_TRAIL_STEP_PCT,
+    liveOscarFastDipScalpCooldownMin: process.env.PAPER_LIVE_OSCAR_FAST_DIP_SCALP_COOLDOWN_MIN,
     runnerProbeEnabled: envBool(process.env.PAPER_RUNNER_PROBE_ENABLED, false),
     runnerProbeMinAgeMin: process.env.PAPER_RUNNER_PROBE_MIN_AGE_MIN,
     runnerProbeMaxAgeMin: process.env.PAPER_RUNNER_PROBE_MAX_AGE_MIN,

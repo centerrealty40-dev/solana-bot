@@ -98,6 +98,10 @@ import {
   isLiveOscarScalpWaveLaneEnabled,
 } from '../live-oscar-scalp-wave.js';
 import {
+  evaluateLiveOscarFastDipScalpDiscovery,
+  isLiveOscarFastDipScalpLaneEnabled,
+} from '../live-oscar-fast-dip-scalp.js';
+import {
   evaluateLiveOscarRunnerProbeDiscovery,
   isRunnerProbeLaneEnabled,
   runnerProbeCandidateInBand,
@@ -182,11 +186,18 @@ export interface EvalDecision {
     | 'post_crash_fast'
     | 'stress_kill_reentry'
     | 'preset_c_pullback'
-    | 'preset_c_spike';
+    | 'preset_c_spike'
+    | 'fast_dip_window';
   /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M; `scalp_wave` = shallow scalp lane. */
   liveOscarMcapTier?: LiveOscarTradeTier;
   /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); runner lanes parallel. */
-  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
+  liveOscarTradeLane?:
+    | 'prod'
+    | 'scalp_wave'
+    | 'runner_probe'
+    | 'runner_lite'
+    | 'pervyy_vystrel'
+    | 'fast_dip_scalp';
   positionSource?: 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
   /** Wallet-intel gate snapshot (prod / runner_probe / runner_lite). */
   oscarIntel?: OscarIntelGateSnapshot;
@@ -1959,6 +1970,57 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         entryPath: scalpEval.entryPath,
         liveOscarMcapTier: 'scalp_wave',
         liveOscarTradeLane: 'scalp_wave',
+      });
+    }
+  }
+
+  if (isLiveOscarFastDipScalpLaneEnabled(cfg)) {
+    for (const { row, lane } of allowedSnapshotTagged) {
+      const discoveryMcap = resolveDiscoveryRefMcap(row);
+      const ageMin = +Number(row.age_min ?? row.token_age_min ?? 0).toFixed(1);
+      const fastEval = evaluateLiveOscarFastDipScalpDiscovery({
+        cfg,
+        row,
+        lane,
+        refMcap: discoveryMcap.refMcapUsd,
+        ageMin,
+        dipCtx: dipMap.get(row.mint),
+      });
+      let fastPass = fastEval.pass;
+      const fastReasons = [...fastEval.reasons];
+      if (fastPass) {
+        const knownMint = isKnownMint(cfg, row.mint, knownMintHistory, Date.now(), knownMintSupplement);
+        if (cfg.volumeSybilGuardEnabled) {
+          const sybilRes = evaluateVolumeSybilGuard(cfg, row, volumeSybilMap.get(row.mint), { knownMint });
+          if (sybilRes.blocked) {
+            fastPass = false;
+            fastReasons.push(...sybilRes.blockedReasons);
+          }
+        }
+        if (fastPass && cfg.volumeEphemeralGuardEnabled) {
+          const ephemeralRes = evaluateVolumeEphemeralGuard(cfg, row, volumeEphemeralMap.get(row.mint), {
+            knownMint,
+          });
+          if (ephemeralRes.blocked) {
+            fastPass = false;
+            fastReasons.push(...ephemeralRes.blockedReasons);
+          }
+        }
+      }
+      evaluated++;
+      if (fastPass) passed++;
+      decisions.push({
+        lane,
+        source: row.source,
+        mint: row.mint,
+        symbol: row.symbol,
+        ageMin,
+        pass: fastPass,
+        reasons: fastReasons,
+        features: buildFeatures(row, null, null, null, cfg, undefined, undefined, undefined, undefined),
+        whale: null,
+        entryPath: fastEval.entryPath,
+        liveOscarTradeLane: 'fast_dip_scalp',
       });
     }
   }
