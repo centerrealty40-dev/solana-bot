@@ -71,6 +71,80 @@ function prodConfiguredEntrySplitTotalUsd(cfg: PaperTraderConfig): number {
   return prodEntrySplitLegUsdValues(cfg).reduce((sum, usd) => sum + Math.max(0, usd), 0);
 }
 
+/** E+2 canon: first staged avg @ −10% = 50% of tier entry-split total (excludes avg legs). */
+export function deriveLiveOscarStagedAvgLegHalfEntryUsd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
+): number {
+  const splitTotal = resolveLiveOscarEntrySplitTotalUsd(cfg, tier, marketCapUsd);
+  if (!(splitTotal > 0)) return 0;
+  return splitTotal / 2;
+}
+
+/** Prod-only: avg @ −10% filled as entry-split-sized slices ($500). */
+export function resolveLiveOscarStagedAvgSplitEnabled(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
+): boolean {
+  const effectiveTier = tier ?? resolveLiveOscarTradeTierFromMcap(cfg, marketCapUsd);
+  return effectiveTier === 'prod';
+}
+
+/** USD per avg slice (= entry split leg-1 USD on prod). */
+export function resolveLiveOscarStagedAvgSliceUsd(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
+): number {
+  if (!resolveLiveOscarStagedAvgSplitEnabled(cfg, tier, marketCapUsd)) return 0;
+  return resolveLiveOscarEntrySplitLegUsd(cfg, tier, marketCapUsd);
+}
+
+export function resolveLiveOscarStagedAvgSplitLegCount(
+  cfg: PaperTraderConfig,
+  tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
+): number {
+  const total = deriveLiveOscarStagedAvgLegHalfEntryUsd(cfg, tier, marketCapUsd);
+  const slice = resolveLiveOscarStagedAvgSliceUsd(cfg, tier, marketCapUsd);
+  if (!(total > 0 && slice > 0)) return total > 0 ? 1 : 0;
+  return Math.max(1, Math.round(total / slice));
+}
+
+/** Apply prod avg-split leg USD + done flags on staged state. */
+export function applyLiveOscarAvgSplitPlanToState(
+  cfg: PaperTraderConfig,
+  st: LiveStagedEntryState,
+  tier?: LiveOscarTradeTier,
+  marketCapUsd?: number | null,
+): void {
+  const total = deriveLiveOscarStagedAvgLegHalfEntryUsd(cfg, tier, marketCapUsd);
+  const slice = resolveLiveOscarStagedAvgSliceUsd(cfg, tier, marketCapUsd);
+  const splitEnabled =
+    resolveLiveOscarStagedAvgSplitEnabled(cfg, tier, marketCapUsd) && total > slice + 1e-6;
+  if (!splitEnabled) {
+    st.avgSplitV2 = false;
+    st.avgSplitLeg2Usd = 0;
+    st.avgSplitLeg3Usd = 0;
+    st.avgSplitLeg4Usd = 0;
+    st.avgSecondLegUsd = total;
+    st.secondLegUsd = total;
+    return;
+  }
+  const count = resolveLiveOscarStagedAvgSplitLegCount(cfg, tier, marketCapUsd);
+  st.avgSplitV2 = true;
+  st.avgSecondLegUsd = slice;
+  st.secondLegUsd = slice;
+  st.avgSplitLeg2Usd = count >= 2 ? slice : 0;
+  st.avgSplitLeg3Usd = count >= 3 ? slice : 0;
+  st.avgSplitLeg4Usd = count >= 4 ? slice : 0;
+  if (count < 2) st.avgSplitLeg2Done = true;
+  if (count < 3) st.avgSplitLeg3Done = true;
+  if (count < 4) st.avgSplitLeg4Done = true;
+}
+
 /** Derive split/avg legs from band max cap (configured split legs + staged avg). */
 export function deriveLiveOscarProdBandEntryPlan(
   cfg: PaperTraderConfig,
@@ -78,10 +152,10 @@ export function deriveLiveOscarProdBandEntryPlan(
 ): LiveOscarProdBandEntryPlan {
   const maxUsd = prodBandMaxUsd(cfg, band);
   const legUsd = cfg.liveStagedEntryEntrySplitLegUsd;
-  const avg1Default = cfg.liveStagedEntrySecondLegUsd;
-  const avg2Default = cfg.liveStagedEntryThirdLegUsd;
   const splitLegCount = prodConfiguredEntrySplitLegCount(cfg);
   const splitTotal = prodConfiguredEntrySplitTotalUsd(cfg);
+  const avg1Default = splitTotal / 2;
+  const avg2Default = 0;
   const fullMax = splitTotal + avg1Default + avg2Default;
 
   if (maxUsd >= fullMax) {
@@ -287,17 +361,16 @@ export function resolveLiveOscarStagedAvgFirstDropPct(
   return cfg.liveStagedEntrySecondDropPct;
 }
 
-/** Tier-aware first staged avg leg USD. */
+/** Tier-aware first staged avg leg USD (−10%): 50% of entry-split; prod = per-slice USD. */
 export function resolveLiveOscarStagedAvgLegUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
   marketCapUsd?: number | null,
 ): number {
-  if (tier === 'micro') return cfg.liveOscarMicroMcapStagedAvgLegUsd;
-  if (tier === 'low') return cfg.liveOscarLowMcapStagedAvgLegUsd;
-  const plan = resolveProdBandPlanIfApplicable(cfg, tier, marketCapUsd);
-  if (plan) return plan.avgLeg1Usd;
-  return cfg.liveStagedEntrySecondLegUsd;
+  if (resolveLiveOscarStagedAvgSplitEnabled(cfg, tier, marketCapUsd)) {
+    return resolveLiveOscarStagedAvgSliceUsd(cfg, tier, marketCapUsd);
+  }
+  return deriveLiveOscarStagedAvgLegHalfEntryUsd(cfg, tier, marketCapUsd);
 }
 
 /** Second staged averaging leg (prod + low when configured). */
@@ -331,7 +404,7 @@ export function resolveLiveOscarStagedEntryMaxUsd(
   const plan = resolveProdBandPlanIfApplicable(cfg, tier, marketCapUsd);
   if (plan) return plan.maxUsd;
   let sum = resolveLiveOscarEntrySplitTotalUsd(cfg, tier, marketCapUsd);
-  sum += resolveLiveOscarStagedAvgLegUsd(cfg, tier, marketCapUsd);
+  sum += deriveLiveOscarStagedAvgLegHalfEntryUsd(cfg, tier, marketCapUsd);
   sum += resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier, marketCapUsd);
   return sum;
 }
@@ -429,10 +502,6 @@ export function applyCanonicalStagedEntrySizing(
 ): void {
   if (st.copyLeaderAdoptStagedPlan) return;
   const leg1 = resolveLiveOscarEntrySplitLegUsd(cfg, tier, marketCapUsd);
-  const avgUsd = resolveLiveOscarStagedAvgLegUsd(cfg, tier, marketCapUsd);
-  const avg2Usd = resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier, marketCapUsd);
-  const avgDrop = resolveLiveOscarStagedAvgFirstDropPct(cfg, tier, marketCapUsd);
-  const avg2Drop = resolveLiveOscarStagedAvgSecondDropPct(cfg, tier, marketCapUsd);
   st.firstLegUsd = leg1;
   st.entrySplitLegUsd = leg1;
   st.entrySplitLeg2Usd = resolveLiveOscarEntrySplitLeg2Usd(cfg, tier, marketCapUsd);
@@ -453,6 +522,11 @@ export function applyCanonicalStagedEntrySizing(
   st.entrySplitMaxDownPct = cfg.liveStagedEntryEntrySplitMaxDownPct;
   st.entrySplitTargetDropPct = cfg.liveStagedEntryEntrySplitTargetDropPct;
   if (!st.mintFirstProbe) {
+    applyLiveOscarAvgSplitPlanToState(cfg, st, tier, marketCapUsd);
+    const avgUsd = st.avgSecondLegUsd ?? 0;
+    const avg2Usd = resolveLiveOscarStagedAvgSecondLegUsd(cfg, tier, marketCapUsd);
+    const avgDrop = resolveLiveOscarStagedAvgFirstDropPct(cfg, tier, marketCapUsd);
+    const avg2Drop = resolveLiveOscarStagedAvgSecondDropPct(cfg, tier, marketCapUsd);
     st.avgSecondLegUsd = avgUsd;
     st.secondLegUsd = avgUsd;
     st.avgSecondDropPct = avgDrop;

@@ -88,6 +88,22 @@
 
 ---
 
+## [1.11.568] — 2026-07-10
+
+**Тег:** `sa-alpha-1.11.568`
+
+### Live Oscar staged avg — −20% OFF, −10% = 50% entry, prod 3×$500 slices
+
+- **−20% avg leg OFF** все тиры (`THIRD_LEG_USD=0`, LOW second avg OFF).
+- **−10% avg = 50% entry-split** по тиру (resolver в коде): prod $1500, LOW $500, micro $150; max prod **$4500**, LOW **$1500**.
+- **Prod only:** avg @ −10% исполняется **3×$500** (delay 10s, corridor +3/−5% vs signal anchor); LOW/micro — один лег.
+- **LOW lane ON:** 2×$500 entry + avg $500 @ −10%.
+- **Файлы:** `avg-split-legs.ts`, `live-oscar-entry-sizing.ts`, `live-staged-entry-gates.ts`, `live-staged-entry-lifecycle.ts`, `store-restore.ts`, `types.ts`, `ecosystem.config.cjs`, `tests/live-oscar-entry-sizing.test.ts`.
+
+**Откат:** redeploy `sa-alpha-1.11.564`; вернуть `SECOND_LEG_USD` / `THIRD_LEG_USD` / LOW lane env в ecosystem.
+
+---
+
 ## [1.11.564] — 2026-07-09
 
 **Тег:** `sa-alpha-1.11.564`

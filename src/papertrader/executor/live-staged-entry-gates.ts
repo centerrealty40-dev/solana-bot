@@ -11,6 +11,15 @@ import {
   type EntrySplitLegIndex,
 } from '../entry-split-legs.js';
 import {
+  avgSplitLegDoneFromState,
+  avgSplitLegTsFromState,
+  avgSplitLegUsdFromState,
+  avgSplitTimedLegIndices,
+  setAvgSplitLegDone,
+  setAvgSplitLegTs,
+  type AvgSplitLegIndex,
+} from '../avg-split-legs.js';
+import {
   applyCanonicalStagedEntrySizing,
   resolveLiveOscarEntrySplitLeg2Usd,
   resolveLiveOscarEntrySplitLeg3Usd,
@@ -223,6 +232,59 @@ export function signalDropPctFromState(st: LiveStagedEntryState, curMetric: numb
   return (curMetric / st.signalPriceUsd - 1) * 100;
 }
 
+/** Timed avg-split legs 2–4: delay from prior avg leg + corridor vs signal anchor. */
+export function avgSplitTimedLegEligible(args: {
+  st: LiveStagedEntryState;
+  nowMs: number;
+  entrySplitPx: number;
+  anchorUsd: number;
+  legIndex: AvgSplitLegIndex;
+}): { ok: boolean; triggerPct: number } {
+  const { st, nowMs, entrySplitPx, anchorUsd, legIndex } = args;
+  if (!st.avgSplitV2 || legIndex < 2 || legIndex > 4) return { ok: false, triggerPct: 0 };
+  if (avgSplitLegDoneFromState(st, legIndex)) return { ok: false, triggerPct: 0 };
+  const prevLegIndex = (legIndex - 1) as AvgSplitLegIndex;
+  if (!avgSplitLegDoneFromState(st, prevLegIndex)) return { ok: false, triggerPct: 0 };
+  const leg1Ts = st.avgFirstLegTs ?? st.entrySplitLeg1Ts ?? st.signalTs;
+  const delay = st.entrySplitDelayMs ?? 10_000;
+  const prevTs = avgSplitLegTsFromState(st, prevLegIndex) ?? leg1Ts;
+  const readyTs = prevTs + delay;
+  if (nowMs < readyTs) return { ok: false, triggerPct: 0 };
+  const ch = pctFromAnchor(anchorUsd, entrySplitPx);
+  const maxUp = st.entrySplitMaxUpPct ?? 3;
+  const maxDown = st.entrySplitMaxDownPct ?? 5;
+  if (ch != null && entrySplitBandOk(ch, maxUp, maxDown)) return { ok: true, triggerPct: ch / 100 };
+  return { ok: false, triggerPct: 0 };
+}
+
+/** First avg-split leg (−10% zone) or single-shot avg on low/micro. */
+export function stagedAvgSplitLeg1Eligible(args: {
+  st: LiveStagedEntryState;
+  signalDropPct: number;
+  nowMs: number;
+}): boolean {
+  if (avgSplitLegDoneFromState(args.st, 1)) return false;
+  return stagedAvgFirstEligible(args);
+}
+
+export function liveStagedEntryHasPendingAvgSplitLegs(st: LiveStagedEntryState): boolean {
+  if (!st.avgSplitV2) return false;
+  for (let i = 1; i <= 4; i++) {
+    const legIndex = i as AvgSplitLegIndex;
+    const usd = avgSplitLegUsdFromState(st, legIndex);
+    if (usd > 0 && !avgSplitLegDoneFromState(st, legIndex)) return true;
+  }
+  return false;
+}
+
+/** Stop pending avg-split legs after TP-ladder partial (mirrors entry-split cancel). */
+export function cancelPendingAvgSplitLegs(st: LiveStagedEntryState): void {
+  if (!st.avgSplitV2) return;
+  for (const legIndex of avgSplitTimedLegIndices()) {
+    if (avgSplitLegUsdFromState(st, legIndex) > 0) setAvgSplitLegDone(st, legIndex, true);
+  }
+}
+
 /** First staged averaging (−7%): only after cooldown from split leg 1; drop strictly between −7% and −14% vs signal. */
 export function stagedAvgFirstEligible(args: {
   st: LiveStagedEntryState;
@@ -287,6 +349,12 @@ export function stagedAvgDownhillAddBlocked(args: {
 }
 
 export function stagedAveragingConfigured(st: LiveStagedEntryState): boolean {
+  if (st.avgSplitV2) {
+    for (let i = 1; i <= 4; i++) {
+      if (avgSplitLegUsdFromState(st, i as AvgSplitLegIndex) > 0) return true;
+    }
+    return false;
+  }
   return (
     (st.avgSecondLegUsd ?? st.secondLegUsd) > 0 || ((st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0) > 0)
   );
@@ -335,6 +403,7 @@ export function liveStagedEntryHasPendingLegs(st: LiveStagedEntryState): boolean
   if (st.entrySplitV2) {
     if (liveStagedEntryHasPendingEntrySplitLegs(st)) return true;
     if (!stagedAveragingConfigured(st)) return false;
+    if (st.avgSplitV2) return liveStagedEntryHasPendingAvgSplitLegs(st);
     const avg1Usd = st.avgSecondLegUsd ?? st.secondLegUsd;
     const avg2Usd = st.avgThirdLegUsd ?? st.thirdLegUsd ?? 0;
     if (avg1Usd > 0 && !st.avgFirstLegDone) return true;
@@ -496,6 +565,15 @@ export function reconcileEntrySplitV2FromLegs(ot: OpenTrade): void {
   }
 
   const avgLegs = ot.legs.filter((l) => l.reason === 'staged_avg');
+  if (st.avgSplitV2) {
+    for (let i = 0; i < avgLegs.length && i < 4; i++) {
+      const legIndex = (i + 1) as AvgSplitLegIndex;
+      setAvgSplitLegDone(st, legIndex, true);
+      setAvgSplitLegTs(st, legIndex, avgLegs[i]!.ts);
+    }
+    if (avgLegs.length >= 1) st.secondLegDone = true;
+    return;
+  }
   if (avgLegs.length >= 1) {
     st.avgFirstLegDone = true;
     st.avgFirstLegTs = avgLegs[0]!.ts;

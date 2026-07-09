@@ -507,6 +507,17 @@ export interface LiveStagedEntryState {
   avgFirstLegDone?: boolean;
   avgSecondLegDone?: boolean;
   avgFirstLegTs?: number;
+  /** Prod: avg @ −10% as $500 slices (same size as entry-split leg). */
+  avgSplitV2?: boolean;
+  avgSplitLeg2Usd?: number;
+  avgSplitLeg3Usd?: number;
+  avgSplitLeg4Usd?: number;
+  avgSplitLeg2Done?: boolean;
+  avgSplitLeg3Done?: boolean;
+  avgSplitLeg4Done?: boolean;
+  avgSplitLeg2Ts?: number;
+  avgSplitLeg3Ts?: number;
+  avgSplitLeg4Ts?: number;
   /** Legacy / mirror: staged averaging (−7%) — same as `avgFirstLegDone` on v2. */
   secondDropPct: number;
   secondLegUsd: number;
