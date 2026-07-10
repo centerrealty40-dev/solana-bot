@@ -68,10 +68,15 @@ export function liveOscarRpcHttpUrlFromEnv(env: NodeJS.ProcessEnv = process.env)
 
 /** WebSocket RPC — explicit `SA_RPC_WS_URL` or flip http(s)→ws(s) on primary HTTP URL. */
 export function resolveSolanaRpcWsUrl(env: NodeJS.ProcessEnv = process.env): string {
-  const explicit = env.SA_RPC_WS_URL?.trim() || env.SOLANA_RPC_WS_URL?.trim() || env.QUICKNODE_WS_URL?.trim();
+  const explicit =
+    env.SA_RPC_WS_URL?.trim() ||
+    env.SOLANA_RPC_WS_URL?.trim() ||
+    env.QUICKNODE_WS_URL?.trim() ||
+    env.ALCHEMY_WS_URL?.trim();
   if (explicit) return explicit;
   const http =
     env.SA_RPC_HTTP_URL?.trim() ||
+    env.ALCHEMY_HTTP_URL?.trim() ||
     env.SOLANA_RPC_HTTP_URL?.trim() ||
     env.QUICKNODE_HTTP_URL?.trim() ||
     primarySolanaRpcUrlFromEnv(env) ||

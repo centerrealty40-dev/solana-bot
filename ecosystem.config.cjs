@@ -2327,6 +2327,15 @@ const PM2_APPS = [
         KNIFE_CATCHER_ENABLED: process.env.KNIFE_CATCHER_ENABLED || '0',
         /** shadow = journal hypothetical fills only; live execution not wired yet. */
         KNIFE_MODE: process.env.KNIFE_MODE || 'shadow',
+        /**
+         * Stage-1 on-chain data collection: watchlist + Shyft swap_decode consumer persist every
+         * observed swap (with trader wallet) to KNIFE_SWAP_CAPTURE_PATH; NO Jupiter poll, NO dump/
+         * entry logic. All new load stays on Shyft (no DexScreener / Discovery / snapshot writes).
+         */
+        KNIFE_CAPTURE_ONLY: process.env.KNIFE_CAPTURE_ONLY || '0',
+        KNIFE_SWAP_CAPTURE_ENABLED: process.env.KNIFE_SWAP_CAPTURE_ENABLED || '1',
+        KNIFE_SWAP_CAPTURE_PATH:
+          process.env.KNIFE_SWAP_CAPTURE_PATH || 'data/knife-catcher/knife-swaps.jsonl',
         KNIFE_TOP_N: process.env.KNIFE_TOP_N || '15',
         KNIFE_WATCHLIST_REFRESH_MIN: process.env.KNIFE_WATCHLIST_REFRESH_MIN || '3',
         KNIFE_WATCHLIST_LOOKBACK_MIN: process.env.KNIFE_WATCHLIST_LOOKBACK_MIN || '30',
@@ -2387,6 +2396,57 @@ const PM2_APPS = [
         KNIFE_CATCHER_JOURNAL_PATH:
           process.env.KNIFE_CATCHER_JOURNAL_PATH || path.join(root, 'data/knife-catcher/knife-catcher.jsonl'),
         SHYFT_GRPC_ENDPOINT: process.env.SHYFT_GRPC_ENDPOINT || 'https://grpc.fra.shyft.to',
+      },
+    },
+    /**
+     * awakening-catcher — ISOLATED shadow worker (default OFF). Dormant-low volume awakening:
+     * stream_events pulse (pump.fun + PumpSwap) + Gecko trending → DexScreener on trigger →
+     * shadow journal for lera10 lane. Read-only PG; no trade execution.
+     */
+    {
+      name: 'awakening-catcher',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/awakening-catcher.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 5000,
+      max_memory_restart: '300M',
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        AWAKENING_CATCHER_ENABLED: process.env.AWAKENING_CATCHER_ENABLED || '0',
+        AWAKENING_MODE: process.env.AWAKENING_MODE || 'shadow',
+        /** ws = Alchemy logsSubscribe in-process (default, zero PG). pg = legacy stream_events poll. */
+        AWAKENING_STREAM_SOURCE: process.env.AWAKENING_STREAM_SOURCE || 'ws',
+        AWAKENING_CATCHER_JOURNAL_PATH:
+          process.env.AWAKENING_CATCHER_JOURNAL_PATH ||
+          path.join(root, 'data/awakening-catcher/awakening-catcher.jsonl'),
+        AWAKENING_CURSOR_PATH:
+          process.env.AWAKENING_CURSOR_PATH ||
+          path.join(root, 'data/awakening-catcher/stream-cursor.json'),
+        AWAKENING_STREAM_PROGRAM_IDS:
+          process.env.AWAKENING_STREAM_PROGRAM_IDS ||
+          '6EF8rrecthR5Dkzon8Nwu78hRvfCKubJ14M5uBEwF6P,pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+        AWAKENING_TICK_MS: process.env.AWAKENING_TICK_MS || '10000',
+        AWAKENING_STREAM_BATCH_SIZE: process.env.AWAKENING_STREAM_BATCH_SIZE || '50',
+        AWAKENING_STREAM_MIN_SIGS_5M: process.env.AWAKENING_STREAM_MIN_SIGS_5M || '2',
+        AWAKENING_VOL5M_MIN_USD: process.env.AWAKENING_VOL5M_MIN_USD || '5000',
+        AWAKENING_QUIET_PRIOR_VOL6H_MAX_USD: process.env.AWAKENING_QUIET_PRIOR_VOL6H_MAX_USD || '1500',
+        AWAKENING_QUIET_VOL1H_MAX_USD: process.env.AWAKENING_QUIET_VOL1H_MAX_USD || '2000',
+        AWAKENING_VOL_VELOCITY_MIN: process.env.AWAKENING_VOL_VELOCITY_MIN || '0.4',
+        AWAKENING_MIN_MCAP_USD: process.env.AWAKENING_MIN_MCAP_USD || '300000',
+        AWAKENING_MIN_LIQ_USD: process.env.AWAKENING_MIN_LIQ_USD || '20000',
+        AWAKENING_MIN_BUY_RATIO: process.env.AWAKENING_MIN_BUY_RATIO || '0.45',
+        AWAKENING_LEG_USD: process.env.AWAKENING_LEG_USD || '10',
+        AWAKENING_GECKO_TRENDING_ENABLED: process.env.AWAKENING_GECKO_TRENDING_ENABLED || '1',
+        AWAKENING_GECKO_TRENDING_POLL_SEC: process.env.AWAKENING_GECKO_TRENDING_POLL_SEC || '60',
+        AWAKENING_TELEGRAM_ENABLED: process.env.AWAKENING_TELEGRAM_ENABLED || '0',
+        AWAKENING_SUMMARY_MIN: process.env.AWAKENING_SUMMARY_MIN || '30',
       },
     },
 ];

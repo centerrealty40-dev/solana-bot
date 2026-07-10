@@ -392,7 +392,8 @@ export interface OpenTrade {
     | 'runner_probe'
     | 'runner_lite'
     | 'pervyy_vystrel'
-    | 'fast_dip_scalp';
+    | 'fast_dip_scalp'
+    | 'dormant_awakening';
   /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; scalp_wave $800k–$30M; absent = prod. */
   liveOscarMcapTier?: 'micro' | 'low' | 'prod' | 'scalp_wave';
   /** Set when scalp_wave hands off to prod/low staged management. */

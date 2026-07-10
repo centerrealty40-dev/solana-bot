@@ -88,6 +88,22 @@
 
 ---
 
+## [1.11.573] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.573`
+
+### Awakening-catcher — ловля «пробуждения» тихих/новых монет (GMGN-style), изолированный воркер
+
+- **Причина:** воронка Oscar/LERA видит только монеты, уже попавшие в PG по порогам ликвы/объёма — то есть на которых **уже** сконцентрирован ритейл. Первые растущие объёмы по **тихим до этого** (или совсем новым) монетам мы структурно пропускаем. GMGN Trending ловит их потому, что это глобальный он-чейн индексер, а не фильтр внешних API.
+- **Что сделано:** новый **изолированный** PM2-воркер `awakening-catcher` (`src/scripts/awakening-catcher.ts`, default **OFF**). Гибрид: дешёвый `logsSubscribe` (Alchemy WS, программы pump.fun + pumpswap-amm) детектит активность по минтам (`MintActivityTracker`), затем **по требованию** дёргает DexScreener для метрик (5м/1ч/6ч/24ч объёмы, ликва, mcap, price-change) и оценивает паттерн «dormant-low awakening» чистой функцией `evaluateAwakeningSignal`. Fallback-источник — чтение `stream_events` из PG (`AWAKENING_STREAM_SOURCE=pg`). Плюс GeckoTerminal trending как второй источник кандидатов. Никакой лишней нагрузки на PG и без сжигания RPC-лимитов (батчи, tick 10с, cap кандидатов).
+- **Интеграция:** сигналы идут в `live-lera10` через файловую очередь `data/live/awakening-entry-queue.jsonl` (`enqueueAwakeningLiveEntry` → `processAwakeningLiveEntryQueue` в discovery-цикле `main.ts`). Отдельная торговая линия `dormant_awakening` (union в `types.ts`/`live-oscar-scalp-wave.ts`/`live-oscar-mcap-tier.ts`/`dip-clones.ts`), чтобы обойти гварды, которые иначе режут этот паттерн (`old-mint-dormant-volume-spike-guard` и т.п.). On-chain overlay: `shyft-shadow-consumer` теперь пробрасывает `wallet` из декодированного свопа (для кластер-детекта).
+- **Безопасность:** default `AWAKENING_MODE=shadow` (гипотетические входы только в журнал), live-вход за флагом `AWAKENING_LIVE_ENTRY_ENABLED` и лимитом `AWAKENING_MAX_OPEN_POSITIONS` (≤3) на линии `dormant_awakening`; проверка denylist/blacklist перед исполнением. RPC резолвится Alchemy-first (`resolve-solana-rpc-url.ts`: `ALCHEMY_WS_URL`/`ALCHEMY_HTTP_URL`). `pumpswap-amm` добавлен в `KNOWN_PROGRAMS`.
+- **Флаги (все в `.env.example`):** `AWAKENING_CATCHER_ENABLED`, `AWAKENING_MODE`, `AWAKENING_STREAM_SOURCE` (`ws`|`pg`), `AWAKENING_LIVE_ENTRY_ENABLED`, `AWAKENING_MAX_OPEN_POSITIONS`, пороги/кулдауны/Telegram.
+- **Тесты:** `tests/awakening-catcher.test.ts`.
+- **Откат:** `AWAKENING_CATCHER_ENABLED=0` (воркер OFF) и/или `AWAKENING_LIVE_ENTRY_ENABLED=0` (live-вход OFF) — мгновенно; либо revert коммита `1.11.573`. Линия изолирована, откат не затрагивает Oscar/остальные линии LERA.
+
+---
+
 ## [1.11.572] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.572`
