@@ -88,6 +88,20 @@
 
 ---
 
+## [1.11.569] — 2026-07-10
+
+**Тег:** `sa-alpha-1.11.569`
+
+### Live Oscar — disable Wave B + hard time-stop
+
+- `PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS=0`, `PAPER_LIVE_OSCAR_HARD_TIME_STOP_HOURS=0`.
+- Owner: no auto time-stop; manual exit after ~2d if needed. Half8/kill/trail/breakeven unchanged.
+- Broad half8 backtest (N≈3500): short flush TS cuts PnL; sit / ~36h ≈ max PnL.
+
+**Откат:** вернуть `WAVE_B_TIME_STOP_HOURS=12`, `HARD_TIME_STOP_HOURS=24` в `ecosystem.config.cjs` и redeploy.
+
+---
+
 ## [1.11.568] — 2026-07-10
 
 **Тег:** `sa-alpha-1.11.568`
