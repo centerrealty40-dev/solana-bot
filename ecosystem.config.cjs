@@ -1298,13 +1298,15 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_PNL_FRAC: '0.05',
         PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_PARTIAL_FRACTION: '0.5',
         PAPER_LIVE_OSCAR_DIP10_FIRST_TP5_SIGNAL_DROP_PCT: '10',
-        PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '12',
+        /** 0 = off — owner: no auto time-stop; manual exit after ~2d if needed (2026-07-10). */
+        PAPER_LIVE_OSCAR_WAVE_B_TIME_STOP_HOURS: '0',
         /**
          * Hard profit-agnostic time-stop (hours) — any exit policy. Frees capital from stale
          * «downhill runner» positions instead of sitting to −50% killstop for days. Real on-chain
          * full exit (TIME_STOP, policy-allowed). Backtest 2mo: ×3 capital efficiency @ 24h. 0 = off.
          */
-        PAPER_LIVE_OSCAR_HARD_TIME_STOP_HOURS: '24',
+        /** 0 = off — same as Wave B TS; capital rotation by hand (2026-07-10). */
+        PAPER_LIVE_OSCAR_HARD_TIME_STOP_HOURS: '0',
         PAPER_LIVE_OSCAR_EXIT_POLICY_VARIANT_A: '0',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_ENABLED: '1',
         PAPER_LIVE_OSCAR_VARIANT_A_SALVAGE24_MIN_PEAK_PCT: '5',
