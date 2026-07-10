@@ -154,6 +154,8 @@ export type ShyftObservationMeta = {
   side: 'buy' | 'sell';
   signature: string;
   amountUsd: number;
+  /** Trader wallet from the decoded swap (swap_decode mode only). Empty in vault mode. */
+  wallet?: string;
 };
 
 export interface ShyftShadowConsumerConfig {
@@ -547,6 +549,7 @@ export function startShyftShadowConsumer(
         side: swap.side,
         signature: swap.signature,
         amountUsd: swap.amountUsd,
+        wallet: swap.wallet,
       };
       emitObservation(swap.baseMint, swap.priceUsd, streamTsMs, slot, meta);
     }

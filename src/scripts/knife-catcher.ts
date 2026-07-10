@@ -78,6 +78,16 @@ function parseLadder(v: unknown, def: number[]): number[] {
 interface KnifeConfig {
   enabled: boolean;
   mode: 'shadow' | 'live';
+  /**
+   * Stage-1 on-chain data collection. When true: run watchlist + Shyft swap_decode consumer and
+   * persist every observed swap (with trader wallet) to `swapCapturePath`, but SKIP the Jupiter
+   * poll and all dump/entry/exit logic. All new runtime load stays on Shyft — no Jupiter, no
+   * DexScreener, no Discovery snapshot writes.
+   */
+  captureOnly: boolean;
+  /** Persist observed Shyft swaps (mint/wallet/side/usd/price) to a JSONL for offline cluster join. */
+  swapCaptureEnabled: boolean;
+  swapCapturePath: string;
   topN: number;
   watchlistRefreshMs: number;
   watchlistLookbackMin: number;
@@ -123,6 +133,11 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
   return {
     enabled: envBool(env.KNIFE_CATCHER_ENABLED, false),
     mode: String(env.KNIFE_MODE ?? 'shadow').trim().toLowerCase() === 'live' ? 'live' : 'shadow',
+    captureOnly: envBool(env.KNIFE_CAPTURE_ONLY, false),
+    swapCaptureEnabled: envBool(env.KNIFE_SWAP_CAPTURE_ENABLED, true),
+    swapCapturePath:
+      env.KNIFE_SWAP_CAPTURE_PATH?.trim() ||
+      path.join('data', 'knife-catcher', 'knife-swaps.jsonl'),
     topN: Math.min(64, Math.round(envNum(env.KNIFE_TOP_N, 15))),
     watchlistRefreshMs: Math.round(envNum(env.KNIFE_WATCHLIST_REFRESH_MIN, 3) * 60_000),
     watchlistLookbackMin: envNum(env.KNIFE_WATCHLIST_LOOKBACK_MIN, 30),
@@ -227,6 +242,43 @@ function appendJournal(cfg: KnifeConfig, ev: Record<string, unknown>): void {
     );
   } catch (e) {
     log.debug({ err: (e as Error).message }, 'journal append failed');
+  }
+}
+
+let swapCapturePathResolved: string | null = null;
+let swapCaptureCount = 0;
+
+/**
+ * Append one observed swap (with trader wallet) to the swap-capture JSONL.
+ * Pure local disk write — no DB / DexScreener / Discovery load. Offline enrichment (cluster/tag
+ * join against `wallet_tags` / `entity_wallets`) runs separately, read-only.
+ */
+function recordKnifeSwap(cfg: KnifeConfig, mint: string, tsMs: number, meta: ShyftObservationMeta): void {
+  if (!cfg.swapCaptureEnabled) return;
+  const wallet = meta.wallet?.trim();
+  if (!wallet) return;
+  try {
+    if (!swapCapturePathResolved) {
+      const dir = path.dirname(cfg.swapCapturePath);
+      if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+      swapCapturePathResolved = cfg.swapCapturePath;
+    }
+    fs.appendFileSync(
+      swapCapturePathResolved,
+      `${JSON.stringify({
+        ts: tsMs,
+        mint,
+        wallet,
+        side: meta.side,
+        amountUsd: Number(meta.amountUsd.toFixed(2)),
+        dex: meta.source,
+        sig: meta.signature,
+      })}\n`,
+      'utf8',
+    );
+    swapCaptureCount += 1;
+  } catch (e) {
+    log.debug({ err: (e as Error).message }, 'swap capture append failed');
   }
 }
 
@@ -854,23 +906,30 @@ async function main(): Promise<void> {
 
   const getWatchedMints = (): string[] => [...states.keys()];
 
-  startKnifeJupiterPoll(
-    {
-      legUsd: cfg.legUsd,
-      pollIntervalMs: cfg.jupiterPollIntervalMs,
-      slippageBps: cfg.jupiterSlippageBps,
-      timeoutMs: cfg.jupiterTimeoutMs,
-      maxMintsPerTick: cfg.jupiterMaxMintsPerTick,
-    },
-    getWatchedMints,
-    (mint, priceUsd, streamTsMs) => {
-      try {
-        onTrustedPriceTick(cfg, mint, priceUsd, streamTsMs, 'jupiter');
-      } catch (e) {
-        log.debug({ mint, err: (e as Error).message }, 'jupiter onPrice failed');
-      }
-    },
-  );
+  if (cfg.captureOnly) {
+    log.info(
+      { topN: cfg.topN, swapCapturePath: cfg.swapCapturePath },
+      'KNIFE_CAPTURE_ONLY=1 — Shyft swap capture only (no Jupiter poll, no dump/entry logic)',
+    );
+  } else {
+    startKnifeJupiterPoll(
+      {
+        legUsd: cfg.legUsd,
+        pollIntervalMs: cfg.jupiterPollIntervalMs,
+        slippageBps: cfg.jupiterSlippageBps,
+        timeoutMs: cfg.jupiterTimeoutMs,
+        maxMintsPerTick: cfg.jupiterMaxMintsPerTick,
+      },
+      getWatchedMints,
+      (mint, priceUsd, streamTsMs) => {
+        try {
+          onTrustedPriceTick(cfg, mint, priceUsd, streamTsMs, 'jupiter');
+        } catch (e) {
+          log.debug({ mint, err: (e as Error).message }, 'jupiter onPrice failed');
+        }
+      },
+    );
+  }
 
   startShyftShadowConsumer(
     {
@@ -882,7 +941,8 @@ async function main(): Promise<void> {
     {
       onObservation: (mint, priceUsd, streamTsMs, meta) => {
         try {
-          onStreamSwap(cfg, mint, priceUsd, streamTsMs, meta);
+          if (meta) recordKnifeSwap(cfg, mint, streamTsMs, meta);
+          if (!cfg.captureOnly) onStreamSwap(cfg, mint, priceUsd, streamTsMs, meta);
         } catch (e) {
           log.debug({ mint, err: (e as Error).message }, 'onStreamSwap failed');
         }
@@ -911,6 +971,8 @@ async function main(): Promise<void> {
         open,
         pending,
         obsTotal: obs,
+        swapsCaptured: swapCaptureCount,
+        captureOnly: cfg.captureOnly,
         realizedUsd: Number(realized.toFixed(2)),
         solUsd: getSolUsd(),
       },
