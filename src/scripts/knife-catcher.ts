@@ -49,6 +49,7 @@ import {
   type KnifeAnalyticsConfig,
 } from './knife-analytics-gate.js';
 import { sendTagged } from '../core/telegram/sender.js';
+import { detectRollingFlush } from './knife-flush-detector.js';
 
 const log = child('knife-catcher');
 const EPS = 1e-12;
@@ -87,6 +88,10 @@ interface KnifeConfig {
   minSellUsd: number;
   maxEntryAfterDumpMs: number;
   preDumpHighMs: number;
+  /** Price-based rolling-flush trigger — fires on distributed/gradual flushes without a single whale sell. */
+  flushTriggerEnabled: boolean;
+  flushWindowMs: number;
+  flushMinDumpPct: number;
   maxBounceFromDumpPct: number;
   maxDrawdownPct: number;
   globalEntryGapMs: number;
@@ -131,7 +136,10 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     minDumpPct: envNum(env.KNIFE_MIN_DUMP_PCT, 10),
     minSellUsd: envNum(env.KNIFE_MIN_SELL_USD, 1500),
     maxEntryAfterDumpMs: Math.round(envNum(env.KNIFE_MAX_ENTRY_AFTER_DUMP_SEC, 50) * 1000),
-    preDumpHighMs: Math.round(envNum(env.KNIFE_PRE_DUMP_HIGH_SEC, 120) * 1000),
+    preDumpHighMs: Math.round(envNum(env.KNIFE_PRE_DUMP_HIGH_SEC, 600) * 1000),
+    flushTriggerEnabled: envBool(env.KNIFE_FLUSH_TRIGGER_ENABLED, true),
+    flushWindowMs: Math.round(envNum(env.KNIFE_FLUSH_WINDOW_SEC, 600) * 1000),
+    flushMinDumpPct: envNum(env.KNIFE_FLUSH_MIN_DUMP_PCT, 10),
     maxBounceFromDumpPct: envNum(env.KNIFE_MAX_BOUNCE_FROM_DUMP_PCT, 5),
     maxDrawdownPct: envNum(env.KNIFE_MAX_DRAWDOWN_PCT, 40),
     globalEntryGapMs: Math.round(envNum(env.KNIFE_GLOBAL_ENTRY_GAP_SEC, 45) * 1000),
@@ -149,7 +157,7 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     tpSellFrac: Math.min(1, envNum(env.KNIFE_TP_SELL_FRAC, 0.3)),
     trailPct: envNum(env.KNIFE_TRAIL_PCT, 5),
     killPct: envNum(env.KNIFE_KILL_PCT, 50),
-    maxHoldMs: Math.round(Number(env.KNIFE_MAX_HOLD_SEC ?? 0) * 1000) || 0,
+    maxHoldMs: Math.round(Number(env.KNIFE_MAX_HOLD_SEC ?? 2700) * 1000) || 0,
     cooldownMs: Math.round(envNum(env.KNIFE_COOLDOWN_SEC, 600) * 1000),
     telegramEnabled: envBool(env.KNIFE_TELEGRAM_ENABLED, true),
     summaryMs: Math.round(envNum(env.KNIFE_SUMMARY_MIN, 30) * 60_000),
@@ -622,6 +630,20 @@ function onTrustedPriceTick(
     if (tsMs < s.cooldownUntilMs) return;
     if (tsMs - s.watchlistJoinedAtMs < cfg.watchlistWarmupMs) return;
     if (s.obsCount < cfg.minObs) return;
+    if (!s.pendingDump && cfg.flushTriggerEnabled && source === 'jupiter') {
+      const flush = detectRollingFlush(s.buf, price, tsMs, cfg);
+      if (flush) {
+        s.pendingDump = flush;
+        appendJournal(cfg, {
+          kind: 'knife_flush_detected',
+          mint: s.mint,
+          preDumpHigh: flush.preDumpHigh,
+          dumpLow: flush.dumpLow,
+          dumpPct: flush.dumpPct,
+          windowSec: Math.round(cfg.flushWindowMs / 1000),
+        });
+      }
+    }
     if (s.pendingDump && source !== 'jupiter') return;
     tryWhaleDumpEntry(cfg, s, price, tsMs);
     return;

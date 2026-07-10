@@ -36,6 +36,12 @@ export interface KnifeAnalyticsConfig {
   enabled: boolean;
   watchlistPoolMult: number;
   minHolderCount: number;
+  /**
+   * When holder data is missing (holder_count = 0, e.g. pump.fun mints not yet in `tokens`),
+   * skip the min-holder floor instead of hard-rejecting. The floor is meant to filter
+   * KNOWN low-holder junk, not unknown data — rejecting on 0 nukes the whole watchlist.
+   */
+  holderGateSkipWhenUnknown: boolean;
   maxVolPerHolder1hUsd: number;
   minAgeMin: number;
   maxAgeMin: number;
@@ -63,6 +69,7 @@ export function loadKnifeAnalyticsConfig(env: NodeJS.ProcessEnv = process.env): 
     enabled: envBool(env.KNIFE_ANALYTICS_ENABLED, true),
     watchlistPoolMult: Math.max(2, Math.round(envNum(env.KNIFE_WATCHLIST_POOL_MULT, 8))),
     minHolderCount: Math.round(envNum(env.KNIFE_MIN_HOLDER_COUNT, 3000)),
+    holderGateSkipWhenUnknown: envBool(env.KNIFE_HOLDER_GATE_SKIP_WHEN_UNKNOWN, true),
     maxVolPerHolder1hUsd: envNum(env.KNIFE_MAX_VOL_PER_HOLDER_1H_USD, 50),
     minAgeMin: Math.round(envNum(env.KNIFE_MIN_AGE_MIN, 720)),
     maxAgeMin: Math.round(envNum(env.KNIFE_MAX_AGE_MIN, 2880)),
@@ -127,7 +134,12 @@ export function evaluateKnifeHolderWash(
   const vol1h = Number(row.volume_1h ?? 0);
   const ageMin = Number(row.token_age_min ?? 0);
 
-  if (analytics.minHolderCount > 0 && holders < analytics.minHolderCount) {
+  const holderDataMissing = !(holders > 0);
+  if (
+    analytics.minHolderCount > 0 &&
+    !(holderDataMissing && analytics.holderGateSkipWhenUnknown) &&
+    holders < analytics.minHolderCount
+  ) {
     reasons.push(`knife_holders<${analytics.minHolderCount}(${holders})`);
   }
   if (analytics.maxVolPerHolder1hUsd > 0 && holders > 0 && vol1h > 0) {

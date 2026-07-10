@@ -88,6 +88,22 @@
 
 ---
 
+## [1.11.571] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.571`
+
+### Knife-catcher — rolling-flush trigger + holder-gate unknown-data fix
+
+- **Причина:** ловец ножей входил только на «китовый» слив (одна крупная продажа + падение от 2-мин хая). Плавные/распределённые проливы −10…−14% за 5–15 мин (напр. Cupsey `6Nwar…` 00:04 МСК: пик 0.006685 → 0.005811 = −13%) проходили мимо. Плюс analytics-gate резал почти весь watchlist по `knife_holders<3000(0)`, когда `holder_count` неизвестен (pump.fun-минты не в `tokens`).
+- **Rolling-flush:** новый чистый модуль `knife-flush-detector.ts` (`detectRollingFlush`) — вход по просадке от недавнего хая в окне (без единичной whale-продажи). Врезан в idle-фазу `onTrustedPriceTick` только на `jupiter`-тиках; эмитит `knife_flush_detected`. Дефолты: окно 600с, min-dump 10%, `preDumpHighMs` 120→600с, `maxHoldMs` 0→2700с.
+- **Holder-gate:** `holderGateSkipWhenUnknown` (default ON) — при `holder_count=0` пропускаем min-holder floor вместо hard-reject (floor фильтрует ИЗВЕСТНЫЙ мусор, не неизвестные данные).
+- **Env:** `KNIFE_FLUSH_TRIGGER_ENABLED=1`, `KNIFE_FLUSH_WINDOW_SEC=600`, `KNIFE_FLUSH_MIN_DUMP_PCT=10`, `KNIFE_PRE_DUMP_HIGH_SEC=600`, `KNIFE_MAX_HOLD_SEC=2700`, `KNIFE_HOLDER_GATE_SKIP_WHEN_UNKNOWN=1`.
+- **Файлы:** `knife-flush-detector.ts` (new), `knife-catcher.ts`, `knife-analytics-gate.ts`, `tests/knife-flush-trigger.test.ts`.
+
+**Откат:** `KNIFE_FLUSH_TRIGGER_ENABLED=0` + `KNIFE_HOLDER_GATE_SKIP_WHEN_UNKNOWN=0` (env, без redeploy) или redeploy `sa-alpha-1.11.570`.
+
+---
+
 ## [1.11.570] — 2026-07-10
 
 **Тег:** `sa-alpha-1.11.570`
