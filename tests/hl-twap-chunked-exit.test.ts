@@ -76,9 +76,10 @@ describe('chunked-exit', () => {
     expect(loadChunkedExitConfig(cfg, 'sell').sliceCount).toBe(cfg.exitSlicesShort);
   });
 
-  it('isShortTwapMinutes: short lane 5m, not 16m', () => {
+  it('isShortTwapMinutes: short lane 9–14m; ultra-short <9m and long ≥16m excluded', () => {
     process.env.HL_TWAP_SHORT_ENABLED = '1';
-    expect(isShortTwapMinutes(5)).toBe(true);
+    expect(isShortTwapMinutes(10)).toBe(true);
+    expect(isShortTwapMinutes(5)).toBe(false);
     expect(isShortTwapMinutes(16)).toBe(false);
   });
 
