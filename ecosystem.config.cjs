@@ -887,7 +887,7 @@ const PM2_APPS = [
          * entry ≤ −25% vs 15m rolling-high, single-shot, SL −15%, 30m time-stop, TP ladder +10%/50%
          * +22%/30% + peak-trail runner. Net ≈ +4.4%/trade @2% round-trip, win ~55%, ~2.3 trades/day.
          */
-        PAPER_LIVE_OSCAR_FAST_DIP_SCALP_LANE_ENABLED: '0',
+        PAPER_LIVE_OSCAR_FAST_DIP_SCALP_LANE_ENABLED: '1',
         PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_WINDOW_MIN: '15',
         PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_MIN_DROP_PCT: '-25',
         PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_MAX_DROP_PCT: '-60',
