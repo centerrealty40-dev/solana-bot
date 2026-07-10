@@ -766,6 +766,19 @@ export const LiveBirdeyeMarketQuoteSchema = z.object({
   quoteVol5mUsd: z.number().finite().nullable(),
 });
 
+/** Cross-source guard rejected a divergent external quote as the entry price (fell back to PG). */
+export const LiveQuoteDivergenceRejectSchema = z.object({
+  kind: z.literal('live_quote_divergence_reject'),
+  mint: z.string().min(1).max(64),
+  lane: z.string().max(32),
+  source: z.enum(['birdeye', 'dexscreener', 'pg_snapshot']),
+  pgPriceUsd: z.number().finite().nullable(),
+  quotePriceUsd: z.number().finite().nullable(),
+  divergencePct: z.number().finite(),
+  maxDivergencePct: z.number().finite().positive(),
+  pgSnapshotAgeMs: z.number().finite().nullable(),
+});
+
 /** PG snapshot stale and REST fallbacks missed — coverage hole observability. */
 export const BirdeyeCoverageGapSchema = z.object({
   kind: z.literal('birdeye_coverage_gap'),
@@ -1094,6 +1107,7 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveShyftStreamHealthSchema,
   LiveShyftVsDexQuoteSchema,
   LiveBirdeyeMarketQuoteSchema,
+  LiveQuoteDivergenceRejectSchema,
   BirdeyeCoverageGapSchema,
   BirdeyeTierInsufficientSchema,
   LiveLeraEntryOnchainOverlaySchema,

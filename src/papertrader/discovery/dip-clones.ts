@@ -9,6 +9,8 @@ import {
   buildBirdeyeCoverageGapEvent,
   buildBirdeyeTierInsufficientEvent,
   isFreshExternalDiscoveryQuote,
+  isDiscoveryQuoteDivergent,
+  quotePgDivergencePct,
   type DiscoveryQuoteSource,
 } from '../pricing/discovery-market-quote.js';
 import { fetchLatestCrossVenueSnapshotRowForMint, fetchSnapshotLaneCandidates } from './snapshot.js';
@@ -1094,8 +1096,37 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
      * Shyft stream `price_usd` (1.2) and/or DeFi `market_cap_usd` / `liquidity_usd` (1.3) overrides
      * folded in — used by the snapshot/dip gates + reported features.
      */
+    /**
+     * Cross-source guard (1.11.x): if the external quote price diverges from the PG snapshot beyond
+     * `liveOscarQuoteMaxDivergencePct`, do NOT adopt the quote as the entry price. A bad DexScreener/
+     * Birdeye quote on fragmented multi-pool liquidity (e.g. Meteora) otherwise prints a phantom dip
+     * and triggers a false entry. Fall back to the PG snapshot price; keep the quote for observability.
+     */
+    const quoteDiverged =
+      cfg.liveOscarQuoteDivergenceGuardEnabled &&
+      isDiscoveryQuoteDivergent(
+        birdeyeMarketQuote,
+        row.price_usd ?? null,
+        cfg.liveOscarQuoteMaxDivergencePct,
+      );
+    if (quoteDiverged && birdeyeMarketQuote) {
+      auditRows.push({
+        kind: 'live_quote_divergence_reject',
+        mint: row.mint,
+        lane: String(lane),
+        source: birdeyeMarketQuote.source,
+        pgPriceUsd: row.price_usd ?? null,
+        quotePriceUsd: birdeyeMarketQuote.priceUsd,
+        divergencePct: Number(
+          quotePgDivergencePct(birdeyeMarketQuote.priceUsd, row.price_usd ?? null).toFixed(3),
+        ),
+        maxDivergencePct: cfg.liveOscarQuoteMaxDivergencePct,
+        pgSnapshotAgeMs: birdeyeMarketQuote.pgSnapshotAgeMs,
+      });
+    }
+
     const evalOverrides: Partial<SnapshotCandidateRow> = {};
-    if (birdeyeMarketQuote && birdeyeMarketQuote.source !== 'pg_snapshot') {
+    if (birdeyeMarketQuote && birdeyeMarketQuote.source !== 'pg_snapshot' && !quoteDiverged) {
       if (birdeyeMarketQuote.priceUsd != null && birdeyeMarketQuote.priceUsd > 0) {
         evalOverrides.price_usd = birdeyeMarketQuote.priceUsd;
       }
