@@ -24,8 +24,15 @@ import {
   isRunnerProbeExitPolicy,
   runnerProbeEffectiveExitParams,
 } from './executor/exit-policy-runner-probe.js';
+import {
+  isFastDipScalpExitPolicy,
+  fastDipScalpEffectiveExitParams,
+} from './executor/exit-policy-fast-dip-scalp.js';
 
 export function cfgEffectiveForOpen(cfg: PaperTraderConfig, ot: OpenTrade): PaperTraderConfig {
+  if (isFastDipScalpExitPolicy(ot)) {
+    return { ...cfg, ...fastDipScalpEffectiveExitParams(cfg) };
+  }
   if (isPresetCScalpExitPolicy(ot)) {
     return { ...cfg, ...presetCScalpEffectiveExitParams(cfg) };
   }

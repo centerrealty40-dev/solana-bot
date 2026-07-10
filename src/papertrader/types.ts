@@ -383,9 +383,16 @@ export interface OpenTrade {
     | 'runner_probe_v1'
     | 'runner_lite_v1'
     | 'pervyy_vystrel_v1'
-    | 'preset_c_scalp_v1';
+    | 'preset_c_scalp_v1'
+    | 'fast_dip_scalp_v1';
   /** Live Oscar trade lane — prod/scalp_wave mutex; parallel lanes via composite open key. */
-  liveOscarTradeLane?: 'prod' | 'scalp_wave' | 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
+  liveOscarTradeLane?:
+    | 'prod'
+    | 'scalp_wave'
+    | 'runner_probe'
+    | 'runner_lite'
+    | 'pervyy_vystrel'
+    | 'fast_dip_scalp';
   /** Live Oscar mcap tier: micro $500k–$1.3M; low $1.3M–$3M; scalp_wave $800k–$30M; absent = prod. */
   liveOscarMcapTier?: 'micro' | 'low' | 'prod' | 'scalp_wave';
   /** Set when scalp_wave hands off to prod/low staged management. */

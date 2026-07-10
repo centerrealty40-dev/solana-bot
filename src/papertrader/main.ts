@@ -77,6 +77,10 @@ import {
   type LiveOscarTradeLane,
 } from './live-oscar-scalp-wave.js';
 import {
+  countOpenFastDipScalpPositions,
+  liveOscarFastDipScalpOpenLegUsd,
+} from './live-oscar-fast-dip-scalp.js';
+import {
   countOpenRunnerProbePositions,
   resolveOpenMapKey,
   runnerProbeMintAlreadyOpen,
@@ -484,6 +488,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     return (
       liveStagedEntryActive() &&
       resolveDecisionTradeLane(d) !== 'scalp_wave' &&
+      resolveDecisionTradeLane(d) !== 'fast_dip_scalp' &&
       resolveDecisionTradeLane(d) !== 'runner_probe' &&
       resolveDecisionTradeLane(d) !== 'runner_lite'
     );
@@ -495,6 +500,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   ): number {
     if (resolveDecisionTradeLane(d) === 'scalp_wave') {
       return liveOscarScalpWaveOpenLegUsd(cfg);
+    }
+    if (resolveDecisionTradeLane(d) === 'fast_dip_scalp') {
+      return liveOscarFastDipScalpOpenLegUsd(cfg);
     }
     if (resolveDecisionTradeLane(d) === 'runner_probe') {
       return runnerProbeOpenLegUsd(cfg);
@@ -1983,6 +1991,23 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           });
           continue;
         }
+        if (
+          resolveDecisionTradeLane(d) === 'fast_dip_scalp' &&
+          countOpenFastDipScalpPositions(open) >= cfg.liveOscarFastDipScalpMaxConcurrent
+        ) {
+          journalAppend({
+            kind: 'eval-skip-open',
+            lane: d.lane,
+            source: d.source,
+            mint: d.mint,
+            symbol: d.symbol,
+            reason: 'fast_dip_scalp_max_concurrent',
+            tradeLane: 'fast_dip_scalp',
+            openFastDipScalp: countOpenFastDipScalpPositions(open),
+            maxFastDipScalp: cfg.liveOscarFastDipScalpMaxConcurrent,
+          });
+          continue;
+        }
         if (resolveLiveOscar() && isMintBlockedForAmbiguousLiveBuy(d.mint)) {
           opts?.journalLiveStrategy?.({
             kind: 'execution_skip',
@@ -2133,6 +2158,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             ? loadPresetCScalpConfig().entryUsd
             : tradeLane === 'scalp_wave'
               ? liveOscarScalpWaveOpenLegUsd(cfg)
+              : tradeLane === 'fast_dip_scalp'
+                ? liveOscarFastDipScalpOpenLegUsd(cfg)
               : tradeLane === 'runner_probe'
                 ? runnerProbeOpenLegUsd(cfg)
                 : tradeLane === 'runner_lite'
@@ -2323,6 +2350,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             const jupLegUsd =
               tradeLane === 'scalp_wave'
                 ? liveOscarScalpWaveOpenLegUsd(cfg)
+                : tradeLane === 'fast_dip_scalp'
+                  ? liveOscarFastDipScalpOpenLegUsd(cfg)
                 : tradeLane === 'runner_probe'
                   ? runnerProbeOpenLegUsd(cfg)
                   : tradeLane === 'runner_lite'

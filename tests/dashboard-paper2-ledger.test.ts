@@ -100,7 +100,7 @@ describe('finalizeTimelineForApi — Oscar tiles deferred A/B labels (dashboard 
       }),
       timelineEv({ ts: 3, kind: 'partial_sell', label: 'Лестница TP · x', reason: 'TP_LADDER' }),
     ];
-    const out = finalizeTimelineForApi(tl, 'paper-oscar-v21');
+    const out = finalizeTimelineForApi(tl, 'live-oscar');
     expect(out[0]!.label).toBe('Open');
     expect(out[1]!.label.endsWith(' · режим B')).toBe(true);
     expect(out[2]!.label.endsWith(' · режим B')).toBe(true);

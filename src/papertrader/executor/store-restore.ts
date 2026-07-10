@@ -518,7 +518,8 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       lepi === 'scalp_wave_v1' ||
       lepi === 'runner_probe_v1' ||
       lepi === 'runner_lite_v1' ||
-      lepi === 'preset_c_scalp_v1'
+      lepi === 'preset_c_scalp_v1' ||
+      lepi === 'fast_dip_scalp_v1'
     ) {
       ot.liveExitPolicyId = lepi;
     }
@@ -527,7 +528,13 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveOscarMcapTier = lomt;
     }
     const lotl = rawPayload.liveOscarTradeLane;
-    if (lotl === 'prod' || lotl === 'scalp_wave' || lotl === 'runner_probe' || lotl === 'runner_lite') {
+    if (
+      lotl === 'prod' ||
+      lotl === 'scalp_wave' ||
+      lotl === 'runner_probe' ||
+      lotl === 'runner_lite' ||
+      lotl === 'fast_dip_scalp'
+    ) {
       ot.liveOscarTradeLane = lotl;
     }
     const ps = rawPayload.positionSource;

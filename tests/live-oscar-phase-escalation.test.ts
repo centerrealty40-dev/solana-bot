@@ -6,7 +6,10 @@ import {
   evaluateScalpPhaseEscalationTrigger,
   liveOscarMintOpenSkipReasonForEscalation,
 } from '../src/papertrader/live-oscar-phase-escalation.js';
-import { resolveLiveOscarStagedEntryMaxUsd } from '../src/papertrader/live-oscar-entry-sizing.js';
+import {
+  resolveLiveOscarStagedAvgLegUsd,
+  resolveLiveOscarStagedEntryMaxUsd,
+} from '../src/papertrader/live-oscar-entry-sizing.js';
 import { liveOscarMintOpenSkipReason } from '../src/papertrader/live-oscar-scalp-wave.js';
 import {
   scalpWaveEffectiveExitParams,
@@ -124,10 +127,13 @@ describe('live-oscar-phase-escalation', () => {
     expect(isWaveBExitPolicy(ot)).toBe(true);
     expect(ot.liveStagedEntry).toBeDefined();
     expect(ot.liveStagedEntry?.entrySplitLeg1Ts).toBeGreaterThan(0);
-    expect(ot.liveStagedEntry?.avgSecondLegUsd).toBe(300);
+    // New canon: staged avg @ −10% = half of tier entry-split total (per-tier avg knobs retired).
+    expect(ot.liveStagedEntry?.avgSecondLegUsd).toBe(
+      resolveLiveOscarStagedAvgLegUsd(cfg, 'low', 1_500_000),
+    );
   });
 
-  it('apply escalation to micro: scalp $300 + leg-2 $200 @ ?5% + avg $200 @ ?10% = $700 max', () => {
+  it('apply escalation to micro: scalp $300 + leg-2 $200 @ ?5% + avg (half-entry) @ ?10%', () => {
     const cfg = loadPaperTraderConfig();
     const ot = scalpOpen(1);
     ot.entryMarketCapUsd = 800_000;
@@ -142,8 +148,11 @@ describe('live-oscar-phase-escalation', () => {
     expect(ot.liveOscarMcapTier).toBe('micro');
     expect(ot.liveStagedEntry?.entrySplitLeg2Done).toBe(false);
     expect(ot.liveStagedEntry?.entrySplitLeg2Usd).toBe(200);
-    expect(ot.liveStagedEntry?.avgSecondLegUsd).toBe(200);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'micro')).toBe(700);
+    // New canon: micro avg @ −10% = half of micro entry-split total (300+200)/2 = 250.
+    expect(ot.liveStagedEntry?.avgSecondLegUsd).toBe(
+      resolveLiveOscarStagedAvgLegUsd(cfg, 'micro', 800_000),
+    );
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'micro')).toBe(750);
     expect(ot.totalInvestedUsd).toBe(300);
   });
 

@@ -28,6 +28,7 @@ import {
   evaluateScalpPhaseEscalationTrigger,
 } from '../live-oscar-phase-escalation.js';
 import { isScalpWaveExitPolicy } from './exit-policy-scalp-wave.js';
+import { isFastDipScalpExitPolicy } from './exit-policy-fast-dip-scalp.js';
 import { cfgEffectiveForOpen } from '../cfg-effective-for-open.js';
 import {
   armPostExitReentryGateFromClosedTrade,
@@ -4749,6 +4750,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const mayDca =
       !(isPaperOscarIdealized && idealizedMute) &&
       !ot.liveStagedEntry &&
+      !isFastDipScalpExitPolicy(ot) &&
       !isFlashKillDcaBlocked(cfg, ot, Date.now()) &&
       (tgEff.stepPnl <= 0 || ot.partialSells.length === 0 || isVariantAHybridExitPolicy(ot)) &&
       !(isVariantAScratchExitPolicy(ot) && variantAScratchHadTp(ot)) &&
