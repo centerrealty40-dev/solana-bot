@@ -2327,6 +2327,15 @@ const PM2_APPS = [
         KNIFE_CATCHER_ENABLED: process.env.KNIFE_CATCHER_ENABLED || '0',
         /** shadow = journal hypothetical fills only; live execution not wired yet. */
         KNIFE_MODE: process.env.KNIFE_MODE || 'shadow',
+        /**
+         * Stage-1 on-chain data collection: watchlist + Shyft swap_decode consumer persist every
+         * observed swap (with trader wallet) to KNIFE_SWAP_CAPTURE_PATH; NO Jupiter poll, NO dump/
+         * entry logic. All new load stays on Shyft (no DexScreener / Discovery / snapshot writes).
+         */
+        KNIFE_CAPTURE_ONLY: process.env.KNIFE_CAPTURE_ONLY || '0',
+        KNIFE_SWAP_CAPTURE_ENABLED: process.env.KNIFE_SWAP_CAPTURE_ENABLED || '1',
+        KNIFE_SWAP_CAPTURE_PATH:
+          process.env.KNIFE_SWAP_CAPTURE_PATH || 'data/knife-catcher/knife-swaps.jsonl',
         KNIFE_TOP_N: process.env.KNIFE_TOP_N || '15',
         KNIFE_WATCHLIST_REFRESH_MIN: process.env.KNIFE_WATCHLIST_REFRESH_MIN || '3',
         KNIFE_WATCHLIST_LOOKBACK_MIN: process.env.KNIFE_WATCHLIST_LOOKBACK_MIN || '30',
