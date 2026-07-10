@@ -88,6 +88,21 @@
 
 ---
 
+## [1.11.570] — 2026-07-10
+
+**Тег:** `sa-alpha-1.11.570`
+
+### Live Oscar — cross-source quote divergence guard (Meteora phantom-dip fix)
+
+- **Причина:** на минтах с фрагментированной ликвидностью (Meteora, много пулов) живой квот DexScreener/Birdeye мог кратковременно разойтись с ценой пула и перезаписать `price_usd` для дип-гейта → фантомный «−33% дип» → ложный вход (кейс ANSEM `9cRCn9…`: quote 0.1686 vs PG 0.2123, реальная цена ~0.212 по всем пулам; вход и «+11% TP» — оба по битому квоту).
+- **Фикс:** перед адаптацией квота как цены входа проверяется расхождение с PG-снапшотом; при `> liveOscarQuoteMaxDivergencePct` (по умолч. 12%) перезапись цены/mcap/liq/vol отклоняется, дип-гейт считает по PG, эмитится `live_quote_divergence_reject`. Наблюдаемость сохранена (`live_birdeye_market_quote` пишется как прежде).
+- **Env:** `LIVE_OSCAR_QUOTE_DIVERGENCE_GUARD_ENABLED=1` (default on), `LIVE_OSCAR_QUOTE_MAX_DIVERGENCE_PCT=12`.
+- **Файлы:** `pricing/discovery-market-quote.ts`, `config.ts`, `discovery/dip-clones.ts`, `live/events.ts`, `tests/discovery-quote-divergence.test.ts`.
+
+**Откат:** `LIVE_OSCAR_QUOTE_DIVERGENCE_GUARD_ENABLED=0` (env, без redeploy) или redeploy `sa-alpha-1.11.569`.
+
+---
+
 ## [1.11.569] — 2026-07-10
 
 **Тег:** `sa-alpha-1.11.569`

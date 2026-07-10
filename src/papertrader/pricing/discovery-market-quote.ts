@@ -162,6 +162,35 @@ export function pickDiscoveryMarketQuote(input: DiscoveryQuotePickInput): Discov
   };
 }
 
+/** Absolute % divergence of a quote price vs the PG snapshot baseline. Infinity when PG is unusable. */
+export function quotePgDivergencePct(
+  quotePriceUsd: number | null | undefined,
+  pgPriceUsd: number | null | undefined,
+): number {
+  const q = Number(quotePriceUsd);
+  const p = Number(pgPriceUsd);
+  if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) return Infinity;
+  return (Math.abs(q - p) / p) * 100;
+}
+
+/**
+ * Cross-source guard: should we REJECT adopting a non-PG quote price for an entry decision because it
+ * diverges from the PG snapshot beyond `maxDivergencePct`? Only applies to external (birdeye/dexscreener)
+ * quotes with both prices usable. Prevents phantom dips from a bad quote on fragmented multi-pool liquidity.
+ */
+export function isDiscoveryQuoteDivergent(
+  quote: Pick<DiscoveryMarketQuote, 'source' | 'priceUsd'> | null | undefined,
+  pgPriceUsd: number | null | undefined,
+  maxDivergencePct: number,
+): boolean {
+  if (quote == null || quote.source === 'pg_snapshot') return false;
+  if (!(maxDivergencePct > 0)) return false;
+  const q = Number(quote.priceUsd);
+  const p = Number(pgPriceUsd);
+  if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) return false;
+  return quotePgDivergencePct(q, p) > maxDivergencePct;
+}
+
 /** True when discovery eval resolved price/mcap/liq/vol from fresh Birdeye or DexScreener (not PG). */
 export function isFreshExternalDiscoveryQuote(
   quote: DiscoveryMarketQuote | null | undefined,

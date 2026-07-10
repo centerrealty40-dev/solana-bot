@@ -218,6 +218,14 @@ const ConfigSchema = z.object({
   birdeyeMaxStaleMs: z.coerce.number().int().positive().default(15_000),
   /** Emit `birdeye_coverage_gap` when PG snapshot age exceeds this and REST fallbacks miss. */
   birdeyeCoverageGapMinMs: z.coerce.number().int().positive().default(5 * 60_000),
+  /**
+   * Cross-source guard: reject the discovery quote price override for ENTRY when the quote
+   * (Birdeye/DexScreener) diverges from the PG snapshot price by more than
+   * `liveOscarQuoteMaxDivergencePct`. Prevents phantom dips from a bad quote on fragmented
+   * multi-pool liquidity (e.g. Meteora); falls back to the PG snapshot price. Default ON.
+   */
+  liveOscarQuoteDivergenceGuardEnabled: z.boolean().default(true),
+  liveOscarQuoteMaxDivergencePct: z.coerce.number().positive().default(12),
   /** Try Birdeye batch endpoint (`market-data/multiple`, Business tier). Default OFF (Lite uses per-mint). */
   birdeyeBatchEnabled: z.boolean().default(false),
   /** Min ms after entry split leg 1 before staged averaging (−7%) is evaluated. */
@@ -1481,6 +1489,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     birdeyeMarketTtlMs: process.env.BIRDEYE_MARKET_TTL_MS,
     birdeyeMaxStaleMs: process.env.BIRDEYE_MAX_STALE_MS,
     birdeyeCoverageGapMinMs: process.env.BIRDEYE_COVERAGE_GAP_MIN_MS,
+    liveOscarQuoteDivergenceGuardEnabled: envBool(
+      process.env.LIVE_OSCAR_QUOTE_DIVERGENCE_GUARD_ENABLED,
+      true,
+    ),
+    liveOscarQuoteMaxDivergencePct: process.env.LIVE_OSCAR_QUOTE_MAX_DIVERGENCE_PCT,
     birdeyeBatchEnabled: envBool(process.env.BIRDEYE_USE_BATCH ?? process.env.BIRDEYE_BATCH_ENABLED, false),
     liveStagedEntryAvgCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS,
     liveStagedEntryAvgSecondCooldownMs: process.env.PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS,
