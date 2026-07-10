@@ -750,6 +750,21 @@ const ConfigSchema = z.object({
   dipLocalHighVetoMaxDistancePct: z.coerce.number().min(0).max(50).default(2),
 
   /**
+   * Rolling-flush entry veto (anti «затухающая горка» / падающий нож): block entry when the coin
+   * is in an ACTIVE flush right now — price is down >= minDump% from a recent SHORT-window high
+   * (windows must be shorter than the dip lookback so a stabilized dip still passes). Mirrors
+   * detectRollingFlush (knife-flush-detector) but on aggregated PG window highs. maxDump% caps it
+   * so already-dead mints are left to other guards. Case: DEXBULL bought on a 2-day downhill /
+   * −31% with collapsing volume, then rugged to −99%. Env: PAPER_DIP_ROLLING_FLUSH_VETO_*.
+   */
+  dipRollingFlushVetoEnabled: z.boolean().default(false),
+  dipRollingFlushVetoWindowsCsv: z.string().default('15,30,60'),
+  dipRollingFlushVetoMinDumpPct: z.coerce.number().min(0.1).max(100).default(10),
+  dipRollingFlushVetoMaxDumpPct: z.coerce.number().min(1).max(100).default(45),
+  /** Veto only when price is still within this % of the window LOW (no bounce yet = a knife). */
+  dipRollingFlushVetoNearLowPct: z.coerce.number().min(0).max(100).default(4),
+
+  /**
    * Trend structure veto (1.11.249): блокирует вход в «протухшие раннеры» —
    * монеты без обновления high за N дней и/или в структурном даунтренде.
    */
@@ -1381,10 +1396,17 @@ const ConfigSchema = z.object({
   smlotBlockClusteredWallets: z.boolean().default(true),
   smlotBlockScamFarmMeta: z.boolean().default(true),
 }).transform((data) => {
-  const { dipLookbackWindowsCsv, dipRecoveryVetoWindowsCsv, dipLocalHighVetoWindowsCsv, ...rest } = data;
+  const {
+    dipLookbackWindowsCsv,
+    dipRecoveryVetoWindowsCsv,
+    dipLocalHighVetoWindowsCsv,
+    dipRollingFlushVetoWindowsCsv,
+    ...rest
+  } = data;
   const dipLookbackWindowsMin = resolveDipLookbackWindows(rest.dipLookbackMin, dipLookbackWindowsCsv);
   const dipRecoveryVetoWindowsMin = resolveRecoveryVetoWindows(dipRecoveryVetoWindowsCsv);
   const dipLocalHighVetoWindowsMin = resolveRecoveryVetoWindows(dipLocalHighVetoWindowsCsv);
+  const dipRollingFlushVetoWindowsMin = resolveRecoveryVetoWindows(dipRollingFlushVetoWindowsCsv);
   const fastDipScalpWindows =
     rest.liveOscarFastDipScalpLaneEnabled && rest.liveOscarFastDipScalpDipWindowMin > 0
       ? [rest.liveOscarFastDipScalpDipWindowMin]
@@ -1392,12 +1414,14 @@ const ConfigSchema = z.object({
   const dipAggregationWindowsMin =
     (rest.dipRecoveryVetoEnabled && dipRecoveryVetoWindowsMin.length > 0) ||
     (rest.dipLocalHighVetoEnabled && dipLocalHighVetoWindowsMin.length > 0) ||
+    (rest.dipRollingFlushVetoEnabled && dipRollingFlushVetoWindowsMin.length > 0) ||
     fastDipScalpWindows.length > 0
       ? [
           ...new Set([
             ...dipLookbackWindowsMin,
             ...dipRecoveryVetoWindowsMin,
             ...dipLocalHighVetoWindowsMin,
+            ...dipRollingFlushVetoWindowsMin,
             ...fastDipScalpWindows,
           ]),
         ].sort((a, b) => a - b)
@@ -1407,6 +1431,7 @@ const ConfigSchema = z.object({
     dipLookbackWindowsMin,
     dipRecoveryVetoWindowsMin,
     dipLocalHighVetoWindowsMin,
+    dipRollingFlushVetoWindowsMin,
     dipAggregationWindowsMin,
   };
 });
@@ -1871,6 +1896,11 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipLocalHighVetoEnabled: envBool(process.env.PAPER_DIP_LOCAL_HIGH_VETO_ENABLED, false),
     dipLocalHighVetoWindowsCsv: process.env.PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN ?? '',
     dipLocalHighVetoMaxDistancePct: process.env.PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT,
+    dipRollingFlushVetoEnabled: envBool(process.env.PAPER_DIP_ROLLING_FLUSH_VETO_ENABLED, false),
+    dipRollingFlushVetoWindowsCsv: process.env.PAPER_DIP_ROLLING_FLUSH_VETO_WINDOWS_MIN ?? '15,30,60',
+    dipRollingFlushVetoMinDumpPct: process.env.PAPER_DIP_ROLLING_FLUSH_VETO_MIN_DUMP_PCT,
+    dipRollingFlushVetoMaxDumpPct: process.env.PAPER_DIP_ROLLING_FLUSH_VETO_MAX_DUMP_PCT,
+    dipRollingFlushVetoNearLowPct: process.env.PAPER_DIP_ROLLING_FLUSH_VETO_NEAR_LOW_PCT,
     trendStructureVetoEnabled: envBool(process.env.PAPER_TREND_STRUCTURE_VETO_ENABLED, false),
     trendVetoLookbackDays: process.env.PAPER_TREND_VETO_LOOKBACK_DAYS,
     trendVetoMinPgSamples: process.env.PAPER_TREND_VETO_MIN_PG_SAMPLES,

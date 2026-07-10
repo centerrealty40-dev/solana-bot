@@ -88,6 +88,22 @@
 
 ---
 
+## [1.11.572] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.572`
+
+### Rolling-flush entry veto — не покупать «затухающую горку» / падающий нож
+
+- **Причина:** боевая `live-lera` купила `DEXBULL` (`6xCtR2Eq…`) 2026-07-10 16:22 на свежем 30м/60м-дне (−17%/−21% от хая окна, без отскока), через 16с усреднилась вниз на −21%, затем ликвидность высушили → закрытие `LIQ_DRAIN`, **−99.76% / −$498.82**. Существующие вето это пропускали: recovery-veto молчит без отскока, local-high-veto молчит вдали от хая; dip-логика приняла обвал −31% за «дип».
+- **Что сделано:** новое чистое вето входа `evaluateRollingFlushVeto` (`dip-detector.ts`), встроено в единый protector-блок `dip-clones.ts` (после local-high, пропускается для `post_crash_fast`/`stress_kill_reentry`). Логика как у `detectRollingFlush` (knife-flush-detector), но на агрегированных PG-хаях/лоу окон: блок, если по какому-то окну просадка от хая `>= MIN_DUMP%` и `<= MAX_DUMP%`, И цена ещё в пределах `NEAR_LOW%` от лоу окна (не отскочила = нож). Отскочивший дип проходит.
+- **Калибровка на реальных минутных снапшотах DEXBULL:** за 10–15м просадка была всего ~4% (быстрый слив был раньше + «стабилизация»), поэтому дефолт окон — `15,30,60`; `MIN_DUMP=10%`, `MAX_DUMP=45%`, `NEAR_LOW=4%`. На этих порогах DEXBULL режется по 30м/60м, обычные дипы — нет.
+- **Флаги:** `PAPER_DIP_ROLLING_FLUSH_VETO_ENABLED` (default **OFF** → Oscar не затронут), `..._WINDOWS_MIN`, `..._MIN_DUMP_PCT`, `..._MAX_DUMP_PCT`, `..._NEAR_LOW_PCT`. Включить на LERA: `PAPER_DIP_ROLLING_FLUSH_VETO_ENABLED=true`.
+- **Тесты:** `tests/papertrader-dip-rolling-flush-veto.test.ts` (6, вкл. реальный DEXBULL-контекст).
+- **Примечание:** общие файлы `dip-clones.ts` / `.env.example` в этом коммите несут также структурные правки awakening-линии (union `dormant_awakening`, awakening env) — сама фича awakening в следующем коммите `1.11.573`.
+- **Откат:** `PAPER_DIP_ROLLING_FLUSH_VETO_ENABLED=false` (мгновенно, без деплоя) или revert коммита `1.11.572`.
+
+---
+
 ## [1.11.571] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.571`

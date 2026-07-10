@@ -30,6 +30,7 @@ import {
   evaluateDip,
   evaluateLocalHighVeto,
   evaluateRecoveryVeto,
+  evaluateRollingFlushVeto,
   type LocalHighVetoResult,
   type RecoveryVetoResult,
 } from '../dip-detector.js';
@@ -189,7 +190,8 @@ export interface EvalDecision {
     | 'stress_kill_reentry'
     | 'preset_c_pullback'
     | 'preset_c_spike'
-    | 'fast_dip_window';
+    | 'fast_dip_window'
+    | 'dormant_awakening';
   /** `micro` = $500k–$1.3M; `low` = $1.3M–$3M; `prod` = mcap ≥ $3M; `scalp_wave` = shallow scalp lane. */
   liveOscarMcapTier?: LiveOscarTradeTier;
   /** Mutex trade lane: `prod` (staged Oscar) vs `scalp_wave` ($300 one-shot); runner lanes parallel. */
@@ -199,7 +201,8 @@ export interface EvalDecision {
     | 'runner_probe'
     | 'runner_lite'
     | 'pervyy_vystrel'
-    | 'fast_dip_scalp';
+    | 'fast_dip_scalp'
+    | 'dormant_awakening';
   positionSource?: 'runner_probe' | 'runner_lite' | 'pervyy_vystrel';
   /** Wallet-intel gate snapshot (prod / runner_probe / runner_lite). */
   oscarIntel?: OscarIntelGateSnapshot;
@@ -1384,6 +1387,18 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         const skipLocalHigh = shouldBypassLocalHighVetoForPostCrash(cfg, postCrashFastPath, entryPath);
         if (!skipLocalHigh && localHighVeto.reasons.length > 0) {
           dipReasonsForGate = [...dipReasonsForGate, ...localHighVeto.reasons];
+          entryPath = undefined;
+        }
+      }
+      if (
+        entryPath != null &&
+        cfg.dipRollingFlushVetoEnabled &&
+        entryPath !== 'post_crash_fast' &&
+        entryPath !== 'stress_kill_reentry'
+      ) {
+        const flushVeto = evaluateRollingFlushVeto(cfg, row, dipMap.get(row.mint));
+        if (flushVeto.reasons.length > 0) {
+          dipReasonsForGate = [...dipReasonsForGate, ...flushVeto.reasons];
           entryPath = undefined;
         }
       }
