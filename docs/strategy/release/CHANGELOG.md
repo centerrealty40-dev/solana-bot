@@ -88,6 +88,20 @@
 
 ---
 
+## [1.11.578] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.578`
+
+### Live-Oscar discovery — unfreeze on tick timeout + stall alert + volume-leader audit
+
+- **Причина:** зависший `discoveryTick` (PG fan-out > `PAPER_DISCOVERY_TICK_TIMEOUT_MS`) оставлял `discoveryInFlight` навсегда — discovery молчала часами (RCA mint `4ko5…`). Пустой SQL-пул при pinned volume-leaders не аудировался.
+- **Что сделано:** при timeout сбрасываем `discoveryInFlight` + bump generation (следующий тик снова бежит). Watchdog `LIVE_DISCOVERY_STALL_ALERT_*` → `risk_note` + Telegram ALERT. Обязательный `live_discovery_eval` audit для volume-leader tier; `universe_miss` когда SQL пуст, а top runners pinned.
+- **Флаги (live-oscar PM2):** `LIVE_DISCOVERY_STALL_ALERT_ENABLED=1`, `ALERT_MS=300000`, `BOOT_GRACE_MS=180000`, `REPEAT_MS=600000`.
+- **Тесты:** `discovery-stall-health.test.ts`, `discovery-audit-volume-leader.test.ts`.
+- **Откат:** revert `1.11.578` или `LIVE_DISCOVERY_STALL_ALERT_ENABLED=0`.
+
+---
+
 ## [1.11.577] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.577`
