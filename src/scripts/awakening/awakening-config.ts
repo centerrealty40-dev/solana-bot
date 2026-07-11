@@ -132,7 +132,7 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     minVol1hToVol6hRatio: envNum(env.AWAKENING_MIN_VOL1H_TO_VOL6H_RATIO, 0.35),
     maxVol1hPerMcap: envNum(env.AWAKENING_MAX_VOL1H_PER_MCAP, 2.0),
     legUsd: envNum(env.AWAKENING_LEG_USD, 10),
-    telegramEnabled: envBool(env.AWAKENING_TELEGRAM_ENABLED, false),
+    telegramEnabled: envBool(env.AWAKENING_TELEGRAM_ENABLED, true),
     summaryMs: Math.round(envNum(env.AWAKENING_SUMMARY_MIN, 30) * 60_000),
   };
 }

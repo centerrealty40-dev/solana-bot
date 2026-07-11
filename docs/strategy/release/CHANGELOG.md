@@ -88,6 +88,19 @@
 
 ---
 
+## [1.11.576] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.576`
+
+### Awakening-catcher — Telegram в shadow: «поймал сигнал, покупка не выполнена»
+
+- **Причина:** в shadow awakening пишет только в журнал — непонятно, что сигнал пойман, но реальный вход не ставится; LERA по своей воронке может купить ту же монету независимо.
+- **Что сделано:** `formatAwakeningSignalTelegramHtml` (`awakening-telegram.ts`) — при прохождении сигнала в **shadow** шлёт в Telegram явное объяснение: гипотетический вход $10, покупка awakening **не выполняется**, live-lera может купить отдельно. В **live** — текст про очередь `dormant_awakening`. `AWAKENING_TELEGRAM_ENABLED` default **ON** (config + ecosystem).
+- **Тесты:** `tests/awakening-catcher.test.ts` (+2 на shadow/live текст).
+- **Откат:** `AWAKENING_TELEGRAM_ENABLED=0` или `AWAKENING_CATCHER_ENABLED=0`; revert `1.11.576`.
+
+---
+
 ## [1.11.575] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.575`
