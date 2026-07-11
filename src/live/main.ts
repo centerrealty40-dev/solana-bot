@@ -80,6 +80,8 @@ import {
 import {
   discoveryHealthSummaryRolling,
   getNearReadyDipWatchlist,
+  getDiscoveryStallStatus,
+  shouldEmitDiscoveryStallAlert,
 } from '../papertrader/discovery-health-window.js';
 import { gmgnMintHrefHtml } from '../papertrader/discovery/near-ready-dip-watch.js';
 import { sendTagged } from '../core/telegram/sender.js';
@@ -855,6 +857,33 @@ export async function main(): Promise<void> {
 
       tickLiveBtcGateTelegram(liveCfg);
 
+      const discoveryStall = getDiscoveryStallStatus();
+      const discoveryStallAlert = shouldEmitDiscoveryStallAlert();
+      if (discoveryStallAlert) {
+        appendLiveJsonlEvent({
+          kind: 'risk_note',
+          reason: 'discovery_stall',
+          detail: {
+            stallSec: Math.floor(discoveryStallAlert.stallMs / 1000),
+            thresholdSec: Math.floor(discoveryStallAlert.thresholdMs / 1000),
+            discCycles: stats.ticks,
+            errors: stats.errors,
+          },
+        });
+        void sendTagged(
+          'ALERT',
+          'discovery_stall',
+          [
+            'Discovery STALL: no completed discovery tick',
+            `stall_min=${Math.floor(discoveryStallAlert.stallMs / 60_000)}`,
+            `threshold_min=${Math.floor(discoveryStallAlert.thresholdMs / 60_000)}`,
+            `disc_cycles=${stats.ticks}`,
+            `errors=${stats.errors}`,
+          ].join(' '),
+          { skipQuietHours: true },
+        ).catch((e) => log.warn({ err: String(e) }, 'discovery stall alert telegram failed'));
+      }
+
       const tgHeartbeatOff = process.env.LIVE_TELEGRAM_HEARTBEAT?.trim() === '0';
       /**
        * 1.11.235 — отдельный switch: слать health-pulse в Telegram **только когда
@@ -905,7 +934,8 @@ export async function main(): Promise<void> {
          * 1.11.235 — при `LIVE_TELEGRAM_HEALTH_PULSE_ONLY_ON_ALERT=1` отправляем pulse
          * только если что-то ненормально. Иначе тихо выходим (alert уже выше отправлен).
          */
-        const hasIncident = stats.errors > 0 || simStreak > 0 || snapStale;
+        const hasIncident =
+          stats.errors > 0 || simStreak > 0 || snapStale || discoveryStall.stalled;
         if (tgPulseOnlyOnAlert && !hasIncident) {
           return;
         }

@@ -1538,6 +1538,11 @@ const PM2_APPS = [
         /** Полный аудит по mint из whitelist-файла: pass/fail eval, `universe_miss`, `tick_skip`. */
         LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '1',
         LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
+        /** Alert when heartbeat runs but no discovery tick completes (mutex hang / PG stall). */
+        LIVE_DISCOVERY_STALL_ALERT_ENABLED: '1',
+        LIVE_DISCOVERY_STALL_ALERT_MS: '300000',
+        LIVE_DISCOVERY_STALL_BOOT_GRACE_MS: '180000',
+        LIVE_DISCOVERY_STALL_ALERT_REPEAT_MS: '600000',
         /** 1.11.244 — priority dip-watch tier (open + near-ready + recent eval + SQL pool). Whitelist entry off (`LIVE_MINT_WHITELIST_ENABLED=0`). */
         PAPER_PRIORITY_DISCOVERY_ENABLED: '1',
         PAPER_PRIORITY_DISCOVERY_REEVAL_SEC: '15',

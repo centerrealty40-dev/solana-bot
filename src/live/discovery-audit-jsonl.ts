@@ -177,7 +177,8 @@ export function createLiveDiscoveryAuditJournalAppend(enabled: boolean): (event:
     if (kind === 'eval') {
       const deep = row._liveDiscoveryDeepAudit === true;
       const priority = row._priorityDiscovery === true;
-      if (row.pass === true && !deep && !priority) return;
+      const volumeLeader = row._volumeLeaderDiscovery === true;
+      if (row.pass === true && !deep && !priority && !volumeLeader) return;
       const tele = extractEvalTelemetry(row);
       appendLiveJsonlEvent({
         kind: 'live_discovery_eval',
@@ -188,6 +189,7 @@ export function createLiveDiscoveryAuditJournalAppend(enabled: boolean): (event:
         source: trimStr(row.source, 64),
         ageMin: typeof row.ageMin === 'number' && Number.isFinite(row.ageMin) ? row.ageMin : undefined,
         tradeLane: trimStr(row.tradeLane, 32),
+        volumeLeaderTier: volumeLeader ? true : undefined,
         reasons: reasonsForEval(row.reasons, row.pass === true),
         entryPath: trimStr(row.entry_path, 120),
         ...tele,
