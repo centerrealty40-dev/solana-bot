@@ -17,6 +17,7 @@ import { fetchAwakeningDexMarket } from './awakening/awakening-dex-pair.js';
 import { fetchGeckoTrendingMints } from './awakening/awakening-gecko-trending.js';
 import { enqueueAwakeningLiveEntry } from './awakening/awakening-live-entry-queue.js';
 import { evaluateAwakeningSignal } from './awakening/awakening-signal.js';
+import { formatAwakeningSignalTelegramHtml } from './awakening/awakening-telegram.js';
 import { startAwakeningStreamWs } from './awakening/awakening-stream-ws.js';
 import {
   loadStreamCursor,
@@ -164,17 +165,7 @@ async function evaluateCandidate(
     });
   }
 
-  notifyHtml(
-    cfg,
-    [
-      `<b>Awakening signal</b> (${cfg.mode})`,
-      `mint: <code>${candidate.mint}</code>`,
-      `vol5m: $${Math.round(verdict.metrics.vol5mUsd).toLocaleString('en-US')}`,
-      `prior6h: $${Math.round(verdict.metrics.priorVol6hUsd).toLocaleString('en-US')}`,
-      `mcap: $${Math.round(market.marketCapUsd ?? 0).toLocaleString('en-US')}`,
-      `src: ${candidate.source}`,
-    ].join('\n'),
-  );
+  notifyHtml(cfg, formatAwakeningSignalTelegramHtml(cfg, candidate, market, verdict));
 
   log.info(
     {

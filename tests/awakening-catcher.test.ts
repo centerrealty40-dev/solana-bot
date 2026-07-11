@@ -4,6 +4,8 @@ import { extractMintCandidatesFromLogs } from '../src/scripts/awakening/awakenin
 import { evaluateAwakeningSignal } from '../src/scripts/awakening/awakening-signal.js';
 import type { AwakeningDexMarket } from '../src/scripts/awakening/awakening-types.js';
 import { MintActivityTracker } from '../src/scripts/awakening/awakening-activity.js';
+import { formatAwakeningSignalTelegramHtml } from '../src/scripts/awakening/awakening-telegram.js';
+import type { AwakeningCandidate } from '../src/scripts/awakening/awakening-types.js';
 
 const FEBU = '4ko5tSr5o3H4v1sFtjTSd9MPUW7yx5AFCpkNPoL6pump';
 
@@ -125,5 +127,47 @@ describe('awakening-activity', () => {
     t.record(FEBU, now - 30_000);
     expect(t.count5m(FEBU, now)).toBe(2);
     expect(t.hotMints(2, now).map((x) => x.mint)).toContain(FEBU);
+  });
+});
+
+describe('awakening-telegram', () => {
+  const shadowCfg = loadAwakeningConfig({ AWAKENING_MODE: 'shadow', AWAKENING_LEG_USD: '10' });
+  const liveCfg = loadAwakeningConfig({ AWAKENING_MODE: 'live', AWAKENING_LEG_USD: '10' });
+  const candidate: AwakeningCandidate = { mint: FEBU, source: 'stream_pulse', streamSigCount5m: 3 };
+  const mkt = market({});
+
+  it('shadow message explains no live buy + LERA may still purchase', () => {
+    const html = formatAwakeningSignalTelegramHtml(shadowCfg, candidate, mkt, evaluateAwakeningSignal(shadowCfg, mkt));
+    expect(html).toContain('Awakening shadow');
+    expect(html).toContain(FEBU);
+    expect(html).toContain('shadow');
+    expect(html).toContain('не выполняется');
+    expect(html).toContain('live-lera');
+    expect(html).toContain('ничего не блокирует');
+  });
+
+  it('live message mentions queue intent', () => {
+    const html = formatAwakeningSignalTelegramHtml(liveCfg, candidate, mkt, evaluateAwakeningSignal(liveCfg, mkt));
+    expect(html).toContain('Awakening live');
+    expect(html).toContain('очередь');
+    expect(html).toContain('dormant_awakening');
+  });
+});
+
+describe('awakening-config ws', () => {
+  it('falls back from dead QuickNode WS to Alchemy WSS', () => {
+    const cfg = loadAwakeningConfig({
+      SA_RPC_WS_URL: 'wss://dead.quiknode.pro/key/',
+      ALCHEMY_HTTP_URL: 'https://solana-mainnet.g.alchemy.com/v2/testkey',
+    });
+    expect(cfg.rpcWsUrl).toBe('wss://solana-mainnet.g.alchemy.com/v2/testkey');
+  });
+
+  it('prefers AWAKENING_RPC_WS_URL override', () => {
+    const cfg = loadAwakeningConfig({
+      AWAKENING_RPC_WS_URL: 'wss://custom.example/ws',
+      SA_RPC_WS_URL: 'wss://dead.quiknode.pro/key/',
+    });
+    expect(cfg.rpcWsUrl).toBe('wss://custom.example/ws');
   });
 });

@@ -84,7 +84,16 @@ function parseProgramIds(raw: string | undefined): string[] {
 export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): AwakeningConfig {
   const streamRaw = String(env.AWAKENING_STREAM_SOURCE ?? 'ws').trim().toLowerCase();
   const streamSource: AwakeningStreamSource = streamRaw === 'pg' ? 'pg' : 'ws';
-  const wsUrl = resolveSolanaRpcWsUrl(env);
+  const wsUrl =
+    env.AWAKENING_RPC_WS_URL?.trim() ||
+    (() => {
+      const resolved = resolveSolanaRpcWsUrl(env);
+      if (/quiknode\.pro/i.test(resolved)) {
+        const alchemyHttp = env.ALCHEMY_HTTP_URL?.trim() || env.SA_RPC_HTTP_URL?.trim();
+        if (alchemyHttp?.startsWith('https://')) return `wss://${alchemyHttp.slice('https://'.length)}`;
+      }
+      return resolved;
+    })();
   return {
     enabled: envBool(env.AWAKENING_CATCHER_ENABLED, false),
     mode: String(env.AWAKENING_MODE ?? 'shadow').trim().toLowerCase() === 'live' ? 'live' : 'shadow',
@@ -132,7 +141,7 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     minVol1hToVol6hRatio: envNum(env.AWAKENING_MIN_VOL1H_TO_VOL6H_RATIO, 0.35),
     maxVol1hPerMcap: envNum(env.AWAKENING_MAX_VOL1H_PER_MCAP, 2.0),
     legUsd: envNum(env.AWAKENING_LEG_USD, 10),
-    telegramEnabled: envBool(env.AWAKENING_TELEGRAM_ENABLED, false),
+    telegramEnabled: envBool(env.AWAKENING_TELEGRAM_ENABLED, true),
     summaryMs: Math.round(envNum(env.AWAKENING_SUMMARY_MIN, 30) * 60_000),
   };
 }
