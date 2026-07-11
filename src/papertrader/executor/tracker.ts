@@ -219,8 +219,10 @@ import {
   liveStagedEntryAddWindowOpen,
   liveStagedEntryTtlPreservesPlan,
   liveStagedEntrySignalTtlExpired,
+  openTradeNeedsEntrySplitFastPoll,
   resolveStagedEntryTradableUsd,
 } from './live-staged-entry-gates.js';
+import { maybeRefreshPendingLegPgForOpenTrade } from '../pricing/pending-leg-pg-refresh.js';
 import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-staged-entry-lifecycle.js';
 import { reconcileE2OpenOnTrackerTick } from './live-oscar-e2-open-reconcile.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
@@ -4767,6 +4769,14 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const st = ot.liveStagedEntry;
     if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, stagedEntryPriceUsd)) {
       if (st.entrySplitV2) {
+        if (openTradeNeedsEntrySplitFastPoll(ot)) {
+          await maybeRefreshPendingLegPgForOpenTrade({
+            cfg,
+            ot,
+            mint,
+            journalAppend,
+          });
+        }
         await tryLiveStagedEntryV2TrackerStep({
           cfg,
           ot,

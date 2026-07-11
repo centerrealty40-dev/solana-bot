@@ -88,6 +88,21 @@
 
 ---
 
+---
+
+## [1.11.581] — 2026-07-12
+
+**Тег:** `sa-alpha-1.11.581`
+
+### pending-leg PG refresh — solo-fetch для open mint с pending entry-split leg
+
+- **Причина:** при 2-минутном `sa-meteora` и `PAPER_LIVE_LERA_STALE_PRICE_BLOCK_MS=120000` вторая нога сплита блокировалась `price_stale_block` (ANSEM 12.07 ~02:04): PG `ts` не молодел между тиками коллектора.
+- **Что сделано:** модуль `pending-leg-pg-refresh.ts` — для open mint с pending legs 2–8: DexScreener solo-fetch (cooldown **45s**) → upsert в `{source}_pair_snapshots` с **30s** `ts`-бакетами. Вызов из `entry-split-fast-poll` и `tracker` перед `tryLiveStagedEntryV2TrackerStep`. Env: `PAPER_LIVE_PENDING_LEG_PG_REFRESH_*`.
+- **Тесты:** `pending-leg-pg-refresh.test.ts`.
+- **Откат:** `PAPER_LIVE_PENDING_LEG_PG_REFRESH_ENABLED=0` + reload, или revert `1.11.581`.
+
+---
+
 ## [1.11.580] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.580`
