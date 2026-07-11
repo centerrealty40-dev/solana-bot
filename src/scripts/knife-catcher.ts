@@ -2,7 +2,8 @@
  * Knife-catcher — standalone worker (isolated; NOT wired into live-oscar).
  *
  * Event-driven whale-dump entry: detect large sell swaps that print a fast dump from a recent local
- * high, enter the dip within a short window, scalp out on an escalating TP ladder + trail.
+ * high, enter the dip within a short window, scalp out on an infinite Oscar-style TP grid
+ * (break-even + ladder-retrace + peak trail).
  *
  * Price path: Jupiter buy-quote (trusted anchor) + stream swap_decode only when it agrees
  * with fresh Jupiter and passes tick-move guards. Raw stream prices never reach buffer/PnL.
@@ -51,6 +52,18 @@ import {
 import { sendTagged } from '../core/telegram/sender.js';
 import { detectRollingFlush } from './knife-flush-detector.js';
 import { knifeWatchdogVerdict } from './knife-watchdog.js';
+import {
+  defaultKnifeExitLadderConfig,
+  knifePnlPct,
+  ladderRetraceTriggered,
+  markRungFired,
+  newlyReachableRungs,
+  nextGridRungPnl,
+  peakTrailTriggered,
+  sellFracForRungIndex,
+  updatePeakTrailArm,
+  type KnifeExitLadderConfig,
+} from './knife-exit-ladder.js';
 
 const log = child('knife-catcher');
 const EPS = 1e-12;
@@ -64,17 +77,6 @@ function envBool(v: unknown, def: boolean): boolean {
 function envNum(v: unknown, def: number): number {
   const n = Number(v);
   return Number.isFinite(n) && n > 0 ? n : def;
-}
-
-function parseLadder(v: unknown, def: number[]): number[] {
-  const raw = typeof v === 'string' ? v.trim() : '';
-  if (!raw) return def;
-  const out = raw
-    .split(/[,\s]+/)
-    .map((x) => Number(x))
-    .filter((x) => Number.isFinite(x) && x > 0)
-    .sort((a, b) => a - b);
-  return out.length > 0 ? out : def;
 }
 
 interface KnifeConfig {
@@ -115,11 +117,10 @@ interface KnifeConfig {
   minHoldBeforeTpMs: number;
   legUsd: number;
   positionUsd: number;
+  /** Second leg (avg-down) — off by default for knife scalp. */
+  avgLegEnabled: boolean;
   avgDropPct: number;
-  tpLadderPct: number[];
-  tpSellFrac: number;
-  trailPct: number;
-  killPct: number;
+  exitLadder: KnifeExitLadderConfig;
   maxHoldMs: number;
   cooldownMs: number;
   telegramEnabled: boolean;
@@ -172,11 +173,9 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     minHoldBeforeTpMs: Math.round(envNum(env.KNIFE_MIN_HOLD_BEFORE_TP_SEC, 20) * 1000),
     legUsd,
     positionUsd,
+    avgLegEnabled: envBool(env.KNIFE_AVG_LEG_ENABLED, false),
     avgDropPct: envNum(env.KNIFE_AVG_DROP_PCT, 8),
-    tpLadderPct: parseLadder(env.KNIFE_TP_LADDER_PCT, [3.5, 12, 15]),
-    tpSellFrac: Math.min(1, envNum(env.KNIFE_TP_SELL_FRAC, 0.3)),
-    trailPct: envNum(env.KNIFE_TRAIL_PCT, 5),
-    killPct: envNum(env.KNIFE_KILL_PCT, 50),
+    exitLadder: defaultKnifeExitLadderConfig(env),
     maxHoldMs: Math.round(Number(env.KNIFE_MAX_HOLD_SEC ?? 2700) * 1000) || 0,
     cooldownMs: Math.round(envNum(env.KNIFE_COOLDOWN_SEC, 600) * 1000),
     telegramEnabled: envBool(env.KNIFE_TELEGRAM_ENABLED, true),
@@ -230,9 +229,10 @@ interface MintState {
   investedUsd: number;
   realizedUsd: number;
   peak: number;
+  /** Sorted PnL% thresholds for grid rungs already sold (e.g. [5, 10]). */
+  ladderFiredPnls: number[];
+  peakPnlPct: number;
   trailArmed: boolean;
-  trailPeak: number;
-  rungsFired: number;
   lastMarkPrice: number;
   totalSoldQty: number;
   totalProceedsUsd: number;
@@ -336,9 +336,9 @@ function getOrCreateState(mint: string): MintState {
       investedUsd: 0,
       realizedUsd: 0,
       peak: 0,
+      ladderFiredPnls: [],
+      peakPnlPct: 0,
       trailArmed: false,
-      trailPeak: 0,
-      rungsFired: 0,
       lastMarkPrice: 0,
       totalSoldQty: 0,
       totalProceedsUsd: 0,
@@ -420,23 +420,24 @@ function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: st
   s.investedUsd = 0;
   s.realizedUsd = 0;
   s.peak = 0;
+  s.ladderFiredPnls = [];
+  s.peakPnlPct = 0;
   s.trailArmed = false;
-  s.trailPeak = 0;
-  s.rungsFired = 0;
   s.lastMarkPrice = 0;
   s.totalSoldQty = 0;
   s.totalProceedsUsd = 0;
   s.sellSummary = [];
 }
 
-function sellChunk(
+function sellFraction(
   cfg: KnifeConfig,
   s: MintState,
   price: number,
   reason: string,
+  fracOfInitial: number,
   opts: { forTp?: boolean } = {},
 ): void {
-  if (s.qty <= EPS) return;
+  if (s.qty <= EPS || !(fracOfInitial > 0)) return;
   if (!isKnifeExitPriceSane(price, s.avgEntry, cfg.maxExitMovePct)) {
     log.debug(
       { mint: s.mint, price, avgEntry: s.avgEntry, reason },
@@ -451,7 +452,7 @@ function sellChunk(
     );
     return;
   }
-  const chunk = cfg.tpSellFrac * s.qtyFilled;
+  const chunk = fracOfInitial * s.qtyFilled;
   const soldQty = Math.min(s.qty, chunk);
   if (soldQty <= EPS) return;
   const proceeds = soldQty * price;
@@ -466,11 +467,25 @@ function sellChunk(
     mint: s.mint,
     reason,
     price,
-    soldFracOfInitial: cfg.tpSellFrac,
+    soldFracOfInitial: fracOfInitial,
     chunkPnlPct: Number(((price / s.avgEntry - 1) * 100).toFixed(3)),
     remainingFrac: s.qtyFilled > 0 ? Number((s.qty / s.qtyFilled).toFixed(3)) : 0,
     realizedUsd: Number(s.realizedUsd.toFixed(2)),
   });
+}
+
+function sellAll(
+  cfg: KnifeConfig,
+  s: MintState,
+  price: number,
+  reason: string,
+  opts: { forTp?: boolean } = {},
+): void {
+  if (s.qty <= EPS) return;
+  sellFraction(cfg, s, price, reason, s.qty / s.qtyFilled, opts);
+  while (s.qty > EPS) {
+    sellFraction(cfg, s, price, reason, s.qty / s.qtyFilled, opts);
+  }
 }
 
 /**
@@ -603,7 +618,14 @@ function onPriceInPosition(
   s.lastMarkPrice = price;
   if (price > s.peak) s.peak = price;
 
-  if (s.legs < 2 && price <= s.leg1Price * (1 - cfg.avgDropPct / 100)) {
+  const ladder = cfg.exitLadder;
+  const pnlPct = knifePnlPct(price, s.avgEntry);
+
+  if (
+    cfg.avgLegEnabled &&
+    s.legs < 2 &&
+    price <= s.leg1Price * (1 - cfg.avgDropPct / 100)
+  ) {
     fillLeg(s, cfg.legUsd, price);
     appendJournal(cfg, {
       kind: 'knife_avg_leg',
@@ -628,9 +650,8 @@ function onPriceInPosition(
     log.info({ mint: s.mint, price, avgEntry: s.avgEntry }, 'knife avg leg2');
   }
 
-  if (price <= s.avgEntry * (1 - cfg.killPct / 100)) {
-    sellChunk(cfg, s, price, 'kill');
-    while (s.qty > EPS) sellChunk(cfg, s, price, 'kill');
+  if (pnlPct <= -ladder.killPct) {
+    sellAll(cfg, s, price, 'kill');
     closePosition(cfg, s, tsMs, 'kill');
     return;
   }
@@ -638,34 +659,47 @@ function onPriceInPosition(
   const holdMs = tsMs - s.entryTs;
   const tpAllowed = holdMs >= cfg.minHoldBeforeTpMs;
 
-  if (
-    tpAllowed &&
-    s.rungsFired < cfg.tpLadderPct.length &&
-    price >= s.avgEntry * (1 + cfg.tpLadderPct[s.rungsFired]! / 100)
-  ) {
-    const reason = `tp_${cfg.tpLadderPct[s.rungsFired]}pct`;
-    const qtyBefore = s.qty;
-    sellChunk(cfg, s, price, reason, { forTp: true });
-    if (s.qty < qtyBefore - EPS) {
-      s.rungsFired += 1;
-      if (s.rungsFired >= cfg.tpLadderPct.length) {
-        s.trailArmed = true;
-        s.trailPeak = price;
+  if (tpAllowed) {
+    const snap = updatePeakTrailArm(ladder, {
+      firedRungPnls: s.ladderFiredPnls,
+      peakPnlPct: s.peakPnlPct,
+      trailArmed: s.trailArmed,
+    }, pnlPct);
+    s.peakPnlPct = snap.peakPnlPct;
+    s.trailArmed = snap.trailArmed;
+
+    for (const rungIdx of newlyReachableRungs(ladder, s.ladderFiredPnls, pnlPct)) {
+      const thr = nextGridRungPnl(ladder, rungIdx);
+      const frac = sellFracForRungIndex(ladder, rungIdx);
+      const qtyBefore = s.qty;
+      sellFraction(cfg, s, price, `tp_grid_${thr.toFixed(1)}pct`, frac, { forTp: true });
+      if (s.qty < qtyBefore - EPS) {
+        s.ladderFiredPnls = markRungFired(s.ladderFiredPnls, thr);
       }
     }
-  }
 
-  if (s.trailArmed && s.qty > EPS && tpAllowed) {
-    if (price > s.trailPeak) {
-      s.trailPeak = price;
-    } else if (price <= s.trailPeak * (1 - cfg.trailPct / 100)) {
-      sellChunk(cfg, s, price, 'trail', { forTp: true });
-      s.trailPeak = price;
+    if (ladderRetraceTriggered(ladder, s.ladderFiredPnls, pnlPct) && s.qty > EPS) {
+      sellAll(cfg, s, price, 'ladder_retrace', { forTp: true });
+      closePosition(cfg, s, tsMs, 'ladder_retrace');
+      return;
+    }
+
+    if (
+      peakTrailTriggered(
+        ladder,
+        { firedRungPnls: s.ladderFiredPnls, peakPnlPct: s.peakPnlPct, trailArmed: s.trailArmed },
+        pnlPct,
+      ) &&
+      s.qty > EPS
+    ) {
+      sellAll(cfg, s, price, 'peak_trail', { forTp: true });
+      closePosition(cfg, s, tsMs, 'peak_trail');
+      return;
     }
   }
 
   if (cfg.maxHoldMs > 0 && tsMs - s.entryTs >= cfg.maxHoldMs && s.qty > EPS) {
-    while (s.qty > EPS) sellChunk(cfg, s, price, 'timeout');
+    sellAll(cfg, s, price, 'timeout');
     closePosition(cfg, s, tsMs, 'timeout');
     return;
   }
@@ -861,7 +895,8 @@ async function main(): Promise<void> {
       maxEntryAfterDumpSec: cfg.maxEntryAfterDumpMs / 1000,
       legUsd: cfg.legUsd,
       positionUsd: cfg.positionUsd,
-      tpLadderPct: cfg.tpLadderPct,
+      avgLegEnabled: cfg.avgLegEnabled,
+      exitLadder: cfg.exitLadder,
       endpoint: cfg.shyftEndpoint,
       priceExtraction: 'swap_decode',
       analyticsEnabled: knifeAnalyticsCfg.enabled,

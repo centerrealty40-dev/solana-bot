@@ -88,6 +88,31 @@
 
 ---
 
+## [1.11.580] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.580`
+
+### knife-catcher — Oscar-style infinite TP grid + BE/trail; kill −30%; leg2 off
+
+- **Причина:** 3-rung ladder с 30% partial TP оставлял слишком много хвоста; entry-path хороший, exit терял на просадках. Нужна лестница как у Live Oscar: бесконечная сетка, break-even после 1-й ступени, ladder-retrace после ≥2, peak trail.
+- **Что сделано:** новый модуль `knife-exit-ladder.ts` (+5% grid, sell fracs 50/45/40/35%, BE floor 0%, trail arm +10% / drop 5%, kill **−30%**). Вторая нога avg-down **выключена** по умолчанию (`KNIFE_AVG_LEG_ENABLED=0`). PM2 env обновлён.
+- **Тесты:** `knife-exit-ladder.test.ts`.
+- **Откат:** revert `1.11.580` или вернуть старые `KNIFE_TP_LADDER_PCT` / `KNIFE_KILL_PCT=50` в `.env` + reload.
+
+---
+
+## [1.11.579] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.579`
+
+### awakening-catcher — ослаблены shadow-пороги для накопления сигналов
+
+- **Причина:** за 12ч shadow — 398 eval, **0 signals**; главные блокеры: `vol_velocity<0.4`, `pool_age<48h`, `vol24h>250k`, `price_m5<2`.
+- **Что сделано:** дефолты и PM2 env: vol5m 3k, vol1h 10k, vol24h cap 800k, pool age **24h**, vol_velocity **0.15**, mcap **150k**, liq **15k**, price_m5 **1%**, h24/h6 caps 120/80%, vol1h/vol6h **0.25**, vol1h/mcap **3.0**.
+- **Откат:** revert `1.11.579` или вернуть прежние `AWAKENING_*` в `.env` + `pm2 reload awakening-catcher --update-env`.
+
+---
+
 ## [1.11.578] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.578`
