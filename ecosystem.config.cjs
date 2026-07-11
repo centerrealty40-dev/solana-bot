@@ -1105,11 +1105,20 @@ const PM2_APPS = [
         PAPER_TREND_VETO_LOOKBACK_DAYS: '14',
         PAPER_TREND_VETO_MIN_PG_SAMPLES: '36',
         PAPER_TREND_VETO_NO_HIGH_BREAK_ENABLED: '1',
-        PAPER_TREND_VETO_MIN_DAYS_SINCE_HIGH_BREAK: '7',
+        PAPER_TREND_VETO_MIN_DAYS_SINCE_HIGH_BREAK: '3',
         PAPER_TREND_VETO_DECLINE_ENABLED: '1',
-        PAPER_TREND_VETO_MAX_PX_VS_HIGH_14D: '0.75',
-        PAPER_TREND_VETO_MAX_SLOPE_7D_PCT: '0',
+        PAPER_TREND_VETO_MAX_PX_VS_HIGH_14D: '0.55',
+        PAPER_TREND_VETO_MAX_SLOPE_7D_PCT: '-3',
         PAPER_TREND_VETO_PEAK_TOUCH_TOLERANCE_PCT: '1',
+        PAPER_TREND_VETO_SLOPE_3D_ENABLED: '1',
+        PAPER_TREND_VETO_MAX_PX_VS_HIGH_3D: '0.65',
+        PAPER_TREND_VETO_MAX_SLOPE_3D_PCT: '-5',
+        PAPER_TREND_VETO_SKI_SLOPE_ENABLED: '1',
+        PAPER_TREND_VETO_SKI_SLOPE_MAX_PX_VS_HIGH: '0.42',
+        PAPER_TREND_VETO_SKI_SLOPE_MIN_DAYS_SINCE_HIGH: '2',
+        /** Telegram when dip passed but trend veto is sole blocker (default ON, 30m cooldown). */
+        LIVE_TREND_VETO_TELEGRAM_ENABLED: '1',
+        LIVE_TREND_VETO_TELEGRAM_COOLDOWN_MS: '1800000',
         /** Post-crash fast path — entry vs crash peak after spike+drop (swarms-class). */
         PAPER_POST_CRASH_FAST_PATH_ENABLED: '1',
         PAPER_POST_CRASH_FAST_PATH_LOOKBACK_MIN: '180',
@@ -1860,15 +1869,17 @@ const PM2_APPS = [
         /** Фон обновления индекса (с) — вне hot-path. */
         LIVE_MEM_SWAN_REFRESH_SEC: '60',
         /** Окно равновзвешенного возврата вселенной раннеров (мин) + запас на baseline. */
-        LIVE_MEM_SWAN_ROLL_MIN: '360',
-        LIVE_MEM_SWAN_BASELINE_TOL_MIN: '30',
+        LIVE_MEM_SWAN_ROLL_MIN: '120',
+        LIVE_MEM_SWAN_BASELINE_TOL_MIN: '15',
         /** Вселенная: топ-N по пиковому 1h-объёму (активные раннеры Оскара, не blue chips). */
-        LIVE_MEM_SWAN_TOP_N: '80',
+        LIVE_MEM_SWAN_TOP_N: '40',
         LIVE_MEM_SWAN_MIN_RUNNER_V1H_USD: '10000',
         /** Анти-фантом: < MIN_RUNNERS валидных раннеров = слепые данные, НЕ ликвидируем. */
-        LIVE_MEM_SWAN_MIN_RUNNERS: '40',
+        LIVE_MEM_SWAN_MIN_RUNNERS: '20',
         /** Триггер: equal-weight падение ≥ этих % (мгновенно, без breadth/подтверждения). */
-        LIVE_MEM_SWAN_EW_DROP_PCT: '16',
+        LIVE_MEM_SWAN_EW_DROP_PCT: '14',
+        LIVE_MEM_SWAN_BREADTH_RED_MIN_PCT: '65',
+        LIVE_MEM_SWAN_BREADTH_EW_DROP_PCT: '8',
         /** Кэш старше (с) — статус unknown, НЕ ликвидируем (fail-safe). */
         LIVE_MEM_SWAN_MAX_STALE_SEC: '900',
         /** Сброс active после N мин валидного затишья (для журнала/повторного эпизода). */
@@ -1887,10 +1898,12 @@ const PM2_APPS = [
         LIVE_MEM_SWAN_PORT_ENABLED: '1',
         LIVE_MEM_SWAN_PORT_MODE: 'liquidate',
         /** Окно equal-weight просадки нашего портфеля (мин) + запас на baseline. */
-        LIVE_MEM_SWAN_PORT_ROLL_MIN: '360',
-        LIVE_MEM_SWAN_PORT_BASELINE_TOL_MIN: '30',
+        LIVE_MEM_SWAN_PORT_ROLL_MIN: '120',
+        LIVE_MEM_SWAN_PORT_BASELINE_TOL_MIN: '15',
         /** Триггер: EW нашего book ≤ −этих %. */
-        LIVE_MEM_SWAN_PORT_EW_DROP_PCT: '25',
+        LIVE_MEM_SWAN_PORT_EW_DROP_PCT: '20',
+        LIVE_MEM_SWAN_PORT_BREADTH_RED_MIN_PCT: '65',
+        LIVE_MEM_SWAN_PORT_BREADTH_EW_DROP_PCT: '8',
         /** Анти-фантом: < этого числа участвующих позиций = не ликвидируем (в т.ч. прогрев). */
         LIVE_MEM_SWAN_PORT_MIN_POSITIONS: '8',
         /** Кэш тика старше (с) — не ликвидируем (fail-safe). */

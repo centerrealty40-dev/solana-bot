@@ -170,18 +170,21 @@ const LiveOscarConfigSchema = z
     liveMemSwanMode: z.enum(['off', 'shadow', 'liquidate']).default('off'),
     /** Background refresh cadence (s). Off any hot path. */
     liveMemSwanRefreshSec: z.coerce.number().int().min(20).max(600).default(60),
-    /** Rolling window (min) for the equal-weight return (baseline = now − rollMin). Default 6h. */
-    liveMemSwanRollMin: z.coerce.number().int().min(60).max(1440).default(360),
+    /** Rolling window (min) for the equal-weight return (baseline = now − rollMin). Default 2h. */
+    liveMemSwanRollMin: z.coerce.number().int().min(60).max(1440).default(120),
     /** Extra minutes of snapshots fetched beyond rollMin so the baseline point has data. */
-    liveMemSwanBaselineTolMin: z.coerce.number().int().min(5).max(120).default(30),
-    /** Universe size: top-N runners by peak 1h volume. */
-    liveMemSwanTopN: z.coerce.number().int().min(10).max(500).default(80),
+    liveMemSwanBaselineTolMin: z.coerce.number().int().min(5).max(120).default(15),
+    /** Universe size: top-N runners by peak 1h volume (core tape, not full long tail). */
+    liveMemSwanTopN: z.coerce.number().int().min(10).max(500).default(40),
     /** A mint is an eligible runner when its peak rolling 1h volume ≥ this (USD). */
     liveMemSwanMinRunnerV1hUsd: z.coerce.number().min(0).max(10_000_000).default(10_000),
     /** Anti-phantom: below this many contributing runners the index is blind (never liquidates). */
-    liveMemSwanMinRunners: z.coerce.number().int().min(5).max(500).default(40),
-    /** Trigger: equal-weight return over rollMin ≤ −this (percent points). Backtest sweet spot 16–18. */
-    liveMemSwanEwDropPct: z.coerce.number().min(1).max(90).default(16),
+    liveMemSwanMinRunners: z.coerce.number().int().min(5).max(500).default(20),
+    /** Trigger: equal-weight return over rollMin ≤ −this (percent points). */
+    liveMemSwanEwDropPct: z.coerce.number().min(1).max(90).default(14),
+    /** Alternate trigger when breadth is very red: ≥ this % of universe red AND EW ≤ breadthEwDrop. */
+    liveMemSwanBreadthRedMinPct: z.coerce.number().min(50).max(100).default(65),
+    liveMemSwanBreadthEwDropPct: z.coerce.number().min(1).max(90).default(8),
     /** Anti-phantom: if cached metrics older than this (s), never liquidate. */
     liveMemSwanMaxStaleSec: z.coerce.number().int().min(60).max(3600).default(900),
     /** Resume: minutes of valid, non-triggered windows before the swan clears (trading resumes). */
@@ -193,16 +196,18 @@ const LiveOscarConfigSchema = z
      * OWN-BOOK swan / portfolio-bleed liquidation (independent failure domain from the external
      * index above). Keys off our own open positions' live marks (snapshot→Jupiter), so it fires
      * even when the external top-N index goes blind. Equal-weight return of open positions over
-     * `RollMin` (~6h); trigger EW ≤ −`EwDropPct` (~−25%) with ≥ `MinPositions` contributing.
+     * `RollMin` (~2h); trigger EW ≤ −`EwDropPct` or high breadth + mild EW with ≥ `MinPositions`.
      * Backtest (608 real positions): ≈6/mo, liquidate-vs-hold +$13.5k. In-memory history →
      * ~`RollMin` warmup after restart (external index covers that window). Default OFF.
      */
     liveMemSwanPortEnabled: z.boolean().default(false),
     liveMemSwanPortMode: z.enum(['off', 'shadow', 'liquidate']).default('off'),
-    liveMemSwanPortRollMin: z.coerce.number().int().min(30).max(1440).default(360),
-    liveMemSwanPortBaselineTolMin: z.coerce.number().int().min(5).max(120).default(30),
-    liveMemSwanPortEwDropPct: z.coerce.number().min(1).max(90).default(25),
+    liveMemSwanPortRollMin: z.coerce.number().int().min(30).max(1440).default(120),
+    liveMemSwanPortBaselineTolMin: z.coerce.number().int().min(5).max(120).default(15),
+    liveMemSwanPortEwDropPct: z.coerce.number().min(1).max(90).default(20),
     liveMemSwanPortMinPositions: z.coerce.number().int().min(2).max(500).default(8),
+    liveMemSwanPortBreadthRedMinPct: z.coerce.number().min(50).max(100).default(65),
+    liveMemSwanPortBreadthEwDropPct: z.coerce.number().min(1).max(90).default(8),
     liveMemSwanPortMaxStaleSec: z.coerce.number().int().min(30).max(3600).default(180),
     liveMemSwanPortResumeMin: z.coerce.number().int().min(15).max(1440).default(120),
     liveMemSwanPortJournalEverySec: z.coerce.number().int().min(60).max(3600).default(600),
@@ -221,6 +226,11 @@ const LiveOscarConfigSchema = z
     liveCapitalRotateCascade: z.boolean().default(false),
     /** Rent + fee cushion subtracted from getBalance lamports before free_usd (v1 SOL-only). Default 0.05 SOL. */
     liveFreeSolBufferLamports: z.coerce.number().int().min(0).default(50_000_000),
+    /** Optional: USDC (or other stable) as Jupiter buy/sell input/output instead of WSOL. */
+    liveQuoteMint: z.string().min(32).max(64).optional(),
+    liveQuoteAsset: z.enum(['SOL', 'USDC']).optional(),
+    /** USDC buffer kept on wallet when `liveQuoteAsset=USDC` (fee reserve stays in SOL). */
+    liveFreeUsdcBufferUsd: z.coerce.number().min(0).max(10_000).default(0),
     /**
      * Live buy: when wallet cannot fund full slice, execute partial notional if ≥ this USD (1.11.506).
      * Env: `LIVE_PARTIAL_BUY_MIN_USD`. `0` = never partial (legacy hard block).
@@ -834,6 +844,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveMemSwanMinRunnerV1hUsd: process.env.LIVE_MEM_SWAN_MIN_RUNNER_V1H_USD,
     liveMemSwanMinRunners: process.env.LIVE_MEM_SWAN_MIN_RUNNERS,
     liveMemSwanEwDropPct: process.env.LIVE_MEM_SWAN_EW_DROP_PCT,
+    liveMemSwanBreadthRedMinPct: process.env.LIVE_MEM_SWAN_BREADTH_RED_MIN_PCT,
+    liveMemSwanBreadthEwDropPct: process.env.LIVE_MEM_SWAN_BREADTH_EW_DROP_PCT,
     liveMemSwanMaxStaleSec: process.env.LIVE_MEM_SWAN_MAX_STALE_SEC,
     liveMemSwanResumeMin: process.env.LIVE_MEM_SWAN_RESUME_MIN,
     liveMemSwanJournalEverySec: process.env.LIVE_MEM_SWAN_JOURNAL_EVERY_SEC,
@@ -845,6 +857,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveMemSwanPortRollMin: process.env.LIVE_MEM_SWAN_PORT_ROLL_MIN,
     liveMemSwanPortBaselineTolMin: process.env.LIVE_MEM_SWAN_PORT_BASELINE_TOL_MIN,
     liveMemSwanPortEwDropPct: process.env.LIVE_MEM_SWAN_PORT_EW_DROP_PCT,
+    liveMemSwanPortBreadthRedMinPct: process.env.LIVE_MEM_SWAN_PORT_BREADTH_RED_MIN_PCT,
+    liveMemSwanPortBreadthEwDropPct: process.env.LIVE_MEM_SWAN_PORT_BREADTH_EW_DROP_PCT,
     liveMemSwanPortMinPositions: process.env.LIVE_MEM_SWAN_PORT_MIN_POSITIONS,
     liveMemSwanPortMaxStaleSec: process.env.LIVE_MEM_SWAN_PORT_MAX_STALE_SEC,
     liveMemSwanPortResumeMin: process.env.LIVE_MEM_SWAN_PORT_RESUME_MIN,
@@ -856,6 +870,12 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveCapitalRotateEnabled: envBool(process.env.LIVE_CAPITAL_ROTATE_ENABLED, false),
     liveCapitalRotateCascade: envBool(process.env.LIVE_CAPITAL_ROTATE_CASCADE, false),
     liveFreeSolBufferLamports: process.env.LIVE_FREE_SOL_BUFFER_LAMPORTS,
+    liveQuoteMint: process.env.LIVE_QUOTE_MINT?.trim() || undefined,
+    liveQuoteAsset: (() => {
+      const s = process.env.LIVE_QUOTE_ASSET?.trim().toUpperCase();
+      return s === 'USDC' || s === 'SOL' ? s : undefined;
+    })(),
+    liveFreeUsdcBufferUsd: process.env.LIVE_FREE_USDC_BUFFER_USD,
     livePartialBuyMinUsd: process.env.LIVE_PARTIAL_BUY_MIN_USD,
     liveSolUsdMaxAgeMs: process.env.LIVE_SOL_USD_MAX_AGE_MS,
 

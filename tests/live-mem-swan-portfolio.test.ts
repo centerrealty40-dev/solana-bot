@@ -22,10 +22,12 @@ import {
 } from '../src/live/mem-swan-portfolio.js';
 
 const PARAMS: PortfolioParams = {
-  rollMin: 360,
-  baselineTolMin: 30,
-  ewDropPct: 25,
+  rollMin: 120,
+  baselineTolMin: 15,
+  ewDropPct: 20,
   minPositions: 8,
+  breadthRedMinPct: 65,
+  breadthEwDropPct: 8,
 };
 
 describe('computePortfolioMetric', () => {
@@ -65,7 +67,7 @@ describe('classifyPortfolioSwan', () => {
   });
 
   it('does not trigger on a shallow drop', () => {
-    const m = computePortfolioMetric(Array.from({ length: 10 }, () => ({ pnow: 90, pbase: 100 }))); // -10%
+    const m = computePortfolioMetric(Array.from({ length: 10 }, () => ({ pnow: 95, pbase: 100 }))); // -5%
     const c = classifyPortfolioSwan(m, PARAMS);
     expect(c.valid).toBe(true);
     expect(c.triggered).toBe(false);
@@ -77,9 +79,11 @@ function cfg(over: Partial<LiveOscarConfig> = {}): LiveOscarConfig {
     executionMode: 'live',
     liveMemSwanPortEnabled: true,
     liveMemSwanPortMode: 'liquidate',
-    liveMemSwanPortRollMin: 360,
-    liveMemSwanPortBaselineTolMin: 30,
-    liveMemSwanPortEwDropPct: 25,
+    liveMemSwanPortRollMin: 120,
+    liveMemSwanPortBaselineTolMin: 15,
+    liveMemSwanPortEwDropPct: 20,
+    liveMemSwanPortBreadthRedMinPct: 65,
+    liveMemSwanPortBreadthEwDropPct: 8,
     liveMemSwanPortMinPositions: 3,
     liveMemSwanPortMaxStaleSec: 180,
     liveMemSwanPortResumeMin: 120,
@@ -104,8 +108,8 @@ describe('ingest + rising edge', () => {
       ingestMemSwanPortfolioTick(c);
       expect(consumeMemSwanPortRisingEdge(c)).toBeNull();
 
-      // t1 = t0 + 6h1m: same mints crashed -30%. Now a base ~6h old exists → trigger.
-      vi.setSystemTime(now + (360 + 1) * 60_000);
+      // t1 = t0 + 2h1m: same mints crashed -30%. Now a base ~2h old exists → trigger.
+      vi.setSystemTime(now + (120 + 1) * 60_000);
       recordMemSwanPortfolioMark('a', 70);
       recordMemSwanPortfolioMark('b', 70);
       recordMemSwanPortfolioMark('c', 70);
@@ -130,13 +134,13 @@ describe('ingest + rising edge', () => {
       recordMemSwanPortfolioMark('b', 100);
       recordMemSwanPortfolioMark('c', 100);
       ingestMemSwanPortfolioTick(c);
-      vi.setSystemTime(now + (360 + 1) * 60_000);
+      vi.setSystemTime(now + (120 + 1) * 60_000);
       recordMemSwanPortfolioMark('a', 70);
       recordMemSwanPortfolioMark('b', 70);
       recordMemSwanPortfolioMark('c', 70);
       ingestMemSwanPortfolioTick(c);
       // Advance well past maxStaleSec before consuming.
-      vi.setSystemTime(now + (360 + 1) * 60_000 + 120_000);
+      vi.setSystemTime(now + (120 + 1) * 60_000 + 120_000);
       expect(consumeMemSwanPortRisingEdge(c)).toBeNull();
     } finally {
       vi.useRealTimers();

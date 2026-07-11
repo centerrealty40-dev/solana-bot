@@ -156,6 +156,10 @@ import type {
 } from './types.js';
 import { isMintBlockedForAmbiguousLiveBuy } from '../live/pending-buy-cooldown.js';
 import { isMintPermanentlyDeniedLiveOscar } from '../live/mint-permanent-denylist.js';
+import {
+  buildTrendStructureVetoTelegramText,
+  shouldNotifyTrendStructureVeto,
+} from './discovery/trend-structure-veto-telegram.js';
 import { isMintOnLiveWhitelist, notifyLiveMintWhitelistSkip } from '../live/mint-whitelist.js';
 import { isMintBlacklisted } from './discovery/mint-blacklist-file.js';
 import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
@@ -414,6 +418,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   >();
   const stagedEntryBuyInFlight = new Set<string>();
   const localHighVetoTelegramLastMs = new Map<string, number>();
+  const trendVetoTelegramLastMs = new Map<string, number>();
   const liveOscarIntelBlockNotified: LiveOscarIntelBlockNotifyCache = new Map();
   const volumeEphemeralTelegramLastMs = new Map<string, number>();
   const holdersUnknownTelegramLastMs = new Map<string, number>();
@@ -679,6 +684,48 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       telegramChatId: chat,
     }    ).catch((e) =>
       logger.warn({ err: String(e), mint: d.mint }, 'live local-high veto telegram failed'),
+    );
+  }
+
+  function notifyLiveOscarTrendStructureVetoOnly(d: EvalDecision): void {
+    if (!isLiveOscarMainStrategyId(cfg.strategyId)) return;
+    if (process.env.LIVE_TREND_VETO_TELEGRAM_ENABLED === '0') return;
+    if (!shouldNotifyTrendStructureVeto(d)) return;
+    if (open.has(d.mint)) return;
+    if (isLiveBuyDiscoveryTelegramSuppressed()) return;
+    const cooldownMs = Math.max(0, Number(process.env.LIVE_TREND_VETO_TELEGRAM_COOLDOWN_MS ?? 30 * 60_000));
+    const now = Date.now();
+    const prev = trendVetoTelegramLastMs.get(d.mint) ?? 0;
+    if (cooldownMs > 0 && now - prev < cooldownMs) return;
+    trendVetoTelegramLastMs.set(d.mint, now);
+
+    const token =
+      process.env.LIVE_TREND_VETO_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.LIVE_MINT_WHITELIST_TELEGRAM_BOT_TOKEN?.trim() ||
+      process.env.TELEGRAM_BOT_TOKEN?.trim();
+    const chat =
+      process.env.LIVE_TREND_VETO_TELEGRAM_CHAT_ID?.trim() ||
+      process.env.LIVE_STAGED_ENTRY_SIGNAL_TELEGRAM_CHAT_ID?.trim() ||
+      '-1003878024799';
+    if (!token || !chat) {
+      logger.warn({ mint: d.mint }, 'live trend veto telegram skipped: bot token/chat missing');
+      return;
+    }
+
+    const text = buildTrendStructureVetoTelegramText({
+      d,
+      escapeHtml: escapeHtmlPlain,
+      mintHrefHtml: gmgnMintHrefHtml,
+      fmtUsd: fmtUsdCompact,
+    });
+    void sendTagged('ADVICE', 'live_oscar_trend_veto', text, {
+      parseMode: 'HTML',
+      skipQuietHours: true,
+      telegramBotToken: token,
+      telegramChatId: chat,
+    }).catch((e) =>
+      logger.warn({ err: String(e), mint: d.mint }, 'live trend veto telegram failed'),
     );
   }
 
@@ -1743,6 +1790,9 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         });
         if (!d.pass && isOnlyLocalHighVetoReasons(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarLocalHighVetoOnly(d);
+        }
+        if (!d.pass && !open.has(d.mint)) {
+          notifyLiveOscarTrendStructureVetoOnly(d);
         }
         if (!d.pass && isOnlyVolumeEphemeralBlockReasons(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarVolumeEphemeralGuard(d);

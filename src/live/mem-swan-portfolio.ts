@@ -7,7 +7,7 @@
  * must mark our positions to manage them, and Jupiter is a separate source from the PG snapshot
  * universe.
  *
- * Signal: equal-weight return of our open positions over a rolling window (`rollMin`, ~6h),
+ * Signal: equal-weight return of our open positions over a rolling window (`rollMin`, ~2h),
  * anchored to an in-memory per-mint mark history. Trigger: EW ≤ −`ewDropPct` (~−25%) with
  * ≥ `minPositions` contributing (anti-phantom). Fires on the rising edge (once per episode) →
  * force-close ALL open positions.
@@ -21,6 +21,7 @@
  * that window the external `mem-swan` index (PG-backfilled) provides coverage. Default OFF;
  * `shadow` journals only; `liquidate` sells.
  */
+import { memSwanDropTriggered } from './mem-swan.js';
 import { child } from '../core/logger.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import type { LiveOscarConfig } from './config.js';
@@ -35,6 +36,8 @@ export type PortfolioParams = {
   baselineTolMin: number;
   ewDropPct: number;
   minPositions: number;
+  breadthRedMinPct: number;
+  breadthEwDropPct: number;
 };
 
 export type PortfolioMetrics = {
@@ -84,8 +87,7 @@ export function computePortfolioMetric(
 
 export function classifyPortfolioSwan(m: PortfolioMetrics, params: PortfolioParams): PortfolioClassification {
   if (m.positionCount < params.minPositions) return { valid: false, triggered: false };
-  const triggered = m.ewReturnPct != null && m.ewReturnPct <= -params.ewDropPct;
-  return { valid: true, triggered };
+  return { valid: true, triggered: memSwanDropTriggered(m, params) };
 }
 
 export function memSwanPortParams(cfg: LiveOscarConfig): PortfolioParams {
@@ -94,6 +96,8 @@ export function memSwanPortParams(cfg: LiveOscarConfig): PortfolioParams {
     baselineTolMin: cfg.liveMemSwanPortBaselineTolMin,
     ewDropPct: cfg.liveMemSwanPortEwDropPct,
     minPositions: cfg.liveMemSwanPortMinPositions,
+    breadthRedMinPct: cfg.liveMemSwanPortBreadthRedMinPct,
+    breadthEwDropPct: cfg.liveMemSwanPortBreadthEwDropPct,
   };
 }
 

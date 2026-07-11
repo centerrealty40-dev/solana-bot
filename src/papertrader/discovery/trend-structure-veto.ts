@@ -20,7 +20,9 @@ export interface TrendStructureFeatures {
   highLookbackUsd: number | null;
   daysSinceHighBreak: number | null;
   price7dAgoUsd: number | null;
+  price3dAgoUsd: number | null;
   slope7dPct: number | null;
+  slope3dPct: number | null;
   pxVsHighLookback: number | null;
   pgSnapsCount: number;
   coverageOk: boolean;
@@ -36,7 +38,9 @@ const EMPTY_FEATURES: TrendStructureFeatures = {
   highLookbackUsd: null,
   daysSinceHighBreak: null,
   price7dAgoUsd: null,
+  price3dAgoUsd: null,
   slope7dPct: null,
+  slope3dPct: null,
   pxVsHighLookback: null,
   pgSnapsCount: 0,
   coverageOk: false,
@@ -49,6 +53,22 @@ function sqlQuote(value: string): string {
 function emptyFeatures(cfg: PaperTraderConfig): TrendStructureFeatures {
   return { ...EMPTY_FEATURES, lookbackDays: cfg.trendVetoLookbackDays };
 }
+
+type TrendStructureVetoCfg = Pick<
+  PaperTraderConfig,
+  | 'trendVetoNoHighBreakEnabled'
+  | 'trendVetoMinDaysSinceHighBreak'
+  | 'trendVetoDeclineEnabled'
+  | 'trendVetoMaxPxVsHigh14d'
+  | 'trendVetoMaxSlope7dPct'
+  | 'trendVetoSlope3dEnabled'
+  | 'trendVetoMaxPxVsHigh3d'
+  | 'trendVetoMaxSlope3dPct'
+  | 'trendVetoSkiSlopeEnabled'
+  | 'trendVetoSkiSlopeMaxPxVsHigh'
+  | 'trendVetoSkiSlopeMinDaysSinceHigh'
+  | 'trendVetoLookbackDays'
+>;
 
 /** Apply veto rules to pre-fetched features + current price. */
 export function evaluateTrendStructureVeto(
@@ -64,6 +84,9 @@ export function evaluateTrendStructureVeto(
   if (features.price7dAgoUsd != null && features.price7dAgoUsd > 0 && px > 0) {
     features.slope7dPct = +(((px - features.price7dAgoUsd) / features.price7dAgoUsd) * 100).toFixed(3);
   }
+  if (features.price3dAgoUsd != null && features.price3dAgoUsd > 0 && px > 0) {
+    features.slope3dPct = +(((px - features.price3dAgoUsd) / features.price3dAgoUsd) * 100).toFixed(3);
+  }
 
   if (!cfg.trendStructureVetoEnabled) {
     return { reasons: [], features };
@@ -73,25 +96,50 @@ export function evaluateTrendStructureVeto(
   }
 
   const reasons: string[] = [];
+  const v: TrendStructureVetoCfg = cfg;
 
   if (
-    cfg.trendVetoNoHighBreakEnabled &&
+    v.trendVetoNoHighBreakEnabled &&
     features.daysSinceHighBreak != null &&
-    features.daysSinceHighBreak + 1e-9 >= cfg.trendVetoMinDaysSinceHighBreak
+    features.daysSinceHighBreak + 1e-9 >= v.trendVetoMinDaysSinceHighBreak
   ) {
     reasons.push(
-      `trend_veto_no_high_break_${features.daysSinceHighBreak.toFixed(1)}d>=${cfg.trendVetoMinDaysSinceHighBreak}d`,
+      `trend_veto_no_high_break_${features.daysSinceHighBreak.toFixed(1)}d>=${v.trendVetoMinDaysSinceHighBreak}d`,
     );
   }
 
-  if (cfg.trendVetoDeclineEnabled) {
+  if (v.trendVetoSkiSlopeEnabled) {
     const ratioOk =
-      features.pxVsHighLookback != null && features.pxVsHighLookback < cfg.trendVetoMaxPxVsHigh14d;
-    const slopeOk =
-      features.slope7dPct != null && features.slope7dPct <= cfg.trendVetoMaxSlope7dPct;
-    if (ratioOk && slopeOk) {
+      features.pxVsHighLookback != null &&
+      features.pxVsHighLookback < v.trendVetoSkiSlopeMaxPxVsHigh;
+    const ageOk =
+      features.daysSinceHighBreak != null &&
+      features.daysSinceHighBreak + 1e-9 >= v.trendVetoSkiSlopeMinDaysSinceHigh;
+    if (ratioOk && ageOk) {
       reasons.push(
-        `trend_veto_decline_pxVs${cfg.trendVetoLookbackDays}d=${(features.pxVsHighLookback! * 100).toFixed(1)}%<${(cfg.trendVetoMaxPxVsHigh14d * 100).toFixed(0)}%_slope7d=${features.slope7dPct!.toFixed(1)}%<=${cfg.trendVetoMaxSlope7dPct}%`,
+        `trend_veto_ski_slope_pxVs${v.trendVetoLookbackDays}d=${(features.pxVsHighLookback! * 100).toFixed(1)}%<${(v.trendVetoSkiSlopeMaxPxVsHigh * 100).toFixed(0)}%_sinceHigh=${features.daysSinceHighBreak!.toFixed(1)}d`,
+      );
+    }
+  }
+
+  if (v.trendVetoDeclineEnabled) {
+    const ratioOk =
+      features.pxVsHighLookback != null && features.pxVsHighLookback < v.trendVetoMaxPxVsHigh14d;
+    const slope7Ok =
+      features.slope7dPct != null && features.slope7dPct <= v.trendVetoMaxSlope7dPct;
+    const slope3Ok =
+      v.trendVetoSlope3dEnabled &&
+      features.slope3dPct != null &&
+      features.slope3dPct <= v.trendVetoMaxSlope3dPct &&
+      features.pxVsHighLookback != null &&
+      features.pxVsHighLookback < v.trendVetoMaxPxVsHigh3d;
+    if (ratioOk && slope7Ok) {
+      reasons.push(
+        `trend_veto_decline_pxVs${v.trendVetoLookbackDays}d=${(features.pxVsHighLookback! * 100).toFixed(1)}%<${(v.trendVetoMaxPxVsHigh14d * 100).toFixed(0)}%_slope7d=${features.slope7dPct!.toFixed(1)}%<=${v.trendVetoMaxSlope7dPct}%`,
+      );
+    } else if (slope3Ok) {
+      reasons.push(
+        `trend_veto_decline3d_pxVs${v.trendVetoLookbackDays}d=${(features.pxVsHighLookback! * 100).toFixed(1)}%_slope3d=${features.slope3dPct!.toFixed(1)}%<=${v.trendVetoMaxSlope3dPct}%`,
       );
     }
   }
@@ -104,6 +152,7 @@ interface TrendAggRow {
   high_lookback: number | null;
   days_since_high: number | null;
   price_7d_ago: number | null;
+  price_3d_ago: number | null;
   snaps_count: number | null;
 }
 
@@ -118,7 +167,9 @@ function mapAggRow(cfg: PaperTraderConfig, row: TrendAggRow): TrendStructureFeat
         ? +Number(row.days_since_high).toFixed(3)
         : null,
     price7dAgoUsd: Number(row.price_7d_ago ?? 0) > 0 ? Number(row.price_7d_ago) : null,
+    price3dAgoUsd: Number(row.price_3d_ago ?? 0) > 0 ? Number(row.price_3d_ago) : null,
     slope7dPct: null,
+    slope3dPct: null,
     pxVsHighLookback: null,
     pgSnapsCount: snaps,
     coverageOk: snaps >= cfg.trendVetoMinPgSamples,
@@ -150,7 +201,11 @@ function trendStructureSql(
         AVG(px) FILTER (
           WHERE ts >= to_timestamp(${refEpochSec}) - interval '7 days 2 hours'
             AND ts <= to_timestamp(${refEpochSec}) - interval '6 days 22 hours'
-        )::float AS price_7d_ago
+        )::float AS price_7d_ago,
+        AVG(px) FILTER (
+          WHERE ts >= to_timestamp(${refEpochSec}) - interval '3 days 2 hours'
+            AND ts <= to_timestamp(${refEpochSec}) - interval '2 days 22 hours'
+        )::float AS price_3d_ago
       FROM bars
       GROUP BY mint
     ),
@@ -166,6 +221,7 @@ function trendStructureSql(
       p.high_lookback,
       p.snaps_count,
       p.price_7d_ago,
+      p.price_3d_ago,
       EXTRACT(EPOCH FROM (to_timestamp(${refEpochSec}) - lp.ts_last_peak)) / 86400.0 AS days_since_high
     FROM per_mint p
     LEFT JOIN last_peak lp ON lp.mint = p.mint
