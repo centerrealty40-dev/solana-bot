@@ -88,6 +88,24 @@
 
 ---
 
+## [1.11.574] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.574`
+
+### Knife-catcher — self-watchdog против утечки памяти → kernel OOM (защита всей VPS) + прунинг states
+
+- **Причина (инцидент 2026-07-11 08:00:35 UTC):** процесс `knife-catcher` утёк по памяти до **~5.8 ГБ RSS** (`total-vm 63GB`) и был убит **ядром** (`Out of memory: Killed process … (node) … oom_score_adj:0`, `redis-server invoked oom-killer`, `global_oom`, exit 137). pm2 `max_memory_restart: 350M` утечку **не поймал** — при тормозящем/тризингующем event-loop телеметрия pm2 не обновляется. Побочно: ловец **угрожал co-tenant'ам** VPS (redis, dc-trader, live-oscar). Из-за постоянных рестартов (kernel OOM + краш-луп) in-memory буфер цен обнулялся, а rolling-flush-детектору нужен 10-мин хай → он почти всегда был в прогреве и **не ловил проливы** («за 6ч 0 flush»).
+- **Что сделано:**
+  - Новый чистый модуль `src/scripts/knife-watchdog.ts` (`knifeWatchdogVerdict`, без нативных зависимостей → юнит-тестируемый). В `knife-catcher.ts` — таймер-сторож (не `unref`, тик `KNIFE_WATCHDOG_CHECK_SEC`=15с): при `RSS >= KNIFE_WATCHDOG_RSS_MB` (420) **или** «немоте» (нет ни одного observation `>= KNIFE_WATCHDOG_STALL_SEC`=600с при непустом вотчлисте) — пишет `knife_watchdog_exit` в журнал и делает **чистый `process.exit(1)`** задолго до kernel-OOM; pm2 поднимает свежий процесс за 5с.
+  - Прунинг `states`: при обновлении вотчлиста снимаемые монеты (idle, без `pendingDump`) удаляются из Map — память ограничена набором наблюдаемых + открытых позиций (раньше Map рос неограниченно по ротации вотчлиста).
+  - Снижение утечки в общем gRPC-consumer'е (`shyft-shadow-consumer.ts`): на завершении сессии — `stream.removeAllListeners()` и best-effort `client.close()/destroy()`, чтобы буферы мёртвой сессии освобождались при churn reconnect/resubscribe (обратно совместимо, live-oscar не затронут по поведению).
+  - Heartbeat теперь печатает `rssMb`.
+- **Флаги (все в ecosystem, `.env`-override):** `KNIFE_WATCHDOG_RSS_MB` (420), `KNIFE_WATCHDOG_STALL_SEC` (600), `KNIFE_WATCHDOG_CHECK_SEC` (15). `0` отключает соответствующий гвард.
+- **Тесты:** `tests/knife-watchdog.test.ts` (7).
+- **Откат:** `KNIFE_WATCHDOG_RSS_MB=0 KNIFE_WATCHDOG_STALL_SEC=0` (отключить сторож, без деплоя) или revert коммита `1.11.574`. Изолированный воркер — Oscar/LERA не затронуты.
+
+---
+
 ## [1.11.573] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.573`

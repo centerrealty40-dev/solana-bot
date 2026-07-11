@@ -2392,6 +2392,14 @@ const PM2_APPS = [
         /** Telegram: same operator chat as live-oscar health (bot token from .env). */
         KNIFE_TELEGRAM_ENABLED: process.env.KNIFE_TELEGRAM_ENABLED || '1',
         KNIFE_SUMMARY_MIN: process.env.KNIFE_SUMMARY_MIN || '30',
+        /**
+         * Self-watchdog: clean exit(1) before a memory leak reaches the kernel OOM-killer (pm2
+         * max_memory_restart telemetry lags a stalled loop; a prior leak reached ~5.8GB and was
+         * kernel-killed, endangering co-tenants). RSS cap in MB; stall = no observations for N sec.
+         */
+        KNIFE_WATCHDOG_RSS_MB: process.env.KNIFE_WATCHDOG_RSS_MB || '420',
+        KNIFE_WATCHDOG_STALL_SEC: process.env.KNIFE_WATCHDOG_STALL_SEC || '600',
+        KNIFE_WATCHDOG_CHECK_SEC: process.env.KNIFE_WATCHDOG_CHECK_SEC || '15',
         TELEGRAM_CHAT_ID: process.env.KNIFE_TELEGRAM_CHAT_ID || OPERATOR_TELEGRAM_CHAT_ID,
         KNIFE_CATCHER_JOURNAL_PATH:
           process.env.KNIFE_CATCHER_JOURNAL_PATH || path.join(root, 'data/knife-catcher/knife-catcher.jsonl'),

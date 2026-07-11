@@ -657,6 +657,19 @@ export function startShyftShadowConsumer(
     } catch {
       /* ignore */
     }
+    // Detach listeners + tear down the native client so a dead session's gRPC buffers can be GC'd
+    // (repeated reconnect/resubscribe churn otherwise accretes native memory → OOM risk).
+    try {
+      (stream as unknown as { removeAllListeners?: () => void }).removeAllListeners?.();
+    } catch {
+      /* ignore */
+    }
+    try {
+      (client as unknown as { close?: () => void; destroy?: () => void }).close?.();
+      (client as unknown as { close?: () => void; destroy?: () => void }).destroy?.();
+    } catch {
+      /* ignore */
+    }
   }
 
   function delay(ms: number): Promise<void> {
