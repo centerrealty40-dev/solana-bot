@@ -1100,8 +1100,8 @@ const PM2_APPS = [
         PAPER_DIP_LOCAL_HIGH_VETO_ENABLED: '1',
         PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN: '30,60,120',
         PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT: '2',
-        /** Trend structure veto — stale runner / multi-day downtrend (1.11.249). Off until backtest OK. */
-        PAPER_TREND_STRUCTURE_VETO_ENABLED: '0',
+        /** Trend structure veto — stale runner / ski-slope (1.11.583). */
+        PAPER_TREND_STRUCTURE_VETO_ENABLED: '1',
         PAPER_TREND_VETO_LOOKBACK_DAYS: '14',
         PAPER_TREND_VETO_MIN_PG_SAMPLES: '36',
         PAPER_TREND_VETO_NO_HIGH_BREAK_ENABLED: '1',
