@@ -54,7 +54,7 @@ describe('awakening-signal', () => {
     expect(r.metrics.poolAgeMin).toBe(5_000);
   });
 
-  it('blocks a fresh coin (< 48h) — no new pump.fun launches', () => {
+  it('blocks a fresh coin (< 24h) — no new pump.fun launches', () => {
     const r = evaluateAwakeningSignal(cfg, market({ poolAgeMin: 120 }));
     expect(r.pass).toBe(false);
     expect(r.reasons.some((x) => x.startsWith('pool_age<'))).toBe(true);
