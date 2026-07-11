@@ -55,7 +55,8 @@ export function resolveLiveOscarTradeTierFromOpen(
       | 'runner_probe'
       | 'runner_lite'
       | 'pervyy_vystrel'
-      | 'fast_dip_scalp';
+      | 'fast_dip_scalp'
+      | 'dormant_awakening';
     liveExitPolicyId?: string;
     entryMarketCapUsd?: number | null;
   },

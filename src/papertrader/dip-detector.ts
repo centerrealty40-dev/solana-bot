@@ -238,3 +238,62 @@ export function evaluateLocalHighVeto(
 
   return { reasons, distanceFromHighPct };
 }
+
+export type RollingFlushVetoResult = {
+  reasons: string[];
+  dumpFromHighPct: Record<number, number>;
+};
+
+/**
+ * Rolling-flush entry veto (anti «затухающая горка» / падающий нож).
+ *
+ * Blocks entry when the coin is a falling knife right now: for some window it is down
+ * `>= dipRollingFlushVetoMinDumpPct` from that window's high (and not more than
+ * `dipRollingFlushVetoMaxDumpPct`, so already-collapsed/dead mints are left to other guards)
+ * AND the current price is still within `dipRollingFlushVetoNearLowPct` of the window LOW —
+ * i.e. it fell hard and has NOT bounced yet (still at the fresh bottom). A stabilized dip that
+ * has bounced off its low passes (that is a real dip, not a knife); the recovery/local-high
+ * vetos cover the over-bounced end. Same dump-from-window-high math as `detectRollingFlush`
+ * (knife-flush-detector), on aggregated PG window highs/lows instead of a tick buffer.
+ *
+ * Calibrated on DEXBULL (bought 2026-07-10 16:22 on a fresh 30m/60m low, −17%/−21% from the
+ * window high with zero bounce, then rugged to −99%): the 10–15m dump was only ~4%, so the
+ * default windows include 30m/60m to catch the slower fade.
+ */
+export function evaluateRollingFlushVeto(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  ctxByWindow: DipContextByWindows | null | undefined,
+): RollingFlushVetoResult {
+  const dumpFromHighPct: Record<number, number> = {};
+  if (!cfg.dipRollingFlushVetoEnabled || cfg.dipRollingFlushVetoWindowsMin.length === 0) {
+    return { reasons: [], dumpFromHighPct };
+  }
+  if (!ctxByWindow || ctxByWindow.size === 0) {
+    return { reasons: [], dumpFromHighPct };
+  }
+  const price = Number(row.price_usd);
+  if (!(price > 0)) {
+    return { reasons: [], dumpFromHighPct };
+  }
+
+  const reasons: string[] = [];
+  const minDump = cfg.dipRollingFlushVetoMinDumpPct;
+  const maxDump = cfg.dipRollingFlushVetoMaxDumpPct;
+  const nearLowPct = cfg.dipRollingFlushVetoNearLowPct;
+  for (const w of cfg.dipRollingFlushVetoWindowsMin) {
+    const ctx = ctxByWindow.get(w);
+    if (!ctx || !(ctx.high_px > 0)) continue;
+    const dump = ((ctx.high_px - price) / ctx.high_px) * 100;
+    dumpFromHighPct[w] = +dump.toFixed(2);
+    if (dump < minDump || dump > maxDump) continue;
+    // Still-falling check: current price at/near the window low = no real bounce yet (a knife).
+    if (nearLowPct > 0 && ctx.low_px > 0) {
+      const aboveLowPct = (price / ctx.low_px - 1) * 100;
+      if (aboveLowPct > nearLowPct) continue; // already bounced off the low → a dip, not a knife
+    }
+    reasons.push(`rolling_flush_veto_${w}m_dump${dump.toFixed(1)}%_atlow`);
+  }
+
+  return { reasons, dumpFromHighPct };
+}

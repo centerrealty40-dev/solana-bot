@@ -50,6 +50,7 @@ import {
 } from './knife-analytics-gate.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import { detectRollingFlush } from './knife-flush-detector.js';
+import { knifeWatchdogVerdict } from './knife-watchdog.js';
 
 const log = child('knife-catcher');
 const EPS = 1e-12;
@@ -123,6 +124,10 @@ interface KnifeConfig {
   cooldownMs: number;
   telegramEnabled: boolean;
   summaryMs: number;
+  /** Self-watchdog: force clean exit(1) before a memory leak reaches kernel OOM (which threatens the whole VPS). */
+  watchdogRssMb: number;
+  watchdogStallMs: number;
+  watchdogCheckMs: number;
   journalPath: string;
   shyftEndpoint: string;
   shyftToken: string;
@@ -176,6 +181,9 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     cooldownMs: Math.round(envNum(env.KNIFE_COOLDOWN_SEC, 600) * 1000),
     telegramEnabled: envBool(env.KNIFE_TELEGRAM_ENABLED, true),
     summaryMs: Math.round(envNum(env.KNIFE_SUMMARY_MIN, 30) * 60_000),
+    watchdogRssMb: envNum(env.KNIFE_WATCHDOG_RSS_MB, 420),
+    watchdogStallMs: Math.round(envNum(env.KNIFE_WATCHDOG_STALL_SEC, 600) * 1000),
+    watchdogCheckMs: Math.round(envNum(env.KNIFE_WATCHDOG_CHECK_SEC, 15) * 1000),
     journalPath:
       env.KNIFE_CATCHER_JOURNAL_PATH?.trim() ||
       path.join('data', 'knife-catcher', 'knife-catcher.jsonl'),
@@ -234,6 +242,8 @@ interface MintState {
 const states = new Map<string, MintState>();
 let journalPathResolved: string | null = null;
 let globalLastEntryAtMs = 0;
+/** Last time any price/swap observation was processed — fuels the stall watchdog. */
+let lastActivityAtMs = Date.now();
 let knifeAnalyticsCfg: KnifeAnalyticsConfig = loadKnifeAnalyticsConfig();
 
 function appendJournal(cfg: KnifeConfig, ev: Record<string, unknown>): void {
@@ -672,6 +682,7 @@ function onTrustedPriceTick(
   tsMs: number,
   source: KnifePriceSource,
 ): void {
+  lastActivityAtMs = Date.now();
   const s = getOrCreateState(mint);
   s.obsCount += 1;
   s.buf.push({ t: tsMs, p: price });
@@ -878,6 +889,11 @@ async function main(): Promise<void> {
           const s = getOrCreateState(m);
           if (isNew) s.watchlistJoinedAtMs = now;
         }
+        // Bound memory: drop states for mints no longer watched that are idle & have no open work.
+        const keep = new Set(mints);
+        for (const [m, s] of states) {
+          if (!keep.has(m) && s.phase === 'idle' && !s.pendingDump) states.delete(m);
+        }
         appendJournal(cfg, {
           kind: 'knife_watchlist',
           count: mints.length,
@@ -963,6 +979,7 @@ async function main(): Promise<void> {
     {
       onObservation: (mint, priceUsd, streamTsMs, meta) => {
         try {
+          lastActivityAtMs = Date.now();
           if (meta) recordKnifeSwap(cfg, mint, streamTsMs, meta);
           if (!cfg.captureOnly) onStreamSwap(cfg, mint, priceUsd, streamTsMs, meta);
         } catch (e) {
@@ -975,6 +992,34 @@ async function main(): Promise<void> {
         log.warn({ err: err instanceof Error ? err.message : String(err) }, 'stream error'),
     },
   );
+
+  // Self-watchdog: clean exit(1) before a leak reaches the kernel OOM-killer (which threatens the
+  // whole VPS). Not unref'd so it always keeps firing while the process is alive.
+  setInterval(() => {
+    const rssMb = Math.round(process.memoryUsage().rss / 1048576);
+    const lastActivityAgeMs = Date.now() - lastActivityAtMs;
+    const verdict = knifeWatchdogVerdict({
+      rssMb,
+      lastActivityAgeMs,
+      watchedCount: states.size,
+      rssHardMb: cfg.watchdogRssMb,
+      stallMs: cfg.watchdogStallMs,
+    });
+    if (verdict.exit) {
+      appendJournal(cfg, {
+        kind: 'knife_watchdog_exit',
+        reason: verdict.reason,
+        rssMb,
+        lastActivityAgeSec: Math.round(lastActivityAgeMs / 1000),
+        watched: states.size,
+      });
+      log.error(
+        { reason: verdict.reason, rssMb, lastActivityAgeSec: Math.round(lastActivityAgeMs / 1000) },
+        'knife-catcher watchdog tripped — exiting for clean pm2 restart',
+      );
+      process.exit(1);
+    }
+  }, cfg.watchdogCheckMs);
 
   setInterval(() => {
     let open = 0;
@@ -995,6 +1040,7 @@ async function main(): Promise<void> {
         obsTotal: obs,
         swapsCaptured: swapCaptureCount,
         captureOnly: cfg.captureOnly,
+        rssMb: Math.round(process.memoryUsage().rss / 1048576),
         realizedUsd: Number(realized.toFixed(2)),
         solUsd: getSolUsd(),
       },

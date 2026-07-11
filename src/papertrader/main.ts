@@ -55,7 +55,9 @@ import {
   isLiveOscarTradingStrategyId,
   isLiveOscarFamilyTradingStrategyId,
   isLiveLeraTradingStrategyId,
+  LIVE_LERA10_STRATEGY_ID,
 } from '../preset-c/live-oscar-family.js';
+import { processAwakeningLiveEntryQueue } from '../live/awakening-live-entry.js';
 import { gmgnMintHrefHtml, isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
 import { syncPriorityOpenMints } from './discovery/priority-discovery-registry.js';
 import { updateNearReadyDipWatchlist } from './discovery-health-window.js';
@@ -1621,6 +1623,29 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         );
       }
       if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') return;
+
+      const liveOscarForAwakening = resolveLiveOscar();
+      if (
+        liveOscarForAwakening &&
+        cfg.strategyId === LIVE_LERA10_STRATEGY_ID &&
+        liveOscarForAwakening.liveCfg.executionMode === 'live'
+      ) {
+        const awakeningRes = await processAwakeningLiveEntryQueue({
+          liveCfg: liveOscarForAwakening.liveCfg,
+          paperCfg: cfg,
+          open,
+          discovery: liveOscarForAwakening.discovery,
+          journalLiveStrategy,
+          maxOpenPositions: Number(process.env.AWAKENING_MAX_OPEN_POSITIONS ?? 3),
+        });
+        if (awakeningRes.opened > 0) {
+          logger.info(
+            { opened: awakeningRes.opened, attempted: awakeningRes.attempted },
+            'awakening live entries consumed',
+          );
+        }
+      }
+
       syncPriorityOpenMints(open.keys());
       const res =
         cfg.strategyKind === 'dip'

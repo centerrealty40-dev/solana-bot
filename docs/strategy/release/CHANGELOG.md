@@ -88,6 +88,56 @@
 
 ---
 
+## [1.11.574] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.574`
+
+### Knife-catcher — self-watchdog против утечки памяти → kernel OOM (защита всей VPS) + прунинг states
+
+- **Причина (инцидент 2026-07-11 08:00:35 UTC):** процесс `knife-catcher` утёк по памяти до **~5.8 ГБ RSS** (`total-vm 63GB`) и был убит **ядром** (`Out of memory: Killed process … (node) … oom_score_adj:0`, `redis-server invoked oom-killer`, `global_oom`, exit 137). pm2 `max_memory_restart: 350M` утечку **не поймал** — при тормозящем/тризингующем event-loop телеметрия pm2 не обновляется. Побочно: ловец **угрожал co-tenant'ам** VPS (redis, dc-trader, live-oscar). Из-за постоянных рестартов (kernel OOM + краш-луп) in-memory буфер цен обнулялся, а rolling-flush-детектору нужен 10-мин хай → он почти всегда был в прогреве и **не ловил проливы** («за 6ч 0 flush»).
+- **Что сделано:**
+  - Новый чистый модуль `src/scripts/knife-watchdog.ts` (`knifeWatchdogVerdict`, без нативных зависимостей → юнит-тестируемый). В `knife-catcher.ts` — таймер-сторож (не `unref`, тик `KNIFE_WATCHDOG_CHECK_SEC`=15с): при `RSS >= KNIFE_WATCHDOG_RSS_MB` (420) **или** «немоте» (нет ни одного observation `>= KNIFE_WATCHDOG_STALL_SEC`=600с при непустом вотчлисте) — пишет `knife_watchdog_exit` в журнал и делает **чистый `process.exit(1)`** задолго до kernel-OOM; pm2 поднимает свежий процесс за 5с.
+  - Прунинг `states`: при обновлении вотчлиста снимаемые монеты (idle, без `pendingDump`) удаляются из Map — память ограничена набором наблюдаемых + открытых позиций (раньше Map рос неограниченно по ротации вотчлиста).
+  - Снижение утечки в общем gRPC-consumer'е (`shyft-shadow-consumer.ts`): на завершении сессии — `stream.removeAllListeners()` и best-effort `client.close()/destroy()`, чтобы буферы мёртвой сессии освобождались при churn reconnect/resubscribe (обратно совместимо, live-oscar не затронут по поведению).
+  - Heartbeat теперь печатает `rssMb`.
+- **Флаги (все в ecosystem, `.env`-override):** `KNIFE_WATCHDOG_RSS_MB` (420), `KNIFE_WATCHDOG_STALL_SEC` (600), `KNIFE_WATCHDOG_CHECK_SEC` (15). `0` отключает соответствующий гвард.
+- **Тесты:** `tests/knife-watchdog.test.ts` (7).
+- **Откат:** `KNIFE_WATCHDOG_RSS_MB=0 KNIFE_WATCHDOG_STALL_SEC=0` (отключить сторож, без деплоя) или revert коммита `1.11.574`. Изолированный воркер — Oscar/LERA не затронуты.
+
+---
+
+## [1.11.573] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.573`
+
+### Awakening-catcher — ловля «пробуждения» тихих/новых монет (GMGN-style), изолированный воркер
+
+- **Причина:** воронка Oscar/LERA видит только монеты, уже попавшие в PG по порогам ликвы/объёма — то есть на которых **уже** сконцентрирован ритейл. Первые растущие объёмы по **тихим до этого** (или совсем новым) монетам мы структурно пропускаем. GMGN Trending ловит их потому, что это глобальный он-чейн индексер, а не фильтр внешних API.
+- **Что сделано:** новый **изолированный** PM2-воркер `awakening-catcher` (`src/scripts/awakening-catcher.ts`, default **OFF**). Гибрид: дешёвый `logsSubscribe` (Alchemy WS, программы pump.fun + pumpswap-amm) детектит активность по минтам (`MintActivityTracker`), затем **по требованию** дёргает DexScreener для метрик (5м/1ч/6ч/24ч объёмы, ликва, mcap, price-change) и оценивает паттерн «dormant-low awakening» чистой функцией `evaluateAwakeningSignal`. Fallback-источник — чтение `stream_events` из PG (`AWAKENING_STREAM_SOURCE=pg`). Плюс GeckoTerminal trending как второй источник кандидатов. Никакой лишней нагрузки на PG и без сжигания RPC-лимитов (батчи, tick 10с, cap кандидатов).
+- **Интеграция:** сигналы идут в `live-lera10` через файловую очередь `data/live/awakening-entry-queue.jsonl` (`enqueueAwakeningLiveEntry` → `processAwakeningLiveEntryQueue` в discovery-цикле `main.ts`). Отдельная торговая линия `dormant_awakening` (union в `types.ts`/`live-oscar-scalp-wave.ts`/`live-oscar-mcap-tier.ts`/`dip-clones.ts`), чтобы обойти гварды, которые иначе режут этот паттерн (`old-mint-dormant-volume-spike-guard` и т.п.). On-chain overlay: `shyft-shadow-consumer` теперь пробрасывает `wallet` из декодированного свопа (для кластер-детекта).
+- **Безопасность:** default `AWAKENING_MODE=shadow` (гипотетические входы только в журнал), live-вход за флагом `AWAKENING_LIVE_ENTRY_ENABLED` и лимитом `AWAKENING_MAX_OPEN_POSITIONS` (≤3) на линии `dormant_awakening`; проверка denylist/blacklist перед исполнением. RPC резолвится Alchemy-first (`resolve-solana-rpc-url.ts`: `ALCHEMY_WS_URL`/`ALCHEMY_HTTP_URL`). `pumpswap-amm` добавлен в `KNOWN_PROGRAMS`.
+- **Флаги (все в `.env.example`):** `AWAKENING_CATCHER_ENABLED`, `AWAKENING_MODE`, `AWAKENING_STREAM_SOURCE` (`ws`|`pg`), `AWAKENING_LIVE_ENTRY_ENABLED`, `AWAKENING_MAX_OPEN_POSITIONS`, пороги/кулдауны/Telegram.
+- **Тесты:** `tests/awakening-catcher.test.ts`.
+- **Откат:** `AWAKENING_CATCHER_ENABLED=0` (воркер OFF) и/или `AWAKENING_LIVE_ENTRY_ENABLED=0` (live-вход OFF) — мгновенно; либо revert коммита `1.11.573`. Линия изолирована, откат не затрагивает Oscar/остальные линии LERA.
+
+---
+
+## [1.11.572] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.572`
+
+### Rolling-flush entry veto — не покупать «затухающую горку» / падающий нож
+
+- **Причина:** боевая `live-lera` купила `DEXBULL` (`6xCtR2Eq…`) 2026-07-10 16:22 на свежем 30м/60м-дне (−17%/−21% от хая окна, без отскока), через 16с усреднилась вниз на −21%, затем ликвидность высушили → закрытие `LIQ_DRAIN`, **−99.76% / −$498.82**. Существующие вето это пропускали: recovery-veto молчит без отскока, local-high-veto молчит вдали от хая; dip-логика приняла обвал −31% за «дип».
+- **Что сделано:** новое чистое вето входа `evaluateRollingFlushVeto` (`dip-detector.ts`), встроено в единый protector-блок `dip-clones.ts` (после local-high, пропускается для `post_crash_fast`/`stress_kill_reentry`). Логика как у `detectRollingFlush` (knife-flush-detector), но на агрегированных PG-хаях/лоу окон: блок, если по какому-то окну просадка от хая `>= MIN_DUMP%` и `<= MAX_DUMP%`, И цена ещё в пределах `NEAR_LOW%` от лоу окна (не отскочила = нож). Отскочивший дип проходит.
+- **Калибровка на реальных минутных снапшотах DEXBULL:** за 10–15м просадка была всего ~4% (быстрый слив был раньше + «стабилизация»), поэтому дефолт окон — `15,30,60`; `MIN_DUMP=10%`, `MAX_DUMP=45%`, `NEAR_LOW=4%`. На этих порогах DEXBULL режется по 30м/60м, обычные дипы — нет.
+- **Флаги:** `PAPER_DIP_ROLLING_FLUSH_VETO_ENABLED` (default **OFF** → Oscar не затронут), `..._WINDOWS_MIN`, `..._MIN_DUMP_PCT`, `..._MAX_DUMP_PCT`, `..._NEAR_LOW_PCT`. Включить на LERA: `PAPER_DIP_ROLLING_FLUSH_VETO_ENABLED=true`.
+- **Тесты:** `tests/papertrader-dip-rolling-flush-veto.test.ts` (6, вкл. реальный DEXBULL-контекст).
+- **Примечание:** общие файлы `dip-clones.ts` / `.env.example` в этом коммите несут также структурные правки awakening-линии (union `dormant_awakening`, awakening env) — сама фича awakening в следующем коммите `1.11.573`.
+- **Откат:** `PAPER_DIP_ROLLING_FLUSH_VETO_ENABLED=false` (мгновенно, без деплоя) или revert коммита `1.11.572`.
+
+---
+
 ## [1.11.571] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.571`

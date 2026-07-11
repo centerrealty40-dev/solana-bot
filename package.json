@@ -26,6 +26,7 @@
     "dashboard": "tsx scripts-tmp/dashboard-server.ts",
     "stream": "tsx src/scripts/stream.ts",
     "parser": "tsx src/scripts/parser.ts",
+    "awakening-catcher": "tsx src/scripts/awakening-catcher.ts",
     "atlas": "tsx src/scripts/atlas.ts",
     "live-oscar": "tsx src/scripts/live-oscar.ts",
     "live-oscar-risky": "tsx src/scripts/live-oscar.ts",
