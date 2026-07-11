@@ -137,12 +137,30 @@ export function startKnifeJupiterPoll(
 ): { stop: () => void } {
   let stopped = false;
   let roundRobin = 0;
+  /**
+   * Only one poll cycle in flight at a time. Without this, `setInterval` fires a new cycle every
+   * `pollIntervalMs` even while the previous is still awaiting Jupiter quotes. When quotes are slow
+   * (e.g. the shared cross-process Jupiter rate-gate is contended), cycles overlap and each reserves
+   * up to `maxMintsPerTick` future gate slots — the gate's `nextAllowedMs` then runs minutes/hours
+   * into the future (starving *all* Jupiter callers, incl. live-oscar), while thousands of pending
+   * awaiters pile up in this process → multi-GB RSS → kernel OOM. The guard caps knife to at most one
+   * sequential quote chain, so it can never reserve slots faster than the gate grants them.
+   */
+  let inFlight = false;
 
   const pollOnce = async (): Promise<void> => {
-    if (stopped) return;
+    if (stopped || inFlight) return;
     const solUsd = getSolUsd();
     if (!(solUsd > 0)) return;
+    inFlight = true;
+    try {
+      await pollCycle(solUsd);
+    } finally {
+      inFlight = false;
+    }
+  };
 
+  const pollCycle = async (solUsd: number): Promise<void> => {
     const mints = getWatchedMints();
     if (mints.length === 0) return;
 
