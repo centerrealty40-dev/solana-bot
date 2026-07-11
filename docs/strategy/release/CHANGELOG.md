@@ -88,6 +88,31 @@
 
 ---
 
+## [1.11.577] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.577`
+
+### Awakening-catcher — Alchemy WS fallback (QuickNode 403 на VPS)
+
+- **Причина:** на Oscar VPS `SA_RPC_WS_URL` в pm2/.env указывал на мёртвый QuickNode → awakening WS 403/EPROTO, сигналы не ловились.
+- **Что сделано:** `loadAwakeningConfig` — `AWAKENING_RPC_WS_URL` override; если resolved WS — `quiknode.pro`, автоматически берёт Alchemy WSS из `ALCHEMY_HTTP_URL`/`SA_RPC_HTTP_URL`.
+- **Откат:** revert `1.11.577`.
+
+---
+
+## [1.11.577] — 2026-07-11
+
+**Тег:** `sa-alpha-1.11.577`
+
+### Awakening-catcher — Alchemy WS вместо мёртвого QuickNode в pm2 env
+
+- **Причина:** на Oscar VPS `SA_RPC_WS_URL` в pm2 env указывал на QuickNode (403/EPROTO); awakening-catcher не получал stream-пульс.
+- **Что сделано:** `loadAwakeningConfig` — `AWAKENING_RPC_WS_URL` override; если resolved WS — `quiknode.pro`, автоматически берёт Alchemy WSS из `ALCHEMY_HTTP_URL`/`SA_RPC_HTTP_URL`.
+- **Тесты:** +2 в `awakening-catcher.test.ts`.
+- **Откат:** revert `1.11.577`.
+
+---
+
 ## [1.11.576] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.576`

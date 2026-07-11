@@ -84,7 +84,16 @@ function parseProgramIds(raw: string | undefined): string[] {
 export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): AwakeningConfig {
   const streamRaw = String(env.AWAKENING_STREAM_SOURCE ?? 'ws').trim().toLowerCase();
   const streamSource: AwakeningStreamSource = streamRaw === 'pg' ? 'pg' : 'ws';
-  const wsUrl = resolveSolanaRpcWsUrl(env);
+  const wsUrl =
+    env.AWAKENING_RPC_WS_URL?.trim() ||
+    (() => {
+      const resolved = resolveSolanaRpcWsUrl(env);
+      if (/quiknode\.pro/i.test(resolved)) {
+        const alchemyHttp = env.ALCHEMY_HTTP_URL?.trim() || env.SA_RPC_HTTP_URL?.trim();
+        if (alchemyHttp?.startsWith('https://')) return `wss://${alchemyHttp.slice('https://'.length)}`;
+      }
+      return resolved;
+    })();
   return {
     enabled: envBool(env.AWAKENING_CATCHER_ENABLED, false),
     mode: String(env.AWAKENING_MODE ?? 'shadow').trim().toLowerCase() === 'live' ? 'live' : 'shadow',

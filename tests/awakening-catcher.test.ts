@@ -153,3 +153,21 @@ describe('awakening-telegram', () => {
     expect(html).toContain('dormant_awakening');
   });
 });
+
+describe('awakening-config ws', () => {
+  it('falls back from dead QuickNode WS to Alchemy WSS', () => {
+    const cfg = loadAwakeningConfig({
+      SA_RPC_WS_URL: 'wss://dead.quiknode.pro/key/',
+      ALCHEMY_HTTP_URL: 'https://solana-mainnet.g.alchemy.com/v2/testkey',
+    });
+    expect(cfg.rpcWsUrl).toBe('wss://solana-mainnet.g.alchemy.com/v2/testkey');
+  });
+
+  it('prefers AWAKENING_RPC_WS_URL override', () => {
+    const cfg = loadAwakeningConfig({
+      AWAKENING_RPC_WS_URL: 'wss://custom.example/ws',
+      SA_RPC_WS_URL: 'wss://dead.quiknode.pro/key/',
+    });
+    expect(cfg.rpcWsUrl).toBe('wss://custom.example/ws');
+  });
+});
