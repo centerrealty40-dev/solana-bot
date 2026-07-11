@@ -313,6 +313,8 @@ export const LiveDiscoveryEvalSchema = z.object({
   ageMin: z.number().finite().optional(),
   /** Trade strategy lane (`prod` | `scalp_wave`) for mutex audit. */
   tradeLane: z.string().max(32).optional(),
+  /** Volume-leader tier (top-N by 24h peak vol_1h) — always audited when enabled. */
+  volumeLeaderTier: z.boolean().optional(),
   reasons: z.array(z.string().max(400)).max(24),
   /** Tier «Первый выстрел» shadow eval (PR1+). */
   pervyyVystrel: z

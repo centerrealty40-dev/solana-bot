@@ -177,7 +177,7 @@ import {
   usesPaperOscarSecondLegScaleIn,
 } from './paper-oscar-v21.js';
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
-import { recordDiscoveryHealthSample } from './discovery-health-window.js';
+import { recordDiscoveryHealthSample, markDiscoverySchedulerStarted, recordDiscoveryTickCompleted } from './discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import {
   buildHoldersUnknownTelegramText,
@@ -1714,10 +1714,14 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       const discoveryDecisions: ScalpDiscoveryDecision[] = [...scalpOpenDecisions, ...res.decisions];
 
       for (const d of discoveryDecisions) {
-        const priorityFlag = res.priorityMintSet?.has(d.mint) ?? false;
+        const volumeLeaderFlag = res.volumeLeaderMintSet?.has(d.mint) ?? false;
+        const priorityFlag =
+          (res.priorityMintSet?.has(d.mint) ?? false) || volumeLeaderFlag;
         const deepAuditFlag =
           cfg.discoveryDeepAuditJsonl === true &&
-          (priorityFlag || Boolean(cfg.discoveryDeepAuditWhitelistMintSet?.has(d.mint)));
+          (priorityFlag ||
+            volumeLeaderFlag ||
+            Boolean(cfg.discoveryDeepAuditWhitelistMintSet?.has(d.mint)));
         journalAppend({
           kind: 'eval',
           lane: d.lane,
@@ -1735,6 +1739,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           tradeLane: resolveDecisionTradeLane(d),
           _liveDiscoveryDeepAudit: deepAuditFlag,
           _priorityDiscovery: priorityFlag,
+          _volumeLeaderDiscovery: volumeLeaderFlag,
         });
         if (!d.pass && isOnlyLocalHighVetoReasons(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarLocalHighVetoOnly(d);
@@ -2876,6 +2881,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         passed: res.passed,
         opened: stats.opened - openedBeforeDiscoveryBatch,
       });
+      recordDiscoveryTickCompleted();
     } catch (err) {
       stats.errors++;
       logger.warn({ msg: 'discovery tick failed', err: (err as Error).message });
@@ -2884,15 +2890,19 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   /** Blocks overlapping discovery ticks until the in-flight promise settles (timeout alone does not release). */
   let discoveryInFlight: Promise<void> | null = null;
+  let discoveryInFlightGen = 0;
   let trackerRunning = false;
   let followupRunning = false;
   const discoveryTickTimeoutMs = cfg.discoveryTickTimeoutMs;
 
+  markDiscoverySchedulerStarted();
+
   const discoveryTimer = setInterval(() => {
     if (discoveryInFlight) return;
+    const gen = ++discoveryInFlightGen;
     const tickPromise = discoveryTick();
     discoveryInFlight = tickPromise.finally(() => {
-      discoveryInFlight = null;
+      if (discoveryInFlightGen === gen) discoveryInFlight = null;
     });
     void (async () => {
       try {
@@ -2900,6 +2910,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       } catch (err) {
         stats.errors++;
         logger.warn({ msg: 'discovery error', err: (err as Error).message });
+        if (discoveryInFlightGen === gen) {
+          discoveryInFlight = null;
+          discoveryInFlightGen++;
+        }
       }
     })();
   }, cfg.discoveryIntervalMs);

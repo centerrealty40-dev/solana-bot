@@ -96,3 +96,66 @@ export function discoveryHealthSummaryRolling(): DiscoveryHealthSummary {
     discoveryTicks: samples.length,
   };
 }
+
+/** Last time a discovery tick finished without throwing (mutex / stall watchdog). */
+let lastDiscoveryTickCompletedMs = 0;
+let discoverySchedulerStartedMs = 0;
+let lastDiscoveryStallAlertMs = 0;
+
+export function markDiscoverySchedulerStarted(ts = Date.now()): void {
+  discoverySchedulerStartedMs = ts;
+  if (lastDiscoveryTickCompletedMs === 0) lastDiscoveryTickCompletedMs = ts;
+}
+
+export function recordDiscoveryTickCompleted(ts = Date.now()): void {
+  lastDiscoveryTickCompletedMs = ts;
+}
+
+export function discoveryStallThresholdMs(): number {
+  const n = Number(process.env.LIVE_DISCOVERY_STALL_ALERT_MS);
+  return Number.isFinite(n) && n >= 60_000 ? Math.floor(n) : 5 * 60_000;
+}
+
+function discoveryStallBootGraceMs(): number {
+  const n = Number(process.env.LIVE_DISCOVERY_STALL_BOOT_GRACE_MS);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : 3 * 60_000;
+}
+
+function discoveryStallAlertRepeatMs(): number {
+  const n = Number(process.env.LIVE_DISCOVERY_STALL_ALERT_REPEAT_MS);
+  return Number.isFinite(n) && n >= 60_000 ? Math.floor(n) : 10 * 60_000;
+}
+
+export function isDiscoveryStallAlertEnabled(): boolean {
+  return process.env.LIVE_DISCOVERY_STALL_ALERT_ENABLED?.trim() !== '0';
+}
+
+export type DiscoveryStallStatus = {
+  stalled: boolean;
+  stallMs: number;
+  thresholdMs: number;
+  lastTickCompletedMs: number;
+};
+
+export function getDiscoveryStallStatus(now = Date.now()): DiscoveryStallStatus {
+  const thresholdMs = discoveryStallThresholdMs();
+  const started = discoverySchedulerStartedMs > 0 ? discoverySchedulerStartedMs : now;
+  const last = lastDiscoveryTickCompletedMs > 0 ? lastDiscoveryTickCompletedMs : started;
+  const stallMs = Math.max(0, now - last);
+  const inGrace = now - started < discoveryStallBootGraceMs();
+  return {
+    stalled: isDiscoveryStallAlertEnabled() && !inGrace && stallMs >= thresholdMs,
+    stallMs,
+    thresholdMs,
+    lastTickCompletedMs: last,
+  };
+}
+
+/** Returns stall status when a new alert should fire (throttled repeat). */
+export function shouldEmitDiscoveryStallAlert(now = Date.now()): DiscoveryStallStatus | null {
+  const st = getDiscoveryStallStatus(now);
+  if (!st.stalled) return null;
+  if (now - lastDiscoveryStallAlertMs < discoveryStallAlertRepeatMs()) return null;
+  lastDiscoveryStallAlertMs = now;
+  return st;
+}

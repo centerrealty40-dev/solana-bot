@@ -244,6 +244,80 @@ export interface DiscoveryTickResult {
   pgCoverageModeChanged?: 'full' | 'relaxed' | null;
   /** Priority tier mint set this tick (open + near-ready + recent eval + SQL pool). */
   priorityMintSet?: Set<string>;
+  /** Volume-leader tier mints this tick (top-N by 24h peak vol_1h). */
+  volumeLeaderMintSet?: Set<string>;
+}
+
+function buildDiscoveryDeepAuditMintSet(
+  cfg: PaperTraderConfig,
+  priorityMintSet: ReadonlySet<string>,
+  volumeLeaderMintSet: ReadonlySet<string>,
+): Set<string> {
+  const out = new Set<string>(priorityMintSet);
+  if (cfg.volumeLeaderEnabled) {
+    for (const m of volumeLeaderMintSet) out.add(m);
+  }
+  const wl = cfg.discoveryDeepAuditWhitelistMintSet;
+  if (wl) for (const m of wl) out.add(m);
+  return out;
+}
+
+async function collectUniverseMissAuditRows(
+  cfg: PaperTraderConfig,
+  args: {
+    auditMintSet: ReadonlySet<string>;
+    candidateMintKeys: ReadonlySet<string>;
+  },
+): Promise<Record<string, unknown>[]> {
+  const out: Record<string, unknown>[] = [];
+  if (cfg.discoveryDeepAuditJsonl !== true || args.auditMintSet.size === 0) return out;
+  const missEveryMs = cfg.discoveryDeepAuditUniverseMissMinMs;
+  for (const mint of args.auditMintSet) {
+    if (
+      cfg.mintBlacklistEnabled &&
+      cfg.mintBlacklistPath?.trim() &&
+      isMintBlacklisted(cfg.mintBlacklistPath.trim(), mint)
+    ) {
+      continue;
+    }
+    if (args.candidateMintKeys.has(mint)) continue;
+    if (!allowDeepAuditLog(`${mint}:universe_miss`, missEveryMs)) continue;
+    const probe = await fetchLatestCrossVenueSnapshotRowForMint(mint);
+    if (probe && !passesDiscoveryMinMarketCap(cfg, probe)) continue;
+    const { reasons: sqlReasons, symbol } = explainPostLaneUniverseMiss(cfg, probe);
+    const crowded =
+      probe != null && sqlReasons.length === 0 ? explainCrowdedOutOnly(cfg, true) : null;
+    const reasons = crowded ? [...sqlReasons, crowded] : sqlReasons;
+    let snapshotHint: string | undefined;
+    if (probe) {
+      try {
+        snapshotHint = JSON.stringify({
+          source: probe.source,
+          ts: probe.ts instanceof Date ? probe.ts.toISOString() : String(probe.ts),
+          price_usd: probe.price_usd,
+          liquidity_usd: probe.liquidity_usd,
+          volume_5m: probe.volume_5m,
+          volume_1h: probe.volume_1h,
+          buys_5m: probe.buys_5m,
+          sells_5m: probe.sells_5m,
+          age_min: probe.age_min,
+          holder_count: probe.holder_count,
+        }).slice(0, 1600);
+      } catch {
+        snapshotHint = undefined;
+      }
+    }
+    out.push({
+      kind: 'live_discovery_universe_miss',
+      mint,
+      symbol,
+      lane: 'post_migration',
+      source: probe?.source ?? 'none',
+      reasons,
+      snapshotHint,
+    });
+  }
+  return out;
 }
 
 const deepAuditLastLogMs = new Map<string, number>();
@@ -835,8 +909,21 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     );
   }
   if (snapshotTagged.length === 0) {
+    const auditMintSet = buildDiscoveryDeepAuditMintSet(cfg, priorityMintSet, volumeLeaderMintSet);
+    const emptyAuditRows = await collectUniverseMissAuditRows(cfg, {
+      auditMintSet,
+      candidateMintKeys: new Set(),
+    });
     syncDiscoveryCollectorPin(cfg, priorityMintSet);
-    return { discovered: 0, evaluated: 0, passed: 0, decisions: [], priorityMintSet };
+    return {
+      discovered: 0,
+      evaluated: 0,
+      passed: 0,
+      decisions: [],
+      auditRows: emptyAuditRows.length > 0 ? emptyAuditRows : undefined,
+      priorityMintSet,
+      volumeLeaderMintSet,
+    };
   }
 
   /**
@@ -866,11 +953,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   const allowedSnapshotTagged = snapshotTagged.filter(({ row }) => allowedFlag.get(row.mint) === true);
 
   if (allowedSnapshotTagged.length === 0) {
-    /** Все mint'ы на throttle — пишем deep-аудит для whitelist + priority tier. */
+    /** Все mint'ы на throttle — пишем deep-аудит для whitelist + priority + volume-leader tier. */
     const auditRowsThrottle: Record<string, unknown>[] = [];
-    const wl = cfg.discoveryDeepAuditWhitelistMintSet;
-    const auditMintSet = new Set<string>([...priorityMintSet]);
-    if (wl) for (const m of wl) auditMintSet.add(m);
+    const auditMintSet = buildDiscoveryDeepAuditMintSet(cfg, priorityMintSet, volumeLeaderMintSet);
     if (cfg.discoveryDeepAuditJsonl === true && auditMintSet.size > 0) {
       for (const { row, lane } of snapshotTagged) {
         if (!auditMintSet.has(row.mint)) continue;
@@ -899,6 +984,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       decisions: [],
       auditRows: auditRowsThrottle.length > 0 ? auditRowsThrottle : undefined,
       priorityMintSet,
+      volumeLeaderMintSet,
     };
   }
 
@@ -980,10 +1066,8 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
   /** Whitelist deep-audit set = repeat-traded mints for relaxed volume / PG gap rules. */
   const knownMintSupplement = cfg.discoveryDeepAuditWhitelistMintSet;
 
-  /** Throttled deep-аудит для whitelist + priority tier. */
-  const wlForThrottle = cfg.discoveryDeepAuditWhitelistMintSet;
-  const throttleAuditMints = new Set<string>([...priorityMintSet]);
-  if (wlForThrottle) for (const m of wlForThrottle) throttleAuditMints.add(m);
+  /** Throttled deep-аудит для whitelist + priority + volume-leader tier. */
+  const throttleAuditMints = buildDiscoveryDeepAuditMintSet(cfg, priorityMintSet, volumeLeaderMintSet);
   if (cfg.discoveryDeepAuditJsonl === true && throttleAuditMints.size > 0) {
     for (const { row, lane } of snapshotTagged) {
       if (allowedFlag.get(row.mint) === true) continue;
@@ -1881,59 +1965,12 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     });
   }
 
-  const wl = cfg.discoveryDeepAuditWhitelistMintSet;
-  const universeMissMints = new Set<string>([...priorityMintSet]);
-  if (wl) for (const m of wl) universeMissMints.add(m);
-  if (cfg.discoveryDeepAuditJsonl === true && universeMissMints.size > 0) {
-    const missEveryMs = cfg.discoveryDeepAuditUniverseMissMinMs;
-    for (const mint of universeMissMints) {
-      if (
-        cfg.mintBlacklistEnabled &&
-        cfg.mintBlacklistPath?.trim() &&
-        isMintBlacklisted(cfg.mintBlacklistPath.trim(), mint)
-      ) {
-        continue;
-      }
-      if (candidateMintKeys.has(mint)) continue;
-      if (!allowDeepAuditLog(`${mint}:universe_miss`, missEveryMs)) continue;
-      const probe = await fetchLatestCrossVenueSnapshotRowForMint(mint);
-      if (probe && !passesDiscoveryMinMarketCap(cfg, probe)) continue;
-      const { reasons: sqlReasons, symbol } = explainPostLaneUniverseMiss(cfg, probe);
-      const crowded =
-        probe != null && sqlReasons.length === 0
-          ? explainCrowdedOutOnly(cfg, true)
-          : null;
-      const reasons = crowded ? [...sqlReasons, crowded] : sqlReasons;
-      let snapshotHint: string | undefined;
-      if (probe) {
-        try {
-          snapshotHint = JSON.stringify({
-            source: probe.source,
-            ts: probe.ts instanceof Date ? probe.ts.toISOString() : String(probe.ts),
-            price_usd: probe.price_usd,
-            liquidity_usd: probe.liquidity_usd,
-            volume_5m: probe.volume_5m,
-            volume_1h: probe.volume_1h,
-            buys_5m: probe.buys_5m,
-            sells_5m: probe.sells_5m,
-            age_min: probe.age_min,
-            holder_count: probe.holder_count,
-          }).slice(0, 1600);
-        } catch {
-          snapshotHint = undefined;
-        }
-      }
-      auditRows.push({
-        kind: 'live_discovery_universe_miss',
-        mint,
-        symbol,
-        lane: 'post_migration',
-        source: probe?.source ?? 'none',
-        reasons,
-        snapshotHint,
-      });
-    }
-  }
+  const auditMintSet = buildDiscoveryDeepAuditMintSet(cfg, priorityMintSet, volumeLeaderMintSet);
+  const universeMissRows = await collectUniverseMissAuditRows(cfg, {
+    auditMintSet,
+    candidateMintKeys,
+  });
+  auditRows.push(...universeMissRows);
 
   syncDiscoveryCollectorPin(cfg, priorityMintSet);
 
@@ -2460,6 +2497,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     auditRows,
     pgCoverageModeChanged: globalPgCoverage.coverageModeChanged,
     priorityMintSet,
+    volumeLeaderMintSet,
   };
 }
 
