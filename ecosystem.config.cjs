@@ -745,6 +745,10 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '5',
         /** 0 = timed corridor splits (not dip-triggered leg-2). */
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT: '0',
+        /** Solo DexScreener → PG refresh while entry-split legs 2–8 are pending (30s buckets, 45s cooldown). */
+        PAPER_LIVE_PENDING_LEG_PG_REFRESH_ENABLED: '1',
+        PAPER_LIVE_PENDING_LEG_PG_REFRESH_COOLDOWN_MS: '45000',
+        PAPER_LIVE_PENDING_LEG_PG_REFRESH_BUCKET_SEC: '30',
         PAPER_LIVE_STAGED_ENTRY_AVG_COOLDOWN_MS: '0',
         PAPER_LIVE_STAGED_ENTRY_AVG_SECOND_COOLDOWN_MS: '300000',
         /**

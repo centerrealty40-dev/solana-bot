@@ -144,6 +144,16 @@ const ConfigSchema = z.object({
   /** When >0: leg-2 split at −N% from signal (replaces delay+corridor). 0 = legacy timed corridor. */
   liveStagedEntryEntrySplitTargetDropPct: z.coerce.number().min(0).max(95).default(0),
   /**
+   * Solo DexScreener → PG refresh for open mints with pending entry-split legs (1.11.581).
+   * Keeps `{source}_pair_snapshots.ts` young between 2-min collector ticks so stale-price gates
+   * see fresh rows. Default ON.
+   */
+  livePendingLegPgRefreshEnabled: z.boolean().default(true),
+  /** Per-mint cooldown between solo refreshes (ms). Default 45s. */
+  livePendingLegPgRefreshCooldownMs: z.coerce.number().int().positive().default(45_000),
+  /** PG `ts` bucket size (seconds) for pending-leg rows. Default 30s (not 1-min collector bucket). */
+  livePendingLegPgRefreshBucketSec: z.coerce.number().int().min(15).max(120).default(30),
+  /**
    * Observability only (Stage 0, 1.11.466): warn threshold (ms) for the age of the PG snapshot price
    * used at the entry-decision point. When the polled PG price is older than this, the entry path emits a
    * `live_stale_price_warn` journal event (+ throttled alert). Does **not** change any trading decision.
@@ -1494,6 +1504,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEntrySplitMaxUpPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT,
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
     liveStagedEntryEntrySplitTargetDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT,
+    livePendingLegPgRefreshEnabled: envBool(process.env.PAPER_LIVE_PENDING_LEG_PG_REFRESH_ENABLED, true),
+    livePendingLegPgRefreshCooldownMs: process.env.PAPER_LIVE_PENDING_LEG_PG_REFRESH_COOLDOWN_MS,
+    livePendingLegPgRefreshBucketSec: process.env.PAPER_LIVE_PENDING_LEG_PG_REFRESH_BUCKET_SEC,
     liveOscarStalePriceWarnMs: process.env.PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS,
     liveOscarShyftShadowEnabled: shyftShadowEnabled,
     shyftStreamEnabled: resolveShyftStreamEnabledFromEnv(shyftShadowEnabled),

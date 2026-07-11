@@ -14,6 +14,7 @@ import {
   openTradeNeedsEntrySplitFastPoll,
   resolveEntrySplitFastPollIntervalMsFromOpen,
 } from './live-staged-entry-gates.js';
+import { maybeRefreshPendingLegPgForOpenTrade } from '../pricing/pending-leg-pg-refresh.js';
 import { tryLiveStagedEntryV2TrackerStep } from './live-staged-entry-lifecycle.js';
 
 const log = child('entry-split-fast-poll');
@@ -108,6 +109,12 @@ export async function runEntrySplitFastPollStep(ctx: EntrySplitFastPollContext):
   for (const [mint, ot] of open) {
     if (!openTradeNeedsEntrySplitFastPoll(ot)) continue;
     try {
+      await maybeRefreshPendingLegPgForOpenTrade({
+        cfg: ctx.paperCfg,
+        ot,
+        mint,
+        journalAppend: ctx.journalAppend,
+      });
       const { curMetric, entrySplitJupiterPx } = await resolveEntrySplitMetricUsd({
         ot,
         mint,
