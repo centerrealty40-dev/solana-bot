@@ -14,6 +14,7 @@ import {
   classifySwan,
   computeSwanMetric,
   consumeMemSwanRisingEdge,
+  memSwanDropTriggered,
   resetMemSwanStateForTest,
   resolveMemSwanStatus,
   type MemSwanParams,
@@ -21,10 +22,12 @@ import {
 } from '../src/live/mem-swan.js';
 
 const PARAMS: MemSwanParams = {
-  topN: 80,
+  topN: 40,
   minRunnerV1hUsd: 10_000,
   minRunners: 5,
-  ewDropPct: 16,
+  ewDropPct: 14,
+  breadthRedMinPct: 65,
+  breadthEwDropPct: 8,
 };
 
 function row(mint: string, priceNow: number, priceBase: number, v1h: number): MemSwanRunnerRow {
@@ -87,11 +90,24 @@ describe('classifySwan', () => {
   });
 
   it('does not trigger on a shallow drop above the threshold', () => {
-    const rows = Array.from({ length: 6 }, (_, i) => row(`m${i}`, 90, 100, 500_000)); // -10% each
+    const rows = Array.from({ length: 6 }, (_, i) => row(`m${i}`, 95, 100, 500_000)); // -5% each
     const m = computeSwanMetric(rows, PARAMS, 1);
     const c = classifySwan(m, PARAMS);
     expect(c.valid).toBe(true);
     expect(c.triggered).toBe(false);
+  });
+
+  it('breadth path triggers when most runners red even if EW is mild (one outlier green)', () => {
+    const rows: MemSwanRunnerRow[] = [
+      ...Array.from({ length: 7 }, (_, i) => row(`red${i}`, 88, 100, 500_000)), // -12%
+      row('green', 120, 100, 400_000), // +20% outlier
+    ];
+    const m = computeSwanMetric(rows, PARAMS, 1);
+    expect(m.breadthRedPct).toBeCloseTo((7 / 8) * 100, 1);
+    expect(m.ewReturnPct).toBeCloseTo(-8, 1);
+    expect(memSwanDropTriggered(m, PARAMS)).toBe(true);
+    const c = classifySwan(m, PARAMS);
+    expect(c.triggered).toBe(true);
   });
 });
 

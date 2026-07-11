@@ -760,7 +760,9 @@ export interface SnapshotFeatures {
     highLookbackUsd: number | null;
     daysSinceHighBreak: number | null;
     price7dAgoUsd: number | null;
+    price3dAgoUsd: number | null;
     slope7dPct: number | null;
+    slope3dPct: number | null;
     pxVsHighLookback: number | null;
     pgSnapsCount: number;
     vetoed: boolean;
