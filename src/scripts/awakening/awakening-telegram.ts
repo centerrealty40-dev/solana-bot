@@ -8,7 +8,8 @@ export function formatAwakeningSignalTelegramHtml(
   verdict: AwakeningSignalResult,
 ): string {
   const vol5m = Math.round(verdict.metrics.vol5mUsd).toLocaleString('en-US');
-  const prior6h = Math.round(verdict.metrics.priorVol6hUsd).toLocaleString('en-US');
+  const spike6h = verdict.metrics.vol5mSpikeVs6hMult.toFixed(1);
+  const spike1h = verdict.metrics.vol5mSpikeVs1hMult.toFixed(1);
   const mcap = Math.round(market.marketCapUsd ?? 0).toLocaleString('en-US');
   const liq = Math.round(market.liquidityUsd ?? 0).toLocaleString('en-US');
 
@@ -17,7 +18,7 @@ export function formatAwakeningSignalTelegramHtml(
       '<b>Awakening shadow — сигнал пойман</b>',
       '',
       `mint: <code>${candidate.mint}</code>`,
-      `vol5m: $${vol5m} · prior6h: $${prior6h}`,
+      `vol5m: $${vol5m} · spike 6h/1h: ${spike6h}x / ${spike1h}x`,
       `mcap: $${mcap} · liq: $${liq}`,
       `src: ${candidate.source}`,
       '',
@@ -32,7 +33,7 @@ export function formatAwakeningSignalTelegramHtml(
     `<b>Awakening live — сигнал → очередь входа</b>`,
     '',
     `mint: <code>${candidate.mint}</code>`,
-    `vol5m: $${vol5m} · prior6h: $${prior6h}`,
+    `vol5m: $${vol5m} · spike 6h/1h: ${spike6h}x / ${spike1h}x`,
     `mcap: $${mcap} · liq: $${liq}`,
     `src: ${candidate.source}`,
     '',

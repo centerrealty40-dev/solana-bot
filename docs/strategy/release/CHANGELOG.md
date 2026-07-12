@@ -96,6 +96,12 @@
 
 **Тег:** `sa-alpha-1.11.583`
 
+### Awakening — early vol5m spike trigger (shadow)
+
+- **Проблема:** сигнал ждал `vol1h ≥ 8k` → вход в конце часового ралли (2vvw3, FeMb#2), не в начале пробуждения.
+- **Что сделано:** `evaluateAwakeningSignal` — gate по `vol5mSpikeVs6hMult` (vol5m / prior-6h 5m-avg) и `vol5mSpikeVs1hMult`; убран pass/fail на `minVol1hUsd`. Env: `AWAKENING_VOL5M_SPIKE_MIN_MULT` (8), `AWAKENING_VOL5M_SPIKE_VS_1H_MIN_MULT` (4).
+- **Откат:** revert коммита или вернуть старый `awakening-signal.ts`; `pm2 reload awakening-catcher --update-env`.
+
 ### Trend veto v2 + Telegram; Mem Swan 2h / top-40 / breadth
 
 - **Trend veto v2:** ski-slope rule, 3d-decline path, смягчённые пороги (`minDaysSinceHigh=3`, `maxPxVsHigh=55%`, ski `42%`). Config + `trend-structure-veto.ts` + тесты.

@@ -29,12 +29,19 @@ export interface AwakeningConfig {
   geckoTrendingPollMs: number;
   geckoTrendingPages: number;
   vol5mMinUsd: number;
+  /** Legacy journaled threshold; pass/fail uses vol5m spike mults instead. */
   minVol1hUsd: number;
   minVol5mToVol1hRatio: number;
   maxVol24hUsd: number;
   minPoolAgeMin: number;
   quietPriorVol6hMaxUsd: number;
   quietVol1hMaxUsd: number;
+  /** Min vol5m / prior-6h 5m-avg — catch first burst on quiet coin (not mid-rally). */
+  vol5mSpikeMinMult: number;
+  /** Min vol5m / prior-1h 5m-avg — reject hour-old ramps (2vvw3/FeMb#2 shape). */
+  vol5mSpikeVs1hMinMult: number;
+  /** Floor $/5m in spike denominators (avoids div-by-zero on dead baselines). */
+  quietPrior5mAvgFloorUsd: number;
   volVelocityMin: number;
   minMcapUsd: number;
   minLiqUsd: number;
@@ -128,6 +135,9 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     minPoolAgeMin: Math.round(envNum(env.AWAKENING_MIN_POOL_AGE_HOURS, 24) * 60),
     quietPriorVol6hMaxUsd: envNum(env.AWAKENING_QUIET_PRIOR_VOL6H_MAX_USD, 1_500),
     quietVol1hMaxUsd: envNum(env.AWAKENING_QUIET_VOL1H_MAX_USD, 2_000),
+    vol5mSpikeMinMult: envNum(env.AWAKENING_VOL5M_SPIKE_MIN_MULT, 8),
+    vol5mSpikeVs1hMinMult: envNum(env.AWAKENING_VOL5M_SPIKE_VS_1H_MIN_MULT, 4),
+    quietPrior5mAvgFloorUsd: envNum(env.AWAKENING_QUIET_PRIOR_5M_AVG_FLOOR_USD, 50),
     volVelocityMin: envNum(env.AWAKENING_VOL_VELOCITY_MIN, 0.15),
     minMcapUsd: envNum(env.AWAKENING_MIN_MCAP_USD, 150_000),
     minLiqUsd: envNum(env.AWAKENING_MIN_LIQ_USD, 15_000),
