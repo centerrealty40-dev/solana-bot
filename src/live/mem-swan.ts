@@ -8,7 +8,7 @@
  * Backtest (609 real Oscar positions, may–jul 2026, prices anchored to `*_pair_snapshots`):
  *   - Universe: top-N memecoins by peak 1h volume (the active runners Oscar trades — NOT
  *     deep-liquidity blue chips, which never showed the jul 7 drain).
- *   - Signal: equal-weight return of that universe over a `rollMin` (6h) window.
+ *   - Signal: equal-weight return of that universe over a `rollMin` (2h) window.
  *   - Trigger: ew ≤ −`ewDropPct` (≈ −16%). Fires **immediately** on depth (no breadth gate,
  *     no confirmation delay — confirmation/persistence sells at the bottom after the bounce).
  *   - Result: liquidating open positions at the trigger nets **+$5.8k (−16%, 24h) … +$14k
@@ -49,7 +49,24 @@ export type MemSwanParams = {
   minRunnerV1hUsd: number;
   minRunners: number;
   ewDropPct: number;
+  /** Alternate path: broad red tape + milder EW (one outlier green runner cannot veto the tape). */
+  breadthRedMinPct: number;
+  breadthEwDropPct: number;
 };
+
+/** Shared trigger: deep EW drop OR high breadth + mild EW drop. */
+export function memSwanDropTriggered(
+  m: { ewReturnPct: number | null; breadthRedPct: number | null },
+  params: Pick<MemSwanParams, 'ewDropPct' | 'breadthRedMinPct' | 'breadthEwDropPct'>,
+): boolean {
+  if (m.ewReturnPct == null) return false;
+  if (m.ewReturnPct <= -params.ewDropPct) return true;
+  return (
+    m.breadthRedPct != null &&
+    m.breadthRedPct >= params.breadthRedMinPct &&
+    m.ewReturnPct <= -params.breadthEwDropPct
+  );
+}
 
 export type MemSwanMetrics = {
   ts: number;
@@ -126,8 +143,7 @@ export function computeSwanMetric(
  */
 export function classifySwan(m: MemSwanMetrics, params: MemSwanParams): MemSwanClassification {
   if (m.runnerCount < params.minRunners) return { valid: false, triggered: false };
-  const triggered = m.ewReturnPct != null && m.ewReturnPct <= -params.ewDropPct;
-  return { valid: true, triggered };
+  return { valid: true, triggered: memSwanDropTriggered(m, params) };
 }
 
 export function memSwanParams(cfg: LiveOscarConfig): MemSwanParams {
@@ -136,6 +152,8 @@ export function memSwanParams(cfg: LiveOscarConfig): MemSwanParams {
     minRunnerV1hUsd: cfg.liveMemSwanMinRunnerV1hUsd,
     minRunners: cfg.liveMemSwanMinRunners,
     ewDropPct: cfg.liveMemSwanEwDropPct,
+    breadthRedMinPct: cfg.liveMemSwanBreadthRedMinPct,
+    breadthEwDropPct: cfg.liveMemSwanBreadthEwDropPct,
   };
 }
 

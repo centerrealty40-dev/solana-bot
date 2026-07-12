@@ -204,7 +204,11 @@ async function acquireDexScreenerSlot(): Promise<void> {
   if (waitMs > 0) await sleep(waitMs);
 }
 
-function pickBestSolanaPair(pairs: unknown[], mint: string): Record<string, unknown> | null {
+function pickBestSolanaPair(
+  pairs: unknown[],
+  mint: string,
+  preferredDex?: string,
+): Record<string, unknown> | null {
   if (!Array.isArray(pairs) || pairs.length === 0) return null;
   const relevant = pairs.filter((p) => {
     const row = p as { chainId?: string; baseToken?: { address?: string }; quoteToken?: { address?: string } };
@@ -213,7 +217,15 @@ function pickBestSolanaPair(pairs: unknown[], mint: string): Record<string, unkn
     const quote = row.quoteToken?.address ?? '';
     return base === mint || quote === mint;
   });
-  const pool = relevant.length > 0 ? relevant : pairs;
+  let pool = relevant.length > 0 ? relevant : pairs;
+  const dexNeedle = preferredDex?.trim().toLowerCase();
+  if (dexNeedle) {
+    const dexPool = pool.filter((p) => {
+      const dexId = String((p as { dexId?: string }).dexId ?? '').toLowerCase();
+      return dexId.includes(dexNeedle);
+    });
+    if (dexPool.length > 0) pool = dexPool;
+  }
   let best: Record<string, unknown> | null = null;
   let bestLiq = -1;
   for (const p of pool) {
@@ -257,6 +269,138 @@ function cacheEntryToSnapshot(entry: CacheEntry | undefined): DexScreenerMarketS
     volume1hUsd: entry.volume1hUsd ?? null,
     fetchedAtMs: entry.fetchedAtMs,
   };
+}
+
+function toInt(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
+}
+
+/** Full DexScreener pair row for PG upsert (pending-leg refresh, enrich). */
+export interface DexScreenerPairDetails {
+  priceUsd: number | null;
+  marketCapUsd: number | null;
+  liquidityUsd: number | null;
+  volume5mUsd: number | null;
+  volume1hUsd: number | null;
+  pairAddress: string;
+  baseMint: string;
+  quoteMint: string;
+  dexId: string | null;
+  buys5m: number | null;
+  sells5m: number | null;
+  fetchedAtMs: number;
+}
+
+function parsePairToDetails(
+  pair: Record<string, unknown> | null,
+  mint: string,
+  nowMs: number,
+): DexScreenerPairDetails | null {
+  if (!pair) return null;
+  const entry = parsePairToCacheEntry(pair, mint, nowMs);
+  if (entry.miss || !entry.pairAddress) return null;
+  const txns = pair.txns as { m5?: { buys?: number; sells?: number } } | undefined;
+  return {
+    priceUsd: entry.priceUsd ?? null,
+    marketCapUsd: entry.marketCapUsd ?? null,
+    liquidityUsd: entry.liquidityUsd ?? null,
+    volume5mUsd: entry.volume5mUsd ?? null,
+    volume1hUsd: entry.volume1hUsd ?? null,
+    pairAddress: entry.pairAddress,
+    baseMint: entry.baseMint ?? mint,
+    quoteMint: entry.quoteMint ?? SOL_MINT,
+    dexId: (pair.dexId as string | undefined) ?? null,
+    buys5m: toInt(txns?.m5?.buys),
+    sells5m: toInt(txns?.m5?.sells),
+    fetchedAtMs: nowMs,
+  };
+}
+
+export async function fetchDexScreenerPairDetails(
+  mint: string,
+  opts?: {
+    fetchImpl?: typeof import('undici').fetch;
+    cacheTtlMs?: number;
+    nowMs?: number;
+    preferredDex?: string;
+    /** When true, always HTTP-fetch (still respects global gate + updates shared cache). */
+    bypassCache?: boolean;
+  },
+): Promise<DexScreenerPairDetails | null> {
+  if (!mint) return null;
+  const nowMs = opts?.nowMs ?? Date.now();
+  const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
+  const bypass = opts?.bypassCache === true;
+  const doFetch = opts?.fetchImpl ?? (await import('undici')).fetch;
+
+  if (!bypass) {
+    const mem = inProcess.get(mint);
+    if (mem && nowMs - mem.at < ttlMs) {
+      const cached = readCacheFile()[mint];
+      if (cached && !cached.miss && cached.pairAddress) {
+        return parsePairToDetails(
+          {
+            priceUsd: cached.priceUsd,
+            marketCap: cached.marketCapUsd,
+            fdv: cached.marketCapUsd,
+            liquidity: { usd: cached.liquidityUsd },
+            volume: { m5: cached.volume5mUsd, h1: cached.volume1hUsd },
+            pairAddress: cached.pairAddress,
+            baseToken: { address: cached.baseMint },
+            quoteToken: { address: cached.quoteMint },
+          },
+          mint,
+          cached.fetchedAtMs,
+        );
+      }
+    }
+    if (isDexQuoteCacheEnabled()) {
+      const cached = getCachedDexQuote(mint, nowMs, ttlMs);
+      if (cached.hit && cached.entry && !cached.entry.miss && cached.entry.pairAddress) {
+        return parsePairToDetails(
+          {
+            priceUsd: cached.entry.priceUsd,
+            marketCap: cached.entry.marketCapUsd,
+            fdv: cached.entry.marketCapUsd,
+            liquidity: { usd: cached.entry.liquidityUsd },
+            volume: { m5: cached.entry.volume5mUsd, h1: cached.entry.volume1hUsd },
+            pairAddress: cached.entry.pairAddress,
+            baseToken: { address: cached.entry.baseMint },
+            quoteToken: { address: cached.entry.quoteMint },
+          },
+          mint,
+          cached.entry.fetchedAtMs,
+        );
+      }
+    }
+  }
+
+  await acquireDexScreenerSlot();
+
+  let details: DexScreenerPairDetails | null = null;
+  let cacheEntry: CacheEntry = { miss: true, fetchedAtMs: nowMs };
+  try {
+    const res = await doFetch(
+      `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`,
+      { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8_000) },
+    );
+    if (res.ok) {
+      const j = (await res.json()) as { pairs?: unknown[] };
+      const best = pickBestSolanaPair(j.pairs ?? [], mint, opts?.preferredDex);
+      cacheEntry = parsePairToCacheEntry(best, mint, nowMs);
+      details = parsePairToDetails(best, mint, nowMs);
+    }
+  } catch {
+    /* null */
+  }
+
+  if (isDexQuoteCacheEnabled()) {
+    await putCachedDexQuotes({ [mint]: cacheEntry }, nowMs);
+  }
+  const snap = cacheEntryToSnapshot(cacheEntry);
+  inProcess.set(mint, { at: nowMs, val: snap });
+  return details;
 }
 
 /** Test-only — clears in-process L1 cache. */

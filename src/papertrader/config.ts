@@ -144,6 +144,16 @@ const ConfigSchema = z.object({
   /** When >0: leg-2 split at −N% from signal (replaces delay+corridor). 0 = legacy timed corridor. */
   liveStagedEntryEntrySplitTargetDropPct: z.coerce.number().min(0).max(95).default(0),
   /**
+   * Solo DexScreener → PG refresh for open mints with pending entry-split legs (1.11.581).
+   * Keeps `{source}_pair_snapshots.ts` young between 2-min collector ticks so stale-price gates
+   * see fresh rows. Default ON.
+   */
+  livePendingLegPgRefreshEnabled: z.boolean().default(true),
+  /** Per-mint cooldown between solo refreshes (ms). Default 45s. */
+  livePendingLegPgRefreshCooldownMs: z.coerce.number().int().positive().default(45_000),
+  /** PG `ts` bucket size (seconds) for pending-leg rows. Default 30s (not 1-min collector bucket). */
+  livePendingLegPgRefreshBucketSec: z.coerce.number().int().min(15).max(120).default(30),
+  /**
    * Observability only (Stage 0, 1.11.466): warn threshold (ms) for the age of the PG snapshot price
    * used at the entry-decision point. When the polled PG price is older than this, the entry path emits a
    * `live_stale_price_warn` journal event (+ throttled alert). Does **not** change any trading decision.
@@ -780,6 +790,14 @@ const ConfigSchema = z.object({
   trendVetoMaxSlope7dPct: z.coerce.number().min(-99).max(99).default(0),
   /** Peak touch tolerance (%): bar within this % of lookback high counts as «touch». */
   trendVetoPeakTouchTolerancePct: z.coerce.number().min(0).max(10).default(1),
+  /** Rule 2b: 3d slope decline path (young coins with sparse 7d history). */
+  trendVetoSlope3dEnabled: z.boolean().default(true),
+  trendVetoMaxPxVsHigh3d: z.coerce.number().min(0.1).max(1).default(0.65),
+  trendVetoMaxSlope3dPct: z.coerce.number().min(-99).max(99).default(-5),
+  /** Ski-slope: deep vs peak + stale high (expiring runner, 6Nwar-class). */
+  trendVetoSkiSlopeEnabled: z.boolean().default(true),
+  trendVetoSkiSlopeMaxPxVsHigh: z.coerce.number().min(0.1).max(1).default(0.42),
+  trendVetoSkiSlopeMinDaysSinceHigh: z.coerce.number().min(1).max(30).default(2),
 
   /**
    * Policy A+ (1.11.167): «хирургические» правила пропуска кандидатов на вход.
@@ -1494,6 +1512,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     liveStagedEntryEntrySplitMaxUpPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT,
     liveStagedEntryEntrySplitMaxDownPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT,
     liveStagedEntryEntrySplitTargetDropPct: process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_TARGET_DROP_PCT,
+    livePendingLegPgRefreshEnabled: envBool(process.env.PAPER_LIVE_PENDING_LEG_PG_REFRESH_ENABLED, true),
+    livePendingLegPgRefreshCooldownMs: process.env.PAPER_LIVE_PENDING_LEG_PG_REFRESH_COOLDOWN_MS,
+    livePendingLegPgRefreshBucketSec: process.env.PAPER_LIVE_PENDING_LEG_PG_REFRESH_BUCKET_SEC,
     liveOscarStalePriceWarnMs: process.env.PAPER_LIVE_OSCAR_STALE_PRICE_WARN_MS,
     liveOscarShyftShadowEnabled: shyftShadowEnabled,
     shyftStreamEnabled: resolveShyftStreamEnabledFromEnv(shyftShadowEnabled),
@@ -1910,6 +1931,12 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     trendVetoMaxPxVsHigh14d: process.env.PAPER_TREND_VETO_MAX_PX_VS_HIGH_14D,
     trendVetoMaxSlope7dPct: process.env.PAPER_TREND_VETO_MAX_SLOPE_7D_PCT,
     trendVetoPeakTouchTolerancePct: process.env.PAPER_TREND_VETO_PEAK_TOUCH_TOLERANCE_PCT,
+    trendVetoSlope3dEnabled: envBool(process.env.PAPER_TREND_VETO_SLOPE_3D_ENABLED, true),
+    trendVetoMaxPxVsHigh3d: process.env.PAPER_TREND_VETO_MAX_PX_VS_HIGH_3D,
+    trendVetoMaxSlope3dPct: process.env.PAPER_TREND_VETO_MAX_SLOPE_3D_PCT,
+    trendVetoSkiSlopeEnabled: envBool(process.env.PAPER_TREND_VETO_SKI_SLOPE_ENABLED, true),
+    trendVetoSkiSlopeMaxPxVsHigh: process.env.PAPER_TREND_VETO_SKI_SLOPE_MAX_PX_VS_HIGH,
+    trendVetoSkiSlopeMinDaysSinceHigh: process.env.PAPER_TREND_VETO_SKI_SLOPE_MIN_DAYS_SINCE_HIGH,
     policyAPlusEnabled: envBool(process.env.PAPER_POLICY_A_PLUS_ENABLED, false),
     policyAPlusBounceFromMin30mEnabled: envBool(
       process.env.PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED,

@@ -27,6 +27,16 @@ export interface AwakeningSignalMetrics {
   vol6hUsd: number;
   vol24hUsd: number;
   priorVol6hUsd: number;
+  /** Volume in the ~55m window before the current 5m bucket (vol1h − vol5m). */
+  priorVol1hUsd: number;
+  /** Avg $/5m over prior ~6h (excludes current vol5m). */
+  prior6h5mAvgUsd: number;
+  /** Avg $/5m over prior ~55m (excludes current vol5m). */
+  prior1h5mAvgUsd: number;
+  /** vol5m / prior 6h 5m-average — fresh dormant burst vs sustained flow. */
+  vol5mSpikeVs6hMult: number;
+  /** vol5m / prior 1h 5m-average — start of hour spike vs mid-rally continuation. */
+  vol5mSpikeVs1hMult: number;
   volVelocity: number;
   vol5mToVol1hRatio: number | null;
   vol1hToVol6hRatio: number | null;

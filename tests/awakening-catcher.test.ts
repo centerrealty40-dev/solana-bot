@@ -16,8 +16,8 @@ function market(partial: Partial<AwakeningDexMarket>): AwakeningDexMarket {
     marketCapUsd: 500_000,
     liquidityUsd: 40_000,
     volume5mUsd: 8_000,
-    volume1hUsd: 30_000,
-    volume6hUsd: 40_000,
+    volume1hUsd: 9_500,
+    volume6hUsd: 12_000,
     volume24hUsd: 80_000,
     buys5m: 30,
     sells5m: 10,
@@ -36,22 +36,72 @@ function market(partial: Partial<AwakeningDexMarket>): AwakeningDexMarket {
 describe('awakening-signal', () => {
   const cfg = loadAwakeningConfig({
     AWAKENING_VOL5M_MIN_USD: '5000',
-    AWAKENING_MIN_VOL1H_USD: '20000',
+    AWAKENING_VOL5M_SPIKE_MIN_MULT: '8',
+    AWAKENING_VOL5M_SPIKE_VS_1H_MIN_MULT: '4',
     AWAKENING_MAX_VOL24H_USD: '250000',
     AWAKENING_MIN_POOL_AGE_HOURS: '48',
-    AWAKENING_VOL_VELOCITY_MIN: '0.1',
-    AWAKENING_MIN_VOL1H_TO_VOL6H_RATIO: '0.35',
     AWAKENING_MAX_VOL1H_PER_MCAP: '2.0',
     AWAKENING_MIN_MCAP_USD: '300000',
     AWAKENING_MIN_LIQ_USD: '20000',
     AWAKENING_MIN_BUY_RATIO: '0.45',
   });
 
-  it('passes dormant awakening shape (aged, rising, organic)', () => {
+  it('passes fresh vol5m spike on quiet prior (early awakening)', () => {
     const r = evaluateAwakeningSignal(cfg, market({}));
     expect(r.pass).toBe(true);
-    expect(r.metrics.vol1hPerMcap).toBeCloseTo(0.06, 3);
-    expect(r.metrics.poolAgeMin).toBe(5_000);
+    expect(r.metrics.vol5mSpikeVs6hMult).toBeGreaterThan(8);
+    expect(r.metrics.vol5mSpikeVs1hMult).toBeGreaterThan(4);
+    expect(r.metrics.priorVol1hUsd).toBe(1_500);
+  });
+
+  it('passes when vol1h is still small — no vol1h accumulation gate', () => {
+    const r = evaluateAwakeningSignal(
+      cfg,
+      market({ volume5mUsd: 6_000, volume1hUsd: 6_500, volume6hUsd: 8_000, volume24hUsd: 60_000 }),
+    );
+    expect(r.pass).toBe(true);
+    expect(r.metrics.vol1hUsd).toBe(6_500);
+  });
+
+  it('blocks mid-rally continuation (2vvw3 late-entry shape)', () => {
+    const r = evaluateAwakeningSignal(
+      cfg,
+      market({
+        volume5mUsd: 5_712,
+        volume1hUsd: 30_831,
+        volume6hUsd: 74_069,
+        volume24hUsd: 251_534,
+        marketCapUsd: 862_247,
+        liquidityUsd: 78_590,
+        priceChangeH24: -10,
+        priceChangeH6: 5,
+        priceChangeH1: 8,
+        priceChangeM5: 3,
+      }),
+    );
+    expect(r.pass).toBe(false);
+    expect(r.reasons.some((x) => x.startsWith('vol5m_spike_6h<'))).toBe(true);
+    expect(r.reasons.some((x) => x.startsWith('vol5m_spike_1h<'))).toBe(true);
+  });
+
+  it('blocks uniform large-cap flow (J8PS shape)', () => {
+    const r = evaluateAwakeningSignal(
+      cfg,
+      market({
+        volume5mUsd: 5_919,
+        volume1hUsd: 15_882,
+        volume6hUsd: 80_805,
+        volume24hUsd: 567_197,
+        marketCapUsd: 16_729_399,
+        liquidityUsd: 659_158,
+        priceChangeH24: 2,
+        priceChangeH6: 1,
+        priceChangeH1: 0,
+        priceChangeM5: 2,
+      }),
+    );
+    expect(r.pass).toBe(false);
+    expect(r.reasons.some((x) => x.startsWith('vol5m_spike_6h<'))).toBe(true);
   });
 
   it('blocks a fresh coin (< 24h) — no new pump.fun launches', () => {
@@ -69,13 +119,13 @@ describe('awakening-signal', () => {
     expect(r.reasons.some((x) => x.startsWith('vol24h>'))).toBe(true);
   });
 
-  it('blocks a fading pump (vol1h tiny vs vol6h)', () => {
+  it('blocks a fading pump (vol1h tiny vs vol6h, weak 6h spike)', () => {
     const r = evaluateAwakeningSignal(
       cfg,
       market({ volume1hUsd: 22_000, volume6hUsd: 200_000, volume24hUsd: 240_000 }),
     );
     expect(r.pass).toBe(false);
-    expect(r.reasons.some((x) => x.startsWith('vol1h/vol6h<'))).toBe(true);
+    expect(r.reasons.some((x) => x.startsWith('vol5m_spike_6h<'))).toBe(true);
   });
 
   it('blocks a multi-hour downhill / falling knife', () => {

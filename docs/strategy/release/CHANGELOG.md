@@ -88,6 +88,42 @@
 
 ---
 
+---
+
+---
+
+## [1.11.583] — 2026-07-12
+
+**Тег:** `sa-alpha-1.11.583`
+
+### Awakening — early vol5m spike trigger (shadow)
+
+- **Проблема:** сигнал ждал `vol1h ≥ 8k` → вход в конце часового ралли (2vvw3, FeMb#2), не в начале пробуждения.
+- **Что сделано:** `evaluateAwakeningSignal` — gate по `vol5mSpikeVs6hMult` (vol5m / prior-6h 5m-avg) и `vol5mSpikeVs1hMult`; убран pass/fail на `minVol1hUsd`. Env: `AWAKENING_VOL5M_SPIKE_MIN_MULT` (8), `AWAKENING_VOL5M_SPIKE_VS_1H_MIN_MULT` (4).
+- **Откат:** revert коммита или вернуть старый `awakening-signal.ts`; `pm2 reload awakening-catcher --update-env`.
+
+### Trend veto v2 + Telegram; Mem Swan 2h / top-40 / breadth
+
+- **Trend veto v2:** ski-slope rule, 3d-decline path, смягчённые пороги (`minDaysSinceHigh=3`, `maxPxVsHigh=55%`, ski `42%`). Config + `trend-structure-veto.ts` + тесты.
+- **Telegram:** `trend-structure-veto-telegram.ts` — уведомление когда dip и все пороги пройдены, единственный блокер `trend_veto_*`, нет open по mint. `LIVE_TREND_VETO_TELEGRAM_*`.
+- **Mem Swan:** окно **2h**, top-**40**, breadth-триггер (65% red + EW −8%); port swan parity.
+- **Откат:** `PAPER_TREND_STRUCTURE_VETO_ENABLED=0`, `LIVE_TREND_VETO_TELEGRAM_ENABLED=0`, вернуть `LIVE_MEM_SWAN_ROLL_MIN=360` + reload.
+
+---
+
+## [1.11.581] — 2026-07-12
+
+**Тег:** `sa-alpha-1.11.581`
+
+### pending-leg PG refresh — solo-fetch для open mint с pending entry-split leg
+
+- **Причина:** при 2-минутном `sa-meteora` и `PAPER_LIVE_LERA_STALE_PRICE_BLOCK_MS=120000` вторая нога сплита блокировалась `price_stale_block` (ANSEM 12.07 ~02:04): PG `ts` не молодел между тиками коллектора.
+- **Что сделано:** модуль `pending-leg-pg-refresh.ts` — для open mint с pending legs 2–8: DexScreener solo-fetch (cooldown **45s**) → upsert в `{source}_pair_snapshots` с **30s** `ts`-бакетами. Вызов из `entry-split-fast-poll` и `tracker` перед `tryLiveStagedEntryV2TrackerStep`. Env: `PAPER_LIVE_PENDING_LEG_PG_REFRESH_*`.
+- **Тесты:** `pending-leg-pg-refresh.test.ts`.
+- **Откат:** `PAPER_LIVE_PENDING_LEG_PG_REFRESH_ENABLED=0` + reload, или revert `1.11.581`.
+
+---
+
 ## [1.11.580] — 2026-07-11
 
 **Тег:** `sa-alpha-1.11.580`

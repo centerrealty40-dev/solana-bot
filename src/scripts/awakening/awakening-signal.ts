@@ -6,13 +6,18 @@ function pos(v: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/** Five-minute buckets in (6h − 5m) and (1h − 5m) DexScreener windows. */
+const PRIOR_6H_5M_BUCKETS = 71;
+const PRIOR_1H_5M_BUCKETS = 12;
+
 type AwakeningSignalCfg = Pick<
   AwakeningConfig,
   | 'vol5mMinUsd'
-  | 'minVol1hUsd'
   | 'maxVol24hUsd'
   | 'minPoolAgeMin'
-  | 'volVelocityMin'
+  | 'vol5mSpikeMinMult'
+  | 'vol5mSpikeVs1hMinMult'
+  | 'quietPrior5mAvgFloorUsd'
   | 'minMcapUsd'
   | 'minLiqUsd'
   | 'minBuyRatio'
@@ -22,14 +27,14 @@ type AwakeningSignalCfg = Pick<
   | 'minPriceChangeH24Pct'
   | 'minPriceChangeH6Pct'
   | 'minPriceChangeH1Pct'
-  | 'minVol1hToVol6hRatio'
   | 'maxVol1hPerMcap'
 >;
 
 /**
- * Dormant-low awakening: first real volume on a previously quiet, aged coin —
+ * Dormant-low awakening: first real vol5m burst on a previously quiet, aged coin —
  * NOT a one-shot pump that is already fading, NOT a multi-day downhill, and
- * NOT a cluster/wash spike. Pure function — no I/O.
+ * NOT mid-rally continuation after vol1h has already accumulated.
+ * Pure function — no I/O.
  */
 export function evaluateAwakeningSignal(
   cfg: AwakeningSignalCfg,
@@ -46,6 +51,13 @@ export function evaluateAwakeningSignal(
   const poolAgeMin = market.poolAgeMin;
 
   const priorVol6h = Math.max(0, vol6h - vol5m);
+  const priorVol1h = Math.max(0, vol1h - vol5m);
+  const quietFloor = cfg.quietPrior5mAvgFloorUsd;
+  const prior6h5mAvg = priorVol6h / PRIOR_6H_5M_BUCKETS;
+  const prior1h5mAvg = priorVol1h / PRIOR_1H_5M_BUCKETS;
+  const vol5mSpikeVs6hMult = vol5m / Math.max(prior6h5mAvg, quietFloor);
+  const vol5mSpikeVs1hMult = vol5m / Math.max(prior1h5mAvg, quietFloor);
+
   const volVelocity = vol5m / Math.max(vol1h, 1);
   const vol5mToVol1hRatio = vol1h > 0 ? vol5m / vol1h : null;
   const vol1hToVol6hRatio = vol6h > 0 ? vol1h / vol6h : null;
@@ -62,6 +74,11 @@ export function evaluateAwakeningSignal(
     vol6hUsd: vol6h,
     vol24hUsd: vol24h,
     priorVol6hUsd: priorVol6h,
+    priorVol1hUsd: priorVol1h,
+    prior6h5mAvgUsd: prior6h5mAvg,
+    prior1h5mAvgUsd: prior1h5mAvg,
+    vol5mSpikeVs6hMult,
+    vol5mSpikeVs1hMult,
     volVelocity,
     vol5mToVol1hRatio,
     vol1hToVol6hRatio,
@@ -70,42 +87,30 @@ export function evaluateAwakeningSignal(
     buyRatio,
   };
 
-  // --- Coin must be aged (no fresh one-shot pump.fun launches) ---
   if (poolAgeMin == null || poolAgeMin < cfg.minPoolAgeMin) {
     reasons.push(`pool_age<${cfg.minPoolAgeMin}m`);
   }
 
-  // --- Enough real volume, not a micro-blip ---
   if (vol5m < cfg.vol5mMinUsd) {
     reasons.push(`vol5m<${cfg.vol5mMinUsd}`);
   }
-  if (vol1h < cfg.minVol1hUsd) {
-    reasons.push(`vol1h<${cfg.minVol1hUsd}`);
+
+  // Early trigger: live vol5m vs quiet prior baseline — not accumulated vol1h floor.
+  if (vol5mSpikeVs6hMult < cfg.vol5mSpikeMinMult) {
+    reasons.push(`vol5m_spike_6h<${cfg.vol5mSpikeMinMult}`);
+  }
+  if (vol5mSpikeVs1hMult < cfg.vol5mSpikeVs1hMinMult) {
+    reasons.push(`vol5m_spike_1h<${cfg.vol5mSpikeVs1hMinMult}`);
   }
 
-  // --- Was actually quiet over the last day (dormancy baseline) ---
-  // NOTE: dormancy is measured on the 24h window. The prior-6h/vol1h micro
-  // thresholds are kept only as journaled metrics; gating on them is impossible
-  // alongside a real awakening (vol6h >= vol1h), so they are not pass/fail here.
   if (vol24h > cfg.maxVol24hUsd) {
     reasons.push(`vol24h>${cfg.maxVol24hUsd}`);
   }
 
-  // --- Volume must still be live right now, not rolling off after a burst ---
-  if (volVelocity < cfg.volVelocityMin) {
-    reasons.push(`vol_velocity<${cfg.volVelocityMin}`);
-  }
-  if (vol1hToVol6hRatio != null && vol1hToVol6hRatio < cfg.minVol1hToVol6hRatio) {
-    // vol1h tiny vs vol6h => the pump already happened and is fading.
-    reasons.push(`vol1h/vol6h<${cfg.minVol1hToVol6hRatio}`);
-  }
-
-  // --- Wash/cluster proxy: absurd hourly turnover relative to mcap ---
   if (vol1hPerMcap != null && vol1hPerMcap > cfg.maxVol1hPerMcap) {
     reasons.push(`vol1h/mcap>${cfg.maxVol1hPerMcap}`);
   }
 
-  // --- Basic market health ---
   if (mcap == null || mcap < cfg.minMcapUsd) {
     reasons.push(`mcap<${cfg.minMcapUsd}`);
   }
@@ -116,7 +121,6 @@ export function evaluateAwakeningSignal(
     reasons.push(`buy_ratio<${cfg.minBuyRatio}`);
   }
 
-  // --- Not already at multi-day highs (chasing a top) ---
   const h24 = market.priceChangeH24;
   if (h24 != null && h24 > cfg.maxPriceChangeH24Pct) {
     reasons.push(`price_h24>${cfg.maxPriceChangeH24Pct}`);
@@ -126,7 +130,6 @@ export function evaluateAwakeningSignal(
     reasons.push(`price_h6>${cfg.maxPriceChangeH6Pct}`);
   }
 
-  // --- Not a multi-hour downhill / falling knife ---
   if (h24 != null && h24 < cfg.minPriceChangeH24Pct) {
     reasons.push(`price_h24<${cfg.minPriceChangeH24Pct}`);
   }
@@ -138,7 +141,6 @@ export function evaluateAwakeningSignal(
     reasons.push(`price_h1<${cfg.minPriceChangeH1Pct}`);
   }
 
-  // --- Turning up right now ---
   const m5 = market.priceChangeM5;
   if (m5 != null && m5 < cfg.minPriceChangeM5Pct) {
     reasons.push(`price_m5<${cfg.minPriceChangeM5Pct}`);
