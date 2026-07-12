@@ -92,6 +92,7 @@ import {
 } from './position-reconcile.js';
 import {
   checkCopyBuyWalletCapGuard,
+  purgeStaleOscarHandoffPosition,
   shouldIgnoreLeaderForMint,
   type CopyBuyOscarDupGuardVerdict,
   type CopyLeaderIgnoreVerdict,
@@ -129,6 +130,7 @@ function leaderIgnoreBlocksAction(
   args: {
     mint: string;
     copyPosition?: CopyPosition | null;
+    walletMintRaw?: bigint;
   },
 ): CopyLeaderIgnoreVerdict & { ignore: true } | null {
   const verdict = shouldIgnoreLeaderForMint({
@@ -136,6 +138,7 @@ function leaderIgnoreBlocksAction(
     mint: args.mint,
     copyPosition: args.copyPosition,
     statePath: cfg.statePath,
+    walletMintRaw: args.walletMintRaw,
   });
   return verdict.ignore ? verdict : null;
 }
@@ -283,9 +286,12 @@ async function onLeaderBuy(
     syncPositionFromWallet(existing, walletBal, priceUsd, cfg);
   }
 
+  purgeStaleOscarHandoffPosition({ cfg, state, mint, walletMintRaw: walletBal });
+  existing = state.positions[mint];
+
   if (existing) {
     if (hasPendingBuyForMint(state, mint)) return;
-    const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: existing });
+    const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: existing, walletMintRaw: walletBal });
     if (leaderIgnore) {
       logCopyLeaderIgnored(cfg, {
         mint,
@@ -638,8 +644,10 @@ async function onLeaderSell(
   preLeaderRaw: bigint,
 ): Promise<void> {
   const mint = swap.baseMint;
+  const walletBal = await fetchExecutionWalletBalanceRaw(cfg, mint);
+  purgeStaleOscarHandoffPosition({ cfg, state, mint, walletMintRaw: walletBal });
   const pos = state.positions[mint];
-  const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: pos });
+  const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: pos, walletMintRaw: walletBal });
   if (leaderIgnore) {
     logCopyLeaderIgnored(cfg, {
       mint,
@@ -708,7 +716,6 @@ async function onLeaderSell(
     });
   }
 
-  const walletBal = await fetchExecutionWalletBalanceRaw(cfg, mint);
   const sellableRaw = copySellableTokenRaw(cfg, pos);
   if (sellableRaw === 0n && !cfg.sharedOscarWallet && walletBal === 0n) {
     if (pos) closePositionForMint(cfg, state, mint, 'wallet_empty_on_leader_sell');

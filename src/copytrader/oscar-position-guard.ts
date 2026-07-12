@@ -5,12 +5,16 @@
 import path from 'node:path';
 import { readLiveOpenSnapshot } from '../live/open-snapshot.js';
 import {
+  finalizeCopyLeaderOscarHandoffClose,
   isCopyLeaderPromotedToOscar,
   oscarWalletMintUsdExcludingCopyLeader,
 } from '../live/copy-leader-attribution.js';
 import type { CopyTraderConfig } from './config.js';
 import { walletNotionalUsdFromRaw } from './position-reconcile.js';
-import type { CopyPosition } from './state.js';
+import type { CopyPosition, CopyTraderState } from './state.js';
+
+/** SPL dust — below this raw balance, treat wallet as empty for stale handoff purge. */
+export const COPY_HANDOFF_WALLET_DUST_RAW = 1n;
 
 export type CopyLeaderIgnoreReason = 'oscar_position_open' | 'oscar_promoted_handoff';
 
@@ -85,6 +89,69 @@ export function skipBuyOpenWalletMintMinUsd(): number {
   return envNum('LIVE_SKIP_BUY_OPEN_WALLET_MINT_MIN_USD', 0);
 }
 
+function copyHandoffStillActive(args: {
+  cfg: CopyTraderConfig;
+  mint: string;
+  copyPosition?: CopyPosition | null;
+  statePath?: string;
+  snapshotPath?: string;
+  walletMintRaw?: bigint;
+}): boolean {
+  const mint = args.mint.trim();
+  const statePath = args.statePath ?? args.cfg.statePath;
+  const promoted =
+    (args.copyPosition?.oscarPromotedAt != null && args.copyPosition.oscarPromotedAt > 0) ||
+    isCopyLeaderPromotedToOscar(mint, statePath);
+  if (!promoted) return false;
+
+  if (oscarHasOpenPositionOnAnySharedSnapshot(mint, args.cfg, args.snapshotPath)) {
+    return true;
+  }
+
+  const bal = args.walletMintRaw;
+  if (bal != null && bal <= COPY_HANDOFF_WALLET_DUST_RAW) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * Drop zombie handoff rows after Oscar full close + empty wallet (copy in-memory can outlive disk).
+ */
+export function purgeStaleOscarHandoffPosition(args: {
+  cfg: CopyTraderConfig;
+  state: CopyTraderState;
+  mint: string;
+  walletMintRaw?: bigint;
+  snapshotPath?: string;
+}): boolean {
+  if (!args.cfg.sharedOscarWallet) return false;
+
+  const mint = args.mint.trim();
+  if (!mint) return false;
+  if (
+    copyHandoffStillActive({
+      cfg: args.cfg,
+      mint,
+      copyPosition: args.state.positions[mint],
+      statePath: args.cfg.statePath,
+      snapshotPath: args.snapshotPath,
+      walletMintRaw: args.walletMintRaw,
+    })
+  ) {
+    return false;
+  }
+
+  const hadMemory = args.state.positions[mint] != null;
+  if (hadMemory) delete args.state.positions[mint];
+  const clearedDisk = finalizeCopyLeaderOscarHandoffClose({
+    mint,
+    statePath: args.cfg.statePath,
+  });
+  return hadMemory || clearedDisk;
+}
+
 /**
  * Fully ignore leader actions for `mint` when Oscar already manages it or holds it open.
  */
@@ -94,18 +161,24 @@ export function shouldIgnoreLeaderForMint(args: {
   copyPosition?: CopyPosition | null;
   statePath?: string;
   snapshotPath?: string;
+  walletMintRaw?: bigint;
 }): CopyLeaderIgnoreVerdict {
   if (!args.cfg.sharedOscarWallet) {
     return { ignore: false };
   }
 
   const mint = args.mint.trim();
-  const statePath = args.statePath ?? args.cfg.statePath;
 
-  if (args.copyPosition?.oscarPromotedAt) {
-    return { ignore: true, reason: 'oscar_promoted_handoff' };
-  }
-  if (isCopyLeaderPromotedToOscar(mint, statePath)) {
+  if (
+    copyHandoffStillActive({
+      cfg: args.cfg,
+      mint,
+      copyPosition: args.copyPosition,
+      statePath: args.statePath,
+      snapshotPath: args.snapshotPath,
+      walletMintRaw: args.walletMintRaw,
+    })
+  ) {
     return { ignore: true, reason: 'oscar_promoted_handoff' };
   }
 

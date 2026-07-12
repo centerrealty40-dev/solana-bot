@@ -92,6 +92,20 @@
 
 ---
 
+---
+
+## [1.11.584] — 2026-07-12
+
+**Тег:** `sa-alpha-1.11.584`
+
+### Copy-trader — purge stale Oscar handoff after full close
+
+- **Проблема:** после `copy_oscar_exit_handoff` + полного закрытия Oscar зомби `oscarPromotedAt` оставался в RAM copy-trader → лидерские `add` игнорировались (`oscar_promoted_handoff`) при пустом кошельке (ANSEM 12.07 ~21:55).
+- **Что сделано:** `purgeStaleOscarHandoffPosition` — если кошелёк пуст и Oscar open snapshot без mint, сброс memory + `finalizeCopyLeaderOscarHandoffClose` на диске перед mirror buy/sell.
+- **Откат:** revert коммита; `pm2 reload copy-trader --update-env`.
+
+---
+
 ## [1.11.583] — 2026-07-12
 
 **Тег:** `sa-alpha-1.11.583`

@@ -8,11 +8,12 @@ import {
   checkCopyBuyWalletCapGuard,
   copyTraderSharesPresetCWallet,
   oscarHasOpenPositionOnMint,
+  purgeStaleOscarHandoffPosition,
   shouldIgnoreLeaderForMint,
   skipBuyOpenWalletMintMinUsd,
 } from '../../src/copytrader/oscar-position-guard.js';
 import { COPY_TRADER_TOKEN_UI_SCALE } from '../../src/copytrader/position-reconcile.js';
-import type { CopyPosition } from '../../src/copytrader/state.js';
+import type { CopyPosition, CopyTraderState } from '../../src/copytrader/state.js';
 import { LIVE_OPEN_SNAPSHOT_VERSION } from '../../src/live/open-snapshot.js';
 
 const mint = 'MintOscarDup111111111111111111111111111';
@@ -263,5 +264,70 @@ describe('copy-trader oscar position guard', () => {
         statePath,
       }),
     ).toEqual({ ignore: true, reason: 'oscar_promoted_handoff' });
+  });
+
+  it('allows leader follow after Oscar close when wallet is empty (stale handoff)', () => {
+    const statePath = tmpFile('-state.json');
+    const snapshotPath = tmpFile('-snap.json');
+    writeSnapshot(snapshotPath, []);
+    fs.writeFileSync(
+      statePath,
+      JSON.stringify({
+        positions: {
+          [mint]: {
+            mint,
+            entryDeployedCostUsd: 500,
+            sizeUsd: 500,
+            positionSource: 'copy_leader',
+            oscarPromotedAt: Date.now() - 60_000,
+          },
+        },
+      }),
+    );
+
+    const pos: CopyPosition = {
+      mint,
+      symbol: 'T',
+      positionSource: 'copy_leader',
+      entryTs: Date.now(),
+      entryPriceUsd: 1,
+      sizeUsd: 500,
+      tokenRaw: '0',
+      addCount: 0,
+      leaderWallet: baseCfg.targetWallet,
+      leaderEntrySig: 'sig',
+      oscarPromotedAt: Date.now() - 60_000,
+    };
+
+    const state: CopyTraderState = {
+      seenSignatures: {},
+      pendingBuys: [],
+      pendingSells: [],
+      positions: { [mint]: pos },
+      leaderLedger: {},
+    };
+
+    expect(
+      purgeStaleOscarHandoffPosition({
+        cfg: { ...baseCfg, statePath },
+        state,
+        mint,
+        walletMintRaw: 0n,
+        snapshotPath,
+      }),
+    ).toBe(true);
+    expect(state.positions[mint]).toBeUndefined();
+    expect(JSON.parse(fs.readFileSync(statePath, 'utf8')).positions?.[mint]).toBeUndefined();
+
+    expect(
+      shouldIgnoreLeaderForMint({
+        cfg: { ...baseCfg, statePath },
+        mint,
+        copyPosition: undefined,
+        statePath,
+        snapshotPath,
+        walletMintRaw: 0n,
+      }),
+    ).toEqual({ ignore: false });
   });
 });
