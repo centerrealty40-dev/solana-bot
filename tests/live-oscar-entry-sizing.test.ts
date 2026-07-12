@@ -166,15 +166,15 @@ describe('live-oscar-entry-sizing', () => {
 
     process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD = '500';
 
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD = '0';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD = '500';
 
-    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD = '0';
+    process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD = '500';
 
     process.env.PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD = '500';
 
-    process.env.PAPER_POSITION_USD = '3000';
+    process.env.PAPER_POSITION_USD = '4000';
 
-    process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '1500';
+    process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD = '2000';
 
     process.env.PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT = '10';
 
@@ -224,9 +224,9 @@ describe('live-oscar-entry-sizing', () => {
 
     process.env.PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD = '12000000';
 
-    process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD = '4500';
+    process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD = '6000';
 
-    process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD = '4500';
+    process.env.PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD = '6000';
 
     process.env.PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS = '10000';
 
@@ -266,11 +266,11 @@ describe('live-oscar-entry-sizing', () => {
 
     expect(resolveLiveOscarEntrySplitLeg6Usd(cfg, 'prod')).toBe(500);
 
-    expect(resolveLiveOscarEntrySplitLeg7Usd(cfg, 'prod')).toBe(0);
+    expect(resolveLiveOscarEntrySplitLeg7Usd(cfg, 'prod')).toBe(500);
 
-    expect(resolveLiveOscarEntrySplitLeg8Usd(cfg, 'prod')).toBe(0);
+    expect(resolveLiveOscarEntrySplitLeg8Usd(cfg, 'prod')).toBe(500);
 
-    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod')).toBe(3000);
+    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod')).toBe(4000);
 
     expect(resolveLiveOscarEntrySplitLegUsd(cfg, 'low')).toBe(500);
 
@@ -293,7 +293,7 @@ describe('live-oscar-entry-sizing', () => {
     const prodOt = { entryMarketCapUsd: 5_000_000 } as OpenTrade;
     const lowOt = { entryMarketCapUsd: 2_500_000 } as OpenTrade;
     // No global hard cap → ceiling equals tier plan max.
-    expect(resolveLiveOscarPositionCeilingUsd(cfg, prodOt)).toBe(4500);
+    expect(resolveLiveOscarPositionCeilingUsd(cfg, prodOt)).toBe(6000);
     expect(resolveLiveOscarPositionCeilingUsd(cfg, lowOt)).toBe(1500);
 
     // Global hard cap tightens every tier to min(plan, hardCap).
@@ -322,12 +322,12 @@ describe('live-oscar-entry-sizing', () => {
     expect(resolveLiveOscarStagedAvgSecondLegUsd(cfg, 'low')).toBe(0);
     expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'prod')).toBe(10);
     expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'prod')).toBe(500);
-    expect(resolveLiveOscarStagedAvgSplitLegCount(cfg, 'prod')).toBe(3);
+    expect(resolveLiveOscarStagedAvgSplitLegCount(cfg, 'prod')).toBe(4);
     expect(resolveLiveOscarStagedAvgSecondLegUsd(cfg, 'prod')).toBe(0);
     expect(resolveLiveOscarStagedAvgFirstDropPct(cfg, 'micro')).toBe(10);
     expect(resolveLiveOscarStagedAvgLegUsd(cfg, 'micro')).toBe(150);
     expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'low')).toBe(1500);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod')).toBe(4500);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod')).toBe(6000);
     expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'micro')).toBe(450);
   });
 
@@ -355,58 +355,63 @@ describe('live-oscar-entry-sizing', () => {
 
 
 
-  it('buildLiveStagedEntryState uses 6×$500 split + prod avg for prod mcap $3–12M', () => {
+  it('buildLiveStagedEntryState uses 8×$500 split + prod avg for prod mcap $3–12M', () => {
     const cfg = loadPaperTraderConfig();
     const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 4_000_000 });
     expect(st.entrySplitLegUsd).toBe(500);
     expect(st.entrySplitLeg6Usd).toBe(500);
     expect(st.entrySplitLeg6Done).toBe(false);
-    expect(st.entrySplitLeg7Usd).toBe(0);
-    expect(st.entrySplitLeg7Done).toBe(true);
+    expect(st.entrySplitLeg7Usd).toBe(500);
+    expect(st.entrySplitLeg7Done).toBe(false);
+    expect(st.entrySplitLeg8Usd).toBe(500);
+    expect(st.entrySplitLeg8Done).toBe(false);
     expect(st.avgSplitV2).toBe(true);
     expect(st.avgSecondLegUsd).toBe(500);
     expect(st.avgSplitLeg2Usd).toBe(500);
     expect(st.avgSplitLeg3Usd).toBe(500);
-    expect(st.avgSplitLeg4Usd).toBe(0);
+    expect(st.avgSplitLeg4Usd).toBe(500);
     expect(st.avgThirdLegUsd).toBe(0);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', 4_000_000)).toBe(4500);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', 4_000_000)).toBe(6000);
   });
 
 
 
-  it('prod mcap bands: $3–12M and ≥$12M both $4500 with avg −10% = 50% entry', () => {
+  it('prod mcap bands: $3–12M and ≥$12M both $6000 with avg −10% = 50% entry', () => {
     const cfg = loadPaperTraderConfig();
     expect(resolveLiveOscarProdMcapBand(cfg, 4_000_000)).toBe('3_12');
     expect(resolveLiveOscarProdMcapBand(cfg, 15_000_000)).toBe('12_plus');
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', 4_000_000)).toBe(4500);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', 15_000_000)).toBe(4500);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', 4_000_000)).toBe(6000);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', 15_000_000)).toBe(6000);
     const st6m = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 6_000_000 });
     expect(st6m.avgSplitV2).toBe(true);
     expect(st6m.avgSecondLegUsd).toBe(500);
     expect(st6m.avgSplitLeg2Usd).toBe(500);
     expect(st6m.avgSplitLeg3Usd).toBe(500);
+    expect(st6m.avgSplitLeg4Usd).toBe(500);
     expect(st6m.avgThirdLegUsd).toBe(0);
-    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod', 6_000_000)).toBe(3000);
-    expect(resolveLiveOscarEntrySplitLeg8Usd(cfg, 'prod', 15_000_000)).toBe(0);
-    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod', 15_000_000)).toBe(3000);
+    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod', 6_000_000)).toBe(4000);
+    expect(resolveLiveOscarEntrySplitLeg8Usd(cfg, 'prod', 15_000_000)).toBe(500);
+    expect(resolveLiveOscarEntrySplitTotalUsd(cfg, 'prod', 15_000_000)).toBe(4000);
   });
 
 
 
-  it('buildLiveStagedEntryState uses full $4500 plan at prod mcap', () => {
+  it('buildLiveStagedEntryState uses full $6000 plan at prod mcap', () => {
     const cfg = loadPaperTraderConfig();
     const st = buildLiveStagedEntryState(cfg, { signalTs: 1, signalPriceUsd: 0.01 }, { marketCapUsd: 5_000_000 });
     expect(st.entrySplitLegUsd).toBe(500);
     expect(st.entrySplitLeg6Usd).toBe(500);
+    expect(st.entrySplitLeg8Usd).toBe(500);
     expect(st.avgSplitV2).toBe(true);
     expect(st.avgSecondLegUsd).toBe(500);
     expect(st.avgSplitLeg2Usd).toBe(500);
     expect(st.avgSplitLeg3Usd).toBe(500);
+    expect(st.avgSplitLeg4Usd).toBe(500);
     expect(st.avgSecondDropPct).toBe(10);
     expect(st.avgThirdLegUsd).toBe(0);
     expect(st.avgThirdDropPct).toBe(0);
     expect(st.entrySplitDelayMs).toBe(10000);
-    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', 5_000_000)).toBe(4500);
+    expect(resolveLiveOscarStagedEntryMaxUsd(cfg, 'prod', 5_000_000)).toBe(6000);
   });
 
 
@@ -535,9 +540,9 @@ describe('live-oscar-entry-sizing', () => {
 
     expect(st.entrySplitLeg6Usd).toBe(500);
 
-    expect(st.entrySplitLeg7Usd).toBe(0);
+    expect(st.entrySplitLeg7Usd).toBe(500);
 
-    expect(st.entrySplitLeg8Usd).toBe(0);
+    expect(st.entrySplitLeg8Usd).toBe(500);
 
     expect(st.entrySplitDelayMs).toBe(10000);
 

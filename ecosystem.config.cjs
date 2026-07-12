@@ -289,11 +289,12 @@ const HL_TWAP_LIVE_ENV = {
  * 1.11.567 — avg @ −10% = 50% of tier entry-split total (all strategies); prod max $4500; Lera max $750.
  * 1.11.566 — prod+low+micro: avg −10% only; −20% second avg leg OFF all tiers; max prod $3500, low $1500.
  * 1.11.563 — prod from $2M (low/micro OFF): 6×$500 entry split @10s (+3/−5% corridor); avg −10% $500, −20% $1000; max $4500; no DCA/scale-in.
+ * 1.11.585 — prod: 8×$500 entry split ($4000); avg −10% = 50% entry ($2000 as 4×$500); max $6000.
  * 1.11.506 — partial entry slice when wallet SOL short (reserve 0.05 SOL, min partial $50).
  * 1.11.500 — min mcap $2M; micro/scalp_wave OFF; low $2M–$3M: 2×$250 @ 10s (+3/−5% corridor), avg −10% $250; prod ≥$3M: 3×$400 @ 10s, avg −5%/$300 + −20%/$300.
  */
-const LIVE_OSCAR_ENTRY_SPLIT_USD = '3000';
-const LIVE_OSCAR_MAX_POSITION_USD = '4500';
+const LIVE_OSCAR_ENTRY_SPLIT_USD = '4000';
+const LIVE_OSCAR_MAX_POSITION_USD = '6000';
 
 /** 1.11.281 — discovery SQL + priority mints → DexScreener enrich (не trading whitelist). */
 const DISCOVERY_COLLECTOR_PIN_PATH = path.join(root, 'data/live/discovery-collector-pin-mints.txt');
@@ -726,7 +727,7 @@ const PM2_APPS = [
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
         /**
-         * 1.11.566 — prod ≥$3M + LOW $2M–$3M: prod 6×$500 + avg −10% $500; LOW 2×$500 + avg −10% $500.
+         * 1.11.585 — prod ≥$3M + LOW $2M–$3M: prod 8×$500 ($4000) + avg −10% = 50% entry ($2000).
          */
         PAPER_POSITION_USD: LIVE_OSCAR_ENTRY_SPLIT_USD,
         PAPER_ENTRY_FIRST_LEG_FRACTION: '0.5',
@@ -738,8 +739,8 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG4_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG5_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG6_USD: '500',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD: '0',
-        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD: '0',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG7_USD: '500',
+        PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_LEG8_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_DELAY_MS: '10000',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_UP_PCT: '3',
         PAPER_LIVE_STAGED_ENTRY_ENTRY_SPLIT_MAX_DOWN_PCT: '5',
@@ -760,8 +761,8 @@ const PM2_APPS = [
         PAPER_LIVE_STAGED_AVG_MAX_DEPTH_PCT: '20',
         PAPER_LIVE_STAGED_ENTRY_FIRST_LEG_USD: '500',
         PAPER_LIVE_STAGED_ENTRY_SECOND_DROP_PCT: '10',
-        /** avg @ −10%: resolver = 50% of entry-split total ($1500 on 6×$500). Env is legacy/doc. */
-        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '1500',
+        /** avg @ −10%: resolver = 50% of entry-split total ($2000 on 8×$500). Env is legacy/doc. */
+        PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD: '2000',
         PAPER_LIVE_STAGED_ENTRY_THIRD_DROP_PCT: '0',
         PAPER_LIVE_STAGED_ENTRY_THIRD_LEG_USD: '0',
         /** Signal kill: full exit when price ≤ −N% from signal anchor. */
@@ -1048,8 +1049,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '100000',
         /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '4500',
-        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '4500',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '6000',
+        PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '6000',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
         /** Global vol1h floor — no buys below $100k/h (all tiers). */
         PAPER_VOL_1H_MIN_USD: '100000',

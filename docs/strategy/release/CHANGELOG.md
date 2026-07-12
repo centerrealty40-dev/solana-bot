@@ -94,6 +94,19 @@
 
 ---
 
+---
+
+## [1.11.585] — 2026-07-12
+
+**Тег:** `sa-alpha-1.11.585`
+
+### Live Oscar («Живой Оскар») — prod entry split $4000
+
+- **Изменение:** prod ≥$3M: **8×$500** timed entry split @10s (+3/−5% corridor) = **$4000** (`PAPER_POSITION_USD`); avg @ −10% = 50% entry (**$2000** as 4×$500 slices); max **$6000** (`LIVE_MAX_POSITION_USD`, `PROD_MCAP_MAX_*`).
+- **Откат:** вернуть `6×$500` / max `$4500` в `ecosystem.config.cjs` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.584] — 2026-07-12
 
 **Тег:** `sa-alpha-1.11.584`
