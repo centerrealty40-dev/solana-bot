@@ -1117,6 +1117,10 @@ const PM2_APPS = [
         PAPER_TREND_VETO_SKI_SLOPE_ENABLED: '1',
         PAPER_TREND_VETO_SKI_SLOPE_MAX_PX_VS_HIGH: '0.42',
         PAPER_TREND_VETO_SKI_SLOPE_MIN_DAYS_SINCE_HIGH: '2',
+        PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_BYPASS_ENABLED: '1',
+        PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_LOOKBACK_HOURS: '72',
+        PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_BOUNCE_PCT: '80',
+        PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_HOURS_AFTER_LOW: '12',
         /** Telegram when dip passed but trend veto is sole blocker (default ON, 30m cooldown). */
         LIVE_TREND_VETO_TELEGRAM_ENABLED: '1',
         LIVE_TREND_VETO_TELEGRAM_COOLDOWN_MS: '1800000',
@@ -2322,11 +2326,12 @@ const PM2_APPS = [
       },
     },
     /**
-     * knife-catcher — ISOLATED shadow worker (default OFF). Tracks top-N high-volume runners via a
-     * SMALL Shyft gRPC subscription (swap_decode prices + Jupiter cross-check) and simulates 2-leg
-     * dip-buys on whale-dump events with an escalating scalp TP ladder + trail. Fully decoupled from
-     * live-oscar: own process, own JSONL, read-only PG, never executes. SHYFT_GRPC_TOKEN /
-     * TELEGRAM_BOT_TOKEN read from .env (dotenv).
+     * knife-catcher — Oscar VPS: keep STOPPED (live knife only on LERA / live-lera10 wallet).
+     * ISOLATED shadow worker (default OFF). Tracks top-N high-volume runners via a SMALL Shyft gRPC
+     * subscription (swap_decode prices + Jupiter cross-check) and simulates 2-leg dip-buys on whale-dump
+     * events with an escalating scalp TP ladder + trail. Fully decoupled from live-oscar: own process,
+     * own JSONL, read-only PG, never executes live on Oscar. SHYFT_GRPC_TOKEN / TELEGRAM_BOT_TOKEN
+     * read from .env (dotenv).
      */
     {
       name: 'knife-catcher',

@@ -764,6 +764,9 @@ export interface SnapshotFeatures {
     slope7dPct: number | null;
     slope3dPct: number | null;
     pxVsHighLookback: number | null;
+    localLowLookbackUsd: number | null;
+    hoursSinceLocalLow: number | null;
+    skiSlopeReversalBypass: boolean;
     pgSnapsCount: number;
     vetoed: boolean;
     veto_reasons: string[];

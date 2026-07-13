@@ -798,6 +798,14 @@ const ConfigSchema = z.object({
   trendVetoSkiSlopeEnabled: z.boolean().default(true),
   trendVetoSkiSlopeMaxPxVsHigh: z.coerce.number().min(0.1).max(1).default(0.42),
   trendVetoSkiSlopeMinDaysSinceHigh: z.coerce.number().min(1).max(30).default(2),
+  /**
+   * Ski-slope bypass after post-crash reversal: if price bounced ≥N% from lookback low
+   * and low is ≥M hours old, treat as range/base (febu-class) — not a bleeding runner.
+   */
+  trendVetoSkiSlopeReversalBypassEnabled: z.boolean().default(true),
+  trendVetoSkiSlopeReversalLookbackHours: z.coerce.number().int().min(24).max(168).default(72),
+  trendVetoSkiSlopeReversalMinBouncePct: z.coerce.number().min(10).max(500).default(80),
+  trendVetoSkiSlopeReversalMinHoursAfterLow: z.coerce.number().min(1).max(168).default(12),
 
   /**
    * Policy A+ (1.11.167): «хирургические» правила пропуска кандидатов на вход.
@@ -1939,6 +1947,16 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     trendVetoSkiSlopeEnabled: envBool(process.env.PAPER_TREND_VETO_SKI_SLOPE_ENABLED, true),
     trendVetoSkiSlopeMaxPxVsHigh: process.env.PAPER_TREND_VETO_SKI_SLOPE_MAX_PX_VS_HIGH,
     trendVetoSkiSlopeMinDaysSinceHigh: process.env.PAPER_TREND_VETO_SKI_SLOPE_MIN_DAYS_SINCE_HIGH,
+    trendVetoSkiSlopeReversalBypassEnabled: envBool(
+      process.env.PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_BYPASS_ENABLED,
+      true,
+    ),
+    trendVetoSkiSlopeReversalLookbackHours:
+      process.env.PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_LOOKBACK_HOURS,
+    trendVetoSkiSlopeReversalMinBouncePct:
+      process.env.PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_BOUNCE_PCT,
+    trendVetoSkiSlopeReversalMinHoursAfterLow:
+      process.env.PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_HOURS_AFTER_LOW,
     policyAPlusEnabled: envBool(process.env.PAPER_POLICY_A_PLUS_ENABLED, false),
     policyAPlusBounceFromMin30mEnabled: envBool(
       process.env.PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED,

@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { evaluateTrendStructureVeto } from '../src/papertrader/discovery/trend-structure-veto.js';
+import {
+  evaluateTrendStructureVeto,
+  skiSlopeReversalBypassActive,
+} from '../src/papertrader/discovery/trend-structure-veto.js';
 import type { PaperTraderConfig } from '../src/papertrader/config.js';
 import type { SnapshotCandidateRow } from '../src/papertrader/types.js';
 
@@ -19,6 +22,10 @@ function cfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     trendVetoSkiSlopeEnabled: true,
     trendVetoSkiSlopeMaxPxVsHigh: 0.42,
     trendVetoSkiSlopeMinDaysSinceHigh: 2,
+    trendVetoSkiSlopeReversalBypassEnabled: true,
+    trendVetoSkiSlopeReversalLookbackHours: 72,
+    trendVetoSkiSlopeReversalMinBouncePct: 80,
+    trendVetoSkiSlopeReversalMinHoursAfterLow: 12,
     trendVetoPeakTouchTolerancePct: 1,
     ...overrides,
   } as PaperTraderConfig;
@@ -86,9 +93,25 @@ describe('trend-structure-veto', () => {
       daysSinceHighBreak: 3.8,
       price7dAgoUsd: 0.5,
       price3dAgoUsd: 0.35,
+      localLowLookbackUsd: 0.21,
+      hoursSinceLocalLow: 4,
     });
     expect(res.features.pxVsHighLookback).toBeCloseTo(0.23);
     expect(res.reasons.some((r) => r.startsWith('trend_veto_ski_slope_'))).toBe(true);
+  });
+
+  it('ski-slope bypass: post-reversal base after crash low (febu-class)', () => {
+    const features = {
+      ...baseCtx,
+      highLookbackUsd: 0.008874,
+      daysSinceHighBreak: 2.2,
+      localLowLookbackUsd: 0.000703,
+      hoursSinceLocalLow: 25,
+    };
+    expect(skiSlopeReversalBypassActive(cfg(), features, 0.002818)).toBe(true);
+    const res = evaluateTrendStructureVeto(cfg(), row(0.002818), features);
+    expect(res.features.pxVsHighLookback).toBeCloseTo(0.002818 / 0.008874, 3);
+    expect(res.reasons.some((r) => r.startsWith('trend_veto_ski_slope_'))).toBe(false);
   });
 
   it('rule 2b: 3d decline path for young coins', () => {

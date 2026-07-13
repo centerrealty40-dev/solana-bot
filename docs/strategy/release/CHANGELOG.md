@@ -96,6 +96,18 @@
 
 ---
 
+## [1.11.586] — 2026-07-13
+
+**Тег:** `sa-alpha-1.11.586`
+
+### Trend veto — ski-slope bypass after post-crash reversal (febu RCA)
+
+- **Проблема:** `trend_veto_ski_slope` блокировал dip-entry на монетах с боковиком после crash+разворота (febu 13.07 ~19:52: px/peak 32%, но +300% от 72h-low за ~25ч). Вето смотрело только на 14d-peak age, не на базу после разворота.
+- **Что сделано:** bypass ski-slope когда цена ≥+80% от 72h local low и low старше 12ч (`PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_*`). Тест на febu-цифрах.
+- **Откат:** `PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_BYPASS_ENABLED=0` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
+---
+
 ## [1.11.585] — 2026-07-12
 
 **Тег:** `sa-alpha-1.11.585`
