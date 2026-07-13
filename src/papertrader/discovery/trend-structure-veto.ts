@@ -24,6 +24,10 @@ export interface TrendStructureFeatures {
   slope7dPct: number | null;
   slope3dPct: number | null;
   pxVsHighLookback: number | null;
+  /** Recent crash low within ski-slope reversal lookback (PG). */
+  localLowLookbackUsd: number | null;
+  /** Hours since `localLowLookbackUsd` was printed. */
+  hoursSinceLocalLow: number | null;
   pgSnapsCount: number;
   coverageOk: boolean;
 }
@@ -42,6 +46,8 @@ const EMPTY_FEATURES: TrendStructureFeatures = {
   slope7dPct: null,
   slope3dPct: null,
   pxVsHighLookback: null,
+  localLowLookbackUsd: null,
+  hoursSinceLocalLow: null,
   pgSnapsCount: 0,
   coverageOk: false,
 };
@@ -67,8 +73,29 @@ type TrendStructureVetoCfg = Pick<
   | 'trendVetoSkiSlopeEnabled'
   | 'trendVetoSkiSlopeMaxPxVsHigh'
   | 'trendVetoSkiSlopeMinDaysSinceHigh'
+  | 'trendVetoSkiSlopeReversalBypassEnabled'
+  | 'trendVetoSkiSlopeReversalLookbackHours'
+  | 'trendVetoSkiSlopeReversalMinBouncePct'
+  | 'trendVetoSkiSlopeReversalMinHoursAfterLow'
   | 'trendVetoLookbackDays'
 >;
+
+/** Post-crash reversal: bleed ended, price holds above recent local low (febu-class base). */
+export function skiSlopeReversalBypassActive(
+  cfg: PaperTraderConfig,
+  features: Pick<TrendStructureFeatures, 'localLowLookbackUsd' | 'hoursSinceLocalLow'>,
+  snapshotPriceUsd: number,
+): boolean {
+  if (!cfg.trendVetoSkiSlopeReversalBypassEnabled) return false;
+  const low = features.localLowLookbackUsd;
+  const ageH = features.hoursSinceLocalLow;
+  if (!(low != null && low > 0) || !(ageH != null && ageH >= 0) || !(snapshotPriceUsd > 0)) {
+    return false;
+  }
+  if (ageH + 1e-9 < cfg.trendVetoSkiSlopeReversalMinHoursAfterLow) return false;
+  const bouncePct = ((snapshotPriceUsd - low) / low) * 100;
+  return bouncePct + 1e-9 >= cfg.trendVetoSkiSlopeReversalMinBouncePct;
+}
 
 /** Apply veto rules to pre-fetched features + current price. */
 export function evaluateTrendStructureVeto(
@@ -115,7 +142,8 @@ export function evaluateTrendStructureVeto(
     const ageOk =
       features.daysSinceHighBreak != null &&
       features.daysSinceHighBreak + 1e-9 >= v.trendVetoSkiSlopeMinDaysSinceHigh;
-    if (ratioOk && ageOk) {
+    const reversalBypass = skiSlopeReversalBypassActive(cfg, features, px);
+    if (ratioOk && ageOk && !reversalBypass) {
       reasons.push(
         `trend_veto_ski_slope_pxVs${v.trendVetoLookbackDays}d=${(features.pxVsHighLookback! * 100).toFixed(1)}%<${(v.trendVetoSkiSlopeMaxPxVsHigh * 100).toFixed(0)}%_sinceHigh=${features.daysSinceHighBreak!.toFixed(1)}d`,
       );
@@ -153,6 +181,8 @@ interface TrendAggRow {
   days_since_high: number | null;
   price_7d_ago: number | null;
   price_3d_ago: number | null;
+  local_low_lookback: number | null;
+  hours_since_local_low: number | null;
   snaps_count: number | null;
 }
 
@@ -171,6 +201,14 @@ function mapAggRow(cfg: PaperTraderConfig, row: TrendAggRow): TrendStructureFeat
     slope7dPct: null,
     slope3dPct: null,
     pxVsHighLookback: null,
+    localLowLookbackUsd:
+      row.local_low_lookback != null && Number(row.local_low_lookback) > 0
+        ? Number(row.local_low_lookback)
+        : null,
+    hoursSinceLocalLow:
+      row.hours_since_local_low != null && Number.isFinite(Number(row.hours_since_local_low))
+        ? +Number(row.hours_since_local_low).toFixed(3)
+        : null,
     pgSnapsCount: snaps,
     coverageOk: snaps >= cfg.trendVetoMinPgSamples,
   };
@@ -182,8 +220,10 @@ function trendStructureSql(
   refEpochSec: number,
   lookbackDays: number,
   peakTouchTolFrac: number,
+  reversalLookbackHours: number,
 ): string {
   const tol = peakTouchTolFrac.toFixed(6);
+  const revH = Math.max(12, Math.floor(reversalLookbackHours));
   return `
     WITH bars AS (
       SELECT base_mint AS mint, ts, COALESCE(price_usd, 0)::float AS px
@@ -215,6 +255,15 @@ function trendStructureSql(
         INNER JOIN per_mint p ON p.mint = b.mint
        WHERE b.px >= p.high_lookback * (1.0 - ${tol})
        GROUP BY b.mint
+    ),
+    local_low AS (
+      SELECT DISTINCT ON (b.mint)
+        b.mint,
+        b.px AS local_low_lookback,
+        EXTRACT(EPOCH FROM (to_timestamp(${refEpochSec}) - b.ts)) / 3600.0 AS hours_since_local_low
+        FROM bars b
+       WHERE b.ts >= to_timestamp(${refEpochSec}) - interval '${revH} hours'
+       ORDER BY b.mint, b.px ASC, b.ts DESC
     )
     SELECT
       p.mint,
@@ -222,9 +271,12 @@ function trendStructureSql(
       p.snaps_count,
       p.price_7d_ago,
       p.price_3d_ago,
+      ll.local_low_lookback,
+      ll.hours_since_local_low,
       EXTRACT(EPOCH FROM (to_timestamp(${refEpochSec}) - lp.ts_last_peak)) / 86400.0 AS days_since_high
     FROM per_mint p
     LEFT JOIN last_peak lp ON lp.mint = p.mint
+    LEFT JOIN local_low ll ON ll.mint = p.mint
   `;
 }
 
@@ -257,6 +309,7 @@ export async function fetchTrendStructureContextMap(
       refEpochSec,
       cfg.trendVetoLookbackDays,
       cfg.trendVetoPeakTouchTolerancePct / 100,
+      cfg.trendVetoSkiSlopeReversalLookbackHours,
     );
     const r = (await db.execute(dsql.raw(sqlText))) as unknown as TrendAggRow[];
     for (const row of r) {
@@ -283,6 +336,7 @@ export async function fetchTrendStructureContextAtTs(
     refEpochSec,
     cfg.trendVetoLookbackDays,
     cfg.trendVetoPeakTouchTolerancePct / 100,
+    cfg.trendVetoSkiSlopeReversalLookbackHours,
   );
   const r = (await db.execute(dsql.raw(sqlText))) as unknown as TrendAggRow[];
   const row = r[0];

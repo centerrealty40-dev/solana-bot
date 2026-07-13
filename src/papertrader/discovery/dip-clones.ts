@@ -58,6 +58,7 @@ import {
 import {
   fetchTrendStructureContextMap,
   evaluateTrendStructureVeto,
+  skiSlopeReversalBypassActive,
   type TrendStructureVetoResult,
 } from './trend-structure-veto.js';
 import {
@@ -825,6 +826,9 @@ function buildFeatures(
       slope7dPct: f.slope7dPct,
       slope3dPct: f.slope3dPct,
       pxVsHighLookback: f.pxVsHighLookback,
+      localLowLookbackUsd: f.localLowLookbackUsd,
+      hoursSinceLocalLow: f.hoursSinceLocalLow,
+      skiSlopeReversalBypass: skiSlopeReversalBypassActive(cfg, f, Number(row.price_usd ?? 0)),
       pgSnapsCount: f.pgSnapsCount,
       vetoed: trendStructureVeto.reasons.length > 0,
       veto_reasons: trendStructureVeto.reasons,
