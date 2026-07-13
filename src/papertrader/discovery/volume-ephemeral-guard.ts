@@ -5,8 +5,9 @@
  * within the lookback (typical one-shot wash / sybil burst — e.g. GOAT: 3 active
  * hours in 24h, peak vol5m $432k, otherwise dead).
  *
- * Known repeat mints: spike/narrow-window/tail_wash are new-mint-only; dead live
+ * Known repeat mints: spike/narrow-window blocks are new-mint-only; dead live
  * vol5m is ignored when neighboring PG hourly windows show healthy volume.
+ * Re-entry tail_wash (vol5m/vol1h below ratio floor) still applies on known mints.
  *
  * Uses hourly MAX(volume_5m) from PG pair snapshots. Missing PG history => safe-skip.
  */
@@ -86,6 +87,30 @@ function newMintVol5mVol1hRatio(row: SnapshotCandidateRow): number | null {
   return vol5mToVol1hRatio(row);
 }
 
+/** Inflated vol1h + dead vol5m tail — wash / volume decay (SCAM 6AVA re-entry RCA). */
+function appendTailWashVol5mVol1hReasons(
+  cfg: PaperTraderConfig,
+  row: SnapshotCandidateRow,
+  blockedReasons: string[],
+): void {
+  const vol1h = Number(row.volume_1h ?? 0);
+  const vol5mWash = Number(row.volume_5m ?? 0);
+  const vol5mVol1h = newMintVol5mVol1hRatio(row);
+  const deadVol5mWash =
+    Number.isFinite(vol5mWash) && vol5mWash < cfg.volumeEphemeralMinActiveHourVol5mUsd;
+  if (
+    Number.isFinite(vol1h) &&
+    vol1h >= cfg.volumeGuardNewMintVol1hWashMinUsd &&
+    deadVol5mWash &&
+    vol5mVol1h != null &&
+    vol5mVol1h < cfg.volumeGuardNewMintMinVol5mToVol1hRatio
+  ) {
+    blockedReasons.push(
+      `volume_ephemeral:tail_wash_vol5m_vol1h=${(vol5mVol1h * 100).toFixed(1)}%<${(cfg.volumeGuardNewMintMinVol5mToVol1hRatio * 100).toFixed(0)}%_vol5m=$${Math.round(vol5mWash)}_vol1h=$${Math.round(vol1h)}`,
+    );
+  }
+}
+
 /**
  * True when PG neighbor hourly windows show sustained healthy vol5m — one dead live
  * tick should not block (NEST/world RCA: stale PG snapshot vs constant market).
@@ -153,6 +178,13 @@ function evaluateKnownMintVolumeEphemeral(
   }
 
   const blockedReasons: string[] = [];
+  if (cfg.volumeEphemeralKnownMintTailWashBlockEnabled) {
+    appendTailWashVol5mVol1hReasons(cfg, row, blockedReasons);
+    if (blockedReasons.length > 0) {
+      return { blocked: true, blockedReasons, features: enriched };
+    }
+  }
+
   const sustainedDead =
     features.coverageOk &&
     features.activeHours <= cfg.volumeEphemeralMaxActiveHours &&
@@ -297,7 +329,7 @@ export function evaluateVolumeEphemeralGuard(
     };
   }
 
-  /** Repeat mint: spike/narrow-window/tail_wash are new-mint-only; neighbor-window for dead ticks. */
+  /** Repeat mint: spike/narrow-window blocks are new-mint-only; tail_wash + neighbor-window for dead ticks. */
   if (knownMint) {
     return evaluateKnownMintVolumeEphemeral(cfg, row, features);
   }
@@ -404,21 +436,7 @@ export function evaluateVolumeEphemeralGuard(
     );
   }
 
-  const vol5mWash = Number(row.volume_5m ?? 0);
-  const vol5mVol1h = newMintVol5mVol1hRatio(row);
-  const deadVol5mWash =
-    Number.isFinite(vol5mWash) && vol5mWash < cfg.volumeEphemeralMinActiveHourVol5mUsd;
-  if (
-    Number.isFinite(vol1h) &&
-    vol1h >= cfg.volumeGuardNewMintVol1hWashMinUsd &&
-    deadVol5mWash &&
-    vol5mVol1h != null &&
-    vol5mVol1h < cfg.volumeGuardNewMintMinVol5mToVol1hRatio
-  ) {
-    blockedReasons.push(
-      `volume_ephemeral:tail_wash_vol5m_vol1h=${(vol5mVol1h * 100).toFixed(1)}%<${(cfg.volumeGuardNewMintMinVol5mToVol1hRatio * 100).toFixed(0)}%_vol5m=$${Math.round(vol5mWash)}_vol1h=$${Math.round(vol1h)}`,
-    );
-  }
+  appendTailWashVol5mVol1hReasons(cfg, row, blockedReasons);
 
   return { blocked: blockedReasons.length > 0, blockedReasons, features };
 }

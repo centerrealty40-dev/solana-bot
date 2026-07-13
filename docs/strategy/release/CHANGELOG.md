@@ -105,6 +105,12 @@
 - **Изменение:** prod ≥$3M: **8×$500** timed entry split @10s (+3/−5% corridor) = **$4000** (`PAPER_POSITION_USD`); avg @ −10% = 50% entry (**$2000** as 4×$500 slices); max **$6000** (`LIVE_MAX_POSITION_USD`, `PROD_MCAP_MAX_*`).
 - **Откат:** вернуть `6×$500` / max `$4500` в `ecosystem.config.cjs` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
 
+### Volume ephemeral — known-mint re-entry tail_wash (6AVA RCA)
+
+- **Проблема:** familiar/known mint обходил `volume_ephemeral` на re-entry при мёртвом vol5m (SCAM 12.07 ~22:00 MSK).
+- **Что сделано:** `tail_wash` при `vol5m/vol1h < 8%` на known mint; env `PAPER_VOLUME_EPHEMERAL_KNOWN_MINT_TAIL_WASH_BLOCK_ENABLED` (default `1`). Спека: `docs/strategy/live-oscar/LIVE_OSCAR_KNOWN_MINT_TAIL_WASH_SPEC.md`.
+- **Откат:** `PAPER_VOLUME_EPHEMERAL_KNOWN_MINT_TAIL_WASH_BLOCK_ENABLED=0` + `pm2 reload ecosystem.config.cjs --update-env`.
+
 ---
 
 ## [1.11.584] — 2026-07-12

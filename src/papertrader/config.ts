@@ -928,6 +928,8 @@ const ConfigSchema = z.object({
    * ephemeral blocks (narrow hourly window / tail from stale PG peak). Env `PAPER_VOLUME_EPHEMERAL_BIRDEYE_FRESH_BYPASS`.
    */
   volumeEphemeralBirdeyeFreshBypass: z.boolean().default(true),
+  /** Known-mint re-entry: block when live vol5m/vol1h ratio below wash floor (6AVA RCA). */
+  volumeEphemeralKnownMintTailWashBlockEnabled: z.boolean().default(true),
 
   /**
    * Ephemeral volume spike guard (48h): block dormant baseline → sudden vol1h explosion
@@ -1995,6 +1997,10 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     volumeEphemeralNewMintMinActiveHours: process.env.PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS,
     volumeEphemeralBirdeyeFreshBypass: envBool(
       process.env.PAPER_VOLUME_EPHEMERAL_BIRDEYE_FRESH_BYPASS,
+      true,
+    ),
+    volumeEphemeralKnownMintTailWashBlockEnabled: envBool(
+      process.env.PAPER_VOLUME_EPHEMERAL_KNOWN_MINT_TAIL_WASH_BLOCK_ENABLED,
       true,
     ),
     oldMintDormantVolSpikeGuardEnabled: envBool(

@@ -1193,6 +1193,8 @@ const PM2_APPS = [
         PAPER_VOLUME_EPHEMERAL_TAIL_MAX_PEAK_RATIO: '0.3',
         /** New mints: min active hours + wash vol ratio (MUSHU RCA 2026-06-30). */
         PAPER_VOLUME_EPHEMERAL_NEW_MINT_MIN_ACTIVE_HOURS: '8',
+        /** Known-mint re-entry: block tail_wash when vol5m/vol1h < 8% (6AVA SCAM RCA 2026-07-12). */
+        PAPER_VOLUME_EPHEMERAL_KNOWN_MINT_TAIL_WASH_BLOCK_ENABLED: '1',
         PAPER_VOLUME_GUARD_NEW_MINT_MIN_VOL5M_TO_VOL1H_RATIO: '0.08',
         PAPER_VOLUME_GUARD_NEW_MINT_VOL1H_WASH_MIN_USD: '36000',
         /** Ephemeral volume spike (7d dormant→spike, age-agnostic; DADDY RCA 2026-07-05). */
