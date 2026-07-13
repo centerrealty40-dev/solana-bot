@@ -43,6 +43,7 @@ function baseCfg(over: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     volumeGuardNewMintMinVol5mToVol1hRatio: 0.08,
     volumeGuardNewMintVol1hWashMinUsd: 36_000,
     volumeEphemeralNewMintMinActiveHours: 10,
+    volumeEphemeralKnownMintTailWashBlockEnabled: true,
     ...over,
   } as PaperTraderConfig;
 }
@@ -167,7 +168,7 @@ describe('evaluateVolumeEphemeralGuard', () => {
     expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(true);
   });
 
-  it('NEST-like known mint at dip: no ephemeral block (tail_wash skipped for repeat mint)', () => {
+  it('NEST-like known mint at dip: no ephemeral block when neighbor window healthy (stale tick)', () => {
     const r = evaluateVolumeEphemeralGuard(
       baseCfg({ volumeEphemeralNewMintMinActiveHours: 0 }),
       baseRow({ volume_5m: 1_400, volume_1h: 194_000, symbol: 'NEST' }),
@@ -284,10 +285,47 @@ describe('evaluateVolumeEphemeralGuard', () => {
     expect(r.blockedReasons.length).toBeGreaterThan(0);
   });
 
-  it('MUSHU prod bypass: activeHours=5 known mint passes ephemeral (repeat mint)', () => {
+  it('MUSHU prod bypass: activeHours=5 known mint blocks on tail_wash re-entry', () => {
     const r = evaluateVolumeEphemeralGuard(
       baseCfg(),
       baseRow({ volume_5m: 5505, volume_1h: 168_265, symbol: 'MUSHU' }),
+      ctx({ hoursWithData: 12, activeHours: 5, peakHourVol5mUsd: 153_197 }),
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h'))).toBe(true);
+  });
+
+  it('SCAM-like known mint re-entry: dead vol5m vs inflated vol1h blocks (6AVA RCA)', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg({ volumeEphemeralNewMintMinActiveHours: 0 }),
+      baseRow({
+        mint: '6AVAUKa9uxQpruHZUinFECpXEh1usRVtzQWK8N2wpump',
+        volume_5m: 3_028,
+        volume_1h: 103_586,
+        symbol: 'SCAM',
+      }),
+      ctx({
+        hoursWithData: 22,
+        activeHours: 8,
+        peakHourVol5mUsd: 45_000,
+        vol5mPrev1hUsd: 2_900,
+        vol5mPrev2hUsd: 3_100,
+        medianVol5m12hUsd: 3_200,
+      }),
+      { knownMint: true },
+    );
+    expect(r.blocked).toBe(true);
+    expect(r.blockedReasons.some((x) => x.includes('tail_wash_vol5m_vol1h=2.9%<8%'))).toBe(true);
+  });
+
+  it('known mint tail_wash block can be disabled via config', () => {
+    const r = evaluateVolumeEphemeralGuard(
+      baseCfg({
+        volumeEphemeralNewMintMinActiveHours: 0,
+        volumeEphemeralKnownMintTailWashBlockEnabled: false,
+      }),
+      baseRow({ volume_5m: 3_028, volume_1h: 103_586, symbol: 'SCAM' }),
       ctx({ hoursWithData: 12, activeHours: 5, peakHourVol5mUsd: 153_197 }),
       { knownMint: true },
     );
