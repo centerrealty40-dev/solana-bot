@@ -104,10 +104,13 @@ describe('awakening-signal', () => {
     expect(r.reasons.some((x) => x.startsWith('vol5m_spike_6h<'))).toBe(true);
   });
 
-  it('blocks a fresh coin (< 24h) — no new pump.fun launches', () => {
-    const r = evaluateAwakeningSignal(cfg, market({ poolAgeMin: 120 }));
+  it('blocks a fresh coin (< 6h) — no brand-new pump.fun launches', () => {
+    const sixHourCfg = loadAwakeningConfig({ AWAKENING_MIN_POOL_AGE_HOURS: '6' });
+    const r = evaluateAwakeningSignal(sixHourCfg, market({ poolAgeMin: 120 }));
     expect(r.pass).toBe(false);
     expect(r.reasons.some((x) => x.startsWith('pool_age<'))).toBe(true);
+    const ok = evaluateAwakeningSignal(sixHourCfg, market({ poolAgeMin: 400 }));
+    expect(ok.reasons.some((x) => x.startsWith('pool_age<'))).toBe(false);
   });
 
   it('blocks an already-hot / one-shot pump (huge 24h vol) — DEXBULL shape', () => {

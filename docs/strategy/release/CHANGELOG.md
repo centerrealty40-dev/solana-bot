@@ -98,6 +98,15 @@
 
 ---
 
+## [1.11.591] — 2026-07-14
+
+**Тег:** `sa-alpha-1.11.591`
+
+### Volume Awakening (shadow) — min pool age 6h
+
+- **`AWAKENING_MIN_POOL_AGE_HOURS`:** default **6** (было 12 на проде / 24 в ecosystem) — расширяем re-awakening на монеты от ~6ч после миграции (AQD-класс).
+- **Откат:** вернуть `AWAKENING_MIN_POOL_AGE_HOURS=12` в `.env` + ecosystem default + `pm2 reload awakening-catcher --update-env`.
+
 ## [1.11.590] — 2026-07-14
 
 **Тег:** `sa-alpha-1.11.590`
