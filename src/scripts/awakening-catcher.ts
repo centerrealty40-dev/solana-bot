@@ -16,7 +16,7 @@ import { loadAwakeningConfig, type AwakeningConfig } from './awakening/awakening
 import { fetchAwakeningDexMarket } from './awakening/awakening-dex-pair.js';
 import { fetchGeckoTrendingMints } from './awakening/awakening-gecko-trending.js';
 import { enqueueAwakeningLiveEntry } from './awakening/awakening-live-entry-queue.js';
-import { evaluateAwakeningSignal } from './awakening/awakening-signal.js';
+import { evaluateAwakeningSignal, awakeningEvalCooldownMs } from './awakening/awakening-signal.js';
 import { formatAwakeningSignalTelegramHtml } from './awakening/awakening-telegram.js';
 import { startAwakeningStreamWs } from './awakening/awakening-stream-ws.js';
 import {
@@ -76,8 +76,8 @@ function onCooldown(mint: string, nowMs: number): boolean {
   return until > nowMs;
 }
 
-function setCooldown(cfg: AwakeningConfig, mint: string, nowMs: number): void {
-  cooldownUntil.set(mint, nowMs + cfg.candidateCooldownMs);
+function setCooldown(cfg: AwakeningConfig, mint: string, nowMs: number, ms?: number): void {
+  cooldownUntil.set(mint, nowMs + (ms ?? cfg.candidateCooldownMs));
 }
 
 async function evaluateCandidate(
@@ -121,7 +121,7 @@ async function evaluateCandidate(
     },
   });
 
-  setCooldown(cfg, candidate.mint, nowMs);
+  setCooldown(cfg, candidate.mint, nowMs, awakeningEvalCooldownMs(cfg, verdict));
 
   if (!verdict.pass) return;
 

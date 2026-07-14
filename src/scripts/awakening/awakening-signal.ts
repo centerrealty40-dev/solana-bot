@@ -21,6 +21,8 @@ type AwakeningSignalCfg = Pick<
   | 'minMcapUsd'
   | 'minLiqUsd'
   | 'minBuyRatio'
+  | 'buyRatioSpikeBypass'
+  | 'minPriceChangeM5IgnitionPct'
   | 'maxPriceChangeH24Pct'
   | 'maxPriceChangeH6Pct'
   | 'minPriceChangeM5Pct'
@@ -29,6 +31,35 @@ type AwakeningSignalCfg = Pick<
   | 'minPriceChangeH1Pct'
   | 'maxVol1hPerMcap'
 >;
+
+/** Confirmed vol5m burst vs quiet prior — re-awakening ignition shape. */
+export function isAwakeningIgnitionBurst(
+  cfg: Pick<AwakeningConfig, 'vol5mMinUsd' | 'vol5mSpikeMinMult' | 'vol5mSpikeVs1hMinMult'>,
+  metrics: { vol5mUsd: number; vol5mSpikeVs6hMult: number; vol5mSpikeVs1hMult: number },
+): boolean {
+  return (
+    metrics.vol5mUsd >= cfg.vol5mMinUsd &&
+    metrics.vol5mSpikeVs6hMult >= cfg.vol5mSpikeMinMult &&
+    metrics.vol5mSpikeVs1hMult >= cfg.vol5mSpikeVs1hMinMult
+  );
+}
+
+/** Spike passed but only soft gates (buy_ratio / m5) blocked — retry soon. */
+export function isAwakeningNearMiss(reasons: string[]): boolean {
+  if (reasons.length === 0) return false;
+  const spikeFailed = reasons.some((r) => r.startsWith('vol5m_spike_'));
+  if (spikeFailed) return false;
+  return reasons.every((r) => r.startsWith('buy_ratio<') || r.startsWith('price_m5<'));
+}
+
+export function awakeningEvalCooldownMs(
+  cfg: Pick<AwakeningConfig, 'candidateCooldownMs' | 'candidateNearMissCooldownMs' | 'candidateFailCooldownMs'>,
+  verdict: AwakeningSignalResult,
+): number {
+  if (verdict.pass) return cfg.candidateCooldownMs;
+  if (isAwakeningNearMiss(verdict.reasons)) return cfg.candidateNearMissCooldownMs;
+  return cfg.candidateFailCooldownMs;
+}
 
 /**
  * Dormant-low awakening: first real vol5m burst on a previously quiet, aged coin —
@@ -117,8 +148,17 @@ export function evaluateAwakeningSignal(
   if (liq == null || liq < cfg.minLiqUsd) {
     reasons.push(`liq<${cfg.minLiqUsd}`);
   }
+  const m5 = market.priceChangeM5;
+  const ignitionBurst = isAwakeningIgnitionBurst(cfg, metrics);
+  const ignitionPriceOk =
+    m5 == null || m5 >= cfg.minPriceChangeM5IgnitionPct;
+
   if (buyRatio == null || buyRatio < cfg.minBuyRatio) {
-    reasons.push(`buy_ratio<${cfg.minBuyRatio}`);
+    const bypassBuyRatio =
+      cfg.buyRatioSpikeBypass && ignitionBurst && ignitionPriceOk;
+    if (!bypassBuyRatio) {
+      reasons.push(`buy_ratio<${cfg.minBuyRatio}`);
+    }
   }
 
   const h24 = market.priceChangeH24;
@@ -141,7 +181,6 @@ export function evaluateAwakeningSignal(
     reasons.push(`price_h1<${cfg.minPriceChangeH1Pct}`);
   }
 
-  const m5 = market.priceChangeM5;
   if (m5 != null && m5 < cfg.minPriceChangeM5Pct) {
     reasons.push(`price_m5<${cfg.minPriceChangeM5Pct}`);
   }

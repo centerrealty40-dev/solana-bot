@@ -98,6 +98,37 @@
 
 ---
 
+## [1.11.590] — 2026-07-14
+
+**Тег:** `sa-alpha-1.11.590`
+
+### Volume Awakening (shadow) — re-awakening pump ignition
+
+- **RCA FeMbDo 12:47–12:50 MSK:** stream поймал всплеск в 12:49:43; vol5m spike 11×/12× прошёл, но `buy_ratio` 31% < 38% отрубил сигнал; 15‑мин cooldown после fail заблокировал повтор до пика.
+- **`awakening-signal`:** `AWAKENING_BUY_RATIO_SPIKE_BYPASS` — при подтверждённом ignition (spike 8×/4× + m5↑) не требовать buy_ratio; `AWAKENING_MIN_PRICE_CHANGE_M5_IGNITION_PCT` (default 1%).
+- **`awakening-catcher`:** tiered cooldown — near-miss (только buy_ratio/m5) 90s, hard fail 300s, signal 900s.
+- **Тест:** fixture FeMbDo Jul-14 ignition + post-peak block.
+- **Откат:** `git revert` коммита 1.11.590 + `pm2 reload awakening-catcher --update-env`.
+
+## [1.11.589] — 2026-07-14
+
+**Тег:** `sa-alpha-1.11.589`
+
+### Live Oscar — ужесточение entry-порогов (anti-bounce / anti-chop)
+
+- **RCA:** F4Gp TrumpCoin — покупка на отскоке ~735k после пролива до 700k (16:04 МСК); shallow dip passes в боковике.
+- **Пороги (`ecosystem.config.cjs` → `live-oscar`):**
+  - `PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT` 12 → **8**
+  - `PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT` 2.5 → **1.0**
+  - `PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT` −18 → **−22**
+  - `PAPER_DIP_MIN_DROP_PCT` −20 → **−25**
+  - `PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT` 2 → **4**
+  - `PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT` −7 → **−10**
+  - `LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT` 10 → **18**
+- **Откат:** вернуть значения 1.11.588 в `ecosystem.config.cjs` + `pm2 reload live-oscar --update-env`.
+
+---
+
 ## [1.11.588] — 2026-07-14
 
 **Тег:** `sa-alpha-1.11.588`

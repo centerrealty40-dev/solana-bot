@@ -1045,7 +1045,8 @@ const PM2_APPS = [
         LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS: '0',
         TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_INTEL_BLOCK_MS: '0',
         /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$100k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
-        PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
+        /** 1.11.589: −22% prod dip (F4Gp-class chop entries on shallow −18% windows). */
+        PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-22',
         PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '100000',
         /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
@@ -1062,7 +1063,8 @@ const PM2_APPS = [
         PAPER_DIP_LOOKBACK_WINDOWS_MIN: '120,360,720',
         /** Live Oscar only: мин. глубина просадки от high окна (OR 120/360/720 мин). −20 = −20%.
          *  1.11.283: возврат к −20% — меньше входов (было −16 с 1.11.242). */
-        PAPER_DIP_MIN_DROP_PCT: '-20',
+        /** 1.11.589: −25% global dip floor — fewer «боковик» passes on weak 120m windows. */
+        PAPER_DIP_MIN_DROP_PCT: '-25',
         PAPER_DIP_MAX_DROP_PCT: '-50',
         PAPER_DIP_MIN_IMPULSE_PCT: '12',
         /** 1.11.283: паритет с PAPER_POST_MIN_AGE_MIN (48 ч). Было 0 — volume-leader inject обходил post SQL age. */
@@ -1078,7 +1080,8 @@ const PM2_APPS = [
         /**
          * Re-entry после выхода: price ceiling −10% только в post-exit cooldown (10m); после — без dip anchor.
          */
-        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '10',
+        /** 1.11.589: re-entry only after −18% from last exit, not chop re-buy (was −10%). */
+        LIVE_REENTRY_MIN_DROP_FROM_LAST_EXIT_PCT: '18',
         LIVE_REENTRY_BREAKOUT_ABOVE_EXIT_PCT: '20',
         LIVE_REENTRY_MAX_WAIT_MINUTES: '240',
         LIVE_REENTRY_GATE_MAX_AGE_HOURS: '4',
@@ -1096,11 +1099,13 @@ const PM2_APPS = [
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
-        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
+        /** 1.11.589: 8% recovery cap — block bounce entries (was 12%, F4Gp/TrumpCoin RCA). */
+        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '8',
         /** Live Oscar guard: не покупать первую ногу по сигналу, если цена уже у локального high. */
         PAPER_DIP_LOCAL_HIGH_VETO_ENABLED: '1',
         PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN: '30,60,120',
-        PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT: '2',
+        /** 1.11.589: 4% below local high — wider anti-FOMO zone (was 2%). */
+        PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT: '4',
         /** Trend structure veto — stale runner / ski-slope (1.11.583). */
         PAPER_TREND_STRUCTURE_VETO_ENABLED: '1',
         PAPER_TREND_VETO_LOOKBACK_DAYS: '14',
@@ -1163,14 +1168,16 @@ const PM2_APPS = [
          */
         PAPER_POLICY_A_PLUS_ENABLED: '1',
         PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED: '1',
-        PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT: '2.5',
+        /** 1.11.589: must be within 1% of 30m low — no «отскок в боковике» (was 2.5%). */
+        PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_MAX_PCT: '1.0',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_ENABLED: '1',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_1H_MIN_PCT: '-20',
         PAPER_POLICY_A_PLUS_VOL_1H_ENABLED: '1',
         PAPER_POLICY_A_PLUS_VOL_1H_MAX_USD: '1000000',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_ENABLED: '1',
         PAPER_POLICY_A_PLUS_PRICE_CHANGE_WINDOW_MIN: '15',
-        PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT: '-7',
+        /** 1.11.589: block entry if −10% in 15m still in free-fall (was −7%). */
+        PAPER_POLICY_A_PLUS_PRICE_CHANGE_30M_MIN_PCT: '-10',
         /**
          * Volume Sybil guard (1.11.216): блокирует dead→spike→dead wash-паттерн
          * по истории `volume_5m` в PG snapshots (lookback 6h, recent 45m).
@@ -2501,6 +2508,12 @@ const PM2_APPS = [
         AWAKENING_MIN_MCAP_USD: process.env.AWAKENING_MIN_MCAP_USD || '150000',
         AWAKENING_MIN_LIQ_USD: process.env.AWAKENING_MIN_LIQ_USD || '15000',
         AWAKENING_MIN_BUY_RATIO: process.env.AWAKENING_MIN_BUY_RATIO || '0.42',
+        AWAKENING_BUY_RATIO_SPIKE_BYPASS: process.env.AWAKENING_BUY_RATIO_SPIKE_BYPASS || '1',
+        AWAKENING_MIN_PRICE_CHANGE_M5_IGNITION_PCT:
+          process.env.AWAKENING_MIN_PRICE_CHANGE_M5_IGNITION_PCT || '1',
+        AWAKENING_CANDIDATE_COOLDOWN_SEC: process.env.AWAKENING_CANDIDATE_COOLDOWN_SEC || '900',
+        AWAKENING_NEAR_MISS_COOLDOWN_SEC: process.env.AWAKENING_NEAR_MISS_COOLDOWN_SEC || '90',
+        AWAKENING_FAIL_COOLDOWN_SEC: process.env.AWAKENING_FAIL_COOLDOWN_SEC || '300',
         AWAKENING_MAX_PRICE_CHANGE_H24_PCT: process.env.AWAKENING_MAX_PRICE_CHANGE_H24_PCT || '120',
         AWAKENING_MAX_PRICE_CHANGE_H6_PCT: process.env.AWAKENING_MAX_PRICE_CHANGE_H6_PCT || '80',
         AWAKENING_MIN_PRICE_CHANGE_M5_PCT: process.env.AWAKENING_MIN_PRICE_CHANGE_M5_PCT || '1',

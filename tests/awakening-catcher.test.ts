@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { loadAwakeningConfig } from '../src/scripts/awakening/awakening-config.js';
 import { extractMintCandidatesFromLogs } from '../src/scripts/awakening/awakening-mint-from-logs.js';
-import { evaluateAwakeningSignal } from '../src/scripts/awakening/awakening-signal.js';
+import { evaluateAwakeningSignal, awakeningEvalCooldownMs, isAwakeningNearMiss } from '../src/scripts/awakening/awakening-signal.js';
 import type { AwakeningDexMarket } from '../src/scripts/awakening/awakening-types.js';
 import { MintActivityTracker } from '../src/scripts/awakening/awakening-activity.js';
 import { formatAwakeningSignalTelegramHtml } from '../src/scripts/awakening/awakening-telegram.js';
@@ -152,10 +152,113 @@ describe('awakening-signal', () => {
     expect(r.reasons.some((x) => x.startsWith('vol5m<'))).toBe(true);
   });
 
-  it('blocks sell-heavy flow', () => {
-    const r = evaluateAwakeningSignal(cfg, market({ buys5m: 5, sells5m: 20 }));
+  it('blocks sell-heavy flow without confirmed spike', () => {
+    const r = evaluateAwakeningSignal(
+      { ...cfg, buyRatioSpikeBypass: false },
+      market({ buys5m: 5, sells5m: 20 }),
+    );
     expect(r.pass).toBe(false);
     expect(r.reasons.some((x) => x.startsWith('buy_ratio<'))).toBe(true);
+  });
+
+  describe('re-awakening pump (FeMbDo Jul-14 12:49 MSK)', () => {
+    const shadowCfg = loadAwakeningConfig({
+      AWAKENING_VOL5M_MIN_USD: '2500',
+      AWAKENING_VOL5M_SPIKE_MIN_MULT: '8',
+      AWAKENING_VOL5M_SPIKE_VS_1H_MIN_MULT: '4',
+      AWAKENING_MAX_VOL24H_USD: '1500000',
+      AWAKENING_MIN_POOL_AGE_HOURS: '12',
+      AWAKENING_MAX_VOL1H_PER_MCAP: '4.0',
+      AWAKENING_MIN_MCAP_USD: '100000',
+      AWAKENING_MIN_LIQ_USD: '12000',
+      AWAKENING_MIN_BUY_RATIO: '0.38',
+      AWAKENING_BUY_RATIO_SPIKE_BYPASS: '1',
+      AWAKENING_MIN_PRICE_CHANGE_M5_IGNITION_PCT: '1',
+      AWAKENING_MIN_PRICE_CHANGE_M5_PCT: '0',
+      AWAKENING_MIN_PRICE_CHANGE_H24_PCT: '-15',
+      AWAKENING_MIN_PRICE_CHANGE_H6_PCT: '-12',
+      AWAKENING_MIN_PRICE_CHANGE_H1_PCT: '-12',
+      AWAKENING_MAX_PRICE_CHANGE_H6_PCT: '120',
+    });
+
+    const fembdoIgnition = market({
+      mint: 'FeMbDoX7R1Psc4GEcvJdsbNbZA3bfztcyDCatJVJpump',
+      priceUsd: 0.002192,
+      marketCapUsd: 2_191_555,
+      liquidityUsd: 235_348,
+      volume5mUsd: 34_665.51,
+      volume1hUsd: 68_161.16,
+      volume6hUsd: 254_751.42,
+      volume24hUsd: 459_301.82,
+      buys5m: 31,
+      sells5m: 69,
+      priceChangeM5: 5,
+      priceChangeH1: 8,
+      priceChangeH6: 10,
+      priceChangeH24: 5,
+      poolAgeMin: 109_600,
+    });
+
+    it('passes ignition with sell-heavy vol5m when spike + m5 confirm burst', () => {
+      const r = evaluateAwakeningSignal(shadowCfg, fembdoIgnition);
+      expect(r.pass).toBe(true);
+      expect(r.metrics.vol5mSpikeVs6hMult).toBeGreaterThan(8);
+      expect(r.metrics.vol5mSpikeVs1hMult).toBeGreaterThan(4);
+      expect(r.metrics.buyRatio).toBeLessThan(0.38);
+    });
+
+    it('blocks same shape when buy_ratio bypass disabled', () => {
+      const strictCfg = loadAwakeningConfig({
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(([k]) => k.startsWith('AWAKENING_')),
+        ),
+        AWAKENING_VOL5M_MIN_USD: '2500',
+        AWAKENING_VOL5M_SPIKE_MIN_MULT: '8',
+        AWAKENING_VOL5M_SPIKE_VS_1H_MIN_MULT: '4',
+        AWAKENING_MAX_VOL24H_USD: '1500000',
+        AWAKENING_MIN_POOL_AGE_HOURS: '12',
+        AWAKENING_MAX_VOL1H_PER_MCAP: '4.0',
+        AWAKENING_MIN_MCAP_USD: '100000',
+        AWAKENING_MIN_BUY_RATIO: '0.38',
+        AWAKENING_BUY_RATIO_SPIKE_BYPASS: '0',
+        AWAKENING_MIN_PRICE_CHANGE_M5_PCT: '0',
+      });
+      const r = evaluateAwakeningSignal(strictCfg, fembdoIgnition);
+      expect(r.pass).toBe(false);
+      expect(r.reasons.some((x) => x.startsWith('buy_ratio<'))).toBe(true);
+    });
+
+    it('blocks post-peak continuation (vol24h + h6 cap)', () => {
+      const r = evaluateAwakeningSignal(
+        shadowCfg,
+        market({
+          ...fembdoIgnition,
+          volume5mUsd: 295_939,
+          volume1hUsd: 1_116_340,
+          volume6hUsd: 1_310_291,
+          volume24hUsd: 1_513_866,
+          priceUsd: 0.004267,
+          marketCapUsd: 4_266_241,
+          priceChangeH6: 130,
+        }),
+      );
+      expect(r.pass).toBe(false);
+      expect(r.reasons.some((x) => x.startsWith('vol24h>'))).toBe(true);
+      expect(r.reasons.some((x) => x.startsWith('price_h6>'))).toBe(true);
+    });
+  });
+
+  it('near-miss cooldown is short for buy_ratio-only reject', () => {
+    const cfg = loadAwakeningConfig({
+      AWAKENING_CANDIDATE_COOLDOWN_SEC: '900',
+      AWAKENING_NEAR_MISS_COOLDOWN_SEC: '90',
+      AWAKENING_FAIL_COOLDOWN_SEC: '300',
+    });
+    const nearMiss = { pass: false, reasons: ['buy_ratio<0.38'], metrics: {} as never };
+    expect(isAwakeningNearMiss(nearMiss.reasons)).toBe(true);
+    expect(awakeningEvalCooldownMs(cfg, nearMiss)).toBe(90_000);
+    const hardFail = { pass: false, reasons: ['vol5m_spike_6h<8'], metrics: {} as never };
+    expect(awakeningEvalCooldownMs(cfg, hardFail)).toBe(300_000);
   });
 });
 
