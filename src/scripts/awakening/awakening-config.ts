@@ -25,6 +25,10 @@ export interface AwakeningConfig {
   streamActivityWindowMs: number;
   maxCandidatesPerTick: number;
   candidateCooldownMs: number;
+  /** Short retry after spike-pass / buy_ratio-only near-miss (2nd minute candle). */
+  candidateNearMissCooldownMs: number;
+  /** Cooldown after hard reject (spike/vol/age fail). */
+  candidateFailCooldownMs: number;
   geckoTrendingEnabled: boolean;
   geckoTrendingPollMs: number;
   geckoTrendingPages: number;
@@ -46,6 +50,10 @@ export interface AwakeningConfig {
   minMcapUsd: number;
   minLiqUsd: number;
   minBuyRatio: number;
+  /** When vol5m spike confirms ignition, skip buy_ratio if m5 price is up. */
+  buyRatioSpikeBypass: boolean;
+  /** Min Dex m5 % for buy_ratio bypass on confirmed spike (re-awakening pumps). */
+  minPriceChangeM5IgnitionPct: number;
   maxPriceChangeH24Pct: number;
   maxPriceChangeH6Pct: number;
   minPriceChangeM5Pct: number;
@@ -125,6 +133,8 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     streamActivityWindowMs: Math.round(envNum(env.AWAKENING_STREAM_ACTIVITY_WINDOW_SEC, 300) * 1000),
     maxCandidatesPerTick: Math.min(20, Math.round(envNum(env.AWAKENING_MAX_CANDIDATES_PER_TICK, 8))),
     candidateCooldownMs: Math.round(envNum(env.AWAKENING_CANDIDATE_COOLDOWN_SEC, 900) * 1000),
+    candidateNearMissCooldownMs: Math.round(envNum(env.AWAKENING_NEAR_MISS_COOLDOWN_SEC, 90) * 1000),
+    candidateFailCooldownMs: Math.round(envNum(env.AWAKENING_FAIL_COOLDOWN_SEC, 300) * 1000),
     geckoTrendingEnabled: envBool(env.AWAKENING_GECKO_TRENDING_ENABLED, true),
     geckoTrendingPollMs: Math.round(envNum(env.AWAKENING_GECKO_TRENDING_POLL_SEC, 60) * 1000),
     geckoTrendingPages: Math.min(3, Math.round(envNum(env.AWAKENING_GECKO_TRENDING_PAGES, 2))),
@@ -142,6 +152,8 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     minMcapUsd: envNum(env.AWAKENING_MIN_MCAP_USD, 150_000),
     minLiqUsd: envNum(env.AWAKENING_MIN_LIQ_USD, 15_000),
     minBuyRatio: envNum(env.AWAKENING_MIN_BUY_RATIO, 0.42),
+    buyRatioSpikeBypass: envBool(env.AWAKENING_BUY_RATIO_SPIKE_BYPASS, true),
+    minPriceChangeM5IgnitionPct: envNumSigned(env.AWAKENING_MIN_PRICE_CHANGE_M5_IGNITION_PCT, 1),
     maxPriceChangeH24Pct: envNum(env.AWAKENING_MAX_PRICE_CHANGE_H24_PCT, 120),
     maxPriceChangeH6Pct: envNum(env.AWAKENING_MAX_PRICE_CHANGE_H6_PCT, 80),
     minPriceChangeM5Pct: envNum(env.AWAKENING_MIN_PRICE_CHANGE_M5_PCT, 1),
