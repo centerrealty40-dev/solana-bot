@@ -225,9 +225,30 @@ function nextSlippageBps(args: {
   currentBps: number;
   bump: number;
   attempt: number;
+  maxBps?: number;
 }): number {
+  const cap = args.maxBps ?? args.cfg.liveSimSlippageRetryMaxBps;
   const wanted = args.currentBps + args.bump;
-  return Math.min(args.cfg.liveSimSlippageRetryMaxBps, Math.max(args.currentBps, wanted));
+  return Math.min(cap, Math.max(args.currentBps, wanted));
+}
+
+/** Mem-swan / KILLSTOP: wider slippage ladder and faster retries during volatile dumps. */
+function resolveEmergencySellRetryProfile(liveCfg: LiveOscarConfig): {
+  sellMaxAttempts: number;
+  sellRetryDelayMs: number;
+  sellSlippageBumpBps: number;
+  sellSlippageCap: number;
+  sellCurrentSlippageBps: number;
+  sellSlippageMaxBps: number;
+} {
+  return {
+    sellMaxAttempts: 1 + Math.max(liveCfg.liveSellSimRetryAttempts, 20),
+    sellRetryDelayMs: Math.min(liveCfg.liveSellSimRetryDelayMs, 100),
+    sellSlippageBumpBps: Math.max(liveCfg.liveSimSlippageRetryBumpBps, 25),
+    sellSlippageCap: 1 + Math.max(liveCfg.liveSellSimSlippageRetryAttempts, 12),
+    sellCurrentSlippageBps: Math.max(liveCfg.liveDefaultSlippageBps, 150),
+    sellSlippageMaxBps: Math.max(liveCfg.liveSimSlippageRetryMaxBps, 800),
+  };
 }
 
 /** Терминальная классификация ошибки pipeline для surface'а наружу (cooldown / metrics). */
@@ -899,6 +920,7 @@ async function runTokenToSolPipeline(
     referencePriceUsd?: number | null;
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
+    emergencyExit?: boolean;
   },
 ): Promise<LiveTokenToSolPipelineResult> {
   const executionMode = resolveSellExecutionMode(liveCfg);
@@ -914,30 +936,32 @@ async function runTokenToSolPipeline(
   }
   if (executionMode !== 'simulate' && executionMode !== 'live') return { ok: false };
 
-  const quoteSanity = liveSellQuotePriceSanity({
-    quotePriceUsd: args.priceUsdPerToken,
-    referencePriceUsd: args.referencePriceUsd,
-  });
-  if (!quoteSanity.ok) {
-    const reason =
-      quoteSanity.reason === 'ghost_price_quote_rejected' &&
-      Number.isFinite(quoteSanity.referencePriceUsd) &&
-      quoteSanity.referencePriceUsd > 0
-        ? 'ghost_price_quote_rejected'
-        : 'sell_price_usd_insane';
-    appendSellPreflightSkip(liveCfg, {
-      mint: args.mint,
-      reason,
-      detail: JSON.stringify({
-        mint: args.mint,
-        intentKind: args.intentKind,
-        priceUsdPerToken: args.priceUsdPerToken,
-        referencePriceUsd: args.referencePriceUsd ?? null,
-        deviationFrac: quoteSanity.deviationFrac,
-      }).slice(0, 400),
-      intentKind: args.intentKind,
+  if (!args.emergencyExit) {
+    const quoteSanity = liveSellQuotePriceSanity({
+      quotePriceUsd: args.priceUsdPerToken,
+      referencePriceUsd: args.referencePriceUsd,
     });
-    return { ok: false, preflightSkipReason: reason };
+    if (!quoteSanity.ok) {
+      const reason =
+        quoteSanity.reason === 'ghost_price_quote_rejected' &&
+        Number.isFinite(quoteSanity.referencePriceUsd) &&
+        quoteSanity.referencePriceUsd > 0
+          ? 'ghost_price_quote_rejected'
+          : 'sell_price_usd_insane';
+      appendSellPreflightSkip(liveCfg, {
+        mint: args.mint,
+        reason,
+        detail: JSON.stringify({
+          mint: args.mint,
+          intentKind: args.intentKind,
+          priceUsdPerToken: args.priceUsdPerToken,
+          referencePriceUsd: args.referencePriceUsd ?? null,
+          deviationFrac: quoteSanity.deviationFrac,
+        }).slice(0, 400),
+        intentKind: args.intentKind,
+      });
+      return { ok: false, preflightSkipReason: reason };
+    }
   }
 
   let raw = tokenAmountRawFromUsd(args.usdNotional, args.priceUsdPerToken, args.decimals);
@@ -1006,11 +1030,15 @@ async function runTokenToSolPipeline(
 
   const kp = signer(liveCfg);
   const pk = kp.publicKey.toBase58();
-  const sellMaxAttempts = 1 + liveCfg.liveSellSimRetryAttempts;
-  const sellSlippageBumpBps = liveCfg.liveSimSlippageRetryBumpBps;
-  const sellSlippageCap = 1 + liveCfg.liveSellSimSlippageRetryAttempts;
+  const emergency = args.emergencyExit === true;
+  const emergencyProfile = emergency ? resolveEmergencySellRetryProfile(liveCfg) : null;
+  const sellMaxAttempts = emergencyProfile?.sellMaxAttempts ?? 1 + liveCfg.liveSellSimRetryAttempts;
+  const sellRetryDelayMs = emergencyProfile?.sellRetryDelayMs ?? liveCfg.liveSellSimRetryDelayMs;
+  const sellSlippageBumpBps = emergencyProfile?.sellSlippageBumpBps ?? liveCfg.liveSimSlippageRetryBumpBps;
+  const sellSlippageCap = emergencyProfile?.sellSlippageCap ?? 1 + liveCfg.liveSellSimSlippageRetryAttempts;
+  const sellSlippageMaxBps = emergencyProfile?.sellSlippageMaxBps ?? liveCfg.liveSimSlippageRetryMaxBps;
   let sellSlippageClassAttempts = 0;
-  let sellCurrentSlippageBps = liveCfg.liveDefaultSlippageBps;
+  let sellCurrentSlippageBps = emergencyProfile?.sellCurrentSlippageBps ?? liveCfg.liveDefaultSlippageBps;
 
   /**
    * Persistent retry envelope for sell pipeline (1.11.167):
@@ -1064,6 +1092,7 @@ async function runTokenToSolPipeline(
       ...(prep?.quoteSnapshot ?? { provider: 'jupiter', empty: true }),
       sellSimRetryAttempt: attempt,
       sellSimRetryMaxAttempts: sellMaxAttempts,
+      ...(emergency ? { emergencyExit: true, slippageBps: sellCurrentSlippageBps } : {}),
     };
 
     appendLiveJsonlEvent({
@@ -1091,7 +1120,7 @@ async function runTokenToSolPipeline(
       });
       notifyLiveExecutionSimErrForTerminal(reason);
       if (attempt < sellMaxAttempts - 1 && isRetryablePreBroadcastError(reason)) {
-        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        await sleep(sellRetryDelayMs);
         continue;
       }
       return { ok: false, terminalKind: 'sim_err', terminalMessage: reason };
@@ -1114,7 +1143,7 @@ async function runTokenToSolPipeline(
       });
       notifyLiveExecutionSimErrForTerminal(staleMsg);
       if (attempt < sellMaxAttempts - 1) {
-        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        await sleep(sellRetryDelayMs);
         continue;
       }
       return { ok: false, terminalKind: 'sim_err', terminalMessage: staleMsg };
@@ -1140,7 +1169,7 @@ async function runTokenToSolPipeline(
       });
       notifyLiveExecutionSimErrForTerminal(message);
       if (attempt < sellMaxAttempts - 1) {
-        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        await sleep(sellRetryDelayMs);
         continue;
       }
       return { ok: false, terminalKind: 'sim_err', terminalMessage: message };
@@ -1190,6 +1219,7 @@ async function runTokenToSolPipeline(
             currentBps: sellCurrentSlippageBps,
             bump: sellSlippageBumpBps,
             attempt,
+            maxBps: sellSlippageMaxBps,
           });
         }
         const slippageBail = isSlippage && sellSlippageClassAttempts >= sellSlippageCap;
@@ -1198,7 +1228,7 @@ async function runTokenToSolPipeline(
           attempt < sellMaxAttempts - 1 &&
           isRetryableSellSimError(message)
         ) {
-          await sleep(liveCfg.liveSellSimRetryDelayMs);
+          await sleep(sellRetryDelayMs);
           continue;
         }
         return { ok: false, terminalKind: 'sim_err', terminalMessage: message };
@@ -1266,11 +1296,12 @@ async function runTokenToSolPipeline(
           currentBps: sellCurrentSlippageBps,
           bump: sellSlippageBumpBps,
           attempt,
+          maxBps: sellSlippageMaxBps,
         });
       }
       const slippageBail = isSlippage && sellSlippageClassAttempts >= sellSlippageCap;
       if (!slippageBail && attempt < sellMaxAttempts - 1) {
-        await sleep(liveCfg.liveSellSimRetryDelayMs);
+        await sleep(sellRetryDelayMs);
         continue;
       }
     }

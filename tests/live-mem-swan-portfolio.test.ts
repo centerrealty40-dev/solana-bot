@@ -15,9 +15,11 @@ import {
   computePortfolioMetric,
   consumeMemSwanPortRisingEdge,
   ingestMemSwanPortfolioTick,
+  memSwanPortLiquidationDue,
   recordMemSwanPortfolioMark,
   resetMemSwanPortStateForTest,
   memSwanPortSnapshot,
+  seedMemSwanPortActiveForTest,
   type PortfolioParams,
 } from '../src/live/mem-swan-portfolio.js';
 
@@ -145,5 +147,16 @@ describe('ingest + rising edge', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+
+  it('memSwanPortLiquidationDue is true while port swan active and marks are fresh', () => {
+    const c = cfg({ liveMemSwanPortMaxStaleSec: 180 } as Partial<LiveOscarConfig>);
+    seedMemSwanPortActiveForTest();
+    expect(memSwanPortLiquidationDue(c)).toBe(true);
+  });
+
+  it('memSwanPortLiquidationDue is false when port swan inactive', () => {
+    const c = cfg({ liveMemSwanPortMaxStaleSec: 180 } as Partial<LiveOscarConfig>);
+    expect(memSwanPortLiquidationDue(c)).toBe(false);
   });
 });

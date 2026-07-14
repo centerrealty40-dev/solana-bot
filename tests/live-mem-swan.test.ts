@@ -15,8 +15,10 @@ import {
   computeSwanMetric,
   consumeMemSwanRisingEdge,
   memSwanDropTriggered,
+  memSwanLiquidationDue,
   resetMemSwanStateForTest,
   resolveMemSwanStatus,
+  seedMemSwanActiveForTest,
   type MemSwanParams,
   type MemSwanRunnerRow,
 } from '../src/live/mem-swan.js';
@@ -141,5 +143,25 @@ describe('resolveMemSwanStatus / rising edge', () => {
       liveMemSwanMaxStaleSec: 900,
     } as unknown as LiveOscarConfig;
     expect(consumeMemSwanRisingEdge(cfg)).toBeNull();
+  });
+
+  it('memSwanLiquidationDue is true while swan active and metrics are fresh', () => {
+    const cfg = {
+      liveMemSwanEnabled: true,
+      liveMemSwanMode: 'liquidate',
+      liveMemSwanMaxStaleSec: 900,
+      liveMemSwanRefreshSec: 60,
+    } as unknown as LiveOscarConfig;
+    seedMemSwanActiveForTest();
+    expect(memSwanLiquidationDue(cfg)).toBe(true);
+  });
+
+  it('memSwanLiquidationDue is false when swan inactive', () => {
+    const cfg = {
+      liveMemSwanEnabled: true,
+      liveMemSwanMode: 'liquidate',
+      liveMemSwanMaxStaleSec: 900,
+    } as unknown as LiveOscarConfig;
+    expect(memSwanLiquidationDue(cfg)).toBe(false);
   });
 });

@@ -58,6 +58,7 @@ type TokenToSolPipelineArgs = {
   referencePriceUsd?: number | null;
   decimals: number;
   intentKind: 'sell_partial' | 'sell_full';
+  emergencyExit?: boolean;
 };
 
 type RunTokenToSolPipeline = (
@@ -164,8 +165,11 @@ export async function runSlicedTokenToSolPipeline(
   opts?: RunSlicedTokenToSolPipelineOpts,
 ): Promise<LiveTokenToSolPipelineResult> {
   const maxUsd = liveCfg.liveExitSliceMaxUsd;
-  if (!(maxUsd > 0)) {
-    return runOne(liveCfg, args);
+  if (!(maxUsd > 0) || args.emergencyExit) {
+    return runOne(liveCfg, {
+      ...args,
+      intentKind: args.emergencyExit ? 'sell_full' : args.intentKind,
+    });
   }
 
   const fetchChain =

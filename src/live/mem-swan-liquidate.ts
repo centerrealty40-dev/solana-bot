@@ -1,10 +1,9 @@
 /**
  * Live Oscar — black-swan liquidation sweep (driven by `mem-swan.ts`).
  *
- * On the RISING EDGE of a confirmed swan (top volume runners dumping deeply; fresh data),
- * either journals which open positions it *would* liquidate (`shadow`) or force-closes them
- * on-chain (`liquidate`). Acts **once per episode** (rising-edge consumed), so it does not
- * re-sell on every tick while the swan persists.
+ * While a confirmed swan is active (top volume runners dumping; fresh data) and open
+ * positions remain, either journals which open positions it *would* liquidate (`shadow`) or
+ * force-closes them on-chain (`liquidate`). Retries every tracker tick until flat or calm.
  *
  * Takes a `forceExitLive` closure (bound to `trackerForceFullExitLive`) to avoid a circular
  * import with the tracker. Price per mint is resolved from the latest snapshot (fallback
@@ -16,7 +15,13 @@ import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import { child } from '../core/logger.js';
 import type { LiveOscarConfig } from './config.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
-import { consumeMemSwanRisingEdge, memSwanSnapshot, resolveMemSwanStatus } from './mem-swan.js';
+import {
+  consumeMemSwanRisingEdge,
+  memSwanHasPendingRise,
+  memSwanLiquidationDue,
+  memSwanSnapshot,
+  resolveMemSwanStatus,
+} from './mem-swan.js';
 
 const log = child('live-mem-swan-liq');
 
@@ -38,20 +43,26 @@ export interface MemSwanSweepArgs {
 }
 
 /**
- * Run the swan sweep for this tick. Cheap no-op unless a swan just started. Safe to call
- * from the top of every tracker tick (it consumes the rising edge, so it fires once).
+ * Run the swan sweep for this tick. No-op unless swan is active, data is fresh, and open
+ * positions remain. Safe to call from the top of every tracker tick (retries while swan
+ * persists after a failed liquidate).
  */
 export async function runMemSwanLiquidationSweep(args: MemSwanSweepArgs): Promise<void> {
   const { liveCfg, open } = args;
   if (!liveCfg || liveCfg.executionMode !== 'live') return;
   if (!liveCfg.liveMemSwanEnabled || liveCfg.liveMemSwanMode === 'off') return;
 
-  // Ensures the background refresher is running and validates freshness.
+  // Ensures the background refresher is running.
   const status = resolveMemSwanStatus(liveCfg);
   if (status.kind === 'disabled' || status.kind === 'unknown') return;
+  if (!memSwanLiquidationDue(liveCfg)) return;
 
-  const riseTs = consumeMemSwanRisingEdge(liveCfg);
-  if (riseTs == null) return; // no new swan episode this tick
+  const entries = [...open.entries()].filter(([, ot]) => ot.mint !== WRAPPED_SOL_MINT);
+  if (entries.length === 0) return;
+
+  const risingEdge = memSwanHasPendingRise();
+  if (risingEdge) consumeMemSwanRisingEdge(liveCfg);
+  const sweepKind = risingEdge ? 'rising_edge' : 'retry';
 
   const snap = memSwanSnapshot();
   const metricDetail = {
@@ -64,14 +75,13 @@ export async function runMemSwanLiquidationSweep(args: MemSwanSweepArgs): Promis
     rollMin: liveCfg.liveMemSwanRollMin,
   };
 
-  const entries = [...open.entries()];
   const openMints = entries.map(([, ot]) => ot.symbol || ot.mint.slice(0, 8));
 
   if (liveCfg.liveMemSwanMode === 'shadow') {
     appendLiveJsonlEvent({
       kind: 'risk_note',
       reason: 'mem_swan_would_liquidate',
-      detail: { ...metricDetail, openCount: entries.length, openMints },
+      detail: { ...metricDetail, openCount: entries.length, openMints, sweepKind },
     });
     log.warn(
       { ...metricDetail, openCount: entries.length },
@@ -83,8 +93,8 @@ export async function runMemSwanLiquidationSweep(args: MemSwanSweepArgs): Promis
   // mode === 'liquidate'
   appendLiveJsonlEvent({
     kind: 'risk_block',
-    limit: 'mem_swan_liquidate',
-    detail: { ...metricDetail, openCount: entries.length, openMints },
+    limit: risingEdge ? 'mem_swan_liquidate' : 'mem_swan_liquidate_retry',
+    detail: { ...metricDetail, openCount: entries.length, openMints, sweepKind },
   });
   log.warn({ ...metricDetail, openCount: entries.length }, 'mem-swan LIQUIDATE: closing all open positions');
 
@@ -116,7 +126,7 @@ export async function runMemSwanLiquidationSweep(args: MemSwanSweepArgs): Promis
   appendLiveJsonlEvent({
     kind: 'risk_note',
     reason: 'mem_swan_liquidate_done',
-    detail: { ...metricDetail, attempted: entries.length, liquidated, failed, noPrice },
+    detail: { ...metricDetail, attempted: entries.length, liquidated, failed, noPrice, sweepKind },
   });
   log.warn({ attempted: entries.length, liquidated, failed, noPrice }, 'mem-swan LIQUIDATE done');
 }

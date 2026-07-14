@@ -96,15 +96,37 @@
 
 ---
 
-## [1.11.586] — 2026-07-13
+---
 
-**Тег:** `sa-alpha-1.11.586`
+## [1.11.588] — 2026-07-14
 
-### Trend veto — ski-slope bypass after post-crash reversal (febu RCA)
+**Тег:** `sa-alpha-1.11.588`
 
-- **Проблема:** `trend_veto_ski_slope` блокировал dip-entry на монетах с боковиком после crash+разворота (febu 13.07 ~19:52: px/peak 32%, но +300% от 72h-low за ~25ч). Вето смотрело только на 14d-peak age, не на базу после разворота.
-- **Что сделано:** bypass ski-slope когда цена ≥+80% от 72h local low и low старше 12ч (`PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_*`). Тест на febu-цифрах.
-- **Откат:** `PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_BYPASS_ENABLED=0` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+### Mem-swan KILLSTOP — retry liquidate + emergency sell path
+
+- **Проблема (RCA Jul 14):** swan срабатывал (breadth −8…−10%), но `mem_swan_liquidate_done` давал `liquidated:0 failed:2` — rising-edge один раз, ghost_price блокировал J8PS (−79% vs reference), febu упёрся в sim_err на последнем exit-slice.
+- **Что сделано:**
+  - Повторная ликвидация каждый tracker-tick пока `swan active` и `open > 0` (внешний + portfolio swan).
+  - `emergencyExit` на KILLSTOP (`bypassPolicyBlock`): пропуск ghost-quote gate, single-shot `sell_full` без slicing, агрессивный sim-retry (slippage от 150bps, cap 800bps, delay 100ms).
+- **Откат:** `git revert` коммита 1.11.588 + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.587] — 2026-07-14
+
+**Тег:** `sa-alpha-1.11.587`
+
+### Range-base dip — пролив из боковика (6Nwar-class)
+
+- **Проблема:** после 48h compression dip-окна (`120/360/720m`) дают `dip_no_window_pass` — impulse слишком плоский, хотя свежий пролив от range-low торгуемый.
+- **Что сделано:** путь `range_base_dip` при `span48h<15%`, `|net_move|<10%`, drop от 48h low ≥ tier `dipMinDropPct`, live `vol5m/(vol1h/12)≥2x`. Env: `PAPER_DIP_RANGE_BASE_*` (default ON).
+- **Откат:** `PAPER_DIP_RANGE_BASE_ENABLED=0` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+### Knife — leg2 на floor-flush ≥15% при открытой leg1
+
+- **Проблема:** reconcile/micro leg1 ($5) не усреднялся на новом −15%+ flush (только `KNIFE_AVG_LEG_ENABLED` @ −8% от leg1).
+- **Что сделано:** `KNIFE_FLUSH_LEG2_ENABLED=1`, `KNIFE_FLUSH_LEG2_MIN_DUMP_PCT=15` — rolling flush leg2 независимо от avg-leg.
+- **Откат:** `KNIFE_FLUSH_LEG2_ENABLED=0` + `pm2 reload ecosystem.config.cjs --only knife-catcher --update-env`.
 
 ---
 

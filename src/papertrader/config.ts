@@ -600,6 +600,19 @@ const ConfigSchema = z.object({
   /** Skip local-high-veto on post-crash entries (flat at crash floor). */
   postCrashFastPathBypassLocalHighVeto: z.boolean().default(true),
 
+  /**
+   * Range-base dip (1.11.587): tight 48h sideways + dump from range low on vol5m spike.
+   */
+  dipRangeBaseEnabled: z.boolean().default(true),
+  dipRangeBaseLookbackHours: z.coerce.number().int().min(12).max(96).default(48),
+  /** Max (hi−lo)/avg over lookback — sideways compression ceiling (%). */
+  dipRangeBaseMaxSpanPct: z.coerce.number().min(5).max(40).default(15),
+  /** Max abs(first→last) move over lookback (%). */
+  dipRangeBaseMaxNetMovePct: z.coerce.number().min(2).max(30).default(10),
+  /** Live vol5m / (vol1h/12) floor — confirms active flush, not dead tape. */
+  dipRangeBaseMinVol5mSpikeMult: z.coerce.number().min(1).max(24).default(2),
+  dipRangeBaseMinPgSamples: z.coerce.number().int().min(0).default(12),
+
   dipCooldownMinDefault: z.coerce.number().nonnegative().default(120),
   dipCooldownMinScalp: z.coerce.number().nonnegative().default(20),
   /** После **любого** полного закрытия позиции по mint — пауза повторного входа в тот же mint (часы). 0 = выкл., если заданы минуты. */
@@ -1811,6 +1824,12 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_POST_CRASH_FAST_PATH_BYPASS_LOCAL_HIGH_VETO,
       true,
     ),
+    dipRangeBaseEnabled: envBool(process.env.PAPER_DIP_RANGE_BASE_ENABLED, true),
+    dipRangeBaseLookbackHours: process.env.PAPER_DIP_RANGE_BASE_LOOKBACK_HOURS,
+    dipRangeBaseMaxSpanPct: process.env.PAPER_DIP_RANGE_BASE_MAX_SPAN_PCT,
+    dipRangeBaseMaxNetMovePct: process.env.PAPER_DIP_RANGE_BASE_MAX_NET_MOVE_PCT,
+    dipRangeBaseMinVol5mSpikeMult: process.env.PAPER_DIP_RANGE_BASE_MIN_VOL5M_SPIKE_MULT,
+    dipRangeBaseMinPgSamples: process.env.PAPER_DIP_RANGE_BASE_MIN_PG_SAMPLES,
     dipCooldownMinDefault: process.env.PAPER_DIP_COOLDOWN_MIN,
     dipCooldownMinScalp: process.env.PAPER_DIP_COOLDOWN_MIN_SCALP,
     dipLossExitCooldownHours: process.env.PAPER_DIP_LOSS_EXIT_COOLDOWN_HOURS,

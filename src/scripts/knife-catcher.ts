@@ -51,6 +51,7 @@ import {
 } from './knife-analytics-gate.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import { detectRollingFlush } from './knife-flush-detector.js';
+import { evaluateKnifeFlushLeg2 } from './knife-flush-leg2.js';
 import { knifeWatchdogVerdict } from './knife-watchdog.js';
 import {
   defaultKnifeExitLadderConfig,
@@ -120,6 +121,9 @@ interface KnifeConfig {
   /** Second leg (avg-down) — off by default for knife scalp. */
   avgLegEnabled: boolean;
   avgDropPct: number;
+  /** Leg2 on new floor flush while leg1 open (independent of avgLegEnabled). */
+  flushLeg2Enabled: boolean;
+  flushLeg2MinDumpPct: number;
   exitLadder: KnifeExitLadderConfig;
   maxHoldMs: number;
   cooldownMs: number;
@@ -175,6 +179,8 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     positionUsd,
     avgLegEnabled: envBool(env.KNIFE_AVG_LEG_ENABLED, false),
     avgDropPct: envNum(env.KNIFE_AVG_DROP_PCT, 8),
+    flushLeg2Enabled: envBool(env.KNIFE_FLUSH_LEG2_ENABLED, true),
+    flushLeg2MinDumpPct: envNum(env.KNIFE_FLUSH_LEG2_MIN_DUMP_PCT, 15),
     exitLadder: defaultKnifeExitLadderConfig(env),
     maxHoldMs: Math.round(Number(env.KNIFE_MAX_HOLD_SEC ?? 2700) * 1000) || 0,
     cooldownMs: Math.round(envNum(env.KNIFE_COOLDOWN_SEC, 600) * 1000),
@@ -606,6 +612,44 @@ function tryWhaleDumpEntry(
   );
 }
 
+function tryFlushLeg2(
+  cfg: KnifeConfig,
+  s: MintState,
+  price: number,
+  tsMs: number,
+): void {
+  const result = evaluateKnifeFlushLeg2(cfg, s, price, tsMs, globalLastEntryAtMs);
+  if (!result.fired) return;
+
+  globalLastEntryAtMs = tsMs;
+  appendJournal(cfg, {
+    kind: 'knife_flush_leg2',
+    mint: s.mint,
+    leg: 2,
+    price,
+    dumpPct: result.dumpPct,
+    bouncePct: result.bouncePct,
+    legUsd: cfg.legUsd,
+    avgEntry: s.avgEntry,
+    investedUsd: s.investedUsd,
+  });
+  notifyHtml(
+    cfg,
+    buildKnifeAvgTelegram({
+      mode: cfg.mode,
+      mint: s.mint,
+      legUsd: cfg.legUsd,
+      priceUsd: price,
+      dropFromLeg1Pct: Number((((s.leg1Price - price) / s.leg1Price) * 100).toFixed(1)),
+      avgEntry: s.avgEntry,
+    }),
+  );
+  log.info(
+    { mint: s.mint, price, dumpPct: result.dumpPct, avgEntry: s.avgEntry },
+    'knife flush floor leg2',
+  );
+}
+
 function onPriceInPosition(
   cfg: KnifeConfig,
   s: MintState,
@@ -620,6 +664,8 @@ function onPriceInPosition(
 
   const ladder = cfg.exitLadder;
   const pnlPct = knifePnlPct(price, s.avgEntry);
+
+  tryFlushLeg2(cfg, s, price, tsMs);
 
   if (
     cfg.avgLegEnabled &&

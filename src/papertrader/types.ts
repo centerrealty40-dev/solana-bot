@@ -797,6 +797,25 @@ export interface SnapshotFeatures {
       maxKnife15mPct: number;
     };
   };
+  range_base_dip?: {
+    enabled: boolean;
+    pass: boolean;
+    coverageOk: boolean;
+    lookbackHours: number;
+    rangeLo: number | null;
+    rangeHi: number | null;
+    rangeSpanPct: number | null;
+    netMove48hPct: number | null;
+    dropFromRangeLowPct: number | null;
+    vol5mSpikeRatio: number | null;
+    pgSnapsCount: number;
+    reasons: string[];
+    thresholds: {
+      maxSpanPct: number;
+      maxNetMovePct: number;
+      minVol5mSpikeMult: number;
+    };
+  };
   /**
    * 1.11.167: вычисленные метрики Policy A+ для retro-анализа. Прикрепляются к
    * decision независимо от того, заблокирован ли вход (если фильтр выключен —

@@ -133,6 +133,14 @@ export function evaluateKnifeHolderWash(
   const holders = Number(row.holder_count ?? 0);
   const vol1h = Number(row.volume_1h ?? 0);
   const ageMin = Number(row.token_age_min ?? 0);
+  const mcapUsd = Number(row.market_cap_usd ?? 0);
+
+  if (analytics.minMcapUsd > 0 && mcapUsd > 0 && mcapUsd < analytics.minMcapUsd) {
+    reasons.push(`knife_mcap<${analytics.minMcapUsd}($${Math.round(mcapUsd)})`);
+  }
+  if (analytics.maxMcapUsd > 0 && mcapUsd > analytics.maxMcapUsd) {
+    reasons.push(`knife_mcap>${analytics.maxMcapUsd}($${Math.round(mcapUsd)})`);
+  }
 
   const holderDataMissing = !(holders > 0);
   if (
