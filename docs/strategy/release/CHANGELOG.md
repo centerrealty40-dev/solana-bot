@@ -98,6 +98,17 @@
 
 ---
 
+## [1.11.592] — 2026-07-14
+
+**Тег:** `sa-alpha-1.11.592`
+
+### Knife-catcher — vol-decay exit + $250 leg
+
+- **`KNIFE_VOL_DECAY_EXIT_ENABLED`:** scalp — при **5** подряд минутах с падением `vol5m` (PG `pumpswap_pair_snapshots`) — выход `vol_decay` **до** kill-stop (`KNIFE_VOL_DECAY_CONSECUTIVE_MIN=10` для мягче).
+- **`KNIFE_LEG_USD` / `KNIFE_POSITION_USD`:** default **$250** (одна нога).
+- Env: `KNIFE_VOL_DECAY_CONSECUTIVE_MIN`, `KNIFE_VOL_DECAY_SAMPLE_SEC`, `KNIFE_VOL_DECAY_METRIC` (`vol1h` | `vol5m`).
+- **Откат:** `KNIFE_VOL_DECAY_EXIT_ENABLED=0`, вернуть leg/position в `.env`, `pm2 reload knife-catcher --update-env`.
+
 ## [1.11.591] — 2026-07-14
 
 **Тег:** `sa-alpha-1.11.591`

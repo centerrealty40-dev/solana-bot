@@ -65,6 +65,14 @@ import {
   updatePeakTrailArm,
   type KnifeExitLadderConfig,
 } from './knife-exit-ladder.js';
+import {
+  fetchKnifeLatestVolumeUsd,
+  loadKnifeVolDecayConfig,
+  recordVolDeclineSample,
+  volDecayExitTriggered,
+  type KnifeVolDecayConfig,
+  type VolMinuteSample,
+} from './knife-vol-decay-exit.js';
 
 const log = child('knife-catcher');
 const EPS = 1e-12;
@@ -140,11 +148,12 @@ interface KnifeConfig {
   jupiterSlippageBps: number;
   jupiterTimeoutMs: number;
   jupiterMaxMintsPerTick: number;
+  volDecay: KnifeVolDecayConfig;
 }
 
 function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
-  const legUsd = envNum(env.KNIFE_LEG_USD, 25);
-  const positionUsd = envNum(env.KNIFE_POSITION_USD, 50);
+  const legUsd = envNum(env.KNIFE_LEG_USD, 250);
+  const positionUsd = envNum(env.KNIFE_POSITION_USD, 250);
   return {
     enabled: envBool(env.KNIFE_CATCHER_ENABLED, false),
     mode: String(env.KNIFE_MODE ?? 'shadow').trim().toLowerCase() === 'live' ? 'live' : 'shadow',
@@ -198,6 +207,7 @@ function loadConfig(env: NodeJS.ProcessEnv = process.env): KnifeConfig {
     jupiterSlippageBps: Math.round(Number(env.KNIFE_JUPITER_SLIPPAGE_BPS ?? 300)),
     jupiterTimeoutMs: Math.round(envNum(env.KNIFE_JUPITER_TIMEOUT_SEC, 8) * 1000),
     jupiterMaxMintsPerTick: Math.round(envNum(env.KNIFE_JUPITER_MAX_MINTS_PER_TICK, 15)),
+    volDecay: loadKnifeVolDecayConfig(env),
   };
 }
 
@@ -243,6 +253,8 @@ interface MintState {
   totalSoldQty: number;
   totalProceedsUsd: number;
   sellSummary: Array<{ reason: string; price: number; qty: number }>;
+  /** Minute-bucket vol samples while in position (PG vol1h/vol5m). */
+  volSamples: VolMinuteSample[];
 }
 
 const states = new Map<string, MintState>();
@@ -349,6 +361,7 @@ function getOrCreateState(mint: string): MintState {
       totalSoldQty: 0,
       totalProceedsUsd: 0,
       sellSummary: [],
+      volSamples: [],
     };
     states.set(mint, s);
   }
@@ -433,6 +446,61 @@ function closePosition(cfg: KnifeConfig, s: MintState, nowMs: number, reason: st
   s.totalSoldQty = 0;
   s.totalProceedsUsd = 0;
   s.sellSummary = [];
+  s.volSamples = [];
+}
+
+function tryVolDecayExit(
+  cfg: KnifeConfig,
+  s: MintState,
+  price: number,
+  tsMs: number,
+): boolean {
+  if (!cfg.volDecay.enabled || s.phase !== 'in_pos' || s.qty <= EPS) return false;
+  if (!volDecayExitTriggered(s.volSamples, cfg.volDecay.consecutiveMin)) return false;
+
+  const latestVolUsd = s.volSamples.length >= 1 ? s.volSamples[s.volSamples.length - 1]!.volUsd : 0;
+  const priorVolUsd = s.volSamples.length >= 2 ? s.volSamples[s.volSamples.length - 2]!.volUsd : 0;
+  appendJournal(cfg, {
+    kind: 'knife_vol_decay_exit',
+    mint: s.mint,
+    metric: cfg.volDecay.metric,
+    consecutiveMin: cfg.volDecay.consecutiveMin,
+    declineMinutes: cfg.volDecay.consecutiveMin,
+    latestVolUsd,
+    priorVolUsd,
+    pnlPct: Number(knifePnlPct(price, s.avgEntry).toFixed(2)),
+  });
+  sellAll(cfg, s, price, 'vol_decay');
+  closePosition(cfg, s, tsMs, 'vol_decay');
+  return true;
+}
+
+async function pollVolDecaySamples(cfg: KnifeConfig): Promise<void> {
+  if (!cfg.volDecay.enabled) return;
+  const now = Date.now();
+  for (const s of states.values()) {
+    if (s.phase !== 'in_pos') continue;
+    try {
+      const vol = await fetchKnifeLatestVolumeUsd(s.mint, cfg.volDecay.metric);
+      if (vol == null) continue;
+      const { samples } = recordVolDeclineSample(s.volSamples, vol, now);
+      s.volSamples = samples;
+      const trusted = getKnifeTrustedPrice(s.mint, now);
+      if (trusted && tryVolDecayExit(cfg, s, trusted.priceUsd, now)) {
+        log.info(
+          {
+            mint: s.mint,
+            metric: cfg.volDecay.metric,
+            consecutiveMin: cfg.volDecay.consecutiveMin,
+            latestVolUsd: vol,
+          },
+          'knife vol_decay exit',
+        );
+      }
+    } catch (e) {
+      log.debug({ mint: s.mint, err: (e as Error).message }, 'vol decay sample failed');
+    }
+  }
 }
 
 function sellFraction(
@@ -574,6 +642,7 @@ function tryWhaleDumpEntry(
   s.entryTs = tsMs;
   s.peak = price;
   s.lastMarkPrice = price;
+  s.volSamples = [];
   globalLastEntryAtMs = tsMs;
 
   const dump = s.pendingDump;
@@ -695,6 +764,8 @@ function onPriceInPosition(
     );
     log.info({ mint: s.mint, price, avgEntry: s.avgEntry }, 'knife avg leg2');
   }
+
+  if (tryVolDecayExit(cfg, s, price, tsMs)) return;
 
   if (pnlPct <= -ladder.killPct) {
     sellAll(cfg, s, price, 'kill');
@@ -943,6 +1014,7 @@ async function main(): Promise<void> {
       positionUsd: cfg.positionUsd,
       avgLegEnabled: cfg.avgLegEnabled,
       exitLadder: cfg.exitLadder,
+      volDecay: cfg.volDecay,
       endpoint: cfg.shyftEndpoint,
       priceExtraction: 'swap_decode',
       analyticsEnabled: knifeAnalyticsCfg.enabled,
@@ -1048,6 +1120,12 @@ async function main(): Promise<void> {
         }
       },
     );
+
+    if (cfg.volDecay.enabled) {
+      setInterval(() => {
+        void pollVolDecaySamples(cfg);
+      }, cfg.volDecay.sampleMs).unref();
+    }
   }
 
   startShyftShadowConsumer(

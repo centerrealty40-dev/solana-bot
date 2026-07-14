@@ -2423,8 +2423,13 @@ const PM2_APPS = [
         KNIFE_RUNNER_VELOCITY_MIN_X: process.env.KNIFE_RUNNER_VELOCITY_MIN_X || '1.5',
         KNIFE_MIN_LIQ_USD: process.env.KNIFE_MIN_LIQ_USD || '80000',
         /** Single-leg entry by default; optional avg-down leg2 when KNIFE_AVG_LEG_ENABLED=1. */
-        KNIFE_LEG_USD: process.env.KNIFE_LEG_USD || '25',
-        KNIFE_POSITION_USD: process.env.KNIFE_POSITION_USD || '50',
+        KNIFE_LEG_USD: process.env.KNIFE_LEG_USD || '250',
+        KNIFE_POSITION_USD: process.env.KNIFE_POSITION_USD || '250',
+        /** Scalp exit: vol5m falling minute-over-minute (PG); before kill-stop. */
+        KNIFE_VOL_DECAY_EXIT_ENABLED: process.env.KNIFE_VOL_DECAY_EXIT_ENABLED || '1',
+        KNIFE_VOL_DECAY_CONSECUTIVE_MIN: process.env.KNIFE_VOL_DECAY_CONSECUTIVE_MIN || '5',
+        KNIFE_VOL_DECAY_SAMPLE_SEC: process.env.KNIFE_VOL_DECAY_SAMPLE_SEC || '60',
+        KNIFE_VOL_DECAY_METRIC: process.env.KNIFE_VOL_DECAY_METRIC || 'vol5m',
         KNIFE_AVG_LEG_ENABLED: process.env.KNIFE_AVG_LEG_ENABLED || '0',
         KNIFE_AVG_DROP_PCT: process.env.KNIFE_AVG_DROP_PCT || '8',
         KNIFE_FLUSH_LEG2_ENABLED: process.env.KNIFE_FLUSH_LEG2_ENABLED || '1',
