@@ -142,7 +142,7 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     minVol1hUsd: envNum(env.AWAKENING_MIN_VOL1H_USD, 10_000),
     minVol5mToVol1hRatio: envNum(env.AWAKENING_MIN_VOL5M_TO_VOL1H_RATIO, 0.05),
     maxVol24hUsd: envNum(env.AWAKENING_MAX_VOL24H_USD, 800_000),
-    minPoolAgeMin: Math.round(envNum(env.AWAKENING_MIN_POOL_AGE_HOURS, 24) * 60),
+    minPoolAgeMin: Math.round(envNum(env.AWAKENING_MIN_POOL_AGE_HOURS, 6) * 60),
     quietPriorVol6hMaxUsd: envNum(env.AWAKENING_QUIET_PRIOR_VOL6H_MAX_USD, 1_500),
     quietVol1hMaxUsd: envNum(env.AWAKENING_QUIET_VOL1H_MAX_USD, 2_000),
     vol5mSpikeMinMult: envNum(env.AWAKENING_VOL5M_SPIKE_MIN_MULT, 8),
