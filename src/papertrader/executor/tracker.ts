@@ -3030,6 +3030,7 @@ export async function trackerForceFullExitLive(args: {
     referencePriceUsd: liveSellReferencePriceUsd(ot),
     decimals: ot.tokenDecimals ?? 6,
     intentKind: 'sell_full',
+    emergencyExit: args.bypassPolicyBlock === true,
   });
   if (!okSell.ok) return false;
 

@@ -56,6 +56,11 @@ import {
   type PostCrashFastPathResult,
 } from './post-crash-fast-path.js';
 import {
+  fetchRangeBaseDipContextMap,
+  evaluateRangeBaseDip,
+  type RangeBaseDipResult,
+} from './range-base-dip.js';
+import {
   fetchTrendStructureContextMap,
   evaluateTrendStructureVeto,
   skiSlopeReversalBypassActive,
@@ -188,6 +193,7 @@ export interface EvalDecision {
     | 'impulse_pg_snap'
     | 'runner'
     | 'post_crash_fast'
+    | 'range_base_dip'
     | 'stress_kill_reentry'
     | 'preset_c_pullback'
     | 'preset_c_spike'
@@ -1013,12 +1019,13 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         : isRunnerLiteLaneEnabled(cfg)
           ? runnerLiteRunnerFetchConfig(cfg)
           : { ...cfg, runnerModeEnabled: false };
-  const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, volumeSybilMap, volumeEphemeralMap, oldMintDormantVolSpikeMap, globalPgCoverage, runnerMap] =
+  const [dipMap, policyAPlusMap, trendStructureMap, postCrashMap, rangeBaseDipMap, volumeSybilMap, volumeEphemeralMap, oldMintDormantVolSpikeMap, globalPgCoverage, runnerMap] =
     await Promise.all([
       fetchDipContextMap(cfg, rowsForCtx),
       fetchPolicyAPlusContextMap(cfg, rowsForCtx),
       fetchTrendStructureContextMap(cfg, rowsForCtx),
       fetchPostCrashContextMap(cfg, rowsForCtx),
+      fetchRangeBaseDipContextMap(cfg, rowsForCtx),
       fetchVolumeSybilContextMap(cfg, rowsForCtx),
       fetchVolumeEphemeralContextMap(cfg, rowsForCtx),
       fetchOldMintDormantVolSpikeContextMap(cfg, rowsForCtx),
@@ -1370,6 +1377,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     let localHighVeto: LocalHighVetoResult | undefined;
     let trendStructureVeto: TrendStructureVetoResult | undefined;
     let postCrashFastPath: PostCrashFastPathResult | undefined;
+    let rangeBaseDip: RangeBaseDipResult | undefined;
     if (snapshotGatePass && dipEval.reasons.length === 0) {
       entryPath = 'dip_windows';
     } else if (snapshotGatePass) {
@@ -1399,6 +1407,20 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       if (bypass) {
         dipReasonsForGate = [];
         entryPath = 'impulse_pg_snap';
+      }
+    }
+    if (entryPath == null && snapshotGatePass && cfg.dipRangeBaseEnabled) {
+      const hasNoWindow =
+        dipEval.reasons.length > 0 &&
+        dipEval.reasons.some((r) => r.startsWith('dip_no_window_pass'));
+      if (hasNoWindow) {
+        rangeBaseDip = evaluateRangeBaseDip(dipTierCfg, evalRow, rangeBaseDipMap.get(row.mint));
+        if (rangeBaseDip.pass) {
+          dipReasonsForGate = [];
+          entryPath = 'range_base_dip';
+        } else if (rangeBaseDip.reasons.length > 0) {
+          dipReasonsForGate = [...dipReasonsForGate, ...rangeBaseDip.reasons];
+        }
       }
     }
 
@@ -1449,7 +1471,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
       const dipLookbackForRecovery =
         entryPath === 'post_crash_fast'
           ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
-          : dipEval.dipLookbackUsedMin;
+          : entryPath === 'range_base_dip'
+            ? (rangeBaseDip?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
+            : dipEval.dipLookbackUsedMin;
       if (entryPath === 'stress_kill_reentry') {
         recoveryVeto = { reasons: [], bounces: {} };
       } else {
@@ -1484,6 +1508,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         entryPath != null &&
         cfg.dipRollingFlushVetoEnabled &&
         entryPath !== 'post_crash_fast' &&
+        entryPath !== 'range_base_dip' &&
         entryPath !== 'stress_kill_reentry'
       ) {
         const flushVeto = evaluateRollingFlushVeto(cfg, row, dipMap.get(row.mint));
@@ -1685,16 +1710,24 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
     const reportDipPct =
       entryPath === 'post_crash_fast'
         ? (postCrashFastPath?.features.dropFromPeakPct ?? dipEval.dipPct)
-        : dipEval.dipPct;
+        : entryPath === 'range_base_dip'
+          ? (rangeBaseDip?.dipPct ?? dipEval.dipPct)
+          : dipEval.dipPct;
     const reportDipLookback =
       entryPath === 'post_crash_fast'
         ? (postCrashFastPath?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
-        : dipEval.dipLookbackUsedMin;
+        : entryPath === 'range_base_dip'
+          ? (rangeBaseDip?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
+          : dipEval.dipLookbackUsedMin;
+    const reportImpulsePct =
+      entryPath === 'range_base_dip'
+        ? (rangeBaseDip?.impulsePct ?? dipEval.impulsePct)
+        : dipEval.impulsePct;
 
     const decisionFeatures = buildFeatures(
       evalRow,
       reportDipPct,
-      dipEval.impulsePct,
+      reportImpulsePct,
       reportDipLookback,
       cfg,
       recoveryVeto,
@@ -1729,6 +1762,28 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           stabilizeMin: cfg.postCrashFastPathStabilizeMin,
           maxAgeMin: cfg.postCrashFastPathMaxAgeMin,
           maxKnife15mPct: cfg.postCrashFastPathMaxKnife15mPct,
+        },
+      };
+    }
+    if (rangeBaseDip != null) {
+      const f = rangeBaseDip.features;
+      decisionFeatures.range_base_dip = {
+        enabled: cfg.dipRangeBaseEnabled,
+        pass: rangeBaseDip.pass,
+        coverageOk: f.coverageOk,
+        lookbackHours: f.lookbackHours,
+        rangeLo: f.rangeLo,
+        rangeHi: f.rangeHi,
+        rangeSpanPct: f.rangeSpanPct,
+        netMove48hPct: f.netMove48hPct,
+        dropFromRangeLowPct: f.dropFromRangeLowPct,
+        vol5mSpikeRatio: f.vol5mSpikeRatio,
+        pgSnapsCount: f.pgSnapsCount,
+        reasons: rangeBaseDip.reasons,
+        thresholds: {
+          maxSpanPct: cfg.dipRangeBaseMaxSpanPct,
+          maxNetMovePct: cfg.dipRangeBaseMaxNetMovePct,
+          minVol5mSpikeMult: cfg.dipRangeBaseMinVol5mSpikeMult,
         },
       };
     }

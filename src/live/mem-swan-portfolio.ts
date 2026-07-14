@@ -9,8 +9,8 @@
  *
  * Signal: equal-weight return of our open positions over a rolling window (`rollMin`, ~2h),
  * anchored to an in-memory per-mint mark history. Trigger: EW ≤ −`ewDropPct` (~−25%) with
- * ≥ `minPositions` contributing (anti-phantom). Fires on the rising edge (once per episode) →
- * force-close ALL open positions.
+ * ≥ `minPositions` contributing (anti-phantom). While active and open > 0, retries liquidate
+ * every tracker tick until flat or calm.
  *
  * Backtest (608 real Oscar positions, may–jul 2026, prices from `*_pair_snapshots`, hold 24h):
  *   6h window / EW ≤ −25% / ≥8 positions → ~12 episodes over 2mo (≈6/mo), liquidate-vs-hold
@@ -146,6 +146,20 @@ export function resetMemSwanPortStateForTest(): void {
   state.pendingRiseTs = null;
 }
 
+/** Test helper — seed active own-book swan with fresh marks. */
+export function seedMemSwanPortActiveForTest(metrics?: Partial<PortfolioMetrics>): void {
+  const now = Date.now();
+  state.active = true;
+  state.lastComputeTs = now;
+  state.lastMetrics = {
+    ts: now,
+    positionCount: metrics?.positionCount ?? 8,
+    ewReturnPct: metrics?.ewReturnPct ?? -22,
+    medReturnPct: metrics?.medReturnPct ?? -22,
+    breadthRedPct: metrics?.breadthRedPct ?? 100,
+  };
+}
+
 /** Record one fresh per-position mark during the tracker's per-mint loop. Cheap. */
 export function recordMemSwanPortfolioMark(mint: string, px: number): void {
   if (px > 0 && Number.isFinite(px)) state.pending.set(mint, px);
@@ -187,6 +201,18 @@ export function consumeMemSwanPortRisingEdge(cfg: LiveOscarConfig): number | nul
   const ts = state.pendingRiseTs;
   state.pendingRiseTs = null;
   return ts;
+}
+
+/** True when own-book swan is active and marks are fresh enough to liquidate. */
+export function memSwanPortLiquidationDue(cfg: LiveOscarConfig): boolean {
+  if (!cfg.liveMemSwanPortEnabled || cfg.liveMemSwanPortMode === 'off') return false;
+  const ageMs = state.lastComputeTs ? Date.now() - state.lastComputeTs : null;
+  if (ageMs == null || ageMs > cfg.liveMemSwanPortMaxStaleSec * 1000) return false;
+  return state.active;
+}
+
+export function memSwanPortHasPendingRise(): boolean {
+  return state.pendingRiseTs != null;
 }
 
 function num(n: number | null): number | null {
@@ -312,8 +338,14 @@ export async function runMemSwanPortfolioSweep(args: MemSwanPortSweepArgs): Prom
 
   ingestMemSwanPortfolioTick(liveCfg);
 
-  const riseTs = consumeMemSwanPortRisingEdge(liveCfg);
-  if (riseTs == null) return;
+  if (!memSwanPortLiquidationDue(liveCfg)) return;
+
+  const entries = [...open.entries()].filter(([, ot]) => ot.mint !== WRAPPED_SOL_MINT);
+  if (entries.length === 0) return;
+
+  const risingEdge = memSwanPortHasPendingRise();
+  if (risingEdge) consumeMemSwanPortRisingEdge(liveCfg);
+  const sweepKind = risingEdge ? 'rising_edge' : 'retry';
 
   const m = state.lastMetrics;
   const detail = {
@@ -326,14 +358,13 @@ export async function runMemSwanPortfolioSweep(args: MemSwanPortSweepArgs): Prom
     minPositions: liveCfg.liveMemSwanPortMinPositions,
   };
 
-  const entries = [...open.entries()];
   const openMints = entries.map(([, ot]) => ot.symbol || ot.mint.slice(0, 8));
 
   if (liveCfg.liveMemSwanPortMode === 'shadow') {
     appendLiveJsonlEvent({
       kind: 'risk_note',
       reason: 'mem_swan_port_would_liquidate',
-      detail: { ...detail, openCount: entries.length, openMints },
+      detail: { ...detail, openCount: entries.length, openMints, sweepKind },
     });
     log.warn({ ...detail, openCount: entries.length }, 'mem-swan-port SHADOW: would liquidate all open positions');
     return;
@@ -341,8 +372,8 @@ export async function runMemSwanPortfolioSweep(args: MemSwanPortSweepArgs): Prom
 
   appendLiveJsonlEvent({
     kind: 'risk_block',
-    limit: 'mem_swan_port_liquidate',
-    detail: { ...detail, openCount: entries.length, openMints },
+    limit: risingEdge ? 'mem_swan_port_liquidate' : 'mem_swan_port_liquidate_retry',
+    detail: { ...detail, openCount: entries.length, openMints, sweepKind },
   });
   log.warn({ ...detail, openCount: entries.length }, 'mem-swan-port LIQUIDATE: closing all open positions');
 
@@ -372,7 +403,7 @@ export async function runMemSwanPortfolioSweep(args: MemSwanPortSweepArgs): Prom
   appendLiveJsonlEvent({
     kind: 'risk_note',
     reason: 'mem_swan_port_liquidate_done',
-    detail: { ...detail, attempted: entries.length, liquidated, failed, noPrice },
+    detail: { ...detail, attempted: entries.length, liquidated, failed, noPrice, sweepKind },
   });
   log.warn({ attempted: entries.length, liquidated, failed, noPrice }, 'mem-swan-port LIQUIDATE done');
 }

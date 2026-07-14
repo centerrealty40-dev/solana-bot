@@ -1135,6 +1135,13 @@ const PM2_APPS = [
         PAPER_POST_CRASH_FAST_PATH_MAX_AGE_MIN: '240',
         PAPER_POST_CRASH_FAST_PATH_MAX_KNIFE_15M_PCT: '-8',
         PAPER_POST_CRASH_FAST_PATH_BYPASS_LOCAL_HIGH_VETO: '1',
+        /** Range-base dip — sideways 48h base + flush from range low (6Nwar-class). */
+        PAPER_DIP_RANGE_BASE_ENABLED: '1',
+        PAPER_DIP_RANGE_BASE_LOOKBACK_HOURS: '48',
+        PAPER_DIP_RANGE_BASE_MAX_SPAN_PCT: '15',
+        PAPER_DIP_RANGE_BASE_MAX_NET_MOVE_PCT: '10',
+        PAPER_DIP_RANGE_BASE_MIN_VOL5M_SPIKE_MULT: '2',
+        PAPER_DIP_RANGE_BASE_MIN_PG_SAMPLES: '12',
 
         /**
          * Policy A+ (1.11.167): четыре «хирургических» правила пропуска кандидатов,
@@ -2413,6 +2420,8 @@ const PM2_APPS = [
         KNIFE_POSITION_USD: process.env.KNIFE_POSITION_USD || '50',
         KNIFE_AVG_LEG_ENABLED: process.env.KNIFE_AVG_LEG_ENABLED || '0',
         KNIFE_AVG_DROP_PCT: process.env.KNIFE_AVG_DROP_PCT || '8',
+        KNIFE_FLUSH_LEG2_ENABLED: process.env.KNIFE_FLUSH_LEG2_ENABLED || '1',
+        KNIFE_FLUSH_LEG2_MIN_DUMP_PCT: process.env.KNIFE_FLUSH_LEG2_MIN_DUMP_PCT || '15',
         /** Infinite Oscar-style TP grid: step + escalating sell fracs + BE/ladder-retrace + peak trail. */
         KNIFE_TP_GRID_STEP_PCT: process.env.KNIFE_TP_GRID_STEP_PCT || '5',
         KNIFE_TP_GRID_SELL_FRACS: process.env.KNIFE_TP_GRID_SELL_FRACS || '0.50,0.45,0.40,0.35',

@@ -201,6 +201,20 @@ export function resetMemSwanStateForTest(): void {
   state.pendingRiseTs = null;
 }
 
+/** Test helper — seed active swan with fresh metrics. */
+export function seedMemSwanActiveForTest(metrics?: Partial<MemSwanMetrics>): void {
+  const now = Date.now();
+  state.active = true;
+  state.lastComputeTs = now;
+  state.lastMetrics = {
+    ts: now,
+    runnerCount: metrics?.runnerCount ?? 20,
+    ewReturnPct: metrics?.ewReturnPct ?? -10,
+    medReturnPct: metrics?.medReturnPct ?? -3,
+    breadthRedPct: metrics?.breadthRedPct ?? 70,
+  };
+}
+
 export function memSwanSnapshot(): {
   active: boolean;
   ageMs: number | null;
@@ -213,9 +227,23 @@ export function memSwanSnapshot(): {
   };
 }
 
+/** True when a swan episode is active and cached metrics are fresh enough to liquidate. */
+export function memSwanLiquidationDue(cfg: LiveOscarConfig): boolean {
+  if (!cfg.liveMemSwanEnabled || cfg.liveMemSwanMode === 'off') return false;
+  ensureMemSwanRefresher(cfg);
+  const ageMs = state.lastComputeTs ? Date.now() - state.lastComputeTs : null;
+  if (ageMs == null || ageMs > cfg.liveMemSwanMaxStaleSec * 1000) return false;
+  return state.active;
+}
+
+/** Peek rising edge without consuming (journal label only). */
+export function memSwanHasPendingRise(): boolean {
+  return state.pendingRiseTs != null;
+}
+
 /**
  * If a swan just started (rising edge) and data is fresh, return the rise timestamp
- * exactly once (so the liquidation hook acts once per episode), else null.
+ * exactly once (journal / first-sweep label), else null.
  */
 export function consumeMemSwanRisingEdge(cfg: LiveOscarConfig): number | null {
   if (state.pendingRiseTs == null) return null;

@@ -165,6 +165,8 @@ export interface LiveOscarPhase4Tracker {
     decimals: number;
     intentKind: 'sell_partial' | 'sell_full';
     onSliceSuccess?: LiveExitSliceSuccessHook;
+    /** KILLSTOP / mem-swan: skip ghost-quote gate, no exit slicing, aggressive sim retry. */
+    emergencyExit?: boolean;
   }): Promise<LiveTokenToSolSellResult>;
 }
 

@@ -48,7 +48,7 @@ describe('knife-analytics-gate', () => {
     });
     const reasons = evaluateKnifeHolderWash(
       cfg,
-      row({ holder_count: 12_000, volume_1h: 300_000 }),
+      row({ holder_count: 12_000, volume_1h: 300_000, market_cap_usd: 1_200_000 }),
     );
     expect(reasons).toEqual([]);
   });
