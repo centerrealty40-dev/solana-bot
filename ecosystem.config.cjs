@@ -582,7 +582,7 @@ const PM2_APPS = [
         COLLECTOR_HEALTH_DISCOVERY_MAX_AGE_MS: '120000',
         COLLECTOR_HEALTH_SHYFT_MAX_STALE_MS: '120000',
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '900',
-        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot,jupiter',
         COLLECTOR_HEALTH_LIVE_JSONL: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         TELEGRAM_COOLDOWN_HEALTH_COLLECTOR_STATUS_MS: '0',
       },
@@ -632,7 +632,7 @@ const PM2_APPS = [
         SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS: '3600000',
         TELEGRAM_COOLDOWN_ALERT_SNAPSHOT_STALE_MS: '3600000',
         /** sa-orca off — do not treat stale orca_pair_snapshots as prod incident. */
-        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot,jupiter',
       },
     },
     {
@@ -643,7 +643,9 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autorestart: true,
+      /** Disabled 2026-07-15: unused by live-oscar; burned Jupiter quota (~350 429/30m). Rollback: autostart true + pm2 start sa-jupiter. */
+      autostart: false,
+      autorestart: false,
       max_restarts: 50,
       restart_delay: 5000,
       max_memory_restart: '350M',
@@ -1703,7 +1705,7 @@ const PM2_APPS = [
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '1800',
-        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot',
+        SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot,jupiter',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         LIVE_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
