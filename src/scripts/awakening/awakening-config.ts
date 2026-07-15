@@ -199,7 +199,7 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     streamWarmMinSigs: Math.round(envNum(env.AWAKENING_STREAM_WARM_MIN_SIGS, 1)),
     streamWarmMaxPerTick: Math.min(20, Math.round(envNum(env.AWAKENING_STREAM_WARM_MAX_PER_TICK, 12))),
     legUsd: envNum(env.AWAKENING_LEG_USD, 10),
-    telegramEnabled: envBool(env.AWAKENING_TELEGRAM_ENABLED, true),
+    telegramEnabled: envBool(env.AWAKENING_TELEGRAM_ENABLED, false),
     summaryMs: Math.round(envNum(env.AWAKENING_SUMMARY_MIN, 30) * 60_000),
   };
 }

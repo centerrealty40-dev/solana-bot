@@ -334,19 +334,6 @@ export async function main(): Promise<void> {
     );
   }, 60_000).unref();
 
-  setInterval(() => {
-    notifyHtml(
-      cfg,
-      [
-        `<b>Awakening summary</b> (${cfg.mode})`,
-        `signals: ${totalSignals}`,
-        `dex checks: ${totalDexChecks}`,
-        `tracked mints: ${activity.size()}`,
-        `src: ${cfg.streamSource}`,
-      ].join('\n'),
-    );
-  }, cfg.summaryMs).unref();
-
   const loop = async () => {
     while (true) {
       try {
