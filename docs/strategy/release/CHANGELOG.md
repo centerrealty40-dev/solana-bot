@@ -98,6 +98,17 @@
 
 ---
 
+## [1.11.593] — 2026-07-15
+
+**Тег:** `sa-alpha-1.11.593`
+
+### Live Oscar — смягчение trend/recovery veto (без отключения)
+
+- **Trend dip bypass:** при dip ≥15% и slope3d ≥0 — пропуск `no_high_break` + `decline` (febu/ANSEM pullback); ski-slope остаётся.
+- **Recovery veto:** base 12% (было 8%) + dip-scaled bonus на глубоких dip.
+- **Trend decline:** `MAX_SLOPE_7D` −8% (было −3%); ski reversal bounce 60% (было 80%).
+- **Откат:** вернуть env из 1.11.589/583 + `pm2 reload live-oscar --update-env`.
+
 ## [1.11.592] — 2026-07-14
 
 **Тег:** `sa-alpha-1.11.592`

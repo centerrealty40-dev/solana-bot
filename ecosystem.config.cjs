@@ -1099,8 +1099,11 @@ const PM2_APPS = [
 
         PAPER_DIP_RECOVERY_VETO_ENABLED: '1',
         PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN: '30,60',
-        /** 1.11.589: 8% recovery cap — block bounce entries (was 12%, F4Gp/TrumpCoin RCA). */
-        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '8',
+        /** 1.11.593: 12% base + dip-scaled bonus on deep pullbacks (was 8% flat). */
+        PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT: '12',
+        PAPER_DIP_RECOVERY_VETO_DIP_SCALED: '1',
+        PAPER_DIP_RECOVERY_VETO_DIP_SCALED_FLOOR_PCT: '15',
+        PAPER_DIP_RECOVERY_VETO_DIP_SCALED_BONUS_PER_POINT: '0.25',
         /** Live Oscar guard: не покупать первую ногу по сигналу, если цена уже у локального high. */
         PAPER_DIP_LOCAL_HIGH_VETO_ENABLED: '1',
         PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN: '30,60,120',
@@ -1114,7 +1117,8 @@ const PM2_APPS = [
         PAPER_TREND_VETO_MIN_DAYS_SINCE_HIGH_BREAK: '3',
         PAPER_TREND_VETO_DECLINE_ENABLED: '1',
         PAPER_TREND_VETO_MAX_PX_VS_HIGH_14D: '0.55',
-        PAPER_TREND_VETO_MAX_SLOPE_7D_PCT: '-3',
+        /** 1.11.593: looser weekly bleed gate during dip entries (was -3). */
+        PAPER_TREND_VETO_MAX_SLOPE_7D_PCT: '-8',
         PAPER_TREND_VETO_PEAK_TOUCH_TOLERANCE_PCT: '1',
         PAPER_TREND_VETO_SLOPE_3D_ENABLED: '1',
         PAPER_TREND_VETO_MAX_PX_VS_HIGH_3D: '0.65',
@@ -1124,8 +1128,13 @@ const PM2_APPS = [
         PAPER_TREND_VETO_SKI_SLOPE_MIN_DAYS_SINCE_HIGH: '2',
         PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_BYPASS_ENABLED: '1',
         PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_LOOKBACK_HOURS: '72',
-        PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_BOUNCE_PCT: '80',
+        /** 1.11.593: febu-class post-crash bases (was 80%). */
+        PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_BOUNCE_PCT: '60',
         PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_HOURS_AFTER_LOW: '12',
+        /** Deep dip + slope3d≥0: skip no_high_break + decline (keeps ski-slope). */
+        PAPER_TREND_VETO_DIP_BYPASS_ENABLED: '1',
+        PAPER_TREND_VETO_DIP_BYPASS_MIN_DIP_PCT: '15',
+        PAPER_TREND_VETO_DIP_BYPASS_MIN_SLOPE_3D_PCT: '0',
         /** Telegram when dip passed but trend veto is sole blocker (default ON, 30m cooldown). */
         LIVE_TREND_VETO_TELEGRAM_ENABLED: '1',
         LIVE_TREND_VETO_TELEGRAM_COOLDOWN_MS: '1800000',

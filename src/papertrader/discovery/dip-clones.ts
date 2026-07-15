@@ -1474,6 +1474,12 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           : entryPath === 'range_base_dip'
             ? (rangeBaseDip?.dipLookbackUsedMin ?? dipEval.dipLookbackUsedMin)
             : dipEval.dipLookbackUsedMin;
+      const activeDipPct =
+        entryPath === 'post_crash_fast'
+          ? (postCrashFastPath?.features.dropFromPeakPct ?? dipEval.dipPct)
+          : entryPath === 'range_base_dip'
+            ? (rangeBaseDip?.dipPct ?? dipEval.dipPct)
+            : dipEval.dipPct;
       if (entryPath === 'stress_kill_reentry') {
         recoveryVeto = { reasons: [], bounces: {} };
       } else {
@@ -1483,8 +1489,9 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
               windowsMin: cfg.dipRecoveryVetoWindowsMin.filter(
                 (w) => w <= stressReentryCtx.maxWindowMin,
               ),
+              dipPct: activeDipPct,
             }
-          : undefined;
+          : { dipPct: activeDipPct };
         recoveryVeto = evaluateRecoveryVeto(
           cfg,
           row,
@@ -1522,6 +1529,7 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
           cfg,
           row,
           trendStructureMap.get(row.mint),
+          activeDipPct != null ? { dipPct: activeDipPct } : null,
         );
         if (trendStructureVeto.reasons.length > 0) {
           dipReasonsForGate = [...dipReasonsForGate, ...trendStructureVeto.reasons];
