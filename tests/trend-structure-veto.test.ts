@@ -27,6 +27,9 @@ function cfg(overrides: Partial<PaperTraderConfig> = {}): PaperTraderConfig {
     trendVetoSkiSlopeReversalMinBouncePct: 80,
     trendVetoSkiSlopeReversalMinHoursAfterLow: 12,
     trendVetoPeakTouchTolerancePct: 1,
+    trendVetoDipBypassEnabled: true,
+    trendVetoDipBypassMinDipPct: 15,
+    trendVetoDipBypassMinSlope3dPct: 0,
     ...overrides,
   } as PaperTraderConfig;
 }
@@ -133,5 +136,40 @@ describe('trend-structure-veto', () => {
       price3dAgoUsd: 0.9,
     });
     expect(res.reasons).toEqual([]);
+  });
+
+  it('dip bypass: febu-class deep dip + slope3d up skips no_high_break', () => {
+    const res = evaluateTrendStructureVeto(
+      cfg(),
+      row(0.00341),
+      {
+        ...baseCtx,
+        highLookbackUsd: 0.008874,
+        daysSinceHighBreak: 3.4,
+        price7dAgoUsd: 0.0034,
+        price3dAgoUsd: 0.00304,
+      },
+      { dipPct: -24.42 },
+    );
+    expect(res.features.slope3dPct).toBeGreaterThan(0);
+    expect(res.reasons).toEqual([]);
+  });
+
+  it('dip bypass: ANSEM-class deep dip + slope3d up skips decline', () => {
+    const res = evaluateTrendStructureVeto(
+      cfg(),
+      row(0.218),
+      {
+        ...baseCtx,
+        highLookbackUsd: 0.33,
+        daysSinceHighBreak: 13.3,
+        price7dAgoUsd: 0.327,
+        price3dAgoUsd: 0.206,
+      },
+      { dipPct: -19.15 },
+    );
+    expect(res.features.slope3dPct).toBeGreaterThan(0);
+    expect(res.reasons.some((r) => r.startsWith('trend_veto_decline'))).toBe(false);
+    expect(res.reasons.some((r) => r.startsWith('trend_veto_no_high_break'))).toBe(false);
   });
 });
