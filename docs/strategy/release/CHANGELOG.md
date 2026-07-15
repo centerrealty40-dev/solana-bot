@@ -98,6 +98,16 @@
 
 ---
 
+## [1.11.596] — 2026-07-15
+
+**Тег:** `sa-alpha-1.11.596`
+
+### Live Oscar — discovery stall hotfix (timeout + eval load)
+
+- **Причина:** с 2026-07-15 discovery-тик стабильно **>120s** (DexScreener 120 RPM gate + volume-leader Jupiter crosscheck + SQL pool 500) → `discoveryTick timeout` каждые ~2 мин, `discovery_stall` Telegram, `errors≈ticks`.
+- **Что сделано (PM2 `live-oscar`):** `PAPER_DISCOVERY_TICK_TIMEOUT_MS` **120000→300000**; `PAPER_SNAPSHOT_CANDIDATE_LIMIT` **500→250**; `PAPER_VOLUME_LEADER_REEVAL_SEC` **15→30**; `PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK` **20→5**.
+- **Откат:** вернуть прежние значения в `ecosystem.config.cjs` + `pm2 reload ecosystem.config.cjs --only live-oscar --update-env`.
+
 ## [1.11.593] — 2026-07-15
 
 **Тег:** `sa-alpha-1.11.593`
