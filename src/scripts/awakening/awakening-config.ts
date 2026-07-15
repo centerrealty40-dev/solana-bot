@@ -65,6 +65,24 @@ export interface AwakeningConfig {
   minVol1hToVol6hRatio: number;
   /** Wash/cluster proxy: cap on hourly turnover vol1h/mcap (organic rarely > ~1x/h). */
   maxVol1hPerMcap: number;
+  /** Block when almost all vol1h landed in last 5m (peak / red-candle entry). */
+  maxVol5mToVol1hRatio: number;
+  /** Apply late-burst block only when vol1h already meaningful. */
+  lateBurstMinVol1hUsd: number;
+  /** Gradual awakening: vol build before retail pump (2vvw3 08:00 class). */
+  gradualAwakeningEnabled: boolean;
+  gradualVol5mSpike6hMult: number;
+  gradualVol1hSpikeVs6hMult: number;
+  gradualMaxPriceChangeH6Pct: number;
+  gradualMaxPriceChangeH24Pct: number;
+  gradualMaxVol5mSpikeVs1hMult: number;
+  gradualMaxPriceChangeM5Pct: number;
+  /** When prior6h is elevated, require this spike mult to allow ignition (FeMbDo re-awakening). */
+  quietPriorReIgnitionSpike6hMult: number;
+  /** Re-eval mints with stream activity in the last hour (not only 5m pulse). */
+  streamWarmLookbackMs: number;
+  streamWarmMinSigs: number;
+  streamWarmMaxPerTick: number;
   legUsd: number;
   telegramEnabled: boolean;
   summaryMs: number;
@@ -162,6 +180,19 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     minPriceChangeH1Pct: envNumSigned(env.AWAKENING_MIN_PRICE_CHANGE_H1_PCT, -5),
     minVol1hToVol6hRatio: envNum(env.AWAKENING_MIN_VOL1H_TO_VOL6H_RATIO, 0.25),
     maxVol1hPerMcap: envNum(env.AWAKENING_MAX_VOL1H_PER_MCAP, 3.0),
+    maxVol5mToVol1hRatio: envNum(env.AWAKENING_MAX_VOL5M_TO_VOL1H_RATIO, 0.9),
+    lateBurstMinVol1hUsd: envNum(env.AWAKENING_LATE_BURST_MIN_VOL1H_USD, 15_000),
+    gradualAwakeningEnabled: envBool(env.AWAKENING_GRADUAL_AWAKENING_ENABLED, true),
+    gradualVol5mSpike6hMult: envNum(env.AWAKENING_GRADUAL_VOL5M_SPIKE_6H_MULT, 3),
+    gradualVol1hSpikeVs6hMult: envNum(env.AWAKENING_GRADUAL_VOL1H_SPIKE_VS_6H_MULT, 2),
+    gradualMaxPriceChangeH6Pct: envNum(env.AWAKENING_GRADUAL_MAX_PRICE_CHANGE_H6_PCT, 30),
+    gradualMaxPriceChangeH24Pct: envNum(env.AWAKENING_GRADUAL_MAX_PRICE_CHANGE_H24_PCT, 60),
+    gradualMaxVol5mSpikeVs1hMult: envNum(env.AWAKENING_GRADUAL_MAX_VOL5M_SPIKE_1H_MULT, 10),
+    gradualMaxPriceChangeM5Pct: envNum(env.AWAKENING_GRADUAL_MAX_PRICE_CHANGE_M5_PCT, 15),
+    quietPriorReIgnitionSpike6hMult: envNum(env.AWAKENING_QUIET_PRIOR_REIGNITION_SPIKE_6H_MULT, 10),
+    streamWarmLookbackMs: Math.round(envNum(env.AWAKENING_STREAM_WARM_LOOKBACK_SEC, 3600) * 1000),
+    streamWarmMinSigs: Math.round(envNum(env.AWAKENING_STREAM_WARM_MIN_SIGS, 1)),
+    streamWarmMaxPerTick: Math.min(20, Math.round(envNum(env.AWAKENING_STREAM_WARM_MAX_PER_TICK, 12))),
     legUsd: envNum(env.AWAKENING_LEG_USD, 10),
     telegramEnabled: envBool(env.AWAKENING_TELEGRAM_ENABLED, true),
     summaryMs: Math.round(envNum(env.AWAKENING_SUMMARY_MIN, 30) * 60_000),

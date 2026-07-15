@@ -44,6 +44,8 @@ describe('awakening-signal', () => {
     AWAKENING_MIN_MCAP_USD: '300000',
     AWAKENING_MIN_LIQ_USD: '20000',
     AWAKENING_MIN_BUY_RATIO: '0.45',
+    AWAKENING_QUIET_PRIOR_VOL6H_MAX_USD: '50000',
+    AWAKENING_QUIET_VOL1H_MAX_USD: '50000',
   });
 
   it('passes fresh vol5m spike on quiet prior (early awakening)', () => {
@@ -263,6 +265,136 @@ describe('awakening-signal', () => {
     const hardFail = { pass: false, reasons: ['vol5m_spike_6h<8'], metrics: {} as never };
     expect(awakeningEvalCooldownMs(cfg, hardFail)).toBe(300_000);
   });
+
+  describe('Jul-15 prod RCA (4U4U / BDdz / 2vvw3)', () => {
+    const prodCfg = loadAwakeningConfig({
+      AWAKENING_VOL5M_MIN_USD: '2500',
+      AWAKENING_VOL5M_SPIKE_MIN_MULT: '8',
+      AWAKENING_VOL5M_SPIKE_VS_1H_MIN_MULT: '4',
+      AWAKENING_MAX_VOL24H_USD: '1500000',
+      AWAKENING_MIN_POOL_AGE_HOURS: '6',
+      AWAKENING_MAX_VOL1H_PER_MCAP: '4.0',
+      AWAKENING_MIN_MCAP_USD: '100000',
+      AWAKENING_MIN_LIQ_USD: '12000',
+      AWAKENING_MIN_BUY_RATIO: '0.38',
+      AWAKENING_BUY_RATIO_SPIKE_BYPASS: '1',
+      AWAKENING_MIN_PRICE_CHANGE_M5_IGNITION_PCT: '1',
+      AWAKENING_MIN_PRICE_CHANGE_M5_PCT: '0',
+      AWAKENING_MIN_PRICE_CHANGE_H24_PCT: '-15',
+      AWAKENING_MIN_PRICE_CHANGE_H6_PCT: '-12',
+      AWAKENING_MIN_PRICE_CHANGE_H1_PCT: '-12',
+      AWAKENING_MAX_PRICE_CHANGE_H6_PCT: '120',
+      AWAKENING_MAX_PRICE_CHANGE_H24_PCT: '180',
+      AWAKENING_MIN_VOL1H_USD: '8000',
+      AWAKENING_QUIET_PRIOR_VOL6H_MAX_USD: '1500',
+      AWAKENING_QUIET_VOL1H_MAX_USD: '2000',
+      AWAKENING_MAX_VOL5M_TO_VOL1H_RATIO: '0.9',
+    });
+
+    it('blocks 4U4U late-burst peak entry (vol5m≈vol1h)', () => {
+      const r = evaluateAwakeningSignal(
+        prodCfg,
+        market({
+          mint: '4U4U8oXwDyVXGeTffMXds4NAgBgLFwq3wNvTCRTSpump',
+          priceUsd: 0.000459,
+          marketCapUsd: 459_034,
+          volume5mUsd: 21_569.6,
+          volume1hUsd: 21_695.69,
+          volume6hUsd: 31_122.7,
+          volume24hUsd: 41_620.5,
+          buys5m: 36,
+          sells5m: 37,
+          priceChangeM5: -2,
+          priceChangeH1: 5,
+          priceChangeH6: 8,
+          priceChangeH24: 10,
+        }),
+      );
+      expect(r.pass).toBe(false);
+      expect(r.reasons.some((x) => x.startsWith('late_burst_'))).toBe(true);
+    });
+
+    it('blocks 2vvw3 Jul-15 05:29 tail spike (noisy prior + spike1h)', () => {
+      const r = evaluateAwakeningSignal(
+        prodCfg,
+        market({
+          mint: '2vvw3cSwibzGD6SgW9QzRaBdmjkYrvs218DUy6VWpump',
+          priceUsd: 0.0001465,
+          marketCapUsd: 146_508,
+          volume5mUsd: 7_127.54,
+          volume1hUsd: 15_254.48,
+          volume6hUsd: 66_108.62,
+          volume24hUsd: 298_964.58,
+          buys5m: 11,
+          sells5m: 13,
+          priceChangeM5: 2,
+          priceChangeH1: 4,
+          priceChangeH6: 8,
+          priceChangeH24: -5,
+          poolAgeMin: 12_146,
+        }),
+      );
+      expect(r.pass).toBe(false);
+      expect(
+        r.reasons.some(
+          (x) => x.startsWith('prior6h_quiet>') || x.startsWith('gradual_spike_1h>'),
+        ),
+      ).toBe(true);
+    });
+
+    it('passes 2vvw3 gradual awakening at 08:00 pump start', () => {
+      const r = evaluateAwakeningSignal(
+        prodCfg,
+        market({
+          mint: '2vvw3cSwibzGD6SgW9QzRaBdmjkYrvs218DUy6VWpump',
+          priceUsd: 0.000129,
+          marketCapUsd: 123_000,
+          liquidityUsd: 25_000,
+          volume5mUsd: 3_500,
+          volume1hUsd: 8_500,
+          volume6hUsd: 60_500,
+          volume24hUsd: 280_000,
+          buys5m: 18,
+          sells5m: 12,
+          priceChangeM5: 5.6,
+          priceChangeH1: 3,
+          priceChangeH6: 8,
+          priceChangeH24: -5,
+          poolAgeMin: 12_200,
+        }),
+      );
+      expect(r.pass).toBe(true);
+      expect(r.metrics.entryPath).toBe('gradual');
+    });
+
+    it('blocks 2vvw3 post-retail pump (h6/h24 caps)', () => {
+      const r = evaluateAwakeningSignal(
+        prodCfg,
+        market({
+          mint: '2vvw3cSwibzGD6SgW9QzRaBdmjkYrvs218DUy6VWpump',
+          priceUsd: 0.000264,
+          marketCapUsd: 252_000,
+          volume5mUsd: 15_582.96,
+          volume1hUsd: 45_000,
+          volume6hUsd: 88_000,
+          volume24hUsd: 320_000,
+          buys5m: 40,
+          sells5m: 30,
+          priceChangeM5: 20,
+          priceChangeH1: 80,
+          priceChangeH6: 130,
+          priceChangeH24: 200,
+          poolAgeMin: 12_300,
+        }),
+      );
+      expect(r.pass).toBe(false);
+      expect(
+        r.reasons.some(
+          (x) => x.startsWith('gradual_price_h6>') || x.startsWith('price_h6>'),
+        ),
+      ).toBe(true);
+    });
+  });
 });
 
 describe('awakening-mint-from-logs', () => {
@@ -277,12 +409,20 @@ describe('awakening-mint-from-logs', () => {
 
 describe('awakening-activity', () => {
   it('tracks hot mints in rolling window', () => {
-    const t = new MintActivityTracker(300_000);
+    const t = new MintActivityTracker(300_000, 300_000);
     const now = 1_000_000;
     t.record(FEBU, now - 60_000);
     t.record(FEBU, now - 30_000);
     expect(t.count5m(FEBU, now)).toBe(2);
     expect(t.hotMints(2, now).map((x) => x.mint)).toContain(FEBU);
+  });
+
+  it('tracks warm mints over 1h lookback', () => {
+    const t = new MintActivityTracker(300_000, 3_600_000);
+    const now = 10_000_000;
+    t.record(FEBU, now - 3_600_000 + 60_000);
+    expect(t.count5m(FEBU, now)).toBe(0);
+    expect(t.warmMints(1, 3_600_000, now).map((x) => x.mint)).toContain(FEBU);
   });
 });
 

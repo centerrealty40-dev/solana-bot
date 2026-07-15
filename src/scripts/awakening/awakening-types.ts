@@ -42,8 +42,12 @@ export interface AwakeningSignalMetrics {
   vol1hToVol6hRatio: number | null;
   /** Hourly turnover vol1h/mcap — wash/cluster proxy. */
   vol1hPerMcap: number | null;
+  /** vol1h / prior-6h hourly avg — gradual awakening ramp. */
+  vol1hSpikeVs6hHourlyMult: number;
   poolAgeMin: number | null;
   buyRatio: number | null;
+  /** Which eval path passed (ignition burst vs gradual vol build). */
+  entryPath?: 'ignition' | 'gradual';
 }
 
 export interface AwakeningSignalResult {
@@ -52,7 +56,11 @@ export interface AwakeningSignalResult {
   metrics: AwakeningSignalMetrics;
 }
 
-export type AwakeningCandidateSource = 'stream_pulse' | 'gecko_trending' | 'dex_search';
+export type AwakeningCandidateSource =
+  | 'stream_pulse'
+  | 'stream_warm'
+  | 'gecko_trending'
+  | 'dex_search';
 
 export interface AwakeningCandidate {
   mint: string;
