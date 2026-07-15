@@ -717,12 +717,15 @@ const PM2_APPS = [
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
         PAPER_DISCOVERY_INTERVAL_MS: '10000',
-        /** Await cap per discovery tick; in-flight tick mutex prevents overlap after timeout. */
-        PAPER_DISCOVERY_TICK_TIMEOUT_MS: '120000',
+        /**
+         * 1.11.596 — discovery tick >120s (DexScreener gate + volume-leader eval) → stall alert;
+         * поднят cap, чтобы тик успевал завершиться и сбрасывать mutex.
+         */
+        PAPER_DISCOVERY_TICK_TIMEOUT_MS: '300000',
         /** 1.11.244: быстрее reeval для SQL-pool mint'ов; priority tier — `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`. */
         PAPER_DISCOVERY_REEVAL_SEC: '30',
-        /** 1.11.244: шире SQL-пул при малом числе активных монет. */
-        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '500',
+        /** 1.11.596: 500→250 — меньше PG fan-out и DexScreener queue wait per tick. */
+        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '250',
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
@@ -1603,7 +1606,8 @@ const PM2_APPS = [
         /** 1.11.274 — Volume Leader tier: top-N by 24h peak vol_1h, canonical pool = max volume. */
         PAPER_VOLUME_LEADER_ENABLED: '1',
         PAPER_VOLUME_LEADER_TOP_N: '50',
-        PAPER_VOLUME_LEADER_REEVAL_SEC: '15',
+        /** 1.11.596: 15→30s — реже полный reeval top runners (меньше Jupiter+DS нагрузки). */
+        PAPER_VOLUME_LEADER_REEVAL_SEC: '30',
         PAPER_VOLUME_LEADER_LOOKBACK_HOURS: '24',
         PAPER_VOLUME_LEADER_QUERY_CACHE_SEC: '60',
         /** 1.11.283: откат 90→30m + меньше top-N — реже inject молодых раннеров. */
@@ -1618,7 +1622,8 @@ const PM2_APPS = [
         PAPER_DISCOVERY_SNAPSHOT_SANITY_ZERO_LIQ_MAX_MCAP_USD: '500000',
         /** 1.11.276 — Jupiter cross-check price/mcap for volume-leader tier. */
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_ENABLED: '1',
-        PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK: '20',
+        /** 1.11.596: 20→5 — меньше Jupiter RPS на volume-leader tier per discovery tick. */
+        PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK: '5',
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_DIVERGENCE_PCT: '35',
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MIN_DIVERGENCE_PCT: '0.5',
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
@@ -2555,7 +2560,7 @@ const PM2_APPS = [
         AWAKENING_LEG_USD: process.env.AWAKENING_LEG_USD || '10',
         AWAKENING_GECKO_TRENDING_ENABLED: process.env.AWAKENING_GECKO_TRENDING_ENABLED || '1',
         AWAKENING_GECKO_TRENDING_POLL_SEC: process.env.AWAKENING_GECKO_TRENDING_POLL_SEC || '60',
-        AWAKENING_TELEGRAM_ENABLED: process.env.AWAKENING_TELEGRAM_ENABLED || '1',
+        AWAKENING_TELEGRAM_ENABLED: process.env.AWAKENING_TELEGRAM_ENABLED || '0',
         AWAKENING_SUMMARY_MIN: process.env.AWAKENING_SUMMARY_MIN || '30',
       },
     },
