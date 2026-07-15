@@ -763,6 +763,10 @@ const ConfigSchema = z.object({
   dipRecoveryVetoEnabled: z.boolean().default(false),
   dipRecoveryVetoWindowsCsv: z.string().default(''),
   dipRecoveryVetoMaxBouncePct: z.coerce.number().min(0.1).max(500).default(12),
+  /** Deep dip: allow extra bounce off 30/60m low (|dip| above floor × bonus per %). */
+  dipRecoveryVetoDipScaledEnabled: z.boolean().default(true),
+  dipRecoveryVetoDipScaledFloorPct: z.coerce.number().min(5).max(80).default(15),
+  dipRecoveryVetoDipScaledBonusPerPoint: z.coerce.number().min(0).max(2).default(0.25),
   /**
    * Blocks immediate signal entries when a long-window dip candidate has already
    * recovered back to a recent local high. This covers cases where bounce-from-low
@@ -819,6 +823,13 @@ const ConfigSchema = z.object({
   trendVetoSkiSlopeReversalLookbackHours: z.coerce.number().int().min(24).max(168).default(72),
   trendVetoSkiSlopeReversalMinBouncePct: z.coerce.number().min(10).max(500).default(80),
   trendVetoSkiSlopeReversalMinHoursAfterLow: z.coerce.number().min(1).max(168).default(12),
+  /**
+   * Deep dip + short-term recovery (slope3d ≥ 0): skip no_high_break + decline rules.
+   * Keeps ski-slope for bleeding runners without a bounce (febu/ANSEM pullback entries).
+   */
+  trendVetoDipBypassEnabled: z.boolean().default(true),
+  trendVetoDipBypassMinDipPct: z.coerce.number().min(5).max(80).default(15),
+  trendVetoDipBypassMinSlope3dPct: z.coerce.number().min(-50).max(50).default(0),
 
   /**
    * Policy A+ (1.11.167): «хирургические» правила пропуска кандидатов на вход.
@@ -1943,6 +1954,10 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
     dipRecoveryVetoEnabled: envBool(process.env.PAPER_DIP_RECOVERY_VETO_ENABLED, false),
     dipRecoveryVetoWindowsCsv: process.env.PAPER_DIP_RECOVERY_VETO_WINDOWS_MIN ?? '',
     dipRecoveryVetoMaxBouncePct: process.env.PAPER_DIP_RECOVERY_VETO_MAX_BOUNCE_PCT,
+    dipRecoveryVetoDipScaledEnabled: envBool(process.env.PAPER_DIP_RECOVERY_VETO_DIP_SCALED, true),
+    dipRecoveryVetoDipScaledFloorPct: process.env.PAPER_DIP_RECOVERY_VETO_DIP_SCALED_FLOOR_PCT,
+    dipRecoveryVetoDipScaledBonusPerPoint:
+      process.env.PAPER_DIP_RECOVERY_VETO_DIP_SCALED_BONUS_PER_POINT,
     dipLocalHighVetoEnabled: envBool(process.env.PAPER_DIP_LOCAL_HIGH_VETO_ENABLED, false),
     dipLocalHighVetoWindowsCsv: process.env.PAPER_DIP_LOCAL_HIGH_VETO_WINDOWS_MIN ?? '',
     dipLocalHighVetoMaxDistancePct: process.env.PAPER_DIP_LOCAL_HIGH_VETO_MAX_DISTANCE_PCT,
@@ -1976,6 +1991,9 @@ export function loadPaperTraderConfig(): PaperTraderConfig {
       process.env.PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_BOUNCE_PCT,
     trendVetoSkiSlopeReversalMinHoursAfterLow:
       process.env.PAPER_TREND_VETO_SKI_SLOPE_REVERSAL_MIN_HOURS_AFTER_LOW,
+    trendVetoDipBypassEnabled: envBool(process.env.PAPER_TREND_VETO_DIP_BYPASS_ENABLED, true),
+    trendVetoDipBypassMinDipPct: process.env.PAPER_TREND_VETO_DIP_BYPASS_MIN_DIP_PCT,
+    trendVetoDipBypassMinSlope3dPct: process.env.PAPER_TREND_VETO_DIP_BYPASS_MIN_SLOPE_3D_PCT,
     policyAPlusEnabled: envBool(process.env.PAPER_POLICY_A_PLUS_ENABLED, false),
     policyAPlusBounceFromMin30mEnabled: envBool(
       process.env.PAPER_POLICY_A_PLUS_BOUNCE_FROM_MIN_30M_ENABLED,

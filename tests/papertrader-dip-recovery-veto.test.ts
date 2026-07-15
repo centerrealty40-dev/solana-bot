@@ -64,6 +64,21 @@ describe('evaluateRecoveryVeto', () => {
     const r = evaluateRecoveryVeto(base, row(0.09), ctx, 360);
     expect(r.reasons).toEqual([]);
   });
+
+  it('dip-scaled: deep dip allows higher bounce off 60m low', () => {
+    const scaled = cfg({
+      ...base,
+      dipRecoveryVetoMaxBouncePct: 12,
+      dipRecoveryVetoDipScaledEnabled: true,
+      dipRecoveryVetoDipScaledFloorPct: 15,
+      dipRecoveryVetoDipScaledBonusPerPoint: 0.25,
+    });
+    const ctx: DipContextByWindows = new Map([[60, { high_px: 0.12, low_px: 0.08 }]]);
+    const blocked = evaluateRecoveryVeto(scaled, row(0.0904), ctx, 360, { dipPct: -5 });
+    expect(blocked.reasons.length).toBeGreaterThan(0);
+    const allowed = evaluateRecoveryVeto(scaled, row(0.0904), ctx, 360, { dipPct: -24 });
+    expect(allowed.reasons).toEqual([]);
+  });
 });
 
 describe('evaluateLocalHighVeto', () => {

@@ -37,6 +37,22 @@ export type TrendStructureVetoResult = {
   features: TrendStructureFeatures;
 };
 
+/** Active dip context for pullback bypass (deep dip + slope3d recovery). */
+export type TrendVetoDipContext = {
+  dipPct: number;
+};
+
+export function trendVetoDipPullbackBypassActive(
+  cfg: PaperTraderConfig,
+  features: Pick<TrendStructureFeatures, 'slope3dPct'>,
+  dipCtx?: TrendVetoDipContext | null,
+): boolean {
+  if (!cfg.trendVetoDipBypassEnabled || !dipCtx) return false;
+  if (!(dipCtx.dipPct <= -cfg.trendVetoDipBypassMinDipPct)) return false;
+  const s3 = features.slope3dPct;
+  return s3 != null && s3 + 1e-9 >= cfg.trendVetoDipBypassMinSlope3dPct;
+}
+
 const EMPTY_FEATURES: TrendStructureFeatures = {
   lookbackDays: 14,
   highLookbackUsd: null,
@@ -102,6 +118,7 @@ export function evaluateTrendStructureVeto(
   cfg: PaperTraderConfig,
   row: SnapshotCandidateRow,
   ctx?: TrendStructureFeatures,
+  dipCtx?: TrendVetoDipContext | null,
 ): TrendStructureVetoResult {
   const features: TrendStructureFeatures = ctx ?? emptyFeatures(cfg);
   const px = Number(row.price_usd ?? 0);
@@ -124,9 +141,11 @@ export function evaluateTrendStructureVeto(
 
   const reasons: string[] = [];
   const v: TrendStructureVetoCfg = cfg;
+  const dipBypass = trendVetoDipPullbackBypassActive(cfg, features, dipCtx);
 
   if (
     v.trendVetoNoHighBreakEnabled &&
+    !dipBypass &&
     features.daysSinceHighBreak != null &&
     features.daysSinceHighBreak + 1e-9 >= v.trendVetoMinDaysSinceHighBreak
   ) {
@@ -143,14 +162,14 @@ export function evaluateTrendStructureVeto(
       features.daysSinceHighBreak != null &&
       features.daysSinceHighBreak + 1e-9 >= v.trendVetoSkiSlopeMinDaysSinceHigh;
     const reversalBypass = skiSlopeReversalBypassActive(cfg, features, px);
-    if (ratioOk && ageOk && !reversalBypass) {
+    if (ratioOk && ageOk && !reversalBypass && !dipBypass) {
       reasons.push(
         `trend_veto_ski_slope_pxVs${v.trendVetoLookbackDays}d=${(features.pxVsHighLookback! * 100).toFixed(1)}%<${(v.trendVetoSkiSlopeMaxPxVsHigh * 100).toFixed(0)}%_sinceHigh=${features.daysSinceHighBreak!.toFixed(1)}d`,
       );
     }
   }
 
-  if (v.trendVetoDeclineEnabled) {
+  if (v.trendVetoDeclineEnabled && !dipBypass) {
     const ratioOk =
       features.pxVsHighLookback != null && features.pxVsHighLookback < v.trendVetoMaxPxVsHigh14d;
     const slope7Ok =

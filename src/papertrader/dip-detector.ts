@@ -163,6 +163,8 @@ export type RecoveryVetoResult = {
 export type RecoveryVetoOptions = {
   maxBouncePct?: number;
   windowsMin?: number[];
+  /** Dip depth (negative %) — deep dips get a higher bounce allowance when dip-scaled enabled. */
+  dipPct?: number | null;
 };
 
 export type LocalHighVetoResult = {
@@ -190,7 +192,17 @@ export function evaluateRecoveryVeto(
   }
 
   const reasons: string[] = [];
-  const thr = opts?.maxBouncePct ?? cfg.dipRecoveryVetoMaxBouncePct;
+  let thr = opts?.maxBouncePct ?? cfg.dipRecoveryVetoMaxBouncePct;
+  const dipPct = opts?.dipPct;
+  if (
+    cfg.dipRecoveryVetoDipScaledEnabled &&
+    dipPct != null &&
+    dipPct < 0 &&
+    Number.isFinite(dipPct)
+  ) {
+    const excess = Math.max(0, -dipPct - cfg.dipRecoveryVetoDipScaledFloorPct);
+    thr += excess * cfg.dipRecoveryVetoDipScaledBonusPerPoint;
+  }
   const windows = opts?.windowsMin ?? cfg.dipRecoveryVetoWindowsMin;
 
   for (const v of windows) {
