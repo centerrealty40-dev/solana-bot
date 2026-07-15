@@ -104,8 +104,8 @@ const HL_OSCAR_DATA_DIR = path.join(root, 'data/hl-oscar-perp');
 const HL_OSCAR_PERP_ENV = {
   NODE_ENV: 'production',
   HL_OSCAR_ENABLED: '1',
-  /** Parity study 2026-07: pause alt live opens; process stays up for scan/journal. */
-  HL_OSCAR_LIVE_ENABLED: '0',
+  /** Alt perp live opens enabled (HL_OSCAR_LIVE_ENABLED=1). */
+  HL_OSCAR_LIVE_ENABLED: '1',
   HL_OSCAR_DRY_RUN: '0',
   HL_OSCAR_LEVERAGE: '2',
   HL_OSCAR_MARGIN_USD: '50',
@@ -200,9 +200,9 @@ const HL_MAJORS_ENV = {
   HL_MAJORS_SCALP_ENABLED: '1',
   HL_MAJORS_SCALP_LIVE_ENABLED: '1',
   HL_MAJORS_SCALP_DRY_RUN: '0',
-  HL_MAJORS_SCALP_DIP_PCT: '-3',
+  HL_MAJORS_SCALP_DIP_PCT: '-2',
   HL_MAJORS_SCALP_WINDOW_MIN: '120',
-  HL_MAJORS_SCALP_TP_RUNGS: '0.0075,0.015',
+  HL_MAJORS_SCALP_TP_RUNGS: '0.005,0.01',
   HL_MAJORS_SCALP_SL_PCT: '2.5',
   HL_MAJORS_SCALP_TIME_STOP_MIN: '480',
   HL_MAJORS_SCALP_COOLDOWN_MIN: '30',
