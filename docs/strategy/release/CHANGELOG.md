@@ -98,6 +98,16 @@
 
 ---
 
+## [1.11.598] — 2026-07-16
+
+**Тег:** `sa-alpha-1.11.598`
+
+### Ops — Oscar VPS: remove shadow knife-catcher + awakening-catcher PM2 apps
+
+- **Причина:** на Oscar VPS shadow `knife-catcher` / `awakening-catcher` были включены через `.env` drift (`ENABLED=1`), грузили Dex/RPC рядом с `live-oscar` discovery. Live lanes — только LERA (`/opt/lera`).
+- **Что сделано:** блоки PM2 удалены из `ecosystem.config.cjs`; на хосте `pm2 delete` + `pm2 save`; `.env` flags `KNIFE_CATCHER_ENABLED=0`, `AWAKENING_CATCHER_ENABLED=0`.
+- **Откат:** вернуть PM2-блоки из `sa-alpha-1.11.597` + `pm2 reload ecosystem.config.cjs --update-env` (не рекомендуется на Oscar).
+
 ## [1.11.597] — 2026-07-15
 
 **Тег:** `sa-alpha-1.11.597`
