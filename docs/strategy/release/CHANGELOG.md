@@ -98,6 +98,16 @@
 
 ---
 
+## [1.11.597] — 2026-07-15
+
+**Тег:** `sa-alpha-1.11.597`
+
+### Live Oscar — discovery stall: mark eval complete before open pipeline
+
+- **Причина:** `recordDiscoveryTickCompleted()` вызывался только после **всего** `discoveryTick` (eval + journal + open/sim). Open/sim могли идти минутами → `[ALERT][discovery_stall]` при живом eval. Boot `await discoveryTick()` не брал mutex → параллельные тики при старте.
+- **Что сделано:** `recordDiscoveryTickCompleted()` сразу после `runDipDiscovery` (до open-loop). Boot и scheduler через общий `runDiscoveryTickGuarded`. `PAPER_DISCOVERY_INTERVAL_MS` **10s→30s**.
+- **Откат:** revert `1.11.597` + `pm2 reload live-oscar --update-env`.
+
 ## [1.11.596] — 2026-07-15
 
 **Тег:** `sa-alpha-1.11.596`

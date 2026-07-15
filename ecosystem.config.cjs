@@ -716,7 +716,7 @@ const PM2_APPS = [
         /** Unused file — live-oscar never writes paper JSONL (P4-I1). */
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
-        PAPER_DISCOVERY_INTERVAL_MS: '10000',
+        PAPER_DISCOVERY_INTERVAL_MS: '30000',
         /**
          * 1.11.596 — discovery tick >120s (DexScreener gate + volume-leader eval) → stall alert;
          * поднят cap, чтобы тик успевал завершиться и сбрасывать mutex.

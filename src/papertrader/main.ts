@@ -1669,7 +1669,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
           resolveLiveOscarEntrySplitLegUsd(cfg),
         );
       }
-      if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') return;
+      if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') {
+        recordDiscoveryTickCompleted();
+        return;
+      }
 
       const liveOscarForAwakening = resolveLiveOscar();
       if (
@@ -1737,6 +1740,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         setShyftShadowWatchedMints(leraShadowMints);
       }
+      /** Discovery eval done — mark tick complete before slow open/sim pipeline (stall watchdog). */
+      recordDiscoveryTickCompleted();
       const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
 
@@ -2931,7 +2936,6 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         passed: res.passed,
         opened: stats.opened - openedBeforeDiscoveryBatch,
       });
-      recordDiscoveryTickCompleted();
     } catch (err) {
       stats.errors++;
       logger.warn({ msg: 'discovery tick failed', err: (err as Error).message });
@@ -2947,25 +2951,27 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   markDiscoverySchedulerStarted();
 
-  const discoveryTimer = setInterval(() => {
-    if (discoveryInFlight) return;
+  async function runDiscoveryTickGuarded(label: string): Promise<void> {
     const gen = ++discoveryInFlightGen;
     const tickPromise = discoveryTick();
     discoveryInFlight = tickPromise.finally(() => {
       if (discoveryInFlightGen === gen) discoveryInFlight = null;
     });
-    void (async () => {
-      try {
-        await withTimeout(tickPromise, discoveryTickTimeoutMs, 'discoveryTick');
-      } catch (err) {
-        stats.errors++;
-        logger.warn({ msg: 'discovery error', err: (err as Error).message });
-        if (discoveryInFlightGen === gen) {
-          discoveryInFlight = null;
-          discoveryInFlightGen++;
-        }
+    try {
+      await withTimeout(tickPromise, discoveryTickTimeoutMs, label);
+    } catch (err) {
+      stats.errors++;
+      logger.warn({ msg: 'discovery error', err: (err as Error).message });
+      if (discoveryInFlightGen === gen) {
+        discoveryInFlight = null;
+        discoveryInFlightGen++;
       }
-    })();
+    }
+  }
+
+  const discoveryTimer = setInterval(() => {
+    if (discoveryInFlight) return;
+    void runDiscoveryTickGuarded('discoveryTick');
   }, cfg.discoveryIntervalMs);
 
   const trackerTimer = setInterval(async () => {
@@ -3149,7 +3155,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     void refreshBtcContext(cfg);
   }, cfg.btcContextRefreshMs);
 
-  await discoveryTick();
+  await runDiscoveryTickGuarded('discoveryTickBoot');
 
   const shutdown = (sig: string) => {
     opts?.onShutdown?.(sig);
