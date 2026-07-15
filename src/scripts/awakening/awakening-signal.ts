@@ -9,6 +9,7 @@ function pos(v: unknown): number | null {
 /** Five-minute buckets in (6h − 5m) and (1h − 5m) DexScreener windows. */
 const PRIOR_6H_5M_BUCKETS = 71;
 const PRIOR_1H_5M_BUCKETS = 12;
+const PRIOR_6H_HOURLY_BUCKETS = 6;
 
 type AwakeningSignalCfg = Pick<
   AwakeningConfig,
@@ -30,7 +31,155 @@ type AwakeningSignalCfg = Pick<
   | 'minPriceChangeH6Pct'
   | 'minPriceChangeH1Pct'
   | 'maxVol1hPerMcap'
+  | 'maxVol5mToVol1hRatio'
+  | 'lateBurstMinVol1hUsd'
+  | 'quietPriorVol6hMaxUsd'
+  | 'quietVol1hMaxUsd'
+  | 'minVol1hUsd'
+  | 'gradualAwakeningEnabled'
+  | 'gradualVol5mSpike6hMult'
+  | 'gradualVol1hSpikeVs6hMult'
+  | 'gradualMaxPriceChangeH6Pct'
+  | 'gradualMaxPriceChangeH24Pct'
+  | 'gradualMaxVol5mSpikeVs1hMult'
+  | 'gradualMaxPriceChangeM5Pct'
+  | 'quietPriorReIgnitionSpike6hMult'
 >;
+
+export type AwakeningEntryPath = 'ignition' | 'gradual';
+
+export interface AwakeningComputedMetrics {
+  vol5mUsd: number;
+  vol1hUsd: number;
+  vol6hUsd: number;
+  vol24hUsd: number;
+  priorVol6hUsd: number;
+  priorVol1hUsd: number;
+  prior6h5mAvgUsd: number;
+  prior1h5mAvgUsd: number;
+  vol5mSpikeVs6hMult: number;
+  vol5mSpikeVs1hMult: number;
+  vol1hSpikeVs6hHourlyMult: number;
+  volVelocity: number;
+  vol5mToVol1hRatio: number | null;
+  vol1hToVol6hRatio: number | null;
+  vol1hPerMcap: number | null;
+  poolAgeMin: number | null;
+  buyRatio: number | null;
+  entryPath?: AwakeningEntryPath;
+}
+
+function computeMetrics(cfg: AwakeningSignalCfg, market: AwakeningDexMarket): AwakeningComputedMetrics {
+  const vol5m = pos(market.volume5mUsd) ?? 0;
+  const vol1h = pos(market.volume1hUsd) ?? 0;
+  const vol6h = pos(market.volume6hUsd) ?? 0;
+  const vol24h = pos(market.volume24hUsd) ?? 0;
+  const mcap = pos(market.marketCapUsd);
+
+  const priorVol6h = Math.max(0, vol6h - vol5m);
+  const priorVol1h = Math.max(0, vol1h - vol5m);
+  const quietFloor = cfg.quietPrior5mAvgFloorUsd;
+  const prior6h5mAvg = priorVol6h / PRIOR_6H_5M_BUCKETS;
+  const prior1h5mAvg = priorVol1h / PRIOR_1H_5M_BUCKETS;
+  const vol5mSpikeVs6hMult = vol5m / Math.max(prior6h5mAvg, quietFloor);
+  const vol5mSpikeVs1hMult = vol5m / Math.max(prior1h5mAvg, quietFloor);
+  const prior6hHourlyAvg = priorVol6h / PRIOR_6H_HOURLY_BUCKETS;
+  const vol1hSpikeVs6hHourlyMult = vol1h / Math.max(prior6hHourlyAvg, quietFloor * PRIOR_1H_5M_BUCKETS);
+
+  const buys = market.buys5m ?? 0;
+  const sells = market.sells5m ?? 0;
+  const txnTotal = buys + sells;
+
+  return {
+    vol5mUsd: vol5m,
+    vol1hUsd: vol1h,
+    vol6hUsd: vol6h,
+    vol24hUsd: vol24h,
+    priorVol6hUsd: priorVol6h,
+    priorVol1hUsd: priorVol1h,
+    prior6h5mAvgUsd: prior6h5mAvg,
+    prior1h5mAvgUsd: prior1h5mAvg,
+    vol5mSpikeVs6hMult,
+    vol5mSpikeVs1hMult,
+    vol1hSpikeVs6hHourlyMult,
+    volVelocity: vol5m / Math.max(vol1h, 1),
+    vol5mToVol1hRatio: vol1h > 0 ? vol5m / vol1h : null,
+    vol1hToVol6hRatio: vol6h > 0 ? vol1h / vol6h : null,
+    vol1hPerMcap: mcap != null && mcap > 0 ? vol1h / mcap : null,
+    poolAgeMin: market.poolAgeMin,
+    buyRatio: txnTotal > 0 ? buys / txnTotal : null,
+  };
+}
+
+function pushCommonGates(
+  cfg: AwakeningSignalCfg,
+  market: AwakeningDexMarket,
+  metrics: AwakeningComputedMetrics,
+  reasons: string[],
+): void {
+  const mcap = pos(market.marketCapUsd);
+  const liq = pos(market.liquidityUsd);
+
+  if (metrics.poolAgeMin == null || metrics.poolAgeMin < cfg.minPoolAgeMin) {
+    reasons.push(`pool_age<${cfg.minPoolAgeMin}m`);
+  }
+  if (metrics.vol24hUsd > cfg.maxVol24hUsd) {
+    reasons.push(`vol24h>${cfg.maxVol24hUsd}`);
+  }
+  if (metrics.vol1hPerMcap != null && metrics.vol1hPerMcap > cfg.maxVol1hPerMcap) {
+    reasons.push(`vol1h/mcap>${cfg.maxVol1hPerMcap}`);
+  }
+  if (mcap == null || mcap < cfg.minMcapUsd) {
+    reasons.push(`mcap<${cfg.minMcapUsd}`);
+  }
+  if (liq == null || liq < cfg.minLiqUsd) {
+    reasons.push(`liq<${cfg.minLiqUsd}`);
+  }
+
+  const h24 = market.priceChangeH24;
+  if (h24 != null && h24 < cfg.minPriceChangeH24Pct) {
+    reasons.push(`price_h24<${cfg.minPriceChangeH24Pct}`);
+  }
+  const h6 = market.priceChangeH6;
+  if (h6 != null && h6 < cfg.minPriceChangeH6Pct) {
+    reasons.push(`price_h6<${cfg.minPriceChangeH6Pct}`);
+  }
+  const h1 = market.priceChangeH1;
+  if (h1 != null && h1 < cfg.minPriceChangeH1Pct) {
+    reasons.push(`price_h1<${cfg.minPriceChangeH1Pct}`);
+  }
+}
+
+function pushLateBurstBlock(
+  cfg: AwakeningSignalCfg,
+  metrics: AwakeningComputedMetrics,
+  reasons: string[],
+): void {
+  if (
+    metrics.vol5mToVol1hRatio != null &&
+    metrics.vol1hUsd >= cfg.lateBurstMinVol1hUsd &&
+    metrics.vol5mToVol1hRatio > cfg.maxVol5mToVol1hRatio
+  ) {
+    reasons.push(`late_burst_vol5m/vol1h>${cfg.maxVol5mToVol1hRatio}`);
+  }
+}
+
+function pushBuyRatioGate(
+  cfg: AwakeningSignalCfg,
+  market: AwakeningDexMarket,
+  metrics: AwakeningComputedMetrics,
+  ignitionBurst: boolean,
+  reasons: string[],
+): void {
+  const m5 = market.priceChangeM5;
+  const ignitionPriceOk = m5 == null || m5 >= cfg.minPriceChangeM5IgnitionPct;
+  if (metrics.buyRatio == null || metrics.buyRatio < cfg.minBuyRatio) {
+    const bypassBuyRatio = cfg.buyRatioSpikeBypass && ignitionBurst && ignitionPriceOk;
+    if (!bypassBuyRatio) {
+      reasons.push(`buy_ratio<${cfg.minBuyRatio}`);
+    }
+  }
+}
 
 /** Confirmed vol5m burst vs quiet prior — re-awakening ignition shape. */
 export function isAwakeningIgnitionBurst(
@@ -44,12 +193,128 @@ export function isAwakeningIgnitionBurst(
   );
 }
 
+function evaluateIgnitionPath(
+  cfg: AwakeningSignalCfg,
+  market: AwakeningDexMarket,
+  metrics: AwakeningComputedMetrics,
+): string[] {
+  const reasons: string[] = [];
+  pushCommonGates(cfg, market, metrics, reasons);
+  pushLateBurstBlock(cfg, metrics, reasons);
+
+  if (metrics.vol5mUsd < cfg.vol5mMinUsd) {
+    reasons.push(`vol5m<${cfg.vol5mMinUsd}`);
+  }
+  if (
+    metrics.priorVol6hUsd > cfg.quietPriorVol6hMaxUsd &&
+    metrics.vol1hUsd > cfg.quietVol1hMaxUsd &&
+    metrics.vol5mSpikeVs6hMult < cfg.quietPriorReIgnitionSpike6hMult
+  ) {
+    reasons.push(`prior6h_quiet>${cfg.quietPriorVol6hMaxUsd}`);
+  }
+  if (metrics.vol5mSpikeVs6hMult < cfg.vol5mSpikeMinMult) {
+    reasons.push(`vol5m_spike_6h<${cfg.vol5mSpikeMinMult}`);
+  }
+  if (metrics.vol5mSpikeVs1hMult < cfg.vol5mSpikeVs1hMinMult) {
+    reasons.push(`vol5m_spike_1h<${cfg.vol5mSpikeVs1hMinMult}`);
+  }
+
+  const h24 = market.priceChangeH24;
+  if (h24 != null && h24 > cfg.maxPriceChangeH24Pct) {
+    reasons.push(`price_h24>${cfg.maxPriceChangeH24Pct}`);
+  }
+  const h6 = market.priceChangeH6;
+  if (h6 != null && h6 > cfg.maxPriceChangeH6Pct) {
+    reasons.push(`price_h6>${cfg.maxPriceChangeH6Pct}`);
+  }
+
+  const m5 = market.priceChangeM5;
+  if (m5 != null && m5 < cfg.minPriceChangeM5Pct) {
+    reasons.push(`price_m5<${cfg.minPriceChangeM5Pct}`);
+  }
+
+  const ignitionBurst = isAwakeningIgnitionBurst(cfg, metrics);
+  pushBuyRatioGate(cfg, market, metrics, ignitionBurst, reasons);
+  return reasons;
+}
+
+function evaluateGradualPath(
+  cfg: AwakeningSignalCfg,
+  market: AwakeningDexMarket,
+  metrics: AwakeningComputedMetrics,
+): string[] {
+  const reasons: string[] = [];
+  if (!cfg.gradualAwakeningEnabled) {
+    reasons.push('gradual_disabled');
+    return reasons;
+  }
+
+  pushCommonGates(cfg, market, metrics, reasons);
+  pushLateBurstBlock(cfg, metrics, reasons);
+
+  if (metrics.vol5mUsd < cfg.vol5mMinUsd) {
+    reasons.push(`vol5m<${cfg.vol5mMinUsd}`);
+  }
+  if (metrics.vol1hUsd < cfg.minVol1hUsd) {
+    reasons.push(`vol1h<${cfg.minVol1hUsd}`);
+  }
+
+  const volGrowing =
+    metrics.vol5mSpikeVs6hMult >= cfg.gradualVol5mSpike6hMult ||
+    metrics.vol1hSpikeVs6hHourlyMult >= cfg.gradualVol1hSpikeVs6hMult;
+  if (!volGrowing) {
+    reasons.push(
+      `gradual_vol<sp6:${cfg.gradualVol5mSpike6hMult}|vh6:${cfg.gradualVol1hSpikeVs6hMult}`,
+    );
+  }
+  if (metrics.vol5mSpikeVs1hMult > cfg.gradualMaxVol5mSpikeVs1hMult) {
+    reasons.push(`gradual_spike_1h>${cfg.gradualMaxVol5mSpikeVs1hMult}`);
+  }
+
+  const h24 = market.priceChangeH24;
+  if (h24 != null && h24 > cfg.gradualMaxPriceChangeH24Pct) {
+    reasons.push(`gradual_price_h24>${cfg.gradualMaxPriceChangeH24Pct}`);
+  }
+  const h6 = market.priceChangeH6;
+  if (h6 != null && h6 > cfg.gradualMaxPriceChangeH6Pct) {
+    reasons.push(`gradual_price_h6>${cfg.gradualMaxPriceChangeH6Pct}`);
+  }
+
+  const m5 = market.priceChangeM5;
+  if (m5 != null && m5 < cfg.minPriceChangeM5Pct) {
+    reasons.push(`price_m5<${cfg.minPriceChangeM5Pct}`);
+  }
+  if (m5 != null && m5 > cfg.gradualMaxPriceChangeM5Pct) {
+    reasons.push(`gradual_price_m5>${cfg.gradualMaxPriceChangeM5Pct}`);
+  }
+
+  const gradualBurst =
+    metrics.vol5mUsd >= cfg.vol5mMinUsd &&
+    (metrics.vol5mSpikeVs6hMult >= cfg.gradualVol5mSpike6hMult ||
+      metrics.vol1hSpikeVs6hHourlyMult >= cfg.gradualVol1hSpikeVs6hMult);
+  pushBuyRatioGate(cfg, market, metrics, gradualBurst, reasons);
+  return reasons;
+}
+
 /** Spike passed but only soft gates (buy_ratio / m5) blocked — retry soon. */
 export function isAwakeningNearMiss(reasons: string[]): boolean {
   if (reasons.length === 0) return false;
-  const spikeFailed = reasons.some((r) => r.startsWith('vol5m_spike_'));
-  if (spikeFailed) return false;
-  return reasons.every((r) => r.startsWith('buy_ratio<') || r.startsWith('price_m5<'));
+  const hardFail = reasons.some(
+    (r) =>
+      r.startsWith('vol5m_spike_') ||
+      r.startsWith('gradual_vol<') ||
+      r.startsWith('late_burst_') ||
+      r.startsWith('prior6h_quiet>') ||
+      r.startsWith('vol1h_quiet>') ||
+      r.startsWith('gradual_spike_1h>'),
+  );
+  if (hardFail) return false;
+  return reasons.every(
+    (r) =>
+      r.startsWith('buy_ratio<') ||
+      r.startsWith('price_m5<') ||
+      r.startsWith('gradual_price_m5>'),
+  );
 }
 
 export function awakeningEvalCooldownMs(
@@ -62,132 +327,36 @@ export function awakeningEvalCooldownMs(
 }
 
 /**
- * Dormant-low awakening: first real vol5m burst on a previously quiet, aged coin —
- * NOT a one-shot pump that is already fading, NOT a multi-day downhill, and
- * NOT mid-rally continuation after vol1h has already accumulated.
- * Pure function — no I/O.
+ * Dormant-low awakening: ignition burst on quiet prior OR gradual vol build
+ * with modest price rise before retail pump — NOT late-burst peak entries.
  */
 export function evaluateAwakeningSignal(
   cfg: AwakeningSignalCfg,
   market: AwakeningDexMarket,
 ): AwakeningSignalResult {
-  const reasons: string[] = [];
+  const metrics = computeMetrics(cfg, market);
+  const ignitionReasons = evaluateIgnitionPath(cfg, market, metrics);
+  const gradualReasons = evaluateGradualPath(cfg, market, metrics);
 
-  const vol5m = pos(market.volume5mUsd) ?? 0;
-  const vol1h = pos(market.volume1hUsd) ?? 0;
-  const vol6h = pos(market.volume6hUsd) ?? 0;
-  const vol24h = pos(market.volume24hUsd) ?? 0;
-  const mcap = pos(market.marketCapUsd);
-  const liq = pos(market.liquidityUsd);
-  const poolAgeMin = market.poolAgeMin;
-
-  const priorVol6h = Math.max(0, vol6h - vol5m);
-  const priorVol1h = Math.max(0, vol1h - vol5m);
-  const quietFloor = cfg.quietPrior5mAvgFloorUsd;
-  const prior6h5mAvg = priorVol6h / PRIOR_6H_5M_BUCKETS;
-  const prior1h5mAvg = priorVol1h / PRIOR_1H_5M_BUCKETS;
-  const vol5mSpikeVs6hMult = vol5m / Math.max(prior6h5mAvg, quietFloor);
-  const vol5mSpikeVs1hMult = vol5m / Math.max(prior1h5mAvg, quietFloor);
-
-  const volVelocity = vol5m / Math.max(vol1h, 1);
-  const vol5mToVol1hRatio = vol1h > 0 ? vol5m / vol1h : null;
-  const vol1hToVol6hRatio = vol6h > 0 ? vol1h / vol6h : null;
-  const vol1hPerMcap = mcap != null && mcap > 0 ? vol1h / mcap : null;
-
-  const buys = market.buys5m ?? 0;
-  const sells = market.sells5m ?? 0;
-  const txnTotal = buys + sells;
-  const buyRatio = txnTotal > 0 ? buys / txnTotal : null;
-
-  const metrics = {
-    vol5mUsd: vol5m,
-    vol1hUsd: vol1h,
-    vol6hUsd: vol6h,
-    vol24hUsd: vol24h,
-    priorVol6hUsd: priorVol6h,
-    priorVol1hUsd: priorVol1h,
-    prior6h5mAvgUsd: prior6h5mAvg,
-    prior1h5mAvgUsd: prior1h5mAvg,
-    vol5mSpikeVs6hMult,
-    vol5mSpikeVs1hMult,
-    volVelocity,
-    vol5mToVol1hRatio,
-    vol1hToVol6hRatio,
-    vol1hPerMcap,
-    poolAgeMin,
-    buyRatio,
-  };
-
-  if (poolAgeMin == null || poolAgeMin < cfg.minPoolAgeMin) {
-    reasons.push(`pool_age<${cfg.minPoolAgeMin}m`);
+  if (ignitionReasons.length === 0) {
+    return {
+      pass: true,
+      reasons: [],
+      metrics: { ...metrics, entryPath: 'ignition' },
+    };
+  }
+  if (gradualReasons.length === 0) {
+    return {
+      pass: true,
+      reasons: [],
+      metrics: { ...metrics, entryPath: 'gradual' },
+    };
   }
 
-  if (vol5m < cfg.vol5mMinUsd) {
-    reasons.push(`vol5m<${cfg.vol5mMinUsd}`);
-  }
-
-  // Early trigger: live vol5m vs quiet prior baseline — not accumulated vol1h floor.
-  if (vol5mSpikeVs6hMult < cfg.vol5mSpikeMinMult) {
-    reasons.push(`vol5m_spike_6h<${cfg.vol5mSpikeMinMult}`);
-  }
-  if (vol5mSpikeVs1hMult < cfg.vol5mSpikeVs1hMinMult) {
-    reasons.push(`vol5m_spike_1h<${cfg.vol5mSpikeVs1hMinMult}`);
-  }
-
-  if (vol24h > cfg.maxVol24hUsd) {
-    reasons.push(`vol24h>${cfg.maxVol24hUsd}`);
-  }
-
-  if (vol1hPerMcap != null && vol1hPerMcap > cfg.maxVol1hPerMcap) {
-    reasons.push(`vol1h/mcap>${cfg.maxVol1hPerMcap}`);
-  }
-
-  if (mcap == null || mcap < cfg.minMcapUsd) {
-    reasons.push(`mcap<${cfg.minMcapUsd}`);
-  }
-  if (liq == null || liq < cfg.minLiqUsd) {
-    reasons.push(`liq<${cfg.minLiqUsd}`);
-  }
-  const m5 = market.priceChangeM5;
-  const ignitionBurst = isAwakeningIgnitionBurst(cfg, metrics);
-  const ignitionPriceOk =
-    m5 == null || m5 >= cfg.minPriceChangeM5IgnitionPct;
-
-  if (buyRatio == null || buyRatio < cfg.minBuyRatio) {
-    const bypassBuyRatio =
-      cfg.buyRatioSpikeBypass && ignitionBurst && ignitionPriceOk;
-    if (!bypassBuyRatio) {
-      reasons.push(`buy_ratio<${cfg.minBuyRatio}`);
-    }
-  }
-
-  const h24 = market.priceChangeH24;
-  if (h24 != null && h24 > cfg.maxPriceChangeH24Pct) {
-    reasons.push(`price_h24>${cfg.maxPriceChangeH24Pct}`);
-  }
-  const h6 = market.priceChangeH6;
-  if (h6 != null && h6 > cfg.maxPriceChangeH6Pct) {
-    reasons.push(`price_h6>${cfg.maxPriceChangeH6Pct}`);
-  }
-
-  if (h24 != null && h24 < cfg.minPriceChangeH24Pct) {
-    reasons.push(`price_h24<${cfg.minPriceChangeH24Pct}`);
-  }
-  if (h6 != null && h6 < cfg.minPriceChangeH6Pct) {
-    reasons.push(`price_h6<${cfg.minPriceChangeH6Pct}`);
-  }
-  const h1 = market.priceChangeH1;
-  if (h1 != null && h1 < cfg.minPriceChangeH1Pct) {
-    reasons.push(`price_h1<${cfg.minPriceChangeH1Pct}`);
-  }
-
-  if (m5 != null && m5 < cfg.minPriceChangeM5Pct) {
-    reasons.push(`price_m5<${cfg.minPriceChangeM5Pct}`);
-  }
-
+  const merged = [...new Set([...ignitionReasons, ...gradualReasons])];
   return {
-    pass: reasons.length === 0,
-    reasons,
+    pass: false,
+    reasons: merged,
     metrics,
   };
 }

@@ -133,6 +133,7 @@ async function evaluateCandidate(
     mint: candidate.mint,
     source: candidate.source,
     streamSigCount5m: candidate.streamSigCount5m ?? null,
+    entryPath: verdict.metrics.entryPath ?? null,
     legUsd: cfg.legUsd,
     metrics: verdict.metrics,
     marketCapUsd: market.marketCapUsd,
@@ -171,6 +172,7 @@ async function evaluateCandidate(
     {
       mint: candidate.mint,
       source: candidate.source,
+      entryPath: verdict.metrics.entryPath,
       vol5m: verdict.metrics.vol5mUsd,
       prior6h: verdict.metrics.priorVol6hUsd,
       mcap: market.marketCapUsd,
@@ -196,6 +198,14 @@ async function collectCandidates(
 
   for (const hot of activity.hotMints(cfg.streamMinSigs5m, nowMs)) {
     push({ mint: hot.mint, source: 'stream_pulse', streamSigCount5m: hot.sigs });
+  }
+
+  let warmAdded = 0;
+  for (const warm of activity.warmMints(cfg.streamWarmMinSigs, cfg.streamWarmLookbackMs, nowMs)) {
+    if (warmAdded >= cfg.streamWarmMaxPerTick) break;
+    if (seen.has(warm.mint)) continue;
+    push({ mint: warm.mint, source: 'stream_warm', streamSigCount5m: warm.sigs });
+    warmAdded += 1;
   }
 
   if (cfg.geckoTrendingEnabled && nowMs - lastGeckoPollAtMs >= cfg.geckoTrendingPollMs) {
@@ -292,7 +302,7 @@ export async function main(): Promise<void> {
     vol5mMinUsd: cfg.vol5mMinUsd,
   });
 
-  const activity = new MintActivityTracker(cfg.streamActivityWindowMs);
+  const activity = new MintActivityTracker(cfg.streamActivityWindowMs, cfg.streamWarmLookbackMs);
   const streamCursor = { value: loadStreamCursor(cfg.cursorPath) };
 
   let wsHandle: { stop: () => void } | null = null;
