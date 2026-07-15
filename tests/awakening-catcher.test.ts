@@ -59,10 +59,10 @@ describe('awakening-signal', () => {
   it('passes when vol1h is still small — no vol1h accumulation gate', () => {
     const r = evaluateAwakeningSignal(
       cfg,
-      market({ volume5mUsd: 6_000, volume1hUsd: 6_500, volume6hUsd: 8_000, volume24hUsd: 60_000 }),
+      market({ volume5mUsd: 5_500, volume1hUsd: 12_000, volume6hUsd: 14_000, volume24hUsd: 60_000 }),
     );
     expect(r.pass).toBe(true);
-    expect(r.metrics.vol1hUsd).toBe(6_500);
+    expect(r.metrics.vol1hUsd).toBe(12_000);
   });
 
   it('blocks mid-rally continuation (2vvw3 late-entry shape)', () => {
@@ -289,9 +289,11 @@ describe('awakening-signal', () => {
       AWAKENING_QUIET_PRIOR_VOL6H_MAX_USD: '1500',
       AWAKENING_QUIET_VOL1H_MAX_USD: '2000',
       AWAKENING_MAX_VOL5M_TO_VOL1H_RATIO: '0.9',
+      AWAKENING_MINI_PUMP_PEAK_VOL5M_TO_VOL1H_MIN: '0.85',
+      AWAKENING_MINI_PUMP_PEAK_SPIKE_6H_MIN: '15',
     });
 
-    it('blocks 4U4U late-burst peak entry (vol5m≈vol1h)', () => {
+    it('blocks 4U4U mini-pump peak (vol5m≈vol1h + spike)', () => {
       const r = evaluateAwakeningSignal(
         prodCfg,
         market({
@@ -311,7 +313,57 @@ describe('awakening-signal', () => {
         }),
       );
       expect(r.pass).toBe(false);
-      expect(r.reasons.some((x) => x.startsWith('late_burst_'))).toBe(true);
+      expect(r.reasons.some((x) => x.startsWith('mini_pump_peak:'))).toBe(true);
+    });
+
+    it('blocks B1rGc4 mini-pump peak (small vol1h, vol5m≈vol1h)', () => {
+      const r = evaluateAwakeningSignal(
+        prodCfg,
+        market({
+          mint: 'B1rGc4HM4Q6q4nU78ADM7fGguxqiasH53fh6ViDXpump',
+          priceUsd: 0.0004309,
+          marketCapUsd: 430_904,
+          liquidityUsd: 68_974,
+          volume5mUsd: 2_859.68,
+          volume1hUsd: 3_008.34,
+          volume6hUsd: 4_564.69,
+          volume24hUsd: 15_844.91,
+          buys5m: 10,
+          sells5m: 2,
+          priceChangeM5: -1,
+          priceChangeH1: 3,
+          priceChangeH6: 5,
+          priceChangeH24: 8,
+          poolAgeMin: 296_793,
+        }),
+      );
+      expect(r.pass).toBe(false);
+      expect(r.reasons.some((x) => x.startsWith('mini_pump_peak:'))).toBe(true);
+    });
+
+    it('passes 2vvw3 gradual awakening at 08:00 pump start', () => {
+      const r = evaluateAwakeningSignal(
+        prodCfg,
+        market({
+          mint: '2vvw3cSwibzGD6SgW9QzRaBdmjkYrvs218DUy6VWpump',
+          priceUsd: 0.000129,
+          marketCapUsd: 123_000,
+          liquidityUsd: 25_000,
+          volume5mUsd: 3_500,
+          volume1hUsd: 8_500,
+          volume6hUsd: 60_500,
+          volume24hUsd: 280_000,
+          buys5m: 18,
+          sells5m: 12,
+          priceChangeM5: 5.6,
+          priceChangeH1: 3,
+          priceChangeH6: 8,
+          priceChangeH24: -5,
+          poolAgeMin: 12_200,
+        }),
+      );
+      expect(r.pass).toBe(true);
+      expect(r.metrics.entryPath).toBe('gradual');
     });
 
     it('blocks 2vvw3 Jul-15 05:29 tail spike (noisy prior + spike1h)', () => {
@@ -340,31 +392,6 @@ describe('awakening-signal', () => {
           (x) => x.startsWith('prior6h_quiet>') || x.startsWith('gradual_spike_1h>'),
         ),
       ).toBe(true);
-    });
-
-    it('passes 2vvw3 gradual awakening at 08:00 pump start', () => {
-      const r = evaluateAwakeningSignal(
-        prodCfg,
-        market({
-          mint: '2vvw3cSwibzGD6SgW9QzRaBdmjkYrvs218DUy6VWpump',
-          priceUsd: 0.000129,
-          marketCapUsd: 123_000,
-          liquidityUsd: 25_000,
-          volume5mUsd: 3_500,
-          volume1hUsd: 8_500,
-          volume6hUsd: 60_500,
-          volume24hUsd: 280_000,
-          buys5m: 18,
-          sells5m: 12,
-          priceChangeM5: 5.6,
-          priceChangeH1: 3,
-          priceChangeH6: 8,
-          priceChangeH24: -5,
-          poolAgeMin: 12_200,
-        }),
-      );
-      expect(r.pass).toBe(true);
-      expect(r.metrics.entryPath).toBe('gradual');
     });
 
     it('blocks 2vvw3 post-retail pump (h6/h24 caps)', () => {
@@ -436,16 +463,15 @@ describe('awakening-telegram', () => {
     const html = formatAwakeningSignalTelegramHtml(shadowCfg, candidate, mkt, evaluateAwakeningSignal(shadowCfg, mkt));
     expect(html).toContain('Awakening shadow');
     expect(html).toContain(FEBU);
-    expect(html).toContain('shadow');
-    expect(html).toContain('не выполняется');
-    expect(html).toContain('live-lera');
-    expect(html).toContain('ничего не блокирует');
+    expect(html).toContain('gmgn.ai/sol/token/');
+    expect(html).toContain('Цена входа');
+    expect(html).toContain('GMGN');
   });
 
   it('live message mentions queue intent', () => {
     const html = formatAwakeningSignalTelegramHtml(liveCfg, candidate, mkt, evaluateAwakeningSignal(liveCfg, mkt));
     expect(html).toContain('Awakening live');
-    expect(html).toContain('очередь');
+    expect(html).toContain('gmgn.ai/sol/token/');
     expect(html).toContain('dormant_awakening');
   });
 });

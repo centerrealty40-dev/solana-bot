@@ -69,6 +69,9 @@ export interface AwakeningConfig {
   maxVol5mToVol1hRatio: number;
   /** Apply late-burst block only when vol1h already meaningful. */
   lateBurstMinVol1hUsd: number;
+  /** Block 2-green + red-candle peak: vol5m≈vol1h on explosive spike (4U4U/B1rGc4). */
+  miniPumpPeakVol5mToVol1hMin: number;
+  miniPumpPeakSpike6hMin: number;
   /** Gradual awakening: vol build before retail pump (2vvw3 08:00 class). */
   gradualAwakeningEnabled: boolean;
   gradualVol5mSpike6hMult: number;
@@ -182,6 +185,8 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     maxVol1hPerMcap: envNum(env.AWAKENING_MAX_VOL1H_PER_MCAP, 3.0),
     maxVol5mToVol1hRatio: envNum(env.AWAKENING_MAX_VOL5M_TO_VOL1H_RATIO, 0.9),
     lateBurstMinVol1hUsd: envNum(env.AWAKENING_LATE_BURST_MIN_VOL1H_USD, 15_000),
+    miniPumpPeakVol5mToVol1hMin: envNum(env.AWAKENING_MINI_PUMP_PEAK_VOL5M_TO_VOL1H_MIN, 0.85),
+    miniPumpPeakSpike6hMin: envNum(env.AWAKENING_MINI_PUMP_PEAK_SPIKE_6H_MIN, 15),
     gradualAwakeningEnabled: envBool(env.AWAKENING_GRADUAL_AWAKENING_ENABLED, true),
     gradualVol5mSpike6hMult: envNum(env.AWAKENING_GRADUAL_VOL5M_SPIKE_6H_MULT, 3),
     gradualVol1hSpikeVs6hMult: envNum(env.AWAKENING_GRADUAL_VOL1H_SPIKE_VS_6H_MULT, 2),

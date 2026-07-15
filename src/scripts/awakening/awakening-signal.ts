@@ -33,6 +33,8 @@ type AwakeningSignalCfg = Pick<
   | 'maxVol1hPerMcap'
   | 'maxVol5mToVol1hRatio'
   | 'lateBurstMinVol1hUsd'
+  | 'miniPumpPeakVol5mToVol1hMin'
+  | 'miniPumpPeakSpike6hMin'
   | 'quietPriorVol6hMaxUsd'
   | 'quietVol1hMaxUsd'
   | 'minVol1hUsd'
@@ -164,6 +166,30 @@ function pushLateBurstBlock(
   }
 }
 
+/** 2× green 2m + red 3rd: vol squeezed into last 5m on huge spike (works even when vol1h is tiny). */
+export function isAwakeningMiniPumpPeak(
+  cfg: Pick<AwakeningConfig, 'miniPumpPeakVol5mToVol1hMin' | 'miniPumpPeakSpike6hMin'>,
+  metrics: Pick<AwakeningComputedMetrics, 'vol5mToVol1hRatio' | 'vol5mSpikeVs6hMult'>,
+): boolean {
+  return (
+    metrics.vol5mToVol1hRatio != null &&
+    metrics.vol5mToVol1hRatio >= cfg.miniPumpPeakVol5mToVol1hMin &&
+    metrics.vol5mSpikeVs6hMult >= cfg.miniPumpPeakSpike6hMin
+  );
+}
+
+function pushMiniPumpPeakBlock(
+  cfg: AwakeningSignalCfg,
+  metrics: AwakeningComputedMetrics,
+  reasons: string[],
+): void {
+  if (isAwakeningMiniPumpPeak(cfg, metrics)) {
+    reasons.push(
+      `mini_pump_peak:vol5m/vol1h>=${cfg.miniPumpPeakVol5mToVol1hMin},spike6h>=${cfg.miniPumpPeakSpike6hMin}`,
+    );
+  }
+}
+
 function pushBuyRatioGate(
   cfg: AwakeningSignalCfg,
   market: AwakeningDexMarket,
@@ -201,6 +227,7 @@ function evaluateIgnitionPath(
   const reasons: string[] = [];
   pushCommonGates(cfg, market, metrics, reasons);
   pushLateBurstBlock(cfg, metrics, reasons);
+  pushMiniPumpPeakBlock(cfg, metrics, reasons);
 
   if (metrics.vol5mUsd < cfg.vol5mMinUsd) {
     reasons.push(`vol5m<${cfg.vol5mMinUsd}`);
@@ -251,6 +278,7 @@ function evaluateGradualPath(
 
   pushCommonGates(cfg, market, metrics, reasons);
   pushLateBurstBlock(cfg, metrics, reasons);
+  pushMiniPumpPeakBlock(cfg, metrics, reasons);
 
   if (metrics.vol5mUsd < cfg.vol5mMinUsd) {
     reasons.push(`vol5m<${cfg.vol5mMinUsd}`);
@@ -304,6 +332,7 @@ export function isAwakeningNearMiss(reasons: string[]): boolean {
       r.startsWith('vol5m_spike_') ||
       r.startsWith('gradual_vol<') ||
       r.startsWith('late_burst_') ||
+      r.startsWith('mini_pump_peak:') ||
       r.startsWith('prior6h_quiet>') ||
       r.startsWith('vol1h_quiet>') ||
       r.startsWith('gradual_spike_1h>'),
