@@ -2143,7 +2143,7 @@ const PM2_APPS = [
       },
     },
     /**
-     * HyperLiquid Oscar dip-buy perp bot â€” PAPER by default (HL_OSCAR_LIVE_ENABLED=0).
+     * HyperLiquid Oscar dip-buy perp bot — live alts (HL_OSCAR_LIVE_ENABLED=1).
      * Same HL wallet/API as hl-twap via `.env` (HL_TWAP_* fallback).
      */
     {
