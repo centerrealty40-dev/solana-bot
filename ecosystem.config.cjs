@@ -202,7 +202,7 @@ const HL_MAJORS_ENV = {
   HL_MAJORS_SCALP_DRY_RUN: '0',
   HL_MAJORS_SCALP_DIP_PCT: '-2',
   HL_MAJORS_SCALP_WINDOW_MIN: '120',
-  HL_MAJORS_SCALP_TP_RUNGS: '0.005,0.01',
+  HL_MAJORS_SCALP_TP_RUNGS: '0.0075,0.015',
   HL_MAJORS_SCALP_SL_PCT: '2.5',
   HL_MAJORS_SCALP_TIME_STOP_MIN: '480',
   HL_MAJORS_SCALP_COOLDOWN_MIN: '30',
@@ -2143,7 +2143,7 @@ const PM2_APPS = [
       },
     },
     /**
-     * HyperLiquid Oscar dip-buy perp bot â€” PAPER by default (HL_OSCAR_LIVE_ENABLED=0).
+     * HyperLiquid Oscar dip-buy perp bot — live alts (HL_OSCAR_LIVE_ENABLED=1).
      * Same HL wallet/API as hl-twap via `.env` (HL_TWAP_* fallback).
      */
     {
