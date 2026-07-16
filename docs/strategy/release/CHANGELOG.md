@@ -100,6 +100,21 @@
 
 ---
 
+---
+
+## [1.11.603] — 2026-07-16
+
+**Тег:** `sa-alpha-1.11.603`
+
+### Live Oscar — bare half8_runner only + discovery recovery
+
+- **PM2:** убраны из экспорта `copy-trader`, `live-oscar-dashboard`, hl/market/retrace watches, basepulse/bscpulse sync, rh-sniper; watchdog только `live-oscar`.
+- **Discovery unload:** pool ≥$3M, `PAPER_SNAPSHOT_CANDIDATE_LIMIT=250`, tick 30s / timeout 300s; LOW / fast_dip_scalp / volume_leader / intel / whale / deep_audit / copy-adopt — **OFF**.
+- **Код:** `discoveryInFlightGen` (mutex после timeout); `recordDiscoveryTickCompleted()` сразу после eval; PG-only quote при свежем snapshot (≤3 мин, Birdeye OFF) — меньше DexScreener на eval.
+- **Откат:** redeploy `sa-alpha-1.11.602`; `pm2 start ecosystem.config.cjs` для восстановления снятых apps при необходимости.
+
+---
+
 ## [1.11.602] — 2026-07-16
 
 **Тег:** `sa-alpha-1.11.602`

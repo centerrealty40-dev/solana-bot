@@ -1745,6 +1745,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         setShyftShadowWatchedMints(leraShadowMints);
       }
+      recordDiscoveryTickCompleted();
       const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
 
@@ -2939,7 +2940,6 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         passed: res.passed,
         opened: stats.opened - openedBeforeDiscoveryBatch,
       });
-      recordDiscoveryTickCompleted();
     } catch (err) {
       stats.errors++;
       logger.warn({ msg: 'discovery tick failed', err: (err as Error).message });
@@ -2948,6 +2948,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   /** Blocks overlapping discovery ticks until the in-flight promise settles (timeout alone does not release). */
   let discoveryInFlight: Promise<void> | null = null;
+  let discoveryInFlightGen = 0;
   let trackerRunning = false;
   let followupRunning = false;
   const discoveryTickTimeoutMs = cfg.discoveryTickTimeoutMs;
@@ -2956,9 +2957,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   const discoveryTimer = setInterval(() => {
     if (discoveryInFlight) return;
+    const gen = ++discoveryInFlightGen;
     const tickPromise = discoveryTick();
     discoveryInFlight = tickPromise.finally(() => {
-      discoveryInFlight = null;
+      if (discoveryInFlightGen === gen) discoveryInFlight = null;
     });
     void (async () => {
       try {
@@ -2966,7 +2968,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       } catch (err) {
         stats.errors++;
         logger.warn({ msg: 'discovery error', err: (err as Error).message });
-        discoveryInFlight = null;
+        if (discoveryInFlightGen === gen) {
+          discoveryInFlight = null;
+          discoveryInFlightGen++;
+        }
       }
     })();
   }, cfg.discoveryIntervalMs);
