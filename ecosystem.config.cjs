@@ -1619,8 +1619,8 @@ const PM2_APPS = [
         PAPER_DISCOVERY_SNAPSHOT_SANITY_ZERO_LIQ_MAX_MCAP_USD: '500000',
         /** 1.11.276 — Jupiter cross-check price/mcap for volume-leader tier. */
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_ENABLED: '1',
-        /** 1.11.596: 20→5 — меньше Jupiter RPS на volume-leader tier per discovery tick. */
-        PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK: '20',
+        /** 1.11.601: 20→5 — снять Jupiter RPS с volume-leader tier (1.11.599 ошибочно вернул 20). */
+        PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK: '5',
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_DIVERGENCE_PCT: '35',
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MIN_DIVERGENCE_PCT: '0.5',
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
@@ -1803,6 +1803,8 @@ const PM2_APPS = [
          * Circuit breaker price-verify: `JUPITER_QUOTE_CIRCUIT_TELEGRAM=0` при необходимости отдельно.
          */
         LIVE_JUPITER_TRACKER_TELEGRAM: '0',
+        /** 1.11.601 — не спамить `[ALERT][jupiter-quote-circuit]` чаще 1 раз/час при хроническом overload. */
+        TELEGRAM_COOLDOWN_ALERT_JUPITER_QUOTE_CIRCUIT_MS: '3600000',
         /**
          * Jupiter quote + swap: max execution tolerance (bps). 1.11.503:
          * **10 bps** (0.1%) base + adaptive bump до 100 bps на slippage-class retry.
