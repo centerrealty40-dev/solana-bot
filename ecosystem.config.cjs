@@ -718,16 +718,11 @@ const PM2_APPS = [
         /** Unused file — live-oscar never writes paper JSONL (P4-I1). */
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
-        PAPER_DISCOVERY_INTERVAL_MS: '30000',
-        /**
-         * 1.11.596 — discovery tick >120s (DexScreener gate + volume-leader eval) → stall alert;
-         * поднят cap, чтобы тик успевал завершиться и сбрасывать mutex.
-         */
-        PAPER_DISCOVERY_TICK_TIMEOUT_MS: '300000',
+        PAPER_DISCOVERY_INTERVAL_MS: '10000',
+        PAPER_DISCOVERY_TICK_TIMEOUT_MS: '120000',
         /** 1.11.244: быстрее reeval для SQL-pool mint'ов; priority tier — `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`. */
         PAPER_DISCOVERY_REEVAL_SEC: '30',
-        /** 1.11.596: 500→250 — меньше PG fan-out и DexScreener queue wait per tick. */
-        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '250',
+        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '500',
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
@@ -1586,11 +1581,6 @@ const PM2_APPS = [
         /** Полный аудит по mint из whitelist-файла: pass/fail eval, `universe_miss`, `tick_skip`. */
         LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '1',
         LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
-        /** Alert when heartbeat runs but no discovery tick completes (mutex hang / PG stall). */
-        LIVE_DISCOVERY_STALL_ALERT_ENABLED: '1',
-        LIVE_DISCOVERY_STALL_ALERT_MS: '300000',
-        LIVE_DISCOVERY_STALL_BOOT_GRACE_MS: '180000',
-        LIVE_DISCOVERY_STALL_ALERT_REPEAT_MS: '600000',
         /** 1.11.244 — priority dip-watch tier (open + near-ready + recent eval + SQL pool). Whitelist entry off (`LIVE_MINT_WHITELIST_ENABLED=0`). */
         PAPER_PRIORITY_DISCOVERY_ENABLED: '1',
         PAPER_PRIORITY_DISCOVERY_REEVAL_SEC: '15',
@@ -1609,7 +1599,7 @@ const PM2_APPS = [
         PAPER_VOLUME_LEADER_ENABLED: '1',
         PAPER_VOLUME_LEADER_TOP_N: '50',
         /** 1.11.596: 15→30s — реже полный reeval top runners (меньше Jupiter+DS нагрузки). */
-        PAPER_VOLUME_LEADER_REEVAL_SEC: '30',
+        PAPER_VOLUME_LEADER_REEVAL_SEC: '15',
         PAPER_VOLUME_LEADER_LOOKBACK_HOURS: '24',
         PAPER_VOLUME_LEADER_QUERY_CACHE_SEC: '60',
         /** 1.11.283: откат 90→30m + меньше top-N — реже inject молодых раннеров. */
@@ -1625,7 +1615,7 @@ const PM2_APPS = [
         /** 1.11.276 — Jupiter cross-check price/mcap for volume-leader tier. */
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_ENABLED: '1',
         /** 1.11.596: 20→5 — меньше Jupiter RPS на volume-leader tier per discovery tick. */
-        PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK: '5',
+        PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK: '20',
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_DIVERGENCE_PCT: '35',
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MIN_DIVERGENCE_PCT: '0.5',
         PAPER_WHITELIST_SNAPSHOT_LOOKBACK_MIN: '60',
@@ -2143,7 +2133,7 @@ const PM2_APPS = [
       },
     },
     /**
-     * HyperLiquid Oscar dip-buy perp bot � live alts (HL_OSCAR_LIVE_ENABLED=1).
+     * HyperLiquid Oscar dip-buy perp bot � live alts (HL_OSCAR_LIVE_ENABLED=1).
      * Same HL wallet/API as hl-twap via `.env` (HL_TWAP_* fallback).
      */
     {

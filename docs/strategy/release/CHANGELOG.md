@@ -98,6 +98,18 @@
 
 ---
 
+## [1.11.599] — 2026-07-16
+
+**Тег:** `sa-alpha-1.11.599`
+
+### Live Oscar — revert discovery runtime to pre–1.11.578 (fix recurring stall)
+
+- **Причина:** 1.11.578 unfreeze mutex на timeout + 1.11.596/597 (pool 250, timeout 300s, stall watchdog) не устранили корень: eval >5 мин → zombie ticks → overlapping DexScreener load → `discovery_stall` ALERT и ~16% throughput за ночь.
+- **Откат scheduler:** убран `runDiscoveryTickGuarded` / `discoveryInFlightGen` unfreeze; single-flight mutex как до 11 июля (timeout логирует ошибку, новый тик ждёт завершения in-flight).
+- **Удалён stall watchdog:** `recordDiscoveryTickCompleted`, `LIVE_DISCOVERY_STALL_ALERT_*`, Telegram `[ALERT][discovery_stall]`.
+- **Env (`live-oscar`):** `PAPER_DISCOVERY_INTERVAL_MS` 30s→**10s**; `PAPER_DISCOVERY_TICK_TIMEOUT_MS` 300s→**120s**; `PAPER_SNAPSHOT_CANDIDATE_LIMIT` 250→**500**; `PAPER_VOLUME_LEADER_REEVAL_SEC` 30→**15**; `PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK` 5→**20**.
+- **Откат:** redeploy `sa-alpha-1.11.598` / SHA `be983e1`.
+
 ## [1.11.598] — 2026-07-16
 
 **Тег:** `sa-alpha-1.11.598`
