@@ -181,7 +181,7 @@ import {
   usesPaperOscarSecondLegScaleIn,
 } from './paper-oscar-v21.js';
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
-import { recordDiscoveryHealthSample } from './discovery-health-window.js';
+import { recordDiscoveryHealthSample, markDiscoverySchedulerStarted, recordDiscoveryTickCompleted } from './discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import {
   buildHoldersUnknownTelegramText,
@@ -2933,6 +2933,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         passed: res.passed,
         opened: stats.opened - openedBeforeDiscoveryBatch,
       });
+      recordDiscoveryTickCompleted();
     } catch (err) {
       stats.errors++;
       logger.warn({ msg: 'discovery tick failed', err: (err as Error).message });
@@ -2944,6 +2945,8 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   let trackerRunning = false;
   let followupRunning = false;
   const discoveryTickTimeoutMs = cfg.discoveryTickTimeoutMs;
+
+  markDiscoverySchedulerStarted();
 
   const discoveryTimer = setInterval(() => {
     if (discoveryInFlight) return;
@@ -2957,6 +2960,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       } catch (err) {
         stats.errors++;
         logger.warn({ msg: 'discovery error', err: (err as Error).message });
+        discoveryInFlight = null;
       }
     })();
   }, cfg.discoveryIntervalMs);

@@ -98,6 +98,18 @@
 
 ---
 
+## [1.11.600] — 2026-07-16
+
+**Тег:** `sa-alpha-1.11.600`
+
+### Live Oscar — restore discovery stall watchdog (visibility, not a perf fix)
+
+- **Причина:** 1.11.599 убрал `LIVE_DISCOVERY_STALL_ALERT_*` и Telegram `[ALERT][discovery_stall]` — оператор терял видимость, когда eval > timeout и тики не завершались. Это была ошибка revert: диагностику нельзя отключать, пока discovery не здоров.
+- **Восстановлено:** `recordDiscoveryTickCompleted`, `markDiscoverySchedulerStarted`, stall watchdog в `discovery-health-window.ts`, Telegram ALERT + `risk_note` в heartbeat, env `LIVE_DISCOVERY_STALL_ALERT_*` в `live-oscar`.
+- **Дополнительно:** при `discoveryTick timeout` сбрасываем `discoveryInFlight`, чтобы следующий интервал мог стартовать (mutex не залипает на zombie tick).
+- **Не входит:** abort eval loop при timeout (pool 500 всё ещё может давать `errors≈ticks`); отдельный релиз.
+- **Откат:** redeploy `sa-alpha-1.11.599` / SHA `ffe33a4` или `LIVE_DISCOVERY_STALL_ALERT_ENABLED=0`.
+
 ## [1.11.599] — 2026-07-16
 
 **Тег:** `sa-alpha-1.11.599`
