@@ -1579,12 +1579,12 @@ const PM2_APPS = [
         LIVE_STRATEGY_ID: 'live-oscar',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         LIVE_OPEN_SNAPSHOT_PATH: path.join(root, 'data/live/live-oscar-open-snapshot.json'),
-        /** Subtract copy-leader cost basis from wallet-holds-mint gate — OFF (no copy-trader). */
-        LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
+        /** Subtract copy-leader cost basis from wallet-holds-mint gate. */
+        LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
         LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
-        /** Copy-adopt OFF — bare half8 discovery only. */
+        /** Copy buy → live-oscar wave_b half8_runner exit (no leader mirror sell). */
         LIVE_COPY_LEADER_ADOPT_STAGED_ENTRY_ENABLED: '0',
-        LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED: '0',
+        LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED: '1',
         LIVE_COPY_LEADER_ADOPT_AVG_LEG_PCT: '25',
         /** `live_discovery_eval` / `live_discovery_skip_open` в JSONL (отключить: `0`). */
         LIVE_DISCOVERY_AUDIT_JSONL: '1',
@@ -2216,13 +2216,19 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
-        /** Bare Oscar: watchdog only live-oscar (no copy-trader / hl-twap). */
+        /** Bare Oscar: watchdog live-oscar + copy-trader. */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
           {
             pm2: 'live-oscar',
             heartbeatPath: 'data/ops-heartbeats/live-oscar.json',
             staleMs: 300_000,
             fatalPath: 'data/live/last-fatal-live-oscar.json',
+          },
+          {
+            pm2: 'copy-trader',
+            heartbeatPath: 'data/ops-heartbeats/copy-trader.json',
+            staleMs: 300_000,
+            fatalPath: 'data/ops-heartbeats/copy-trader-last-fatal.json',
           },
         ]),
       },
@@ -2260,8 +2266,8 @@ const PM2_APPS = [
         COPY_TRADER_TARGET_WALLET: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        /** Leader-mirror initial entry: 50% of leader buy USD (0 = fixed positionUsd). */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
+        /** Leader-mirror initial entry: 75% of leader buy USD (0 = fixed positionUsd). */
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.75',
         /** Fallback / cap when initialMirrorRatio=0; ignored for entry when mirror is on. */
         COPY_TRADER_POSITION_USD: '500',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
@@ -2374,12 +2380,11 @@ const PM2_APPS = [
 ];
 
 /**
- * Oscar VPS 2026-07-16: single strategy `live-oscar` half8_runner — no copy/hl/market/dashboard tiles.
+ * Oscar VPS 2026-07-16: live-oscar half8_runner + copy-trader (75% mirror, oscar_half8 exit).
  * dc-trader / dcafr-dc-alert are separate product (`/opt/dc-trader`) — not in this ecosystem file.
  */
 const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'live-oscar-dashboard',
-  'copy-trader',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',
   'retrace-alert-watch',
