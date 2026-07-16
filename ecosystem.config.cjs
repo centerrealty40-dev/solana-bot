@@ -715,6 +715,8 @@ const PM2_APPS = [
          */
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'live-oscar',
+        /** preset-c/pullback-scan imports geometry from market-pullback-telegram-watch — must not start TG poll in-process. */
+        PULLBACK_ALERT_SKIP_MAIN: '1',
         /** Unused file — live-oscar never writes paper JSONL (P4-I1). */
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
