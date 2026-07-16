@@ -720,6 +720,11 @@ const PM2_APPS = [
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
         PAPER_DISCOVERY_INTERVAL_MS: '10000',
         PAPER_DISCOVERY_TICK_TIMEOUT_MS: '120000',
+        /** 1.11.578 — watchdog: Telegram ALERT если нет completed discovery tick >5 мин (boot grace 3 мин). */
+        LIVE_DISCOVERY_STALL_ALERT_ENABLED: '1',
+        LIVE_DISCOVERY_STALL_ALERT_MS: '300000',
+        LIVE_DISCOVERY_STALL_BOOT_GRACE_MS: '180000',
+        LIVE_DISCOVERY_STALL_ALERT_REPEAT_MS: '600000',
         /** 1.11.244: быстрее reeval для SQL-pool mint'ов; priority tier — `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`. */
         PAPER_DISCOVERY_REEVAL_SEC: '30',
         PAPER_SNAPSHOT_CANDIDATE_LIMIT: '500',
