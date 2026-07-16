@@ -106,12 +106,13 @@
 
 **Тег:** `sa-alpha-1.11.603`
 
-### Live Oscar — bare half8_runner only + discovery recovery
+### Live Oscar — bare half8_runner + discovery recovery + copy-trader 75%
 
-- **PM2:** убраны из экспорта `copy-trader`, `live-oscar-dashboard`, hl/market/retrace watches, basepulse/bscpulse sync, rh-sniper; watchdog только `live-oscar`.
-- **Discovery unload:** pool ≥$3M, `PAPER_SNAPSHOT_CANDIDATE_LIMIT=250`, tick 30s / timeout 300s; LOW / fast_dip_scalp / volume_leader / intel / whale / deep_audit / copy-adopt — **OFF**.
-- **Код:** `discoveryInFlightGen` (mutex после timeout); `recordDiscoveryTickCompleted()` сразу после eval; PG-only quote при свежем snapshot (≤3 мин, Birdeye OFF) — меньше DexScreener на eval.
-- **Откат:** redeploy `sa-alpha-1.11.602`; `pm2 start ecosystem.config.cjs` для восстановления снятых apps при необходимости.
+- **PM2:** убраны `live-oscar-dashboard`, hl/market/retrace watches, basepulse/bscpulse sync, rh-sniper; **оставлены** `live-oscar`, **`copy-trader`** (75% mirror, `oscar_half8` exit), коллекторы PG, ops-watch.
+- **Copy-trader:** `COPY_TRADER_INITIAL_MIRROR_RATIO=0.75`; после входа handoff → live-oscar half8_runner (`LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED=1`).
+- **Discovery unload:** pool ≥$3M, `PAPER_SNAPSHOT_CANDIDATE_LIMIT=250`, tick 30s / timeout 300s; LOW / fast_dip_scalp / volume_leader / intel / whale / deep_audit — **OFF**.
+- **Код:** `discoveryInFlightGen` (mutex после timeout); `recordDiscoveryTickCompleted()` сразу после eval; PG-only quote при свежем snapshot (≤3 мин); `PULLBACK_ALERT_SKIP_MAIN=1` (нет TG-poll внутри live-oscar).
+- **Откат:** redeploy `sa-alpha-1.11.602`.
 
 ---
 
