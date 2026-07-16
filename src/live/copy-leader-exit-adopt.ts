@@ -158,7 +158,8 @@ export function buildCopyLeaderAdoptStagedEntryState(
     copyLeaderAdoptStagedPlan: true,
     firstDropPct: 0,
     firstLegUsd: args.initialInvestedUsd,
-    killDropPct: cfg.liveStagedEntryKillDropPct,
+    /** Handoff already at market — no signal-kill (wave/avg kill only; avoids ghost Jupiter kills). */
+    killDropPct: 0,
     entrySplitV2: true,
     entrySplitLegUsd: args.initialInvestedUsd,
     entrySplitLeg2Usd: 0,

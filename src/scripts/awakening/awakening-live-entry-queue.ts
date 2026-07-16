@@ -58,3 +58,8 @@ export function awakeningLiveEntryEnabled(env: NodeJS.ProcessEnv = process.env):
   const v = env.AWAKENING_LIVE_ENTRY_ENABLED?.trim().toLowerCase();
   return v === '1' || v === 'true';
 }
+
+/** PM2 consumer strategy — default live-lera10; catcher uses live-catcher-awakening. */
+export function awakeningLiveEntryStrategyId(env: NodeJS.ProcessEnv = process.env): string {
+  return env.AWAKENING_LIVE_ENTRY_STRATEGY_ID?.trim() || 'live-lera10';
+}

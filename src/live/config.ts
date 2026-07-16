@@ -618,6 +618,9 @@ const LiveOscarConfigSchema = z
      */
     liveTrackerJupiterMaxPremiumOverSnapshotPct: z.coerce.number().min(0).max(200).default(6),
 
+    /** Max PG snapshot age (ms) for live exit MTM; older rows ignored (Jupiter-only). Default 2m. */
+    liveTrackerPgSnapshotMaxAgeMs: z.coerce.number().int().min(0).max(3_600_000).default(120_000),
+
     /**
      * Пауза (мс) между открытыми mint в тике трекера после Jupiter MTM — снижает burst на API.
      * При Jupiter Developer tier (~10 RPS) можно **50–100**; `0` = без паузы.
@@ -1155,6 +1158,13 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 6;
       const n = Number(s);
       return Number.isFinite(n) && n >= 0 ? Math.min(200, n) : 6;
+    })(),
+    liveTrackerPgSnapshotMaxAgeMs: (() => {
+      const s = process.env.LIVE_TRACKER_PG_SNAPSHOT_MAX_AGE_MS?.trim();
+      if (s === '0') return 0;
+      if (!s) return 120_000;
+      const n = Number.parseInt(s, 10);
+      return Number.isFinite(n) && n >= 0 ? Math.min(3_600_000, n) : 120_000;
     })(),
     liveTrackerInterMintDelayMs: (() => {
       const s = process.env.LIVE_TRACKER_INTER_MINT_DELAY_MS?.trim();

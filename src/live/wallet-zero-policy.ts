@@ -38,3 +38,14 @@ export function livePartialSellDrainedWallet(
 ): boolean {
   return walletDrained === true || sellAmountSource === 'chain_full_balance';
 }
+
+/** True when a sell tx consumed ~all on-chain SPL for the mint (partial vs full aware). */
+export function sellPipelineWalletDrained(
+  intentKind: 'sell_partial' | 'sell_full',
+  soldRaw: bigint,
+  chainAmt: bigint,
+): boolean {
+  if (!(chainAmt > 0n) || !(soldRaw > 0n)) return false;
+  if (intentKind === 'sell_full') return soldRaw >= chainAmt;
+  return soldRaw * 100n >= chainAmt * 95n;
+}

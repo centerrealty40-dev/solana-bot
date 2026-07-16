@@ -117,9 +117,14 @@ describe('copy-leader exit adopt sizing', () => {
     const ot = open.get(mint)!;
     expect(ot.copyToOscarPromoted).toBe(true);
     expect(ot.totalInvestedUsd).toBe(700);
+    expect(ot.liveExitPolicyId).toBe('wave_b_v1');
+    expect(ot.liveWaveFlatTpMode).toBe('half8_runner');
+    expect(ot.tpGridOverrides?.gridStepPnl).toBe(0.08);
+    expect(ot.tpGridOverrides?.gridSellFractionByStep).toEqual([0.5]);
 
     const st = ot.liveStagedEntry!;
     expect(st.copyLeaderAdoptStagedPlan).toBe(true);
+    expect(st.killDropPct).toBe(0);
     expect(st.signalPriceUsd).toBe(entryPriceUsd);
     expect(st.avgSecondLegUsd).toBe(175);
     expect(st.avgThirdLegUsd).toBe(175);
