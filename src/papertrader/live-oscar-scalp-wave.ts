@@ -41,6 +41,7 @@ export function resolveLiveOscarTradeLaneFromOpen(
   if (ot.liveOscarTradeLane === 'fast_dip_scalp') return 'fast_dip_scalp';
   if (ot.liveExitPolicyId === 'fast_dip_scalp_v1') return 'fast_dip_scalp';
   if (ot.liveOscarTradeLane === 'dormant_awakening') return 'dormant_awakening';
+  if (ot.liveExitPolicyId === 'dormant_awakening_v1') return 'dormant_awakening';
   if (ot.liveOscarTradeLane === 'scalp_wave') return 'scalp_wave';
   if (ot.liveOscarMcapTier === 'scalp_wave') return 'scalp_wave';
   if (ot.liveExitPolicyId === 'scalp_wave_v1') return 'scalp_wave';

@@ -232,6 +232,27 @@ export function signalDropPctFromState(st: LiveStagedEntryState, curMetric: numb
   return (curMetric / st.signalPriceUsd - 1) * 100;
 }
 
+/** Copy-handoff: signal-kill vs adopt anchor is meaningless — use wave/avg kill only. */
+export function liveStagedEntrySignalKillDisabled(st: LiveStagedEntryState | undefined): boolean {
+  return st?.copyLeaderAdoptStagedPlan === true;
+}
+
+/** Exit/kill gating uses clamped tracker MTM, not raw Jupiter buy-probe (false −50% kills). */
+export function resolveStagedEntryKillMetricUsd(args: {
+  exitMtmUsd: number;
+  stagedEntryTradableUsd: number;
+}): number {
+  if (args.exitMtmUsd > 0) return args.exitMtmUsd;
+  return args.stagedEntryTradableUsd;
+}
+
+export function liveStagedEntryKillHit(ot: OpenTrade, killMetricUsd: number): boolean {
+  const st = ot.liveStagedEntry;
+  if (!st || liveStagedEntrySignalKillDisabled(st) || !(st.killDropPct > 0)) return false;
+  const dropPct = signalDropPctFromState(st, killMetricUsd);
+  return dropPct != null && dropPct <= -st.killDropPct;
+}
+
 /** Timed avg-split legs 2–4: delay from prior avg leg + corridor vs signal anchor. */
 export function avgSplitTimedLegEligible(args: {
   st: LiveStagedEntryState;

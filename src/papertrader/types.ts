@@ -384,7 +384,8 @@ export interface OpenTrade {
     | 'runner_lite_v1'
     | 'pervyy_vystrel_v1'
     | 'preset_c_scalp_v1'
-    | 'fast_dip_scalp_v1';
+    | 'fast_dip_scalp_v1'
+    | 'dormant_awakening_v1';
   /** Live Oscar trade lane — prod/scalp_wave mutex; parallel lanes via composite open key. */
   liveOscarTradeLane?:
     | 'prod'

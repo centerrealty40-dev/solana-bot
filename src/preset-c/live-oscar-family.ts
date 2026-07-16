@@ -10,6 +10,9 @@ export const LIVE_LERA_STRATEGY_ID = 'live-lera';
 /** LERA 10 — second live dip lane on Lera VPS (`PAPER_STRATEGY_ID=live-lera10`). */
 export const LIVE_LERA10_STRATEGY_ID = 'live-lera10';
 
+/** Catcher VPS — Volume Awakening live consumer (`PAPER_STRATEGY_ID=live-catcher-awakening`). */
+export const LIVE_CATCHER_AWAKENING_STRATEGY_ID = 'live-catcher-awakening';
+
 /** SuperBot / Preset C execution wallet (public only). */
 export const LIVE_OSCAR_PRESET_C_WALLET_PUBKEY =
   'HcV3BhmKQN5hhFWiKWoRfzuYM2C6ftPjqQC67wo27DDo';
@@ -28,7 +31,11 @@ export function isLiveOscarTradingStrategyId(strategyId: string): boolean {
 }
 
 export function isLiveLeraTradingStrategyId(strategyId: string): boolean {
-  return strategyId === LIVE_LERA_STRATEGY_ID || strategyId === LIVE_LERA10_STRATEGY_ID;
+  return (
+    strategyId === LIVE_LERA_STRATEGY_ID ||
+    strategyId === LIVE_LERA10_STRATEGY_ID ||
+    strategyId === LIVE_CATCHER_AWAKENING_STRATEGY_ID
+  );
 }
 
 /** Oscar + Lera live dip processes sharing exit remainder flush and wave-B family behavior. */

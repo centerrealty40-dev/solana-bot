@@ -217,10 +217,14 @@ import {
 } from './flash-crash-kill.js';
 import {
   liveStagedEntryAddWindowOpen,
+  liveStagedEntryKillHit,
+  liveStagedEntrySignalKillDisabled,
   liveStagedEntryTtlPreservesPlan,
   liveStagedEntrySignalTtlExpired,
   openTradeNeedsEntrySplitFastPoll,
+  resolveStagedEntryKillMetricUsd,
   resolveStagedEntryTradableUsd,
+  signalDropPctFromState,
 } from './live-staged-entry-gates.js';
 import { maybeRefreshPendingLegPgForOpenTrade } from '../pricing/pending-leg-pg-refresh.js';
 import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-staged-entry-lifecycle.js';
@@ -228,6 +232,7 @@ import { reconcileE2OpenOnTrackerTick } from './live-oscar-e2-open-reconcile.js'
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
 import { liveTrackerMtmUsdSnapJupiterSymmetricBand } from '../../live/mtm-snapshot-guard.js';
+import { rejectStalePgSnapshotForMtm } from '../../live/pg-snapshot-mtm.js';
 import {
   getOpenPositionExecSellUsd,
   isOpenPositionExecSellFresh,
@@ -324,19 +329,6 @@ function paperOscarIdealizedNeutralFull(ot: OpenTrade): boolean {
     !ot.livePendingScaleIn &&
     !ot.liveExitProfileMode
   );
-}
-
-function liveStagedEntrySignalDropPct(ot: OpenTrade, curMetric: number): number | null {
-  const st = ot.liveStagedEntry;
-  if (!st || !(st.signalPriceUsd > 0) || !(curMetric > 0)) return null;
-  return (curMetric / st.signalPriceUsd - 1) * 100;
-}
-
-function liveStagedEntryKillHit(ot: OpenTrade, curMetric: number): boolean {
-  const st = ot.liveStagedEntry;
-  if (!st || !(st.killDropPct > 0)) return false;
-  const dropPct = liveStagedEntrySignalDropPct(ot, curMetric);
-  return dropPct != null && dropPct <= -st.killDropPct;
 }
 
 function scheduleTailAfterLiveClose(
@@ -886,9 +878,19 @@ function buildExitContext(args: {
           : `Wave B breakeven exit (TP≥+7.5% taken, cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`;
       break;
     case 'KILLSTOP':
-      if (ot.liveStagedEntry) {
-        const signalDropPct = liveStagedEntrySignalDropPct(ot, curMetric);
-        triggerLabel = `Signal killstop −${ot.liveStagedEntry.killDropPct}% (cur ${signalDropPct?.toFixed(1) ?? 'n/a'}% vs signal, full exit)`;
+      if (
+        ot.liveStagedEntry &&
+        ot.liveStagedEntry.killDropPct > 0 &&
+        !liveStagedEntrySignalKillDisabled(ot.liveStagedEntry)
+      ) {
+        const signalDropPct = signalDropPctFromState(ot.liveStagedEntry, curMetric);
+        if (signalDropPct != null && signalDropPct <= -ot.liveStagedEntry.killDropPct) {
+          triggerLabel = `Signal killstop −${ot.liveStagedEntry.killDropPct}% (cur ${signalDropPct.toFixed(1)}% vs signal, full exit)`;
+          break;
+        }
+      }
+      if (isWaveBExitPolicy(ot)) {
+        triggerLabel = `Wave B killstop ${(killEff * 100).toFixed(0)}% (cur ${closePnlPct.toFixed(1)}% vs avg, full exit)`;
       } else {
         triggerLabel = `DCA killstop ${(killEff * 100).toFixed(0)}% (cur ${closePnlPct.toFixed(1)}% vs avg, ${dcaLegsAdded} DCA legs)`;
       }
@@ -1494,11 +1496,7 @@ async function tryExecuteTpPartialSell(args: {
     ps.walletDrainedFlush = true;
     ps.remainingFractionBeforePartial = remainingFractionBeforePartial;
     ps.mtmFlushProceedsUsd = mtmFlushProceedsUsd;
-    if (proceedsUsd < mtmFlushProceedsUsd * 0.85) {
-      ps.price = marketSell;
-      ps.pnlUsd = mtmFlushProceedsUsd - ot.totalInvestedUsd * remainingFractionBeforePartial;
-      ps.grossPnlUsd = ps.pnlUsd;
-    }
+    // Do not inflate partial PnL from MTM — chain proceedsUsd stays authoritative (FfpUuX Jul 2026).
   }
   markLadder();
   const mcUsdLive_ps = await getLiveMcUsd(
@@ -3492,6 +3490,45 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       snapPx = Number(quote.priceUsd ?? 0);
       snapVol5m = quote.volume5mUsd;
       snapTsMs = quote.snapshotTsMs ?? null;
+      const pgMaxAgeMs =
+        liveOscarCfg?.liveTrackerPgSnapshotMaxAgeMs ??
+        Math.max(cfg.liveOscarStalePriceWarnMs, 120_000);
+      const stalePg = rejectStalePgSnapshotForMtm({
+        snapPx,
+        snapTsMs,
+        nowMs: Date.now(),
+        maxAgeMs: pgMaxAgeMs,
+      });
+      if (stalePg.rejected && Number(quote.priceUsd ?? 0) > 0) {
+        log.warn(
+          {
+            mint: mint.slice(0, 8),
+            symbol: ot.symbol,
+            pgPriceUsd: quote.priceUsd,
+            pgAgeMs: stalePg.ageMs,
+            maxAgeMs: pgMaxAgeMs,
+          },
+          'live tracker: PG snapshot too stale for exit MTM — ignoring PG price',
+        );
+        journalAppend({
+          kind: 'live_stale_pg_mtm_reject',
+          mint,
+          pgPriceUsd: quote.priceUsd,
+          pgAgeMs: stalePg.ageMs,
+          maxAgeMs: pgMaxAgeMs,
+          snapshotTsMs: snapTsMs,
+        });
+        journalLiveStrategy?.({
+          kind: 'live_stale_pg_mtm_reject',
+          mint,
+          pgPriceUsd: quote.priceUsd,
+          pgAgeMs: stalePg.ageMs,
+          maxAgeMs: pgMaxAgeMs,
+          snapshotTsMs: snapTsMs,
+        });
+      }
+      snapPx = stalePg.snapPx;
+      snapTsMs = stalePg.snapTsMs;
     } catch (err) {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
     }
@@ -4072,7 +4109,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       waveBUpdateDip10ReachedBeforeTp8(
         ot,
         curMetric,
-        liveStagedEntrySignalDropPct(ot, curMetric),
+        ot.liveStagedEntry ? signalDropPctFromState(ot.liveStagedEntry, curMetric) : null,
         cfg.liveOscarDip10FirstTp5SignalDropPct,
       );
     }
@@ -4767,8 +4804,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       entrySplitJupiterPx,
       fallbackCurMetric: curMetric,
     });
+    const stagedEntryKillMetricUsd = resolveStagedEntryKillMetricUsd({
+      exitMtmUsd: curMetric,
+      stagedEntryTradableUsd: stagedEntryPriceUsd,
+    });
     const st = ot.liveStagedEntry;
-    if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, stagedEntryPriceUsd)) {
+    if (st && ot.remainingFraction > 0 && !liveStagedEntryKillHit(ot, stagedEntryKillMetricUsd)) {
       if (st.entrySplitV2) {
         if (openTradeNeedsEntrySplitFastPoll(ot)) {
           await maybeRefreshPendingLegPgForOpenTrade({
@@ -4789,7 +4830,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           journalLiveStrategy,
         });
       }
-      const signalDropPct = liveStagedEntrySignalDropPct(ot, stagedEntryPriceUsd);
+      const signalDropPct = st ? signalDropPctFromState(st, stagedEntryPriceUsd) : null;
       /** Staged доборы до якоря сигнала: раньше блокировались после любого partial TP; теперь — до 2-й ступени TP-сетки (`TP_LADDER`), затем запрет. */
       const tpLadderPartials = ot.partialSells.filter((p) => p.reason === 'TP_LADDER').length;
       const hasThird = (st.thirdLegUsd ?? 0) > 0;
@@ -5590,7 +5631,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         }
       }
 
-      const inSignalKillTerritory = liveStagedEntryKillHit(ot, stagedEntryPriceUsd);
+      const inSignalKillTerritory = liveStagedEntryKillHit(ot, stagedEntryKillMetricUsd);
+      const debounceKillAfterReplenish =
+        isLiveOscarTradingStrategyId(cfg.strategyId) && ot.legs.length > 1 && !inSignalKillTerritory;
       if (
         !exitReason &&
         waveBPostTp1ScratchFullExitDue(effCfg, ot, curMetric)
@@ -5632,10 +5675,16 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         } else if (waveBKill || presetCScalpKill || runnerProbeKill) {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
-        } else {
-        const debounceKillAfterReplenish =
-          isLiveOscarTradingStrategyId(cfg.strategyId) && ot.legs.length > 1 && !inSignalKillTerritory;
-        if (debounceKillAfterReplenish) {
+        } else if (inSignalKillTerritory) {
+          const nextStreak = (ot.liveKillstopBelowStreak ?? 0) + 1;
+          ot.liveKillstopBelowStreak = nextStreak;
+          if (nextStreak >= 2) exitReason = 'KILLSTOP';
+          else {
+            console.log(
+              `[KILLSTOP_DEBOUNCE_SIGNAL] ${mint.slice(0, 8)} $${ot.symbol} streak=${nextStreak}/2 pnlVsAvg=${pnlPctVsAvg.toFixed(2)}% signalKill=${ot.liveStagedEntry?.killDropPct ?? 0}%`,
+            );
+          }
+        } else if (debounceKillAfterReplenish) {
           const nextStreak = (ot.liveKillstopBelowStreak ?? 0) + 1;
           ot.liveKillstopBelowStreak = nextStreak;
           if (nextStreak >= 2) exitReason = 'KILLSTOP';
@@ -5647,7 +5696,6 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         } else {
           ot.liveKillstopBelowStreak = 0;
           exitReason = 'KILLSTOP';
-        }
         }
       } else {
         ot.liveKillstopBelowStreak = 0;

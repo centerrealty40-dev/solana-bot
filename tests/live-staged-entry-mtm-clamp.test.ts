@@ -4,6 +4,8 @@ import { resolveObservedPriceUsdForJournal } from '../src/live/sell-price-sanity
 import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
+  liveStagedEntryKillHit,
+  resolveStagedEntryKillMetricUsd,
 } from '../src/papertrader/executor/live-staged-entry-gates.js';
 import type { LiveStagedEntryState, OpenTrade } from '../src/papertrader/types.js';
 
@@ -70,5 +72,35 @@ describe('staged entry vs MTM tick clamp', () => {
     ot.lastObservedPriceUsd = resolveObservedPriceUsdForJournal(rawMtm, clamped);
     expect(ot.lastObservedPriceUsd).toBe(clamped);
     expect(ot.lastObservedPriceUsd).not.toBe(rawMtm);
+  });
+
+  it('signal-kill uses clamped exit MTM — raw Jupiter −55% does not trip −50% kill', () => {
+    const signalPx = 0.16;
+    const rawJupiter = signalPx * 0.45;
+    const clampedExit = clampLiveTrackerMtmForExit(
+      { lastObservedPriceUsd: signalPx, avgEntryMarket: signalPx } as OpenTrade,
+      signalPx * 0.98,
+    );
+    const killMetric = resolveStagedEntryKillMetricUsd({
+      exitMtmUsd: clampedExit,
+      stagedEntryTradableUsd: rawJupiter,
+    });
+    const ot = {
+      liveStagedEntry: stagedState({ signalPriceUsd: signalPx, killDropPct: 50 }),
+    } as OpenTrade;
+    expect(liveStagedEntryKillHit(ot, rawJupiter)).toBe(true);
+    expect(liveStagedEntryKillHit(ot, killMetric)).toBe(false);
+  });
+
+  it('copy-handoff staged plan disables signal-kill entirely', () => {
+    const signalPx = 0.16;
+    const ot = {
+      liveStagedEntry: stagedState({
+        signalPriceUsd: signalPx,
+        killDropPct: 50,
+        copyLeaderAdoptStagedPlan: true,
+      }),
+    } as OpenTrade;
+    expect(liveStagedEntryKillHit(ot, signalPx * 0.4)).toBe(false);
   });
 });

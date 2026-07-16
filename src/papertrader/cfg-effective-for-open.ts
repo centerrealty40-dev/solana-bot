@@ -28,8 +28,15 @@ import {
   isFastDipScalpExitPolicy,
   fastDipScalpEffectiveExitParams,
 } from './executor/exit-policy-fast-dip-scalp.js';
+import {
+  isDormantAwakeningExitPolicy,
+  dormantAwakeningEffectiveExitParams,
+} from './executor/exit-policy-dormant-awakening.js';
 
 export function cfgEffectiveForOpen(cfg: PaperTraderConfig, ot: OpenTrade): PaperTraderConfig {
+  if (isDormantAwakeningExitPolicy(ot)) {
+    return { ...cfg, ...dormantAwakeningEffectiveExitParams(cfg) };
+  }
   if (isFastDipScalpExitPolicy(ot)) {
     return { ...cfg, ...fastDipScalpEffectiveExitParams(cfg) };
   }

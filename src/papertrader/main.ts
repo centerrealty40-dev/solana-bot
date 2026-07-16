@@ -55,9 +55,9 @@ import {
   isLiveOscarTradingStrategyId,
   isLiveOscarFamilyTradingStrategyId,
   isLiveLeraTradingStrategyId,
-  LIVE_LERA10_STRATEGY_ID,
 } from '../preset-c/live-oscar-family.js';
 import { processAwakeningLiveEntryQueue } from '../live/awakening-live-entry.js';
+import { awakeningLiveEntryStrategyId } from '../scripts/awakening/awakening-live-entry-queue.js';
 import { gmgnMintHrefHtml, isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
 import { syncPriorityOpenMints } from './discovery/priority-discovery-registry.js';
 import { updateNearReadyDipWatchlist } from './discovery-health-window.js';
@@ -118,6 +118,7 @@ import {
   finalizeRunnerLiteOpenOnBoot,
   runnerLiteMaxPositionUsd,
 } from './executor/exit-policy-runner-lite.js';
+import { finalizeDormantAwakeningOpenOnBoot } from './executor/exit-policy-dormant-awakening.js';
 import { applyLiveOscarPhaseEscalation, computeDropFromScalpAnchor } from './live-oscar-phase-escalation.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from './executor/open.js';
 import { configureWaveBPostTp1ScratchReentry } from './executor/wave-b-post-tp1-scratch-reentry.js';
@@ -396,6 +397,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
   const runnerLiteKeysNormalized = finalizeRunnerLiteOpenOnBoot(open, cfg);
   if (runnerLiteKeysNormalized > 0) {
     logger.info({ migrated: runnerLiteKeysNormalized }, 'runner_lite open-map keys normalized on boot');
+  }
+  const awakeningKeysNormalized = finalizeDormantAwakeningOpenOnBoot(open, cfg);
+  if (awakeningKeysNormalized > 0) {
+    logger.info({ migrated: awakeningKeysNormalized }, 'dormant_awakening open-map keys normalized on boot');
   }
   for (const ot of open.values()) {
     reconcileOpenTradeDcaFromLegs(ot, dcaLevels);
@@ -1674,9 +1679,10 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       }
 
       const liveOscarForAwakening = resolveLiveOscar();
+      const awakeningStrategyId = awakeningLiveEntryStrategyId();
       if (
         liveOscarForAwakening &&
-        cfg.strategyId === LIVE_LERA10_STRATEGY_ID &&
+        cfg.strategyId === awakeningStrategyId &&
         liveOscarForAwakening.liveCfg.executionMode === 'live'
       ) {
         const awakeningRes = await processAwakeningLiveEntryQueue({

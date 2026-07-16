@@ -98,6 +98,18 @@
 
 ---
 
+---
+
+## [1.11.602] — 2026-07-16
+
+**Тег:** `sa-alpha-1.11.602`
+
+### Live Oscar — copy-handoff half8: не резать на ложном signal-kill
+
+- **Причина:** ANSEM `copy_leader_exit_adopt` $4000 получил `KILLSTOP` ~−2% при half8_runner (+8% TP не достигнут): signal-kill смотрел **сырой Jupiter buy-probe** (фантом −50%), single-leg — без debounce; tail `zero_balance` только после полного exit.
+- **Исправлено:** copy-handoff `killDropPct: 0` (только wave kill −50%); signal-kill по **clamped exit MTM**; debounce signal-kill 2 тика; честная подпись KILLSTOP; отклонение stale PG snapshot для exit MTM; partial TP PnL только chain proceeds.
+- **Откат:** redeploy `sa-alpha-1.11.601`.
+
 ## [1.11.601] — 2026-07-16
 
 **Тег:** `sa-alpha-1.11.601`

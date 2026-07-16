@@ -3,19 +3,25 @@ import path from 'node:path';
 import type { LiveOscarConfig } from './config.js';
 import type { PaperTraderConfig } from '../papertrader/config.js';
 import { makeOpenTradeFromEntry, snapshotSourceToDex } from '../papertrader/executor/open.js';
+import { stampLiveOscarExitPolicyOnOpen } from '../papertrader/executor/exit-policy-wave-b.js';
 import type { LiveOscarPhase4Discovery } from './phase4-types.js';
 import type { EvalDecision } from '../papertrader/discovery/dip-clones.js';
 import type { OpenTrade, SnapshotCandidateRow, SnapshotFeatures, Lane } from '../papertrader/types.js';
-import { LIVE_LERA10_STRATEGY_ID } from '../preset-c/live-oscar-family.js';
 import { isMintPermanentlyDeniedLiveOscar } from './mint-permanent-denylist.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { child } from '../core/logger.js';
 import {
   awakeningLiveEntryEnabled,
   awakeningLiveEntryQueuePathFromEnv,
+  awakeningLiveEntryStrategyId,
   type AwakeningLiveEntryIntent,
 } from '../scripts/awakening/awakening-live-entry-queue.js';
-import { stampLiveOscarTradeLaneOnOpen } from '../papertrader/live-oscar-scalp-wave.js';
+import {
+  countOpenDormantAwakeningPositions,
+  dormantAwakeningMintAlreadyOpen,
+  dormantAwakeningOpenMapKey,
+  stampDormantAwakeningOnOpen,
+} from '../papertrader/live-oscar-dormant-awakening.js';
 
 const log = child('awakening-live-entry');
 
@@ -64,12 +70,27 @@ function readNewIntents(queuePath: string): AwakeningLiveEntryIntent[] {
   return intents;
 }
 
-function countAwakeningOpens(open: ReadonlyMap<string, OpenTrade>): number {
-  let n = 0;
-  for (const ot of open.values()) {
-    if (ot.liveOscarTradeLane === 'dormant_awakening') n++;
-  }
-  return n;
+function journalAwakeningSkip(args: {
+  intent: AwakeningLiveEntryIntent;
+  reason: string;
+  skipped: string[];
+  journalLiveStrategy?: (body: Record<string, unknown>) => void;
+}): void {
+  const tag = `${args.intent.mint}:${args.reason}`;
+  args.skipped.push(tag);
+  appendLiveJsonlEvent({
+    kind: 'awakening_entry_skip',
+    mint: args.intent.mint,
+    reason: args.reason,
+    legUsd: args.intent.legUsd,
+  });
+  args.journalLiveStrategy?.({
+    kind: 'awakening_entry_skip',
+    mint: args.intent.mint,
+    reason: args.reason,
+    legUsd: args.intent.legUsd,
+    entryPath: 'dormant_awakening',
+  });
 }
 
 function rowFromIntent(intent: AwakeningLiveEntryIntent): SnapshotCandidateRow {
@@ -134,7 +155,6 @@ function decisionFromIntent(intent: AwakeningLiveEntryIntent, row: SnapshotCandi
 
 /**
  * Consume awakening entry intents queued by awakening-catcher (live mode).
- * Runs inside live-lera10 discovery tick — isolated lane, $10 single leg, no PG stream load.
  */
 export async function processAwakeningLiveEntryQueue(args: {
   liveCfg: LiveOscarConfig;
@@ -148,7 +168,8 @@ export async function processAwakeningLiveEntryQueue(args: {
   if (!awakeningLiveEntryEnabled()) {
     return { attempted: 0, opened: 0, skipped };
   }
-  if (args.liveCfg.strategyId !== LIVE_LERA10_STRATEGY_ID) {
+  const targetStrategyId = awakeningLiveEntryStrategyId();
+  if (args.liveCfg.strategyId !== targetStrategyId) {
     return { attempted: 0, opened: 0, skipped };
   }
   if (args.liveCfg.executionMode !== 'live' || !args.liveCfg.strategyEnabled) {
@@ -163,20 +184,20 @@ export async function processAwakeningLiveEntryQueue(args: {
   let opened = 0;
 
   for (const intent of intents) {
-    if (countAwakeningOpens(args.open) >= maxOpen) {
-      skipped.push(`${intent.mint}:max_open`);
+    if (countOpenDormantAwakeningPositions(args.open) >= maxOpen) {
+      journalAwakeningSkip({ intent, reason: 'max_open', skipped, journalLiveStrategy: args.journalLiveStrategy });
       continue;
     }
-    if (args.open.has(intent.mint)) {
-      skipped.push(`${intent.mint}:already_open`);
+    if (dormantAwakeningMintAlreadyOpen(args.open, intent.mint)) {
+      journalAwakeningSkip({ intent, reason: 'already_open', skipped, journalLiveStrategy: args.journalLiveStrategy });
       continue;
     }
     if (isMintPermanentlyDeniedLiveOscar(args.liveCfg, intent.mint)) {
-      skipped.push(`${intent.mint}:denylist`);
+      journalAwakeningSkip({ intent, reason: 'denylist', skipped, journalLiveStrategy: args.journalLiveStrategy });
       continue;
     }
     if (!(intent.legUsd > 0) || !(intent.priceUsd != null && intent.priceUsd > 0)) {
-      skipped.push(`${intent.mint}:bad_quote`);
+      journalAwakeningSkip({ intent, reason: 'bad_quote', skipped, journalLiveStrategy: args.journalLiveStrategy });
       continue;
     }
 
@@ -190,7 +211,8 @@ export async function processAwakeningLiveEntryQueue(args: {
       liquidityUsd: row.liquidity_usd,
       firstLegUsdOverride: intent.legUsd,
     });
-    stampLiveOscarTradeLaneOnOpen(ot, 'dormant_awakening');
+    stampDormantAwakeningOnOpen(ot);
+    stampLiveOscarExitPolicyOnOpen(ot, args.paperCfg);
     if (intent.marketCapUsd != null && intent.marketCapUsd >= 300_000) {
       ot.liveOscarMcapTier = intent.marketCapUsd < 3_000_000 ? 'low' : 'prod';
     }
@@ -207,17 +229,16 @@ export async function processAwakeningLiveEntryQueue(args: {
     });
 
     if (!openedRes.ok) {
-      skipped.push(`${intent.mint}:${openedRes.terminalMessage ?? 'buy_fail'}`);
-      appendLiveJsonlEvent({
-        kind: 'awakening_entry_skip',
-        mint: intent.mint,
+      journalAwakeningSkip({
+        intent,
         reason: openedRes.terminalMessage ?? 'buy_fail',
-        legUsd: intent.legUsd,
+        skipped,
+        journalLiveStrategy: args.journalLiveStrategy,
       });
       continue;
     }
 
-    args.open.set(intent.mint, ot);
+    args.open.set(dormantAwakeningOpenMapKey(intent.mint), ot);
     opened += 1;
     args.journalLiveStrategy?.({
       kind: 'live_position_open',
@@ -231,6 +252,10 @@ export async function processAwakeningLiveEntryQueue(args: {
       { mint: intent.mint, legUsd: intent.legUsd, mcap: intent.marketCapUsd },
       'awakening live entry opened',
     );
+  }
+
+  if (skipped.length > 0) {
+    log.info({ skipped, opened, attempted: intents.length }, 'awakening live entries consumed');
   }
 
   return { attempted: intents.length, opened, skipped };

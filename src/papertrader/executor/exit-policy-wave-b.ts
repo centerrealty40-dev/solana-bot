@@ -17,6 +17,7 @@ import { stampRunnerProbeExitPolicyOnOpen } from './exit-policy-runner-probe.js'
 import { stampFastDipScalpExitPolicyOnOpen } from './exit-policy-fast-dip-scalp.js';
 import { stampRunnerLiteExitPolicyOnOpen } from './exit-policy-runner-lite.js';
 import { stampPresetCScalpExitPolicyOnOpen, isPresetCScalpExitPolicy } from './exit-policy-preset-c-scalp.js';
+import { stampDormantAwakeningExitPolicyOnOpen } from './exit-policy-dormant-awakening.js';
 
 export type LiveExitPolicyId =
   | 'legacy_grid'
@@ -591,6 +592,7 @@ export function waveBTrailSellFractionForRemainder(
 export function stampLiveOscarExitPolicyOnOpen(ot: OpenTrade, cfg: PaperTraderConfig): void {
   if (!isLiveOscarFamilyTradingStrategyId(cfg.strategyId)) return;
   if (stampPresetCScalpExitPolicyOnOpen(ot, cfg, ot.presetCScalpAnchorPriceUsd)) return;
+  if (stampDormantAwakeningExitPolicyOnOpen(ot, cfg)) return;
   if (stampRunnerLiteExitPolicyOnOpen(ot, cfg)) return;
   if (stampRunnerProbeExitPolicyOnOpen(ot, cfg)) return;
   if (stampFastDipScalpExitPolicyOnOpen(ot, cfg)) return;

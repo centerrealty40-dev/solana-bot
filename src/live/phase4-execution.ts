@@ -26,6 +26,7 @@ import { appendLiveJsonlEvent } from './store-jsonl.js';
 import { liveSimulateSignedTransaction, signLiveJupiterSwapBase64 } from './simulate.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { newLiveIntentId } from './intent.js';
+import { sellPipelineWalletDrained } from './wallet-zero-policy.js';
 import type { LiveOscarConfig } from './config.js';
 import type {
   LiveBuyPipelineResult,
@@ -898,15 +899,6 @@ function appendSellPreflightSkip(
     simulated: false,
     error: { message: args.reason },
   });
-}
-
-function sellPipelineWalletDrained(
-  intentKind: 'sell_partial' | 'sell_full',
-  soldRaw: bigint,
-  chainAmt: bigint,
-): boolean {
-  if (intentKind === 'sell_full') return chainAmt > 0n && soldRaw >= chainAmt;
-  return chainAmt > 0n && soldRaw >= chainAmt;
 }
 
 async function runTokenToSolPipeline(
