@@ -715,11 +715,14 @@ const PM2_APPS = [
          */
         PAPER_STRATEGY_KIND: 'dip',
         PAPER_STRATEGY_ID: 'live-oscar',
+        /** preset-c/pullback-scan imports geometry from market-pullback-telegram-watch — must not start TG poll in-process. */
+        PULLBACK_ALERT_SKIP_MAIN: '1',
         /** Unused file — live-oscar never writes paper JSONL (P4-I1). */
         PAPER_TRADES_PATH: path.join(root, 'data/paper2/_live_oscar_unused_journal.jsonl'),
         PAPER_HEARTBEAT_INTERVAL_MS: '30000',
-        PAPER_DISCOVERY_INTERVAL_MS: '10000',
-        PAPER_DISCOVERY_TICK_TIMEOUT_MS: '120000',
+        /** 1.11.603 — bare half8: slower ticks, smaller pool, headroom vs Dex gate. */
+        PAPER_DISCOVERY_INTERVAL_MS: '30000',
+        PAPER_DISCOVERY_TICK_TIMEOUT_MS: '300000',
         /** 1.11.578 — watchdog: Telegram ALERT если нет completed discovery tick >5 мин (boot grace 3 мин). */
         LIVE_DISCOVERY_STALL_ALERT_ENABLED: '1',
         LIVE_DISCOVERY_STALL_ALERT_MS: '300000',
@@ -727,7 +730,8 @@ const PM2_APPS = [
         LIVE_DISCOVERY_STALL_ALERT_REPEAT_MS: '600000',
         /** 1.11.244: быстрее reeval для SQL-pool mint'ов; priority tier — `PAPER_PRIORITY_DISCOVERY_REEVAL_SEC`. */
         PAPER_DISCOVERY_REEVAL_SEC: '30',
-        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '500',
+        /** Prod-only SQL pool (≥$3M); was 500 → eval storm + 120s timeouts. */
+        PAPER_SNAPSHOT_CANDIDATE_LIMIT: '250',
         PAPER_TRACK_INTERVAL_MS: '30000',
         PAPER_FOLLOWUP_TICK_MS: '60000',
         PAPER_DRY_RUN: 'false',
@@ -843,9 +847,9 @@ const PM2_APPS = [
         PAPER_POST_MIN_SELLS_5M: '3',
         PAPER_POST_MIN_BS: '0.95',
         /**
-         * Discovery SQL pool: от $2M (LOW lane ON). Prod ≥$3M; LOW $2M–$3M.
+         * Discovery SQL pool: prod half8 only (≥$3M). LOW lane OFF — no $2M–$3M tier.
          */
-        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '2000000',
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '3000000',
         /** Не сканировать discovery pool / eval для mcap > $500M (экономия PG/CPU). Открытые позиции — исключение. */
         PAPER_DISCOVERY_MAX_MARKET_CAP_USD: '500000000',
         /** 1.11.500 — micro lane OFF (min mcap $2M). */
@@ -861,8 +865,8 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_LEG_USD: '150',
         PAPER_LIVE_OSCAR_MICRO_MCAP_STAGED_AVG_DROP_PCT: '10',
         PAPER_LIVE_OSCAR_MICRO_MCAP_DCA_LEVELS: '',
-        /** 1.11.565 — LOW $2M–$3M ON: 2×$500 @ 10s (+3/−5%), avg −10% = 50% entry ($500, max $1500); dip −30%. */
-        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '1',
+        /** 1.11.565 — LOW lane OFF (bare half8 prod ≥$3M only). */
+        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '0',
         PAPER_LIVE_OSCAR_LOW_MCAP_MIN_USD: '2000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_MAX_USD: '3000000',
         PAPER_LIVE_OSCAR_LOW_MCAP_DIP_MIN_DROP_PCT: '-30',
@@ -897,7 +901,7 @@ const PM2_APPS = [
          * entry ≤ −25% vs 15m rolling-high, single-shot, SL −15%, 30m time-stop, TP ladder +10%/50%
          * +22%/30% + peak-trail runner. Net ≈ +4.4%/trade @2% round-trip, win ~55%, ~2.3 trades/day.
          */
-        PAPER_LIVE_OSCAR_FAST_DIP_SCALP_LANE_ENABLED: '1',
+        PAPER_LIVE_OSCAR_FAST_DIP_SCALP_LANE_ENABLED: '0',
         PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_WINDOW_MIN: '15',
         PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_MIN_DROP_PCT: '-25',
         PAPER_LIVE_OSCAR_FAST_DIP_SCALP_DIP_MAX_DROP_PCT: '-60',
@@ -1029,9 +1033,9 @@ const PM2_APPS = [
         LIVE_OSCAR_INTEL_MODE_PERVYY_VYSTREL: 'off',
         /** Shyft shadow: suppress mint-set resubscribes right after connect (boot churn). */
         SHYFT_SHADOW_CONNECT_GRACE_MS: '30000',
-        /** Coin intelligence overlay — shadow ≥48h before gate (LIVE_OSCAR_COIN_INTELLIGENCE_SPEC §3). */
-        LIVE_OSCAR_INTEL_ENABLED: '1',
-        LIVE_OSCAR_INTEL_MODE: 'shadow',
+        /** Wallet-intel / cluster overlay OFF — bare dip gates only. */
+        LIVE_OSCAR_INTEL_ENABLED: '0',
+        LIVE_OSCAR_INTEL_MODE: 'off',
         /** runner_probe lane: hard gate after shadow window (prod/scalp_wave stay shadow). */
         LIVE_OSCAR_INTEL_MODE_RUNNER_PROBE: 'gate',
         LIVE_OSCAR_INTEL_WALLET_GATE_ENABLED: '1',
@@ -1044,7 +1048,7 @@ const PM2_APPS = [
         LIVE_OSCAR_INTEL_BLOCK_CLUSTERED_WALLETS: '1',
         LIVE_OSCAR_INTEL_BLOCK_SCAM_FARM_META: '1',
         /** TG ADVICE: tier gates OK but wallet-intel blocks (prod / runner_probe / runner_lite). */
-        LIVE_OSCAR_INTEL_TELEGRAM_ENABLED: '1',
+        LIVE_OSCAR_INTEL_TELEGRAM_ENABLED: '0',
         LIVE_OSCAR_INTEL_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         /** Dedup via mint+intel-reason fingerprint in-process; no time cooldown. */
         LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS: '0',
@@ -1141,7 +1145,7 @@ const PM2_APPS = [
         PAPER_TREND_VETO_DIP_BYPASS_MIN_DIP_PCT: '15',
         PAPER_TREND_VETO_DIP_BYPASS_MIN_SLOPE_3D_PCT: '0',
         /** Telegram when dip passed but trend veto is sole blocker (default ON, 30m cooldown). */
-        LIVE_TREND_VETO_TELEGRAM_ENABLED: '1',
+        LIVE_TREND_VETO_TELEGRAM_ENABLED: '0',
         LIVE_TREND_VETO_TELEGRAM_COOLDOWN_MS: '1800000',
         /** Post-crash fast path — entry vs crash peak after spike+drop (swarms-class). */
         PAPER_POST_CRASH_FAST_PATH_ENABLED: '1',
@@ -1276,7 +1280,7 @@ const PM2_APPS = [
         LIVE_VOLUME_EPHEMERAL_TELEGRAM_COOLDOWN_MS: '3600000',
         TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_VOLUME_EPHEMERAL_MS: '1800000',
         /** TG: only when new local-high veto is the sole reason a live-oscar candidate is skipped. */
-        LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '1',
+        LIVE_LOCAL_HIGH_VETO_TELEGRAM_ENABLED: '0',
         LIVE_LOCAL_HIGH_VETO_TELEGRAM_COOLDOWN_MS: '1800000',
 
         /** Live: без tp-regime классов на входе. Унифицированный профиль выхода (без A/B) — см. CHANGELOG 2026-05-13 + IDEALIZED_OSCAR_STACK_SPEC_V2 §1. */
@@ -1362,7 +1366,7 @@ const PM2_APPS = [
         LIVE_MINT_SCRATCH_REENTRY_ENABLED: '0',
         PAPER_PEAK_LOG_STEP_PCT: '1',
 
-        PAPER_DIP_WHALE_ANALYSIS_ENABLED: '1',
+        PAPER_DIP_WHALE_ANALYSIS_ENABLED: '0',
         PAPER_DIP_REQUIRE_WHALE_TRIGGER: '0',
         PAPER_DIP_LARGE_SELL_USD: '3000',
         PAPER_DIP_RECENT_LOOKBACK_MIN: '10',
@@ -1575,16 +1579,17 @@ const PM2_APPS = [
         LIVE_STRATEGY_ID: 'live-oscar',
         LIVE_TRADES_PATH: path.join(root, 'data/live/pt1-oscar-live.jsonl'),
         LIVE_OPEN_SNAPSHOT_PATH: path.join(root, 'data/live/live-oscar-open-snapshot.json'),
-        /** Subtract copy-leader cost basis from wallet-holds-mint gate (golden-goose). */
+        /** Subtract copy-leader cost basis from wallet-holds-mint gate. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
         LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
-        /** Copy-adopt: staged avg at adopt (−10% / −20%, each leg = 25% of initial open). */
-        LIVE_COPY_LEADER_ADOPT_STAGED_ENTRY_ENABLED: '1',
+        /** Copy buy → live-oscar wave_b half8_runner exit (no leader mirror sell). */
+        LIVE_COPY_LEADER_ADOPT_STAGED_ENTRY_ENABLED: '0',
+        LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED: '1',
         LIVE_COPY_LEADER_ADOPT_AVG_LEG_PCT: '25',
         /** `live_discovery_eval` / `live_discovery_skip_open` в JSONL (отключить: `0`). */
         LIVE_DISCOVERY_AUDIT_JSONL: '1',
         /** Полный аудит по mint из whitelist-файла: pass/fail eval, `universe_miss`, `tick_skip`. */
-        LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '1',
+        LIVE_DISCOVERY_DEEP_AUDIT_JSONL: '0',
         LIVE_DISCOVERY_DEEP_AUDIT_WHITELIST_PATH: path.join(root, 'data/live/live-oscar-mint-whitelist.txt'),
         /** 1.11.244 — priority dip-watch tier (open + near-ready + recent eval + SQL pool). Whitelist entry off (`LIVE_MINT_WHITELIST_ENABLED=0`). */
         PAPER_PRIORITY_DISCOVERY_ENABLED: '1',
@@ -1601,7 +1606,7 @@ const PM2_APPS = [
         /** Priority tier BS 0.75 (global POST_MIN_BS остаётся 0.98). */
         PAPER_PRIORITY_DISCOVERY_MIN_BS: '0.75',
         /** 1.11.274 — Volume Leader tier: top-N by 24h peak vol_1h, canonical pool = max volume. */
-        PAPER_VOLUME_LEADER_ENABLED: '1',
+        PAPER_VOLUME_LEADER_ENABLED: '0',
         PAPER_VOLUME_LEADER_TOP_N: '50',
         /** 1.11.596: 15→30s — реже полный reeval top runners (меньше Jupiter+DS нагрузки). */
         PAPER_VOLUME_LEADER_REEVAL_SEC: '15',
@@ -1618,7 +1623,7 @@ const PM2_APPS = [
         PAPER_DISCOVERY_SNAPSHOT_SANITY_MIN_LIQ_SHARE_OF_MINT_MAX: '0.10',
         PAPER_DISCOVERY_SNAPSHOT_SANITY_ZERO_LIQ_MAX_MCAP_USD: '500000',
         /** 1.11.276 — Jupiter cross-check price/mcap for volume-leader tier. */
-        PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_ENABLED: '1',
+        PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_ENABLED: '0',
         /** 1.11.601: 20→5 — снять Jupiter RPS с volume-leader tier (1.11.599 ошибочно вернул 20). */
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK: '5',
         PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_DIVERGENCE_PCT: '35',
@@ -2211,6 +2216,21 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
+        /** Bare Oscar: watchdog live-oscar + copy-trader. */
+        STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
+          {
+            pm2: 'live-oscar',
+            heartbeatPath: 'data/ops-heartbeats/live-oscar.json',
+            staleMs: 300_000,
+            fatalPath: 'data/live/last-fatal-live-oscar.json',
+          },
+          {
+            pm2: 'copy-trader',
+            heartbeatPath: 'data/ops-heartbeats/copy-trader.json',
+            staleMs: 300_000,
+            fatalPath: 'data/ops-heartbeats/copy-trader-last-fatal.json',
+          },
+        ]),
       },
     },
     /**
@@ -2246,8 +2266,8 @@ const PM2_APPS = [
         COPY_TRADER_TARGET_WALLET: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        /** Leader-mirror initial entry: 50% of leader buy USD (0 = fixed positionUsd). */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
+        /** Leader-mirror initial entry: 75% of leader buy USD (0 = fixed positionUsd). */
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.75',
         /** Fallback / cap when initialMirrorRatio=0; ignored for entry when mirror is on. */
         COPY_TRADER_POSITION_USD: '500',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
@@ -2359,6 +2379,24 @@ const PM2_APPS = [
      */
 ];
 
+/**
+ * Oscar VPS 2026-07-16: live-oscar half8_runner + copy-trader (75% mirror, oscar_half8 exit).
+ * dc-trader / dcafr-dc-alert are separate product (`/opt/dc-trader`) — not in this ecosystem file.
+ */
+const OSCAR_VPS_EXCLUDED_APPS = new Set([
+  'live-oscar-dashboard',
+  'market-spike-telegram-watch',
+  'market-pullback-telegram-watch',
+  'retrace-alert-watch',
+  'hl-twap-telegram-watch',
+  'hl-oscar-perp-watch',
+  'hl-oscar-majors-watch',
+  'basepulse-journal-sync',
+  'bscpulse-journal-sync',
+  'rh-sniper-discovery',
+  'rh-sniper-executor',
+]);
+
 module.exports = {
-  apps: PM2_APPS,
+  apps: PM2_APPS.filter((a) => !OSCAR_VPS_EXCLUDED_APPS.has(a.name)),
 };

@@ -340,7 +340,16 @@ export async function resolveDiscoveryMarketQuote(
       birdeye.volume5mUsd != null ||
       birdeye.volume1hUsd != null);
 
-  if (!birdeyeUsable) {
+  const pgTsMs = snapshotRowTsMs(opts.pgRow.ts);
+  const pgAgeMs = snapshotPriceAgeMs(pgTsMs, nowMs);
+  const pgOnlyMaxAgeMs = 180_000;
+  const pgQuoteUsable =
+    !opts.enabled &&
+    positive(opts.pgRow.price_usd) != null &&
+    pgAgeMs != null &&
+    pgAgeMs <= pgOnlyMaxAgeMs;
+
+  if (!birdeyeUsable && !pgQuoteUsable) {
     dexscreener = await fetchDexScreenerMarketSnapshot(opts.mint, {
       fetchImpl: opts.fetchImpl,
       nowMs,
