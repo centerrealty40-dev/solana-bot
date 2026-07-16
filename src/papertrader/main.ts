@@ -181,7 +181,7 @@ import {
   usesPaperOscarSecondLegScaleIn,
 } from './paper-oscar-v21.js';
 import { readPaperOscarScaleInEnv } from './executor/paper-scale-in-env.js';
-import { recordDiscoveryHealthSample, markDiscoverySchedulerStarted, recordDiscoveryTickCompleted } from './discovery-health-window.js';
+import { recordDiscoveryHealthSample } from './discovery-health-window.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import {
   buildHoldersUnknownTelegramText,
@@ -1670,7 +1670,6 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         );
       }
       if (cfg.strategyKind !== 'dip' && cfg.strategyKind !== 'smart_lottery') {
-        recordDiscoveryTickCompleted();
         return;
       }
 
@@ -1740,8 +1739,6 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         }
         setShyftShadowWatchedMints(leraShadowMints);
       }
-      /** Discovery eval done — mark tick complete before slow open/sim pipeline (stall watchdog). */
-      recordDiscoveryTickCompleted();
       const openedBeforeDiscoveryBatch = stats.opened;
       const btc = getBtcContext();
 
@@ -2944,34 +2941,24 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   /** Blocks overlapping discovery ticks until the in-flight promise settles (timeout alone does not release). */
   let discoveryInFlight: Promise<void> | null = null;
-  let discoveryInFlightGen = 0;
   let trackerRunning = false;
   let followupRunning = false;
   const discoveryTickTimeoutMs = cfg.discoveryTickTimeoutMs;
 
-  markDiscoverySchedulerStarted();
-
-  async function runDiscoveryTickGuarded(label: string): Promise<void> {
-    const gen = ++discoveryInFlightGen;
-    const tickPromise = discoveryTick();
-    discoveryInFlight = tickPromise.finally(() => {
-      if (discoveryInFlightGen === gen) discoveryInFlight = null;
-    });
-    try {
-      await withTimeout(tickPromise, discoveryTickTimeoutMs, label);
-    } catch (err) {
-      stats.errors++;
-      logger.warn({ msg: 'discovery error', err: (err as Error).message });
-      if (discoveryInFlightGen === gen) {
-        discoveryInFlight = null;
-        discoveryInFlightGen++;
-      }
-    }
-  }
-
   const discoveryTimer = setInterval(() => {
     if (discoveryInFlight) return;
-    void runDiscoveryTickGuarded('discoveryTick');
+    const tickPromise = discoveryTick();
+    discoveryInFlight = tickPromise.finally(() => {
+      discoveryInFlight = null;
+    });
+    void (async () => {
+      try {
+        await withTimeout(tickPromise, discoveryTickTimeoutMs, 'discoveryTick');
+      } catch (err) {
+        stats.errors++;
+        logger.warn({ msg: 'discovery error', err: (err as Error).message });
+      }
+    })();
   }, cfg.discoveryIntervalMs);
 
   const trackerTimer = setInterval(async () => {
@@ -3155,7 +3142,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     void refreshBtcContext(cfg);
   }, cfg.btcContextRefreshMs);
 
-  await runDiscoveryTickGuarded('discoveryTickBoot');
+  await discoveryTick();
 
   const shutdown = (sig: string) => {
     opts?.onShutdown?.(sig);
