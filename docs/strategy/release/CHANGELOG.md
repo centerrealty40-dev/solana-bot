@@ -98,6 +98,16 @@
 
 ---
 
+## [1.11.601] — 2026-07-16
+
+**Тег:** `sa-alpha-1.11.601`
+
+### Live Oscar — снизить Jupiter RPS discovery + throttle circuit TG
+
+- **Причина:** после 1.11.599 revert `PAPER_VOLUME_LEADER_JUPITER_CROSSCHECK_MAX_PER_TICK` снова **20** (комментарий говорил 5, значение — 20) → live-oscar сам забивает Jupiter gate; transport-fail >10% → `[ALERT][jupiter-quote-circuit]` каждые ~90s cooldown. **Не связано** с остановкой `sa-jupiter` (фоновый watcher, не питал live quotes; освобождал квоту).
+- **PM2:** crosscheck **20→5**; `TELEGRAM_COOLDOWN_ALERT_JUPITER_QUOTE_CIRCUIT_MS=3600000`.
+- **Откат:** redeploy `sa-alpha-1.11.600` или crosscheck `20`.
+
 ## [1.11.600] — 2026-07-16
 
 **Тег:** `sa-alpha-1.11.600`
