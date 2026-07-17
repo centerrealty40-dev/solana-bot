@@ -573,8 +573,13 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** [HEALTH][collector_status] every 30m — OK or BLIND body (2 min poll). */
+        /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + copy-trader). */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
+        COLLECTOR_HEALTH_PRODUCT_LABEL: 'Oscar',
+        COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
+          { pm2: 'live-oscar', heartbeatPath: 'data/ops-heartbeats/live-oscar.json', staleMs: 300_000 },
+          { pm2: 'copy-trader', heartbeatPath: 'data/ops-heartbeats/copy-trader.json', staleMs: 300_000 },
+        ]),
         COLLECTOR_HEALTH_TELEGRAM: '1',
         COLLECTOR_HEALTH_POLL_MS: '120000',
         COLLECTOR_HEALTH_STATUS_INTERVAL_MS: '1800000',
