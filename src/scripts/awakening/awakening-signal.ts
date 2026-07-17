@@ -391,6 +391,13 @@ function evaluateGradualPath(
   return reasons;
 }
 
+/** Reject shape: explosive burst already in progress — do not chase on gradual after cooldown. */
+export function isAwakeningPumpEpisodeReject(reasons: string[]): boolean {
+  return reasons.some(
+    (r) => r.startsWith('late_burst_') || r.startsWith('mini_pump_peak:'),
+  );
+}
+
 /** Spike passed but only soft gates (buy_ratio / m5) blocked — retry soon. */
 export function isAwakeningNearMiss(reasons: string[]): boolean {
   if (reasons.length === 0) return false;
