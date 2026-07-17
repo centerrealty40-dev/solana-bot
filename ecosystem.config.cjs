@@ -2306,6 +2306,10 @@ const PM2_APPS = [
         COPY_TRADER_TELEGRAM_ENABLED: '0',
         LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
+        /** Match live-oscar adopt floor — handoff only when Oscar can manage exit. */
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '3000000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '0',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '0',
         /** Poll + parse leader txs: Alchemy (`COPY_TRADER_RPC_URL` или `SA_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },

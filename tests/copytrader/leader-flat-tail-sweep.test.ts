@@ -124,7 +124,7 @@ describe('leader flat tail sweep', () => {
     vi.restoreAllMocks();
   });
 
-  it('skips tail sweep when exit mode is oscar_half8', async () => {
+  it('skips tail sweep for oscar-promoted legs in oscar_half8 mode', async () => {
     const state = emptyCopyTraderState();
     state.positions.mintA = {
       mint: 'mintA',
@@ -135,6 +135,7 @@ describe('leader flat tail sweep', () => {
       addCount: 0,
       leaderWallet: cfg.targetWallet,
       leaderEntrySig: 'sig',
+      oscarPromotedAt: Date.now(),
     };
     const oscarCfg = { ...cfg, exitMode: 'oscar_half8' } as CopyTraderConfig;
     await expect(scheduleLeaderFlatTailSweeps(oscarCfg, state)).resolves.toBe(0);

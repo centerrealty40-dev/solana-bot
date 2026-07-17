@@ -102,6 +102,18 @@
 
 ---
 
+## [1.11.604] — 2026-07-17
+
+**Тег:** `sa-alpha-1.11.604`
+
+### Copy-trader — no ghost handoff below Oscar adopt floor
+
+- **Причина:** copy buy на sub-$3M mcap (ATBR/AWGCD) сразу получал `oscarPromotedAt`, Oscar skip adopt → copy-trader игнорировал sell лидера → зомби в `state.json`.
+- **Исправлено:** handoff только если Oscar adopt tier pass; auto-revert stale `oscarPromotedAt` каждые 60s; mirror sell / tail sweep для не-promoted legs в `oscar_half8`; copy-trader PM2 env `PAPER_DISCOVERY_MIN_MARKET_CAP_USD=3000000`.
+- **Откат:** redeploy `sa-alpha-1.11.603`.
+
+---
+
 ## [1.11.603] — 2026-07-16
 
 **Тег:** `sa-alpha-1.11.603`
