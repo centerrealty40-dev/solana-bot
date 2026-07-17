@@ -102,6 +102,18 @@
 
 ---
 
+## [1.11.605] — 2026-07-17
+
+**Тег:** `sa-alpha-1.11.605`
+
+### Live Oscar — relax prod vol1h + dip gates (24h counterfactual)
+
+- **PM2 live-oscar:** `PAPER_VOL_1H_MIN_USD=50000`, `PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD=50000`, `PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT=-18` (was 100k / −22%).
+- **Причина:** ~30h silence — top blockers `vol1h<100000` + `dip_no_window`; counterfactual on 8 bounce mints showed conservative vol50k+dip18 captures TripleT/NORMIE-class without reopening shallow chop.
+- **Откат:** redeploy `sa-alpha-1.11.604`.
+
+---
+
 ## [1.11.604] — 2026-07-17
 
 **Тег:** `sa-alpha-1.11.604`

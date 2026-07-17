@@ -1054,17 +1054,17 @@ const PM2_APPS = [
         /** Dedup via mint+intel-reason fingerprint in-process; no time cooldown. */
         LIVE_OSCAR_INTEL_TELEGRAM_COOLDOWN_MS: '0',
         TELEGRAM_COOLDOWN_ADVICE_LIVE_OSCAR_INTEL_BLOCK_MS: '0',
-        /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$100k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
-        /** 1.11.589: −22% prod dip (F4Gp-class chop entries on shallow −18% windows). */
-        PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-22',
-        PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '100000',
+        /** Prod tier (mcap ≥ $3M): near-miss runner — dip −18%, vol1h ≥$50k. Low tier $2M–$3M — см. PAPER_LIVE_OSCAR_LOW_*. */
+        /** 1.11.605: −18% prod dip + vol50k (24h counterfactual: TripleT/NORMIE-class near-misses). */
+        PAPER_LIVE_OSCAR_PROD_MCAP_DIP_MIN_DROP_PCT: '-18',
+        PAPER_LIVE_OSCAR_PROD_MCAP_VOL_1H_MIN_USD: '50000',
         /** Prod sub-tier boundary + max caps (signal mcap at entry → scaled slices). 1.11.519. */
         PAPER_LIVE_OSCAR_PROD_MCAP_BAND_12M_USD: '12000000',
         PAPER_LIVE_OSCAR_PROD_MCAP_MAX_3_12_USD: '2700',
         PAPER_LIVE_OSCAR_PROD_MCAP_MAX_12_PLUS_USD: '2700',
         PAPER_VOL_5M_1H_GUARD_ENABLED: '1',
-        /** Global vol1h floor — no buys below $100k/h (all tiers). */
-        PAPER_VOL_1H_MIN_USD: '100000',
+        /** Global vol1h floor — no buys below $50k/h (all tiers). 1.11.605: was $100k. */
+        PAPER_VOL_1H_MIN_USD: '50000',
         PAPER_VOL_5M_SPIKE_MAX_MULT: '7',
         /** Global holder floor — live QN resolve + Shyft fallback; block when unknown. */
         PAPER_MIN_HOLDER_COUNT: '3000',
