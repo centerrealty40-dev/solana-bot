@@ -71,7 +71,10 @@ function prodConfiguredEntrySplitTotalUsd(cfg: PaperTraderConfig): number {
   return prodEntrySplitLegUsdValues(cfg).reduce((sum, usd) => sum + Math.max(0, usd), 0);
 }
 
-/** E+2 canon: first staged avg @ −10% = 50% of tier entry-split total (excludes avg legs). */
+/**
+ * First staged avg @ −10%: prod uses `PAPER_LIVE_STAGED_ENTRY_SECOND_LEG_USD` when set;
+ * otherwise 50% of entry-split total (legacy E+2 canon).
+ */
 export function deriveLiveOscarStagedAvgLegHalfEntryUsd(
   cfg: PaperTraderConfig,
   tier?: LiveOscarTradeTier,
@@ -79,6 +82,10 @@ export function deriveLiveOscarStagedAvgLegHalfEntryUsd(
 ): number {
   const splitTotal = resolveLiveOscarEntrySplitTotalUsd(cfg, tier, marketCapUsd);
   if (!(splitTotal > 0)) return 0;
+  const effectiveTier = tier ?? resolveLiveOscarTradeTierFromMcap(cfg, marketCapUsd);
+  if (effectiveTier === 'prod' && cfg.liveStagedEntrySecondLegUsd > 0) {
+    return cfg.liveStagedEntrySecondLegUsd;
+  }
   return splitTotal / 2;
 }
 
@@ -154,7 +161,7 @@ export function deriveLiveOscarProdBandEntryPlan(
   const legUsd = cfg.liveStagedEntryEntrySplitLegUsd;
   const splitLegCount = prodConfiguredEntrySplitLegCount(cfg);
   const splitTotal = prodConfiguredEntrySplitTotalUsd(cfg);
-  const avg1Default = splitTotal / 2;
+  const avg1Default = deriveLiveOscarStagedAvgLegHalfEntryUsd(cfg, 'prod');
   const avg2Default = 0;
   const fullMax = splitTotal + avg1Default + avg2Default;
 
