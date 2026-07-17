@@ -140,6 +140,7 @@ import {
   stampLiveOscarExitPolicyOnOpen,
   shouldApplyRemainderFlushOnPartialSell,
   resolveWaveBRemainderFlushUsd,
+  shouldAllowPartialExitTailFlush,
   WAVE_B_DEFENSIVE_TRAIL_ARM_PNL_FRAC,
   WAVE_B_FLAT_TP_HALF8_RUNNER,
   WAVE_B_TRAIL_FLUSH_REMAIN_USD,
@@ -456,6 +457,7 @@ async function syncOpenTradeAfterLiveExitSlice(args: {
     decimals: ot.tokenDecimals ?? 6,
     hintPriceUsdPerToken: marketSell,
     dexSource: ot.source,
+    allowPartialTailFlush: shouldAllowPartialExitTailFlush(ot),
   });
 }
 
@@ -1547,6 +1549,7 @@ async function tryExecuteTpPartialSell(args: {
       decimals: ot.tokenDecimals ?? 6,
       hintPriceUsdPerToken: marketSell,
       dexSource: ot.source,
+      allowPartialTailFlush: shouldAllowPartialExitTailFlush(ot),
     });
   }
   console.log(

@@ -23,6 +23,8 @@ import {
   waveBAdjustSellFractionForRemainder,
   shouldApplyRemainderFlushOnPartialSell,
   resolveWaveBRemainderFlushUsd,
+  shouldAllowPartialExitTailFlush,
+  WAVE_B_SMALL_LEG_DUST_FLUSH_USD,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
   waveBBreakevenAtZeroExitEligible,
@@ -201,22 +203,26 @@ describe('exit-policy-wave-b', () => {
 
   it('waveBTrailSellFractionForRemainder flushes full remainder at or below $100', () => {
     const c = cfg();
-    expect(waveBTrailSellFractionForRemainder(99.99, c)).toBe(1);
-    expect(waveBTrailSellFractionForRemainder(100, c)).toBe(1);
+    /** Positions ≤$100 keep trail peels unless tail would be dust (<$5). */
+    expect(waveBTrailSellFractionForRemainder(99.99, c)).toBeCloseTo(0.2);
+    expect(waveBTrailSellFractionForRemainder(100, c)).toBeCloseTo(0.2);
     expect(waveBTrailSellFractionForRemainder(250, c)).toBeCloseTo(0.2);
     expect(WAVE_B_TRAIL_FLUSH_REMAIN_USD).toBe(100);
   });
 
   it('waveBAdjustSellFractionForRemainder flushes TP and trail below $100', () => {
     const c = cfg();
-    expect(waveBAdjustSellFractionForRemainder(80, 0.05, c)).toBe(1);
-    expect(waveBAdjustSellFractionForRemainder(80, 0.2, c)).toBe(1);
+    /** Small legs: keep requested partial (regression: $80 leg sold 100% on first TP). */
+    expect(waveBAdjustSellFractionForRemainder(80, 0.05, c)).toBeCloseTo(0.05);
+    expect(waveBAdjustSellFractionForRemainder(80, 0.2, c)).toBeCloseTo(0.2);
     expect(waveBAdjustSellFractionForRemainder(150, 0.05, c)).toBeCloseTo(0.05);
     expect(waveBAdjustSellFractionForRemainder(150, 0.2, c)).toBeCloseTo(0.2);
     expect(waveBAdjustSellFractionForRemainder(99, 0, c)).toBe(0);
     /** Buttcoin-style tail: ~$111 × 10% would leave <$100 — sell 100% now. */
     expect(waveBAdjustSellFractionForRemainder(111, 0.1, c)).toBe(1);
     expect(waveBAdjustSellFractionForRemainder(123, 0.1, c)).toBeCloseTo(0.1);
+    /** Awakening $30 × 30% leaves $21 — keep partial (not dust-flush to 100%). */
+    expect(waveBAdjustSellFractionForRemainder(30, 0.3, c)).toBeCloseTo(0.3);
   });
 
   it('shouldApplyRemainderFlushOnPartialSell covers Lera family and wave B opens', () => {
@@ -226,6 +232,11 @@ describe('exit-policy-wave-b', () => {
     expect(shouldApplyRemainderFlushOnPartialSell('live-oscar-risky', ot)).toBe(false);
     ot.liveExitPolicyId = 'wave_b_v1';
     expect(shouldApplyRemainderFlushOnPartialSell('live-oscar-risky', ot)).toBe(true);
+  });
+
+  it('shouldApplyRemainderFlushOnPartialSell skips preset C scalp', () => {
+    const ot = { liveExitPolicyId: 'preset_c_scalp_v1' } as import('../src/papertrader/types.js').OpenTrade;
+    expect(shouldApplyRemainderFlushOnPartialSell('live-oscar-preset-c', ot)).toBe(false);
   });
 
   it('resolveWaveBRemainderFlushUsd prefers LIVE_TAIL_FLUSH_THRESHOLD_USD', () => {
@@ -245,7 +256,7 @@ describe('exit-policy-wave-b', () => {
       avgEntry: 1,
     } as OpenTrade;
     expect(waveBRemainderValueNetUsd(ot, 1.2)).toBeCloseTo(96, 1);
-    expect(waveBTrailSellFractionForRemainder(waveBRemainderValueNetUsd(ot, 1.2), cfg())).toBe(1);
+    expect(waveBTrailSellFractionForRemainder(waveBRemainderValueNetUsd(ot, 1.2), cfg())).toBeCloseTo(0.2);
   });
 
   it('waveBNextTrailLevelToFire legacy floor at +7.5% when not defensive', () => {
