@@ -167,13 +167,21 @@ export const WAVE_B_ARM_MIN_PNL_FRAC = WAVE_B_BREAKEVEN_EXIT_MIN_TP_FRAC;
 export const WAVE_B_TRAIL_STEP_SELL_FRACTION = 0.2;
 /** Wave B: if modeled remainder notional is below this, any TP/trail partial sells 100% (no dust). */
 export const WAVE_B_TRAIL_FLUSH_REMAIN_USD = 100;
+/** Small legs (awakening ~$30, preset-c ~$50): only dust-flush tails below this — not the $100 runner rule. */
+export const WAVE_B_SMALL_LEG_DUST_FLUSH_USD = 5;
 
 /** Whether partial TP/trail sells should flush the full remainder below the tail threshold. */
 export function shouldApplyRemainderFlushOnPartialSell(
   strategyId: string,
   ot: OpenTrade,
 ): boolean {
+  if (isPresetCScalpExitPolicy(ot)) return false;
   return isLiveOscarFamilyTradingStrategyId(strategyId) || isWaveBExitPolicy(ot);
+}
+
+/** After partial TP: only tail-flush when journal remainder is already ~dust (not half8 50% peels). */
+export function shouldAllowPartialExitTailFlush(ot: OpenTrade): boolean {
+  return ot.remainingFraction <= 0.05 + 1e-9;
 }
 
 export function resolveWaveBRemainderFlushUsd(
@@ -567,10 +575,18 @@ export function waveBAdjustSellFractionForRemainder(
   flushRemainUsd: number = WAVE_B_TRAIL_FLUSH_REMAIN_USD,
 ): number {
   if (!(requestedFraction > 1e-12)) return 0;
-  if (remainingValueNetUsd <= flushRemainUsd) return 1;
   const frac = Math.min(1, requestedFraction);
   const afterRemainUsd = remainingValueNetUsd * (1 - frac);
-  if (afterRemainUsd < flushRemainUsd) return 1;
+  if (!(afterRemainUsd > 0)) return frac;
+  /**
+   * Do NOT force 100% when the whole leg is simply below $100 (regression: awakening $30 / preset-c $50
+   * sold entire wallet on first partial). Only expand when the *requested* partial would leave a dust tail.
+   */
+  const effectiveFlushUsd =
+    remainingValueNetUsd <= flushRemainUsd
+      ? Math.min(flushRemainUsd, WAVE_B_SMALL_LEG_DUST_FLUSH_USD)
+      : flushRemainUsd;
+  if (afterRemainUsd < effectiveFlushUsd) return 1;
   return frac;
 }
 

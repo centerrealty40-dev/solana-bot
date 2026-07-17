@@ -110,9 +110,15 @@ export function runLivePartialExitTailFlush(args: {
   decimals: number;
   hintPriceUsdPerToken: number;
   dexSource?: string;
+  /**
+   * Skip sub-$100 tail flush after partial TP when journal still holds a meaningful remainder
+   * (awakening $30 legs, half8 50% peels, preset-c scalp).
+   */
+  allowPartialTailFlush?: boolean;
 }): void {
   const liveCfg = args.liveCfg;
   if (!liveCfg?.strategyEnabled || liveCfg.executionMode !== 'live') return;
+  if (args.allowPartialTailFlush === false) return;
   void runLiveWalletTailFlushIfNeeded({
     liveCfg,
     mint: args.mint,
