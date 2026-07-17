@@ -100,6 +100,10 @@ import {
 import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
 import { usesOscarExitPolicy } from './exit-mode.js';
 import { handoffCopyPositionToOscarExit } from './copy-oscar-exit-handoff.js';
+import {
+  copyPositionOscarExitManaged,
+  reconcileIneligibleOscarHandoffs,
+} from './copy-oscar-handoff-eligibility.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -662,7 +666,7 @@ async function onLeaderSell(
 
   const sellFrac = leaderSellFraction(preLeaderRaw, swap.baseAmountRaw);
 
-  if (usesOscarExitPolicy(cfg)) {
+  if (usesOscarExitPolicy(cfg) && copyPositionOscarExitManaged(pos)) {
     const cancelledBuys = cancelPendingBuysForMint(state, mint, 'any');
     for (const c of cancelledBuys) {
       appendCopyEvent(cfg, {
@@ -1433,7 +1437,12 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
   let lastReconcile = 0;
 
   try {
+    const reverted = reconcileIneligibleOscarHandoffs(cfg, state);
     const cleared = await reconcileGhostPositions(cfg, state);
+    if (reverted > 0) {
+      writeCopyTraderState(cfg.statePath, state);
+      console.log('[copy-trader] startup: reverted ineligible oscar handoffs', reverted);
+    }
     if (cleared > 0) {
       writeCopyTraderState(cfg.statePath, state);
       console.log('[copy-trader] startup: cleared ghost positions', cleared);
@@ -1483,7 +1492,9 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
 
     if (now - lastReconcile >= 60_000) {
       try {
+        const reverted = reconcileIneligibleOscarHandoffs(cfg, state);
         const cleared = await reconcileGhostPositions(cfg, state);
+        if (reverted > 0) console.log('[copy-trader] reverted ineligible oscar handoffs', reverted);
         if (cleared > 0) console.log('[copy-trader] cleared ghost positions', cleared);
       } catch (err) {
         console.warn('[copy-trader] reconcile error', (err as Error).message);

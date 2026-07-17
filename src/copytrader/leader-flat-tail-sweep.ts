@@ -2,6 +2,7 @@ import type { CopyTraderConfig } from './config.js';
 import { usesOscarExitPolicy } from './exit-mode.js';
 import { effectiveLeaderBalanceRaw } from './leader-dust.js';
 import { appendCopyEvent } from './executor.js';
+import { copyPositionOscarExitManaged } from './copy-oscar-handoff-eligibility.js';
 import { shouldIgnoreLeaderForMint } from './oscar-position-guard.js';
 import { leaderHasActiveJupiterSellOrders } from './jupiter-trigger-orders.js';
 import { getLeaderLedger, leaderPreBalanceRaw } from './leader-ledger.js';
@@ -86,12 +87,12 @@ export async function scheduleLeaderFlatTailSweeps(
   cfg: CopyTraderConfig,
   state: CopyTraderState,
 ): Promise<number> {
-  if (usesOscarExitPolicy(cfg)) return 0;
-
   const now = Date.now();
   let scheduled = 0;
 
   for (const [mint, pos] of Object.entries({ ...state.positions })) {
+    if (usesOscarExitPolicy(cfg) && copyPositionOscarExitManaged(pos)) continue;
+
     const leaderIgnore = shouldIgnoreLeaderForMint({
       cfg,
       mint,

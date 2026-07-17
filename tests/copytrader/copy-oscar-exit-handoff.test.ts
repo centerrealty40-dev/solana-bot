@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, beforeEach } from 'vitest';
 import { handoffCopyPositionToOscarExit } from '../../src/copytrader/copy-oscar-exit-handoff.js';
 import type { CopyTraderConfig } from '../../src/copytrader/config.js';
 import type { CopyPosition, CopyTraderState } from '../../src/copytrader/state.js';
@@ -64,8 +64,19 @@ const cfgBase: CopyTraderConfig = {
 
 describe('copy oscar exit handoff', () => {
   const tmpFiles: string[] = [];
+  const prevDiscoveryMin = process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD;
+  const prevLowLane = process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED;
+
+  beforeEach(() => {
+    process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD = '3000000';
+    process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = '0';
+  });
 
   afterEach(() => {
+    if (prevDiscoveryMin === undefined) delete process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD;
+    else process.env.PAPER_DISCOVERY_MIN_MARKET_CAP_USD = prevDiscoveryMin;
+    if (prevLowLane === undefined) delete process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED;
+    else process.env.PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED = prevLowLane;
     for (const f of tmpFiles) {
       try {
         fs.unlinkSync(f);
@@ -75,7 +86,7 @@ describe('copy oscar exit handoff', () => {
     }
   });
 
-  it('marks oscarPromotedAt on handoff', () => {
+  it('marks oscarPromotedAt on handoff when mcap is adopt-eligible', () => {
     const statePath = path.join(os.tmpdir(), `ct-handoff-${Date.now()}.json`);
     tmpFiles.push(statePath);
     fs.writeFileSync(statePath, JSON.stringify({ positions: {} }), 'utf8');
@@ -88,6 +99,7 @@ describe('copy oscar exit handoff', () => {
       entryPriceUsd: 0.01,
       sizeUsd: 250,
       entryDeployedCostUsd: 250,
+      entryMcapUsd: 5_000_000,
       addCount: 0,
       leaderWallet: cfgBase.targetWallet,
       leaderEntrySig: 'sig',
@@ -99,6 +111,33 @@ describe('copy oscar exit handoff', () => {
 
     expect(handoffCopyPositionToOscarExit({ cfg, state, pos })).toBe(true);
     expect(pos.oscarPromotedAt).toBeGreaterThan(0);
+  });
+
+  it('skips handoff when entry mcap is below Oscar adopt floor', () => {
+    const statePath = path.join(os.tmpdir(), `ct-handoff-skip-${Date.now()}.json`);
+    tmpFiles.push(statePath);
+    fs.writeFileSync(statePath, JSON.stringify({ positions: {} }), 'utf8');
+
+    const state: CopyTraderState = emptyCopyTraderState();
+    const pos: CopyPosition = {
+      mint: 'MintCopySkip111111111111111111111111111111',
+      symbol: 'LOW',
+      entryTs: Date.now(),
+      entryPriceUsd: 0.001,
+      sizeUsd: 500,
+      entryDeployedCostUsd: 500,
+      entryMcapUsd: 700_000,
+      addCount: 0,
+      leaderWallet: cfgBase.targetWallet,
+      leaderEntrySig: 'sig',
+    };
+    state.positions[pos.mint] = pos;
+
+    const cfg = { ...cfgBase, statePath, journalPath: path.join(os.tmpdir(), `j-skip-${Date.now()}.jsonl`) };
+    tmpFiles.push(cfg.journalPath);
+
+    expect(handoffCopyPositionToOscarExit({ cfg, state, pos })).toBe(false);
+    expect(pos.oscarPromotedAt).toBeUndefined();
   });
 
   it('adopts promoted copy position into live-oscar open map', async () => {
