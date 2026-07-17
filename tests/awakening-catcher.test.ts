@@ -51,8 +51,9 @@ describe('awakening-signal', () => {
   it('passes fresh vol5m spike on quiet prior (early awakening)', () => {
     const r = evaluateAwakeningSignal(cfg, market({}));
     expect(r.pass).toBe(true);
-    expect(r.metrics.vol5mSpikeVs6hMult).toBeGreaterThan(8);
-    expect(r.metrics.vol5mSpikeVs1hMult).toBeGreaterThan(4);
+    expect(r.metrics.entryPath).toBe('early_spike');
+    expect(r.metrics.vol5mSpikeVs6hMult).toBeGreaterThan(4);
+    expect(r.metrics.vol5mSpikeVs1hMult).toBeGreaterThan(2.5);
     expect(r.metrics.priorVol1hUsd).toBe(1_500);
   });
 
@@ -63,6 +64,50 @@ describe('awakening-signal', () => {
     );
     expect(r.pass).toBe(true);
     expect(r.metrics.vol1hUsd).toBe(12_000);
+  });
+
+  it('CHANCE Jul-17 ~21:00 MSK: early_spike on first vol5m cross before vol1h heats up', () => {
+    const chanceCfg = loadAwakeningConfig({});
+    const r = evaluateAwakeningSignal(
+      chanceCfg,
+      market({
+        mint: 'JCKwsT8UAbygnFkZ7u3amDUM7BXRtwUhCsHQv2khpump',
+        priceUsd: 0.001321,
+        marketCapUsd: 1_321_504,
+        liquidityUsd: 130_414,
+        volume5mUsd: 5_489,
+        volume1hUsd: 13_380,
+        volume6hUsd: 67_654,
+        volume24hUsd: 271_620,
+        priceChangeM5: 2,
+        priceChangeH1: 4,
+        priceChangeH6: 10,
+        priceChangeH24: 15,
+        buys5m: 23,
+        sells5m: 25,
+      }),
+    );
+    expect(r.pass).toBe(true);
+    expect(r.metrics.entryPath).toBe('early_spike');
+  });
+
+  it('CHANCE Jul-17 ~21:28 MSK: blocks late mega-spike once vol1h already hot', () => {
+    const chanceCfg = loadAwakeningConfig({});
+    const r = evaluateAwakeningSignal(
+      chanceCfg,
+      market({
+        volume5mUsd: 57_016,
+        volume1hUsd: 172_937,
+        volume6hUsd: 225_722,
+        volume24hUsd: 426_889,
+        priceChangeM5: 0.5,
+        priceChangeH1: 40,
+        priceChangeH6: 45,
+        priceChangeH24: 65,
+      }),
+    );
+    expect(r.pass).toBe(false);
+    expect(r.reasons.some((x) => x.startsWith('early_vol1h>'))).toBe(true);
   });
 
   it('blocks mid-rally continuation (2vvw3 late-entry shape)', () => {
@@ -363,7 +408,7 @@ describe('awakening-signal', () => {
         }),
       );
       expect(r.pass).toBe(true);
-      expect(r.metrics.entryPath).toBe('gradual');
+      expect(r.metrics.entryPath).toBe('early_spike');
     });
 
     it('blocks 2vvw3 Jul-15 05:29 tail spike (noisy prior + spike1h)', () => {
@@ -389,7 +434,10 @@ describe('awakening-signal', () => {
       expect(r.pass).toBe(false);
       expect(
         r.reasons.some(
-          (x) => x.startsWith('prior6h_quiet>') || x.startsWith('gradual_spike_1h>'),
+          (x) =>
+            x.startsWith('prior6h_quiet>') ||
+            x.startsWith('gradual_spike_1h>') ||
+            x.startsWith('early_spike_1h_tail>'),
         ),
       ).toBe(true);
     });

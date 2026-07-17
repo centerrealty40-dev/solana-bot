@@ -47,7 +47,7 @@ export interface AwakeningSignalMetrics {
   poolAgeMin: number | null;
   buyRatio: number | null;
   /** Which eval path passed (ignition burst vs gradual vol build). */
-  entryPath?: 'ignition' | 'gradual';
+  entryPath?: 'early_spike' | 'ignition' | 'gradual';
 }
 
 export interface AwakeningSignalResult {

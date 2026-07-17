@@ -94,6 +94,7 @@ import type {
 import {
   isGhostMtmExitTick,
   liveHotTickProbeQuoteSanity,
+  liveSellQuotePriceSanity,
   resolveLiveSellReferencePriceUsd,
   resolveObservedPriceUsdForJournal,
 } from '../../live/sell-price-sanity.js';
@@ -232,7 +233,8 @@ import { tryLiveStagedEntryV2TrackerStep, usesLegacyStagedAdds } from './live-st
 import { reconcileE2OpenOnTrackerTick } from './live-oscar-e2-open-reconcile.js';
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
-import { liveTrackerMtmUsdSnapJupiterSymmetricBand } from '../../live/mtm-snapshot-guard.js';
+import { resolveLiveExitMtmMark } from '../../live/live-exit-mtm.js';
+import { liveTrackerSellProbeUsdPerToken } from '../../live/mtm-jupiter-probe.js';
 import { rejectStalePgSnapshotForMtm } from '../../live/pg-snapshot-mtm.js';
 import {
   getOpenPositionExecSellUsd,
@@ -3696,7 +3698,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           });
       }
     }
-    let curMetric = snapPx > 0 ? snapPx : 0;
+    let curMetric = livePhase4 && liveOscarCfg ? 0 : snapPx > 0 ? snapPx : 0;
+    /** Live peak/TP: advance only when Jupiter sell-probe (or hot-tick exec) confirms this tick. */
+    let peakMtmUsd = 0;
     let ghostExitTick = false;
     let entrySplitJupiterPx: number | undefined;
     let chainOscarUsdForMint = 0;
@@ -3758,12 +3762,34 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         });
       } else {
         try {
-          const fq = await liveFetchBuyQuote({
-            cfg: liveOscarCfg,
-            outputMint: mint,
-            sizeUsd: probeUsd,
-            solUsd,
-          });
+          const chainTokenRaw = liveChainMap?.get(mint);
+          const priceHintUsd = snapPx > 0 ? snapPx : anchorPx;
+          const [fq, jupiterSellRaw] = await Promise.all([
+            liveFetchBuyQuote({
+              cfg: liveOscarCfg,
+              outputMint: mint,
+              sizeUsd: probeUsd,
+              solUsd,
+            }),
+            liveTrackerSellProbeUsdPerToken({
+              liveCfg: liveOscarCfg,
+              ot,
+              mint,
+              probeUsd,
+              solUsd,
+              priceHintUsd,
+              chainTokenRaw,
+            }),
+          ]);
+          let jupiterSellPx: number | null = null;
+          if (jupiterSellRaw != null && jupiterSellRaw > 0) {
+            const sellSanity = liveSellQuotePriceSanity({
+              quotePriceUsd: jupiterSellRaw,
+              referencePriceUsd:
+                anchorPx > 0 ? anchorPx : snapPx > 0 ? snapPx : ot.lastObservedPriceUsd ?? null,
+            });
+            if (sellSanity.ok) jupiterSellPx = jupiterSellRaw;
+          }
           if (!fq) {
             void notifyLiveTrackerJupiterFallback({
               strategyId: cfg.strategyId,
@@ -3775,6 +3801,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               dexSource: ot.source,
               reason: 'quote-null',
             });
+            const holdPx =
+              ot.lastObservedPriceUsd ??
+              (anchorPx > 0 ? anchorPx : snapPx > 0 ? snapPx : 0);
+            if (holdPx > 0) curMetric = holdPx;
           } else {
             const fit = tokenUsdFromBuyQuoteFitDecimals(fq.quoteResponse, solUsd, hintDec, anchorPx);
             const jpx = fit?.px;
@@ -3789,6 +3819,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                 dexSource: ot.source,
                 reason: 'jupiter-price-null',
               });
+              const holdPx =
+                ot.lastObservedPriceUsd ??
+                (anchorPx > 0 ? anchorPx : snapPx > 0 ? snapPx : 0);
+              if (holdPx > 0) curMetric = holdPx;
             } else {
               entrySplitJupiterPx = jpx;
               const fittedDec = fit!.decimalsUsed;
@@ -3819,38 +3853,64 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
               });
               const divergeVsAnchor =
                 anchorPx > 0 ? Math.abs(anchorPx - jpx) / Math.max(anchorPx, 1e-18) : 0;
-              /**
-               * При jpx ниже якоря относительное расхождение всегда ≤ 1 (максимум −100%% к якорю).
-               * Режим `divergeVsAnchor > 2` возможен только при сильном пампе (jpx ≫ anchor).
-               * Тогда не подменяем Jupiter устаревшим PG — иначе MTM занижается и лестница TP не срабатывает.
-               */
               const jupiterSaneVsEntry =
                 !(anchorPx > 0) || divergeVsAnchor <= 2 || jpx >= anchorPx - 1e-18;
               if (jupiterSaneVsEntry) {
                 const maxPrem = liveOscarCfg.liveTrackerJupiterMaxPremiumOverSnapshotPct;
-                const { useUsd: mtmPick, clampedFromJupiter, bandClamp } = liveTrackerMtmUsdSnapJupiterSymmetricBand({
+                const mtm = resolveLiveExitMtmMark({
                   snapPx,
-                  jupiterPx: jpx,
+                  jupiterSellPx,
+                  jupiterBuyPx: jpx,
                   maxPremiumOverSnapshotPct: maxPrem,
                   anchorPx,
                 });
-                curMetric = mtmPick;
-                ot.liveFlashLastSnapshotPx = snapPx;
-                ot.liveFlashLastJupiterPx = jpx;
-                if (clampedFromJupiter) {
-                  const premPct = snapPx > 0 ? +(((jpx / snapPx - 1) * 100).toFixed(2)) : null;
-                  if (bandClamp === 'low') {
+                if (mtm.pgRejected) {
+                  log.warn(
+                    {
+                      mint: mint.slice(0, 8),
+                      symbol: ot.symbol,
+                      pgPriceUsd: snapPx,
+                      executableUsd: mtm.jupiterExecutablePx,
+                      reason: mtm.pgRejectReason,
+                    },
+                    'live tracker: PG snapshot rejected for exit MTM (wick above executable)',
+                  );
+                }
+                curMetric = mtm.exitMtmUsd;
+                peakMtmUsd = mtm.peakMtmUsd;
+                ot.liveFlashLastSnapshotPx = mtm.pgSnapUsed > 0 ? mtm.pgSnapUsed : snapPx;
+                ot.liveFlashLastJupiterPx = mtm.jupiterExecutablePx ?? jpx;
+                if (mtm.clampedFromJupiter) {
+                  const premPct =
+                    snapPx > 0 && mtm.jupiterExecutablePx != null
+                      ? +(((mtm.jupiterExecutablePx / snapPx - 1) * 100).toFixed(2))
+                      : null;
+                  if (mtm.bandClamp === 'low') {
                     log.warn(
                       {
                         mint: mint.slice(0, 8),
                         symbol: ot.symbol,
                         snapshotPx: snapPx,
-                        jupiterPx: jpx,
+                        jupiterPx: mtm.jupiterExecutablePx,
+                        jupiterSellPx,
+                        jupiterBuyPx: jpx,
                         maxPremiumPct: maxPrem,
                         jupiterDiscountVsSnapPct: premPct,
-                        mtmUsd: mtmPick,
+                        mtmUsd: mtm.exitMtmUsd,
                       },
                       'live tracker: Jupiter below snapshot band; using Jupiter MTM (stale snapshot guard)',
+                    );
+                  } else if (mtm.bandClamp === 'anchor_stale_low') {
+                    log.warn(
+                      {
+                        mint: mint.slice(0, 8),
+                        symbol: ot.symbol,
+                        snapshotPx: snapPx,
+                        jupiterPx: mtm.jupiterExecutablePx,
+                        anchorPx,
+                        mtmUsd: mtm.exitMtmUsd,
+                      },
+                      'live tracker: stale-low PG below entry; trusting Jupiter executable for MTM',
                     );
                   } else {
                     log.warn(
@@ -3858,12 +3918,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                         mint: mint.slice(0, 8),
                         symbol: ot.symbol,
                         snapshotPx: snapPx,
-                        jupiterPx: jpx,
+                        jupiterPx: mtm.jupiterExecutablePx,
                         maxPremiumPct: maxPrem,
                         jupiterPremiumVsSnapPct: premPct,
-                        mtmUsd: mtmPick,
+                        mtmUsd: mtm.exitMtmUsd,
                       },
-                      'live tracker: Jupiter buy-probe above snapshot premium cap; using PG snapshot for MTM (anti-ghost)',
+                      'live tracker: Jupiter above snapshot premium cap; using PG snapshot for MTM (anti-ghost)',
                     );
                   }
                   void notifyLiveTrackerJupiterMtmClampedToSnapshot({
@@ -3871,45 +3931,47 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                     mint,
                     symbol: ot.symbol,
                     snapshotPx: snapPx,
-                    jupiterPx: jpx,
+                    jupiterPx: mtm.jupiterExecutablePx ?? jpx,
                     probeUsd,
                     maxPremiumPct: maxPrem,
-                    bandClamp: bandClamp === 'low' ? 'low' : 'high',
+                    bandClamp: mtm.bandClamp === 'low' ? 'low' : 'high',
                   });
-                } else if (snapPx > 0 && jpx > 0 && jpx < snapPx - 1e-18) {
-                  const divergeVsSnap = Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18);
+                } else if (snapPx > 0 && mtm.jupiterExecutablePx != null && mtm.jupiterExecutablePx < snapPx - 1e-18) {
+                  const divergeVsSnap =
+                    Math.abs(snapPx - mtm.jupiterExecutablePx) / Math.max(mtm.jupiterExecutablePx, 1e-18);
                   if (divergeVsSnap > 0.035) {
                     log.warn(
                       {
                         mint: mint.slice(0, 8),
                         symbol: ot.symbol,
                         snapshotPx: snapPx,
-                        jupiterPx: jpx,
+                        jupiterPx: mtm.jupiterExecutablePx,
                         divergePct: +(divergeVsSnap * 100).toFixed(2),
-                        mtmUsd: mtmPick,
+                        mtmUsd: mtm.exitMtmUsd,
                       },
-                      'live tracker: PG snapshot above Jupiter; MTM uses min(snapshot,Jupiter) for exits',
+                      'live tracker: PG snapshot above Jupiter; MTM uses executable mark for exits',
                     );
                     void notifyLiveTrackerJupiterMtmClampedToSnapshot({
                       strategyId: cfg.strategyId,
                       mint,
                       symbol: ot.symbol,
                       snapshotPx: snapPx,
-                      jupiterPx: jpx,
+                      jupiterPx: mtm.jupiterExecutablePx,
                       probeUsd,
                       maxPremiumPct: maxPrem,
                       bandClamp: 'low',
                     });
                   }
-                } else if (snapPx > 0) {
-                  const divergeVsSnap = Math.abs(snapPx - jpx) / Math.max(jpx, 1e-18);
-                  if (divergeVsSnap > 0.035 && jpx > snapPx + 1e-18) {
+                } else if (snapPx > 0 && mtm.jupiterExecutablePx != null) {
+                  const divergeVsSnap =
+                    Math.abs(snapPx - mtm.jupiterExecutablePx) / Math.max(mtm.jupiterExecutablePx, 1e-18);
+                  if (divergeVsSnap > 0.035 && mtm.jupiterExecutablePx > snapPx + 1e-18) {
                     log.warn(
                       {
                         mint: mint.slice(0, 8),
                         symbol: ot.symbol,
                         snapshotPx: snapPx,
-                        jupiterPx: jpx,
+                        jupiterPx: mtm.jupiterExecutablePx,
                         divergePct: +(divergeVsSnap * 100).toFixed(2),
                       },
                       'live tracker: PG snapshot vs Jupiter tradable price; using conservative MTM for decisions',
@@ -3919,17 +3981,24 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                       mint,
                       symbol: ot.symbol,
                       snapshotPx: snapPx,
-                      jupiterPx: jpx,
+                      jupiterPx: mtm.jupiterExecutablePx,
                       divergePct: divergeVsSnap * 100,
                       probeUsd,
                       avgEntryMarket: ot.avgEntryMarket,
                     });
                   }
-                } else {
+                } else if (mtm.exitMtmUsd > 0) {
                   log.warn(
-                    { mint: mint.slice(0, 8), symbol: ot.symbol, jupiterPx: jpx },
-                    'live tracker: PG price missing; using Jupiter MTM',
+                    { mint: mint.slice(0, 8), symbol: ot.symbol, jupiterPx: mtm.jupiterExecutablePx },
+                    'live tracker: PG price missing; using Jupiter executable MTM',
                   );
+                }
+                if (!(mtm.exitMtmUsd > 0)) {
+                  const holdPx =
+                    ot.lastObservedPriceUsd ??
+                    (anchorPx > 0 ? anchorPx : snapPx > 0 ? snapPx : 0);
+                  if (holdPx > 0) curMetric = holdPx;
+                  peakMtmUsd = 0;
                 }
               } else {
                 log.warn(
@@ -3941,18 +4010,20 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
                     anchorPx,
                     divergeVsAnchorPct: +(divergeVsAnchor * 100).toFixed(1),
                   },
-                  'live tracker: Jupiter MTM conflicts with entry anchor; keeping PG / entry fallback',
+                  'live tracker: Jupiter MTM conflicts with entry anchor; keeping last observed / entry fallback',
                 );
-                if (snapPx > 0) curMetric = snapPx;
-                else if (anchorPx > 0) curMetric = anchorPx;
-                else curMetric = jpx;
+                const holdPx =
+                  ot.lastObservedPriceUsd ??
+                  (anchorPx > 0 ? anchorPx : snapPx > 0 ? snapPx : jpx);
+                if (holdPx > 0) curMetric = holdPx;
+                peakMtmUsd = 0;
               }
             }
           }
         } catch (e) {
           log.warn(
             { mint: mint.slice(0, 8), err: (e as Error)?.message },
-            'live tracker: Jupiter probe failed; keeping snapshot price',
+            'live tracker: Jupiter probe failed; keeping last observed price',
           );
           void notifyLiveTrackerJupiterFallback({
             strategyId: cfg.strategyId,
@@ -3965,6 +4036,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
             reason: 'exception',
             errorMessage: (e as Error)?.message,
           });
+          const holdPx =
+            ot.lastObservedPriceUsd ??
+            (ot.avgEntryMarket > 0
+              ? ot.avgEntryMarket
+              : ot.avgEntry > 0
+                ? ot.avgEntry
+                : snapPx > 0
+                  ? snapPx
+                  : 0);
+          if (holdPx > 0) curMetric = holdPx;
+          peakMtmUsd = 0;
         }
       }
     }
@@ -4025,6 +4107,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         });
         if (execSanity.ok) {
           curMetric = execSell;
+          peakMtmUsd = execSell;
           ot.liveFlashLastJupiterPx = execSell;
         } else {
           const anchorSummary = summarizeHotTickAnchorChecks(execSanity.anchorChecks);
@@ -4742,10 +4825,20 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const liveOscarAb = isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveExitModeAbEnabled;
     const entrySplitComplete = ot.legs.some((l) => l.reason === 'scale_in');
 
+    const livePeakPx =
+      isLiveOscarTradingStrategyId(cfg.strategyId) && peakMtmUsd > 0
+        ? peakMtmUsd
+        : isLiveOscarTradingStrategyId(cfg.strategyId)
+          ? ot.peakMcUsd
+          : curMetric;
     const peakCandidate = isRunnerProbeExitPolicy(ot)
       ? runnerProbeOptimisticTpPx(ot, curMetric, snapPx)
-      : curMetric;
-    if (!(isPaperOscarIdealized && idealizedMute) && peakCandidate > ot.peakMcUsd) {
+      : livePeakPx;
+    if (
+      !(isPaperOscarIdealized && idealizedMute) &&
+      !ghostExitTick &&
+      peakCandidate > ot.peakMcUsd
+    ) {
       const wasArmed = ot.trailingArmed;
       const peakMetric = peakCandidate;
       const pnlFracPeak = ot.avgEntry > 0 ? peakMetric / ot.avgEntry - 1 : 0;
@@ -4760,8 +4853,16 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       } else if (isVariantALegacyV1ExitPolicy(ot)) {
         variantAUpdateRemainderPeak(ot, pnlFracPeak, cfg);
       }
-      ot.peakMcUsd = isRunnerProbeExitPolicy(ot) ? peakMetric : curMetric;
-      ot.peakPnlPct = isRunnerProbeExitPolicy(ot) ? pnlFracPeak * 100 : pnlPctVsAvg;
+      ot.peakMcUsd = isRunnerProbeExitPolicy(ot)
+        ? peakMetric
+        : peakMtmUsd > 0
+          ? peakMtmUsd
+          : curMetric;
+      ot.peakPnlPct = isRunnerProbeExitPolicy(ot)
+        ? pnlFracPeak * 100
+        : peakMtmUsd > 0 && ot.avgEntry > 0
+          ? (peakMtmUsd / ot.avgEntry - 1) * 100
+          : pnlPctVsAvg;
       /**
        * Peak trailing only after ≥2 partial TP rungs when using TP grid or discrete ladder — avoids full exit
        * on retrace right after a shallow first rung (~2.5%).

@@ -46,9 +46,16 @@ type AwakeningSignalCfg = Pick<
   | 'gradualMaxVol5mSpikeVs1hMult'
   | 'gradualMaxPriceChangeM5Pct'
   | 'quietPriorReIgnitionSpike6hMult'
+  | 'earlySpikeEnabled'
+  | 'earlySpikeVol5mSpike6hMult'
+  | 'earlySpikeVol5mSpike1hMult'
+  | 'earlySpikeMaxVol1hUsd'
+  | 'earlySpikeMinPriceChangeM5Pct'
+  | 'earlySpikeTailMinVol1hUsd'
+  | 'gradualMaxVol5mSpikeVs1hMult'
 >;
 
-export type AwakeningEntryPath = 'ignition' | 'gradual';
+export type AwakeningEntryPath = 'early_spike' | 'ignition' | 'gradual';
 
 export interface AwakeningComputedMetrics {
   vol5mUsd: number;
@@ -219,6 +226,66 @@ export function isAwakeningIgnitionBurst(
   );
 }
 
+function evaluateEarlySpikePath(
+  cfg: AwakeningSignalCfg,
+  market: AwakeningDexMarket,
+  metrics: AwakeningComputedMetrics,
+): string[] {
+  const reasons: string[] = [];
+  if (!cfg.earlySpikeEnabled) {
+    reasons.push('early_spike_disabled');
+    return reasons;
+  }
+
+  const mcap = pos(market.marketCapUsd);
+  const liq = pos(market.liquidityUsd);
+  if (metrics.poolAgeMin == null || metrics.poolAgeMin < cfg.minPoolAgeMin) {
+    reasons.push(`pool_age<${cfg.minPoolAgeMin}m`);
+  }
+  if (metrics.vol24hUsd > cfg.maxVol24hUsd) {
+    reasons.push(`vol24h>${cfg.maxVol24hUsd}`);
+  }
+  if (mcap == null || mcap < cfg.minMcapUsd) {
+    reasons.push(`mcap<${cfg.minMcapUsd}`);
+  }
+  if (liq == null || liq < cfg.minLiqUsd) {
+    reasons.push(`liq<${cfg.minLiqUsd}`);
+  }
+  if (metrics.vol5mUsd < cfg.vol5mMinUsd) {
+    reasons.push(`vol5m<${cfg.vol5mMinUsd}`);
+  }
+  if (metrics.vol5mSpikeVs6hMult < cfg.earlySpikeVol5mSpike6hMult) {
+    reasons.push(`early_spike_6h<${cfg.earlySpikeVol5mSpike6hMult}`);
+  }
+  if (metrics.vol5mSpikeVs1hMult < cfg.earlySpikeVol5mSpike1hMult) {
+    reasons.push(`early_spike_1h<${cfg.earlySpikeVol5mSpike1hMult}`);
+  }
+  if (metrics.vol1hUsd > cfg.earlySpikeMaxVol1hUsd) {
+    reasons.push(`early_vol1h>${cfg.earlySpikeMaxVol1hUsd}`);
+  }
+  if (
+    metrics.vol1hUsd >= cfg.earlySpikeTailMinVol1hUsd &&
+    metrics.vol5mSpikeVs1hMult > cfg.gradualMaxVol5mSpikeVs1hMult
+  ) {
+    reasons.push(`early_spike_1h_tail>${cfg.gradualMaxVol5mSpikeVs1hMult}`);
+  }
+
+  const m5 = market.priceChangeM5;
+  if (m5 != null && m5 < cfg.earlySpikeMinPriceChangeM5Pct) {
+    reasons.push(`early_price_m5<${cfg.earlySpikeMinPriceChangeM5Pct}`);
+  }
+  if (m5 != null && m5 < -3) {
+    reasons.push('early_price_m5_red_candle');
+  }
+
+  const earlyBurst =
+    metrics.vol5mUsd >= cfg.vol5mMinUsd &&
+    metrics.vol5mSpikeVs6hMult >= cfg.earlySpikeVol5mSpike6hMult &&
+    metrics.vol5mSpikeVs1hMult >= cfg.earlySpikeVol5mSpike1hMult;
+  pushBuyRatioGate(cfg, market, metrics, earlyBurst, reasons);
+  return reasons;
+}
+
 function evaluateIgnitionPath(
   cfg: AwakeningSignalCfg,
   market: AwakeningDexMarket,
@@ -330,6 +397,8 @@ export function isAwakeningNearMiss(reasons: string[]): boolean {
   const hardFail = reasons.some(
     (r) =>
       r.startsWith('vol5m_spike_') ||
+      r.startsWith('early_spike_') ||
+      r.startsWith('early_vol1h>') ||
       r.startsWith('gradual_vol<') ||
       r.startsWith('late_burst_') ||
       r.startsWith('mini_pump_peak:') ||
@@ -364,9 +433,17 @@ export function evaluateAwakeningSignal(
   market: AwakeningDexMarket,
 ): AwakeningSignalResult {
   const metrics = computeMetrics(cfg, market);
+  const earlyReasons = evaluateEarlySpikePath(cfg, market, metrics);
   const ignitionReasons = evaluateIgnitionPath(cfg, market, metrics);
   const gradualReasons = evaluateGradualPath(cfg, market, metrics);
 
+  if (earlyReasons.length === 0) {
+    return {
+      pass: true,
+      reasons: [],
+      metrics: { ...metrics, entryPath: 'early_spike' },
+    };
+  }
   if (ignitionReasons.length === 0) {
     return {
       pass: true,
@@ -382,7 +459,7 @@ export function evaluateAwakeningSignal(
     };
   }
 
-  const merged = [...new Set([...ignitionReasons, ...gradualReasons])];
+  const merged = [...new Set([...earlyReasons, ...ignitionReasons, ...gradualReasons])];
   return {
     pass: false,
     reasons: merged,
