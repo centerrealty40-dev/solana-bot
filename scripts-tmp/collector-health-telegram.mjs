@@ -12,6 +12,8 @@
  *   COLLECTOR_HEALTH_TICK_STALE_BY_COLLECTOR — per-collector overrides, e.g. pumpswap=240000
  *   COLLECTOR_HEALTH_DISCOVERY_MAX_AGE_MS — stale live-discovery-health.json (default 120000)
  *   COLLECTOR_HEALTH_SHYFT_MAX_STALE_MS — no shyft status event (default 120000)
+ *   COLLECTOR_HEALTH_PRODUCT_LABEL — header label, e.g. Oscar / LERA (default Oscar)
+ *   COLLECTOR_HEALTH_STRATEGY_TARGETS — JSON array [{ pm2, heartbeatPath, staleMs }]
  *   COLLECTOR_HEALTH_LIVE_JSONL — tail path for Shyft status (default data/live/pt1-oscar-live.jsonl)
  *   COLLECTOR_HEALTH_JSONL_TAIL_BYTES — tail read size (default 524288)
  *   SNAPSHOT_FRESHNESS_MAX_AGE_SEC / SNAPSHOT_FRESHNESS_SKIP_SOURCES — PG freshness
@@ -90,9 +92,29 @@ const JSONL_TAIL_BYTES = Math.max(32_768, Number(process.env.COLLECTOR_HEALTH_JS
 const DEX_GATE_PATH =
   process.env.DEXSCREENER_GLOBAL_GATE_PATH?.trim() ||
   path.join('data', 'dexscreener-api-gate.json');
-const STRATEGY_TARGETS = [
-  { pm2: 'live-oscar', heartbeatPath: 'data/ops-heartbeats/live-oscar.json', staleMs: 300_000 },
-];
+const PRODUCT_LABEL = String(process.env.COLLECTOR_HEALTH_PRODUCT_LABEL || 'Oscar').trim() || 'Oscar';
+
+function parseStrategyTargets(raw) {
+  const fallback = [
+    { pm2: 'live-oscar', heartbeatPath: 'data/ops-heartbeats/live-oscar.json', staleMs: 300_000 },
+  ];
+  if (!raw?.trim()) return fallback;
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) return fallback;
+    return parsed
+      .map((t) => ({
+        pm2: String(t.pm2 || '').trim(),
+        heartbeatPath: String(t.heartbeatPath || '').trim(),
+        staleMs: Math.max(30_000, Number(t.staleMs || 300_000)),
+      }))
+      .filter((t) => t.pm2 && t.heartbeatPath);
+  } catch {
+    return fallback;
+  }
+}
+
+const STRATEGY_TARGETS = parseStrategyTargets(process.env.COLLECTOR_HEALTH_STRATEGY_TARGETS);
 
 function envBool(key, fallback = false) {
   const v = process.env[key];
@@ -427,7 +449,7 @@ async function tick(pool) {
   const state = loadState();
   const ctx = await gather(pool, state);
   const nowMs = Date.now();
-  const body = buildCollectorHealthBody(ctx);
+  const body = buildCollectorHealthBody(ctx, { productLabel: PRODUCT_LABEL });
 
   console.log(
     JSON.stringify({
@@ -445,7 +467,12 @@ async function tick(pool) {
   if (duePeriodic) {
     if (!DRY_RUN && TELEGRAM_ON) {
       const sent = await sendTagged('HEALTH', 'collector_status', body, { skipQuietHours: true });
-      if (sent) state.lastStatusAt = nowMs;
+      if (sent) {
+        state.lastStatusAt = nowMs;
+        console.log(JSON.stringify({ ts: new Date().toISOString(), msg: 'collector-health telegram sent', product: PRODUCT_LABEL }));
+      } else {
+        console.warn(JSON.stringify({ ts: new Date().toISOString(), msg: 'collector-health telegram skipped/failed', product: PRODUCT_LABEL }));
+      }
     } else {
       console.log(`[HEALTH][collector_status]\n${body}`);
       state.lastStatusAt = nowMs;
@@ -476,6 +503,8 @@ async function main() {
       telegram: TELEGRAM_ON,
       dryRun: DRY_RUN,
       statePath: STATE_PATH,
+      productLabel: PRODUCT_LABEL,
+      strategyTargets: STRATEGY_TARGETS.map((t) => t.pm2),
     }),
   );
 

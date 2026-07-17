@@ -280,14 +280,16 @@ export function formatAgeSec(ageSec) {
 /**
  * Build compact Telegram body.
  * @param {object} ctx
+ * @param {{ productLabel?: string }} [opts]
  */
-export function buildCollectorHealthBody(ctx) {
+export function buildCollectorHealthBody(ctx, opts = {}) {
+  const productLabel = String(opts.productLabel || 'Oscar').trim() || 'Oscar';
   const lines = [];
   const head = ctx.blind
-    ? '🚨 Oscar collectors BLIND / degraded'
+    ? `🚨 ${productLabel} collectors BLIND / degraded`
     : ctx.warn
-      ? '⚠️ Oscar collectors — warnings'
-      : '✅ Oscar collectors OK';
+      ? `⚠️ ${productLabel} collectors — warnings`
+      : `✅ ${productLabel} collectors OK`;
   lines.push(head);
 
   const dexLines = ctx.collectors.map((c) => {

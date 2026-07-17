@@ -10,6 +10,7 @@ import 'dotenv/config';
 import fs from 'node:fs';
 import path from 'node:path';
 import { child } from '../core/logger.js';
+import { startOpsHeartbeat, writeOpsFatal } from '../core/ops-heartbeat.js';
 import { sendTagged } from '../core/telegram/sender.js';
 import { MintActivityTracker } from './awakening/awakening-activity.js';
 import { loadAwakeningConfig, type AwakeningConfig } from './awakening/awakening-config.js';
@@ -303,6 +304,18 @@ export async function main(): Promise<void> {
   });
 
   const activity = new MintActivityTracker(cfg.streamActivityWindowMs, cfg.streamWarmLookbackMs);
+
+  startOpsHeartbeat({
+    appName: 'awakening-catcher',
+    stats: () => ({
+      trackedMints: activity.size(),
+      streamRows: totalStreamRows,
+      wsMints: totalWsMints,
+      dexChecks: totalDexChecks,
+      signals: totalSignals,
+      streamSource: cfg.streamSource,
+    }),
+  });
   const streamCursor = { value: loadStreamCursor(cfg.cursorPath) };
 
   let wsHandle: { stop: () => void } | null = null;
@@ -376,6 +389,7 @@ const isMain =
 
 if (isMain) {
   main().catch((e) => {
+    writeOpsFatal('awakening-catcher', 'main', e);
     log.error({ err: (e as Error).message }, 'fatal');
     process.exit(1);
   });

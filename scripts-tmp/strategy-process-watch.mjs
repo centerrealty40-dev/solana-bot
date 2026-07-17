@@ -87,7 +87,7 @@ function readFatal(fatalPath) {
 }
 
 function pm2Restart(pm2Name) {
-  execSync(`pm2 restart ${pm2Name} --update-env`, { cwd: ROOT, stdio: 'pipe' });
+  execSync(`pm2 restart ${pm2Name}`, { cwd: ROOT, stdio: 'pipe' });
 }
 
 function issueDetail(issue, target, status, heartbeatAgeMs) {
