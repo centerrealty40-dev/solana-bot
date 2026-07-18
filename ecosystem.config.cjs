@@ -43,20 +43,21 @@ const JUPITER_SWAP_BUILD_URL = 'https://api.jup.ag/swap/v1/swap';
  */
 const JUPITER_PRO_TRADING_ENV = {
   ...JUPITER_DEVELOPER_TIER_ENV,
-  /** Cross-process slot scheduler — one Developer key shared by live-oscar, copy-trader, sa-jupiter, preset-c. */
-  JUPITER_GLOBAL_MAX_RPS: '8',
+  /** Cross-process slot scheduler — shared by live-oscar + copy-trader; keep ≤5 on Developer 10 RPS. */
+  JUPITER_GLOBAL_MAX_RPS: '5',
   JUPITER_GLOBAL_GATE_PATH: path.join(root, 'data/jupiter-api-gate.json'),
-  JUPITER_QUOTE_429_MAX_RETRIES: '12',
-  JUPITER_SWAP_429_MAX_RETRIES: '12',
-  JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
+  /** Swap-only: low 429 retries — each retry burns the shared bucket (was 12 → 55 events/min storms). */
+  JUPITER_QUOTE_429_MAX_RETRIES: '4',
+  JUPITER_SWAP_429_MAX_RETRIES: '4',
+  JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '250',
   LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
   LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
   LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
   LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'high',
-  LIVE_BUY_SIM_RETRY_ATTEMPTS: '20',
-  LIVE_BUY_SIM_RETRY_DELAY_MS: '150',
-  LIVE_SELL_SIM_RETRY_ATTEMPTS: '20',
-  LIVE_SELL_SIM_RETRY_DELAY_MS: '150',
+  LIVE_BUY_SIM_RETRY_ATTEMPTS: '4',
+  LIVE_BUY_SIM_RETRY_DELAY_MS: '400',
+  LIVE_SELL_SIM_RETRY_ATTEMPTS: '4',
+  LIVE_SELL_SIM_RETRY_DELAY_MS: '500',
   LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '10',
   LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '15',
   LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '10',
@@ -1719,12 +1720,12 @@ const PM2_APPS = [
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /**
-         * 1.11.520 — Developer 10 RPS: persistent retry x20, base slippage 10 bps, delay 150 ms.
+         * 1.11.607 — swap-only: fewer sim retries (was 20×13 HTTP → 429 storms on real exits).
          */
-        LIVE_BUY_SIM_RETRY_ATTEMPTS: '20',
-        LIVE_BUY_SIM_RETRY_DELAY_MS: '150',
-        LIVE_SELL_SIM_RETRY_ATTEMPTS: '20',
-        LIVE_SELL_SIM_RETRY_DELAY_MS: '150',
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '4',
+        LIVE_BUY_SIM_RETRY_DELAY_MS: '400',
+        LIVE_SELL_SIM_RETRY_ATTEMPTS: '4',
+        LIVE_SELL_SIM_RETRY_DELAY_MS: '500',
         /** Jupiter swap-only: no hot-tick sell probes (was 2.5s × open mint → 429 storms). */
         LIVE_OPEN_HOT_TICK_ENABLED: '0',
         LIVE_OPEN_HOT_TICK_INTERVAL_MS: '2500',
