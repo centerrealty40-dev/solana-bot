@@ -1,5 +1,5 @@
 /**
- * Live holder gate: QuickNode resolve → Shyft fallback → block/warn policy.
+ * Live holder gate: QuickNode GPA resolve → optional Shyft fallback → block/warn policy.
  */
 import type { PaperTraderConfig } from '../config.js';
 import type { HoldersDecisionMeta } from './holder-types.js';
@@ -55,6 +55,9 @@ function applyGateFailure(
     if (cfg.holdersOnFail === 'block') {
       holderReasons.push(`holders_unknown:${failReason}`);
       if (cheapPass) holdersMeta.holders_unknown_after_cheap_pass = true;
+    } else if (cfg.holdersOnFail === 'warn') {
+      /** Unknown count — do not block; observability + optional Telegram ADVICE. */
+      if (cheapPass) holdersMeta.holders_unknown_after_cheap_pass = true;
     } else if (cfg.holdersOnFail === 'db_fallback') {
       holdersMeta.holders_source = 'db';
       if (dbHolders < cfg.globalMinHolderCount) {
@@ -104,8 +107,8 @@ export async function evaluateHolderGate(input: HolderGateEvalInput): Promise<Ho
       return { holderReasons, holdersMeta, liveHoldersThisTick };
     }
 
-    const shyft = await tryShyftHolderCount(cfg, mint);
-    if ('count' in shyft) {
+    const shyft = cfg.shyftHoldersEnabled ? await tryShyftHolderCount(cfg, mint) : null;
+    if (shyft != null && 'count' in shyft) {
       const holderReasons: string[] = [];
       const holdersMeta: HoldersDecisionMeta = {
         holders_db: dbHolders,
@@ -121,14 +124,15 @@ export async function evaluateHolderGate(input: HolderGateEvalInput): Promise<Ho
       return { holderReasons, holdersMeta, liveHoldersThisTick };
     }
 
-    const failReason = `${r.reason}+${shyft.failReason}`;
+    const failReason =
+      shyft != null && 'failReason' in shyft ? `${r.reason}+${shyft.failReason}` : r.reason;
     const blocked = applyGateFailure(cfg, dbHolders, failReason, liveHoldersForGate, cheapPass);
     return { ...blocked, liveHoldersThisTick };
   }
 
   if (!qnBudgetOk) {
-    const shyft = await tryShyftHolderCount(cfg, mint);
-    if ('count' in shyft) {
+    const shyft = cfg.shyftHoldersEnabled ? await tryShyftHolderCount(cfg, mint) : null;
+    if (shyft != null && 'count' in shyft) {
       const holderReasons: string[] = [];
       const holdersMeta: HoldersDecisionMeta = {
         holders_db: dbHolders,
@@ -143,31 +147,47 @@ export async function evaluateHolderGate(input: HolderGateEvalInput): Promise<Ho
       }
       return { holderReasons, holdersMeta, liveHoldersThisTick };
     }
-    const failReason = shyft.failReason === 'shyft_disabled' ? 'budget_per_tick' : `budget_per_tick+${shyft.failReason}`;
+    const failReason =
+      shyft != null && 'failReason' in shyft
+        ? shyft.failReason === 'shyft_disabled'
+          ? 'budget_per_tick'
+          : `budget_per_tick+${shyft.failReason}`
+        : 'budget_per_tick';
     const blocked = applyGateFailure(cfg, dbHolders, failReason, liveHoldersForGate, cheapPass);
     return { ...blocked, liveHoldersThisTick };
   }
 
-  const shyftOnly = await tryShyftHolderCount(cfg, mint);
-  if ('count' in shyftOnly) {
-    const holderReasons: string[] = [];
-    const holdersMeta: HoldersDecisionMeta = {
-      holders_db: dbHolders,
-      holders_live: shyftOnly.count,
-      holders_source: 'shyft',
-      holders_age_ms: 0,
-      holders_used_for_gate: shyftOnly.count,
-    };
-    if (liveHoldersForGate && shyftOnly.count < cfg.globalMinHolderCount) {
-      holderReasons.push(`holders<${cfg.globalMinHolderCount}`);
+  if (cfg.shyftHoldersEnabled) {
+    const shyftOnly = await tryShyftHolderCount(cfg, mint);
+    if ('count' in shyftOnly) {
+      const holderReasons: string[] = [];
+      const holdersMeta: HoldersDecisionMeta = {
+        holders_db: dbHolders,
+        holders_live: shyftOnly.count,
+        holders_source: 'shyft',
+        holders_age_ms: 0,
+        holders_used_for_gate: shyftOnly.count,
+      };
+      if (liveHoldersForGate && shyftOnly.count < cfg.globalMinHolderCount) {
+        holderReasons.push(`holders<${cfg.globalMinHolderCount}`);
+      }
+      return { holderReasons, holdersMeta, liveHoldersThisTick };
     }
-    return { holderReasons, holdersMeta, liveHoldersThisTick };
+
+    const blocked = applyGateFailure(
+      cfg,
+      dbHolders,
+      shyftOnly.failReason,
+      liveHoldersForGate,
+      cheapPass,
+    );
+    return { ...blocked, liveHoldersThisTick };
   }
 
   const blocked = applyGateFailure(
     cfg,
     dbHolders,
-    shyftOnly.failReason,
+    'holders_live_disabled',
     liveHoldersForGate,
     cheapPass,
   );

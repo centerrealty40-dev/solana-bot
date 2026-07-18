@@ -38,30 +38,31 @@ const JUPITER_WATCHER_QUOTE_CONCURRENCY = '2';
 const JUPITER_SWAP_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
 const JUPITER_SWAP_BUILD_URL = 'https://api.jup.ag/swap/v1/swap';
 /**
- * Shared Jupiter Pro execution envelope — tight slippage + max retries (subscription underutilized).
- * Used by live-oscar, live-oscar-preset-c, and copy-trader (live-oscar may override slippage inline).
+ * Shared Jupiter execution envelope — Developer 10 RPS, ~10 concurrent positions.
+ * HTTP: 1 quote + 1 swap per attempt; 429 → global pause, tracker retries next tick.
  */
 const JUPITER_PRO_TRADING_ENV = {
   ...JUPITER_DEVELOPER_TIER_ENV,
-  /** Cross-process slot scheduler — shared by live-oscar + copy-trader; keep ≤5 on Developer 10 RPS. */
-  JUPITER_GLOBAL_MAX_RPS: '5',
+  /** Cross-process gate: 8 RPS cap (headroom under Developer 10 RPS org limit). */
+  JUPITER_GLOBAL_MAX_RPS: '8',
   JUPITER_GLOBAL_GATE_PATH: path.join(root, 'data/jupiter-api-gate.json'),
-  /** Swap-only: low 429 retries — each retry burns the shared bucket (was 12 → 55 events/min storms). */
-  JUPITER_QUOTE_429_MAX_RETRIES: '4',
-  JUPITER_SWAP_429_MAX_RETRIES: '4',
-  JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '250',
+  /** HTTP-layer: max 1 retry on 429; sim/tracker handles next attempt. */
+  JUPITER_QUOTE_429_MAX_RETRIES: '1',
+  JUPITER_SWAP_429_MAX_RETRIES: '1',
+  JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '1000',
   LIVE_JUPITER_QUOTE_URL: JUPITER_SWAP_QUOTE_URL,
   LIVE_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
   LIVE_JUPITER_PRIORITY_MAX_SOL: '0.0001',
   LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'high',
-  LIVE_BUY_SIM_RETRY_ATTEMPTS: '4',
-  LIVE_BUY_SIM_RETRY_DELAY_MS: '400',
-  LIVE_SELL_SIM_RETRY_ATTEMPTS: '4',
-  LIVE_SELL_SIM_RETRY_DELAY_MS: '500',
-  LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '10',
-  LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '15',
+  LIVE_BUY_SIM_RETRY_ATTEMPTS: '2',
+  LIVE_BUY_SIM_RETRY_DELAY_MS: '800',
+  LIVE_SELL_SIM_RETRY_ATTEMPTS: '2',
+  LIVE_SELL_SIM_RETRY_DELAY_MS: '1000',
+  LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '2',
+  LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '2',
   LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '10',
   LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '100',
+  PAPER_PRICE_VERIFY_QUOTE_RETRIES_ENABLED: '0',
 };
 
 /**
@@ -1401,8 +1402,8 @@ const PM2_APPS = [
          *   - `SNAPSHOT_WARMUP_MAX=0` (как раньше) — не прогреваем holders для всех snapshot rows.
          */
         /**
-         * Holders gate ON: min 3000, live QN resolve, Shyft fallback on fail/budget, block when unknown.
-         * Telegram: `live_holders_unknown_block` when candidate passed all gates except holder count.
+         * Holders gate: live QN GPA; block only when count known and below min.
+         * ON_FAIL=warn — unknown count does not block buy (Shyft off).
          */
         PAPER_HOLDERS_LIVE_ENABLED: '1',
         PAPER_HOLDERS_USE_QN_ADDON: '0',
@@ -1411,13 +1412,11 @@ const PM2_APPS = [
         PAPER_HOLDERS_MAX_PER_TICK: '8',
         PAPER_HOLDERS_TIMEOUT_MS: '4000',
         PAPER_HOLDERS_INCLUDE_TOKEN2022: '1',
-        PAPER_HOLDERS_ON_FAIL: 'block',
+        PAPER_HOLDERS_ON_FAIL: 'warn',
         PAPER_HOLDERS_DB_WRITEBACK: '1',
         PAPER_HOLDERS_SNAPSHOT_WARMUP_MAX: '0',
         PAPER_HOLDERS_GPA_CREDITS_PER_CALL: '100',
-        SHYFT_HOLDERS_ENABLED: '1',
-        SHYFT_HOLDERS_TTL_MS: '90000',
-        SHYFT_HOLDERS_TIMEOUT_MS: '4000',
+        SHYFT_HOLDERS_ENABLED: '0',
         /**
          * 1.11.232 — Runner Mode (параллельный путь к dip-windows).
          *
@@ -1475,17 +1474,10 @@ const PM2_APPS = [
         LIVE_ENTRY_SLICE_MAX_USD: '300',
         LIVE_ENTRY_SLICE_DELAY_MS: '10000',
 
-        PAPER_SIM_AUDIT_ENABLED: '1',
-        PAPER_SIM_SAMPLE_PCT: '5',
-        PAPER_SIM_MAX_WALL_MS: '8000',
-        PAPER_SIM_BUILD_TIMEOUT_MS: '5000',
-        PAPER_JUPITER_SWAP_URL: JUPITER_SWAP_BUILD_URL,
-        PAPER_SIM_USE_JUPITER_BUILD: '1',
-        /**
-         * 1.11.520 — Jupiter Pro ($25/mo): max 429 retries (cap 12 in `jupiter-http.ts`), fast backoff.
-         */
-        JUPITER_QUOTE_429_MAX_RETRIES: '12',
-        JUPITER_QUOTE_429_INITIAL_BACKOFF_MS: '100',
+        /** 1.11.608 — swap-only: sim-audit Jupiter builds off on live-oscar (was 5% sample → extra swap POSTs). */
+        PAPER_SIM_AUDIT_ENABLED: '0',
+        PAPER_SIM_SAMPLE_PCT: '0',
+        PAPER_SIM_USE_JUPITER_BUILD: '0',
 
         /**
          * 1.11.231 — pre-check Jupiter `priceImpactPct` ПЕРЕД simulate.
@@ -1720,12 +1712,8 @@ const PM2_APPS = [
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /**
-         * 1.11.607 — swap-only: fewer sim retries (was 20×13 HTTP → 429 storms on real exits).
+         * 1.11.608 — sim retries inherit JUPITER_PRO_TRADING_ENV (2+1 attempts; 429 → next tracker tick).
          */
-        LIVE_BUY_SIM_RETRY_ATTEMPTS: '4',
-        LIVE_BUY_SIM_RETRY_DELAY_MS: '400',
-        LIVE_SELL_SIM_RETRY_ATTEMPTS: '4',
-        LIVE_SELL_SIM_RETRY_DELAY_MS: '500',
         /** Jupiter swap-only: no hot-tick sell probes (was 2.5s × open mint → 429 storms). */
         LIVE_OPEN_HOT_TICK_ENABLED: '0',
         LIVE_OPEN_HOT_TICK_INTERVAL_MS: '2500',
@@ -1751,10 +1739,7 @@ const PM2_APPS = [
          *   2) bump `slippageBps` +10 bps каждый retry, cap 100 bps;
          *   3) buy slippage-cap 8 (10→20→…→100), sell 12 — exits должны пройти.
          */
-        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '10',
-        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '15',
-        LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '10',
-        LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '100',
+        /** Slippage retries: inherit JUPITER_PRO_TRADING_ENV (3×3, was 10×15 → 429 storms on real exits). */
         /**
          * 1.11.230 — Staged-add sim_err cooldown (A.1).
          *

@@ -7,11 +7,9 @@ import { child } from '../core/logger.js';
 import {
   JUPITER_QUOTE_URL_DEFAULT,
   JUPITER_SWAP_URL_DEFAULT,
+  fetchJupiterSwapPostResult,
   fetchJupiterSwapQuoteGetJson,
-  jupiterJsonHeaders,
 } from '../core/jupiter-http.js';
-import { acquireJupiterApiSlot } from '../core/jupiter-api-gate.js';
-import { recordJupiter429Event } from '../core/jupiter-429-monitor.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import { adaptivePriorityMaxLamports } from './adaptive-priority-fee.js';
 import type { LiveOscarConfig } from './config.js';
@@ -304,81 +302,21 @@ export async function liveBuildUnsignedSwapTx(args: {
 }): Promise<{ ok: true; b64: string } | { ok: false; reason: string }> {
   const { cfg, quoteResponse, userPublicKey } = args;
   const buildTimeoutMs = cfg.liveJupiterSwapTimeoutMs;
-  const headers = jupiterJsonHeaders({ 'content-type': 'application/json' });
   const body = liveJupiterSwapPostBody({ cfg, quoteResponse, userPublicKey });
   const swapUrl = resolveLiveJupiterSwapUrl(cfg);
-  const max429 = (() => {
-    const s = process.env.JUPITER_SWAP_429_MAX_RETRIES?.trim();
-    if (s === '0') return 0;
-    if (!s) return process.env.JUPITER_DEVELOPER_TIER === '1' ? 12 : 3;
-    const n = Number.parseInt(s, 10);
-    return Number.isFinite(n) && n >= 0 ? Math.min(12, n) : 3;
-  })();
-  let backoff = 150;
-
-  for (let j = 0; j <= max429; j++) {
-    await acquireJupiterApiSlot();
-    const ac = new AbortController();
-    const tt = setTimeout(() => ac.abort(), Math.max(300, buildTimeoutMs));
-    try {
-      const res = await fetch(swapUrl, {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-        signal: ac.signal,
-      });
-      const txt = await res.text();
-      if (res.status === 429 && j < max429) {
-        recordJupiter429Event({ source: 'swap', retriesAttempted: j + 1 });
-        const ra = res.headers.get('retry-after');
-        let waitMs = backoff;
-        if (ra) {
-          const sec = Number.parseFloat(ra);
-          if (Number.isFinite(sec) && sec >= 0) {
-            waitMs = Math.max(waitMs, Math.min(15_000, Math.round(sec * 1000)));
-          }
-        }
-        await new Promise((r) => setTimeout(r, waitMs));
-        backoff = Math.min(8000, Math.floor(backoff * 1.8) || 200);
-        continue;
-      }
-      if (!res.ok) {
-        if (res.status === 429) {
-          recordJupiter429Event({
-            source: 'swap',
-            exhausted: true,
-            retriesAttempted: max429 + 1,
-          });
-        }
-        log.debug(
-          { status: res.status, rateLimited: res.status === 429, snippet: txt.slice(0, 200) },
-          res.status === 429 ? 'live jupiter swap rate limited' : 'live jupiter swap http',
-        );
-        return { ok: false, reason: `swap-http-${res.status}` };
-      }
-      let parsed: { swapTransaction?: string };
-      try {
-        parsed = JSON.parse(txt) as { swapTransaction?: string };
-      } catch {
-        return { ok: false, reason: 'swap-parse' };
-      }
-      if (!parsed.swapTransaction || typeof parsed.swapTransaction !== 'string') {
-        return { ok: false, reason: 'no-swap-tx' };
-      }
-      return { ok: true, b64: parsed.swapTransaction };
-    } catch (e) {
-      const aborted = (e as Error)?.name === 'AbortError';
-      return { ok: false, reason: aborted ? 'swap-timeout' : 'swap-fetch' };
-    } finally {
-      clearTimeout(tt);
-    }
-  }
-  recordJupiter429Event({
-    source: 'swap',
-    exhausted: true,
-    retriesAttempted: max429 + 1,
+  const built = await fetchJupiterSwapPostResult({
+    url: swapUrl,
+    timeoutMs: buildTimeoutMs,
+    body: JSON.stringify(body),
   });
-  return { ok: false, reason: 'swap-http-429' };
+  if (built.ok) return { ok: true, b64: built.swapTransaction };
+  if (built.reason.startsWith('swap-http-')) {
+    log.debug(
+      { reason: built.reason, status: built.status },
+      built.reason === 'swap-http-429' ? 'live jupiter swap rate limited' : 'live jupiter swap http',
+    );
+  }
+  return { ok: false, reason: built.reason };
 }
 
 /**

@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {
   acquireJupiterApiSlot,
+  extendJupiterApiPause,
   resetJupiterApiGateForTests,
 } from '../src/core/jupiter-api-gate.js';
 
@@ -43,5 +44,13 @@ describe('jupiter-api-gate', () => {
     const t0 = Date.now();
     await Promise.all([acquireJupiterApiSlot(), acquireJupiterApiSlot()]);
     expect(Date.now() - t0).toBeLessThan(50);
+  });
+
+  it('waits for org-wide 429 pause before granting slot', async () => {
+    const pauseUntil = Date.now() + 120;
+    extendJupiterApiPause(pauseUntil);
+    const t0 = Date.now();
+    await acquireJupiterApiSlot();
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(80);
   });
 });

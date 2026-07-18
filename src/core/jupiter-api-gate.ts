@@ -1,17 +1,21 @@
 /**
- * Cross-process Jupiter API slot scheduler (file lock + nextAllowedMs).
- * All solana-alpha PM2 apps share one Developer key (~10 RPS) — without this,
- * per-process hot-tick / discovery / sa-jupiter bursts exceed quota.
+ * Cross-process Jupiter API scheduler (file lock + nextAllowedMs + 429 pause).
+ * live-oscar + copy-trader share one Developer key (10 RPS org limit).
  *
  * Env:
  * - `JUPITER_GLOBAL_RATE_LIMIT=0` — disable gate.
  * - `JUPITER_GLOBAL_RATE_LIMIT=1` — force enable.
  * - default: on when `JUPITER_API_KEY` is set.
- * - `JUPITER_GLOBAL_MAX_RPS` — default 8 when `JUPITER_DEVELOPER_TIER=1`, else 1.
- * - `JUPITER_GLOBAL_GATE_PATH` — state file (default `data/jupiter-api-gate.json` under cwd).
+ * - `JUPITER_GLOBAL_MAX_RPS` — default 8 (headroom under Developer 10 RPS).
+ * - `JUPITER_GLOBAL_GATE_PATH` — state file (default `data/jupiter-api-gate.json`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
+
+type GateState = {
+  nextAllowedMs: number;
+  pausedUntilMs: number;
+};
 
 function gateEnabled(): boolean {
   const flag = process.env.JUPITER_GLOBAL_RATE_LIMIT?.trim();
@@ -27,7 +31,7 @@ function maxRps(): number {
     const n = Number.parseFloat(raw);
     if (Number.isFinite(n) && n > 0) return Math.min(20, n);
   }
-  return process.env.JUPITER_DEVELOPER_TIER === '1' ? 8 : 1;
+  return 8;
 }
 
 function statePath(): string {
@@ -44,22 +48,30 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
-function readState(): { nextAllowedMs: number } {
+function readState(): GateState {
   try {
     const raw = fs.readFileSync(statePath(), 'utf8');
-    const j = JSON.parse(raw) as { nextAllowedMs?: unknown };
+    const j = JSON.parse(raw) as { nextAllowedMs?: unknown; pausedUntilMs?: unknown };
     const next = j?.nextAllowedMs;
-    return { nextAllowedMs: typeof next === 'number' && Number.isFinite(next) ? next : 0 };
+    const paused = j?.pausedUntilMs;
+    return {
+      nextAllowedMs: typeof next === 'number' && Number.isFinite(next) ? next : 0,
+      pausedUntilMs: typeof paused === 'number' && Number.isFinite(paused) ? paused : 0,
+    };
   } catch {
-    return { nextAllowedMs: 0 };
+    return { nextAllowedMs: 0, pausedUntilMs: 0 };
   }
 }
 
-function writeState(nextAllowedMs: number): void {
+function writeState(state: GateState): void {
   const p = statePath();
   fs.mkdirSync(path.dirname(p), { recursive: true });
   const tmp = `${p}.tmp.${process.pid}.${Date.now()}`;
-  fs.writeFileSync(tmp, JSON.stringify({ nextAllowedMs, updatedAt: Date.now() }), 'utf8');
+  fs.writeFileSync(
+    tmp,
+    JSON.stringify({ ...state, updatedAt: Date.now() }),
+    'utf8',
+  );
   fs.renameSync(tmp, p);
 }
 
@@ -99,7 +111,51 @@ async function withFileLock<T>(fn: () => Promise<T>): Promise<T> {
   return fn();
 }
 
-/** Reserve the next Jupiter HTTP slot; waits until grant time. */
+/** Extend org-wide Jupiter pause after HTTP 429 (x-ratelimit-reset or fallback). */
+export function extendJupiterApiPause(untilMs: number): void {
+  if (!gateEnabled() || !(untilMs > 0)) return;
+  try {
+    clearStaleLock();
+    const fd = fs.openSync(lockPath(), 'wx');
+    try {
+      const state = readState();
+      writeState({
+        ...state,
+        pausedUntilMs: Math.max(state.pausedUntilMs, untilMs),
+      });
+    } finally {
+      fs.closeSync(fd);
+      try {
+        fs.unlinkSync(lockPath());
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* best-effort — lock held by another process */
+  }
+}
+
+/** Parse Jupiter rate-limit headers → ms to wait (0 if slot already free). */
+export function jupiterRateLimitWaitMs(headers: Headers, fallbackMs = 1000): number {
+  const reset = headers.get('x-ratelimit-reset');
+  if (reset) {
+    const sec = Number.parseFloat(reset);
+    if (Number.isFinite(sec) && sec > 0) {
+      return Math.max(0, Math.min(15_000, Math.round(sec * 1000 - Date.now())));
+    }
+  }
+  const ra = headers.get('retry-after');
+  if (ra) {
+    const sec = Number.parseFloat(ra);
+    if (Number.isFinite(sec) && sec >= 0) {
+      return Math.max(0, Math.min(15_000, Math.round(sec * 1000)));
+    }
+  }
+  return Math.max(0, Math.min(15_000, fallbackMs));
+}
+
+/** Reserve the next Jupiter HTTP slot; waits until grant time and any 429 pause. */
 export async function acquireJupiterApiSlot(): Promise<void> {
   if (!gateEnabled()) return;
   const minGapMs = Math.ceil(1000 / maxRps());
@@ -107,9 +163,12 @@ export async function acquireJupiterApiSlot(): Promise<void> {
   await withFileLock(async () => {
     const now = Date.now();
     const state = readState();
-    const grantAt = Math.max(now, state.nextAllowedMs);
+    const grantAt = Math.max(now, state.nextAllowedMs, state.pausedUntilMs);
     waitMs = Math.max(0, grantAt - now);
-    writeState(grantAt + minGapMs);
+    writeState({
+      nextAllowedMs: grantAt + minGapMs,
+      pausedUntilMs: state.pausedUntilMs,
+    });
   });
   if (waitMs > 0) await sleep(waitMs);
 }

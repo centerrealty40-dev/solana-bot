@@ -102,6 +102,26 @@
 
 ---
 
+## [1.11.607] — 2026-07-18
+
+**Тег:** `sa-alpha-1.11.607`
+
+### Jupiter Developer tier — org-wide gate + no 429 retry storms
+
+- **Gate:** `jupiter-api-gate.ts` — 8 RPS org-wide + pause по `x-ratelimit-reset` при 429.
+- **HTTP:** единый `jupiter-http.ts` (quote GET + swap POST), **1 retry** на 429; `swap-http-429` **не** ретраится в sim/execution loop.
+- **PM2:** `JUPITER_PRO_TRADING_ENV` — 8 RPS, quote/swap retry=1; убран live-oscar override quote retry=12.
+- **Причина:** Free/Developer лимит сжигался 12×12 retry loops на одном mint (Ge87/Jimothy alerts).
+- **Откат:** redeploy `sa-alpha-1.11.606` + старые `JUPITER_*_429_MAX_RETRIES`.
+
+### Paper — holders unknown → BUY (warn), Shyft off
+
+- **`PAPER_HOLDERS_ON_FAIL=warn`:** неизвестный holder count → **pass** (Telegram warn), блок только если count **известен и < 3000**.
+- **`SHYFT_HOLDERS_ENABLED=0`:** без Shyft addon.
+- **Откат:** `PAPER_HOLDERS_ON_FAIL=block` + `SHYFT_HOLDERS_ENABLED=1` при наличии Shyft.
+
+---
+
 ## [1.11.606] — 2026-07-18
 
 **Тег:** `sa-alpha-1.11.606`
