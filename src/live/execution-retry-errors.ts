@@ -2,9 +2,11 @@
  * 1.11.458 — shared retry classification for live buy/sell pipelines (Phase 1 execution hardening).
  */
 
-/** Transient failures before simulate/send — retry immediately inside the pipeline envelope. */
+/** Transient failures before simulate/send — retry inside the pipeline envelope. */
 export function isRetryablePreBroadcastError(reason: string): boolean {
   if (!reason) return false;
+  /** 429 — org-wide pause; tracker/copy retry on next tick, not tight sim loop. */
+  if (reason === 'swap-http-429') return false;
   if (reason === 'no_quote' || reason === 'swap_build') return true;
   if (reason.startsWith('swap-http-')) return true;
   if (reason === 'swap-timeout' || reason === 'swap-fetch' || reason === 'swap-parse' || reason === 'no-swap-tx') {

@@ -1,4 +1,8 @@
-import { acquireJupiterApiSlot } from './jupiter-api-gate.js';
+import {
+  acquireJupiterApiSlot,
+  extendJupiterApiPause,
+  jupiterRateLimitWaitMs,
+} from './jupiter-api-gate.js';
 import { recordJupiter429Event } from './jupiter-429-monitor.js';
 
 export const JUPITER_QUOTE_URL_DEFAULT = 'https://api.jup.ag/swap/v1/quote';
@@ -20,26 +24,22 @@ export function jupiterJsonHeaders(extra: Record<string, string> = {}): Record<s
   return headers;
 }
 
-function jupiterQuote429MaxRetries(): number {
-  const s = process.env.JUPITER_QUOTE_429_MAX_RETRIES?.trim();
-  if (s === '0') return 0;
-  if (!s) {
-    /** Developer tier default when env unset — Pro subscription underutilized. */
-    return process.env.JUPITER_DEVELOPER_TIER === '1' ? 12 : 3;
-  }
-  const n = Number.parseInt(s, 10);
-  /**
-   * 1.11.230 — cap поднят 8 → 12: при 429 от Jupiter free/paid tier
-   * используем экспоненциальный backoff; потолок одного wait — 15 с (Retry-After honoured).
-   */
-  return Number.isFinite(n) && n >= 0 ? Math.min(12, n) : 3;
+/** HTTP-layer 429 retries — keep low; sim/tracker retries happen on next tick. */
+function jupiterHttp429MaxRetries(): number {
+  const quote = process.env.JUPITER_QUOTE_429_MAX_RETRIES?.trim();
+  const swap = process.env.JUPITER_SWAP_429_MAX_RETRIES?.trim();
+  const raw = quote ?? swap;
+  if (raw === '0') return 0;
+  if (!raw) return 1;
+  const n = Number.parseInt(raw, 10);
+  return Number.isFinite(n) && n >= 0 ? Math.min(2, n) : 1;
 }
 
-function jupiterQuote429InitialBackoffMs(): number {
+function jupiterHttp429InitialBackoffMs(): number {
   const s = process.env.JUPITER_QUOTE_429_INITIAL_BACKOFF_MS?.trim();
-  if (!s) return 100;
+  if (!s) return 1000;
   const n = Number.parseInt(s, 10);
-  return Number.isFinite(n) && n >= 0 ? Math.min(10_000, n) : 100;
+  return Number.isFinite(n) && n >= 0 ? Math.min(10_000, n) : 1000;
 }
 
 async function sleepMs(ms: number): Promise<void> {
@@ -51,75 +51,110 @@ export type JupiterSwapQuoteGetResult =
   | { ok: true; body: Record<string, unknown> }
   | { ok: false; status?: number; aborted?: boolean };
 
-/**
- * GET JSON for Jupiter `/swap/v1/quote` (and same-shape sell quotes).
- * Retries on **HTTP 429** with exponential backoff and optional `Retry-After` (seconds).
- * Uses `jupiterJsonHeaders()` → **`JUPITER_API_KEY`** from your Jupiter Developer account as **`x-api-key`** (Pro limits apply to that key; the app never mints a new key).
- * Tuned for Developer Platform bursts; set `JUPITER_QUOTE_429_MAX_RETRIES=0` to disable.
- */
-export async function fetchJupiterSwapQuoteGetResult(args: {
+export type JupiterSwapPostResult =
+  | { ok: true; swapTransaction: string }
+  | { ok: false; reason: string; status?: number; aborted?: boolean };
+
+async function jupiterFetchWith429Policy(args: {
+  method: 'GET' | 'POST';
   url: string;
   timeoutMs: number;
   extraHeaders?: Record<string, string>;
-}): Promise<JupiterSwapQuoteGetResult> {
-  const maxR = jupiterQuote429MaxRetries();
-  let backoff = jupiterQuote429InitialBackoffMs();
+  body?: string;
+  source: 'quote' | 'swap';
+}): Promise<{ ok: true; response: Response } | { ok: false; status?: number; aborted?: boolean }> {
+  const maxR = jupiterHttp429MaxRetries();
+  let backoff = jupiterHttp429InitialBackoffMs();
+
   for (let j = 0; j <= maxR; j++) {
     await acquireJupiterApiSlot();
     const ac = new AbortController();
     const tt = setTimeout(() => ac.abort(), Math.max(500, args.timeoutMs));
     try {
       const resp = await fetch(args.url, {
-        method: 'GET',
+        method: args.method,
         signal: ac.signal,
         headers: jupiterJsonHeaders(args.extraHeaders ?? {}),
+        ...(args.body != null ? { body: args.body } : {}),
       });
+
       if (resp.status === 429 && j < maxR) {
-        recordJupiter429Event({ source: 'quote', retriesAttempted: j + 1 });
-        const ra = resp.headers.get('retry-after');
-        let waitMs = backoff;
-        if (ra) {
-          const sec = Number.parseFloat(ra);
-          if (Number.isFinite(sec) && sec >= 0) {
-            waitMs = Math.max(waitMs, Math.min(15_000, Math.round(sec * 1000)));
-          }
-        }
+        recordJupiter429Event({ source: args.source, retriesAttempted: j + 1 });
+        const waitMs = jupiterRateLimitWaitMs(resp.headers, backoff);
+        extendJupiterApiPause(Date.now() + waitMs);
         try {
           await resp.text();
         } catch {
           /* ignore body */
         }
         await sleepMs(waitMs);
-        backoff = Math.min(8000, Math.floor(backoff * 1.8) || 200);
+        backoff = Math.min(8000, Math.floor(backoff * 1.8) || 1000);
         continue;
       }
-      if (!resp.ok) {
-        try {
-          await resp.text();
-        } catch {
-          /* ignore body */
-        }
-        return { ok: false, status: resp.status };
+
+      if (resp.status === 429) {
+        recordJupiter429Event({
+          source: args.source,
+          exhausted: true,
+          retriesAttempted: maxR + 1,
+        });
+        const waitMs = jupiterRateLimitWaitMs(resp.headers, backoff);
+        extendJupiterApiPause(Date.now() + waitMs);
       }
-      const raw = (await resp.json()) as unknown;
-      const body =
-        typeof raw === 'object' && raw != null && !Array.isArray(raw)
-          ? (raw as Record<string, unknown>)
-          : null;
-      if (!body) return { ok: false, status: resp.status };
-      return { ok: true, body };
+
+      return { ok: true, response: resp };
     } catch (e) {
       return { ok: false, aborted: (e as Error)?.name === 'AbortError' };
     } finally {
       clearTimeout(tt);
     }
   }
+
   recordJupiter429Event({
-    source: 'quote',
+    source: args.source,
     exhausted: true,
     retriesAttempted: maxR + 1,
   });
   return { ok: false, status: 429 };
+}
+
+/**
+ * GET JSON for Jupiter `/swap/v1/quote`.
+ * One HTTP-layer 429 retry max by default — execution/tracker retry on next tick.
+ */
+export async function fetchJupiterSwapQuoteGetResult(args: {
+  url: string;
+  timeoutMs: number;
+  extraHeaders?: Record<string, string>;
+}): Promise<JupiterSwapQuoteGetResult> {
+  const fetched = await jupiterFetchWith429Policy({
+    method: 'GET',
+    url: args.url,
+    timeoutMs: args.timeoutMs,
+    extraHeaders: args.extraHeaders,
+    source: 'quote',
+  });
+  if (!fetched.ok) {
+    return { ok: false, status: fetched.status, aborted: fetched.aborted };
+  }
+
+  const resp = fetched.response;
+  if (!resp.ok) {
+    try {
+      await resp.text();
+    } catch {
+      /* ignore body */
+    }
+    return { ok: false, status: resp.status };
+  }
+
+  const raw = (await resp.json()) as unknown;
+  const body =
+    typeof raw === 'object' && raw != null && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : null;
+  if (!body) return { ok: false, status: resp.status };
+  return { ok: true, body };
 }
 
 export async function fetchJupiterSwapQuoteGetJson(args: {
@@ -129,6 +164,45 @@ export async function fetchJupiterSwapQuoteGetJson(args: {
 }): Promise<Record<string, unknown> | null> {
   const r = await fetchJupiterSwapQuoteGetResult(args);
   return r.ok ? r.body : null;
+}
+
+/** POST `/swap/v1/swap` — build unsigned tx (live execution path). */
+export async function fetchJupiterSwapPostResult(args: {
+  url: string;
+  timeoutMs: number;
+  body: string;
+  extraHeaders?: Record<string, string>;
+}): Promise<JupiterSwapPostResult> {
+  const fetched = await jupiterFetchWith429Policy({
+    method: 'POST',
+    url: args.url,
+    timeoutMs: args.timeoutMs,
+    extraHeaders: { 'content-type': 'application/json', ...(args.extraHeaders ?? {}) },
+    body: args.body,
+    source: 'swap',
+  });
+  if (!fetched.ok) {
+    if (fetched.status === 429) return { ok: false, reason: 'swap-http-429', status: 429 };
+    if (fetched.aborted) return { ok: false, reason: 'swap-timeout', aborted: true };
+    return { ok: false, reason: 'swap-fetch' };
+  }
+
+  const resp = fetched.response;
+  const txt = await resp.text();
+  if (!resp.ok) {
+    return { ok: false, reason: `swap-http-${resp.status}`, status: resp.status };
+  }
+
+  let parsed: { swapTransaction?: string };
+  try {
+    parsed = JSON.parse(txt) as { swapTransaction?: string };
+  } catch {
+    return { ok: false, reason: 'swap-parse' };
+  }
+  if (!parsed.swapTransaction || typeof parsed.swapTransaction !== 'string') {
+    return { ok: false, reason: 'no-swap-tx' };
+  }
+  return { ok: true, swapTransaction: parsed.swapTransaction };
 }
 
 export function jupiterPriceV3Url(id: string): string {

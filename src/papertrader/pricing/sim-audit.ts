@@ -6,8 +6,7 @@ import { createHash } from 'node:crypto';
 import { Keypair } from '@solana/web3.js';
 import { qnCall } from '../../core/rpc/qn-client.js';
 import { child } from '../../core/logger.js';
-import { JUPITER_SWAP_URL_DEFAULT, jupiterJsonHeaders } from '../../core/jupiter-http.js';
-import { acquireJupiterApiSlot } from '../../core/jupiter-api-gate.js';
+import { JUPITER_SWAP_URL_DEFAULT, fetchJupiterSwapPostResult } from '../../core/jupiter-http.js';
 import { quoteResilienceFromPaperCfg, type PaperTraderConfig } from '../config.js';
 import type { SimAuditStamp } from '../types.js';
 import { fetchJupiterBuyQuoteResponse } from './price-verify.js';
@@ -62,48 +61,23 @@ async function jupiterBuildSwapBase64(
   userPublicKey: string,
   buildTimeoutMs: number,
 ): Promise<{ ok: true; b64: string } | { ok: false; reason: string }> {
-  const ac = new AbortController();
-  const tt = setTimeout(() => ac.abort(), Math.max(300, buildTimeoutMs));
-  const headers = jupiterJsonHeaders({ 'content-type': 'application/json' });
-  try {
-    const body = {
-      quoteResponse,
-      userPublicKey,
-      wrapAndUnwrapSol: true,
-      dynamicComputeUnitLimit: false,
-      asLegacyTransaction: false,
-    };
-    await acquireJupiterApiSlot();
-    const res = await fetch(swapApiUrl(), {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      signal: ac.signal,
-    });
-    const txt = await res.text();
-    if (!res.ok) {
-      log.debug(
-        { status: res.status, rateLimited: res.status === 429, snippet: txt.slice(0, 200) },
-        res.status === 429 ? 'jupiter swap build rate limited' : 'jupiter swap build http',
-      );
-      return { ok: false, reason: `swap-http-${res.status}` };
-    }
-    let j: { swapTransaction?: string };
-    try {
-      j = JSON.parse(txt) as { swapTransaction?: string };
-    } catch {
-      return { ok: false, reason: 'swap-parse' };
-    }
-    if (!j.swapTransaction || typeof j.swapTransaction !== 'string') {
-      return { ok: false, reason: 'no-swap-tx' };
-    }
-    return { ok: true, b64: j.swapTransaction };
-  } catch (e) {
-    const aborted = (e as Error)?.name === 'AbortError';
-    return { ok: false, reason: aborted ? 'swap-timeout' : 'swap-fetch' };
-  } finally {
-    clearTimeout(tt);
+  const body = {
+    quoteResponse,
+    userPublicKey,
+    wrapAndUnwrapSol: true,
+    dynamicComputeUnitLimit: false,
+    asLegacyTransaction: false,
+  };
+  const built = await fetchJupiterSwapPostResult({
+    url: swapApiUrl(),
+    timeoutMs: buildTimeoutMs,
+    body: JSON.stringify(body),
+  });
+  if (built.ok) return { ok: true, b64: built.swapTransaction };
+  if (built.reason.startsWith('swap-http-')) {
+    log.debug({ reason: built.reason }, 'jupiter swap build http');
   }
+  return { ok: false, reason: built.reason };
 }
 
 export interface OpenSimAuditArgs {

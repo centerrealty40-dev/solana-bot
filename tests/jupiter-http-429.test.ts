@@ -7,7 +7,7 @@ describe('fetchJupiterSwapQuoteGetJson', () => {
 
   beforeEach(() => {
     process.env = { ...envBackup };
-    process.env.JUPITER_QUOTE_429_MAX_RETRIES = '3';
+    process.env.JUPITER_QUOTE_429_MAX_RETRIES = '1';
     process.env.JUPITER_QUOTE_429_INITIAL_BACKOFF_MS = '1';
   });
 
@@ -17,11 +17,11 @@ describe('fetchJupiterSwapQuoteGetJson', () => {
     fetchSpy = undefined;
   });
 
-  it('retries on HTTP 429 then returns quote JSON', async () => {
+  it('retries once on HTTP 429 then returns quote JSON', async () => {
     let n = 0;
     fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
       n += 1;
-      if (n < 3) {
+      if (n < 2) {
         return {
           status: 429,
           ok: false,
@@ -42,7 +42,7 @@ describe('fetchJupiterSwapQuoteGetJson', () => {
       timeoutMs: 5000,
     });
     expect(j).toMatchObject({ inAmount: '1000000', outAmount: '500' });
-    expect(n).toBe(3);
+    expect(n).toBe(2);
   });
 
   it('with JUPITER_QUOTE_429_MAX_RETRIES=0 does not retry on 429', async () => {

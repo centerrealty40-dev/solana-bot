@@ -187,7 +187,7 @@ import { recordDiscoveryHealthSample, markDiscoverySchedulerStarted, recordDisco
 import { sendTagged } from '../core/telegram/sender.js';
 import {
   buildHoldersUnknownTelegramText,
-  shouldNotifyHoldersUnknownBlock,
+  shouldNotifyHoldersUnknown,
 } from './holders/holders-unknown-telegram.js';
 import { isEntryPriceStale, snapshotPriceAgeMs } from './stale-price.js';
 import { buildShadowPriceEvent } from './stream/shadow-price.js';
@@ -792,7 +792,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
 
   function notifyLiveHoldersUnknownBlock(d: EvalDecision): void {
     if (!isLiveOscarFamilyTradingStrategyId(cfg.strategyId)) return;
-    if (!shouldNotifyHoldersUnknownBlock(d)) return;
+    if (!shouldNotifyHoldersUnknown(d)) return;
     if (process.env.LIVE_HOLDERS_UNKNOWN_TELEGRAM_ENABLED === '0') return;
     if (isLiveBuyDiscoveryTelegramSuppressed()) return;
     const cooldownMs = Math.max(
@@ -1810,7 +1810,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
         if (!d.pass && isOnlyDataCoverageBlock(d.reasons) && !open.has(d.mint)) {
           notifyLiveOscarDataCoverageSkip(d);
         }
-        if (!d.pass && shouldNotifyHoldersUnknownBlock(d)) {
+        if (shouldNotifyHoldersUnknown(d)) {
           notifyLiveHoldersUnknownBlock(d);
         }
         const intelTradeLane = resolveLiveOscarIntelTradeLane(d);

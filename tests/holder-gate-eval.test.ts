@@ -42,6 +42,25 @@ afterEach(() => {
 });
 
 describe('evaluateHolderGate', () => {
+  it('warn mode: unknown holders do not block buy', async () => {
+    mockBatch.mockResolvedValueOnce({ ok: false, reason: 'timeout', message: 't/o' });
+
+    const r = await evaluateHolderGate({
+      cfg: { ...cfgBase, holdersOnFail: 'warn' as const, shyftHoldersEnabled: false } as never,
+      mint: 'MintWarn',
+      dbHolders: 0,
+      cheapPass: true,
+      liveHoldersForObservability: true,
+      liveHoldersForGate: true,
+      liveHoldersThisTick: 0,
+    });
+
+    expect(r.holderReasons).toEqual([]);
+    expect(r.holdersMeta?.holders_unknown_after_cheap_pass).toBe(true);
+    expect(r.holdersMeta?.holders_fail_reason).toBe('timeout');
+    expect(mockShyft).not.toHaveBeenCalled();
+  });
+
   it('blocks with telegram flag when QN and Shyft both fail', async () => {
     mockBatch.mockResolvedValueOnce({ ok: false, reason: 'timeout', message: 't/o' });
     mockShyft.mockResolvedValueOnce({ ok: false, reason: 'http' });
