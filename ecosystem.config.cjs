@@ -1712,7 +1712,7 @@ const PM2_APPS = [
         LIVE_SIM_TIMEOUT_MS: '12000',
         LIVE_SIM_CREDITS_PER_CALL: '30',
         /**
-         * 1.11.608 — sim retries inherit JUPITER_PRO_TRADING_ENV (2+1 attempts; 429 → next tracker tick).
+         * 1.11.607 — sim retries inherit JUPITER_PRO_TRADING_ENV (2+1 attempts; 429 → next tracker tick).
          */
         /** Jupiter swap-only: no hot-tick sell probes (was 2.5s × open mint → 429 storms). */
         LIVE_OPEN_HOT_TICK_ENABLED: '0',
