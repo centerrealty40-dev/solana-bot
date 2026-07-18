@@ -1603,10 +1603,10 @@ const PM2_APPS = [
         PAPER_PRIORITY_DISCOVERY_LOOKBACK_MIN: '120',
         PAPER_PRIORITY_DISCOVERY_RECENT_EVAL_MIN: '180',
         PAPER_PRIORITY_DISCOVERY_MAX_MINTS: '200',
-        PAPER_PRIORITY_DISCOVERY_JUPITER_REFRESH: '1',
-        PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK: '5',
-        /** 1.11.251 — near-miss dip: Jupiter refresh если PG dip в (min, min+gap] (minute bucket отстаёт). */
-        PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_REFRESH: '1',
+        PAPER_PRIORITY_DISCOVERY_JUPITER_REFRESH: '0',
+        PAPER_PRIORITY_DISCOVERY_JUPITER_MAX_PER_TICK: '0',
+        /** Near-miss Jupiter refresh OFF — swap-only Jupiter policy. */
+        PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_REFRESH: '0',
         PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_GAP_PCT: '4',
         PAPER_PRIORITY_DISCOVERY_NEAR_MISS_JUPITER_MAX_PER_TICK: '5',
         /** Priority tier BS 0.75 (global POST_MIN_BS остаётся 0.98). */
@@ -1725,8 +1725,8 @@ const PM2_APPS = [
         LIVE_BUY_SIM_RETRY_DELAY_MS: '150',
         LIVE_SELL_SIM_RETRY_ATTEMPTS: '20',
         LIVE_SELL_SIM_RETRY_DELAY_MS: '150',
-        /** 1.11.458 — hot tick: executable sell quote for open positions every 2s; kill pre-arm + fast tracker trigger. */
-        LIVE_OPEN_HOT_TICK_ENABLED: '1',
+        /** Jupiter swap-only: no hot-tick sell probes (was 2.5s × open mint → 429 storms). */
+        LIVE_OPEN_HOT_TICK_ENABLED: '0',
         LIVE_OPEN_HOT_TICK_INTERVAL_MS: '2500',
         LIVE_OPEN_HOT_EXEC_PRICE_MAX_AGE_MS: '5000',
         LIVE_OPEN_HOT_PROBE_MIN_USD: '20',
@@ -1807,6 +1807,9 @@ const PM2_APPS = [
         LIVE_TRACKER_MTM_PROBE_MIN_USD: '20',
         LIVE_TRACKER_MTM_PROBE_MAX_USD: '200',
         LIVE_TRACKER_MTM_PROBE_FRACTION: '0.10',
+        /** Swap-only: tracker MTM from PG; Jupiter only on buy/sell execution. */
+        LIVE_TRACKER_JUPITER_MTM_ENABLED: '0',
+        LIVE_ENTRY_SPLIT_JUPITER_PROBE_ENABLED: '0',
         /** W8.0 §10 — max Jupiter quote age (ms) before sign/send; `0` = disable (see `loadLiveOscarConfig`). */
         LIVE_QUOTE_MAX_AGE_MS: '8000',
         /**
@@ -2299,7 +2302,8 @@ const PM2_APPS = [
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
-        COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS: '2000',
+        COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS: '0',
+        COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
         COPY_TRADER_SELL_DELAY_MIN_MS: '0',
         COPY_TRADER_SELL_DELAY_MAX_MS: '2000',

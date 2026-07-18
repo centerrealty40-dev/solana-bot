@@ -49,7 +49,7 @@ async function resolveEntrySplitMetricUsd(args: {
   }
 
   let entrySplitJupiterPx: number | undefined;
-  if (liveOscarCfg) {
+  if (liveOscarCfg?.liveEntrySplitJupiterProbeEnabled) {
     const solUsd = getSolUsd() ?? 0;
     const hintDec = ot.tokenDecimals ?? 6;
     const anchorPx =

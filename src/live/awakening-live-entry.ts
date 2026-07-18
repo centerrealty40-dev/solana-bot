@@ -51,23 +51,37 @@ function saveCursor(queuePath: string, byteOffset: number): void {
   );
 }
 
-function readNewIntents(queuePath: string): AwakeningLiveEntryIntent[] {
-  if (!fs.existsSync(queuePath)) return [];
-  const offset = loadCursor(queuePath);
-  const buf = fs.readFileSync(queuePath);
-  if (offset >= buf.length) return [];
-  const chunk = buf.subarray(offset).toString('utf8');
-  const lines = chunk.split('\n').filter((l) => l.trim().length > 0);
-  const intents: AwakeningLiveEntryIntent[] = [];
-  for (const line of lines) {
-    try {
-      intents.push(JSON.parse(line) as AwakeningLiveEntryIntent);
-    } catch {
-      /* skip malformed */
-    }
+function readPendingIntents(queuePath: string): {
+  intents: AwakeningLiveEntryIntent[];
+  lineEndOffsets: number[];
+  startOffset: number;
+} {
+  if (!fs.existsSync(queuePath)) {
+    return { intents: [], lineEndOffsets: [], startOffset: loadCursor(queuePath) };
   }
-  saveCursor(queuePath, buf.length);
-  return intents;
+  const startOffset = loadCursor(queuePath);
+  const buf = fs.readFileSync(queuePath);
+  if (startOffset >= buf.length) {
+    return { intents: [], lineEndOffsets: [], startOffset };
+  }
+  const intents: AwakeningLiveEntryIntent[] = [];
+  const lineEndOffsets: number[] = [];
+  let pos = startOffset;
+  while (pos < buf.length) {
+    const nl = buf.indexOf(0x0a, pos);
+    const lineEnd = nl === -1 ? buf.length : nl + 1;
+    const raw = buf.subarray(pos, nl === -1 ? buf.length : nl).toString('utf8').trim();
+    if (raw.length > 0) {
+      try {
+        intents.push(JSON.parse(raw) as AwakeningLiveEntryIntent);
+        lineEndOffsets.push(lineEnd);
+      } catch {
+        lineEndOffsets.push(lineEnd);
+      }
+    }
+    pos = lineEnd;
+  }
+  return { intents, lineEndOffsets, startOffset };
 }
 
 function journalAwakeningSkip(args: {
@@ -177,27 +191,35 @@ export async function processAwakeningLiveEntryQueue(args: {
   }
 
   const queuePath = awakeningLiveEntryQueuePathFromEnv();
-  const intents = readNewIntents(queuePath);
-  if (intents.length === 0) return { attempted: 0, opened: 0, skipped };
+  const pending = readPendingIntents(queuePath);
+  if (pending.intents.length === 0) return { attempted: 0, opened: 0, skipped };
 
   const maxOpen = Math.max(1, args.maxOpenPositions ?? 3);
   let opened = 0;
+  let cursorAdvanceTo = pending.startOffset;
 
-  for (const intent of intents) {
+  for (let i = 0; i < pending.intents.length; i++) {
+    const intent = pending.intents[i]!;
+    const lineEnd = pending.lineEndOffsets[i] ?? pending.startOffset;
+    const permanentSkip = (reason: string) => {
+      journalAwakeningSkip({ intent, reason, skipped, journalLiveStrategy: args.journalLiveStrategy });
+      cursorAdvanceTo = lineEnd;
+    };
+
     if (countOpenDormantAwakeningPositions(args.open) >= maxOpen) {
-      journalAwakeningSkip({ intent, reason: 'max_open', skipped, journalLiveStrategy: args.journalLiveStrategy });
+      permanentSkip('max_open');
       continue;
     }
     if (dormantAwakeningMintAlreadyOpen(args.open, intent.mint)) {
-      journalAwakeningSkip({ intent, reason: 'already_open', skipped, journalLiveStrategy: args.journalLiveStrategy });
+      permanentSkip('already_open');
       continue;
     }
     if (isMintPermanentlyDeniedLiveOscar(args.liveCfg, intent.mint)) {
-      journalAwakeningSkip({ intent, reason: 'denylist', skipped, journalLiveStrategy: args.journalLiveStrategy });
+      permanentSkip('denylist');
       continue;
     }
     if (!(intent.legUsd > 0) || !(intent.priceUsd != null && intent.priceUsd > 0)) {
-      journalAwakeningSkip({ intent, reason: 'bad_quote', skipped, journalLiveStrategy: args.journalLiveStrategy });
+      permanentSkip('bad_quote');
       continue;
     }
 
@@ -235,11 +257,12 @@ export async function processAwakeningLiveEntryQueue(args: {
         skipped,
         journalLiveStrategy: args.journalLiveStrategy,
       });
-      continue;
+      break;
     }
 
     args.open.set(dormantAwakeningOpenMapKey(intent.mint), ot);
     opened += 1;
+    cursorAdvanceTo = lineEnd;
     args.journalLiveStrategy?.({
       kind: 'live_position_open',
       mint: intent.mint,
@@ -254,9 +277,59 @@ export async function processAwakeningLiveEntryQueue(args: {
     );
   }
 
-  if (skipped.length > 0) {
-    log.info({ skipped, opened, attempted: intents.length }, 'awakening live entries consumed');
+  if (cursorAdvanceTo > pending.startOffset) {
+    saveCursor(queuePath, cursorAdvanceTo);
   }
 
-  return { attempted: intents.length, opened, skipped };
+  if (skipped.length > 0 || opened > 0) {
+    log.info(
+      { skipped, opened, attempted: pending.intents.length, cursorAdvanceTo },
+      'awakening live entries consumed',
+    );
+  }
+
+  return { attempted: pending.intents.length, opened, skipped };
+}
+
+function awakeningLiveEntryFastPollMs(): number {
+  const raw = process.env.AWAKENING_LIVE_ENTRY_FAST_POLL_MS?.trim();
+  if (!raw) return 3_000;
+  const n = Number.parseInt(raw, 10);
+  if (!Number.isFinite(n) || n <= 0) return 0;
+  return Math.min(30_000, Math.max(1_000, n));
+}
+
+/** Poll awakening queue outside heavy discovery tick (CHANCE 97m queue stall class). */
+export function startAwakeningLiveEntryFastPoll(args: {
+  paperCfg: PaperTraderConfig;
+  liveCfg: LiveOscarConfig;
+  getOpen: () => Map<string, OpenTrade>;
+  getDiscovery: () => LiveOscarPhase4Discovery;
+  journalLiveStrategy?: (body: Record<string, unknown>) => void;
+}): NodeJS.Timeout | null {
+  const intervalMs = awakeningLiveEntryFastPollMs();
+  if (!(intervalMs > 0)) return null;
+  if (!awakeningLiveEntryEnabled()) return null;
+  if (args.liveCfg.strategyId !== awakeningLiveEntryStrategyId()) return null;
+  if (args.liveCfg.executionMode !== 'live' || !args.liveCfg.strategyEnabled) return null;
+
+  let running = false;
+  return setInterval(() => {
+    if (running) return;
+    running = true;
+    void processAwakeningLiveEntryQueue({
+      liveCfg: args.liveCfg,
+      paperCfg: args.paperCfg,
+      open: args.getOpen(),
+      discovery: args.getDiscovery(),
+      journalLiveStrategy: args.journalLiveStrategy,
+      maxOpenPositions: Number(process.env.AWAKENING_MAX_OPEN_POSITIONS ?? 3),
+    })
+      .catch((e) => {
+        log.warn({ err: (e as Error)?.message }, 'awakening fast poll failed');
+      })
+      .finally(() => {
+        running = false;
+      });
+  }, intervalMs);
 }

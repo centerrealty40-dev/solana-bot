@@ -82,6 +82,16 @@ export interface AwakeningConfig {
   gradualMaxPriceChangeM5Pct: number;
   /** When prior6h is elevated, require this spike mult to allow ignition (FeMbDo re-awakening). */
   quietPriorReIgnitionSpike6hMult: number;
+  /** First-minute vol burst — buy before gradual/anti-late gates (CHANCE scalp class). */
+  earlySpikeEnabled: boolean;
+  earlySpikeVol5mSpike6hMult: number;
+  earlySpikeVol5mSpike1hMult: number;
+  /** Skip late-burst / mini-pump blocks while vol1h still below this (burst still forming). */
+  earlySpikeMaxVol1hUsd: number;
+  /** Allow flat m5 on first cross (minute 1–2); still reject sharp red candles. */
+  earlySpikeMinPriceChangeM5Pct: number;
+  /** Tail-spike guard: extreme vol5m vs 1h only when vol1h already warmed up. */
+  earlySpikeTailMinVol1hUsd: number;
   /** Re-eval mints with stream activity in the last hour (not only 5m pulse). */
   streamWarmLookbackMs: number;
   streamWarmMinSigs: number;
@@ -195,6 +205,12 @@ export function loadAwakeningConfig(env: NodeJS.ProcessEnv = process.env): Awake
     gradualMaxVol5mSpikeVs1hMult: envNum(env.AWAKENING_GRADUAL_MAX_VOL5M_SPIKE_1H_MULT, 10),
     gradualMaxPriceChangeM5Pct: envNum(env.AWAKENING_GRADUAL_MAX_PRICE_CHANGE_M5_PCT, 15),
     quietPriorReIgnitionSpike6hMult: envNum(env.AWAKENING_QUIET_PRIOR_REIGNITION_SPIKE_6H_MULT, 10),
+    earlySpikeEnabled: envBool(env.AWAKENING_EARLY_SPIKE_ENABLED, true),
+    earlySpikeVol5mSpike6hMult: envNum(env.AWAKENING_EARLY_SPIKE_VOL5M_SPIKE_6H_MULT, 4),
+    earlySpikeVol5mSpike1hMult: envNum(env.AWAKENING_EARLY_SPIKE_VOL5M_SPIKE_1H_MULT, 2.5),
+    earlySpikeMaxVol1hUsd: envNum(env.AWAKENING_EARLY_SPIKE_MAX_VOL1H_USD, 25_000),
+    earlySpikeMinPriceChangeM5Pct: envNumSigned(env.AWAKENING_EARLY_SPIKE_MIN_PRICE_CHANGE_M5_PCT, 0),
+    earlySpikeTailMinVol1hUsd: envNum(env.AWAKENING_EARLY_SPIKE_TAIL_MIN_VOL1H_USD, 12_000),
     streamWarmLookbackMs: Math.round(envNum(env.AWAKENING_STREAM_WARM_LOOKBACK_SEC, 3600) * 1000),
     streamWarmMinSigs: Math.round(envNum(env.AWAKENING_STREAM_WARM_MIN_SIGS, 1)),
     streamWarmMaxPerTick: Math.min(20, Math.round(envNum(env.AWAKENING_STREAM_WARM_MAX_PER_TICK, 12))),

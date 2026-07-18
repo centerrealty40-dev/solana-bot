@@ -3,7 +3,7 @@
  *
  * Single-shot entry (no DCA):
  *   - hard kill −15% from avg entry,
- *   - TP +30% → sell 30% of position,
+ *   - every +30% PnL → sell 30% of remainder (repeating grid step),
  *   - remainder: instant peak trail (arm ~+0.5%, drop 6% from peak on reversal).
  */
 import type { PaperTraderConfig } from '../config.js';

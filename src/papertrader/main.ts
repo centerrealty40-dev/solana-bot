@@ -55,8 +55,9 @@ import {
   isLiveOscarTradingStrategyId,
   isLiveOscarFamilyTradingStrategyId,
   isLiveLeraTradingStrategyId,
+  LIVE_CATCHER_AWAKENING_STRATEGY_ID,
 } from '../preset-c/live-oscar-family.js';
-import { processAwakeningLiveEntryQueue } from '../live/awakening-live-entry.js';
+import { processAwakeningLiveEntryQueue, startAwakeningLiveEntryFastPoll } from '../live/awakening-live-entry.js';
 import { awakeningLiveEntryStrategyId } from '../scripts/awakening/awakening-live-entry-queue.js';
 import { gmgnMintHrefHtml, isAwaitingDipQualityHold } from './discovery/near-ready-dip-watch.js';
 import { syncPriorityOpenMints } from './discovery/priority-discovery-registry.js';
@@ -3150,6 +3151,18 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     },
   });
 
+  const liveOscarBoot = resolveLiveOscar();
+  const awakeningFastPollTimer =
+    liveOscarBoot && cfg.strategyId === LIVE_CATCHER_AWAKENING_STRATEGY_ID
+      ? startAwakeningLiveEntryFastPoll({
+          paperCfg: cfg,
+          liveCfg: liveOscarBoot.liveCfg,
+          getOpen: () => open,
+          getDiscovery: () => liveOscarBoot.discovery,
+          journalLiveStrategy: opts?.journalLiveStrategy,
+        })
+      : null;
+
   const solTimer = setInterval(() => {
     void refreshSolPrice();
   }, cfg.solPriceRefreshMs);
@@ -3171,6 +3184,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
     if (livePeriodicHealTimer) clearInterval(livePeriodicHealTimer);
     stopEntrySplitFastPoll(entrySplitFastPollTimer);
     if (liveOpenHotTickTimer) clearInterval(liveOpenHotTickTimer);
+    if (awakeningFastPollTimer) clearInterval(awakeningFastPollTimer);
     clearInterval(solTimer);
     clearInterval(btcTimer);
     setTimeout(() => process.exit(0), 200);

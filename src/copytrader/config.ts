@@ -37,6 +37,8 @@ const CopyTraderConfigSchema = z.object({
   minSellIntervalMs: z.coerce.number().int().min(0).max(600_000).default(0),
   /** Min ms between Jupiter dip eval quotes per pending buy (eval-only cache). **0** = off. */
   entryDipJupiterMinIntervalMs: z.coerce.number().int().min(0).max(600_000).default(0),
+  /** `0` — dip gate uses DEX/PG price; Jupiter only on actual buy/sell swap. */
+  entryDipUseJupiter: z.boolean().default(true),
   sellDelayMinMs: z.coerce.number().int().min(0).max(3_600_000).default(20_000),
   sellDelayMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(30_000),
   /** Second on-chain zero read before leader-flat tail sweep (default 3s). */
@@ -153,6 +155,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     sellRetryDeferLogMs: process.env.COPY_TRADER_SELL_RETRY_DEFER_LOG_MS,
     minSellIntervalMs: process.env.COPY_TRADER_MIN_SELL_INTERVAL_MS,
     entryDipJupiterMinIntervalMs: process.env.COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS,
+    entryDipUseJupiter: process.env.COPY_TRADER_ENTRY_DIP_USE_JUPITER !== '0',
     sellDelayMinMs,
     sellDelayMaxMs,
     leaderFlatConfirmDelayMs: process.env.COPY_TRADER_LEADER_FLAT_CONFIRM_DELAY_MS,
