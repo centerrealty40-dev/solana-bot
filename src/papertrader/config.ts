@@ -687,7 +687,7 @@ const ConfigSchema = z.object({
   priorityDiscoveryRecentEvalMin: z.coerce.number().int().min(30).max(720).default(180),
   priorityDiscoveryMaxMints: z.coerce.number().int().min(10).max(500).default(200),
   priorityDiscoveryJupiterRefreshEnabled: z.boolean().default(true),
-  priorityDiscoveryJupiterRefreshMaxPerTick: z.coerce.number().int().min(1).max(50).default(20),
+  priorityDiscoveryJupiterRefreshMaxPerTick: z.coerce.number().int().min(0).max(50).default(20),
   /** Near-miss dip: Jupiter refresh когда PG dip на gapPct выше порога (minute bucket отстаёт). */
   priorityDiscoveryNearMissJupiterRefreshEnabled: z.boolean().default(true),
   priorityDiscoveryNearMissJupiterGapPct: z.coerce.number().min(0.5).max(12).default(4),
