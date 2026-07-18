@@ -3698,7 +3698,12 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           });
       }
     }
-    let curMetric = livePhase4 && liveOscarCfg ? 0 : snapPx > 0 ? snapPx : 0;
+    let curMetric =
+      livePhase4 && liveOscarCfg && liveOscarCfg.liveTrackerJupiterMtmEnabled
+        ? 0
+        : snapPx > 0
+          ? snapPx
+          : 0;
     /** Live peak/TP: advance only when Jupiter sell-probe (or hot-tick exec) confirms this tick. */
     let peakMtmUsd = 0;
     let ghostExitTick = false;
@@ -3721,7 +3726,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
      * выглядит сломанным относительно якоря входа (>2× расхождение). Пробуем Jupiter даже при пустом PG.
      * Telegram при сбое quote или сильном PG↔Jupiter — `src/core/telegram/jupiter-alerts.ts`.
      */
-    if (livePhase4 && liveOscarCfg) {
+    if (livePhase4 && liveOscarCfg && liveOscarCfg.liveTrackerJupiterMtmEnabled) {
       const solUsd = getSolUsd() ?? 0;
       const hintDec = ot.tokenDecimals ?? 6;
       const anchorPx =
@@ -4049,6 +4054,13 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           peakMtmUsd = 0;
         }
       }
+    } else if (livePhase4 && liveOscarCfg) {
+      const pgPx =
+        snapPx > 0
+          ? snapPx
+          : ot.lastObservedPriceUsd ??
+            (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0);
+      if (pgPx > 0) curMetric = pgPx;
     }
 
     /**

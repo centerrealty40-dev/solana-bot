@@ -57,7 +57,7 @@ export async function resolveEntryDipEvalPrice(args: {
 }): Promise<EntryDipEvalPrice> {
   const { cfg, mint, dipSizeUsd, dexPriceUsd, quoteCache } = args;
   const nowMs = args.nowMs ?? Date.now();
-  if (cfg.executionMode === 'paper') {
+  if (cfg.executionMode === 'paper' || !cfg.entryDipUseJupiter) {
     return { priceUsd: dexPriceUsd, source: 'dex', quoteUnavailable: false };
   }
 

@@ -626,6 +626,12 @@ const LiveOscarConfigSchema = z
      * При Jupiter Developer tier (~10 RPS) можно **50–100**; `0` = без паузы.
      */
     liveTrackerInterMintDelayMs: z.coerce.number().int().min(0).max(10_000).default(120),
+
+    /** `0` — MTM/exit decisions from PG only; Jupiter quotes only at buy/sell swap (default prod). */
+    liveTrackerJupiterMtmEnabled: z.boolean().default(true),
+
+    /** `0` — entry-split fast poll uses PG snapshot only (no Jupiter corridor probe). */
+    liveEntrySplitJupiterProbeEnabled: z.boolean().default(true),
   })
   .superRefine((data, ctx) => {
     if (data.strategyEnabled && (data.executionMode === 'simulate' || data.executionMode === 'live')) {
@@ -1173,6 +1179,11 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? Math.min(10_000, n) : 120;
     })(),
+    liveTrackerJupiterMtmEnabled: envBool(process.env.LIVE_TRACKER_JUPITER_MTM_ENABLED, true),
+    liveEntrySplitJupiterProbeEnabled: envBool(
+      process.env.LIVE_ENTRY_SPLIT_JUPITER_PROBE_ENABLED,
+      true,
+    ),
     liveJupiterPriorityMaxLamports: (() => {
       const sol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim();
       if (sol) {

@@ -102,6 +102,19 @@
 
 ---
 
+## [1.11.606] — 2026-07-18
+
+**Тег:** `sa-alpha-1.11.606`
+
+### Live Oscar — Jupiter swap-only (stop background 429 storms)
+
+- **PM2:** discovery Jupiter refresh OFF; hot tick OFF; tracker MTM PG-only; entry-split Jupiter probe OFF; copy-trader dip gate DEX-only.
+- **Код:** `LIVE_TRACKER_JUPITER_MTM_ENABLED`, `LIVE_ENTRY_SPLIT_JUPITER_PROBE_ENABLED`, `COPY_TRADER_ENTRY_DIP_USE_JUPITER`.
+- **Причина:** фоновые quote/swap probes (discovery/hot-tick/tracker) сжигали лимит → реальные swap 429 + tracker timeout.
+- **Откат:** redeploy `sa-alpha-1.11.605` + env `*_JUPITER_*=1` / hot tick ON.
+
+---
+
 ## [1.11.605] — 2026-07-17
 
 **Тег:** `sa-alpha-1.11.605`
