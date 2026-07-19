@@ -13,6 +13,7 @@ import { entryBuySliceEligibleForOpen } from '../../live/entry-slice.js';
 import { resolveLiveOscarPositionCeilingUsd } from '../live-oscar-entry-sizing.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { serializeOpenTrade } from '../../live/strategy-snapshot.js';
+import { notifyUpeEntryLegConfirmed } from '../../live/position-engine/tracker-hook.js';
 import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
@@ -119,6 +120,7 @@ async function pushBuyLeg(args: {
   ot.peakPnlPct = (marketBuy / ot.avgEntry - 1) * 100;
   if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
   if (livePhase4 && buyRes) appendLiveBuyAnchorsAfterDca(ot, buyRes);
+  notifyUpeEntryLegConfirmed({ ot, liveExecution: Boolean(livePhase4) });
   const mcUsdLive = await getLiveMcUsd(
     mint,
     ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,

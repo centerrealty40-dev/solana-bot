@@ -190,6 +190,15 @@ import {
   shouldForceCloseJournalZeroChainTail,
   WALLET_RECONCILE_REMAINING_EPS,
 } from '../../live/wallet-balance-exit-reconcile.js';
+import {
+  applyUpeClosePnlIfEnabled,
+  logUpeExitBlock,
+  logUpePartialBlock,
+  syncLiveUpeOnTrackerTick,
+  tryBlockLiveExitViaUpe,
+  tryBlockPartialSellViaUpe,
+} from '../../live/position-engine/tracker-hook.js';
+import { isUpeExitFrozen, markLiveUpeExitInFlight } from '../../live/position-engine/entry-policy.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
@@ -742,8 +751,10 @@ function applyLiveFullCloseProceedsFromChain(args: {
   sellOut: LiveTokenToSolSellResult;
   marketSell: number;
   networkFeeUsdPerTx: number;
+  liveOscarCfg?: LiveOscarConfig;
+  chainOscarUsd?: number;
 }): void {
-  const { ct, ot, cfg, sellOut, marketSell, networkFeeUsdPerTx } = args;
+  const { ct, ot, cfg, sellOut, marketSell, networkFeeUsdPerTx, liveOscarCfg, chainOscarUsd } = args;
   const spotSol = getSolUsd() ?? 0;
   if (!(sellOut.solProceedsLamports != null && sellOut.solProceedsLamports > 0n && spotSol > 0)) {
     return;
@@ -770,7 +781,15 @@ function applyLiveFullCloseProceedsFromChain(args: {
   }
   const totalProceedsUsd = partialNet + actualFinalUsd;
   const grossTotalProceedsUsd = partialGross + actualFinalUsd;
-  const netPnlUsd = totalProceedsUsd - ot.totalInvestedUsd;
+  const upePnl = applyUpeClosePnlIfEnabled({
+    liveOscarCfg,
+    ot,
+    chainOscarUsd: chainOscarUsd ?? 0,
+    priceUsd: marketSell,
+    finalProceedsUsd: actualFinalUsd,
+    partialProceedsUsd: partialNet,
+  });
+  const netPnlUsd = upePnl?.applied ? upePnl.netPnlUsd : totalProceedsUsd - ot.totalInvestedUsd;
   const grossPnlUsd = grossTotalProceedsUsd - ot.totalInvestedUsd;
   const networkFeeUsdTotal = (ot.legs.length + ot.partialSells.length + 1) * networkFeeUsdPerTx;
   const investedRem = ot.totalInvestedUsd * Math.max(0, ot.remainingFraction);
@@ -779,12 +798,29 @@ function applyLiveFullCloseProceedsFromChain(args: {
   if (tokensClose > 1e-18 && Number.isFinite(actualFinalUsd)) {
     effectiveExit = actualFinalUsd / tokensClose;
   }
-  ct.totalProceedsUsd = totalProceedsUsd;
+  ct.totalProceedsUsd = upePnl?.applied ? upePnl.totalProceedsUsd : totalProceedsUsd;
   ct.grossTotalProceedsUsd = grossTotalProceedsUsd;
   ct.netPnlUsd = netPnlUsd;
   ct.grossPnlUsd = grossPnlUsd;
   ct.grossPnlPct = ot.totalInvestedUsd > 0 ? (grossPnlUsd / ot.totalInvestedUsd) * 100 : 0;
-  ct.pnlPct = ot.totalInvestedUsd > 0 ? (netPnlUsd / ot.totalInvestedUsd) * 100 : 0;
+  ct.pnlPct =
+    upePnl?.applied && upePnl.desyncAdjusted
+      ? upePnl.netPnlPct
+      : ot.totalInvestedUsd > 0
+        ? (netPnlUsd / ot.totalInvestedUsd) * 100
+        : 0;
+  if (upePnl?.desyncAdjusted) {
+    log.info(
+      {
+        mint: ot.mint.slice(0, 8),
+        symbol: ot.symbol,
+        pnlPct: +ct.pnlPct.toFixed(2),
+        journalInvestedUsd: ot.totalInvestedUsd,
+        chainOscarUsd,
+      },
+      'live full close: UPE desync-adjusted PnL',
+    );
+  }
   ct.effective_exit_price = effectiveExit;
   ct.costs = buildCloseCosts({
     cfg,
@@ -1150,6 +1186,22 @@ async function tryExecuteTpPartialSell(args: {
   if (livePhase4 && !isPolicyAllowedPartialSell(partialReason, liveOscarCfg)) {
     return 'defer_next';
   }
+  if (liveOscarCfg?.executionMode === 'live') {
+    const upePartial = tryBlockPartialSellViaUpe({
+      ot,
+      mint,
+      partialReason,
+      chainMap: undefined,
+      chainOscarUsd,
+      priceUsd: marketSell,
+      liveOscarCfg,
+      sellFraction: rawSellFrac,
+    });
+    if (upePartial.blocked) {
+      logUpePartialBlock({ mint, symbol: ot.symbol, partialReason, block: upePartial });
+      return 'defer_next';
+    }
+  }
   if (
     !(ot.remainingFraction > WALLET_RECONCILE_REMAINING_EPS) &&
     !hasManagedWalletExposure({ ot, chainOscarUsd, minUsd: reconcileMinUsd })
@@ -1257,7 +1309,9 @@ async function tryExecuteTpPartialSell(args: {
   let chainPartialProceeds = false;
   const partialSellsBeforeSlice = ot.partialSells.length;
   if (livePhase4 && marketSell > 0 && tokenSizingUsdForSwap > 1e-6) {
-    sellOut = await livePhase4.tryTokenToSolSell({
+    markLiveUpeExitInFlight(ot, true);
+    try {
+      sellOut = await livePhase4.tryTokenToSolSell({
       mint,
       symbol: ot.symbol,
       usdNotional: tokenSizingUsdForSwap,
@@ -1333,6 +1387,9 @@ async function tryExecuteTpPartialSell(args: {
         { mint: mint.slice(0, 8), symbol: ot.symbol },
         'live partial sell ok but missing solProceedsLamports — using modeled proceedsUsd',
       );
+    }
+    } finally {
+      markLiveUpeExitInFlight(ot, false);
     }
   }
   const sellChainRecorded = sellOut.ok || chainPartialProceeds;
@@ -2992,6 +3049,24 @@ export async function trackerForceFullExitLive(args: {
   const ot = open.get(mint);
   if (!ot || !(marketSell > 0)) return false;
   if (!livePhase4) return false;
+
+  if (liveOscarCfg?.executionMode === 'live') {
+    const upeBlock = tryBlockLiveExitViaUpe({
+      ot,
+      mint,
+      exitReason: reason,
+      chainMap: undefined,
+      chainOscarUsd: 0,
+      priceUsd: marketSell,
+      liveOscarCfg,
+      emergency: args.bypassPolicyBlock === true,
+    });
+    if (upeBlock.blocked) {
+      logUpeExitBlock({ mint, symbol: ot.symbol, exitReason: reason, block: upeBlock });
+      return false;
+    }
+  }
+
   if (!args.bypassPolicyBlock && livePolicyBlocksHealSyncSells(args.liveOscarCfg)) {
     log.warn(
       { mint: mint.slice(0, 8), symbol: ot.symbol },
@@ -3025,16 +3100,22 @@ export async function trackerForceFullExitLive(args: {
   });
   const xAvg = marketSell / ot.avgEntry;
 
-  const okSell = await livePhase4.tryTokenToSolSell({
-    mint,
-    symbol: ot.symbol,
-    usdNotional: usdForSell,
-    priceUsdPerToken: marketSell,
-    referencePriceUsd: liveSellReferencePriceUsd(ot),
-    decimals: ot.tokenDecimals ?? 6,
-    intentKind: 'sell_full',
-    emergencyExit: args.bypassPolicyBlock === true,
-  });
+  markLiveUpeExitInFlight(ot, true);
+  let okSell: LiveTokenToSolSellResult;
+  try {
+    okSell = await livePhase4.tryTokenToSolSell({
+      mint,
+      symbol: ot.symbol,
+      usdNotional: usdForSell,
+      priceUsdPerToken: marketSell,
+      referencePriceUsd: liveSellReferencePriceUsd(ot),
+      decimals: ot.tokenDecimals ?? 6,
+      intentKind: 'sell_full',
+      emergencyExit: args.bypassPolicyBlock === true,
+    });
+  } finally {
+    markLiveUpeExitInFlight(ot, false);
+  }
   if (!okSell.ok) return false;
 
   applyLiveFullCloseProceedsFromChain({
@@ -3044,6 +3125,7 @@ export async function trackerForceFullExitLive(args: {
     sellOut: okSell,
     marketSell,
     networkFeeUsdPerTx: perTxClose,
+    liveOscarCfg: args.liveOscarCfg,
   });
   stampFullExitTxSignature(ct, okSell);
   const exitContextMain = buildExitContext({
@@ -4199,6 +4281,17 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         priceUsd: curMetric,
       });
       chainOscarUsdForMint = wr?.chainOscarUsd ?? chainOscarUsdForMint;
+    }
+
+    if (liveOscarCfg?.executionMode === 'live' && curMetric > 0) {
+      syncLiveUpeOnTrackerTick({
+        ot,
+        mint,
+        chainMap: liveChainMap,
+        chainOscarUsd: chainOscarUsdForMint,
+        priceUsd: curMetric,
+        liveOscarCfg,
+      });
     }
 
     if (isWaveBExitPolicy(ot) && curMetric > 0) {
@@ -5747,7 +5840,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         }
       }
 
-      const inSignalKillTerritory = liveStagedEntryKillHit(ot, stagedEntryKillMetricUsd);
+      const upeExitFrozen =
+        liveOscarCfg?.executionMode === 'live' && isUpeExitFrozen(ot);
+      const inSignalKillTerritory =
+        !upeExitFrozen && liveStagedEntryKillHit(ot, stagedEntryKillMetricUsd);
       const debounceKillAfterReplenish =
         isLiveOscarTradingStrategyId(cfg.strategyId) && ot.legs.length > 1 && !inSignalKillTerritory;
       if (
@@ -5758,6 +5854,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         exitReason = 'WAVE_B_POST_TP1_SCRATCH';
       }
       const waveBKill =
+        !upeExitFrozen &&
         isWaveBExitPolicy(ot) &&
         killEff < 0 &&
         waveBAbsoluteKillEligible(ot, killEff, curMetric, pnlPctVsAvg / 100);
@@ -5925,6 +6022,33 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
     }
 
+    if (exitReason && liveOscarCfg?.executionMode === 'live') {
+      const upeBlock = tryBlockLiveExitViaUpe({
+        ot,
+        mint,
+        exitReason,
+        chainMap: liveChainMap,
+        chainOscarUsd: chainOscarUsdForMint,
+        priceUsd: curMetric,
+        liveOscarCfg,
+      });
+      if (upeBlock.blocked) {
+        logUpeExitBlock({ mint, symbol: ot.symbol, exitReason, block: upeBlock });
+        journalAppend({
+          kind: 'risk_note',
+          reason: 'upe_exit_blocked',
+          mint,
+          detail: {
+            exitReason,
+            invariant: upeBlock.invariant,
+            phase: upeBlock.phase,
+            message: upeBlock.reason,
+          },
+        });
+        exitReason = null;
+      }
+    }
+
     if (
       exitReason &&
       livePhase4 &&
@@ -6019,32 +6143,37 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
 
       let sellFullOut: LiveTokenToSolSellResult = { ok: true };
       if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
-        sellFullOut = await livePhase4.tryTokenToSolSell({
-          mint,
-          symbol: ot.symbol,
-          usdNotional: investedRemaining,
-          priceUsdPerToken: marketSell,
-          referencePriceUsd: liveSellReferencePriceUsd(ot),
-          decimals: ot.tokenDecimals ?? 6,
-          intentKind: 'sell_full',
-          onSliceSuccess: async (sliceInfo) => {
-            if (!liveOscarCfg) return;
-            await syncOpenTradeAfterLiveExitSlice({
-              mint,
-              ot,
-              marketSell,
-              liveOscarCfg,
-              reconcileMinUsd,
-              partialReason: exitReasonToPartialSellReason(exitReason),
-              sliceInfo,
-            });
-            journalLiveStrategy?.({
-              kind: 'live_position_partial_sell',
-              mint,
-              openTrade: serializeOpenTrade(ot),
-            });
-          },
-        });
+        markLiveUpeExitInFlight(ot, true);
+        try {
+          sellFullOut = await livePhase4.tryTokenToSolSell({
+            mint,
+            symbol: ot.symbol,
+            usdNotional: investedRemaining,
+            priceUsdPerToken: marketSell,
+            referencePriceUsd: liveSellReferencePriceUsd(ot),
+            decimals: ot.tokenDecimals ?? 6,
+            intentKind: 'sell_full',
+            onSliceSuccess: async (sliceInfo) => {
+              if (!liveOscarCfg) return;
+              await syncOpenTradeAfterLiveExitSlice({
+                mint,
+                ot,
+                marketSell,
+                liveOscarCfg,
+                reconcileMinUsd,
+                partialReason: exitReasonToPartialSellReason(exitReason),
+                sliceInfo,
+              });
+              journalLiveStrategy?.({
+                kind: 'live_position_partial_sell',
+                mint,
+                openTrade: serializeOpenTrade(ot),
+              });
+            },
+          });
+        } finally {
+          markLiveUpeExitInFlight(ot, false);
+        }
         const chainCloseProceeds =
           sellFullOut.solProceedsLamports != null && sellFullOut.solProceedsLamports > 0n;
         if (!sellFullOut.ok && !chainCloseProceeds) {
@@ -6092,6 +6221,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         sellOut: sellFullOut,
         marketSell,
         networkFeeUsdPerTx: perTxClose,
+        liveOscarCfg,
+        chainOscarUsd: chainOscarUsdForMint,
       });
       stampFullExitTxSignature(ct, sellFullOut);
       const exitContextMain = buildExitContext({

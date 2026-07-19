@@ -414,6 +414,20 @@ export function restoreOpenTradeFromJson(o: Partial<OpenTrade> & { mint: string 
       ot.liveKillstopBelowStreak = Math.min(255, Math.floor(lkbs));
     }
 
+    const upePhase = rawPayload.liveUpePhase;
+    if (
+      upePhase === 'opening' ||
+      upePhase === 'acquiring' ||
+      upePhase === 'managed' ||
+      upePhase === 'exiting' ||
+      upePhase === 'closed'
+    ) {
+      ot.liveUpePhase = upePhase;
+    }
+    if (Boolean(rawPayload.liveUpeExitInFlight)) {
+      ot.liveUpeExitInFlight = true;
+    }
+
     if (Boolean(rawPayload.liveBreakevenTrimDone)) {
       ot.liveBreakevenTrimDone = true;
     }

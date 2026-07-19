@@ -292,6 +292,14 @@ export interface OpenTrade {
   liveAnchorMode?: 'chain' | 'simulate';
 
   /**
+   * Unified Position Engine — lifecycle phase (OPENING | ACQUIRING | MANAGED | EXITING | CLOSED).
+   * SSOT for exit freeze during entry-split; synced each tracker tick.
+   */
+  liveUpePhase?: 'opening' | 'acquiring' | 'managed' | 'exiting' | 'closed';
+  /** UPE: Jupiter sell in-flight — blocks duplicate full/partial exits (UPE-I5). */
+  liveUpeExitInFlight?: boolean;
+
+  /**
    * Live Oscar — запланированная вторая нога входа (доля позиции после первого SOL→token).
    * Сериализуется в `live_position_*` для replay; сбрасывается при DCA раньше второй ноги или при выходе цены из коридора.
    */
