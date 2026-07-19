@@ -102,7 +102,20 @@
 
 ---
 
-## [1.11.607] — 2026-07-18
+## [1.11.608] — 2026-07-19
+
+**Тег:** `sa-alpha-1.11.608`
+
+### Unified Position Engine (UPE) — единый lifecycle live Oscar
+
+- **Новый модуль:** `src/live/position-engine/` — фазы OPENING→ACQUIRING→MANAGED→EXITING→CLOSED, chain-SSOT ledger, exit intents.
+- **Ge87 fix:** kill/TP/emergency sell **заблокированы** пока entry-split не завершён (UPE-I1); full exit при chain/journal desync <55% (UPE-I2); close PnL без −75% артефакта (UPE-I3).
+- **Tracker:** `syncLiveUpeOnTrackerTick`, partial/full sell guards, `liveUpePhase` / `liveUpeExitInFlight` в journal replay.
+- **Env:** `LIVE_UNIFIED_POSITION_ENGINE=1` (default on), `LIVE_UPE_MIN_CHAIN_JOURNAL_RATIO=0.55`.
+- **Спека:** `docs/strategy/live-oscar/UNIFIED_POSITION_ENGINE_SPEC.md`.
+- **Откат:** redeploy `sa-alpha-1.11.607` или `LIVE_UNIFIED_POSITION_ENGINE=0`.
+
+---
 
 **Тег:** `sa-alpha-1.11.607`
 

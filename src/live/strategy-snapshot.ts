@@ -63,6 +63,8 @@ export function serializeOpenTrade(ot: OpenTrade): Record<string, unknown> {
     ...(typeof ot.liveKillstopBelowStreak === 'number' && ot.liveKillstopBelowStreak > 0
       ? { liveKillstopBelowStreak: ot.liveKillstopBelowStreak }
       : {}),
+    ...(ot.liveUpePhase ? { liveUpePhase: ot.liveUpePhase } : {}),
+    ...(ot.liveUpeExitInFlight ? { liveUpeExitInFlight: true } : {}),
     ...(ot.liveBreakevenTrimDone ? { liveBreakevenTrimDone: true } : {}),
     ...(ot.liveWaveBreakevenInsuranceTaken ? { liveWaveBreakevenInsuranceTaken: true } : {}),
     ...(ot.liveWavePreArmNoHalf8PartialTaken ? { liveWavePreArmNoHalf8PartialTaken: true } : {}),
