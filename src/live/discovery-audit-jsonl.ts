@@ -151,7 +151,7 @@ function detailFromEvalSkipOpenRest(row: Record<string, unknown>): string | unde
 export function createLiveDiscoveryAuditJournalAppend(enabled: boolean): (event: Record<string, unknown>) => void {
   return (row) => {
     const kind = row.kind;
-    if (kind === 'entry_split_add' || kind === 'staged_avg_add') {
+    if (kind === 'entry_split_add' || kind === 'staged_avg_add' || kind === 'scale_in_add') {
       appendLiveJsonlEvent({
         kind,
         mint: trimStr(row.mint, 64) ?? '(missing_mint)',

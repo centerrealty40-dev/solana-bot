@@ -636,6 +636,7 @@ const PM2_APPS = [
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         SNAPSHOT_FRESHNESS_POLL_MS: '300000',
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '1800',
+        SNAPSHOT_FRESHNESS_ALERT_HOST: 'oscar-vps',
         SNAPSHOT_FRESHNESS_STALE_CONFIRM_TICKS: '2',
         SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS: '3600000',
         TELEGRAM_COOLDOWN_ALERT_SNAPSHOT_STALE_MS: '3600000',
@@ -1704,6 +1705,7 @@ const PM2_APPS = [
         LIVE_HEARTBEAT_INTERVAL_MS: '60000',
         /** PG snapshot age in pulse + `[ALERT][snapshot_stale]` on heartbeat when stale. */
         SNAPSHOT_FRESHNESS_MAX_AGE_SEC: '1800',
+        SNAPSHOT_FRESHNESS_ALERT_HOST: 'oscar-vps',
         SNAPSHOT_FRESHNESS_SKIP_SOURCES: 'orca,moonshot,jupiter',
         /** Файл keypair торгового кошелька на VPS (`chmod 600`). После замены файла задайте LIVE_WALLET_PUBKEY (совпадает с проверкой в коде). */
         LIVE_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),

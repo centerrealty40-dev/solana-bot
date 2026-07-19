@@ -916,11 +916,14 @@ export async function main(): Promise<void> {
         const snapMaxSec = snapshotMaxAgeSecFromEnv();
         let snapPulseLine = 'snap_worst_age_min=?';
         let snapStale = false;
+        const snapHeartbeatAlertOff = ['0', 'false', 'no'].includes(
+          String(process.env.SNAPSHOT_FRESHNESS_HEARTBEAT_ALERT ?? '1').toLowerCase(),
+        );
         try {
           const snapRows = await fetchDexSnapshotFreshness(snapMaxSec);
           snapPulseLine = formatSnapshotFreshnessPulseLine(snapRows);
           snapStale = snapshotsAnyStale(snapRows, snapMaxSec);
-          if (snapStale) {
+          if (snapStale && !snapHeartbeatAlertOff) {
             void sendTagged('ALERT', 'snapshot_stale', buildSnapshotStaleAlertBody(snapRows, snapMaxSec), {
               skipQuietHours: true,
             }).catch((e) => log.warn({ err: String(e) }, 'snapshot stale alert telegram failed'));

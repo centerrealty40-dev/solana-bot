@@ -78,6 +78,7 @@ export function liveEventDefaultFsync(body: LiveEventBody): boolean {
     case 'live_boot_wallet_orphan_restore':
     case 'entry_split_add':
     case 'staged_avg_add':
+    case 'scale_in_add':
       return true;
     default:
       return false;

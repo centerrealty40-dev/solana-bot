@@ -1049,6 +1049,145 @@ export const LiveSellQuotePrearmConsumedSchema = z.object({
   ageMs: z.number().finite().optional(),
 });
 
+/** Scale-in second leg (legacy journal mirror; not entry-split). */
+export const ScaleInAddSchema = z.object({
+  kind: z.literal('scale_in_add'),
+  mint: z.string().min(1).max(64),
+  ts: z.number().finite().optional(),
+  price: z.number().finite().optional(),
+  marketPrice: z.number().finite().optional(),
+  sizeUsd: z.number().finite().optional(),
+  secondLegFractionOfFull: z.number().finite().optional(),
+  fullPositionUsd: z.number().finite().optional(),
+  avgEntry: z.number().finite().optional(),
+  avgEntryMarket: z.number().finite().optional(),
+  totalInvestedUsd: z.number().finite().optional(),
+  legCount: z.number().int().nonnegative().optional(),
+  mcUsdLive: z.number().finite().nullable().optional(),
+  priorityFee: z.number().finite().optional(),
+  timelineLabelRu: z.string().max(512).optional(),
+});
+
+export const AwakeningEntrySkipSchema = z.object({
+  kind: z.literal('awakening_entry_skip'),
+  mint: z.string().min(1).max(64),
+  reason: z.string().max(200),
+  legUsd: z.number().finite().optional(),
+  entryPath: z.string().max(120).optional(),
+});
+
+export const CopyToOscarPromotionSchema = z.object({
+  kind: z.literal('copy_to_oscar_promotion'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  copyCostBasisUsd: z.number().finite().optional(),
+  walletGrossUsd: z.number().finite().optional(),
+  targetUsd: z.number().finite().optional(),
+  topUpUsd: z.number().finite().optional(),
+  tier: z.string().max(32).optional(),
+});
+
+export const LiveMintFileWatchChangeSchema = z.object({
+  kind: z.literal('live_mint_file_watch_change'),
+  fileKind: z.enum(['whitelist', 'denylist']),
+  path: z.string().max(512),
+  addedCount: z.number().int().nonnegative(),
+  removedCount: z.number().int().nonnegative(),
+  total: z.number().int().nonnegative(),
+  added: z.array(z.string()).max(32).optional(),
+  removed: z.array(z.string()).max(32).optional(),
+});
+
+export const LivePriorityFeeBoostSchema = z.object({
+  kind: z.literal('live_priority_fee_boost'),
+  timeoutsInWindow: z.number().int().nonnegative().optional(),
+  threshold: z.number().int().nonnegative().optional(),
+  windowMs: z.number().finite().optional(),
+  boostFactor: z.number().finite().optional(),
+  holdMs: z.number().finite().optional(),
+  boostUntilMs: z.number().finite().optional(),
+});
+
+export const LivePriorityFeeBoostExpiredSchema = z.object({
+  kind: z.literal('live_priority_fee_boost_expired'),
+  boostUntilMs: z.number().finite().optional(),
+  nowMs: z.number().finite().optional(),
+});
+
+export const LiveStagedAddCooldownSchema = z.object({
+  kind: z.literal('live_staged_add_cooldown'),
+  mint: z.string().min(1).max(64),
+  intentKind: z.string().max(64).optional(),
+  streak: z.number().int().nonnegative().optional(),
+  rearms: z.number().int().nonnegative().optional(),
+  cooldownMs: z.number().finite().optional(),
+  cooldownUntilMs: z.number().finite().optional(),
+  sampleMessage: z.string().max(400).optional(),
+});
+
+export const LiveStagedAddAutoDenylistSchema = z.object({
+  kind: z.literal('live_staged_add_auto_denylist'),
+  mint: z.string().min(1).max(64),
+  rearms: z.number().int().nonnegative().optional(),
+  rearmsThreshold: z.number().int().nonnegative().optional(),
+  denylistAdded: z.boolean().optional(),
+});
+
+export const PartialSliceDueToWalletSchema = z.object({
+  kind: z.literal('partial_slice_due_to_wallet'),
+  mint: z.string().min(1).max(64),
+  intentKind: z.string().max(64).optional(),
+  plannedUsd: z.number().finite().optional(),
+  priorEffectiveUsd: z.number().finite().optional(),
+  partialUsd: z.number().finite().optional(),
+  maxAffordableUsd: z.number().finite().optional(),
+  walletLamports: z.string().max(32).optional(),
+  bufferLamports: z.number().finite().optional(),
+  solUsdUsed: z.number().finite().optional(),
+});
+
+export const LiveStagedEntryAttachedSchema = z.object({
+  kind: z.literal('live_staged_entry_attached'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  entryPath: z.string().max(120).optional(),
+  openTrade: z.record(z.string(), z.unknown()).optional(),
+});
+
+const entryRecheckStampFields = {
+  signalTs: z.number().finite().optional(),
+  dueTs: z.number().finite().optional(),
+  delayMs: z.number().finite().optional(),
+  signalPriceUsd: z.number().finite().optional(),
+  recheckPriceUsd: z.number().finite().optional(),
+  changePct: z.number().finite().nullable().optional(),
+  minChangePct: z.number().finite().optional(),
+  maxChangePct: z.number().finite().optional(),
+};
+
+export const EntryRecheckPendingSchema = z.object({
+  kind: z.literal('entry_recheck_pending'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  ...entryRecheckStampFields,
+});
+
+export const EntryRecheckSkipSchema = z.object({
+  kind: z.literal('entry_recheck_skip'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  reason: z.string().max(120).optional(),
+  recheckReasons: z.array(z.string()).max(40).optional(),
+  ...entryRecheckStampFields,
+});
+
+export const EntryRecheckPassSchema = z.object({
+  kind: z.literal('entry_recheck_pass'),
+  mint: z.string().min(1).max(64),
+  symbol: z.string().max(64).optional(),
+  ...entryRecheckStampFields,
+});
+
 export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveBootEventSchema,
   LiveShutdownEventSchema,
@@ -1131,6 +1270,19 @@ export const LiveEventBodySchema = z.discriminatedUnion('kind', [
   LiveSellQuotePrearmArmedSchema,
   LiveSellQuotePrearmExpiredSchema,
   LiveSellQuotePrearmConsumedSchema,
+  ScaleInAddSchema,
+  AwakeningEntrySkipSchema,
+  CopyToOscarPromotionSchema,
+  LiveMintFileWatchChangeSchema,
+  LivePriorityFeeBoostSchema,
+  LivePriorityFeeBoostExpiredSchema,
+  LiveStagedAddCooldownSchema,
+  LiveStagedAddAutoDenylistSchema,
+  PartialSliceDueToWalletSchema,
+  LiveStagedEntryAttachedSchema,
+  EntryRecheckPendingSchema,
+  EntryRecheckSkipSchema,
+  EntryRecheckPassSchema,
 ]);
 
 export type LiveEventBody = z.infer<typeof LiveEventBodySchema>;

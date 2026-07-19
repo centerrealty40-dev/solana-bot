@@ -4,6 +4,7 @@
  */
 import 'dotenv/config';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import pg from 'pg';
 import { sendTagged } from '../scripts/lib/telegram.mjs';
@@ -18,6 +19,13 @@ const STATE_PATH =
 const DRY_RUN = ['1', 'true', 'yes'].includes(
   String(process.env.SNAPSHOT_FRESHNESS_DRY_RUN ?? '0').toLowerCase(),
 );
+const TELEGRAM_ON = !['0', 'false', 'no'].includes(
+  String(process.env.SNAPSHOT_FRESHNESS_TELEGRAM ?? '1').toLowerCase(),
+);
+const ALERT_HOST =
+  process.env.SNAPSHOT_FRESHNESS_ALERT_HOST?.trim() ||
+  process.env.COLLECTOR_HEALTH_PRODUCT_LABEL?.trim() ||
+  os.hostname();
 
 /** sa-orca off since 1.11.279 (runaway CPU); live-oscar uses pumpswap lane. */
 const ALL_TABLES = [
@@ -49,6 +57,20 @@ function saveState(st) {
   fs.writeFileSync(STATE_PATH, JSON.stringify(st, null, 2), 'utf8');
 }
 
+function classifyRow(r) {
+  if (r.error) return 'pg_error';
+  if (r.ageSec == null || !Number.isFinite(r.ageSec)) return 'pg_error';
+  if (r.ageSec > MAX_AGE_SEC) return 'stale';
+  return 'ok';
+}
+
+function rowAlertFlag(r) {
+  const kind = classifyRow(r);
+  if (kind === 'pg_error') return 'PG_ERR';
+  if (kind === 'stale') return 'STALE';
+  return 'OK';
+}
+
 async function fetchRows(pool) {
   const out = [];
   for (const { source, table } of TABLES) {
@@ -62,7 +84,14 @@ async function fetchRows(pool) {
         ts != null && ageSec != null && Number.isFinite(ageSec) && ageSec >= 0 && ageSec <= MAX_AGE_SEC;
       out.push({ source, table, ts, ageSec, ok });
     } catch (e) {
-      out.push({ source, table, ts: null, ageSec: null, ok: false, error: String(e?.message || e) });
+      out.push({
+        source,
+        table,
+        ts: null,
+        ageSec: null,
+        ok: false,
+        error: String(e?.message || e),
+      });
     }
   }
   return out;
@@ -71,13 +100,14 @@ async function fetchRows(pool) {
 function buildStaleBody(rows) {
   const maxMin = Math.round(MAX_AGE_SEC / 60);
   const lines = [
+    `host=${ALERT_HOST}`,
     `🚨 PG snapshots STALE (порог ${maxMin} мин) — discovery и TG dips/pumps слепы.`,
     'Действие: pm2 restart sa-pumpswap sa-raydium sa-meteora sa-moonshot',
   ];
   for (const r of rows) {
     const ageMin = r.ageSec != null ? Math.round(r.ageSec / 60) : '?';
     lines.push(
-      `• ${r.source}: ${r.ok ? 'OK' : 'STALE'} age=${ageMin}m latest=${r.ts ? new Date(r.ts).toISOString() : 'null'}`,
+      `• ${r.source}: ${rowAlertFlag(r)} age=${ageMin}m latest=${r.ts ? new Date(r.ts).toISOString() : 'null'}`,
     );
   }
   return lines.join('\n');
@@ -88,15 +118,40 @@ function buildRecoveryBody(rows) {
     const ageMin = r.ageSec != null ? Math.round(r.ageSec / 60) : '?';
     return `${r.source}=${ageMin}m`;
   });
-  return `✅ PG snapshots снова свежие (worst ≤ ${Math.round(MAX_AGE_SEC / 60)} мин): ${parts.join(' ')}`;
+  return `host=${ALERT_HOST}\n✅ PG snapshots снова свежие (worst ≤ ${Math.round(MAX_AGE_SEC / 60)} мин): ${parts.join(' ')}`;
 }
 
 async function tick(pool) {
   const rows = await fetchRows(pool);
-  const staleNow = rows.some((r) => !r.ok);
+  const kinds = rows.map(classifyRow);
+  const pgErrorAll = kinds.every((k) => k === 'pg_error');
+  const staleNow = kinds.some((k) => k === 'stale');
   const st = loadState();
   const wasStale = st.stale === true;
   const needTicks = Math.max(1, Number(process.env.SNAPSHOT_FRESHNESS_STALE_CONFIRM_TICKS || 2));
+
+  if (pgErrorAll) {
+    st.staleConfirmTicks = 0;
+    saveState(st);
+    console.log(
+      JSON.stringify({
+        ts: new Date().toISOString(),
+        msg: 'snapshot-freshness-watch tick',
+        stale: false,
+        staleNow: false,
+        pgErrorAll: true,
+        host: ALERT_HOST,
+        maxAgeSec: MAX_AGE_SEC,
+        rows: rows.map((r) => ({
+          source: r.source,
+          kind: classifyRow(r),
+          error: r.error ?? null,
+        })),
+      }),
+    );
+    return;
+  }
+
   st.staleConfirmTicks = staleNow ? (Number(st.staleConfirmTicks) || 0) + 1 : 0;
   const stale = st.staleConfirmTicks >= needTicks;
   saveState(st);
@@ -108,14 +163,17 @@ async function tick(pool) {
       stale,
       staleNow,
       staleConfirmTicks: st.staleConfirmTicks,
+      host: ALERT_HOST,
       maxAgeSec: MAX_AGE_SEC,
       rows: rows.map((r) => ({
         source: r.source,
-        ok: r.ok,
+        kind: classifyRow(r),
         ageSec: r.ageSec,
       })),
     }),
   );
+
+  if (!TELEGRAM_ON) return;
 
   if (stale && !wasStale) {
     st.stale = true;
@@ -129,6 +187,16 @@ async function tick(pool) {
   if (stale && wasStale) {
     const repeatMs = Number(process.env.SNAPSHOT_FRESHNESS_REPEAT_ALERT_MS || 3_600_000);
     if (Date.now() - (st.lastAlertTs ?? 0) >= repeatMs) {
+      if (kinds.some((k) => k === 'pg_error')) {
+        console.log(
+          JSON.stringify({
+            ts: new Date().toISOString(),
+            msg: 'snapshot-freshness-watch repeat skipped (pg_error rows present)',
+            host: ALERT_HOST,
+          }),
+        );
+        return;
+      }
       st.lastAlertTs = Date.now();
       saveState(st);
       if (!DRY_RUN) await sendTagged('ALERT', 'snapshot_stale', buildStaleBody(rows));
@@ -157,6 +225,8 @@ async function main() {
       msg: 'snapshot-freshness-watch start',
       pollMs: POLL_MS,
       maxAgeSec: MAX_AGE_SEC,
+      host: ALERT_HOST,
+      telegramOn: TELEGRAM_ON,
       statePath: STATE_PATH,
       dryRun: DRY_RUN,
     }),
