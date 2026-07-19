@@ -71,6 +71,15 @@ export { liveEntryBlockedByUpe, notifyLiveBuyLegConfirmed } from './buy-gate.js'
 
 export { repairPartialSellFromLiveResult, attachBuyTokensRawFromPipeline } from './ledger-repair.js';
 
+export {
+  evaluateTrackerFullExitDecision,
+} from './exit-decision.js';
+export type {
+  TrackerFullExitDecisionInput,
+  TrackerFullExitDecisionResult,
+  KillstopDebounceLog,
+} from './exit-decision.js';
+
 export { loadPositionEngineConfigFromEnv } from './config.js';
 
 export {

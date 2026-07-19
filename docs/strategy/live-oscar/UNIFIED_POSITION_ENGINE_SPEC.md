@@ -1,7 +1,7 @@
 # Unified Position Engine — единый контур исполнения live Oscar
 
 **Продукт:** `solana-alpha` / PM2 `live-oscar`  
-**Статус:** normative — **фазы A–D реализованы** (2026-07-19, продукт **1.11.608**)
+**Статус:** normative — **фазы A–E реализованы** (2026-07-19, продукт **1.11.610**)
 
 ## 1. Проблема
 
@@ -80,7 +80,8 @@ ConfirmedSell    { txSignature, solProceedsLamports, tokensSoldRaw, reason, ts }
 **Фаза A ✅:** guards в `tracker.ts` — block exit при UPE-I1/I2; close PnL по UPE-I3.  
 **Фаза B ✅:** `syncLiveUpeOnTrackerTick` + `notifyUpeEntryLegConfirmed`; `liveUpePhase` на `OpenTrade`.  
 **Фаза C ✅:** partial/full sells через `evaluateExitIntent`; `liveUpeExitInFlight` на sell pipeline.  
-**Фаза D (ongoing):** tracker остаёт orchestrator; policy modules постепенно переносятся в engine.
+**Фаза D ✅:** unified exit/entry execution funnel (`runGuardedLiveFullSell`, entry gates, ledger repair).  
+**Фаза E ✅:** `evaluateTrackerFullExitDecision` — policy full-exit decision вынесен из tracker; tracker = orchestration + execution.
 
 Env: `LIVE_UNIFIED_POSITION_ENGINE=1` (default **1** в live mode).
 
