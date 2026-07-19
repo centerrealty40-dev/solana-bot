@@ -102,6 +102,20 @@
 
 ---
 
+## [1.11.610] — 2026-07-19
+
+**Тег:** `sa-alpha-1.11.610`
+
+### UPE Phase E — exit decision engine
+
+- **`evaluateTrackerFullExitDecision`**: kill / TP / SL / trail / timeout / flash / wallet-tail logic вынесены из `tracker.ts` (~260 строк) в `position-engine/exit-decision.ts`.
+- Tracker остаётся orchestrator: partial TP, Jupiter sell, journal — без изменения контракта.
+- Тесты: `tests/position-engine-exit-decision.test.ts`.
+
+**Откат:** redeploy `1.11.609`.
+
+---
+
 ## [1.11.609] — 2026-07-19
 
 **Тег:** `sa-alpha-1.11.609`

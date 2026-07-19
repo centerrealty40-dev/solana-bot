@@ -12,10 +12,8 @@ import { isRunnerLiteTrade } from '../live-oscar-runner-lite.js';
 import {
   isRunnerProbeExitPolicy,
   runnerProbeDcaLevelsSpec,
-  runnerProbeKillEligible,
   runnerProbeOptimisticTpPx,
   runnerProbeResetPeakAfterDca,
-  runnerProbeTpEligible,
   stampRunnerProbeExitPolicyOnOpen,
 } from './exit-policy-runner-probe.js';
 import {
@@ -40,8 +38,6 @@ import {
   isPresetCScalpExitPolicy,
   presetCScalpDcaDue,
   presetCScalpDca2Due,
-  presetCScalpKillEligible,
-  presetCScalpBreakevenExitEligible,
   presetCScalpSignalPnlFrac,
 } from './exit-policy-preset-c-scalp.js';
 import { loadPresetCScalpConfig } from '../../preset-c/scalp-config.js';
@@ -105,7 +101,6 @@ import {
 import { fetchContextSwaps } from './context-swaps.js';
 import {
   collectFiredLadderPnls,
-  ladderRetraceTriggered,
   ladderPnlThresholdMark,
   ladderStepOrThresholdTaken,
   LADDER_PNL_EPS,
@@ -121,17 +116,14 @@ import {
   clampLiveTrackerMtmForExit,
   waveBRecoverPhantomPeakIfNeeded,
   waveBUpdatePreArmReached,
-  waveBAbsoluteKillEligible,
   waveBNextTrailLevelToFire,
   waveBTrailSellFractionForRemainder,
   waveBAdjustSellFractionForRemainder,
   waveBRemainderValueNetUsd,
   waveBDefensiveTrailActive,
   waveBBreakevenExitEligible,
-  waveBBreakevenAtZeroExitEligible,
   waveBBreakevenInsuranceEligible,
   waveBPreArmNoHalf8PartialEligible,
-  waveBPreArmNoHalf8PullbackFullExitEligible,
   waveBPreArmNoHalf8ScenarioActive,
   waveBDip10FirstTp5PartialEligible,
   waveBUpdateDip10ReachedBeforeTp8,
@@ -153,9 +145,6 @@ import {
   isVariantAScratchExitPolicy,
   isPartialGridTrailExitPolicy,
   variantAUpdateRemainderPeak,
-  variantAMoonExitTriggered,
-  variantATrailFullExitTriggered,
-  variantAEvalTimedExit,
   variantAExitTagLabel,
   variantAHybridDefensiveTrailActive,
   variantAHybridMaybeResetTpImpulse,
@@ -186,8 +175,6 @@ import {
   planPartialSellUsdNotional,
   reconcileOpenPositionWalletBalance,
   resyncRemainingFractionFromChain,
-  journalRemainingUsd,
-  shouldForceCloseJournalZeroChainTail,
   WALLET_RECONCILE_REMAINING_EPS,
 } from '../../live/wallet-balance-exit-reconcile.js';
 import {
@@ -198,10 +185,11 @@ import {
   tryBlockLiveExitViaUpe,
   tryBlockPartialSellViaUpe,
 } from '../../live/position-engine/tracker-hook.js';
-import { isUpeExitFrozen, markLiveUpeExitInFlight } from '../../live/position-engine/entry-policy.js';
+import { markLiveUpeExitInFlight } from '../../live/position-engine/entry-policy.js';
 import { logGuardedFullExitBlock, runGuardedLiveFullSell } from '../../live/position-engine/exit-executor.js';
 import { liveEntryBlockedByUpe, notifyLiveBuyLegConfirmed } from '../../live/position-engine/buy-gate.js';
 import { repairPartialSellFromLiveResult } from '../../live/position-engine/ledger-repair.js';
+import { evaluateTrackerFullExitDecision } from '../../live/position-engine/exit-decision.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
@@ -218,13 +206,11 @@ import {
   armWaveBPostTp1ScratchReentryFromOpenTrade,
   consumeWaveBPostTp1ScratchReentry,
   listWaveBPostTp1ScratchReentryPending,
-  waveBPostTp1ScratchFullExitDue,
   waveBPostTp1ScratchReentryDue,
   waveBPostTp1ScratchReentryExpired,
 } from './wave-b-post-tp1-scratch-reentry.js';
 import {
   appendFlashKillPriceSample,
-  evaluateFlashCrashKill,
   isFlashKillDcaBlocked,
   markFlashKillDcaBlocked,
   stampFlashKillLastBuyLeg,
@@ -258,7 +244,6 @@ import {
   isPolicyAllowedFullExitReason,
   isPolicyAllowedPartialSell,
   livePolicyBlocksHealSyncSells,
-  livePolicyOnlyExitsEnabled,
   recordPostHealChurnBlock,
 } from '../../live/policy-only-exits.js';
 import { isOscarHandoffClosedMint } from '../../live/copy-leader-attribution.js';
@@ -322,13 +307,7 @@ function samePendingTpSellIntent(a: LivePendingTpSellIntent | undefined, b: {
   );
 }
 
-/** Закрытие по TIMEOUT отключается после прогресса по позиции (ожидание отработки сетки после долгого удержания). Сплит scale-in не считается DCA. */
-function timeoutSuppressedByProgress(ot: OpenTrade): boolean {
-  if (isScalpWaveExitPolicy(ot)) return false;
-  if (isRunnerProbeExitPolicy(ot)) return false;
-  if (ot.partialSells.length > 0) return true;
-  return ot.legs.some((l) => l.reason === 'dca');
-}
+/** Закрытие по TIMEOUT отключается после прогресса — см. `evaluateTrackerFullExitDecision` (Phase E). */
 
 /** Paper Oscar IDEALIZED (v2.1/v2.2) — до триггера ± или пока ждём вторую ногу: без TP/kill/trail (таймаут и liq — как обычно). */
 function paperOscarIdealizedExitMute(ot: OpenTrade): boolean {
@@ -5855,265 +5834,96 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     effCfg = cfgEffectiveForOpen(cfg, ot);
     killEff = dcaKillstopEffective(ot, effCfg);
 
-    let exitReason: ExitReason | null = pendingTpProtectiveExit;
+    const reconcileMinUsdForExit = liveOscarCfg
+      ? liveWalletBalanceReconcileMinUsd(liveOscarCfg)
+      : 0;
+    const flashNow = Date.now();
+    const exitDecision = evaluateTrackerFullExitDecision({
+      cfg,
+      effCfg,
+      ot,
+      curMetric,
+      xAvg,
+      pnlPctVsAvg,
+      ageH,
+      tgEff,
+      killEff,
+      tpLadder,
+      stagedEntryKillMetricUsd,
+      snapPx,
+      pendingTpProtectiveExit,
+      ghostExitTick,
+      idealizedMute,
+      isPaperOscarIdealized,
+      liveOscarCfg,
+      chainOscarUsd: chainOscarUsdForMint,
+      reconcileMinUsd: reconcileMinUsdForExit,
+      flashNowMs: flashNow,
+    });
 
-    if (
-      cfg.flashCrashKillEnabled &&
-      isLiveOscarTradingStrategyId(cfg.strategyId) &&
-      !livePolicyOnlyExitsEnabled(liveOscarCfg) &&
-      ot.avgEntry > 0 &&
-      curMetric > 0 &&
-      ot.remainingFraction > 1e-6
-    ) {
-      const flashNow = Date.now();
-      const flash = evaluateFlashCrashKill(cfg, ot, flashNow, curMetric, {
-        jupiterPx: ot.liveFlashLastJupiterPx,
-        snapshotPx: ot.liveFlashLastSnapshotPx,
+    ot.liveKillstopBelowStreak = exitDecision.liveKillstopBelowStreak;
+    if (exitDecision.liveVariantAExitTag != null) {
+      ot.liveVariantAExitTag = exitDecision.liveVariantAExitTag;
+    }
+    if (exitDecision.liveWavePostTp1ScratchTaken === true) {
+      ot.liveWavePostTp1ScratchTaken = true;
+    }
+    if (exitDecision.suppressedKillDueToGhost) {
+      log.warn(
+        {
+          mint: mint.slice(0, 8),
+          symbol: ot.symbol,
+          rawMtmUsd: +rawTrackerPriceUsd.toFixed(8),
+          exitMtmUsd: +exitMtmForJournal.toFixed(8),
+          prevObservedUsd: +prevObservedPriceUsd.toFixed(8),
+        },
+        'live tracker: KILLSTOP suppressed on ghost MTM tick',
+      );
+    }
+    const debLog = exitDecision.killstopDebounceLog;
+    if (debLog?.kind === 'signal') {
+      console.log(
+        `[KILLSTOP_DEBOUNCE_SIGNAL] ${mint.slice(0, 8)} $${ot.symbol} streak=${debLog.streak}/2 pnlVsAvg=${debLog.pnlPctVsAvg.toFixed(2)}% signalKill=${debLog.killDropPct}%`,
+      );
+    } else if (debLog?.kind === 'replenish') {
+      console.log(
+        `[KILLSTOP_DEBOUNCE] ${mint.slice(0, 8)} $${ot.symbol} streak=${debLog.streak}/2 legs=${debLog.legCount} pnlVsAvg=${debLog.pnlPctVsAvg.toFixed(2)}% killEff=${debLog.killEffPct.toFixed(1)}%`,
+      );
+    }
+
+    const flash = exitDecision.flashCrash;
+    if (flash.kind === 'partial') {
+      markFlashKillDcaBlocked(ot, cfg, flashNow);
+      const flashPartial = await tryExecuteTpPartialSell({
+        mint,
+        ot,
+        cfg,
+        curMetric,
+        sellFraction: flash.sellFraction,
+        ladderStepIndex: -1,
+        ladderRungsTotal: 0,
+        ladderPnlPct: pnlPctVsAvg,
+        tpGrid: false,
+        journalAppend,
+        journalLiveStrategy,
+        livePhase4,
+        liveOscarCfg,
+        stats,
+        markLadder: () => {},
+        logLabelPct: flash.trigger,
+        partialReason: 'FLASH_CRASH_KILL',
+        timelineLabelRu: `Flash-килл: ${flash.trigger} · продажа ${(flash.sellFraction * 100).toFixed(0)}% остатка`,
       });
-      if (flash.kind === 'partial') {
-        markFlashKillDcaBlocked(ot, cfg, flashNow);
-        const flashPartial = await tryExecuteTpPartialSell({
-          mint,
-          ot,
-          cfg,
-          curMetric,
-          sellFraction: flash.sellFraction,
-          ladderStepIndex: -1,
-          ladderRungsTotal: 0,
-          ladderPnlPct: pnlPctVsAvg,
-          tpGrid: false,
-          journalAppend,
-          journalLiveStrategy,
-          livePhase4,
-          liveOscarCfg,
-          stats,
-          markLadder: () => {},
-          logLabelPct: flash.trigger,
-          partialReason: 'FLASH_CRASH_KILL',
-          timelineLabelRu: `Flash-килл: ${flash.trigger} · продажа ${(flash.sellFraction * 100).toFixed(0)}% остатка`,
-        });
-        if (flashPartial === 'abort_mint') continue;
-        console.log(
-          `[FLASH_KILL_PARTIAL] ${mint.slice(0, 8)} $${ot.symbol} sold=${(flash.sellFraction * 100).toFixed(0)}% ${flash.trigger}`,
-        );
-      } else if (flash.kind === 'full') {
-        markFlashKillDcaBlocked(ot, cfg, flashNow);
-        exitReason = 'FLASH_CRASH_KILL';
-        console.log(`[FLASH_KILL] ${mint.slice(0, 8)} $${ot.symbol} ${flash.trigger}`);
-      }
+      if (flashPartial === 'abort_mint') continue;
+      console.log(
+        `[FLASH_KILL_PARTIAL] ${mint.slice(0, 8)} $${ot.symbol} sold=${(flash.sellFraction * 100).toFixed(0)}% ${flash.trigger}`,
+      );
+    } else if (flash.kind === 'full') {
+      markFlashKillDcaBlocked(ot, cfg, flashNow);
+      console.log(`[FLASH_KILL] ${mint.slice(0, 8)} $${ot.symbol} ${flash.trigger}`);
     }
 
-    if (!exitReason && !(isPaperOscarIdealized && idealizedMute)) {
-      if (isVariantALegacyV1ExitPolicy(ot) && ot.avgEntry > 0) {
-        const pnlFracVa = pnlPctVsAvg / 100;
-        if (variantAMoonExitTriggered(ot, effCfg, pnlFracVa)) {
-          ot.liveVariantAExitTag = 'moon50';
-          exitReason = 'TP';
-        } else {
-          const timedTag = variantAEvalTimedExit(ot, effCfg, pnlFracVa, ageH);
-          if (timedTag) {
-            ot.liveVariantAExitTag = timedTag;
-            exitReason = 'TIMEOUT';
-          } else if (variantATrailFullExitTriggered(ot, effCfg, pnlFracVa)) {
-            ot.liveVariantAExitTag = 'trail';
-            exitReason = 'TRAIL';
-          }
-        }
-      } else if (isVariantAHybridExitPolicy(ot) && ot.avgEntry > 0) {
-        const timedTag = variantAEvalTimedExit(ot, effCfg, pnlPctVsAvg / 100, ageH);
-        if (timedTag) {
-          ot.liveVariantAExitTag = timedTag;
-          exitReason = 'TIMEOUT';
-        }
-      } else if (isVariantAScratchExitPolicy(ot) && ot.avgEntry > 0) {
-        const timedTag = variantAEvalTimedExit(ot, effCfg, pnlPctVsAvg / 100, ageH);
-        if (timedTag) {
-          ot.liveVariantAExitTag = timedTag;
-          exitReason = 'TIMEOUT';
-        }
-      }
-
-      const upeExitFrozen =
-        liveOscarCfg?.executionMode === 'live' && isUpeExitFrozen(ot);
-      const inSignalKillTerritory =
-        !upeExitFrozen && liveStagedEntryKillHit(ot, stagedEntryKillMetricUsd);
-      const debounceKillAfterReplenish =
-        isLiveOscarTradingStrategyId(cfg.strategyId) && ot.legs.length > 1 && !inSignalKillTerritory;
-      if (
-        !exitReason &&
-        waveBPostTp1ScratchFullExitDue(effCfg, ot, curMetric)
-      ) {
-        ot.liveWavePostTp1ScratchTaken = true;
-        exitReason = 'WAVE_B_POST_TP1_SCRATCH';
-      }
-      const waveBKill =
-        !upeExitFrozen &&
-        isWaveBExitPolicy(ot) &&
-        killEff < 0 &&
-        waveBAbsoluteKillEligible(ot, killEff, curMetric, pnlPctVsAvg / 100);
-      const presetCScalpKill =
-        isPresetCScalpExitPolicy(ot) && presetCScalpKillEligible(ot, curMetric);
-      const runnerProbeKill =
-        isRunnerProbeExitPolicy(ot) && runnerProbeKillEligible(ot, curMetric, snapPx, cfg);
-      const classicKill =
-        !isWaveBExitPolicy(ot) &&
-        !isPresetCScalpExitPolicy(ot) &&
-        !isRunnerProbeExitPolicy(ot) &&
-        !ot.liveStagedEntry &&
-        killEff < 0 &&
-        pnlPctVsAvg / 100 <= killEff;
-      const inKillTerritory =
-        !isVariantAExitPolicy(ot) &&
-        (inSignalKillTerritory || waveBKill || presetCScalpKill || runnerProbeKill || classicKill);
-      if (inKillTerritory) {
-        if (ghostExitTick) {
-          ot.liveKillstopBelowStreak = 0;
-          log.warn(
-            {
-              mint: mint.slice(0, 8),
-              symbol: ot.symbol,
-              rawMtmUsd: +rawTrackerPriceUsd.toFixed(8),
-              exitMtmUsd: +exitMtmForJournal.toFixed(8),
-              prevObservedUsd: +prevObservedPriceUsd.toFixed(8),
-            },
-            'live tracker: KILLSTOP suppressed on ghost MTM tick',
-          );
-        } else if (waveBKill || presetCScalpKill || runnerProbeKill) {
-          ot.liveKillstopBelowStreak = 0;
-          exitReason = 'KILLSTOP';
-        } else if (inSignalKillTerritory) {
-          const nextStreak = (ot.liveKillstopBelowStreak ?? 0) + 1;
-          ot.liveKillstopBelowStreak = nextStreak;
-          if (nextStreak >= 2) exitReason = 'KILLSTOP';
-          else {
-            console.log(
-              `[KILLSTOP_DEBOUNCE_SIGNAL] ${mint.slice(0, 8)} $${ot.symbol} streak=${nextStreak}/2 pnlVsAvg=${pnlPctVsAvg.toFixed(2)}% signalKill=${ot.liveStagedEntry?.killDropPct ?? 0}%`,
-            );
-          }
-        } else if (debounceKillAfterReplenish) {
-          const nextStreak = (ot.liveKillstopBelowStreak ?? 0) + 1;
-          ot.liveKillstopBelowStreak = nextStreak;
-          if (nextStreak >= 2) exitReason = 'KILLSTOP';
-          else {
-            console.log(
-              `[KILLSTOP_DEBOUNCE] ${mint.slice(0, 8)} $${ot.symbol} streak=${nextStreak}/2 legs=${ot.legs.length} pnlVsAvg=${pnlPctVsAvg.toFixed(2)}% killEff=${(killEff * 100).toFixed(1)}%`,
-            );
-          }
-        } else {
-          ot.liveKillstopBelowStreak = 0;
-          exitReason = 'KILLSTOP';
-        }
-      } else {
-        ot.liveKillstopBelowStreak = 0;
-      }
-
-      if (!exitReason) {
-        if (
-          isPresetCScalpExitPolicy(ot) &&
-          presetCScalpBreakevenExitEligible(ot, curMetric) &&
-          (ot.presetCScalpTp5Taken || ot.presetCScalpTp10Taken)
-        ) {
-          exitReason = 'BREAKEVEN_EXIT';
-        } else if (isPresetCScalpExitPolicy(ot)) {
-          const scalpFull = evaluatePresetCScalpExitAction(ot, cfg, curMetric);
-          if (scalpFull.kind === 'full_exit') exitReason = scalpFull.reason;
-        } else if (
-          isWaveBExitPolicy(ot) &&
-          waveBPreArmNoHalf8PullbackFullExitEligible(ot, effCfg, pnlPctVsAvg / 100) &&
-          ot.avgEntry > 0
-        ) {
-          exitReason = 'BREAKEVEN_EXIT';
-        } else if (
-          isWaveBExitPolicy(ot) &&
-          waveBBreakevenAtZeroExitEligible(ot, tgEff.stepPnl) &&
-          ot.avgEntry > 0 &&
-          pnlPctVsAvg <= 0
-        ) {
-          exitReason = 'BREAKEVEN_EXIT';
-        } else if (runnerProbeTpEligible(ot, curMetric, snapPx, cfg)) exitReason = 'TP';
-        else if (xAvg >= effCfg.tpX) exitReason = 'TP';
-        else if (effCfg.slX > 0 && xAvg <= effCfg.slX) exitReason = 'SL';
-        else if (
-          effCfg.trailMode === 'ladder_retrace' &&
-          !isWaveBExitPolicy(ot) &&
-          !isVariantAExitPolicy(ot) &&
-          ladderRetraceTriggered(
-            ot,
-            tpLadder,
-            xAvg,
-            tgEff.stepPnl > 0 ? 'grid' : 'discrete',
-            tgEff.firstRungRetraceMinPnlPct,
-          )
-        )
-          exitReason = 'TRAIL';
-        else if (
-          effCfg.trailMode === 'peak' &&
-          ot.trailingArmed &&
-          curMetric <= ot.peakMcUsd * (1 - effCfg.trailDrop)
-        )
-          exitReason = 'TRAIL';
-      }
-    }
-    if (
-      !exitReason &&
-      !isWaveBExitPolicy(ot) &&
-      !isVariantAExitPolicy(ot) &&
-      !isScalpWaveExitPolicy(ot) &&
-      ageH >= effCfg.timeoutHours &&
-      !timeoutSuppressedByProgress(ot)
-    )
-      exitReason = 'TIMEOUT';
-    if (
-      !exitReason &&
-      isScalpWaveExitPolicy(ot) &&
-      ageH >= effCfg.timeoutHours
-    )
-      exitReason = 'TIMEOUT';
-    /**
-     * Wave B time-stop (1.11.475): legacy Wave B has no time-stop; applied ONLY to opens stamped with a
-     * flat-take mode (`liveWaveFlatTpMode`), so in-flight (pre-change) opens are never force-closed.
-     */
-    if (
-      !exitReason &&
-      isWaveBExitPolicy(ot) &&
-      ot.liveWaveFlatTpMode != null &&
-      cfg.liveOscarWaveBTimeStopHours > 0 &&
-      ageH >= cfg.liveOscarWaveBTimeStopHours
-    )
-      exitReason = 'TIMEOUT';
-    /**
-     * Hard profit-agnostic time-stop (downhill capital rotation): once a position is older than the
-     * configured hours, force a real full exit regardless of exit policy, PnL, or progress. Fires only
-     * after TP/kill/trail were evaluated above, so wins still exit on their own signal within the window.
-     * `TIME_STOP` is policy-allowed (executes on-chain sell, unlike journal-only TIMEOUT). `0` disables.
-     */
-    if (
-      !exitReason &&
-      curMetric > 0 &&
-      cfg.liveOscarHardTimeStopHours > 0 &&
-      ageH >= cfg.liveOscarHardTimeStopHours
-    )
-      exitReason = 'TIME_STOP';
-    if (!exitReason && liveOscarCfg) {
-      const reconcileMinUsd = liveWalletBalanceReconcileMinUsd(liveOscarCfg);
-      const journalZero = ot.remainingFraction <= WALLET_RECONCILE_REMAINING_EPS;
-      if (
-        ot.partialSells.length > 0 &&
-        shouldForceCloseJournalZeroChainTail({
-          remainingFraction: ot.remainingFraction,
-          chainOscarUsd: chainOscarUsdForMint,
-          journalRemainingUsd: journalRemainingUsd(ot),
-          minUsd: reconcileMinUsd,
-          tailFlushThresholdUsd: liveOscarCfg.liveTailFlushThresholdUsd,
-          partialSellCount: ot.partialSells.length,
-        })
-      ) {
-        const lastPartial = ot.partialSells[ot.partialSells.length - 1]!;
-        exitReason = partialReasonToExitReason(lastPartial.reason);
-      } else if (journalZero && !(chainOscarUsdForMint >= reconcileMinUsd)) {
-        exitReason = 'TP';
-      }
-    }
+    let exitReason: ExitReason | null = exitDecision.exitReason;
 
     if (exitReason && liveOscarCfg?.executionMode === 'live') {
       const upeBlock = tryBlockLiveExitViaUpe({
