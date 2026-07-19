@@ -13,7 +13,7 @@ import { entryBuySliceEligibleForOpen } from '../../live/entry-slice.js';
 import { resolveLiveOscarPositionCeilingUsd } from '../live-oscar-entry-sizing.js';
 import { getPriorityFeeUsd } from '../pricing/priority-fee.js';
 import { serializeOpenTrade } from '../../live/strategy-snapshot.js';
-import { notifyUpeEntryLegConfirmed } from '../../live/position-engine/tracker-hook.js';
+import { liveEntryBlockedByUpe, notifyLiveBuyLegConfirmed } from '../../live/position-engine/buy-gate.js';
 import {
   signalDropPctFromState,
   stagedAvgFirstEligible,
@@ -84,6 +84,14 @@ async function pushBuyLeg(args: {
   } = args;
   let buyRes: LiveBuyPipelineResult | undefined;
   if (livePhase4) {
+    if (liveEntryBlockedByUpe(ot, true)) {
+      journalLiveStrategy?.({
+        kind: 'execution_skip',
+        reason: 'upe_entry_blocked',
+        detail: { mint, path: reason },
+      });
+      return false;
+    }
     buyRes = await livePhase4.trySolToTokenBuy({
       mint,
       symbol: ot.symbol,
@@ -120,7 +128,7 @@ async function pushBuyLeg(args: {
   ot.peakPnlPct = (marketBuy / ot.avgEntry - 1) * 100;
   if (cfg.liveExitModeAbEnabled) ot.liveExitProfileMode = 'B';
   if (livePhase4 && buyRes) appendLiveBuyAnchorsAfterDca(ot, buyRes);
-  notifyUpeEntryLegConfirmed({ ot, liveExecution: Boolean(livePhase4) });
+  notifyLiveBuyLegConfirmed({ ot, liveExecution: Boolean(livePhase4), buyRes });
   const mcUsdLive = await getLiveMcUsd(
     mint,
     ot.source as 'raydium' | 'meteora' | 'orca' | 'moonshot' | 'pumpswap' | undefined,

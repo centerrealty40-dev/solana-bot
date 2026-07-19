@@ -10,6 +10,7 @@ import {
   snapshotFromOpenTrade,
   syncUpeOnTrackerTick,
 } from '../src/live/position-engine/index.js';
+import { liveEntryBlockedByUpe } from '../src/live/position-engine/buy-gate.js';
 import type { OpenTrade } from '../src/papertrader/types.js';
 
 function stagedOpen(): OpenTrade {
@@ -114,6 +115,12 @@ describe('Unified Position Engine — phases B/C', () => {
     const ot = stagedOpen();
     onEntryLegConfirmed(ot);
     expect(ot.liveUpePhase).toBe('acquiring');
+  });
+
+  it('liveEntryBlockedByUpe when exit in flight', () => {
+    const ot = stagedOpen();
+    ot.liveUpeExitInFlight = true;
+    expect(liveEntryBlockedByUpe(ot, true)).toBe(true);
   });
 
   it('full kill blocked when exit in flight', () => {

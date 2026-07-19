@@ -199,6 +199,9 @@ import {
   tryBlockPartialSellViaUpe,
 } from '../../live/position-engine/tracker-hook.js';
 import { isUpeExitFrozen, markLiveUpeExitInFlight } from '../../live/position-engine/entry-policy.js';
+import { logGuardedFullExitBlock, runGuardedLiveFullSell } from '../../live/position-engine/exit-executor.js';
+import { liveEntryBlockedByUpe, notifyLiveBuyLegConfirmed } from '../../live/position-engine/buy-gate.js';
+import { repairPartialSellFromLiveResult } from '../../live/position-engine/ledger-repair.js';
 import type { LiveOscarConfig } from '../../live/config.js';
 import { serializeClosedTrade, serializeOpenTrade } from '../../live/strategy-snapshot.js';
 import { tryLiveEntryScaleInTrackerStep } from '../../live/entry-scale-in.js';
@@ -1498,6 +1501,16 @@ async function tryExecuteTpPartialSell(args: {
       : {}),
   };
   ot.partialSells.push(ps);
+  if (sellChainRecorded) {
+    repairPartialSellFromLiveResult({
+      ot,
+      sellOut,
+      partialReason,
+      proceedsUsd,
+      marketPrice: marketSell,
+      effectivePrice: effectiveSell,
+    });
+  }
   ot.lastPartialSellTs = ps.ts;
   ot.remainingFraction *= 1 - sellFraction;
   if (partialReason === 'WAVE_B_PRE_ARM_NO_HALF8_PARTIAL' && sellChainRecorded) {
@@ -2211,6 +2224,7 @@ async function tryWaveBPostTp1ScratchReentryOpens(args: {
         continue;
       }
       applyLiveBuyAnchorsAfterOpen(ot, buyOut);
+      notifyLiveBuyLegConfirmed({ ot, liveExecution: true, buyRes: buyOut });
     }
 
     open.set(mint, ot);
@@ -2885,6 +2899,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
   btcCtx: TrackerArgs['btcCtx'];
   liveOscarCfg?: LiveOscarConfig;
   onMintFullClose?: TrackerArgs['onMintFullClose'];
+  sellOut?: LiveTokenToSolSellResult;
 }): Promise<boolean> {
   const {
     cfg,
@@ -2898,6 +2913,7 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     journalLiveStrategy,
     btcCtx,
     liveOscarCfg,
+    sellOut,
   } = args;
   const ot = open.get(mint);
   if (!ot) return false;
@@ -2948,6 +2964,19 @@ export async function finalizeLiveCapitalRotatePaperClose(args: {
     tpLadder,
   });
   ct.exitContext = exitContextMain;
+
+  if (sellOut?.ok) {
+    applyLiveFullCloseProceedsFromChain({
+      ct,
+      ot,
+      cfg,
+      sellOut,
+      marketSell,
+      networkFeeUsdPerTx: perTxClose,
+      liveOscarCfg,
+    });
+    stampFullExitTxSignature(ct, sellOut);
+  }
 
   clearExitCloseDeferForMint(mint);
   clearExitPartialDeferForMint(mint);
@@ -3289,7 +3318,7 @@ async function tryPresetCScalpDcaLeg(args: {
   livePhase4?: LiveOscarPhase4Tracker;
   liveOscarCfg?: LiveOscarConfig;
 }): Promise<void> {
-  const { mint, ot, cfg, curMetric, journalAppend, journalLiveStrategy, livePhase4 } = args;
+  const { mint, ot, cfg, curMetric, journalAppend, journalLiveStrategy, livePhase4, liveOscarCfg } = args;
   if (!isPresetCScalpExitPolicy(ot)) return;
 
   const scalp = loadPresetCScalpConfig();
@@ -3331,6 +3360,9 @@ async function tryPresetCScalpDcaLeg(args: {
 
     let dcaBuyRes: LiveBuyPipelineResult | undefined;
     if (livePhase4) {
+      if (liveEntryBlockedByUpe(ot, liveOscarCfg?.executionMode === 'live')) {
+        return;
+      }
       dcaBuyRes = await livePhase4.trySolToTokenBuy({
         mint,
         symbol: ot.symbol,
@@ -3362,6 +3394,7 @@ async function tryPresetCScalpDcaLeg(args: {
     ot.remainingFraction = 1;
     if (livePhase4 && dcaBuyRes) {
       appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
+      notifyLiveBuyLegConfirmed({ ot, liveExecution: true, buyRes: dcaBuyRes });
     }
     if (cfg.liqWatchEnabled) {
       await refreshOpenTradeEntryLiqAfterDca(ot, cfg);
@@ -4439,16 +4472,43 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         });
         let liqSellOut: LiveTokenToSolSellResult = { ok: true };
         if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
-          liqSellOut = await livePhase4.tryTokenToSolSell({
+          const guarded = await runGuardedLiveFullSell({
+            ot,
             mint,
-            symbol: ot.symbol,
-            usdNotional: investedRemaining,
-            priceUsdPerToken: marketSell,
-            referencePriceUsd: liveSellReferencePriceUsd(ot),
-            decimals: ot.tokenDecimals ?? 6,
-            intentKind: 'sell_full',
+            exitReason: 'LIQ_DRAIN',
+            chainMap: liveChainMap,
+            chainOscarUsd: chainOscarUsdForMint,
+            priceUsd: marketSell,
+            liveOscarCfg,
+            investedRemainingUsd: investedRemaining,
+            sell: (usdNotional) =>
+              livePhase4.tryTokenToSolSell({
+                mint,
+                symbol: ot.symbol,
+                usdNotional,
+                priceUsdPerToken: marketSell,
+                referencePriceUsd: liveSellReferencePriceUsd(ot),
+                decimals: ot.tokenDecimals ?? 6,
+                intentKind: 'sell_full',
+              }),
           });
-          if (!liqSellOut.ok) continue;
+          if (guarded.status === 'blocked') {
+            logGuardedFullExitBlock({
+              mint,
+              symbol: ot.symbol,
+              exitReason: 'LIQ_DRAIN',
+              block: guarded.block,
+            });
+            journalAppend({
+              kind: 'risk_note',
+              reason: 'upe_exit_blocked',
+              mint,
+              detail: { exitReason: 'LIQ_DRAIN', invariant: guarded.block.invariant },
+            });
+            continue;
+          }
+          if (guarded.status === 'sell_failed') continue;
+          liqSellOut = guarded.sellOut;
         }
         applyLiveFullCloseProceedsFromChain({
           ct,
@@ -4457,6 +4517,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           sellOut: liqSellOut,
           marketSell,
           networkFeeUsdPerTx: perTxClose,
+          liveOscarCfg,
+          chainOscarUsd: chainOscarUsdForMint,
         });
         stampFullExitTxSignature(ct, liqSellOut);
         const exitContext = buildExitContext({
@@ -4610,16 +4672,37 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         });
         let volSellOut: LiveTokenToSolSellResult = { ok: true };
         if (livePhase4 && marketSell > 0 && investedRemaining > 1e-6) {
-          volSellOut = await livePhase4.tryTokenToSolSell({
+          const guarded = await runGuardedLiveFullSell({
+            ot,
             mint,
-            symbol: ot.symbol,
-            usdNotional: investedRemaining,
-            priceUsdPerToken: marketSell,
-            referencePriceUsd: liveSellReferencePriceUsd(ot),
-            decimals: ot.tokenDecimals ?? 6,
-            intentKind: 'sell_full',
+            exitReason: 'VOL_COLLAPSE',
+            chainMap: liveChainMap,
+            chainOscarUsd: chainOscarUsdForMint,
+            priceUsd: marketSell,
+            liveOscarCfg,
+            investedRemainingUsd: investedRemaining,
+            sell: (usdNotional) =>
+              livePhase4.tryTokenToSolSell({
+                mint,
+                symbol: ot.symbol,
+                usdNotional,
+                priceUsdPerToken: marketSell,
+                referencePriceUsd: liveSellReferencePriceUsd(ot),
+                decimals: ot.tokenDecimals ?? 6,
+                intentKind: 'sell_full',
+              }),
           });
-          if (!volSellOut.ok) continue;
+          if (guarded.status === 'blocked') {
+            logGuardedFullExitBlock({
+              mint,
+              symbol: ot.symbol,
+              exitReason: 'VOL_COLLAPSE',
+              block: guarded.block,
+            });
+            continue;
+          }
+          if (guarded.status === 'sell_failed') continue;
+          volSellOut = guarded.sellOut;
         }
         applyLiveFullCloseProceedsFromChain({
           ct,
@@ -4628,6 +4711,8 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
           sellOut: volSellOut,
           marketSell,
           networkFeeUsdPerTx: perTxClose,
+          liveOscarCfg,
+          chainOscarUsd: chainOscarUsdForMint,
         });
         stampFullExitTxSignature(ct, volSellOut);
         const volDrop = {
@@ -5066,6 +5151,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
           if (!open.has(openKey)) return false;
+          if (liveEntryBlockedByUpe(ot, liveOscarCfg?.executionMode === 'live')) {
+            return false;
+          }
           dcaBuyRes = await livePhase4.trySolToTokenBuy({
             mint,
             symbol: ot.symbol,
@@ -5111,6 +5199,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (cfg.liveExitModeAbEnabled && !isRunnerProbeExitPolicy(ot)) ot.liveExitProfileMode = 'B';
         if (livePhase4 && dcaBuyRes) {
           appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
+          notifyLiveBuyLegConfirmed({ ot, liveExecution: true, buyRes: dcaBuyRes });
         }
         if (cfg.liqWatchEnabled) {
           await refreshOpenTradeEntryLiqAfterDca(ot, cfg);
@@ -5253,6 +5342,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         let dcaBuyRes: LiveBuyPipelineResult | undefined;
         if (livePhase4) {
           if (!open.has(openKey)) continue;
+          if (liveEntryBlockedByUpe(ot, liveOscarCfg?.executionMode === 'live')) {
+            continue;
+          }
           dcaBuyRes = await livePhase4.trySolToTokenBuy({
             mint,
             symbol: ot.symbol,
@@ -5298,6 +5390,7 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (cfg.liveExitModeAbEnabled && !isRunnerProbeExitPolicy(ot)) ot.liveExitProfileMode = 'B';
         if (livePhase4 && dcaBuyRes) {
           appendLiveBuyAnchorsAfterDca(ot, dcaBuyRes);
+          notifyLiveBuyLegConfirmed({ ot, liveExecution: true, buyRes: dcaBuyRes });
         }
         if (cfg.liqWatchEnabled) {
           await refreshOpenTradeEntryLiqAfterDca(ot, cfg);

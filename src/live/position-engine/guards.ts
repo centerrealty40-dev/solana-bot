@@ -8,7 +8,7 @@ import type {
 } from './types.js';
 import { chainJournalCostRatio, confirmedBuyCostUsd } from './ledger.js';
 
-const ACQUIRING_ALLOWED_EXITS = new Set(['LIQ_DRAIN']);
+const ACQUIRING_ALLOWED_EXITS = new Set(['LIQ_DRAIN', 'VOL_COLLAPSE']);
 
 /** Derive lifecycle phase from snapshot facts. */
 export function derivePhase(args: {
@@ -63,8 +63,10 @@ export function evaluateExitGuard(
   const reason = req.exitReason.toUpperCase();
 
   if (isAcquiringPhase(snap.phase)) {
-    const liqOk = cfg.allowLiqDrainDuringAcquire && reason === 'LIQ_DRAIN';
-    if (!liqOk && !ACQUIRING_ALLOWED_EXITS.has(reason)) {
+    const safetyOk =
+      cfg.allowLiqDrainDuringAcquire &&
+      (reason === 'LIQ_DRAIN' || reason === 'VOL_COLLAPSE');
+    if (!safetyOk && !ACQUIRING_ALLOWED_EXITS.has(reason)) {
       return {
         allowed: false,
         invariant: 'UPE-I1',
@@ -74,8 +76,9 @@ export function evaluateExitGuard(
   }
 
   const isFullExit = !isPartialExitReason(reason);
-  const skipDesyncGate = reason === 'LIQ_DRAIN' && cfg.allowLiqDrainDuringAcquire;
-  if (isFullExit && !skipDesyncGate && snap.chain.oscarAttributedUsd > 0) {
+  const skipDesyncGate =
+    (reason === 'LIQ_DRAIN' || reason === 'VOL_COLLAPSE') && cfg.allowLiqDrainDuringAcquire;
+  if (isFullExit && !skipDesyncGate && !req.emergencyExit && snap.chain.oscarAttributedUsd > 0) {
     const confirmedCost = confirmedBuyCostUsd(snap.confirmedBuys);
     const ratio = chainJournalCostRatio({
       chain: snap.chain,

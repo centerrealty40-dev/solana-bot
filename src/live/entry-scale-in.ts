@@ -11,6 +11,7 @@ import type { OpenTrade } from '../papertrader/types.js';
 import type { LiveOscarConfig } from './config.js';
 import type { LiveOscarPhase4Tracker } from './phase4-types.js';
 import { appendLiveBuyAnchorsAfterDca } from './live-buy-anchor.js';
+import { liveEntryBlockedByUpe, notifyLiveBuyLegConfirmed } from './position-engine/buy-gate.js';
 import { entryBuySliceEligibleForOpen } from './entry-slice.js';
 import { resolveLiveOscarPositionCeilingUsd } from '../papertrader/live-oscar-entry-sizing.js';
 import { appendLiveJsonlEvent } from './store-jsonl.js';
@@ -224,6 +225,15 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
 
   if (verifyStillOpen && !verifyStillOpen()) return;
 
+  if (liveEntryBlockedByUpe(ot, true)) {
+    appendLiveJsonlEvent({
+      kind: 'execution_skip',
+      reason: 'upe_entry_blocked',
+      detail: { mint, path: 'scale_in_second_leg' },
+    });
+    return;
+  }
+
   const buyRes = await livePhase4.trySolToTokenBuy({
     mint,
     symbol: ot.symbol,
@@ -273,6 +283,7 @@ export async function tryLiveEntryScaleInTrackerStep(args: {
   ot.remainingFraction = 1;
   /** Сплит входа (не DCA): режим A при первом TP +5%; B при DCA — назначает трекер. */
   appendLiveBuyAnchorsAfterDca(ot, buyRes);
+  notifyLiveBuyLegConfirmed({ ot, liveExecution: true, buyRes });
 
   ot.livePendingScaleIn = null;
 

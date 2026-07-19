@@ -16,6 +16,12 @@ import { liveConsecSimFailCount } from './phase5-state.js';
 import { loadLiveKeypairFromSecretEnv } from './wallet.js';
 import { liveReconcileBlocksNewExposure } from './live-reconcile-state.js';
 import { livePolicyOnlyExitsEnabled } from './policy-only-exits.js';
+import {
+  guardLiveFullExit,
+  logGuardedFullExitBlock,
+  withUpeFullExitInFlight,
+} from './position-engine/exit-executor.js';
+import type { LiveTokenToSolSellResult } from './phase4-types.js';
 
 export function capitalNotionalXUsd(liveCfg: LiveOscarConfig, paperPositionUsd: number): number {
   return liveCfg.liveEntryNotionalUsd ?? liveCfg.liveMaxPositionUsd ?? paperPositionUsd;
@@ -436,15 +442,49 @@ export async function phase5AllowIncreaseExposure(args: {
       pick.ot.lastObservedPriceUsd != null && pick.ot.lastObservedPriceUsd > 0
         ? pick.ot.lastObservedPriceUsd
         : pick.ot.avgEntry;
+    const pxForSell = px > 0 ? px : pick.ot.avgEntry;
 
-    const sellRes = await executeLiveTokenToSolPipeline(liveCfg, {
-      mint: pick.ot.mint,
-      symbol: pick.ot.symbol,
-      usdNotional: Math.max(invested, 1e-6),
-      priceUsdPerToken: px > 0 ? px : pick.ot.avgEntry,
-      decimals: pick.ot.tokenDecimals ?? 6,
-      intentKind: 'sell_full',
-    });
+    if (liveCfg.executionMode === 'live') {
+      const upeBlock = guardLiveFullExit({
+        ot: pick.ot,
+        mint: pick.mint,
+        exitReason: 'CAPITAL_ROTATE',
+        chainMap: undefined,
+        chainOscarUsd: 0,
+        priceUsd: pxForSell,
+        liveOscarCfg: liveCfg,
+      });
+      if (upeBlock.blocked) {
+        logGuardedFullExitBlock({
+          mint: pick.mint,
+          symbol: pick.ot.symbol,
+          exitReason: 'CAPITAL_ROTATE',
+          block: upeBlock,
+        });
+        appendLiveJsonlEvent({
+          kind: 'capital_skip',
+          reason: 'upe_exit_blocked',
+          mint: pick.mint,
+          detail: {
+            invariant: upeBlock.invariant,
+            phase: upeBlock.phase,
+          },
+        });
+        rotatedThisTick.add(pick.mint);
+        continue;
+      }
+    }
+
+    const sellRes = await withUpeFullExitInFlight(pick.ot, () =>
+      executeLiveTokenToSolPipeline(liveCfg, {
+        mint: pick.ot.mint,
+        symbol: pick.ot.symbol,
+        usdNotional: Math.max(invested, 1e-6),
+        priceUsdPerToken: pxForSell,
+        decimals: pick.ot.tokenDecimals ?? 6,
+        intentKind: 'sell_full',
+      }),
+    );
 
     if (!sellRes.ok) {
       appendLiveJsonlEvent({
@@ -457,9 +497,28 @@ export async function phase5AllowIncreaseExposure(args: {
       return false;
     }
 
-    const pxForJournal = px > 0 ? px : pick.ot.avgEntry;
+    const pxForJournal = pxForSell;
+    const sellOutForJournal: LiveTokenToSolSellResult = {
+      ok: sellRes.ok,
+      preflightSkipReason: sellRes.preflightSkipReason,
+      solProceedsLamports: sellRes.wsolOutLamports,
+      solProceedsSource: sellRes.solProceedsSource,
+      txSignature: sellRes.txSignature,
+      priceImpactPct: sellRes.priceImpactPct,
+      retryAttempts: sellRes.retryAttempts,
+      sellAmountSource: sellRes.sellAmountSource,
+      walletDrained: sellRes.walletDrained,
+      tokenAmountRawSold: sellRes.tokenAmountRawSold,
+      terminalKind: sellRes.terminalKind,
+      terminalMessage: sellRes.terminalMessage,
+    };
     try {
-      await deps.finalizeCapitalRotatePaperClose?.(pick.mint, pxForJournal, liveCfg);
+      await deps.finalizeCapitalRotatePaperClose?.(
+        pick.mint,
+        pxForJournal,
+        liveCfg,
+        sellOutForJournal,
+      );
     } catch (err) {
       appendLiveJsonlEvent({
         kind: 'risk_note',

@@ -53,6 +53,8 @@ export interface LiveBuyPipelineResult {
   copyToOscarPromotion?: CopyToOscarPromotionPlan;
   /** All confirmed buy tx signatures when entry was split into multiple Jupiter swaps. */
   confirmedBuyTxSignatures?: string[];
+  /** On-chain token atoms received (UPE ledger SSOT). */
+  tokenAmountRawReceived?: string;
 }
 
 /** Mint + lane context after full Oscar entry gates (W8.0-p4 §4, §7). */
@@ -188,5 +190,6 @@ export interface LiveOscarStrategyDeps {
     mint: string,
     marketSellPx: number,
     liveCfg: LiveOscarConfig,
+    sellOut?: LiveTokenToSolSellResult,
   ) => Promise<void>;
 }

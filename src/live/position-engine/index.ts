@@ -59,6 +59,18 @@ export type { ExitIntent, ExitIntentKind, ExitIntentDecision } from './exit-inte
 export { syncUpeOnTrackerTick } from './orchestrator.js';
 export type { UpeTickSyncResult } from './orchestrator.js';
 
+export {
+  guardLiveFullExit,
+  logGuardedFullExitBlock,
+  withUpeFullExitInFlight,
+  runGuardedLiveFullSell,
+} from './exit-executor.js';
+export type { GuardedFullExitBlock, GuardedFullSellOutcome } from './exit-executor.js';
+
+export { liveEntryBlockedByUpe, notifyLiveBuyLegConfirmed } from './buy-gate.js';
+
+export { repairPartialSellFromLiveResult, attachBuyTokensRawFromPipeline } from './ledger-repair.js';
+
 export { loadPositionEngineConfigFromEnv } from './config.js';
 
 export {

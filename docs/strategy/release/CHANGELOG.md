@@ -102,6 +102,21 @@
 
 ---
 
+## [1.11.609] — 2026-07-19
+
+**Тег:** `sa-alpha-1.11.609`
+
+### Unified Position Engine — Phase D (полный exit/entry funnel)
+
+- **Exit funnel:** `runGuardedLiveFullSell` для LIQ_DRAIN / VOL_COLLAPSE; CAPITAL_ROTATE через UPE guard + in-flight в `phase5-gates.ts`; chain PnL в `finalizeLiveCapitalRotatePaperClose`.
+- **Entry funnel:** `liveEntryBlockedByUpe` + `notifyLiveBuyLegConfirmed` на scale-in, staged add, DCA, preset-C DCA, wave-B reentry, staged-entry lifecycle.
+- **Ledger repair (UPE-I4):** `repairPartialSellFromLiveResult` после live partial sell.
+- **Тесты:** VOL_COLLAPSE/CAPITAL_ROTATE при acquire, emergency I2 bypass, entry gate.
+
+**Откат:** `LIVE_UNIFIED_POSITION_ENGINE=0` или redeploy `1.11.608`.
+
+---
+
 ## [1.11.608] — 2026-07-19
 
 **Тег:** `sa-alpha-1.11.608`
