@@ -151,6 +151,36 @@ describe('Unified Position Engine — Ge87 regression', () => {
     expect(d.allowed).toBe(true);
   });
 
+  it('allows VOL_COLLAPSE during ACQUIRING when configured', () => {
+    const ot = ge87OpenTrade();
+    const snap = snapshotFromOpenTrade({ ot, chain: ge87Chain() });
+    const cfg = defaultPositionEngineConfig({ allowLiqDrainDuringAcquire: true });
+    const d = evaluateExitGuard(snap, cfg, { exitReason: 'VOL_COLLAPSE' });
+    expect(d.allowed).toBe(true);
+  });
+
+  it('blocks CAPITAL_ROTATE during ACQUIRING (UPE-I1)', () => {
+    const ot = ge87OpenTrade();
+    const snap = snapshotFromOpenTrade({ ot, chain: ge87Chain() });
+    const cfg = defaultPositionEngineConfig();
+    const d = evaluateExitGuard(snap, cfg, { exitReason: 'CAPITAL_ROTATE' });
+    expect(d.allowed).toBe(false);
+    if (!d.allowed) expect(d.invariant).toBe('UPE-I1');
+  });
+
+  it('allows emergency full exit past desync gate (UPE-I2 bypass)', () => {
+    const ot = ge87OpenTrade();
+    ot.liveStagedEntry = undefined;
+    const snap: PositionSnapshot = {
+      ...snapshotFromOpenTrade({ ot, chain: ge87Chain() }),
+      phase: 'managed',
+      entrySplit: buildEntrySplitProgress({ active: false, plannedLegs: 0, completedLegs: 0 }),
+    };
+    const cfg = defaultPositionEngineConfig();
+    const d = evaluateExitGuard(snap, cfg, { exitReason: 'KILLSTOP', emergencyExit: true });
+    expect(d.allowed).toBe(true);
+  });
+
   it('MANAGED phase after all entry legs done', () => {
     const phase = derivePhase({
       entrySplit: buildEntrySplitProgress({ active: true, plannedLegs: 4, completedLegs: 4 }),

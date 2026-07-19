@@ -298,6 +298,8 @@ export interface OpenTrade {
   liveUpePhase?: 'opening' | 'acquiring' | 'managed' | 'exiting' | 'closed';
   /** UPE: Jupiter sell in-flight — blocks duplicate full/partial exits (UPE-I5). */
   liveUpeExitInFlight?: boolean;
+  /** UPE: SPL raw credited per confirmed buy leg (parallel to entryLegSignatures). */
+  liveUpeLegTokensRaw?: string[];
 
   /**
    * Live Oscar — запланированная вторая нога входа (доля позиции после первого SOL→token).

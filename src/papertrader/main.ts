@@ -167,6 +167,7 @@ import { isMintBlacklisted } from './discovery/mint-blacklist-file.js';
 import type { LivePeriodicSelfHealPaperContext } from '../live/periodic-self-heal.js';
 import type { LiveOpenPositionHotTickPaperContext } from '../live/open-position-hot-tick.js';
 import { applyLiveBuyAnchorsAfterOpen } from '../live/live-buy-anchor.js';
+import { notifyLiveBuyLegConfirmed } from '../live/position-engine/buy-gate.js';
 import { applyCopyToOscarPromotionAccounting } from '../live/copy-to-oscar-promotion.js';
 import {
   attachCopyLeaderDiscoveryStagedEntryTopUp,
@@ -1391,7 +1392,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
       cachedLiveOscar = opts.liveOscarFactory({
         getOpen: () => open,
         getClosed: () => closed,
-        finalizeCapitalRotatePaperClose: async (mint, marketSellPx, liveOscarCfg) => {
+        finalizeCapitalRotatePaperClose: async (mint, marketSellPx, liveOscarCfg, sellOut) => {
           await finalizeLiveCapitalRotatePaperClose({
             cfg,
             mint,
@@ -1404,6 +1405,7 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             journalLiveStrategy: opts?.journalLiveStrategy,
             btcCtx: getBtcContext,
             liveOscarCfg,
+            sellOut,
             onMintFullClose: (mint, ot) => {
               stagedEntrySignals.delete(mint);
               opts?.onMintFullClose?.(mint, ot);
@@ -2607,6 +2609,11 @@ export async function main(opts?: PapertraderMainOptions): Promise<void> {
             continue;
           }
           applyLiveBuyAnchorsAfterOpen(ot, opened);
+          notifyLiveBuyLegConfirmed({
+            ot,
+            liveExecution: liveOscar.liveCfg.executionMode === 'live',
+            buyRes: opened,
+          });
           if (opened.copyToOscarPromotion) {
             applyCopyToOscarPromotionAccounting({
               ot,

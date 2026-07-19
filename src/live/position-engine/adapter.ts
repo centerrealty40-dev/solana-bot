@@ -35,12 +35,15 @@ export function confirmedBuysFromOpenTrade(ot: OpenTrade): ConfirmedBuyLeg[] {
     const leg = legs[i]!;
     const sig = sigs[i];
     if (typeof sig !== 'string' || sig.length < 16) continue;
+    const rawStr = ot.liveUpeLegTokensRaw?.[i];
+    const rawTokens =
+      typeof rawStr === 'string' && /^\d+$/.test(rawStr) ? BigInt(rawStr) : 0n;
     out.push({
       txSignature: sig,
       sizeUsd: leg.sizeUsd,
       effectivePriceUsd: leg.price,
       marketPriceUsd: leg.marketPrice ?? leg.price,
-      rawTokens: 0n,
+      rawTokens,
       confirmedTs: leg.ts,
       reason:
         leg.reason === 'entry_split'
