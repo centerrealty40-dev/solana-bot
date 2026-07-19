@@ -25,6 +25,8 @@ export type DexSnapshotFreshness = {
   latestTs: Date | null;
   ageSec: number | null;
   ok: boolean;
+  /** Set when PG query failed — must not be treated as data stale. */
+  queryError?: string | null;
 };
 
 /** PG drivers may return `MAX(ts)` as string — normalize before alert formatting. */
@@ -44,6 +46,30 @@ export function snapshotMaxAgeSecFromEnv(): number {
   const n = Number(process.env.SNAPSHOT_FRESHNESS_MAX_AGE_SEC?.trim());
   if (Number.isFinite(n) && n > 0) return Math.floor(n);
   return 600;
+}
+
+export function snapshotAlertHostLabelFromEnv(): string | undefined {
+  const raw =
+    process.env.SNAPSHOT_FRESHNESS_ALERT_HOST?.trim() ||
+    process.env.COLLECTOR_HEALTH_PRODUCT_LABEL?.trim();
+  return raw || undefined;
+}
+
+/** True only when age exceeds threshold; PG blip (queryError or missing age) is not stale. */
+export function isSnapshotRowDataStale(
+  row: DexSnapshotFreshness,
+  maxAgeSec: number,
+): boolean {
+  if (row.queryError) return false;
+  if (row.ageSec == null || !Number.isFinite(row.ageSec)) return false;
+  return row.ageSec > maxAgeSec;
+}
+
+export function snapshotRowAlertFlag(row: DexSnapshotFreshness, maxAgeSec: number): 'OK' | 'STALE' | 'PG_ERR' {
+  if (row.queryError) return 'PG_ERR';
+  if (row.ageSec == null || !Number.isFinite(row.ageSec)) return 'PG_ERR';
+  if (row.ageSec > maxAgeSec) return 'STALE';
+  return 'OK';
 }
 
 /** Sources excluded from pg_stale entry blocks (orca off; moonshot low-volume lane). */
@@ -74,11 +100,11 @@ export function isMintLaneSnapshotStale(
   if (lane) {
     const row = rows.find((r) => r.source.toLowerCase() === lane);
     if (row && !snapshotFreshnessSkipSourcesFromEnv().has(lane)) {
-      const stale = !row.ok || (row.ageSec != null && row.ageSec > maxAgeSec);
+      const stale = isSnapshotRowDataStale(row, maxAgeSec);
       return { stale, ageSec: row.ageSec, blockingSource: row.source };
     }
   }
-  const stale = blocking.some((r) => !r.ok || (r.ageSec != null && r.ageSec > maxAgeSec));
+  const stale = blocking.some((r) => isSnapshotRowDataStale(r, maxAgeSec));
   const ageSec = worstSnapshotAgeSec(blocking);
   const worst =
     blocking.reduce<DexSnapshotFreshness | null>((acc, r) => {
@@ -112,8 +138,9 @@ export async function fetchDexSnapshotFreshness(
         ageSec >= 0 &&
         ageSec <= maxAgeSec;
       out.push({ source, table, latestTs, ageSec, ok });
-    } catch {
-      out.push({ source, table, latestTs: null, ageSec: null, ok: false });
+    } catch (e) {
+      const queryError = e instanceof Error ? e.message : String(e);
+      out.push({ source, table, latestTs: null, ageSec: null, ok: false, queryError });
     }
   }
   return out;
@@ -132,7 +159,7 @@ export function snapshotsAnyStale(
   rows: readonly DexSnapshotFreshness[],
   maxAgeSec = snapshotMaxAgeSecFromEnv(),
 ): boolean {
-  return rows.some((r) => !r.ok || (r.ageSec != null && r.ageSec > maxAgeSec));
+  return filterFreshnessForPgStaleBlocking(rows).some((r) => isSnapshotRowDataStale(r, maxAgeSec));
 }
 
 /** Compact line for HEALTH pulse. */
@@ -151,16 +178,18 @@ export function formatSnapshotFreshnessPulseLine(rows: readonly DexSnapshotFresh
 export function buildSnapshotStaleAlertBody(
   rows: readonly DexSnapshotFreshness[],
   maxAgeSec: number,
+  hostLabel = snapshotAlertHostLabelFromEnv(),
 ): string {
   const maxMin = Math.round(maxAgeSec / 60);
   const lines = [
+    ...(hostLabel ? [`host=${hostLabel}`] : []),
     `🚨 PG snapshots STALE (порог ${maxMin} мин) — discovery и TG-алерты слепы.`,
     'Проверьте: pm2 logs sa-pumpswap / sa-raydium; pm2 restart sa-pumpswap sa-raydium sa-meteora sa-moonshot',
   ];
   for (const r of rows) {
     const ageMin =
       r.ageSec != null && Number.isFinite(r.ageSec) ? Math.round(r.ageSec / 60) : '?';
-    const flag = r.ok ? 'OK' : 'STALE';
+    const flag = snapshotRowAlertFlag(r, maxAgeSec);
     lines.push(`• ${r.source}: ${flag} age=${ageMin}m latest=${formatSnapshotLatestTs(r.latestTs)}`);
   }
   return lines.join('\n');

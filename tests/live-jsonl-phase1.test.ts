@@ -298,6 +298,36 @@ describe('W8.0-p1 live JSONL contract', () => {
     }
   });
 
+  it('parses live JSONL kinds added in 1.11.611 (journalLiveStrategy gaps)', () => {
+    const mint = 'Mintaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+    const bodies: LiveEventBody[] = [
+      { kind: 'live_staged_entry_attached', mint, entryPath: 'copy_leader_adopt_staged_heal' },
+      { kind: 'entry_recheck_pending', mint, dueTs: 1_700_000_000_000, signalPriceUsd: 0.01 },
+      { kind: 'entry_recheck_pass', mint, changePct: 2.5 },
+      { kind: 'entry_recheck_skip', mint, reason: 'price_out_of_band' },
+      { kind: 'copy_to_oscar_promotion', mint, topUpUsd: 50, tier: 'prod' },
+      { kind: 'partial_slice_due_to_wallet', mint, partialUsd: 80, plannedUsd: 200 },
+      { kind: 'live_staged_add_cooldown', mint, streak: 2, cooldownMs: 60_000 },
+      { kind: 'live_staged_add_auto_denylist', mint, rearms: 3, denylistAdded: true },
+      { kind: 'live_priority_fee_boost', timeoutsInWindow: 3, boostFactor: 1.5 },
+      { kind: 'live_priority_fee_boost_expired', boostUntilMs: 1_700_000_000_000 },
+      {
+        kind: 'live_mint_file_watch_change',
+        fileKind: 'whitelist',
+        path: '/opt/solana-alpha/data/live-mint-whitelist.txt',
+        addedCount: 1,
+        removedCount: 0,
+        total: 10,
+      },
+      { kind: 'awakening_entry_skip', mint, reason: 'gate:mcap' },
+      { kind: 'scale_in_add', mint, sizeUsd: 100, timelineLabelRu: 'докупка 50%' },
+    ];
+    for (const b of bodies) {
+      expect(safeParseLiveEventBody(JSON.parse(JSON.stringify(b))).success).toBe(true);
+      expect(parseLiveEventBody(JSON.parse(JSON.stringify(b)))).toEqual(b);
+    }
+  });
+
   it('rejects invalid intentId on execution_attempt', () => {
     const bad = safeParseLiveEventBody({
       kind: 'execution_attempt',

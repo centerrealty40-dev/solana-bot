@@ -5,6 +5,8 @@ import {
   formatSnapshotFreshnessPulseLine,
   formatSnapshotLatestTs,
   isMintLaneSnapshotStale,
+  isSnapshotRowDataStale,
+  snapshotRowAlertFlag,
   snapshotsAnyStale,
   worstSnapshotAgeSec,
   type DexSnapshotFreshness,
@@ -32,9 +34,58 @@ describe('pair-snapshot-freshness', () => {
     expect(worstSnapshotAgeSec(rows)).toBe(900);
   });
 
-  it('snapshotsAnyStale when any row not ok', () => {
-    const rows = [row('pumpswap', 60, true), row('raydium', 200, false)];
+  it('snapshotsAnyStale when any row exceeds max age', () => {
+    const rows = [row('pumpswap', 60, true), row('raydium', 800, false)];
     expect(snapshotsAnyStale(rows, 600)).toBe(true);
+  });
+
+  it('snapshotsAnyStale ignores PG query errors (null age)', () => {
+    const rows = [
+      {
+        source: 'pumpswap',
+        table: 'pumpswap_pair_snapshots',
+        latestTs: null,
+        ageSec: null,
+        ok: false,
+        queryError: 'connection timeout',
+      },
+      row('raydium', 60, true),
+    ];
+    expect(snapshotsAnyStale(rows, 600)).toBe(false);
+  });
+
+  it('isSnapshotRowDataStale requires valid age over threshold', () => {
+    expect(isSnapshotRowDataStale(row('pumpswap', 800, false), 600)).toBe(true);
+    expect(
+      isSnapshotRowDataStale(
+        {
+          source: 'pumpswap',
+          table: 'pumpswap_pair_snapshots',
+          latestTs: null,
+          ageSec: null,
+          ok: false,
+          queryError: 'err',
+        },
+        600,
+      ),
+    ).toBe(false);
+  });
+
+  it('snapshotRowAlertFlag marks PG errors separately from stale', () => {
+    expect(
+      snapshotRowAlertFlag(
+        {
+          source: 'pumpswap',
+          table: 'pumpswap_pair_snapshots',
+          latestTs: null,
+          ageSec: null,
+          ok: false,
+          queryError: 'timeout',
+        },
+        600,
+      ),
+    ).toBe('PG_ERR');
+    expect(snapshotRowAlertFlag(row('pumpswap', 800, false), 600)).toBe('STALE');
   });
 
   it('formatSnapshotFreshnessPulseLine includes worst', () => {

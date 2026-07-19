@@ -102,6 +102,38 @@
 
 ---
 
+## [1.11.612] — 2026-07-20
+
+**Тег:** `sa-alpha-1.11.612`
+
+### Fix: snapshot_stale false positives (PG query error ≠ data stale)
+
+- **`snapshot-freshness-watch`:** PG connection/query failures (`latest=null`, `age=?`) больше **не** шлют `[ALERT][snapshot_stale]`; repeat hourly пропускается при `pg_error` rows.
+- **`pair-snapshot-freshness.ts`:** `queryError` на row; `snapshotsAnyStale` / `isMintLaneSnapshotStale` — только реальный age > threshold.
+- **`live-oscar` heartbeat:** `SNAPSHOT_FRESHNESS_HEARTBEAT_ALERT=0` опционально; pulse по-прежнему показывает snap age.
+- Алерты watch: первая строка `host=…` (`SNAPSHOT_FRESHNESS_ALERT_HOST` / `COLLECTOR_HEALTH_PRODUCT_LABEL`).
+- Oscar ecosystem: `SNAPSHOT_FRESHNESS_ALERT_HOST=oscar-vps`.
+
+**LERA VPS (отдельный продукт):** тот же патч + `SNAPSHOT_FRESHNESS_TELEGRAM=0` на watch (спам шёл с `72.62.152.201`, chat LERA).
+
+**Откат:** redeploy `1.11.611`; на LERA — `SNAPSHOT_FRESHNESS_TELEGRAM=1` + старый watch.
+
+---
+
+## [1.11.611] — 2026-07-19
+
+**Тег:** `sa-alpha-1.11.611`
+
+### Live JSONL schema — missing event kinds (hotfix)
+
+- Добавлены Zod-схемы для kind'ов, которые уже писались через `journalLiveStrategy` / `appendLiveJsonlEvent`, но отвергались валидатором (`live JSONL validation failed: invalid_union_discriminator`).
+- Новые kind: `live_staged_entry_attached`, `entry_recheck_*`, `copy_to_oscar_promotion`, `partial_slice_due_to_wallet`, `live_staged_add_*`, `live_priority_fee_boost*`, `live_mint_file_watch_change`, `awakening_entry_skip`, `scale_in_add`.
+- `discovery-audit-jsonl`: mirror `scale_in_add` в live JSONL как у split/avg legs.
+
+**Откат:** redeploy `1.11.610`.
+
+---
+
 ## [1.11.610] — 2026-07-19
 
 **Тег:** `sa-alpha-1.11.610`
