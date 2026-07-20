@@ -178,6 +178,38 @@ describe('exit-policy-wave-b', () => {
     expect(clamped).toBeCloseTo(0.114 * (1 + WAVE_B_MTM_MAX_TICK_JUMP_FRAC), 6);
   });
 
+  it('ZEREBRO RCA: without sell-confirmation the mark cannot ratchet up (holds prior observed)', () => {
+    const ot = {
+      lastObservedPriceUsd: 0.046,
+      avgEntry: 0.0465,
+      avgEntryMarket: 0.046,
+    } as OpenTrade;
+    // Sustained phantom-high quote, no sell-probe this tick → upward ratchet blocked.
+    const held = clampLiveTrackerMtmForExit(ot, 0.11975, false);
+    expect(held).toBeCloseTo(0.046, 6);
+  });
+
+  it('ZEREBRO RCA: sell-confirmed upside still ratchets +12%/tick', () => {
+    const ot = {
+      lastObservedPriceUsd: 0.046,
+      avgEntry: 0.0465,
+      avgEntryMarket: 0.046,
+    } as OpenTrade;
+    const up = clampLiveTrackerMtmForExit(ot, 0.11975, true);
+    expect(up).toBeCloseTo(0.046 * (1 + WAVE_B_MTM_MAX_TICK_JUMP_FRAC), 6);
+  });
+
+  it('ZEREBRO RCA: downside is never blocked by the up-ratchet gate', () => {
+    const ot = {
+      lastObservedPriceUsd: 0.046,
+      avgEntry: 0.0465,
+      avgEntryMarket: 0.046,
+    } as OpenTrade;
+    // Real crash with no sell-confirmation still clamps down (conservative), not held flat.
+    const down = clampLiveTrackerMtmForExit(ot, 0.02, false);
+    expect(down).toBeCloseTo(0.046 * (1 - WAVE_B_MTM_MAX_TICK_JUMP_FRAC), 6);
+  });
+
   it('waveBRecoverPhantomPeakIfNeeded disarms armed trail when PnL below arm and no trail sells yet', () => {
     const ot = {
       liveExitPolicyId: 'wave_b_v1',
