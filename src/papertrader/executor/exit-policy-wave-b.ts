@@ -199,14 +199,25 @@ export const WAVE_B_MTM_MAX_TICK_JUMP_FRAC = 0.12;
 /**
  * Clamp tradable MTM used for exit decisions when Jupiter/PG spikes in one tick (thin-route ghost).
  * Uses prior `lastObservedPriceUsd` (or entry) — call before updating last observed for the tick.
+ *
+ * `allowUpRatchet=false` freezes the upward bound at the prior observed price. Because
+ * `lastObservedPriceUsd` is re-anchored to the clamped value every tick, a per-tick-only cap still
+ * lets a *sustained* phantom-high quote ratchet the mark +{@link WAVE_B_MTM_MAX_TICK_JUMP_FRAC}/tick
+ * up to a false TP even when no sell-probe confirms it (ZEREBRO RCA). Upside that fires TP / arms the
+ * trail must be executable-sell-confirmed; unconfirmed ticks may only hold or fall. Downside is always
+ * allowed (conservative for exits).
  */
-export function clampLiveTrackerMtmForExit(ot: OpenTrade, curMetricUsd: number): number {
+export function clampLiveTrackerMtmForExit(
+  ot: OpenTrade,
+  curMetricUsd: number,
+  allowUpRatchet = true,
+): number {
   if (!(curMetricUsd > 0)) return curMetricUsd;
   const prev =
     ot.lastObservedPriceUsd ??
     (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0);
   if (!(prev > 0)) return curMetricUsd;
-  const maxUp = prev * (1 + WAVE_B_MTM_MAX_TICK_JUMP_FRAC);
+  const maxUp = allowUpRatchet ? prev * (1 + WAVE_B_MTM_MAX_TICK_JUMP_FRAC) : prev;
   const minDown = prev * (1 - WAVE_B_MTM_MAX_TICK_JUMP_FRAC);
   if (curMetricUsd > maxUp) return maxUp;
   if (curMetricUsd < minDown) return minDown;

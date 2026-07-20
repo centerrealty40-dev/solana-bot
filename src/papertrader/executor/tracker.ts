@@ -4241,9 +4241,18 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     const prevObservedPriceUsd =
       ot.lastObservedPriceUsd ??
       (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0);
+    /**
+     * live-oscar: an UP move that fires TP / arms the trail must be executable-sell-confirmed
+     * (`peakMtmUsd > 0`). Without it the mark may not ratchet above the prior observed price, else a
+     * sustained phantom-high quote climbs +12%/tick into a false TP / breakeven exit (ZEREBRO RCA).
+     * Other strategies keep the legacy per-tick clamp.
+     */
+    const allowExitMtmUpRatchet = isLiveOscarTradingStrategyId(cfg.strategyId)
+      ? peakMtmUsd > 0
+      : true;
     let exitMtmForJournal = rawTrackerPriceUsd;
     if (rawTrackerPriceUsd > 0 && (isLiveOscarTradingStrategyId(cfg.strategyId) || isWaveBExitPolicy(ot) || isVariantAExitPolicy(ot))) {
-      const exitMtm = clampLiveTrackerMtmForExit(ot, rawTrackerPriceUsd);
+      const exitMtm = clampLiveTrackerMtmForExit(ot, rawTrackerPriceUsd, allowExitMtmUpRatchet);
       exitMtmForJournal = exitMtm > 0 ? exitMtm : rawTrackerPriceUsd;
       if (exitMtm > 0 && Math.abs(exitMtm - rawTrackerPriceUsd) / Math.max(rawTrackerPriceUsd, 1e-18) > 0.002) {
         log.warn(
