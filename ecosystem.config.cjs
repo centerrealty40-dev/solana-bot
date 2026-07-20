@@ -817,18 +817,23 @@ const PM2_APPS = [
         SHYFT_DEFI_MCAP_ENABLED: '0',
         SHYFT_DEFI_MCAP_TTL_MS: '12000',
         /**
-         * Birdeye REST primary OFF (2026-07): free stack — DexScreener → PG at discovery + liq-watch;
-         * MTM/hot-tick = Jupiter executable. 48h measurement: compare skips, LIQ_DRAIN, PnL vs Birdeye era.
+         * 1.11.614 — Birdeye→DexScreener→PG primary for open-position MTM (reference-first). Both
+         * fresh MTM sources were OFF (Birdeye + Jupiter), leaving stale PG as the only mark → a
+         * 24-min-stale PG froze the mark at avgEntry while the market ran +24% and TP/trail never
+         * armed (Ge87 RCA). A fresh real-aggregator quote is required to advance the peak/TP;
+         * stale PG is dropped (see `resolveLiveOpenPositionMark`). Birdeye self-falls to DexScreener
+         * when the key/tier is insufficient (free-stack still works). TTL == max-stale so a cached
+         * quote reads as fresh for its whole cache life.
          */
-        BIRDEYE_PRIMARY_ENABLED: '0',
+        BIRDEYE_PRIMARY_ENABLED: '1',
         ...BIRDEYE_REST_ENV,
         BIRDEYE_COLLECTOR_ENABLED: '0',
         /** Shared Dex gate + quote cache with collectors (Oscar VPS single egress). */
         ...DEXSCREENER_GATE_ENV,
         ...DEX_QUOTE_CACHE_ENV,
-        BIRDEYE_MARKET_TTL_MS: '30000',
-        /** Telegram Birdeye alerts OFF while primary disabled (no REST quota burn). */
-        BIRDEYE_TELEGRAM_ENABLED: '0',
+        BIRDEYE_MARKET_TTL_MS: '15000',
+        /** Coverage-gap + tier alerts ON — surfaces PG staleness that starves the MTM reference. */
+        BIRDEYE_TELEGRAM_ENABLED: '1',
         BIRDEYE_TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         BIRDEYE_TELEGRAM_TIER_COOLDOWN_MS: '1800000',
         BIRDEYE_TELEGRAM_COVERAGE_GAP_COOLDOWN_MS: '1800000',

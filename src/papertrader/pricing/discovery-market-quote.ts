@@ -182,12 +182,25 @@ export function isDiscoveryQuoteDivergent(
   quote: Pick<DiscoveryMarketQuote, 'source' | 'priceUsd'> | null | undefined,
   pgPriceUsd: number | null | undefined,
   maxDivergencePct: number,
+  opts?: {
+    /** Age of the PG snapshot being compared against. */
+    pgAgeMs?: number | null;
+    /** When PG age exceeds this, PG is no longer a valid anchor → never reject the fresh quote. */
+    pgMaxAgeMs?: number;
+  },
 ): boolean {
   if (quote == null || quote.source === 'pg_snapshot') return false;
   if (!(maxDivergencePct > 0)) return false;
   const q = Number(quote.priceUsd);
   const p = Number(pgPriceUsd);
   if (!Number.isFinite(q) || !Number.isFinite(p) || q <= 0 || p <= 0) return false;
+  // Stale-aware: a stale PG snapshot is not a trustworthy anchor — do not reject a fresh
+  // external quote against it (Ge87 RCA: 24-min-stale PG rejected real +17% DexScreener quotes).
+  const pgAgeMs = opts?.pgAgeMs;
+  const pgMaxAgeMs = opts?.pgMaxAgeMs;
+  if (pgAgeMs != null && pgMaxAgeMs != null && pgMaxAgeMs > 0 && pgAgeMs > pgMaxAgeMs) {
+    return false;
+  }
   return quotePgDivergencePct(q, p) > maxDivergencePct;
 }
 

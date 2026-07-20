@@ -102,6 +102,23 @@
 
 ---
 
+## [1.11.614] — 2026-07-20
+
+**Тег:** `sa-alpha-1.11.614`
+
+### Fix: единый источник цены для MTM открытой позиции — стоп заморозке на протухшем PG (Ge87 RCA)
+
+- **RCA `Ge87Ets…XNxTpump` (Jimothy, live-oscar prod):** позиция висела ~22 ч и **не управлялась** — реальный рынок (DexScreener/meteora) многократно давал +10…+24% над DCA-средней (avgEntry 0.006626, рынок до 0.008197), а трекер держал `peakMcUsd 0.006774` (~+2%), TP/трейл не взводились. Причина архитектурная: у live-oscar **все свежие источники MTM были выключены** (`LIVE_TRACKER_JUPITER_MTM_ENABLED=0`, `BIRDEYE_PRIMARY_ENABLED=0`, Shyft off) → единственной меткой был **PG-снапшот**, протухший на 3–30 мин (median ~24 мин). В PG-only пути `peakMtmUsd` никогда не выставлялся → пик/лестница TP не могли продвинуться. Cross-source divergence-guard дополнительно браковал свежие котировки DexScreener (236×) против протухшего PG-якоря.
+- **Единый принцип (`resolveLiveOpenPositionMark`, `src/live/live-open-position-mark.ts`):** метка = самый свежий доверенный источник. Приоритет: **executable** (Jupiter sell / hot exec-sell) → **fresh aggregator** (Birdeye/DexScreener) → **fresh PG** → **hold** (last observed / anchor). Пик/TP двигают только тиры 1–2 (executable/aggregator) — «сырой»/протухший PG может двигать только **даунсайд** (kill), но никогда не взводит TP (anti-phantom, класс ZEREBRO/FfpUuX). Протухший источник **дропается полностью**: не становится меткой и (см. `isDiscoveryQuoteDivergent`) не бракует более свежую котировку.
+- **Wiring:** `tracker.ts` PG-only путь заменён вызовом резолвера с провенансом источника/возраста (`mtmRefSource`/`mtmRefAgeMs`); `peakMtmUsd` теперь выставляется при `peakEligible`, поэтому TP/трейл работают со свежей ссылкой даже при выключенном Jupiter — комплемент к 1.11.613 (тот требовал sell-подтверждения, но при Jupiter off `peakMtmUsd` был всегда 0 → TP замирал).
+- **Divergence-guard stale-aware:** `isDiscoveryQuoteDivergent` больше не бракует внешнюю котировку, когда PG старше `birdeyeCoverageGapMinMs` (протухший PG — не якорь).
+- **Config:** live-oscar `BIRDEYE_PRIMARY_ENABLED=1` (Birdeye→DexScreener→PG для MTM; авто-фолбэк на DexScreener при нехватке тира), `BIRDEYE_MARKET_TTL_MS=15000` (== max-stale, чтобы кэш-котир читался как свежий весь срок жизни), Birdeye Telegram alerts on. Новый флаг `LIVE_TRACKER_REFERENCE_MAX_STALE_MS` (default 60000).
+- Тесты: `live-open-position-mark` — executable/aggregator peak-eligible; протухший aggregator/PG → hold; свежий PG двигает только даунсайд.
+
+**Откат:** redeploy `1.11.613`; либо `BIRDEYE_PRIMARY_ENABLED=0` (вернёт PG-only MTM) — но это восстановит заморозку на протухшем PG.
+
+---
+
 ## [1.11.613] — 2026-07-20
 
 **Тег:** `sa-alpha-1.11.613`
