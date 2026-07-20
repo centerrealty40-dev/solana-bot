@@ -232,6 +232,10 @@ import { reconcileE2OpenOnTrackerTick } from './live-oscar-e2-open-reconcile.js'
 import { isPaperOscarIdealizedStackStrategyId } from '../paper-oscar-v21.js';
 import { liveFetchBuyQuote } from '../../live/jupiter.js';
 import { resolveLiveExitMtmMark } from '../../live/live-exit-mtm.js';
+import {
+  resolveLiveOpenPositionMark,
+  type LiveMarkReferenceSource,
+} from '../../live/live-open-position-mark.js';
 import { liveTrackerSellProbeUsdPerToken } from '../../live/mtm-jupiter-probe.js';
 import { rejectStalePgSnapshotForMtm } from '../../live/pg-snapshot-mtm.js';
 import {
@@ -3581,6 +3585,9 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
     let snapPx = 0;
     let snapVol5m: number | null = null;
     let snapTsMs: number | null = null;
+    /** Provenance + age of the resolved MTM reference (PG → Birdeye/DexScreener). Drives the unified mark. */
+    let mtmRefSource: LiveMarkReferenceSource = null;
+    let mtmRefAgeMs: number | null = null;
     try {
       const quote = await fetchLatestSnapshotQuote(
         mint,
@@ -3628,6 +3635,10 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
       }
       snapPx = stalePg.snapPx;
       snapTsMs = stalePg.snapTsMs;
+      if (snapPx > 0) {
+        mtmRefSource = 'pg_snapshot';
+        mtmRefAgeMs = stalePg.ageMs;
+      }
     } catch (err) {
       console.warn(`tracker fetch failed for ${mint}: ${(err as Error).message}`);
     }
@@ -3733,6 +3744,15 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         if (mtmQuote.volume5mUsd != null && mtmQuote.volume5mUsd > 0) {
           snapVol5m = mtmQuote.volume5mUsd;
         }
+      }
+      if (mtmQuote.priceUsd != null && mtmQuote.priceUsd > 0) {
+        mtmRefSource = mtmQuote.source;
+        mtmRefAgeMs =
+          mtmQuote.source === 'pg_snapshot'
+            ? mtmQuote.pgSnapshotAgeMs
+            : mtmQuote.quoteTsMs != null
+              ? Math.max(0, Date.now() - mtmQuote.quoteTsMs)
+              : null;
       }
     }
 
@@ -4149,12 +4169,39 @@ export async function trackerTick(args: TrackerArgs): Promise<void> {
         }
       }
     } else if (livePhase4 && liveOscarCfg) {
-      const pgPx =
-        snapPx > 0
-          ? snapPx
-          : ot.lastObservedPriceUsd ??
-            (ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0);
-      if (pgPx > 0) curMetric = pgPx;
+      /**
+       * Unified open-position mark (1.11.614): freshest trusted source drives the mark, and only a
+       * fresh executable / real-aggregator quote may advance the peak / arm TP. A stale PG snapshot
+       * neither becomes the mark nor arms TP — it dropped to `hold` at last observed (Ge87 RCA:
+       * a 24-min-stale PG froze MTM at avgEntry while the market ran +24%, so TP/trail never armed).
+       * The hot exec-sell override below still wins as the executable layer when present.
+       */
+      const mark = resolveLiveOpenPositionMark({
+        executableUsd: null,
+        referenceUsd: snapPx > 0 ? snapPx : null,
+        referenceSource: mtmRefSource,
+        referenceAgeMs: mtmRefAgeMs,
+        referenceMaxStaleMs: liveOscarCfg.liveTrackerReferenceMaxStaleMs,
+        pgMaxAgeMs:
+          liveOscarCfg.liveTrackerPgSnapshotMaxAgeMs ??
+          Math.max(cfg.liveOscarStalePriceWarnMs, 120_000),
+        lastObservedUsd: ot.lastObservedPriceUsd ?? null,
+        anchorUsd: ot.avgEntryMarket > 0 ? ot.avgEntryMarket : ot.avgEntry > 0 ? ot.avgEntry : 0,
+      });
+      if (mark.markUsd > 0) curMetric = mark.markUsd;
+      peakMtmUsd = mark.peakEligible ? mark.markUsd : 0;
+      if (mark.source === 'hold' && mark.reason === 'reference_stale_hold') {
+        log.warn(
+          {
+            mint: mint.slice(0, 8),
+            symbol: ot.symbol,
+            referenceSource: mtmRefSource,
+            referenceAgeMs: mtmRefAgeMs,
+            markUsd: curMetric,
+          },
+          'live tracker: no fresh MTM source — holding mark (stale reference dropped)',
+        );
+      }
     }
 
     /**

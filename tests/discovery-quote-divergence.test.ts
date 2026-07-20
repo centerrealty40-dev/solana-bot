@@ -47,4 +47,23 @@ describe('isDiscoveryQuoteDivergent', () => {
       isDiscoveryQuoteDivergent({ source: 'dexscreener', priceUsd: 0.1 }, 0.2123, 0),
     ).toBe(false);
   });
+
+  it('Ge87 RCA: does NOT reject a fresh quote when PG anchor is stale', () => {
+    // Real +17% DexScreener quote vs a 24-min-stale PG — PG is not a valid anchor.
+    expect(
+      isDiscoveryQuoteDivergent({ source: 'dexscreener', priceUsd: 0.00776 }, 0.006838, 12, {
+        pgAgeMs: 1_440_000,
+        pgMaxAgeMs: 300_000,
+      }),
+    ).toBe(false);
+  });
+
+  it('still rejects a divergent quote when PG anchor is fresh', () => {
+    expect(
+      isDiscoveryQuoteDivergent({ source: 'dexscreener', priceUsd: 0.1686 }, 0.2123, 12, {
+        pgAgeMs: 20_000,
+        pgMaxAgeMs: 300_000,
+      }),
+    ).toBe(true);
+  });
 });

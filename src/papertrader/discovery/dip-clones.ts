@@ -1208,6 +1208,10 @@ export async function runDipDiscovery(cfg: PaperTraderConfig): Promise<Discovery
         birdeyeMarketQuote,
         row.price_usd ?? null,
         cfg.liveOscarQuoteMaxDivergencePct,
+        {
+          pgAgeMs: birdeyeMarketQuote?.pgSnapshotAgeMs ?? null,
+          pgMaxAgeMs: cfg.birdeyeCoverageGapMinMs,
+        },
       );
     if (quoteDiverged && birdeyeMarketQuote) {
       auditRows.push({

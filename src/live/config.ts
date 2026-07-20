@@ -622,6 +622,13 @@ const LiveOscarConfigSchema = z
     liveTrackerPgSnapshotMaxAgeMs: z.coerce.number().int().min(0).max(3_600_000).default(120_000),
 
     /**
+     * Max age (ms) for a real-aggregator MTM quote (Birdeye/DexScreener) to be trusted as the
+     * open-position mark AND advance the peak/TP. Older → dropped to hold (never a stale mark).
+     * Default 60s. See `resolveLiveOpenPositionMark`.
+     */
+    liveTrackerReferenceMaxStaleMs: z.coerce.number().int().min(0).max(3_600_000).default(60_000),
+
+    /**
      * Пауза (мс) между открытыми mint в тике трекера после Jupiter MTM — снижает burst на API.
      * При Jupiter Developer tier (~10 RPS) можно **50–100**; `0` = без паузы.
      */
@@ -1178,6 +1185,12 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
       if (!s) return 120;
       const n = Number.parseInt(s, 10);
       return Number.isFinite(n) && n >= 0 ? Math.min(10_000, n) : 120;
+    })(),
+    liveTrackerReferenceMaxStaleMs: (() => {
+      const s = process.env.LIVE_TRACKER_REFERENCE_MAX_STALE_MS?.trim();
+      if (s === '0') return 0;
+      const n = Number(s);
+      return Number.isFinite(n) && n > 0 ? Math.min(3_600_000, Math.trunc(n)) : 60_000;
     })(),
     liveTrackerJupiterMtmEnabled: envBool(process.env.LIVE_TRACKER_JUPITER_MTM_ENABLED, true),
     liveEntrySplitJupiterProbeEnabled: envBool(
