@@ -140,15 +140,23 @@ export async function putCachedDexQuotes(updates, nowMs = Date.now()) {
   }
 }
 
-function pickBestSolanaPair(pairs, mint) {
-  if (!Array.isArray(pairs) || pairs.length === 0) return null;
-  const relevant = pairs.filter((p) => {
-    if (p?.chainId && p.chainId !== 'solana') return false;
-    const base = p?.baseToken?.address ?? '';
-    const quote = p?.quoteToken?.address ?? '';
-    return base === mint || quote === mint;
-  });
-  const pool = relevant.length > 0 ? relevant : pairs;
+const STABLE_QUOTE_MINTS = new Set([
+  'So11111111111111111111111111111111111111112',
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+]);
+const STABLE_QUOTE_SYMBOLS = new Set(['SOL', 'WSOL', 'USDC', 'USDT', 'USD1', 'USDS']);
+
+function isStableQuote(pair) {
+  const addr = pair?.quoteToken?.address ?? '';
+  if (addr && STABLE_QUOTE_MINTS.has(addr)) return true;
+  const sym = String(pair?.quoteToken?.symbol ?? '')
+    .trim()
+    .toUpperCase();
+  return sym.length > 0 && STABLE_QUOTE_SYMBOLS.has(sym);
+}
+
+function maxLiqPair(pool) {
   let best = null;
   let bestLiq = -1;
   for (const p of pool) {
@@ -159,6 +167,35 @@ function pickBestSolanaPair(pairs, mint) {
     }
   }
   return best;
+}
+
+/** Prefer mint-as-base + stable quotes (SOL/USDC); reject exotic max-liq garbage (TOKEN/MET ≈ $128). */
+function pickBestSolanaPair(pairs, mint, outlierRatio = 3) {
+  if (!Array.isArray(pairs) || pairs.length === 0 || !mint) return null;
+  const solana = pairs.filter((p) => !p?.chainId || p.chainId === 'solana');
+  const asBase = solana.filter((p) => (p?.baseToken?.address ?? '') === mint);
+  const asQuoteOnly =
+    asBase.length === 0 ? solana.filter((p) => (p?.quoteToken?.address ?? '') === mint) : [];
+  let pool = asBase.length > 0 ? asBase : asQuoteOnly.length > 0 ? asQuoteOnly : solana;
+
+  if (asBase.length > 0) {
+    const stable = asBase.filter((p) => isStableQuote(p));
+    if (stable.length > 0) {
+      const bestStable = maxLiqPair(stable);
+      const bestAny = maxLiqPair(asBase);
+      const stablePx = Number(bestStable?.priceUsd);
+      const anyPx = Number(bestAny?.priceUsd);
+      if (bestStable && Number.isFinite(stablePx) && stablePx > 0) {
+        if (!bestAny || bestAny === bestStable || !Number.isFinite(anyPx) || anyPx <= 0 || isStableQuote(bestAny)) {
+          return bestStable;
+        }
+        const ratio = Math.max(anyPx / stablePx, stablePx / anyPx);
+        if (ratio > outlierRatio) return bestStable;
+      }
+      return maxLiqPair(stable) ?? bestStable;
+    }
+  }
+  return maxLiqPair(pool);
 }
 
 export function parseDexPairToCacheEntry(pair, mint, nowMs = Date.now()) {

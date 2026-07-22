@@ -77,6 +77,7 @@ import {
 } from './state.js';
 import { fmtCopyAlert, notifyCopyTraderTelegram } from './telegram.js';
 import { fetchJupiterTokenUsdPrice, getSolUsd, refreshSolPrice } from '../papertrader/pricing.js';
+import { isUsdPriceOutlierVsAnchor } from '../papertrader/pricing/dexscreener-pair-pick.js';
 import {
   closePositionForMint,
   ensurePositionFromWallet,
@@ -202,10 +203,41 @@ function decodeSwapForWallet(tx: TxJsonParsed, wallet: string, solUsd: number): 
   return decodeAllowlistedDexSwapForWallet(tx, wallet, solUsd);
 }
 
-async function resolveCurrentPrice(mint: string, dexPrice: number): Promise<number> {
-  if (dexPrice > 0) return dexPrice;
+/** Max |dex|/|leader| (or inverse) before Dex is treated as garbage (TOKEN/MET ≈ $128 vs fill ≈ $0.028). */
+function copyDexVsLeaderMaxRatio(): number {
+  const n = Number(process.env.COPY_TRADER_DEX_VS_LEADER_MAX_RATIO ?? '2');
+  return Number.isFinite(n) && n > 1 ? n : 2;
+}
+
+/**
+ * Resolve eval/exec spot: prefer Dex, but reject outliers vs leader fill (or Jupiter).
+ * Never leave a pending buy stuck on a single garbage Dex pair forever.
+ */
+async function resolveCurrentPrice(
+  mint: string,
+  dexPrice: number,
+  leaderPriceUsd = 0,
+): Promise<{ priceUsd: number; source: 'dex' | 'jupiter' | 'leader_fill' | 'none'; rejectedDex: boolean }> {
+  const maxRatio = copyDexVsLeaderMaxRatio();
+  const dexOk =
+    dexPrice > 0 &&
+    (!(leaderPriceUsd > 0) || !isUsdPriceOutlierVsAnchor(dexPrice, leaderPriceUsd, maxRatio));
+  if (dexOk) return { priceUsd: dexPrice, source: 'dex', rejectedDex: false };
+
+  const rejectedDex = dexPrice > 0 && leaderPriceUsd > 0;
   const jup = await fetchJupiterTokenUsdPrice(mint);
-  return jup ?? 0;
+  if (
+    jup != null &&
+    jup > 0 &&
+    (!(leaderPriceUsd > 0) || !isUsdPriceOutlierVsAnchor(jup, leaderPriceUsd, maxRatio))
+  ) {
+    return { priceUsd: jup, source: 'jupiter', rejectedDex };
+  }
+  if (leaderPriceUsd > 0) {
+    return { priceUsd: leaderPriceUsd, source: 'leader_fill', rejectedDex };
+  }
+  if (dexPrice > 0) return { priceUsd: dexPrice, source: 'dex', rejectedDex: false };
+  return { priceUsd: jup ?? 0, source: jup != null && jup > 0 ? 'jupiter' : 'none', rejectedDex };
 }
 
 export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderState): Promise<void> {
@@ -933,9 +965,24 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     }
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
-    syncEntryPendingSizing(cfg, pending, dex?.marketCap);
-    let currentPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
-    let entryPriceSource: 'jupiter_quote' | 'dex' | undefined;
+    // Ignore absurd mcap from exotic Dex pairs (same TOKEN/MET garbage that yields ~$128 spot).
+    const dexMcapForSizing =
+      dex?.marketCap &&
+      dex.priceUsd > 0 &&
+      pending.leaderPriceUsd > 0 &&
+      !isUsdPriceOutlierVsAnchor(dex.priceUsd, pending.leaderPriceUsd, copyDexVsLeaderMaxRatio())
+        ? dex.marketCap
+        : undefined;
+    syncEntryPendingSizing(cfg, pending, dexMcapForSizing);
+    const resolved = await resolveCurrentPrice(
+      pending.mint,
+      dex?.priceUsd ?? 0,
+      pending.leaderPriceUsd,
+    );
+    let currentPrice = resolved.priceUsd;
+    let entryPriceSource: 'jupiter_quote' | 'dex' | 'jupiter' | 'leader_fill' | undefined =
+      resolved.source === 'none' ? undefined : resolved.source;
+    const dexRejectedVsLeader = resolved.rejectedDex;
     const isEntryDip = pending.kind === 'entry' && pending.entryLeg === 'dip';
     const isEntryProbe = isEntryProbePending({
       kind: pending.kind,
@@ -1006,7 +1053,9 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           leaderSignature: pending.leaderSignature,
           leaderPriceUsd: pending.leaderPriceUsd,
           currentPriceUsd: currentPrice,
+          dexPriceUsd: dex?.priceUsd ?? null,
           entryDipPriceSource: entryPriceSource ?? null,
+          dexRejectedVsLeader: dexRejectedVsLeader || null,
           eval: evalResult,
           retryUntilTs: pending.retryUntilTs,
         });
@@ -1299,7 +1348,7 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     }
 
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
-    const exitPrice = await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0);
+    const exitPrice = (await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0)).priceUsd;
     if (!pos) {
       if (cfg.sharedOscarWallet) {
         removePendingSellById(state, pending.id);

@@ -102,6 +102,28 @@
 
 ---
 
+## [1.11.615] — 2026-07-22
+
+### Fix: DexScreener max-liq pair can return garbage USD (copy-trader stuck)
+
+RCA (Ge87 / Jimothy): DexScreener's highest-liquidity pair was TOKEN/MET with
+`priceUsd≈128` (and mcap ~$128B). Real SOL/USDC pairs were ~$0.026. Copy-trader
+took that Dex spot, failed `price_too_high` vs leader fill ~$0.028, and deferred
+the mirror buy for hours.
+
+### Changed
+- Shared `pickBestSolanaPairForMint`: prefer mint-as-base + stable quotes
+  (SOL/USDC/USDT/USD1); if exotic max-liq diverges >3× from stable, keep stable.
+- Wired into TS Dex quote cache, discovery quote, awakening dex pair, and
+  `scripts-tmp/dexscreener-quote-cache.mjs`.
+- Copy-trader: reject Dex outliers vs leader fill (>2×), fall back to Jupiter then
+  leader fill; ignore absurd Dex mcap for entry sizing.
+
+### Rollback
+- Revert this commit; `pm2 reload ecosystem.config.cjs --update-env --only copy-trader`.
+
+---
+
 ## [1.11.614] — 2026-07-20
 
 **Тег:** `sa-alpha-1.11.614`

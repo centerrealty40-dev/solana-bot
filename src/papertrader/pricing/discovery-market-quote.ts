@@ -17,6 +17,7 @@ import {
   fetchDexScreenerQuoteViaCache,
   isDexQuoteCacheEnabled,
 } from './dexscreener-quote-cache.js';
+import { pickBestSolanaPairForMint } from './dexscreener-pair-pick.js';
 
 export type DiscoveryQuoteSource = 'birdeye' | 'dexscreener' | 'pg_snapshot';
 
@@ -233,26 +234,7 @@ export function __resetDexScreenerMarketCacheForTests(): void {
 }
 
 function pickBestSolanaPair(pairs: unknown[], mint: string): Record<string, unknown> | null {
-  if (!Array.isArray(pairs) || pairs.length === 0) return null;
-  const relevant = pairs.filter((p) => {
-    const row = p as { chainId?: string; baseToken?: { address?: string }; quoteToken?: { address?: string } };
-    if (row.chainId && row.chainId !== 'solana') return false;
-    const base = row.baseToken?.address ?? '';
-    const quote = row.quoteToken?.address ?? '';
-    return base === mint || quote === mint;
-  });
-  const pool = relevant.length > 0 ? relevant : pairs;
-  let best: Record<string, unknown> | null = null;
-  let bestLiq = -1;
-  for (const p of pool) {
-    const row = p as { liquidity?: { usd?: number } };
-    const liq = Number(row.liquidity?.usd ?? 0);
-    if (liq > bestLiq) {
-      bestLiq = liq;
-      best = p as Record<string, unknown>;
-    }
-  }
-  return best;
+  return pickBestSolanaPairForMint(pairs, mint);
 }
 
 export function parseDexScreenerPair(pair: Record<string, unknown>): DexScreenerMarketSnapshot {
