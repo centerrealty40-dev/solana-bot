@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { DexScreenerMarketSnapshot } from './discovery-market-quote.js';
+import { pickBestSolanaPairForMint } from './dexscreener-pair-pick.js';
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
 
@@ -209,34 +210,7 @@ function pickBestSolanaPair(
   mint: string,
   preferredDex?: string,
 ): Record<string, unknown> | null {
-  if (!Array.isArray(pairs) || pairs.length === 0) return null;
-  const relevant = pairs.filter((p) => {
-    const row = p as { chainId?: string; baseToken?: { address?: string }; quoteToken?: { address?: string } };
-    if (row.chainId && row.chainId !== 'solana') return false;
-    const base = row.baseToken?.address ?? '';
-    const quote = row.quoteToken?.address ?? '';
-    return base === mint || quote === mint;
-  });
-  let pool = relevant.length > 0 ? relevant : pairs;
-  const dexNeedle = preferredDex?.trim().toLowerCase();
-  if (dexNeedle) {
-    const dexPool = pool.filter((p) => {
-      const dexId = String((p as { dexId?: string }).dexId ?? '').toLowerCase();
-      return dexId.includes(dexNeedle);
-    });
-    if (dexPool.length > 0) pool = dexPool;
-  }
-  let best: Record<string, unknown> | null = null;
-  let bestLiq = -1;
-  for (const p of pool) {
-    const row = p as { liquidity?: { usd?: number } };
-    const liq = Number(row.liquidity?.usd ?? 0);
-    if (liq > bestLiq) {
-      bestLiq = liq;
-      best = p as Record<string, unknown>;
-    }
-  }
-  return best;
+  return pickBestSolanaPairForMint(pairs, mint, { preferredDex });
 }
 
 function parsePairToCacheEntry(pair: Record<string, unknown> | null, mint: string, nowMs: number): CacheEntry {

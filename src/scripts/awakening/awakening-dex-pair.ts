@@ -1,5 +1,6 @@
 import { fetch } from 'undici';
 import { fetchDexScreenerQuoteViaCache } from '../../papertrader/pricing/dexscreener-quote-cache.js';
+import { pickBestSolanaPairForMint } from '../../papertrader/pricing/dexscreener-pair-pick.js';
 import type { AwakeningDexMarket } from './awakening-types.js';
 
 const SOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -15,26 +16,7 @@ function num(v: unknown): number | null {
 }
 
 function pickBestSolanaPair(pairs: unknown[], mint: string): Record<string, unknown> | null {
-  if (!Array.isArray(pairs) || pairs.length === 0) return null;
-  const relevant = pairs.filter((p) => {
-    const row = p as { chainId?: string; baseToken?: { address?: string }; quoteToken?: { address?: string } };
-    if (row.chainId && row.chainId !== 'solana') return false;
-    const base = row.baseToken?.address ?? '';
-    const quote = row.quoteToken?.address ?? '';
-    return base === mint || quote === mint;
-  });
-  const pool = relevant.length > 0 ? relevant : pairs;
-  let best: Record<string, unknown> | null = null;
-  let bestLiq = -1;
-  for (const p of pool) {
-    const row = p as { liquidity?: { usd?: number } };
-    const liq = Number(row.liquidity?.usd ?? 0);
-    if (liq > bestLiq) {
-      bestLiq = liq;
-      best = p as Record<string, unknown>;
-    }
-  }
-  return best;
+  return pickBestSolanaPairForMint(pairs, mint);
 }
 
 function pairToMarket(mint: string, pair: Record<string, unknown> | null, fetchedAtMs: number): AwakeningDexMarket | null {
