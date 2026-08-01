@@ -22,10 +22,12 @@ export function shouldSkipCopyLeaderExitAdopt(args: {
   const mint = args.mint.trim();
   if (!mint) return 'empty_mint';
 
-  if (isOscarHandoffClosedMint(mint)) return 'oscar_handoff_closed_session';
-
   const attr = readCopyLeaderMintAttribution(mint, args.statePath);
   if (!attr?.oscarPromotedAt) return 'not_promoted';
+
+  if (isOscarHandoffClosedMint(mint, { promotedAt: attr.oscarPromotedAt })) {
+    return 'oscar_handoff_closed_session';
+  }
 
   if (args.chainRaw != null && args.chainRaw <= COPY_HANDOFF_WALLET_DUST_RAW) {
     return 'wallet_spl_zero';

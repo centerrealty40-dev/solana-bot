@@ -112,7 +112,29 @@ export type CopyLeaderExitAdoptResult = {
   skippedAlreadyOpen: string[];
   skippedHandoffClosed: string[];
   skippedBelowMcap: string[];
+  /**
+   * Rate-limited `mint → reason` for skips worth surfacing: copy-trader has already stopped
+   * mirror-selling these, so a silent skip leaves the position unmanaged on both sides.
+   */
+  reportableSkips: Array<{ mint: string; reason: string }>;
 };
+
+/** Re-report an unchanged adopt skip at most this often, so the journal does not fill up. */
+const ADOPT_SKIP_REPORT_INTERVAL_MS = 15 * 60_000;
+
+const adoptSkipReported = new Map<string, { reason: string; ts: number }>();
+
+/** Reset skip-report throttle (tests). */
+export function resetCopyLeaderAdoptSkipReportCache(): void {
+  adoptSkipReported.clear();
+}
+
+function shouldReportAdoptSkip(mint: string, reason: string, now = Date.now()): boolean {
+  const prev = adoptSkipReported.get(mint);
+  if (prev && prev.reason === reason && now - prev.ts < ADOPT_SKIP_REPORT_INTERVAL_MS) return false;
+  adoptSkipReported.set(mint, { reason, ts: now });
+  return true;
+}
 
 function copyLeaderLiveStagedEntryActive(cfg: PaperTraderConfig): boolean {
   return isLiveOscarTradingStrategyId(cfg.strategyId) && cfg.liveStagedEntryEnabled;
@@ -416,20 +438,21 @@ export async function adoptCopyLeaderExitOpens(args: {
   const skippedAlreadyOpen: string[] = [];
   const skippedHandoffClosed: string[] = [];
   const skippedBelowMcap: string[] = [];
+  const reportableSkips: Array<{ mint: string; reason: string }> = [];
   if (!copyLeaderExitAdoptEnabled()) {
-    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap, reportableSkips };
   }
 
   const fp = args.statePath ?? copyLeaderStatePathFromEnv();
   if (!fp) {
-    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap, reportableSkips };
   }
 
   let parsed: { positions?: Record<string, Record<string, unknown>> };
   try {
     parsed = JSON.parse(fs.readFileSync(fp, 'utf8')) as typeof parsed;
   } catch {
-    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+    return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap, reportableSkips };
   }
 
   const resolveMcapUsd =
@@ -474,6 +497,13 @@ export async function adoptCopyLeaderExitOpens(args: {
     });
     if (skipReason) {
       skippedHandoffClosed.push(mint);
+      /**
+       * `wallet_spl_zero` means the leg is genuinely gone — everything else leaves tokens
+       * on a wallet that copy-trader no longer sells for.
+       */
+      if (skipReason !== 'wallet_spl_zero' && shouldReportAdoptSkip(mint, skipReason)) {
+        reportableSkips.push({ mint, reason: skipReason });
+      }
       continue;
     }
 
@@ -524,5 +554,5 @@ export async function adoptCopyLeaderExitOpens(args: {
 
   reconcileCopyLeaderAdoptStagedEntryPlans(args.open, args.paperCfg, args.journalLiveStrategy);
 
-  return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap };
+  return { adopted, skippedAlreadyOpen, skippedHandoffClosed, skippedBelowMcap, reportableSkips };
 }

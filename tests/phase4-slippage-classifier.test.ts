@@ -24,6 +24,20 @@ describe('isSlippageClassSimError', () => {
     ).toBe(true);
   });
 
+  /**
+   * `simulateTransaction` reports the code in decimal, not hex. These are the verbatim strings
+   * observed in `pt1-oscar-live.jsonl`; before 1.11.610 none of them escalated slippage.
+   */
+  it('matches decimal Custom:6001 from simulateTransaction', () => {
+    expect(isSlippageClassSimError('{"InstructionError":[3,{"Custom":6001}]}')).toBe(true);
+    expect(isSlippageClassSimError('sim_failed:{"InstructionError":[5,{"Custom":6001}]}')).toBe(true);
+    expect(
+      isSlippageClassSimError(
+        'rpc_error:Transaction simulation failed:{"InstructionError":[3,{"Custom":6001}]}',
+      ),
+    ).toBe(true);
+  });
+
   it('matches Jupiter v6 0x1771 SlippageToleranceExceeded', () => {
     expect(
       isSlippageClassSimError(
@@ -48,6 +62,12 @@ describe('isSlippageClassSimError', () => {
   it('does NOT match non-slippage Jupiter errors', () => {
     expect(
       isSlippageClassSimError('sim_failed:{"InstructionError":[0,{"Custom":6010}]}'),
+    ).toBe(false);
+    expect(
+      isSlippageClassSimError('sim_failed:{"InstructionError":[0,{"Custom":60011}]}'),
+    ).toBe(false);
+    expect(
+      isSlippageClassSimError('sim_failed:{"InstructionError":[0,{"Custom":6024}]}'),
     ).toBe(false);
     expect(isSlippageClassSimError('sim_failed:InsufficientFundsForRent')).toBe(false);
     expect(isSlippageClassSimError('chain_err:AccountNotFound')).toBe(false);

@@ -102,6 +102,51 @@
 
 ---
 
+## [1.11.616] — 2026-08-01
+
+### Fix: copy-handoff позиция без владельца выхода (Ai66LHZG RCA) + классификация sim-ошибок
+
+- **RCA `Ai66LHZG…yq5ppump`:** позиция на $900 висела шесть суток с +54% и не управлялась
+  никем. Copy-trader купил монету, поставил `oscarPromotedAt` и по контракту перестал
+  зеркалить продажи лидера (11 событий `oscar_promoted_handoff`, последнее — на продаже
+  лидера через шесть дней). Оскар усыновить позицию отказался. Причина —
+  `isOscarHandoffClosedMint`: `Set` в памяти процесса, куда монета попадала при любом
+  закрытии handoff-ноги и откуда **никогда** не удалялась. Оскар закрыл первую ногу той же
+  монеты по TP в 20:32; повторная покупка в 21:35 для него навсегда осталась «уже закрытой».
+  В том же состоянии оказались `6NwarBvD`, `Ge87Etsj`, `9Pfync3e` — суммарно $5 400 вложений
+  без владельца выхода.
+- **`copy-leader-attribution.ts`:** кэш стал `Map<mint, closedAt>`; `isOscarHandoffClosedMint`
+  сравнивает время закрытия с `oscarPromotedAt` и пропускает **новую** передачу после
+  закрытия. Логика повторяет уже корректную проверку по `closedTrades`.
+  `finalizeCopyLeaderOscarHandoffClose` пробрасывает `closedAt` в кэш.
+- **`copy-oscar-handoff-lifecycle.ts`:** порядок проверок — сначала читаем строку состояния,
+  затем сверяем кэш с известным `promotedAt` (без второго чтения файла).
+- **Наблюдаемость:** `adoptCopyLeaderExitOpens` возвращает `reportableSkips`
+  (rate-limit 15 мин на минт), `src/live/main.ts` пишет `log.warn` + событие
+  `copy_leader_adopt_skipped`. Раньше отказ не попадал ни в лог, ни в журнал — поэтому
+  проблему не видели шесть суток.
+- **`core/rpc/qn-client.ts`:** JSON-RPC ошибка больше не теряет `error.data.err`. Все
+  176 отказов исполнения в журнале выглядели как одинаковый `rpc_error:Transaction
+  simulation failed`; теперь причина (`{"InstructionError":[3,{"Custom":6001}]}`) доходит до
+  классификаторов.
+- **`phase4-execution.ts` — slippage:** `isSlippageClassSimError` понимает десятичный
+  `"Custom":6001` (Jupiter v6 `SlippageToleranceExceeded`), а не только hex `0x1771`.
+  Лестница эскалации slippage на таких отказах раньше не запускалась вообще.
+- **`phase4-execution.ts` — afford gate:** проверка баланса SOL по оценке SOL/USD теперь идёт
+  **до** котировки Jupiter. За 16 дней 4 270 покупок отменялось уже после оплаченной
+  котировки и сборки swap-транзакции. Короткое замыкание только на достоверном
+  `insufficient_wallet_sol`; ошибка RPC проваливается в прежний пост-котировочный гейт.
+- **`replay-strategy-journal.ts`:** окно декодирования ограничено `JOURNAL_MAX_DECODE_BYTES`
+  (256 МБ). При `LIVE_SLIPPAGE_MAX_JOURNAL_BYTES` выше лимита строки V8 штатный отчёт по
+  slippage падал с `ERR_STRING_TOO_LONG` на журнале 2,57 ГБ; теперь завышенный лимит
+  деградирует до более короткого хвоста.
+- Тесты: повторное усыновление после закрытия, отчётность об отказе,
+  decimal `Custom:6001`, ограничение окна чтения журнала.
+
+**Откат:** redeploy `1.11.615`.
+
+---
+
 ## [1.11.615] — 2026-07-22
 
 ### Fix: DexScreener max-liq pair can return garbage USD (copy-trader stuck)

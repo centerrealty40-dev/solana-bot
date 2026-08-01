@@ -53,8 +53,21 @@ type JsonRpcResp = {
   jsonrpc?: string;
   id?: number | string;
   result?: unknown;
-  error?: { code?: number; message?: string };
+  error?: { code?: number; message?: string; data?: { err?: unknown } };
 };
+
+/**
+ * `simulateTransaction` returns `error.message = "Transaction simulation failed"` and puts the
+ * real cause in `error.data.err` (e.g. `{"InstructionError":[3,{"Custom":6001}]}`). Dropping it
+ * makes every on-chain rejection look identical and defeats retry classification downstream.
+ */
+function jsonRpcErrorMessage(err: NonNullable<JsonRpcResp['error']>): string {
+  const base = typeof err.message === 'string' ? err.message : JSON.stringify(err);
+  const detail = err.data?.err;
+  if (detail == null) return base;
+  const encoded = typeof detail === 'string' ? detail : JSON.stringify(detail);
+  return `${base}:${encoded}`.slice(0, 500);
+}
 
 function resolveRpcUrl(httpUrlOverride?: string): string {
   return resolveSolanaRpcUrl({ httpUrlOverride });
@@ -152,7 +165,7 @@ async function postJsonRpc<T>(
       return {
         ok: false,
         reason: 'rpc_error',
-        message: typeof j.error.message === 'string' ? j.error.message : JSON.stringify(j.error),
+        message: jsonRpcErrorMessage(j.error),
       };
     }
     return { ok: true, value: j.result as T };
@@ -295,7 +308,7 @@ export async function qnBatchCall<T>(
         return {
           ok: false,
           reason: 'rpc_error',
-          message: typeof j.error.message === 'string' ? j.error.message : JSON.stringify(j.error),
+          message: jsonRpcErrorMessage(j.error),
         };
       }
       out.push(j?.result as T);

@@ -5,7 +5,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { adoptCopyLeaderExitOpens } from '../../src/live/copy-leader-exit-adopt.js';
+import {
+  adoptCopyLeaderExitOpens,
+  resetCopyLeaderAdoptSkipReportCache,
+} from '../../src/live/copy-leader-exit-adopt.js';
 import {
   finalizeCopyLeaderOscarHandoffClose,
   readCopyLeaderMintAttribution,
@@ -25,6 +28,7 @@ describe('copy-leader handoff ghost heal (DdPrHY)', () => {
 
   afterEach(() => {
     resetOscarHandoffClosedMintCache();
+    resetCopyLeaderAdoptSkipReportCache();
     for (const f of tmpFiles) {
       try {
         fs.unlinkSync(f);
@@ -138,6 +142,90 @@ describe('copy-leader handoff ghost heal (DdPrHY)', () => {
       chainRaw: 0n,
     });
     expect(skip).toBe('wallet_spl_zero');
+  });
+
+  /**
+   * Ai66LHZG RCA — Oscar closed the first handoff leg, then copy-trader bought the same mint
+   * again an hour later. The session cache used to block the re-adopt forever while copy-trader
+   * kept ignoring leader sells, leaving the position with no exit owner for six days.
+   */
+  it('re-adopts when copy-trader promotes a NEW position after an Oscar close', async () => {
+    const firstPromotedAt = Date.now() - 3 * 3_600_000;
+    const statePath = writeCopyState(DDPRHY_MINT, firstPromotedAt);
+
+    finalizeCopyLeaderOscarHandoffClose({
+      mint: DDPRHY_MINT,
+      statePath,
+      closedAt: firstPromotedAt + 300_000,
+    });
+    expect(readCopyLeaderMintAttribution(DDPRHY_MINT, statePath)).toBeNull();
+
+    const rePromotedAt = firstPromotedAt + 3_600_000;
+    const rebought = writeCopyState(DDPRHY_MINT, rePromotedAt);
+
+    expect(
+      shouldSkipCopyLeaderExitAdopt({
+        mint: DDPRHY_MINT,
+        statePath: rebought,
+        chainRaw: 108_876_000_000n,
+      }),
+    ).toBeNull();
+
+    const open = new Map<string, OpenTrade>();
+    const r = await adoptCopyLeaderExitOpens({
+      open,
+      paperCfg: loadPaperTraderConfig(),
+      statePath: rebought,
+      chainMap: new Map<string, bigint>([[DDPRHY_MINT, 108_876_000_000n]]),
+      resolveMcapUsd: async () => 8_000_000,
+    });
+
+    expect(r.adopted).toEqual([DDPRHY_MINT]);
+    expect(open.get(DDPRHY_MINT)?.copyToOscarPromoted).toBe(true);
+  });
+
+  it('still skips a re-read of the same closed position (no new promotion)', () => {
+    const promotedAt = Date.now() - 3_600_000;
+    const statePath = writeCopyState(DDPRHY_MINT, promotedAt);
+
+    finalizeCopyLeaderOscarHandoffClose({
+      mint: DDPRHY_MINT,
+      statePath,
+      closedAt: promotedAt + 60_000,
+    });
+
+    const stale = writeCopyState(DDPRHY_MINT, promotedAt);
+    expect(
+      shouldSkipCopyLeaderExitAdopt({
+        mint: DDPRHY_MINT,
+        statePath: stale,
+        chainRaw: 5_000n,
+      }),
+    ).toBe('oscar_handoff_closed_session');
+  });
+
+  it('reports the skip so an unmanaged position cannot stay silent', async () => {
+    const promotedAt = Date.now() - 3_600_000;
+    const statePath = writeCopyState(DDPRHY_MINT, promotedAt);
+    finalizeCopyLeaderOscarHandoffClose({
+      mint: DDPRHY_MINT,
+      statePath,
+      closedAt: promotedAt + 60_000,
+    });
+
+    const stale = writeCopyState(DDPRHY_MINT, promotedAt);
+    const r = await adoptCopyLeaderExitOpens({
+      open: new Map<string, OpenTrade>(),
+      paperCfg: loadPaperTraderConfig(),
+      statePath: stale,
+      chainMap: new Map<string, bigint>([[DDPRHY_MINT, 5_000n]]),
+      resolveMcapUsd: async () => 8_000_000,
+    });
+
+    expect(r.adopted).toEqual([]);
+    expect(r.reportableSkips).toEqual([
+      { mint: DDPRHY_MINT, reason: 'oscar_handoff_closed_session' },
+    ]);
   });
 
   it('skips adopt when mint already closed after handoff promotion', () => {
