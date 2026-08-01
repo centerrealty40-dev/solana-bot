@@ -24,10 +24,6 @@ function lineMatchesChannel(row: Record<string, unknown>): boolean {
 
 function readJournalLines(storePath: string, maxFileBytes: number): { lines: string[]; truncated: boolean } {
   if (!storePath?.trim() || !fs.existsSync(storePath)) return { lines: [], truncated: false };
-  const st = fs.statSync(storePath);
-  if (st.size <= maxFileBytes) {
-    return { lines: fs.readFileSync(storePath, 'utf-8').split('\n').filter((l) => l.trim().length > 0), truncated: false };
-  }
   const { lines, truncated } = readLiveJournalLinesBounded(storePath, maxFileBytes);
   return { lines: lines.filter((l) => l.trim().length > 0), truncated };
 }

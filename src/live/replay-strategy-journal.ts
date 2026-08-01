@@ -34,6 +34,13 @@ export function readLiveJournalLinesBounded(
 }
 
 /**
+ * V8 refuses to build a single string much beyond 512 MB (`ERR_STRING_TOO_LONG`), and the split
+ * into lines needs room for a second copy. Decode windows are clamped to this regardless of the
+ * caller's `maxFileBytes`, so an oversized limit degrades to a shorter tail instead of throwing.
+ */
+export const JOURNAL_MAX_DECODE_BYTES = 256 * 1024 * 1024;
+
+/**
  * Stream journal lines without retaining the full file in memory.
  * When the file exceeds `maxFileBytes`, only the trailing chunk is scanned.
  */
@@ -44,7 +51,8 @@ export function iterateBoundedJournalLines(
 ): { truncated: boolean } {
   const stat = fs.statSync(storePath);
   const sz = stat.size;
-  if (sz <= maxFileBytes) {
+  const decodeCap = Math.max(0, Math.min(maxFileBytes, JOURNAL_MAX_DECODE_BYTES));
+  if (sz <= decodeCap) {
     const lines = fs.readFileSync(storePath, 'utf-8').split('\n');
     for (let lineIdx = 0; lineIdx < lines.length; lineIdx++) {
       onLine(lines[lineIdx]!, lineIdx);
@@ -54,7 +62,7 @@ export function iterateBoundedJournalLines(
 
   const fd = fs.openSync(storePath, 'r');
   try {
-    const readLen = Math.min(maxFileBytes, sz);
+    const readLen = Math.min(decodeCap, sz);
     const start = sz - readLen;
     const buf = Buffer.alloc(readLen);
     fs.readSync(fd, buf, 0, readLen, start);

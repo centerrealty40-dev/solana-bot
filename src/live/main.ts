@@ -704,6 +704,21 @@ export async function main(): Promise<void> {
           'live-oscar skipped copy-leader adopt (mcap below threshold or unknown)',
         );
       }
+      /**
+       * Copy-trader stops mirror sells once it sets `oscarPromotedAt`. A skip here therefore
+       * leaves a funded position with no exit owner — it must never be silent.
+       */
+      for (const skip of r.reportableSkips) {
+        log.warn(
+          { mint: skip.mint.slice(0, 8), reason: skip.reason },
+          'live-oscar declined copy-leader adopt — position has no exit owner',
+        );
+        appendLiveJsonlEvent({
+          kind: 'copy_leader_adopt_skipped',
+          mint: skip.mint,
+          reason: skip.reason,
+        });
+      }
     },
     onMintFullClose: (mint, openTrade) => {
       const cleared = onOscarFullCloseCopyHandoffMint({

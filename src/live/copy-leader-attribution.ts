@@ -106,21 +106,46 @@ export function isCopyLeaderPromotedToOscar(mint: string, statePath?: string): b
 }
 
 /** Mark copy position Oscar-managed so copy-trader stops proportional mirror sells. */
-/** Session cache: Oscar already closed this handoff mint (avoid re-adopt before disk sync). */
-const oscarHandoffClosedMints = new Set<string>();
+/** Session cache: mint → ts of the Oscar close, so re-adopt is skipped before disk sync. */
+const oscarHandoffClosedAtByMint = new Map<string, number>();
 
-export function registerOscarHandoffClosedMint(mint: string): void {
+export function registerOscarHandoffClosedMint(mint: string, closedAt?: number): void {
   const key = mint.trim();
-  if (key) oscarHandoffClosedMints.add(key);
+  if (!key) return;
+  const ts = typeof closedAt === 'number' && closedAt > 0 ? closedAt : Date.now();
+  const prev = oscarHandoffClosedAtByMint.get(key);
+  if (prev == null || ts > prev) oscarHandoffClosedAtByMint.set(key, ts);
 }
 
-export function isOscarHandoffClosedMint(mint: string): boolean {
-  return oscarHandoffClosedMints.has(mint.trim());
+export function oscarHandoffClosedAtMs(mint: string): number | null {
+  return oscarHandoffClosedAtByMint.get(mint.trim()) ?? null;
+}
+
+/**
+ * True when Oscar closed this handoff mint and copy-trader has not promoted a *newer*
+ * position since. Copy-trader stops mirror sells the moment it sets `oscarPromotedAt`,
+ * so a re-entry that stays blocked here would be managed by nobody at all.
+ *
+ * Pass `promotedAt` when the caller already read the state row — otherwise the state file
+ * is consulted, but only for mints that are actually in the cache.
+ */
+export function isOscarHandoffClosedMint(
+  mint: string,
+  opts?: { statePath?: string; promotedAt?: number },
+): boolean {
+  const key = mint.trim();
+  if (!key) return false;
+  const closedAt = oscarHandoffClosedAtByMint.get(key);
+  if (closedAt == null) return false;
+  const promotedAt =
+    opts?.promotedAt ?? readCopyLeaderMintAttribution(key, opts?.statePath)?.oscarPromotedAt;
+  if (typeof promotedAt === 'number' && promotedAt > closedAt) return false;
+  return true;
 }
 
 /** Reset session cache (tests). */
 export function resetOscarHandoffClosedMintCache(): void {
-  oscarHandoffClosedMints.clear();
+  oscarHandoffClosedAtByMint.clear();
 }
 
 /**
@@ -136,7 +161,7 @@ export function finalizeCopyLeaderOscarHandoffClose(args: {
   const key = args.mint.trim();
   if (!fp || !key) return false;
 
-  registerOscarHandoffClosedMint(key);
+  registerOscarHandoffClosedMint(key, args.closedAt);
 
   let parsed: CopyStateFile;
   try {

@@ -51,6 +51,7 @@ import {
 } from './reconcile-live.js';
 import {
   isInsufficientFundsSimError,
+  liveWalletCanAffordBuyUsd,
   liveWalletCanAffordLamports,
   freshSolUsdForBuyGate,
   resolveBuyAffordRequiredLamports,
@@ -199,7 +200,8 @@ function pipelineAnchorMode(liveCfg: LiveOscarConfig): LiveBuyPipelineResult['an
  *
  * Сюда попадают ошибки, которые повторами с тем же slippageBps НЕ исправить:
  *   - `"Custom":1` в `InstructionError` (Jupiter swap-инструкция: маршрут вернул slippage/cl-pool error);
- *   - `0x1771` = 6001 = Jupiter v6 `SlippageToleranceExceeded`;
+ *   - `6001` = Jupiter v6 `SlippageToleranceExceeded` — и в hex (`0x1771`), и в decimal
+ *     (`{"InstructionError":[3,{"Custom":6001}]}`, как отдаёт `simulateTransaction`);
  *   - явный текст `Slippage` / `Slippage tolerance exceeded` (на случай альтернативного формата).
  *
  * Когда ловим такую — поднимаем slippageBps на следующий retry (adaptive bump для Jupiter Pro)
@@ -217,6 +219,8 @@ export function isSlippageClassSimError(message: string): boolean {
   if (m.includes('slippage')) return true;
   if (m.includes('0x1771')) return true;
   if (m.includes('"custom":1}') || m.includes('"custom": 1}')) return true;
+  /** Decimal form of 6001 as emitted by `simulateTransaction` / `sendTransaction` errors. */
+  if (/"custom"\s*:\s*6001\b/.test(m)) return true;
   return false;
 }
 
@@ -519,6 +523,63 @@ async function runSolToTokenPipeline(
       return failure('other', 'other', 'buy_sol_usd_stale');
     }
     const solUsd = freshSol.price;
+
+    /**
+     * Pre-quote afford gate. The authoritative check below uses Jupiter `inAmount`, but running it
+     * only after the quote means every unaffordable buy still pays for a quote plus a swap build.
+     * A cheap `getBalance` against the SOL/USD estimate skips those before we spend the call.
+     * Only a definitive `insufficient_wallet_sol` short-circuits — an RPC failure falls through
+     * to the post-quote gate rather than blocking trading.
+     */
+    if (liveCfg.executionMode === 'live') {
+      const preAfford = await liveWalletCanAffordBuyUsd(liveCfg, effectiveNotional, solUsd);
+      if (!preAfford.ok && preAfford.reason === 'insufficient_wallet_sol' && preAfford.lamports != null) {
+        const partial =
+          liveCfg.livePartialBuyMinUsd > 0
+            ? resolvePartialBuyNotional({
+                plannedUsd: effectiveNotional,
+                walletLamports: preAfford.lamports,
+                bufferLamports: liveCfg.liveFreeSolBufferLamports,
+                solUsd,
+                minUsd: liveCfg.livePartialBuyMinUsd,
+              })
+            : null;
+        if (partial?.ok) {
+          appendLiveJsonlEvent({
+            kind: 'partial_slice_due_to_wallet',
+            mint: args.mint,
+            intentKind: args.intentKind,
+            plannedUsd: args.usdNotional,
+            priorEffectiveUsd: effectiveNotional,
+            partialUsd: partial.usdNotional,
+            maxAffordableUsd: partial.maxAffordableUsd,
+            walletLamports: String(preAfford.lamports),
+            bufferLamports: liveCfg.liveFreeSolBufferLamports,
+            solUsdUsed: solUsd,
+            preQuote: true,
+          });
+          effectiveNotional = partial.usdNotional;
+          continue;
+        }
+        appendLiveJsonlEvent({
+          kind: 'execution_skip',
+          reason: 'insufficient_wallet_sol_for_buy',
+          detail: JSON.stringify({
+            mint: args.mint.slice(0, 12),
+            lamports: String(preAfford.lamports),
+            requiredLamports:
+              preAfford.requiredLamports != null ? String(preAfford.requiredLamports) : null,
+            intendedUsd: effectiveNotional,
+            plannedUsd: args.usdNotional,
+            maxAffordableUsd: partial?.maxAffordableUsd ?? null,
+            solUsdUsed: solUsd,
+            affordSource: 'pre_quote_estimate',
+          }).slice(0, 500),
+        });
+        return failure('other', 'insufficient_funds', 'insufficient_wallet_sol_for_buy');
+      }
+    }
+
     const intentId = newLiveIntentId();
     const prep = await liveBuyQuoteAndPrepareSnapshot({
       cfg: liveCfg,
