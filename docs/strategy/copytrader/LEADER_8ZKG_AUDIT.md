@@ -279,6 +279,103 @@ This was prompted by the live funnel: 1 of 45 leader buys cleared the gates in
 the two hours after the exit change, with prior-avg rejections clustered at
 +2.9…+4.8%, just under the old bar.
 
+**Superseded the same day.** The prior-record gate does not survive a proper
+measurement — see below.
+
+## Market structure, measured properly (2026-08-02)
+
+Everything above shares a flaw. The entry price came from a snapshot picked by
+one rule while the exit path came from another, so any feature computed off
+that same snapshot — the 5m chase in particular — was partly measuring its own
+entry price. And the return was never checked against what the leader actually
+realised.
+
+Rebuilt from the bottom:
+
+- **Entry and exit read off the same per-minute path.** Our fill is the first
+  path point after his buy, which also prices in the ~30s of entry lag instead
+  of pretending we get his fill.
+- **Calibration.** Snapshot price against his on-chain fill: median ratio 1.001,
+  so the feed is unbiased. Simulated gross on his exits reproduces his realised
+  PnL (+2.2% median against his +2.12%), which means the harness is sound.
+- **Returns winsorized to −95…+200%.** A handful of 100x tails should not pick
+  a threshold.
+- **Three time folds** over 3 624 sessions in a 30-day window, so every number
+  below is reported on data the threshold never saw.
+
+The headline is uncomfortable: copied blind, this leader is **−0.89% per trade**
+after cost, against his own **+2.08%**. Entry lag (~1.2%) plus the 2.5% round
+trip is his entire edge. Selection has to pay for both before it pays us.
+
+Rank correlation with our realised return, in each half of the window:
+
+| Feature | First half | Second half | Replicates |
+| --- | --- | --- | --- |
+| trades in 5m | +0.116 | +0.061 | yes |
+| 5m volume | +0.100 | +0.058 | yes |
+| our clip / 5m volume | −0.098 | −0.058 | yes |
+| **5m volume / liquidity** | **+0.084** | **+0.067** | **yes** |
+| pair age | −0.080 | −0.066 | yes |
+| 1h volume / liquidity | +0.085 | +0.056 | yes |
+| **1h volume / market cap** | **+0.066** | **+0.069** | **yes** |
+| leader's prior avg on mint | +0.048 | +0.005 | no |
+| 5m chase | −0.034 | −0.017 | no |
+| market cap | +0.037 | −0.059 | sign flips |
+| liquidity | +0.053 | −0.054 | sign flips |
+| leader's prior sessions | −0.032 | −0.059 | wrong direction |
+
+Every feature that replicates is the same idea: **how much the pool is actually
+being traded relative to its size**. Market cap and liquidity in absolute terms
+flip sign between halves — there is no "too small" or "too illiquid" band, only
+"nobody is trading it". Turnover octiles, held-out half:
+
+| 5m volume / liquidity | n | Median | Win | Held-out mean |
+| --- | --- | --- | --- | --- |
+| 0.000–0.025 | 452 | −2.56% | 35.8% | −3.33% |
+| 0.025–0.043 | 452 | −2.12% | 43.1% | −1.11% |
+| 0.043–0.066 | 452 | −2.75% | 38.5% | −1.98% |
+| 0.066–0.093 | 452 | −2.69% | 40.3% | −2.70% |
+| 0.093–0.139 | 452 | −0.65% | 46.5% | +0.12% |
+| 0.139–0.213 | 452 | +0.96% | 51.5% | +0.66% |
+| 0.213–0.385 | 452 | −0.81% | 47.6% | +1.75% |
+| 0.385+ | 459 | +0.24% | 50.5% | +0.09% |
+
+The break sits at ~0.09 and the four octiles below it lose money in both halves.
+Pair age behaves the same way past 30 hours (−2.1%, −3.1%, −3.5% in the top
+three octiles).
+
+Rules, each fold unseen by the threshold that produced it:
+
+| Rule | n | Fold 1 | Fold 2 | Fold 3 | All |
+| --- | --- | --- | --- | --- | --- |
+| no gates | 3 624 | −1.49% | −0.44% | −0.74% | −0.89% |
+| prior-history gates (was live) | 1 308 | −2.31% | +1.00% | +1.18% | +0.07% |
+| age ≤ 30h | 2 235 | −1.49% | +0.62% | +0.28% | −0.14% |
+| turnover ≥ 0.09 | 1 871 | +0.61% | +0.55% | +0.38% | +0.50% |
+| age ≤ 30h & turnover ≥ 0.09 | 1 440 | +1.31% | +1.03% | +0.83% | +1.02% |
+| **…& 1h vol/mcap ≥ 0.33** | **1 083** | **+1.95%** | **+1.19%** | **+1.26%** | **+1.37%** |
+
+The prior-history set averages +0.07% and swings from −2.31% to +1.18% between
+folds: it was noise. The turnover set holds its sign in every fold.
+
+A grid search over the same features reached +4.63% in training and +0.94% held
+out; across its top 40 configurations the average drop was 3.1 points. That gap
+is why the shipped thresholds come from the octile breaks, not from the search.
+
+Two things to keep in view:
+
+- **The edge is a tail.** Median is +0.42%; the top 5% of trades carry 293% of
+  the total, and without them the rule averages −2.09%. This only works with
+  enough trades and an exit that lets runners run.
+- **Cost is the whole margin.** At a 2.5% round trip the rule earns +1.37%; at
+  3.5% it earns +0.37%, and at 4% it is negative. Cutting entry lag and
+  slippage is worth more than any further gate work.
+
+Shipped: pair age 1–30h, 5m volume ≥ 9% of liquidity, 1h volume ≥ 33% of market
+cap. Leader mint history, 5m chase, buy/sell pressure, clip size, liquidity and
+market-cap floors are all off. Throughput ~36/day, average hold 16 minutes,
+which occupies well under one of the eight position slots.
+
 ## Cold start
 
 The prior-record gate needs history. `npm run copy-trader:bootstrap-history --
