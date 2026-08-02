@@ -1326,10 +1326,16 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     }
 
     const walletBal = cfg.sharedOscarWallet ? 0n : await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
+    /**
+     * What we actually paid, not the DEX spot the gate looked at. Slippage and
+     * price impact put the fill above spot, and booking the cheaper number would
+     * overstate every later gain — including the level the trail arms at.
+     */
+    const fillPriceUsd = exec.priceUsd > 0 ? exec.priceUsd : currentPrice;
     const fillRaw =
       exec.tokenRaw ??
-      (currentPrice > 0
-        ? BigInt(Math.floor((pending.sizeUsd / currentPrice) * 1_000_000)).toString()
+      (fillPriceUsd > 0
+        ? BigInt(Math.floor((pending.sizeUsd / fillPriceUsd) * 1_000_000)).toString()
         : undefined);
     if ((pending.kind === 'entry' && pending.entryLeg !== 'dip') || !existing) {
       const tokenRaw = cfg.sharedOscarWallet
@@ -1338,15 +1344,15 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           ? walletBal.toString()
           : fillRaw;
       const sizeUsd =
-        !cfg.sharedOscarWallet && walletBal > 0n && currentPrice > 0
-          ? walletNotionalUsdFromRaw(walletBal, currentPrice)
+        !cfg.sharedOscarWallet && walletBal > 0n && fillPriceUsd > 0
+          ? walletNotionalUsdFromRaw(walletBal, fillPriceUsd)
           : pending.sizeUsd;
       state.positions[pending.mint] = {
         mint: pending.mint,
         symbol: pending.symbol,
         positionSource: COPY_LEADER_POSITION_SOURCE,
         entryTs: Date.now(),
-        entryPriceUsd: currentPrice,
+        entryPriceUsd: fillPriceUsd,
         sizeUsd,
         tokenRaw,
         addCount: 0,
@@ -1360,10 +1366,10 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     } else {
       const prev = existing;
       const newAvg =
-        prev.sizeUsd > 0 && currentPrice > 0
-          ? (prev.entryPriceUsd * prev.sizeUsd + currentPrice * pending.sizeUsd) /
+        prev.sizeUsd > 0 && fillPriceUsd > 0
+          ? (prev.entryPriceUsd * prev.sizeUsd + fillPriceUsd * pending.sizeUsd) /
             (prev.sizeUsd + pending.sizeUsd)
-          : currentPrice;
+          : fillPriceUsd;
       if (cfg.sharedOscarWallet) {
         accumulateCopyTokenRaw(prev, fillRaw);
         prev.entryPriceUsd = newAvg;
@@ -1374,9 +1380,9 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           prev.addCount = prev.addCount + 1;
         }
         prev.ourEntrySig = exec.signature;
-        syncPositionFromWallet(prev, copyTrackedTokenRaw(prev), currentPrice, cfg);
+        syncPositionFromWallet(prev, copyTrackedTokenRaw(prev), fillPriceUsd, cfg);
       } else if (walletBal > 0n) {
-        syncPositionFromWallet(prev, walletBal, currentPrice, cfg);
+        syncPositionFromWallet(prev, walletBal, fillPriceUsd, cfg);
         prev.entryPriceUsd = newAvg;
         if (wasEntryDip) {
           prev.entryDeployedCostUsd = (prev.entryDeployedCostUsd ?? 0) + pending.sizeUsd;
@@ -1387,8 +1393,8 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       } else {
         const tokenRaw =
           exec.tokenRaw ??
-          (currentPrice > 0
-            ? BigInt(Math.floor((pending.sizeUsd / currentPrice) * 1_000_000)).toString()
+          (fillPriceUsd > 0
+            ? BigInt(Math.floor((pending.sizeUsd / fillPriceUsd) * 1_000_000)).toString()
             : undefined);
         const newSize = prev.sizeUsd + pending.sizeUsd;
         const prevRaw = prev.tokenRaw ? BigInt(prev.tokenRaw) : 0n;
