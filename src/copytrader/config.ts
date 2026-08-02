@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { liveOscarRpcHttpUrlFromEnv, resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 import { assertCopyTraderIsolation } from './isolation.js';
 import { parseCopyTraderExitMode, type CopyTraderExitMode } from './exit-mode.js';
+import { parseCopyQuoteAsset } from './quote-mint.js';
 
 const ExecutionModeSchema = z.enum(['paper', 'dry_run', 'live']);
 
@@ -104,6 +105,10 @@ const CopyTraderConfigSchema = z.object({
   /** trail_runner: how often open positions are marked. */
   trailTickIntervalMs: z.coerce.number().int().min(1_000).max(300_000).default(5_000),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
+  /** Funding asset for swaps. `USDC` decouples sizing from the SOL price (see quote-mint.ts). */
+  quoteAsset: z.enum(['SOL', 'USDC']).default('SOL'),
+  /** USDC funding: keep this much SOL for fees/rent; below it, buys are skipped. */
+  minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(100),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
@@ -224,6 +229,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     trailTimeCapMs: process.env.COPY_TRADER_TRAIL_TIME_CAP_MS,
     trailTickIntervalMs: process.env.COPY_TRADER_TRAIL_TICK_INTERVAL_MS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
+    quoteAsset: parseCopyQuoteAsset(process.env.COPY_TRADER_QUOTE_MINT).asset,
+    minFeeSolReserve: process.env.COPY_TRADER_MIN_FEE_SOL_RESERVE,
     slippageBps: process.env.COPY_TRADER_SLIPPAGE_BPS,
     walletSecret: process.env.COPY_TRADER_WALLET_SECRET?.trim(),
     walletPubkeyExpected: process.env.COPY_TRADER_WALLET_PUBKEY?.trim() || undefined,

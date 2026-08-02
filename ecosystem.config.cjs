@@ -2365,6 +2365,10 @@ const PM2_APPS = [
         COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/copy-8zkg.keypair.json'),
         COPY_TRADER_WALLET_PUBKEY: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
         COPY_TRADER_TARGET_WALLET: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+        /** Fund trades in USDC — $100 stays $100 regardless of where SOL trades. */
+        COPY_TRADER_QUOTE_MINT: 'USDC',
+        /** Native SOL is still needed for priority fees + ATA rent. */
+        COPY_TRADER_MIN_FEE_SOL_RESERVE: '0.02',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg/target-wallet.txt'),
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg/state.json'),

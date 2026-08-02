@@ -241,15 +241,23 @@ async function httpGetQuote(
     solUsd: number;
     slippageBps: number;
     timeoutMs: number;
+    /** Copy-trader USDC lane: funding mint + pre-computed raw amount. Omitted → WSOL. */
+    inputMintOverride?: string;
+    inputAmountRawOverride?: number;
   },
 ): Promise<Record<string, unknown> | null> {
   const { outputMint, sizeUsd, solUsd, slippageBps, timeoutMs } = args;
-  if (!(solUsd > 0) || !(sizeUsd > 0)) return null;
-  const lamports = Math.max(1, Math.floor((sizeUsd / solUsd) * 1e9));
+  if (!(sizeUsd > 0)) return null;
+  const override = args.inputAmountRawOverride;
+  const hasOverride = typeof override === 'number' && Number.isFinite(override) && override >= 1;
+  if (!hasOverride && !(solUsd > 0)) return null;
+  const amountRaw = hasOverride
+    ? Math.floor(override)
+    : Math.max(1, Math.floor((sizeUsd / solUsd) * 1e9));
   const url = new URL(quoteBaseUrl);
-  url.searchParams.set('inputMint', WRAPPED_SOL_MINT);
+  url.searchParams.set('inputMint', args.inputMintOverride?.trim() || WRAPPED_SOL_MINT);
   url.searchParams.set('outputMint', outputMint);
-  url.searchParams.set('amount', String(lamports));
+  url.searchParams.set('amount', String(amountRaw));
   url.searchParams.set('slippageBps', String(slippageBps));
   url.searchParams.set('onlyDirectRoutes', 'false');
   url.searchParams.set('asLegacyTransaction', 'false');
@@ -272,6 +280,9 @@ export async function liveFetchBuyQuote(args: {
   sizeUsd: number;
   solUsd: number;
   slippageBpsOverride?: number;
+  /** Copy-trader USDC lane; omit for live-oscar (WSOL). */
+  inputMintOverride?: string;
+  inputAmountRawOverride?: number;
 }): Promise<{ quoteResponse: Record<string, unknown>; quoteSnapshot: Record<string, unknown> } | null> {
   const { cfg, outputMint, sizeUsd, solUsd } = args;
   const slippageBps = args.slippageBpsOverride ?? cfg.liveDefaultSlippageBps;
@@ -282,6 +293,8 @@ export async function liveFetchBuyQuote(args: {
     solUsd,
     slippageBps,
     timeoutMs: cfg.liveJupiterQuoteTimeoutMs,
+    inputMintOverride: args.inputMintOverride,
+    inputAmountRawOverride: args.inputAmountRawOverride,
   });
   const quoteAgeMs = Date.now() - t0;
   if (!quoteResponse) return null;
@@ -365,12 +378,14 @@ async function httpGetSellQuote(
     amountRaw: string;
     slippageBps: number;
     timeoutMs: number;
+    /** Copy-trader USDC lane: settle proceeds in USDC. Omitted → WSOL. */
+    outputMintOverride?: string;
   },
 ): Promise<Record<string, unknown> | null> {
   const { inputMint, amountRaw, slippageBps, timeoutMs } = args;
   const url = new URL(quoteBaseUrl);
   url.searchParams.set('inputMint', inputMint);
-  url.searchParams.set('outputMint', WRAPPED_SOL_MINT);
+  url.searchParams.set('outputMint', args.outputMintOverride?.trim() || WRAPPED_SOL_MINT);
   url.searchParams.set('amount', amountRaw);
   url.searchParams.set('slippageBps', String(slippageBps));
   url.searchParams.set('onlyDirectRoutes', 'false');
@@ -392,13 +407,17 @@ export async function liveSellQuoteAndPrepareSnapshot(args: {
   solUsd: number;
   userPublicKey: string;
   slippageBpsOverride?: number;
+  /** Copy-trader USDC lane; omit for live-oscar (WSOL proceeds). */
+  outputMintOverride?: string;
 }): Promise<{
   quoteResponse: Record<string, unknown>;
   quoteSnapshot: Record<string, unknown>;
   swapBuild: { ok: true; b64: string } | { ok: false; reason: string };
 } | null> {
   const { cfg, inputMint, tokenAmountRaw, solUsd, userPublicKey } = args;
-  if (!(solUsd > 0) || !tokenAmountRaw || tokenAmountRaw === '0') return null;
+  /** USD-pegged proceeds need no SOL mark; WSOL proceeds cannot be priced without one. */
+  const needsSolUsd = !args.outputMintOverride?.trim();
+  if ((needsSolUsd && !(solUsd > 0)) || !tokenAmountRaw || tokenAmountRaw === '0') return null;
   const slippageBps = args.slippageBpsOverride ?? cfg.liveDefaultSlippageBps;
   const t0 = Date.now();
   const quoteResponse = await httpGetSellQuote(resolveLiveJupiterQuoteUrl(cfg), {
@@ -406,6 +425,7 @@ export async function liveSellQuoteAndPrepareSnapshot(args: {
     amountRaw: tokenAmountRaw,
     slippageBps,
     timeoutMs: cfg.liveJupiterQuoteTimeoutMs,
+    outputMintOverride: args.outputMintOverride,
   });
   const quoteAgeMs = Date.now() - t0;
   if (!quoteResponse) return null;

@@ -102,6 +102,46 @@
 
 ---
 
+## [1.11.618] — 2026-08-02
+
+### Feature: торговля в USDC для копи-линии (`COPY_TRADER_QUOTE_MINT`)
+
+Копи-линия могла торговать только за wrapped SOL, поэтому размер входа плавал вместе
+с курсом SOL: заявленные $100 превращались в $86 при падении SOL на 14 %, а PnL позиции
+смешивал движение монеты с движением SOL. Теперь актив фондирования выбирается конфигом,
+и `copy-trader-8zkg` переведён на **USDC** — $100 остаются $100.
+
+**Добавлено**
+
+- `src/copytrader/quote-mint.ts` — единственное место, где происходит перевод между сырыми
+  единицами quote-актива и долларами. SOL — 9 знаков, USDC — 6; смешение шкал искажает цену
+  фила в 150 раз, поэтому деления на литералы `1e9` / `1e6` из линии убраны.
+- `src/copytrader/funding-gate.ts` — предпокупочная проверка: хватает ли USDC на сделку и
+  остался ли нативный SOL на комиссии (`COPY_TRADER_MIN_FEE_SOL_RESERVE`, дефолт 0.02 SOL).
+  Без неё пустой USDC-баланс давал бесконечные проваленные раунды к Jupiter.
+- `tests/copytrader/quote-mint.test.ts`, `tests/copytrader/funding-gate.test.ts` — регрессия
+  на десятичные шкалы, включая проверку, что PnL в USDC не зависит от хода SOL.
+
+**Изменено**
+
+- `src/live/jupiter.ts` — необязательные `inputMintOverride` / `inputAmountRawOverride` (buy)
+  и `outputMintOverride` (sell). Без них поведение прежнее, поэтому `live-oscar` не затронут.
+  Гард `solUsd > 0` на продаже снят только для USD-привязанного выхода.
+- `src/copytrader/live-exec.ts` — покупка и продажа идут через quote-спеку; расчёт цены входа
+  и выручки больше не предполагает SOL.
+- `src/copytrader/entry-dip-gate.ts` — `impliedBuyPriceUsdFromQuote` принимает quote-спеку,
+  по умолчанию SOL (существующие вызовы не меняются).
+- `ecosystem.config.cjs` — `copy-trader-8zkg`: `COPY_TRADER_QUOTE_MINT=USDC`.
+
+**Требования к кошельку**: USDC на сделки **плюс** нативный SOL на комиссии и ATA rent.
+Ниже резерва покупки откладываются с причиной `insufficient_fee_sol`, а не падают в свопе.
+
+**Откат**: убрать `COPY_TRADER_QUOTE_MINT` из PM2-блока — линия вернётся на SOL без деплоя кода
+(`pm2 restart copy-trader-8zkg --update-env`). Полный откат — revert коммита ветки
+`feat/release-1.11.618-copy-8zkg-usdc`.
+
+---
+
 ## [1.11.617] — 2026-08-02
 
 ### Feature: вторая копи-линия `copy-trader-8zkg` — селективные гейты входа + свой выход
