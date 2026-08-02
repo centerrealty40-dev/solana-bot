@@ -120,6 +120,70 @@ Peak capital in use ~$400, median 21 trades/day.
 | Leader experience | ≥ 3 prior sessions | 973 |
 | Leader record | prior avg > +5% | 696 |
 
+## Gate re-measurement (2026-08-02)
+
+The funnel above was built on the 3 582 buys that had live DexScreener context.
+Two of its gates — leader clip size and liquidity — were never shown to earn
+anything there; they survived because they barely bound on that subsample. Both
+were re-measured on the full 30-day reconstruction: 35 817 transactions,
+17 525 flat-to-flat sessions, entry context joined to stored pair snapshots
+(24.8% coverage). Prior-record stats use only sessions closed before the one
+being scored, so there is no lookahead.
+
+Buckets by the size of the buy that opened the session, inside the experience
+gates:
+
+| Entry clip | n | Median | Mean | Win |
+| --- | --- | --- | --- | --- |
+| < $50 | 120 | −1.56% | +7.24% | 46.7% |
+| $50–100 | 757 | +0.15% | +3.44% | 50.3% |
+| $100–125 | 472 | +1.42% | +3.17% | 52.3% |
+| $125–150 | 465 | +1.83% | +2.57% | 54.0% |
+| $150–200 | 775 | +0.70% | +1.39% | 51.7% |
+| $200–300 | 1 232 | +3.08% | +3.32% | 59.3% |
+| $300–500 | 1 122 | +1.50% | +1.92% | 54.9% |
+| $500–1000 | 673 | +0.85% | +0.95% | 53.6% |
+| $1000+ | 428 | +2.53% | +2.35% | 60.7% |
+
+A $150 floor raises the median but drops 1 814 sessions whose mean return
+(+3.40%) is *higher* than what it keeps (+2.12%). Liquidity is worse: the
+$10–15k bucket is the best one in the sample (median +6.57%, win 66.7%), and a
+$15k floor discards 25 sessions worth +113 points. 5m pressure did not
+reproduce either — the sub-0.7 bucket, which the old gate rejected outright,
+returns +3.06% mean at 59.9% win.
+
+Whole configurations scored on the 4 339 sessions that have snapshot context,
+$100 flat, 2.5% round trip, leader's own exits:
+
+| Config | n | Median | Win | Net/trade | Net |
+| --- | --- | --- | --- | --- | --- |
+| No gates | 4 339 | +1.98% | 56.7% | −0.51% | −$2 229 |
+| Experience only | 2 363 | +2.24% | 57.9% | −0.15% | −$361 |
+| As shipped (age ≤72h, clip, liq, pressure) | 1 386 | +2.40% | 58.6% | +0.21% | +$289 |
+| Experience + age 1–24h | 1 347 | +3.03% | 59.3% | +1.03% | +$1 393 |
+| …plus clip ≥ $150 | 1 326 | +3.13% | 59.4% | +1.06% | +$1 405 |
+| …plus liquidity ≥ $15k | 1 336 | +3.03% | 59.2% | +1.00% | +$1 333 |
+| …plus pressure ≥ 1.05 | 995 | +3.20% | 59.5% | +1.32% | +$1 314 |
+
+Almost the whole gap between the shipped config and the best one is the age
+window, not the thresholds: 24–72h old pairs return +0.42% mean against +3.5%
+inside 24h. Clip size adds $12 on this sample, liquidity subtracts $60, and
+pressure subtracts $79 by cutting a quarter of the trades for a better average.
+
+Anti-chase is the one threshold that survives. Inside the kept gates, capping
+the pre-entry 5m move at +10% drops 84 sessions worth −$176 net; the 10–15%
+bucket is the sample's worst (median −4.16%, 33.3% win). Capping at +15% only
+recovers $51 of that, so the cap moves to +10%.
+
+Resulting gate set: leader experience (≥3 prior sessions, prior avg > +5%),
+pair age 1–24h, and no entry after a >+10% 5m move. Clip size, liquidity,
+market cap and 5m pressure are all off — Jupiter's slippage guard, not a static
+liquidity floor, is what protects against untradeable pools.
+
+Caveat: snapshot context covers a quarter of sessions and skews toward names
+the collector already tracks, so absolute trade counts scale up in live and
+thin names are under-represented.
+
 ## Cold start
 
 The prior-record gate needs history. `npm run copy-trader:bootstrap-history --
