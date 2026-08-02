@@ -8,20 +8,36 @@ export async function notifyCopyTraderTelegram(
   if (!copyTraderTelegramEnabled(cfg)) return;
   const token = cfg.telegramBotToken!;
   const chatId = cfg.telegramChatId!;
-  try {
+
+  const send = async (markdown: boolean): Promise<{ ok: boolean; status: number; body: string }> => {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         chat_id: chatId,
         text,
-        parse_mode: 'Markdown',
+        ...(markdown ? { parse_mode: 'Markdown' } : {}),
         disable_web_page_preview: true,
       }),
     });
-    if (!res.ok) {
-      console.warn('[copy-trader] telegram send failed', res.status);
+    return { ok: res.ok, status: res.status, body: res.ok ? '' : (await res.text()).slice(0, 300) };
+  };
+
+  try {
+    const first = await send(true);
+    if (first.ok) return;
+    /**
+     * Token symbols are arbitrary strings and routinely contain `_`, `*` or backticks,
+     * which Telegram rejects as broken markup. Losing the alert matters more than losing
+     * the formatting, so retry once as plain text.
+     */
+    if (first.status === 400) {
+      const plain = await send(false);
+      if (plain.ok) return;
+      console.warn('[copy-trader] telegram send failed', plain.status, plain.body);
+      return;
     }
+    console.warn('[copy-trader] telegram send failed', first.status, first.body);
   } catch (err) {
     console.warn('[copy-trader] telegram error', (err as Error).message);
   }
