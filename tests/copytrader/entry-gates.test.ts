@@ -16,6 +16,21 @@ const cfg: LeaderGateConfig = {
   entryMaxPairAgeHours: 72,
   entryMinBuySellRatio5m: 1.05,
   entryMaxChase5mPct: 15,
+  entryMinTurnover5m: 0,
+  entryMinVolToMcap1h: 0,
+};
+
+/** What copy-trader-8zkg actually runs: market structure, no mint memory. */
+const shipped: LeaderGateConfig = {
+  leaderGatesEnabled: true,
+  minLeaderPriorSessions: 0,
+  minLeaderPriorAvgPct: -100,
+  entryMinPairAgeHours: 1,
+  entryMaxPairAgeHours: 30,
+  entryMinBuySellRatio5m: 0,
+  entryMaxChase5mPct: 0,
+  entryMinTurnover5m: 0.09,
+  entryMinVolToMcap1h: 0.33,
 };
 
 const goodStats: LeaderMintStats = {
@@ -34,7 +49,7 @@ function ctx(over: Partial<CopyEntryContext> = {}): CopyEntryContext {
     buySellRatio5m: 120 / 90,
     priceChange5mPct: -2,
     liquidityUsd: 40_000,
-    marketCapUsd: 900_000,
+    marketCapUsd: 200_000,
     volume5mUsd: 8_000,
     volume1hUsd: 90_000,
     fetchedAtMs: 1,
@@ -124,8 +139,53 @@ describe('leader market-context gate', () => {
       entryMaxPairAgeHours: 0,
       entryMinBuySellRatio5m: 0,
       entryMaxChase5mPct: 0,
+      entryMinTurnover5m: 0,
+      entryMinVolToMcap1h: 0,
     };
     expect(evaluateLeaderMarketGate(off, null).pass).toBe(true);
+  });
+});
+
+describe('turnover gates', () => {
+  it('passes a pool that is actually being traded', () => {
+    expect(evaluateLeaderMarketGate(shipped, ctx()).pass).toBe(true);
+  });
+
+  it('rejects a pool with liquidity but no 5m flow', () => {
+    const res = evaluateLeaderMarketGate(shipped, ctx({ volume5mUsd: 900, liquidityUsd: 40_000 }));
+    expect(res.pass).toBe(false);
+    expect(res.reasons[0]).toContain('turnover_5m=0.022<min=0.09');
+  });
+
+  it('accepts a thin pool as long as the flow is large against it', () => {
+    const res = evaluateLeaderMarketGate(shipped, ctx({ liquidityUsd: 6_000, volume5mUsd: 2_000, marketCapUsd: 40_000 }));
+    expect(res.pass).toBe(true);
+  });
+
+  it('rejects a large cap that barely trades', () => {
+    const res = evaluateLeaderMarketGate(shipped, ctx({ marketCapUsd: 9_000_000, volume1hUsd: 90_000 }));
+    expect(res.pass).toBe(false);
+    expect(res.reasons[0]).toContain('vol_to_mcap_1h=0.010<min=0.33');
+  });
+
+  it('treats an unreadable feed as unknown rather than zero turnover', () => {
+    const res = evaluateLeaderMarketGate(shipped, ctx({ liquidityUsd: 0, marketCapUsd: null }));
+    expect(res.pass).toBe(false);
+    expect(res.reasons).toEqual(['turnover_5m_unknown', 'vol_to_mcap_1h_unknown']);
+  });
+
+  it('ignores the leader mint history the shipped config switched off', () => {
+    expect(evaluateLeaderCopyGates(shipped, { stats: null, ctx: ctx() }).pass).toBe(true);
+    expect(
+      evaluateLeaderCopyGates(shipped, { stats: { sessions: 1, avgPct: -40, winRatePct: 0, lastClosedTs: 1 }, ctx: ctx() })
+        .pass,
+    ).toBe(true);
+  });
+
+  it('still rejects a pair past the 30h window', () => {
+    const res = evaluateLeaderMarketGate(shipped, ctx({ pairAgeHours: 44 }));
+    expect(res.pass).toBe(false);
+    expect(res.reasons[0]).toContain('>max=30');
   });
 });
 

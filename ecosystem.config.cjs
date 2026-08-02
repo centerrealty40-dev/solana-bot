@@ -2388,25 +2388,27 @@ const PM2_APPS = [
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
         /**
-         * Only gates that pay for themselves on 17.5k of the leader's sessions
-         * (see LEADER_8ZKG_AUDIT.md "Gate re-measurement"). Everything else is
-         * off: clip size, liquidity, mcap and 5m pressure each cost money or
-         * did nothing when measured on their own.
+         * Gates are market structure only, and only the three features that
+         * held their sign across all three time folds of the 30-day window
+         * (LEADER_8ZKG_AUDIT.md "Market structure, measured properly").
+         *
+         * Copied blind his flow is -0.89% per trade after cost; on turnover +
+         * age it is +1.37%. What does NOT survive: market cap, liquidity and
+         * clip size in absolute terms, 5m buy/sell pressure, the 5m chase cap,
+         * and his own prior record on the mint (rank correlation 0.01).
          */
         COPY_TRADER_LEADER_GATES: '1',
-        COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '3',
-        /**
-         * Only "he has lost money here before" is worth blocking. The old +5%
-         * bar was tuned against his own exits; once we mirror him, the 0-5%
-         * band earns the same per trade as the 5%+ band and is a third of the
-         * flow (LEADER_8ZKG_AUDIT.md "Gates under the shipped exit").
-         */
-        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '0',
+        COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
+        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '-100',
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
-        /** 24-72h is the dead zone: +0.42% mean vs +3.5% inside 24h. */
-        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '24',
+        /** Past ~30h his edge is gone: -2.1%, -3.1%, -3.5% in the top age octiles. */
+        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '30',
+        /** 5m volume over pool liquidity. Below 0.09 every octile loses money. */
+        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.09',
+        /** 1h volume over market cap — the same signal on a slower clock. */
+        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.33',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
-        COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '10',
+        COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
@@ -2478,8 +2480,13 @@ const PM2_APPS = [
         COPY_TRADER_STRICT_ISOLATION: '1',
         COPY_TRADER_SHARED_OSCAR_WALLET: '0',
         COPY_TRADER_SPARE_CAPITAL_GATE: '0',
-        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/copy-8zkg-mirror.keypair.json'),
-        COPY_TRADER_WALLET_PUBKEY: 'BLthwsgzmN1o2XrTKVwPe1gSX1wUwZgTFXLagxP5eXcq',
+        /**
+         * The microcap-scalper's wallet, handed over with its funds. That lane had been parked
+         * since midday — its entries kept missing the price corridor — so its capital was sitting
+         * idle while this lane had none. One funded wallet is worth more than two empty ones.
+         */
+        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/mcs-wallet.json'),
+        COPY_TRADER_WALLET_PUBKEY: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
         COPY_TRADER_TARGET_WALLET: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
         COPY_TRADER_QUOTE_MINT: 'USDC',
         COPY_TRADER_MIN_FEE_SOL_RESERVE: '0.02',
@@ -2505,12 +2512,14 @@ const PM2_APPS = [
          * here and the comparison stops being about exits at all.
          */
         COPY_TRADER_LEADER_GATES: '1',
-        COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '3',
-        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '0',
+        COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
+        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '-100',
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
-        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '24',
+        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '30',
+        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.09',
+        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.33',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
-        COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '10',
+        COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',

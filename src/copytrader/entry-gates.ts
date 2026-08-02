@@ -1,10 +1,15 @@
 /**
- * Selective copy gates derived from the 30d audit of leader 8zkgFGVZ.
+ * Selective copy gates for a leader who fires ~590 buys a day.
  *
- * The leader fires ~590 buys/day; roughly half are one-off entries into mints he
- * never revisits and they are net negative. These gates keep the slice that
- * carries his edge: young-but-not-brand-new pairs, mild buyer pressure, no
- * post-spike chase, and mints where he already has a positive track record.
+ * Copied blind, at our entry lag and round trip cost, his flow is negative. What
+ * separates the profitable part is how much the pool is actually being traded:
+ * 5m volume against liquidity, and 1h volume against market cap. Pools with no
+ * turnover neither absorb our clip nor move for us. Pair age is the one other
+ * feature that reproduces — his edge is in the first day of a pair's life.
+ *
+ * Market cap, liquidity and clip size on their own do not survive an
+ * out-of-sample check; neither does his prior record on the same mint. See
+ * LEADER_8ZKG_AUDIT.md "Market structure, measured properly".
  */
 import type { CopyTraderConfig } from './config.js';
 import type { CopyEntryContext } from './entry-context.js';
@@ -19,6 +24,8 @@ export type LeaderGateConfig = Pick<
   | 'entryMaxPairAgeHours'
   | 'entryMinBuySellRatio5m'
   | 'entryMaxChase5mPct'
+  | 'entryMinTurnover5m'
+  | 'entryMinVolToMcap1h'
 >;
 
 export type LeaderGateResult = {
@@ -28,9 +35,20 @@ export type LeaderGateResult = {
 
 const PASS: LeaderGateResult = { pass: true, reasons: [] };
 
+/** Null unless both sides are usable, so a missing feed reads as unknown, not zero. */
+function ratio(numerator: number | null, denominator: number | null): number | null {
+  if (numerator == null || !Number.isFinite(numerator) || numerator < 0) return null;
+  if (denominator == null || !Number.isFinite(denominator) || denominator <= 0) return null;
+  return numerator / denominator;
+}
+
 /**
  * State-only gate — free to evaluate, so callers run it before spending a
  * DexScreener request on market context.
+ *
+ * Measured rank correlation with our realised return is ~0.01, and the bucket
+ * with the fewest prior sessions was the best one out of sample, so this is off
+ * for 8zkgFGVZ. Kept configurable for lanes that have not been measured.
  */
 export function evaluateLeaderPriorGate(
   cfg: LeaderGateConfig,
@@ -73,7 +91,9 @@ export function evaluateLeaderMarketGate(
   const wantsAge = cfg.entryMinPairAgeHours > 0 || cfg.entryMaxPairAgeHours > 0;
   const wantsPressure = cfg.entryMinBuySellRatio5m > 0;
   const wantsChase = cfg.entryMaxChase5mPct > 0;
-  if (!wantsAge && !wantsPressure && !wantsChase) return PASS;
+  const wantsTurnover = cfg.entryMinTurnover5m > 0;
+  const wantsVolToMcap = cfg.entryMinVolToMcap1h > 0;
+  if (!wantsAge && !wantsPressure && !wantsChase && !wantsTurnover && !wantsVolToMcap) return PASS;
 
   if (!ctx) return { pass: false, reasons: ['no_entry_context'] };
 
@@ -107,6 +127,24 @@ export function evaluateLeaderMarketGate(
       reasons.push('price_change_5m_unknown');
     } else if (ctx.priceChange5mPct > cfg.entryMaxChase5mPct) {
       reasons.push(`chase_5m_pct=${ctx.priceChange5mPct.toFixed(1)}>max=${cfg.entryMaxChase5mPct}`);
+    }
+  }
+
+  if (wantsTurnover) {
+    const turnover = ratio(ctx.volume5mUsd, ctx.liquidityUsd);
+    if (turnover == null) {
+      reasons.push('turnover_5m_unknown');
+    } else if (turnover < cfg.entryMinTurnover5m) {
+      reasons.push(`turnover_5m=${turnover.toFixed(3)}<min=${cfg.entryMinTurnover5m}`);
+    }
+  }
+
+  if (wantsVolToMcap) {
+    const share = ratio(ctx.volume1hUsd, ctx.marketCapUsd);
+    if (share == null) {
+      reasons.push('vol_to_mcap_1h_unknown');
+    } else if (share < cfg.entryMinVolToMcap1h) {
+      reasons.push(`vol_to_mcap_1h=${share.toFixed(3)}<min=${cfg.entryMinVolToMcap1h}`);
     }
   }
 
