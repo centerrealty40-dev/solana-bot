@@ -2500,10 +2500,13 @@ const PM2_APPS = [
         COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
-        /** Identical to the twin — the entry side is the control, only the exit differs. */
+        /**
+         * Identical to the twin — the entry side is the control, only the exit differs. Any drift
+         * here and the comparison stops being about exits at all.
+         */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '3',
-        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '5',
+        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '0',
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '24',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
