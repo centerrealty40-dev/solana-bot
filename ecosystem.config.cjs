@@ -2419,6 +2419,8 @@ const PM2_APPS = [
         /** Entry is one-shot: a missed fill is a skipped trade, not a late chase. */
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '120000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
+        /** 20 attempts per window instead of ~120; a failing swap costs a Jupiter round trip. */
+        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '3600000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',

@@ -1305,6 +1305,16 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       leaderSignature: pending.leaderSignature,
     });
     if (!exec.ok) {
+      /**
+       * Space out the next attempt. A failing swap costs a Jupiter quote plus a
+       * build every tick, and a deterministic failure (missing ATA, thin route)
+       * will not clear within a second — an unfunded wallet once burned ~100
+       * attempts inside one retry window.
+       */
+      const retryRow = findPendingBuy(state, pending.id);
+      if (retryRow && cfg.buyRetryIntervalMs > 0) {
+        retryRow.dueTs = now + cfg.buyRetryIntervalMs;
+      }
       if (noteBuyDefer(state, pending.id, now, cfg)) {
         appendCopyEvent(cfg, {
           kind: pending.kind === 'add' ? 'add_deferred' : 'buy_deferred',
@@ -1313,6 +1323,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           leaderSignature: pending.leaderSignature,
           reason: exec.reason ?? 'execution_failed',
           retryUntilTs: pending.retryUntilTs,
+          nextAttemptTs: retryRow?.dueTs,
         });
       }
       continue;
@@ -1654,6 +1665,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     probeBuyDelaySec: Math.round(cfg.entryProbeBuyDelayMs / 1000),
     buyPriceMaxPremiumPct: cfg.buyPriceMaxPremiumPct,
     buyRetryWindowMin: Math.round(cfg.buyRetryWindowMs / 60_000),
+    buyRetryIntervalSec: cfg.buyRetryIntervalMs > 0 ? Math.round(cfg.buyRetryIntervalMs / 1000) : 'every_tick',
     sellRetryWindowMin: Math.round(cfg.sellRetryWindowMs / 60_000),
     sellRetryIntervalSec: Math.round(cfg.sellRetryIntervalMs / 1000),
     sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
