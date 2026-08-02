@@ -54,7 +54,10 @@ export async function fetchDexInfo(mint: string, solUsd: number): Promise<DexInf
     liquidityUsd: snap.liquidityUsd ?? 0,
     volume24h: 0,
     volume1h: snap.volume1hUsd ?? 0,
-    pairCreatedAtMs: snap.fetchedAtMs ?? null,
+    // The shared quote cache does not carry pair creation time; real pair age
+    // comes from entry-context.ts. Reporting fetch time here made every pair
+    // look newborn to the age gate.
+    pairCreatedAtMs: null,
     dexId: '',
   };
   cache.set(mint, { at: now, val: info });

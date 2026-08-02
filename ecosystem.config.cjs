@@ -581,6 +581,11 @@ const PM2_APPS = [
         COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
           { pm2: 'live-oscar', heartbeatPath: 'data/ops-heartbeats/live-oscar.json', staleMs: 300_000 },
           { pm2: 'copy-trader', heartbeatPath: 'data/ops-heartbeats/copy-trader.json', staleMs: 300_000 },
+          {
+            pm2: 'copy-trader-8zkg',
+            heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
+            staleMs: 300_000,
+          },
         ]),
         COLLECTOR_HEALTH_TELEGRAM: '1',
         COLLECTOR_HEALTH_POLL_MS: '120000',
@@ -2232,6 +2237,12 @@ const PM2_APPS = [
             staleMs: 300_000,
             fatalPath: 'data/ops-heartbeats/copy-trader-last-fatal.json',
           },
+          {
+            pm2: 'copy-trader-8zkg',
+            heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
+            staleMs: 300_000,
+            fatalPath: 'data/ops-heartbeats/copy-trader-8zkg-last-fatal.json',
+          },
         ]),
       },
     },
@@ -2314,6 +2325,99 @@ const PM2_APPS = [
         PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '0',
         PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '0',
         /** Poll + parse leader txs: Alchemy (`COPY_TRADER_RPC_URL` или `SA_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
+      },
+    },
+    /**
+     * Second copy lane — leader `8zkgFGVZ`, own wallet, own state, no Oscar handoff.
+     *
+     * The leader fires ~590 buys/day and is profitable only on short holds; the
+     * 30d audit (docs/strategy/copytrader/LEADER_8ZKG_AUDIT.md) put his edge in
+     * mints he revisits with a positive record, on pairs 1h–3d old, without
+     * chasing a 5m spike. Gates below cut ~590/day to ~20/day. Exit is ours:
+     * peak trail +8% arm / 6% giveback with a 45m cap; his sell mirrors only as
+     * a backstop, because holding to his exit gives the whole excursion back.
+     */
+    {
+      name: 'copy-trader-8zkg',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/copy-trader.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 30,
+      restart_delay: 8000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_PRO_TRADING_ENV,
+        ...PM2_SOLANA_RPC_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
+        NODE_ENV: 'production',
+        COPY_TRADER_APP_NAME: 'copy-trader-8zkg',
+        COPY_TRADER_STRICT_ISOLATION: '1',
+        /** Dedicated wallet — no shared ATAs or SOL pool with live-oscar. */
+        COPY_TRADER_SHARED_OSCAR_WALLET: '0',
+        COPY_TRADER_SPARE_CAPITAL_GATE: '0',
+        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/copy-8zkg.keypair.json'),
+        COPY_TRADER_WALLET_PUBKEY: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
+        COPY_TRADER_TARGET_WALLET: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+        COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg/target-wallet.txt'),
+        COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg/journal.jsonl'),
+        COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg/state.json'),
+        COPY_TRADER_EXECUTION_MODE: 'live',
+        /** Oscar never adopts this lane — it manages its own exits. */
+        LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
+        /** Flat $100 per trade, single leg, no adds (max position = entry size). */
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
+        COPY_TRADER_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '100',
+        COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
+        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
+        COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
+        COPY_TRADER_MAX_POSITION_USD: '100',
+        COPY_TRADER_MAX_OPEN_POSITIONS: '8',
+        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
+        /** Selective copy gates — see entry-gates.ts. */
+        COPY_TRADER_LEADER_GATES: '1',
+        COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '3',
+        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '5',
+        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
+        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '72',
+        COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '1.05',
+        COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '15',
+        COPY_TRADER_MIN_LEADER_BUY_USD: '150',
+        COPY_TRADER_MIN_LIQUIDITY_USD: '15000',
+        COPY_TRADER_MIN_MCAP_USD: '0',
+        /** Self-managed exit: arm +8%, give back 6% of peak, hard cap 45m. */
+        COPY_TRADER_EXIT_MODE: 'trail_runner',
+        COPY_TRADER_TRAIL_ARM_PCT: '8',
+        COPY_TRADER_TRAIL_GIVEBACK_PCT: '6',
+        COPY_TRADER_TRAIL_TIME_CAP_MS: '2700000',
+        COPY_TRADER_TRAIL_TICK_INTERVAL_MS: '5000',
+        /** Follow the leader within ~5s; his median session is 28 min. */
+        COPY_TRADER_POLL_INTERVAL_MS: '3000',
+        COPY_TRADER_TICK_INTERVAL_MS: '1000',
+        COPY_TRADER_BUY_DELAY_MS: '5000',
+        COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
+        /** Entry is one-shot: a missed fill is a skipped trade, not a late chase. */
+        COPY_TRADER_BUY_RETRY_WINDOW_MS: '120000',
+        COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
+        COPY_TRADER_SELL_RETRY_WINDOW_MS: '3600000',
+        COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
+        COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
+        COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
+        COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
+        COPY_TRADER_SELL_DELAY_MIN_MS: '0',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
+        COPY_TRADER_SLIPPAGE_BPS: '150',
+        COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },

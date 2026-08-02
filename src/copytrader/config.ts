@@ -79,6 +79,30 @@ const CopyTraderConfigSchema = z.object({
   minMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000).default(500_000),
   maxMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000_000).default(0),
   minPairAgeHours: z.coerce.number().min(0).max(8760).default(0),
+  /** Selective copy gates from the leader audit (see entry-gates.ts). Off by default. */
+  leaderGatesEnabled: z.boolean().default(false),
+  /** Require this many closed leader round trips on the mint before copying. */
+  minLeaderPriorSessions: z.coerce.number().int().min(0).max(1000).default(3),
+  /** Leader's average return across those sessions must beat this, percent. */
+  minLeaderPriorAvgPct: z.coerce.number().min(-100).max(1000).default(5),
+  /** Pair must be at least this old — brand-new pairs are unreadable at our lag. */
+  entryMinPairAgeHours: z.coerce.number().min(0).max(8760).default(1),
+  /** …and no older than this; the leader's edge decays past ~3 days. **0** = no cap. */
+  entryMaxPairAgeHours: z.coerce.number().min(0).max(8760).default(72),
+  /** Minimum DexScreener 5m buys/sells ratio. **0** = off. */
+  entryMinBuySellRatio5m: z.coerce.number().min(0).max(100).default(1.05),
+  /** Skip entries after a 5m spike larger than this, percent. **0** = off. */
+  entryMaxChase5mPct: z.coerce.number().min(0).max(1000).default(15),
+  /** Forget leader mint history untouched for this long. */
+  leaderHistoryTtlMs: z.coerce.number().int().min(3_600_000).max(31_536_000_000).default(2_592_000_000),
+  /** trail_runner: arm the peak trail once the position is this far up, percent. */
+  trailArmPct: z.coerce.number().min(0).max(1000).default(8),
+  /** trail_runner: exit after giving back this much of the peak, percent. */
+  trailGivebackPct: z.coerce.number().min(0).max(100).default(6),
+  /** trail_runner: hard exit after this long in the position. **0** = off. */
+  trailTimeCapMs: z.coerce.number().int().min(0).max(86_400_000).default(2_700_000),
+  /** trail_runner: how often open positions are marked. */
+  trailTickIntervalMs: z.coerce.number().int().min(1_000).max(300_000).default(5_000),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(100),
   walletSecret: z.string().optional(),
@@ -87,9 +111,10 @@ const CopyTraderConfigSchema = z.object({
   sharedOscarWallet: z.boolean().default(false),
   /**
    * Exit policy: `oscar_half8` — live-oscar wave_b half8_runner (+8% half, kill −50%);
-   * `mirror` — proportional leader sell mirror (legacy).
+   * `mirror` — proportional leader sell mirror (legacy);
+   * `trail_runner` — self-managed peak trail + time cap, leader sell as backstop.
    */
-  exitMode: z.enum(['oscar_half8', 'mirror']).default('oscar_half8'),
+  exitMode: z.enum(['oscar_half8', 'mirror', 'trail_runner']).default('oscar_half8'),
   /** Block copy buys when free SOL would starve live-oscar reserve + open committed. */
   spareCapitalGateEnabled: z.boolean().default(false),
   telegramBotToken: z.string().optional(),
@@ -186,6 +211,18 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     minMarketCapUsd: process.env.COPY_TRADER_MIN_MCAP_USD,
     maxMarketCapUsd: process.env.COPY_TRADER_MAX_MCAP_USD,
     minPairAgeHours: process.env.COPY_TRADER_MIN_PAIR_AGE_HOURS,
+    leaderGatesEnabled: envBool(process.env.COPY_TRADER_LEADER_GATES, false),
+    minLeaderPriorSessions: process.env.COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS,
+    minLeaderPriorAvgPct: process.env.COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT,
+    entryMinPairAgeHours: process.env.COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS,
+    entryMaxPairAgeHours: process.env.COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS,
+    entryMinBuySellRatio5m: process.env.COPY_TRADER_ENTRY_MIN_BUY_SELL_5M,
+    entryMaxChase5mPct: process.env.COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT,
+    leaderHistoryTtlMs: process.env.COPY_TRADER_LEADER_HISTORY_TTL_MS,
+    trailArmPct: process.env.COPY_TRADER_TRAIL_ARM_PCT,
+    trailGivebackPct: process.env.COPY_TRADER_TRAIL_GIVEBACK_PCT,
+    trailTimeCapMs: process.env.COPY_TRADER_TRAIL_TIME_CAP_MS,
+    trailTickIntervalMs: process.env.COPY_TRADER_TRAIL_TICK_INTERVAL_MS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
     slippageBps: process.env.COPY_TRADER_SLIPPAGE_BPS,
     walletSecret: process.env.COPY_TRADER_WALLET_SECRET?.trim(),

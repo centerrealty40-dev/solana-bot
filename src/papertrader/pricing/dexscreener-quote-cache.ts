@@ -263,6 +263,10 @@ export interface DexScreenerPairDetails {
   dexId: string | null;
   buys5m: number | null;
   sells5m: number | null;
+  /** Pair creation time from DexScreener. Only present on a live (uncached) parse. */
+  pairCreatedAtMs: number | null;
+  /** DexScreener `priceChange.m5`, percent. Only present on a live parse. */
+  priceChangeM5Pct: number | null;
   fetchedAtMs: number;
 }
 
@@ -275,6 +279,9 @@ function parsePairToDetails(
   const entry = parsePairToCacheEntry(pair, mint, nowMs);
   if (entry.miss || !entry.pairAddress) return null;
   const txns = pair.txns as { m5?: { buys?: number; sells?: number } } | undefined;
+  const priceChange = pair.priceChange as { m5?: number } | undefined;
+  const createdAt = Number((pair as { pairCreatedAt?: number }).pairCreatedAt);
+  const changeM5 = Number(priceChange?.m5);
   return {
     priceUsd: entry.priceUsd ?? null,
     marketCapUsd: entry.marketCapUsd ?? null,
@@ -287,6 +294,8 @@ function parsePairToDetails(
     dexId: (pair.dexId as string | undefined) ?? null,
     buys5m: toInt(txns?.m5?.buys),
     sells5m: toInt(txns?.m5?.sells),
+    pairCreatedAtMs: Number.isFinite(createdAt) && createdAt > 0 ? Math.trunc(createdAt) : null,
+    priceChangeM5Pct: Number.isFinite(changeM5) ? changeM5 : null,
     fetchedAtMs: nowMs,
   };
 }
