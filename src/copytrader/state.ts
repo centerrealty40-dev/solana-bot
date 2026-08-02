@@ -35,6 +35,10 @@ export type CopyPosition = {
   peakPriceUsd?: number;
   /** Trail became active once the position cleared the arm threshold. */
   trailArmedAt?: number;
+  /** TP ladder rungs already peeled (trail_runner / half8-style). */
+  trailTpRungsTaken?: number;
+  /** Giveback steps fired from the current peak epoch. */
+  trailGivebackStepsTaken?: number;
 };
 
 export type LeaderMintLedger = {
@@ -150,6 +154,14 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof pos.peakPriceUsd === 'number' && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : undefined,
         trailArmedAt:
           typeof pos.trailArmedAt === 'number' && pos.trailArmedAt > 0 ? pos.trailArmedAt : undefined,
+        trailTpRungsTaken:
+          typeof pos.trailTpRungsTaken === 'number' && pos.trailTpRungsTaken >= 0
+            ? Math.floor(pos.trailTpRungsTaken)
+            : undefined,
+        trailGivebackStepsTaken:
+          typeof pos.trailGivebackStepsTaken === 'number' && pos.trailGivebackStepsTaken >= 0
+            ? Math.floor(pos.trailGivebackStepsTaken)
+            : undefined,
       };
     }
     const pendingBuys: PendingBuy[] = (Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys : []).map(

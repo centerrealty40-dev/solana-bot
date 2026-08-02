@@ -2412,16 +2412,21 @@ const PM2_APPS = [
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
         /**
-         * Own exit — does NOT mirror his sells (that is `copy-trader-8zkg-mirror`).
-         * Arm at +8% so a +18% spike is already protected; hard TP at +25%;
-         * giveback 8% from peak; 60m cap as last resort. No hard stop-loss —
-         * every fixed SL level tested cut the tail harder than it saved.
+         * Own exit — Oscar half8_runner shape, not a hard +25% bank:
+         *   +8% / +16% / +24%… → sell 50% of remainder each rung
+         *   trail armed at +8%; each −8% from peak → sell 20% of remainder
+         *   kill at −50%; no time cap (a +200% candle rides under the trail).
+         * Does NOT mirror his sells — that is `copy-trader-8zkg-mirror`.
          */
         COPY_TRADER_EXIT_MODE: 'trail_runner',
         COPY_TRADER_TRAIL_ARM_PCT: '8',
         COPY_TRADER_TRAIL_GIVEBACK_PCT: '8',
-        COPY_TRADER_TRAIL_TAKE_PROFIT_PCT: '25',
-        COPY_TRADER_TRAIL_TIME_CAP_MS: '3600000',
+        COPY_TRADER_TRAIL_TAKE_PROFIT_PCT: '0',
+        COPY_TRADER_TRAIL_TP_STEP_PCT: '8',
+        COPY_TRADER_TRAIL_TP_SELL_FRACTION: '0.5',
+        COPY_TRADER_TRAIL_TRAIL_SELL_FRACTION: '0.2',
+        COPY_TRADER_TRAIL_KILL_PCT: '50',
+        COPY_TRADER_TRAIL_TIME_CAP_MS: '0',
         COPY_TRADER_TRAIL_TICK_INTERVAL_MS: '5000',
         /** Follow the leader within ~5s; his median session is 28 min. */
         COPY_TRADER_POLL_INTERVAL_MS: '3000',

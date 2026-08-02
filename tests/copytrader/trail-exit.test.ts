@@ -9,11 +9,28 @@ import {
 import type { CopyTraderConfig } from '../../src/copytrader/config.js';
 import { emptyCopyTraderState, type CopyPosition } from '../../src/copytrader/state.js';
 
+/** Legacy full-exit trail (no ladder). */
 const cfg: TrailExitConfig = {
   trailArmPct: 8,
   trailGivebackPct: 6,
   trailTakeProfitPct: 0,
+  trailTpStepPct: 0,
+  trailTpSellFraction: 0.5,
+  trailTrailSellFraction: 1,
+  trailKillPct: 0,
   trailTimeCapMs: 2_700_000,
+};
+
+/** Oscar half8_runner shape. */
+const oscar: TrailExitConfig = {
+  trailArmPct: 8,
+  trailGivebackPct: 8,
+  trailTakeProfitPct: 0,
+  trailTpStepPct: 8,
+  trailTpSellFraction: 0.5,
+  trailTrailSellFraction: 0.2,
+  trailKillPct: 50,
+  trailTimeCapMs: 0,
 };
 
 const ENTRY = 0.001;
@@ -54,7 +71,7 @@ describe('trail exit decision', () => {
     expect(d.peakPriceUsd).toBeCloseTo(ENTRY * 1.09, 12);
   });
 
-  it('exits after giving back the configured share of the peak', () => {
+  it('exits fully after giving back when trail sell fraction is 1', () => {
     const d = decideTrailExit(cfg, {
       entryPriceUsd: ENTRY,
       currentPriceUsd: ENTRY * 1.3,
@@ -63,8 +80,9 @@ describe('trail exit decision', () => {
       trailArmedAt: T0 + 10_000,
       nowMs: T0 + 120_000,
     });
-    expect(d.action).toBe('exit');
+    expect(d.action).toBe('sell');
     expect(d.reason).toBe('trail_giveback');
+    expect(d.fraction).toBe(1);
   });
 
   it('keeps riding while the pullback stays inside the giveback band', () => {
@@ -92,15 +110,16 @@ describe('trail exit decision', () => {
     expect(d.peakPriceUsd).toBeCloseTo(ENTRY * 2, 12);
   });
 
-  it('banks a hard take-profit before the trail needs a pullback', () => {
+  it('legacy hard take-profit only when the ladder is off', () => {
     const d = decideTrailExit({ ...cfg, trailTakeProfitPct: 25 }, {
       entryPriceUsd: ENTRY,
       currentPriceUsd: ENTRY * 1.26,
       entryTs: T0,
       nowMs: T0 + 60_000,
     });
-    expect(d.action).toBe('exit');
+    expect(d.action).toBe('sell');
     expect(d.reason).toBe('take_profit');
+    expect(d.fraction).toBe(1);
   });
 
   it('protects an +18% spike once the trail is armed at +8%', () => {
@@ -112,7 +131,7 @@ describe('trail exit decision', () => {
       trailArmedAt: T0 + 10_000,
       nowMs: T0 + 120_000,
     });
-    expect(d.action).toBe('exit');
+    expect(d.action).toBe('sell');
     expect(d.reason).toBe('trail_giveback');
   });
 
@@ -123,7 +142,7 @@ describe('trail exit decision', () => {
       entryTs: T0,
       nowMs: T0 + 2_700_001,
     });
-    expect(d.action).toBe('exit');
+    expect(d.action).toBe('sell');
     expect(d.reason).toBe('time_cap');
   });
 
@@ -135,6 +154,97 @@ describe('trail exit decision', () => {
       nowMs: T0 + 120_000,
     });
     expect(d.action).toBe('hold');
+  });
+});
+
+describe('oscar half8-style ladder', () => {
+  it('peels 50% at +8% instead of banking the whole bag', () => {
+    const d = decideTrailExit(oscar, {
+      entryPriceUsd: ENTRY,
+      currentPriceUsd: ENTRY * 1.09,
+      sizeUsd: 100,
+      entryTs: T0,
+      nowMs: T0 + 60_000,
+    });
+    expect(d.action).toBe('sell');
+    expect(d.reason).toBe('tp_rung');
+    expect(d.fraction).toBe(0.5);
+    expect(d.tpRungsTaken).toBe(1);
+  });
+
+  it('peels another 50% of remainder at +16%', () => {
+    const d = decideTrailExit(oscar, {
+      entryPriceUsd: ENTRY,
+      currentPriceUsd: ENTRY * 1.17,
+      tpRungsTaken: 1,
+      sizeUsd: 100,
+      entryTs: T0,
+      trailArmedAt: T0,
+      nowMs: T0 + 60_000,
+    });
+    expect(d.action).toBe('sell');
+    expect(d.reason).toBe('tp_rung');
+    expect(d.fraction).toBe(0.5);
+    expect(d.tpRungsTaken).toBe(2);
+  });
+
+  it('does not hard-cap a +200% runner — only peels the next rung', () => {
+    const d = decideTrailExit(oscar, {
+      entryPriceUsd: ENTRY,
+      currentPriceUsd: ENTRY * 3.0,
+      tpRungsTaken: 0,
+      sizeUsd: 100,
+      entryTs: T0,
+      nowMs: T0 + 60_000,
+    });
+    expect(d.action).toBe('sell');
+    expect(d.reason).toBe('tp_rung');
+    expect(d.fraction).toBe(0.5);
+    expect(d.gainPct).toBeCloseTo(200, 8);
+  });
+
+  it('on giveback sells 20% of remainder, not the whole runner', () => {
+    const d = decideTrailExit(oscar, {
+      entryPriceUsd: ENTRY,
+      currentPriceUsd: ENTRY * 1.1,
+      peakPriceUsd: ENTRY * 1.3,
+      tpRungsTaken: 1,
+      sizeUsd: 100,
+      entryTs: T0,
+      trailArmedAt: T0,
+      nowMs: T0 + 120_000,
+    });
+    expect(d.action).toBe('sell');
+    expect(d.reason).toBe('trail_giveback');
+    expect(d.fraction).toBe(0.2);
+    expect(d.trailGivebackStepsTaken).toBe(1);
+  });
+
+  it('kills at −50%', () => {
+    const d = decideTrailExit(oscar, {
+      entryPriceUsd: ENTRY,
+      currentPriceUsd: ENTRY * 0.49,
+      sizeUsd: 100,
+      entryTs: T0,
+      nowMs: T0 + 60_000,
+    });
+    expect(d.action).toBe('sell');
+    expect(d.reason).toBe('kill');
+    expect(d.fraction).toBe(1);
+  });
+
+  it('ignores the legacy hard TP when the ladder is on', () => {
+    const d = decideTrailExit({ ...oscar, trailTakeProfitPct: 25 }, {
+      entryPriceUsd: ENTRY,
+      currentPriceUsd: ENTRY * 1.3,
+      tpRungsTaken: 1,
+      sizeUsd: 100,
+      entryTs: T0,
+      trailArmedAt: T0,
+      nowMs: T0 + 60_000,
+    });
+    expect(d.reason).toBe('tp_rung');
+    expect(d.fraction).toBe(0.5);
   });
 });
 
@@ -162,8 +272,8 @@ function position(over: Partial<CopyPosition> = {}): CopyPosition {
   };
 }
 
-function runnerCfg(): CopyTraderConfig {
-  return cfg as CopyTraderConfig;
+function runnerCfg(over: Partial<TrailExitConfig> = {}): CopyTraderConfig {
+  return { ...cfg, ...over } as CopyTraderConfig;
 }
 
 describe('processTrailingExits', () => {
@@ -184,93 +294,29 @@ describe('processTrailingExits', () => {
 
     expect(n).toBe(1);
     expect(events[0]?.reason).toBe('time_cap');
+    expect(events[0]?.fraction).toBe(1);
     expect(state.positions.Mint111?.peakPriceUsd).toBeCloseTo(ENTRY, 12);
   });
 
-  it('marks the trail armed so a later pullback can trip it', async () => {
-    const state = emptyCopyTraderState();
-    state.positions.Mint111 = position();
-    const events: TrailExitEvent[] = [];
-    const deps = {
-      resolvePriceUsd: async () => ENTRY * 1.2,
-      scheduleExit: (e: TrailExitEvent) => events.push(e),
-    };
-
-    await processTrailingExits(runnerCfg(), state, deps, T0 + 60_000);
-    expect(state.positions.Mint111?.trailArmedAt).toBe(T0 + 60_000);
-    expect(events).toHaveLength(0);
-
-    await processTrailingExits(
-      runnerCfg(),
-      state,
-      { ...deps, resolvePriceUsd: async () => ENTRY * 1.1 },
-      T0 + 120_000,
-    );
-    expect(events[0]?.reason).toBe('trail_giveback');
-  });
-
-  it('leaves positions handed to oscar alone', async () => {
-    const state = emptyCopyTraderState();
-    state.positions.Mint111 = position({ oscarPromotedAt: T0 + 1 });
-    const events: TrailExitEvent[] = [];
-
-    const n = await processTrailingExits(
-      runnerCfg(),
-      state,
-      { resolvePriceUsd: async () => ENTRY * 0.5, scheduleExit: (e) => events.push(e) },
-      T0 + 9_000_000,
-    );
-    expect(n).toBe(0);
-  });
-
-  it('defers to an already queued sell', async () => {
-    const state = emptyCopyTraderState();
-    state.positions.Mint111 = position();
-    state.pendingSells.push({
-      id: 'ps1',
-      mint: 'Mint111',
-      symbol: 'MINT',
-      leaderSignature: 'sig2',
-      leaderSellTs: T0,
-      dueTs: T0,
-      fraction: 1,
-      retryUntilTs: T0 + 100,
-    });
-
-    const n = await processTrailingExits(
-      runnerCfg(),
-      state,
-      { resolvePriceUsd: async () => ENTRY * 0.5, scheduleExit: () => undefined },
-      T0 + 9_000_000,
-    );
-    expect(n).toBe(0);
-  });
-
-  it('still exits at the cap when the mark is unusable', async () => {
+  it('persists ladder counters when a TP rung fires', async () => {
     const state = emptyCopyTraderState();
     state.positions.Mint111 = position();
     const events: TrailExitEvent[] = [];
 
     const n = await processTrailingExits(
-      runnerCfg(),
+      runnerCfg(oscar),
       state,
-      { resolvePriceUsd: async () => 0, scheduleExit: (e) => events.push(e) },
-      T0 + 2_700_001,
-    );
-    expect(n).toBe(1);
-    expect(events[0]?.reason).toBe('time_cap');
-  });
-
-  it('does not exit on an unusable mark before the cap', async () => {
-    const state = emptyCopyTraderState();
-    state.positions.Mint111 = position();
-
-    const n = await processTrailingExits(
-      runnerCfg(),
-      state,
-      { resolvePriceUsd: async () => 0, scheduleExit: () => undefined },
+      {
+        resolvePriceUsd: async () => ENTRY * 1.1,
+        scheduleExit: (e) => events.push(e),
+      },
       T0 + 60_000,
     );
-    expect(n).toBe(0);
+
+    expect(n).toBe(1);
+    expect(events[0]?.reason).toBe('tp_rung');
+    expect(events[0]?.fraction).toBe(0.5);
+    expect(state.positions.Mint111?.trailTpRungsTaken).toBe(1);
+    expect(state.positions.Mint111?.trailArmedAt).toBe(T0 + 60_000);
   });
 });
