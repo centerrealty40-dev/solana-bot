@@ -239,6 +239,46 @@ Caveat: snapshot context covers a quarter of sessions and skews toward names
 the collector already tracks, so absolute trade counts scale up in live and
 thin names are under-represented.
 
+## Gates under the shipped exit (2026-08-02)
+
+Everything above was scored against the leader's own exits. Once the lane
+mirrors him with the loose trail as a backstop, the entry buckets have to be
+re-ranked: a bucket that looked weak when we cut it short can be fine when he
+carries it. Same 3 402 sessions that have both entry context and a price path,
+scored with arm +20% / giveback 8% / cap 60m / mirror.
+
+The prior-record bar, by bucket (≥3 prior sessions, age 1–24h):
+
+| Prior avg on mint | n | Median | Win | Net/trade |
+| --- | --- | --- | --- | --- |
+| < −5% | 84 | −0.39% | 47.6% | −1.88% |
+| −5…0% | 109 | +4.17% | 56.0% | +1.45% |
+| 0…3% | 136 | +3.33% | 59.6% | +2.44% |
+| 3…5% | 107 | +3.22% | 61.7% | +1.29% |
+| 5…10% | 272 | +4.19% | 61.8% | +1.49% |
+| > 10% | 749 | +4.91% | 61.9% | +2.73% |
+
+Only the losing bucket loses. The +5% cliff was cutting the 0–5% band, which
+earns as much per trade as the band above it. Fit on the first half of the
+window, judged on the second:
+
+| Prior-avg bar | Held-out n | Net/trade | Net |
+| --- | --- | --- | --- |
+| > +5% (was live) | 520 | +2.97% | +$1 543 |
+| > +3% | 579 | +3.00% | +$1 734 |
+| > 0% | 667 | +2.99% | +$1 996 |
+| > −5% | 725 | +2.95% | +$2 135 |
+
+Per-trade return is flat across the whole range, so the bar buys nothing but
+lost volume. It moves to 0: block the mints he has actually lost money on,
+take the rest. The other two gates stay — the 1-session bucket is the only
+negative experience bucket (−2.12% per trade against +4.09% at 5–9 sessions),
+and 24–48h pairs sit at +0.16% per trade with 48–72h negative.
+
+This was prompted by the live funnel: 1 of 45 leader buys cleared the gates in
+the two hours after the exit change, with prior-avg rejections clustered at
++2.9…+4.8%, just under the old bar.
+
 ## Cold start
 
 The prior-record gate needs history. `npm run copy-trader:bootstrap-history --

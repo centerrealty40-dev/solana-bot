@@ -2395,7 +2395,13 @@ const PM2_APPS = [
          */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '3',
-        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '5',
+        /**
+         * Only "he has lost money here before" is worth blocking. The old +5%
+         * bar was tuned against his own exits; once we mirror him, the 0-5%
+         * band earns the same per trade as the 5%+ band and is a third of the
+         * flow (LEADER_8ZKG_AUDIT.md "Gates under the shipped exit").
+         */
+        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '0',
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
         /** 24-72h is the dead zone: +0.42% mean vs +3.5% inside 24h. */
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '24',
@@ -2428,6 +2434,98 @@ const PM2_APPS = [
         /** 20 attempts per window instead of ~120; a failing swap costs a Jupiter round trip. */
         COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '3600000',
+        COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
+        COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
+        COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
+        COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
+        COPY_TRADER_SELL_DELAY_MIN_MS: '0',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
+        COPY_TRADER_SLIPPAGE_BPS: '150',
+        COPY_TRADER_TELEGRAM_ENABLED: '1',
+        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
+      },
+    },
+    {
+      /**
+       * The same leader and the same entry selection as `copy-trader-8zkg`, but the exit is his
+       * too: we sell when he sells, in his proportion, and never on a rule of our own.
+       *
+       * Run as a twin rather than a replacement because the two disagree about exits and only a
+       * side-by-side on identical entries settles which is right. The audit put mirroring at $1411
+       * against $549 for trail-and-cap, measured on his history; this puts that claim on real
+       * money. Separate wallet, journal and state — sharing any of them would make both lanes
+       * fight over the same token balances and neither result would mean anything.
+       */
+      name: 'copy-trader-8zkg-mirror',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/copy-trader.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 30,
+      restart_delay: 8000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_PRO_TRADING_ENV,
+        ...PM2_SOLANA_RPC_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
+        NODE_ENV: 'production',
+        COPY_TRADER_APP_NAME: 'copy-trader-8zkg-mirror',
+        COPY_TRADER_STRICT_ISOLATION: '1',
+        COPY_TRADER_SHARED_OSCAR_WALLET: '0',
+        COPY_TRADER_SPARE_CAPITAL_GATE: '0',
+        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/copy-8zkg-mirror.keypair.json'),
+        COPY_TRADER_WALLET_PUBKEY: 'BLthwsgzmN1o2XrTKVwPe1gSX1wUwZgTFXLagxP5eXcq',
+        COPY_TRADER_TARGET_WALLET: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+        COPY_TRADER_QUOTE_MINT: 'USDC',
+        COPY_TRADER_MIN_FEE_SOL_RESERVE: '0.02',
+        COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg-mirror/target-wallet.txt'),
+        COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg-mirror/journal.jsonl'),
+        COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg-mirror/state.json'),
+        COPY_TRADER_EXECUTION_MODE: 'live',
+        /** Oscar never adopts this lane — the leader owns the exit end to end. */
+        LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
+        COPY_TRADER_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '100',
+        COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
+        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
+        COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
+        COPY_TRADER_MAX_POSITION_USD: '100',
+        COPY_TRADER_MAX_OPEN_POSITIONS: '8',
+        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
+        /** Identical to the twin — the entry side is the control, only the exit differs. */
+        COPY_TRADER_LEADER_GATES: '1',
+        COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '3',
+        COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '5',
+        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
+        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '24',
+        COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
+        COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '10',
+        COPY_TRADER_MIN_LEADER_BUY_USD: '0',
+        COPY_TRADER_MIN_LIQUIDITY_USD: '0',
+        COPY_TRADER_MIN_MCAP_USD: '0',
+        /** His sell is the only exit: no trail, no time cap, no stop. */
+        COPY_TRADER_EXIT_MODE: 'mirror',
+        COPY_TRADER_POLL_INTERVAL_MS: '3000',
+        COPY_TRADER_TICK_INTERVAL_MS: '1000',
+        COPY_TRADER_BUY_DELAY_MS: '5000',
+        COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
+        COPY_TRADER_BUY_RETRY_WINDOW_MS: '120000',
+        COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
+        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
+        /**
+         * An exit must not be abandoned while the position is still worth something, so the sell
+         * window is long and the retries patient.
+         */
+        COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
