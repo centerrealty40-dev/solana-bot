@@ -96,6 +96,14 @@ const CopyTraderConfigSchema = z.object({
   entryMinBuySellRatio5m: z.coerce.number().min(0).max(100).default(1.05),
   /** Skip entries after a 5m spike larger than this, percent. **0** = off. */
   entryMaxChase5mPct: z.coerce.number().min(0).max(1000).default(15),
+  /**
+   * 5m volume divided by pool liquidity. The single feature that separates the
+   * leader's profitable copies from the rest: a pool nobody is trading cannot
+   * absorb our clip and does not move for us either. **0** = off.
+   */
+  entryMinTurnover5m: z.coerce.number().min(0).max(1000).default(0),
+  /** 1h volume divided by market cap — same idea over a longer window. **0** = off. */
+  entryMinVolToMcap1h: z.coerce.number().min(0).max(1000).default(0),
   /** Forget leader mint history untouched for this long. */
   leaderHistoryTtlMs: z.coerce.number().int().min(3_600_000).max(31_536_000_000).default(2_592_000_000),
   /** trail_runner: arm the peak trail once the position is this far up, percent. */
@@ -226,6 +234,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryMaxPairAgeHours: process.env.COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS,
     entryMinBuySellRatio5m: process.env.COPY_TRADER_ENTRY_MIN_BUY_SELL_5M,
     entryMaxChase5mPct: process.env.COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT,
+    entryMinTurnover5m: process.env.COPY_TRADER_ENTRY_MIN_TURNOVER_5M,
+    entryMinVolToMcap1h: process.env.COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H,
     leaderHistoryTtlMs: process.env.COPY_TRADER_LEADER_HISTORY_TTL_MS,
     trailArmPct: process.env.COPY_TRADER_TRAIL_ARM_PCT,
     trailGivebackPct: process.env.COPY_TRADER_TRAIL_GIVEBACK_PCT,
