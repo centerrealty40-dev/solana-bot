@@ -108,10 +108,27 @@ const CopyTraderConfigSchema = z.object({
   leaderHistoryTtlMs: z.coerce.number().int().min(3_600_000).max(31_536_000_000).default(2_592_000_000),
   /** trail_runner: arm the peak trail once the position is this far up, percent. */
   trailArmPct: z.coerce.number().min(0).max(1000).default(8),
-  /** trail_runner: exit after giving back this much of the peak, percent. */
+  /** trail_runner: each giveback step is this % of the peak (Oscar half8 uses 8). */
   trailGivebackPct: z.coerce.number().min(0).max(100).default(6),
-  /** trail_runner: hard full exit once gain from entry hits this, percent. **0** = off. */
+  /**
+   * trail_runner: legacy hard full exit at +N% from entry. **0** = off.
+   * Ignored when `trailTpStepPct` > 0 (ladder peels instead of banking the bag).
+   */
   trailTakeProfitPct: z.coerce.number().min(0).max(10_000).default(0),
+  /**
+   * trail_runner: Oscar-style TP ladder step vs entry, percent (half8 = 8).
+   * Each rung sells `trailTpSellFraction` of the remainder. **0** = ladder off.
+   */
+  trailTpStepPct: z.coerce.number().min(0).max(1000).default(0),
+  /** Fraction of remaining tokens sold at each TP rung (half8 = 0.5). */
+  trailTpSellFraction: z.coerce.number().min(0).max(1).default(0.5),
+  /**
+   * Fraction of remaining tokens sold on each trail giveback step (Oscar = 0.2).
+   * **1** = full exit on first giveback (old behaviour).
+   */
+  trailTrailSellFraction: z.coerce.number().min(0).max(1).default(1),
+  /** Hard full exit at −N% from entry (Oscar kill = 50). **0** = off. */
+  trailKillPct: z.coerce.number().min(0).max(100).default(0),
   /** trail_runner: hard exit after this long in the position. **0** = off. */
   trailTimeCapMs: z.coerce.number().int().min(0).max(86_400_000).default(2_700_000),
   /** trail_runner: how often open positions are marked. */
@@ -129,7 +146,7 @@ const CopyTraderConfigSchema = z.object({
   /**
    * Exit policy: `oscar_half8` — live-oscar wave_b half8_runner (+8% half, kill −50%);
    * `mirror` — proportional leader sell mirror (full copy);
-   * `trail_runner` — self-managed peak trail + time cap; does not follow leader sells.
+   * `trail_runner` — Oscar-style TP ladder + defensive trail; does not follow leader sells.
    */
   exitMode: z.enum(['oscar_half8', 'mirror', 'trail_runner']).default('oscar_half8'),
   /** Block copy buys when free SOL would starve live-oscar reserve + open committed. */
@@ -242,6 +259,10 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     trailArmPct: process.env.COPY_TRADER_TRAIL_ARM_PCT,
     trailGivebackPct: process.env.COPY_TRADER_TRAIL_GIVEBACK_PCT,
     trailTakeProfitPct: process.env.COPY_TRADER_TRAIL_TAKE_PROFIT_PCT,
+    trailTpStepPct: process.env.COPY_TRADER_TRAIL_TP_STEP_PCT,
+    trailTpSellFraction: process.env.COPY_TRADER_TRAIL_TP_SELL_FRACTION,
+    trailTrailSellFraction: process.env.COPY_TRADER_TRAIL_TRAIL_SELL_FRACTION,
+    trailKillPct: process.env.COPY_TRADER_TRAIL_KILL_PCT,
     trailTimeCapMs: process.env.COPY_TRADER_TRAIL_TIME_CAP_MS,
     trailTickIntervalMs: process.env.COPY_TRADER_TRAIL_TICK_INTERVAL_MS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,

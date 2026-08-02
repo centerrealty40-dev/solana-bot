@@ -235,6 +235,8 @@ function scheduleTrailExitSell(
   event: TrailExitEvent,
 ): void {
   const now = Date.now();
+  const fraction =
+    typeof event.fraction === 'number' && event.fraction > 0 ? Math.min(1, event.fraction) : 1;
   const pending: PendingSell = {
     id: newId('ps'),
     mint: event.pos.mint,
@@ -242,7 +244,7 @@ function scheduleTrailExitSell(
     leaderSignature: `trail_exit:${event.reason}`,
     leaderSellTs: now,
     dueTs: now,
-    fraction: 1,
+    fraction,
     retryUntilTs: computeRetryUntilTs(now, cfg.sellRetryWindowMs),
   };
   state.pendingSells.push(pending);
@@ -256,9 +258,12 @@ function scheduleTrailExitSell(
     priceUsd: event.priceUsd,
     peakPriceUsd: event.peakPriceUsd,
     gainPct: Number(event.gainPct.toFixed(2)),
+    sellFraction: fraction,
     heldSec: Math.round(event.heldMs / 1000),
     trailArmPct: cfg.trailArmPct,
     trailGivebackPct: cfg.trailGivebackPct,
+    tpRungsTaken: event.tpRungsTaken,
+    trailGivebackStepsTaken: event.trailGivebackStepsTaken,
   });
 }
 
@@ -1703,9 +1708,19 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
     exitMode: cfg.exitMode,
     trail: usesTrailingExitPolicy(cfg)
-      ? `arm+${cfg.trailArmPct}% giveback${cfg.trailGivebackPct}%` +
-        (cfg.trailTakeProfitPct > 0 ? ` tp${cfg.trailTakeProfitPct}%` : '') +
-        ` cap${Math.round(cfg.trailTimeCapMs / 60_000)}m`
+      ? [
+          `arm+${cfg.trailArmPct}%`,
+          cfg.trailTpStepPct > 0
+            ? `tpLadder+${cfg.trailTpStepPct}%x${cfg.trailTpSellFraction}`
+            : cfg.trailTakeProfitPct > 0
+              ? `tp${cfg.trailTakeProfitPct}%`
+              : null,
+          `giveback${cfg.trailGivebackPct}%x${cfg.trailTrailSellFraction}`,
+          cfg.trailKillPct > 0 ? `kill-${cfg.trailKillPct}%` : null,
+          cfg.trailTimeCapMs > 0 ? `cap${Math.round(cfg.trailTimeCapMs / 60_000)}m` : 'noCap',
+        ]
+          .filter(Boolean)
+          .join(' ')
       : null,
     leaderGates: cfg.leaderGatesEnabled
       ? {
