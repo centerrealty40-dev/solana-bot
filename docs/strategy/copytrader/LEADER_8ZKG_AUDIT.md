@@ -85,6 +85,10 @@ time cap 45 minutes, leader sell mirrored only as a backstop. No stop-loss — o
 this sample every SL cut the winning tail harder than it saved losers. This
 exits before the leader on 65% of trades.
 
+**Superseded** — see "Exit re-measurement" below. Beating him out the door
+turned out to cost money; the trail is now a backstop and he closes most
+trades. The no-stop conclusion survived re-testing.
+
 ## Backtest
 
 $100 per trade, 2.5% round-trip cost, returns winsorized at +300%, price paths
@@ -119,6 +123,57 @@ Peak capital in use ~$400, median 21 trades/day.
 | No chase | 5m move ≤ +15% | 1 190 |
 | Leader experience | ≥ 3 prior sessions | 973 |
 | Leader record | prior avg > +5% | 696 |
+
+## Exit re-measurement (2026-08-02)
+
+The shipped policy — arm +8%, give back 6%, hard cap 45 minutes, no stop —
+lost $113 over its first seven live round trips. Four winners returned +$29;
+two time-cap exits took −30% and −74%. That prompted a proper simulation:
+1 029 gated entries replayed against per-minute snapshot prices, leader exits
+placed at his actual hold time, 2.5% round trip. A stop is filled exactly at
+its level, which flatters it, since a real stop in a collapsing pool fills
+worse.
+
+Stops lose anyway. Every level tested cut more upside than downside:
+
+| Policy | Median | Mean | Win | 5th pct | Net |
+| --- | --- | --- | --- | --- | --- |
+| arm8 give6 cap45, no stop | +3.75% | +3.88% | 63.6% | −21.0% | +$1 411 |
+| …stop 10% | +1.38% | +3.14% | 55.3% | −10.0% | +$649 |
+| …stop 15% | +2.99% | +3.38% | 59.9% | −15.0% | +$897 |
+| …stop 25% | +3.50% | +3.55% | 62.8% | −25.0% | +$1 076 |
+| …stop 30% | +3.52% | +3.64% | 63.1% | −30.0% | +$1 159 |
+
+The worst single outcome stays near −88% at every setting without a stop. That
+tail is the price of the edge on this leader, not a defect to engineer away —
+but it does mean the per-trade size has to survive it.
+
+The larger finding inverts the original premise. Getting out before the leader
+was supposed to be the advantage; measured, it is the opposite:
+
+| Exit source | Net | Mean | Avg hold |
+| --- | --- | --- | --- |
+| Trail + cap only | +$549 | +3.03% | 24 min |
+| Mirroring the leader | +$1 411 | +3.88% | 15 min |
+
+Raising the arm threshold monotonically improves the result precisely because
+it hands more exits back to him: arm 5/8/12/15/20/25 nets $871 / $1 411 /
+$1 844 / $1 904 / $2 255 / $2 307, while trail exits fall from 434 to 134 and
+leader exits rise from 532 to 767.
+
+Fitted on the first half of the window and judged on the second, the loose
+setting holds up:
+
+| Held-out policy | n | Mean | Net/trade | Net |
+| --- | --- | --- | --- | --- |
+| arm8 give6 cap45 (shipped) | 511 | +4.35% | +1.85% | +$947 |
+| arm15 give8 cap60 | 511 | +5.38% | +2.88% | +$1 474 |
+| arm20 give8 cap60 | 511 | +5.50% | +3.00% | +$1 535 |
+
+arm15 and arm20 land within 4% of each other, so this is a plateau rather than
+a knife edge. Policy is now arm +20%, giveback 8%, cap 60 minutes, no stop:
+the leader closes the trade unless it runs far enough that protecting the gain
+beats following him.
 
 ## Gate re-measurement (2026-08-02)
 
