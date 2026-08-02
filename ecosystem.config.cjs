@@ -2387,16 +2387,22 @@ const PM2_APPS = [
         COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
-        /** Selective copy gates — see entry-gates.ts. */
+        /**
+         * Only gates that pay for themselves on 17.5k of the leader's sessions
+         * (see LEADER_8ZKG_AUDIT.md "Gate re-measurement"). Everything else is
+         * off: clip size, liquidity, mcap and 5m pressure each cost money or
+         * did nothing when measured on their own.
+         */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '3',
         COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '5',
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
-        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '72',
-        COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '1.05',
-        COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '15',
-        COPY_TRADER_MIN_LEADER_BUY_USD: '150',
-        COPY_TRADER_MIN_LIQUIDITY_USD: '15000',
+        /** 24-72h is the dead zone: +0.42% mean vs +3.5% inside 24h. */
+        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '24',
+        COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
+        COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '10',
+        COPY_TRADER_MIN_LEADER_BUY_USD: '0',
+        COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
         /** Self-managed exit: arm +8%, give back 6% of peak, hard cap 45m. */
         COPY_TRADER_EXIT_MODE: 'trail_runner',
