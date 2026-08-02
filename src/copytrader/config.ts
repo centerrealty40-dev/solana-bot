@@ -110,6 +110,8 @@ const CopyTraderConfigSchema = z.object({
   trailArmPct: z.coerce.number().min(0).max(1000).default(8),
   /** trail_runner: exit after giving back this much of the peak, percent. */
   trailGivebackPct: z.coerce.number().min(0).max(100).default(6),
+  /** trail_runner: hard full exit once gain from entry hits this, percent. **0** = off. */
+  trailTakeProfitPct: z.coerce.number().min(0).max(10_000).default(0),
   /** trail_runner: hard exit after this long in the position. **0** = off. */
   trailTimeCapMs: z.coerce.number().int().min(0).max(86_400_000).default(2_700_000),
   /** trail_runner: how often open positions are marked. */
@@ -239,6 +241,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     leaderHistoryTtlMs: process.env.COPY_TRADER_LEADER_HISTORY_TTL_MS,
     trailArmPct: process.env.COPY_TRADER_TRAIL_ARM_PCT,
     trailGivebackPct: process.env.COPY_TRADER_TRAIL_GIVEBACK_PCT,
+    trailTakeProfitPct: process.env.COPY_TRADER_TRAIL_TAKE_PROFIT_PCT,
     trailTimeCapMs: process.env.COPY_TRADER_TRAIL_TIME_CAP_MS,
     trailTickIntervalMs: process.env.COPY_TRADER_TRAIL_TICK_INTERVAL_MS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,

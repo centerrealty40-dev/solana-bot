@@ -12,6 +12,7 @@ import { emptyCopyTraderState, type CopyPosition } from '../../src/copytrader/st
 const cfg: TrailExitConfig = {
   trailArmPct: 8,
   trailGivebackPct: 6,
+  trailTakeProfitPct: 0,
   trailTimeCapMs: 2_700_000,
 };
 
@@ -89,6 +90,30 @@ describe('trail exit decision', () => {
       nowMs: T0 + 120_000,
     });
     expect(d.peakPriceUsd).toBeCloseTo(ENTRY * 2, 12);
+  });
+
+  it('banks a hard take-profit before the trail needs a pullback', () => {
+    const d = decideTrailExit({ ...cfg, trailTakeProfitPct: 25 }, {
+      entryPriceUsd: ENTRY,
+      currentPriceUsd: ENTRY * 1.26,
+      entryTs: T0,
+      nowMs: T0 + 60_000,
+    });
+    expect(d.action).toBe('exit');
+    expect(d.reason).toBe('take_profit');
+  });
+
+  it('protects an +18% spike once the trail is armed at +8%', () => {
+    const d = decideTrailExit({ ...cfg, trailGivebackPct: 8 }, {
+      entryPriceUsd: ENTRY,
+      currentPriceUsd: ENTRY * 1.05,
+      peakPriceUsd: ENTRY * 1.18,
+      entryTs: T0,
+      trailArmedAt: T0 + 10_000,
+      nowMs: T0 + 120_000,
+    });
+    expect(d.action).toBe('exit');
+    expect(d.reason).toBe('trail_giveback');
   });
 
   it('exits an unarmed position at the time cap', () => {

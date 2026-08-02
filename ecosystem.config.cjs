@@ -2412,13 +2412,15 @@ const PM2_APPS = [
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
         /**
-         * Own exit: arm +20% / giveback 8% / cap 60m. Does NOT mirror his sells —
-         * that is `copy-trader-8zkg-mirror`. No stop-loss: every level tested
-         * cut the tail harder than it saved.
+         * Own exit — does NOT mirror his sells (that is `copy-trader-8zkg-mirror`).
+         * Arm at +8% so a +18% spike is already protected; hard TP at +25%;
+         * giveback 8% from peak; 60m cap as last resort. No hard stop-loss —
+         * every fixed SL level tested cut the tail harder than it saved.
          */
         COPY_TRADER_EXIT_MODE: 'trail_runner',
-        COPY_TRADER_TRAIL_ARM_PCT: '20',
+        COPY_TRADER_TRAIL_ARM_PCT: '8',
         COPY_TRADER_TRAIL_GIVEBACK_PCT: '8',
+        COPY_TRADER_TRAIL_TAKE_PROFIT_PCT: '25',
         COPY_TRADER_TRAIL_TIME_CAP_MS: '3600000',
         COPY_TRADER_TRAIL_TICK_INTERVAL_MS: '5000',
         /** Follow the leader within ~5s; his median session is 28 min. */
