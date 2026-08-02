@@ -126,8 +126,8 @@ const CopyTraderConfigSchema = z.object({
   sharedOscarWallet: z.boolean().default(false),
   /**
    * Exit policy: `oscar_half8` — live-oscar wave_b half8_runner (+8% half, kill −50%);
-   * `mirror` — proportional leader sell mirror (legacy);
-   * `trail_runner` — self-managed peak trail + time cap, leader sell as backstop.
+   * `mirror` — proportional leader sell mirror (full copy);
+   * `trail_runner` — self-managed peak trail + time cap; does not follow leader sells.
    */
   exitMode: z.enum(['oscar_half8', 'mirror', 'trail_runner']).default('oscar_half8'),
   /** Block copy buys when free SOL would starve live-oscar reserve + open committed. */

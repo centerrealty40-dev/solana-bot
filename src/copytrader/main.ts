@@ -844,6 +844,38 @@ async function onLeaderSell(
     return;
   }
 
+  /** trail_runner owns the exit — do not dump because he dumped. */
+  if (usesTrailingExitPolicy(cfg)) {
+    const cancelledBuys = cancelPendingBuysForMint(state, mint, 'any');
+    for (const c of cancelledBuys) {
+      appendCopyEvent(cfg, {
+        kind: c.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
+        reason: 'leader_started_exit',
+        mint,
+        symbol: c.symbol,
+        leaderSignature: c.leaderSignature,
+        leaderSellFraction: sellFrac,
+      });
+    }
+    if (pos) {
+      markEntryDipAbandoned(cfg, state, pos, {
+        mint,
+        leaderSignature: row.signature,
+        leaderSellFraction: sellFrac,
+      });
+    }
+    appendCopyEvent(cfg, {
+      kind: 'leader_sell_skipped_own_exit',
+      mint,
+      symbol,
+      leaderSignature: row.signature,
+      leaderPriceUsd: swap.priceUsd,
+      leaderSellFraction: sellFrac,
+      exitMode: cfg.exitMode,
+    });
+    return;
+  }
+
   if (cfg.minProportionalSellFraction > 0 && sellFrac < cfg.minProportionalSellFraction) {
     appendCopyEvent(cfg, {
       kind: 'leader_sell_ignored',
@@ -1753,9 +1785,12 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     try {
       await processPendingBuys(cfg, state);
       await processPendingSells(cfg, state);
-      const tailSweeps = await scheduleLeaderFlatTailSweeps(cfg, state);
-      if (tailSweeps > 0) {
-        console.log('[copy-trader] leader-flat tail sweep scheduled', tailSweeps);
+      /** Flat-tail is leader-follow cleanup — not for trail_runner. */
+      if (!usesTrailingExitPolicy(cfg)) {
+        const tailSweeps = await scheduleLeaderFlatTailSweeps(cfg, state);
+        if (tailSweeps > 0) {
+          console.log('[copy-trader] leader-flat tail sweep scheduled', tailSweeps);
+        }
       }
       writeCopyTraderState(cfg.statePath, state);
     } catch (err) {
