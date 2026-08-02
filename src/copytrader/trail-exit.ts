@@ -1,11 +1,9 @@
 /**
- * Self-managed exit overlay for `COPY_TRADER_EXIT_MODE=trail_runner`.
+ * Self-managed exit for `COPY_TRADER_EXIT_MODE=trail_runner`.
  *
- * The 30d audit showed the leader's median copy is +14.6% at its best point
- * within an hour but −1.7% by the time he sells. Mirroring his exit therefore
- * gives back the whole excursion. This peak trail plus a hard time cap banks it
- * instead; his sell still mirrors through the normal pending-sell path as a
- * backstop.
+ * Peak trail + hard time cap. Leader sells are not mirrored here — that is the
+ * job of a separate `mirror` lane. Pending sells queued by this module are own
+ * exits (giveback / time cap), not leader copies.
  */
 import type { CopyTraderConfig } from './config.js';
 import type { CopyPosition, CopyTraderState } from './state.js';

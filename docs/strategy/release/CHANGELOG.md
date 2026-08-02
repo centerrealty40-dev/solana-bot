@@ -102,6 +102,31 @@
 
 ---
 
+## [1.11.622] — 2026-08-02
+
+### Fix: `trail_runner` больше не продаёт вслед за лидером
+
+`COPY_TRADER_EXIT_MODE=trail_runner` был описан как «свой выход», но в коде продажа
+лидера всё ещё ставилась в очередь как «подстраховка», плюс срабатывал flat-tail
+sweep, когда лидер обнулял позицию. В журнале `copy-trader-8zkg` за 6 часов —
+6 `leader_sell_scheduled` против 6 `trail_exit_scheduled`: половина выходов шла
+зеркало, а не трейл.
+
+Полный копитрейд — отдельная линия `copy-trader-8zkg-mirror` (`EXIT_MODE=mirror`).
+У нашей линии выход только свой: giveback / time cap.
+
+**Изменено**
+
+- `onLeaderSell`: при `trail_runner` — отмена pending buy, событие
+  `leader_sell_skipped_own_exit`, продажа не планируется.
+- `scheduleLeaderFlatTailSweeps` не вызывается в `trail_runner`.
+- `mirrorsLeaderSells()` — явный контракт: только `mirror`.
+
+**Откат:** вернуть зеркало в `onLeaderSell` для `trail_runner` и снова вызывать
+flat-tail; конфиг PM2 не менялся по режиму выхода.
+
+---
+
 ## [1.11.621] — 2026-08-02
 
 ### Change: гейты входа `copy-trader-8zkg` — оборачиваемость пула вместо памяти по монете

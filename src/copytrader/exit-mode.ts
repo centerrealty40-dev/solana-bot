@@ -15,9 +15,14 @@ export function usesOscarExitPolicy(cfg: CopyTraderConfig): boolean {
 }
 
 /**
- * Self-managed peak trail + hard time cap. Leader sells still mirror through the
- * normal pending-sell path as a backstop, so this is an overlay, not a replacement.
+ * Self-managed peak trail + hard time cap. Own exit only — leader sells are
+ * ignored; the twin lane `copy-trader-*-mirror` is the one that follows him out.
  */
 export function usesTrailingExitPolicy(cfg: CopyTraderConfig): boolean {
   return cfg.exitMode === 'trail_runner';
+}
+
+/** Proportional leader sells + flat-tail sweep. Only `mirror` mode. */
+export function mirrorsLeaderSells(cfg: CopyTraderConfig): boolean {
+  return cfg.exitMode === 'mirror';
 }

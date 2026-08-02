@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mirrorsLeaderSells,
   parseCopyTraderExitMode,
   usesOscarExitPolicy,
   usesTrailingExitPolicy,
@@ -37,5 +38,11 @@ describe('copy-trader exit mode', () => {
     expect(usesTrailingExitPolicy({ ...baseCfg, exitMode: 'trail_runner' })).toBe(true);
     expect(usesTrailingExitPolicy({ ...baseCfg, exitMode: 'mirror' })).toBe(false);
     expect(usesTrailingExitPolicy({ ...baseCfg, exitMode: 'oscar_half8' })).toBe(false);
+  });
+
+  it('only mirror mode follows the leader out', () => {
+    expect(mirrorsLeaderSells({ ...baseCfg, exitMode: 'mirror' })).toBe(true);
+    expect(mirrorsLeaderSells({ ...baseCfg, exitMode: 'trail_runner' })).toBe(false);
+    expect(mirrorsLeaderSells({ ...baseCfg, exitMode: 'oscar_half8' })).toBe(false);
   });
 });

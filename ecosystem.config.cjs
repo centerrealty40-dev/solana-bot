@@ -2334,9 +2334,8 @@ const PM2_APPS = [
      * The leader fires ~590 buys/day and is profitable only on short holds; the
      * 30d audit (docs/strategy/copytrader/LEADER_8ZKG_AUDIT.md) put his edge in
      * mints he revisits with a positive record, on pairs 1h–3d old, without
-     * chasing a 5m spike. Gates below cut ~590/day to ~20/day. Exit is ours:
-     * peak trail +8% arm / 6% giveback with a 45m cap; his sell mirrors only as
-     * a backstop, because holding to his exit gives the whole excursion back.
+     * chasing a 5m spike. Exit is ours alone: peak trail + time cap. The twin
+     * `copy-trader-8zkg-mirror` is the lane that follows him out 1:1.
      */
     {
       name: 'copy-trader-8zkg',
@@ -2413,11 +2412,9 @@ const PM2_APPS = [
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
         /**
-         * The leader's own exit is the best exit available: mirroring him nets
-         * $1411 against $549 for trail-and-cap alone on the same entries. The
-         * trail is therefore a backstop, not the primary exit — armed late so
-         * it stops clipping winners the leader would have ridden further.
-         * No stop-loss: every level tested cut the tail harder than it saved.
+         * Own exit: arm +20% / giveback 8% / cap 60m. Does NOT mirror his sells —
+         * that is `copy-trader-8zkg-mirror`. No stop-loss: every level tested
+         * cut the tail harder than it saved.
          */
         COPY_TRADER_EXIT_MODE: 'trail_runner',
         COPY_TRADER_TRAIL_ARM_PCT: '20',
