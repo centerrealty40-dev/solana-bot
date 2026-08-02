@@ -1,15 +1,14 @@
 /**
  * Self-managed exit for `COPY_TRADER_EXIT_MODE=trail_runner`.
  *
- * Peak trail + hard time cap. Leader sells are not mirrored here — that is the
- * job of a separate `mirror` lane. Pending sells queued by this module are own
- * exits (giveback / time cap), not leader copies.
+ * Hard take-profit, peak trail after arm, then time cap. Leader sells are not
+ * mirrored here — that is a separate `mirror` lane.
  */
 import type { CopyTraderConfig } from './config.js';
 import type { CopyPosition, CopyTraderState } from './state.js';
 import { hasPendingSellForMint } from './state.js';
 
-export type TrailExitReason = 'trail_giveback' | 'time_cap';
+export type TrailExitReason = 'take_profit' | 'trail_giveback' | 'time_cap';
 
 export type TrailExitDecision = {
   action: 'hold' | 'exit';
@@ -21,7 +20,7 @@ export type TrailExitDecision = {
 
 export type TrailExitConfig = Pick<
   CopyTraderConfig,
-  'trailArmPct' | 'trailGivebackPct' | 'trailTimeCapMs'
+  'trailArmPct' | 'trailGivebackPct' | 'trailTakeProfitPct' | 'trailTimeCapMs'
 >;
 
 export type TrailExitInput = {
@@ -45,6 +44,10 @@ export function decideTrailExit(cfg: TrailExitConfig, input: TrailExitInput): Tr
   const peak = Math.max(prevPeak, entry, price);
   const gainPct = (price / entry - 1) * 100;
   const armed = input.trailArmedAt != null || gainPct >= cfg.trailArmPct;
+
+  if (cfg.trailTakeProfitPct > 0 && gainPct >= cfg.trailTakeProfitPct) {
+    return { action: 'exit', reason: 'take_profit', armed: true, peakPriceUsd: peak, gainPct };
+  }
 
   if (armed && cfg.trailGivebackPct > 0) {
     const stop = peak * (1 - cfg.trailGivebackPct / 100);

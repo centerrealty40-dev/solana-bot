@@ -1703,7 +1703,9 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
     exitMode: cfg.exitMode,
     trail: usesTrailingExitPolicy(cfg)
-      ? `arm+${cfg.trailArmPct}% giveback${cfg.trailGivebackPct}% cap${Math.round(cfg.trailTimeCapMs / 60_000)}m`
+      ? `arm+${cfg.trailArmPct}% giveback${cfg.trailGivebackPct}%` +
+        (cfg.trailTakeProfitPct > 0 ? ` tp${cfg.trailTakeProfitPct}%` : '') +
+        ` cap${Math.round(cfg.trailTimeCapMs / 60_000)}m`
       : null,
     leaderGates: cfg.leaderGatesEnabled
       ? {
