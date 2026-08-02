@@ -2480,8 +2480,13 @@ const PM2_APPS = [
         COPY_TRADER_STRICT_ISOLATION: '1',
         COPY_TRADER_SHARED_OSCAR_WALLET: '0',
         COPY_TRADER_SPARE_CAPITAL_GATE: '0',
-        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/copy-8zkg-mirror.keypair.json'),
-        COPY_TRADER_WALLET_PUBKEY: 'BLthwsgzmN1o2XrTKVwPe1gSX1wUwZgTFXLagxP5eXcq',
+        /**
+         * The microcap-scalper's wallet, handed over with its funds. That lane had been parked
+         * since midday — its entries kept missing the price corridor — so its capital was sitting
+         * idle while this lane had none. One funded wallet is worth more than two empty ones.
+         */
+        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/mcs-wallet.json'),
+        COPY_TRADER_WALLET_PUBKEY: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
         COPY_TRADER_TARGET_WALLET: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
         COPY_TRADER_QUOTE_MINT: 'USDC',
         COPY_TRADER_MIN_FEE_SOL_RESERVE: '0.02',
