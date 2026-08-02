@@ -5,18 +5,29 @@ import { getSolUsd } from '../papertrader/pricing.js';
 import { entryDipMaxPriceUsd } from './entry-probe.js';
 import type { PendingBuy } from './state.js';
 import { findPendingBuy } from './pending-buy-retry.js';
+import {
+  copyBuyInputAmountRaw,
+  copyBuyQuotePriceUsd,
+  copyQuoteSpec,
+  parseCopyQuoteAsset,
+  type CopyQuoteSpec,
+} from './quote-mint.js';
 
-/** Implied token USD price from a Jupiter buy quote (SOL → memecoin). */
+/**
+ * Implied token USD price from a Jupiter buy quote.
+ * `spec` defaults to SOL funding so existing callers keep their behavior.
+ */
 export function impliedBuyPriceUsdFromQuote(
   quoteResponse: Record<string, unknown>,
   solUsd: number,
+  spec: CopyQuoteSpec = parseCopyQuoteAsset('SOL'),
 ): number {
-  const outRaw = quoteResponse.outAmount;
-  const inRaw = quoteResponse.inAmount;
-  const outN = typeof outRaw === 'string' ? Number(outRaw) : Number(outRaw ?? 0);
-  const inN = typeof inRaw === 'string' ? Number(inRaw) : Number(inRaw ?? 0);
-  if (!(outN > 0) || !(inN > 0) || !(solUsd > 0)) return 0;
-  return ((inN / 1e9) * solUsd) / (outN / 1e6);
+  return copyBuyQuotePriceUsd({
+    spec,
+    inAmountRaw: quoteResponse.inAmount,
+    outAmountRaw: quoteResponse.outAmount,
+    solUsd,
+  });
 }
 
 export type EntryDipEvalPrice = {
@@ -67,16 +78,23 @@ export async function resolveEntryDipEvalPrice(args: {
   }
 
   const solUsd = getSolUsd();
+  const spec = copyQuoteSpec(cfg);
+  const inputAmountRaw = copyBuyInputAmountRaw(spec, dipSizeUsd, solUsd);
+  if (inputAmountRaw == null) {
+    return { priceUsd: 0, source: 'jupiter_quote', quoteUnavailable: true };
+  }
   const quote = await liveFetchBuyQuote({
     cfg: copyTraderLiveOscarBridge(cfg),
     outputMint: mint,
     sizeUsd: dipSizeUsd,
     solUsd,
+    inputMintOverride: spec.mint,
+    inputAmountRawOverride: inputAmountRaw,
   });
   if (!quote) {
     return { priceUsd: 0, source: 'jupiter_quote', quoteUnavailable: true };
   }
-  const priceUsd = impliedBuyPriceUsdFromQuote(quote.quoteResponse, solUsd);
+  const priceUsd = impliedBuyPriceUsdFromQuote(quote.quoteResponse, solUsd, spec);
   if (!(priceUsd > 0)) {
     return { priceUsd: 0, source: 'jupiter_quote', quoteUnavailable: true };
   }

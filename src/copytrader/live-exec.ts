@@ -14,6 +14,12 @@ import { getSolUsd } from '../papertrader/pricing.js';
 import { rpcCall } from './rpc.js';
 import { appendCopyEvent } from './executor.js';
 import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
+import {
+  copyBuyInputAmountRaw,
+  copyBuyQuotePriceUsd,
+  copyQuoteSpec,
+  copySellQuotePriceUsd,
+} from './quote-mint.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -98,12 +104,20 @@ export async function executeLiveCopyBuy(args: {
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
+  const quoteSpec = copyQuoteSpec(cfg);
+
+  const inputAmountRaw = copyBuyInputAmountRaw(quoteSpec, sizeUsd, solUsd);
+  if (inputAmountRaw == null) {
+    return { ok: false, priceUsd: 0, reason: 'buy_size_unresolvable' };
+  }
 
   const quote = await liveFetchBuyQuote({
     cfg: liveCfg,
     outputMint: mint,
     sizeUsd,
     solUsd,
+    inputMintOverride: quoteSpec.mint,
+    inputAmountRawOverride: inputAmountRaw,
   });
   if (!quote) {
     return { ok: false, priceUsd: 0, reason: 'jupiter_buy_quote_failed' };
@@ -119,10 +133,12 @@ export async function executeLiveCopyBuy(args: {
   }
 
   const outRaw = quote.quoteResponse.outAmount;
-  const inRaw = quote.quoteResponse.inAmount;
-  const outN = typeof outRaw === 'string' ? Number(outRaw) : Number(outRaw ?? 0);
-  const inN = typeof inRaw === 'string' ? Number(inRaw) : Number(inRaw ?? 0);
-  const priceUsd = outN > 0 && inN > 0 ? (inN / 1e9) * solUsd / (outN / 1e6) : 0;
+  const priceUsd = copyBuyQuotePriceUsd({
+    spec: quoteSpec,
+    inAmountRaw: quote.quoteResponse.inAmount,
+    outAmountRaw: outRaw,
+    solUsd,
+  });
 
   const sent = await sendSwap(cfg, build.b64, {
     side: 'buy',
@@ -131,6 +147,7 @@ export async function executeLiveCopyBuy(args: {
     sizeUsd,
     kind,
     leaderSignature,
+    quoteAsset: quoteSpec.asset,
     quoteSnapshot: quote.quoteSnapshot,
   });
 
@@ -150,6 +167,7 @@ export async function executeLiveCopySell(args: {
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
+  const quoteSpec = copyQuoteSpec(cfg);
 
   let totalRaw = 0n;
   if (tokenRawBase) {
@@ -185,6 +203,7 @@ export async function executeLiveCopySell(args: {
       solUsd,
       userPublicKey: userPk,
       slippageBpsOverride: currentSlippageBps,
+      outputMintOverride: quoteSpec.mint,
     });
     if (!prep) {
       lastReason = 'jupiter_sell_quote_failed';
@@ -203,11 +222,12 @@ export async function executeLiveCopySell(args: {
       return { ok: false, priceUsd: 0, reason: lastReason };
     }
 
-    const outRaw = prep.quoteResponse.outAmount;
-    const outLamports = typeof outRaw === 'string' ? Number(outRaw) : Number(outRaw ?? 0);
-    const proceedsUsd = outLamports > 0 ? (outLamports / 1e9) * solUsd : 0;
-    const tokensSold = Number(sellRaw) / 1e6;
-    const exitPriceUsd = tokensSold > 0 && proceedsUsd > 0 ? proceedsUsd / tokensSold : 0;
+    const { priceUsd: exitPriceUsd } = copySellQuotePriceUsd({
+      spec: quoteSpec,
+      outAmountRaw: prep.quoteResponse.outAmount,
+      tokenAmountRaw: sellRaw,
+      solUsd,
+    });
 
     const sent = await sendSwap(cfg, prep.swapBuild.b64, {
       side: 'sell',
@@ -216,6 +236,7 @@ export async function executeLiveCopySell(args: {
       leaderSignature,
       sellFraction: fraction,
       tokenAmountRaw: sellRaw.toString(),
+      quoteAsset: quoteSpec.asset,
       quoteSnapshot: {
         ...prep.quoteSnapshot,
         sellSimRetryAttempt: attempt,

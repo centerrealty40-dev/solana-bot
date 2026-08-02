@@ -99,6 +99,7 @@ import {
   type CopyLeaderIgnoreVerdict,
 } from './oscar-position-guard.js';
 import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
+import { checkCopyFundingGate } from './funding-gate.js';
 import { usesOscarExitPolicy, usesTrailingExitPolicy } from './exit-mode.js';
 import { fetchCopyEntryContext, type CopyEntryContext } from './entry-context.js';
 import { evaluateLeaderMarketGate, evaluateLeaderPriorGate } from './entry-gates.js';
@@ -1256,6 +1257,24 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       }
     }
 
+    const funding = await checkCopyFundingGate(cfg, pending.sizeUsd, now);
+    if (!funding.ok) {
+      if (noteBuyDefer(state, pending.id, now, cfg)) {
+        appendCopyEvent(cfg, {
+          kind: pending.kind === 'add' ? 'add_deferred' : 'buy_deferred',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          reason: funding.reason,
+          quoteUsd: funding.quoteUsd,
+          feeSol: funding.feeSol,
+          requiredUsd: funding.requiredUsd,
+          retryUntilTs: pending.retryUntilTs,
+        });
+      }
+      continue;
+    }
+
     const spare = await checkCopySpareCapitalGate(cfg, pending.sizeUsd);
     if (!spare.ok) {
       if (noteBuyDefer(state, pending.id, now, cfg)) {
@@ -1646,6 +1665,8 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         }
       : null,
     leaderHistoryMints: Object.keys(state.leaderHistory).length,
+    quoteAsset: cfg.quoteAsset,
+    minFeeSolReserve: cfg.minFeeSolReserve,
     isolated: true,
   });
 
