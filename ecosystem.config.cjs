@@ -2404,11 +2404,17 @@ const PM2_APPS = [
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
-        /** Self-managed exit: arm +8%, give back 6% of peak, hard cap 45m. */
+        /**
+         * The leader's own exit is the best exit available: mirroring him nets
+         * $1411 against $549 for trail-and-cap alone on the same entries. The
+         * trail is therefore a backstop, not the primary exit — armed late so
+         * it stops clipping winners the leader would have ridden further.
+         * No stop-loss: every level tested cut the tail harder than it saved.
+         */
         COPY_TRADER_EXIT_MODE: 'trail_runner',
-        COPY_TRADER_TRAIL_ARM_PCT: '8',
-        COPY_TRADER_TRAIL_GIVEBACK_PCT: '6',
-        COPY_TRADER_TRAIL_TIME_CAP_MS: '2700000',
+        COPY_TRADER_TRAIL_ARM_PCT: '20',
+        COPY_TRADER_TRAIL_GIVEBACK_PCT: '8',
+        COPY_TRADER_TRAIL_TIME_CAP_MS: '3600000',
         COPY_TRADER_TRAIL_TICK_INTERVAL_MS: '5000',
         /** Follow the leader within ~5s; his median session is 28 min. */
         COPY_TRADER_POLL_INTERVAL_MS: '3000',
