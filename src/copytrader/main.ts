@@ -99,7 +99,16 @@ import {
   type CopyLeaderIgnoreVerdict,
 } from './oscar-position-guard.js';
 import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
-import { usesOscarExitPolicy } from './exit-mode.js';
+import { usesOscarExitPolicy, usesTrailingExitPolicy } from './exit-mode.js';
+import { fetchCopyEntryContext, type CopyEntryContext } from './entry-context.js';
+import { evaluateLeaderMarketGate, evaluateLeaderPriorGate } from './entry-gates.js';
+import {
+  applyLeaderSwapToHistory,
+  gcLeaderHistory,
+  leaderMintStats,
+  type LeaderMintStats,
+} from './leader-history.js';
+import { processTrailingExits, type TrailExitEvent } from './trail-exit.js';
 import { handoffCopyPositionToOscarExit } from './copy-oscar-exit-handoff.js';
 import {
   copyPositionOscarExitManaged,
@@ -190,6 +199,67 @@ function oscarDupGuardBlocksBuy(
 
 let lastPollRpcFailLogMs = 0;
 const POLL_RPC_FAIL_LOG_MS = 60_000;
+
+type LeaderGateBlock = {
+  reasons: string[];
+  stats: LeaderMintStats | null;
+  ctx: CopyEntryContext | null;
+};
+
+/**
+ * Selective copy gates. The state-only prior-record check runs first so most
+ * candidates are rejected without spending a DexScreener request.
+ */
+async function leaderGateBlocksEntry(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+  mint: string,
+): Promise<LeaderGateBlock | null> {
+  if (!cfg.leaderGatesEnabled) return null;
+
+  const stats = leaderMintStats(state, mint);
+  const prior = evaluateLeaderPriorGate(cfg, stats);
+  if (!prior.pass) return { reasons: prior.reasons, stats, ctx: null };
+
+  const ctx = await fetchCopyEntryContext(mint);
+  const market = evaluateLeaderMarketGate(cfg, ctx);
+  if (!market.pass) return { reasons: market.reasons, stats, ctx };
+
+  return null;
+}
+
+function scheduleTrailExitSell(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+  event: TrailExitEvent,
+): void {
+  const now = Date.now();
+  const pending: PendingSell = {
+    id: newId('ps'),
+    mint: event.pos.mint,
+    symbol: event.pos.symbol,
+    leaderSignature: `trail_exit:${event.reason}`,
+    leaderSellTs: now,
+    dueTs: now,
+    fraction: 1,
+    retryUntilTs: computeRetryUntilTs(now, cfg.sellRetryWindowMs),
+  };
+  state.pendingSells.push(pending);
+
+  appendCopyEvent(cfg, {
+    kind: 'trail_exit_scheduled',
+    reason: event.reason,
+    mint: event.pos.mint,
+    symbol: event.pos.symbol,
+    entryPriceUsd: event.pos.entryPriceUsd,
+    priceUsd: event.priceUsd,
+    peakPriceUsd: event.peakPriceUsd,
+    gainPct: Number(event.gainPct.toFixed(2)),
+    heldSec: Math.round(event.heldMs / 1000),
+    trailArmPct: cfg.trailArmPct,
+    trailGivebackPct: cfg.trailGivebackPct,
+  });
+}
 
 function randomSellDelayMs(cfg: CopyTraderConfig): number {
   const span = cfg.sellDelayMaxMs - cfg.sellDelayMinMs;
@@ -293,6 +363,26 @@ export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderS
       await onLeaderSell(cfg, state, swap, symbol, row, preLeaderRaw);
     }
     applyLeaderSwapToLedger(state, mint, swap.side, swap.baseAmountRaw);
+    const closedPct = applyLeaderSwapToHistory(state, {
+      mint,
+      side: swap.side,
+      amountUsd: swap.amountUsd,
+      leaderBalanceAfterRaw: leaderPreBalanceRaw(state, mint),
+      dustRaw: cfg.leaderFlatDustRaw,
+      nowMs: Date.now(),
+    });
+    if (closedPct != null) {
+      const stats = leaderMintStats(state, mint);
+      appendCopyEvent(cfg, {
+        kind: 'leader_session_closed',
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        sessionPct: Number(closedPct.toFixed(2)),
+        leaderPriorSessions: stats?.sessions ?? 0,
+        leaderPriorAvgPct: stats != null ? Number(stats.avgPct.toFixed(2)) : null,
+      });
+    }
     await sleep(120);
   }
 }
@@ -458,6 +548,30 @@ async function onLeaderBuy(
       reason: 'max_open_positions',
       mint,
       leaderSignature: row.signature,
+    });
+    return;
+  }
+
+  const gateBlock = await leaderGateBlocksEntry(cfg, state, mint);
+  if (gateBlock) {
+    appendCopyEvent(cfg, {
+      kind: 'leader_buy_ignored',
+      reason: 'copy_gate',
+      gateReasons: gateBlock.reasons,
+      mint,
+      symbol,
+      leaderSignature: row.signature,
+      leaderBuyUsd: swap.amountUsd,
+      leaderPriorSessions: gateBlock.stats?.sessions ?? 0,
+      leaderPriorAvgPct:
+        gateBlock.stats != null ? Number(gateBlock.stats.avgPct.toFixed(2)) : null,
+      pairAgeHours:
+        gateBlock.ctx?.pairAgeHours != null ? Number(gateBlock.ctx.pairAgeHours.toFixed(2)) : null,
+      buySellRatio5m:
+        gateBlock.ctx?.buySellRatio5m != null
+          ? Number(gateBlock.ctx.buySellRatio5m.toFixed(2))
+          : null,
+      priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
     });
     return;
   }
@@ -1484,6 +1598,8 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
   let lastPoll = 0;
   let lastSolRefresh = 0;
   let lastReconcile = 0;
+  let lastTrailTick = 0;
+  let lastHistoryGc = 0;
 
   try {
     const reverted = reconcileIneligibleOscarHandoffs(cfg, state);
@@ -1517,6 +1633,19 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     sellRetryIntervalSec: Math.round(cfg.sellRetryIntervalMs / 1000),
     sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
     exitMode: cfg.exitMode,
+    trail: usesTrailingExitPolicy(cfg)
+      ? `arm+${cfg.trailArmPct}% giveback${cfg.trailGivebackPct}% cap${Math.round(cfg.trailTimeCapMs / 60_000)}m`
+      : null,
+    leaderGates: cfg.leaderGatesEnabled
+      ? {
+          priorSessions: cfg.minLeaderPriorSessions,
+          priorAvgPct: cfg.minLeaderPriorAvgPct,
+          pairAgeH: `${cfg.entryMinPairAgeHours}-${cfg.entryMaxPairAgeHours}`,
+          minBuySell5m: cfg.entryMinBuySellRatio5m,
+          maxChase5mPct: cfg.entryMaxChase5mPct,
+        }
+      : null,
+    leaderHistoryMints: Object.keys(state.leaderHistory).length,
     isolated: true,
   });
 
@@ -1537,6 +1666,37 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         console.warn('[copy-trader] poll error', (err as Error).message);
       }
       lastPoll = now;
+    }
+
+    if (now - lastHistoryGc >= 3_600_000) {
+      const dropped = gcLeaderHistory(state, cfg.leaderHistoryTtlMs, now);
+      if (dropped > 0) console.log('[copy-trader] leader history gc', dropped);
+      lastHistoryGc = now;
+    }
+
+    if (usesTrailingExitPolicy(cfg) && now - lastTrailTick >= cfg.trailTickIntervalMs) {
+      try {
+        const exits = await processTrailingExits(
+          cfg,
+          state,
+          {
+            // No leader anchor here: the outlier guard would clamp a genuine 3×
+            // back to our entry and stop the trail from ever arming. Absurd
+            // marks are filtered by the sanity band inside processTrailingExits.
+            resolvePriceUsd: async (mint) => {
+              const dex = await fetchDexInfo(mint, getSolUsd());
+              const resolved = await resolveCurrentPrice(mint, dex?.priceUsd ?? 0);
+              return resolved.priceUsd;
+            },
+            scheduleExit: (event) => scheduleTrailExitSell(cfg, state, event),
+          },
+          now,
+        );
+        if (exits > 0) console.log('[copy-trader] trail exits scheduled', exits);
+      } catch (err) {
+        console.warn('[copy-trader] trail exit error', (err as Error).message);
+      }
+      lastTrailTick = now;
     }
 
     if (now - lastReconcile >= 60_000) {

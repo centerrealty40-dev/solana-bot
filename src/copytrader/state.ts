@@ -31,11 +31,28 @@ export type CopyPosition = {
   lastSellTs?: number;
   /** Live-oscar took over management — stop proportional mirror sells. */
   oscarPromotedAt?: number;
+  /** Highest mark seen since entry (trail_runner exit mode). */
+  peakPriceUsd?: number;
+  /** Trail became active once the position cleared the arm threshold. */
+  trailArmedAt?: number;
 };
 
 export type LeaderMintLedger = {
   /** Estimated leader token balance from observed swaps (+ RPC bootstrap). */
   tokenRaw: string;
+};
+
+/** Rolling record of the leader's own round trips on a mint (see leader-history.ts). */
+export type LeaderMintHistory = {
+  sessions: number;
+  wins: number;
+  /** Sum of closed session returns, percent. */
+  sumPct: number;
+  lastClosedTs?: number;
+  /** In-flight session: USD the leader has put in / taken out so far. */
+  openCostUsd?: number;
+  openProceedsUsd?: number;
+  openStartTs?: number;
 };
 
 export type EntryLeg = 'probe' | 'dip';
@@ -92,6 +109,7 @@ export type CopyTraderState = {
   pendingSells: PendingSell[];
   positions: Record<string, CopyPosition>;
   leaderLedger: Record<string, LeaderMintLedger>;
+  leaderHistory: Record<string, LeaderMintHistory>;
 };
 
 export function emptyCopyTraderState(): CopyTraderState {
@@ -101,6 +119,7 @@ export function emptyCopyTraderState(): CopyTraderState {
     pendingSells: [],
     positions: {},
     leaderLedger: {},
+    leaderHistory: {},
   };
 }
 
@@ -127,6 +146,10 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof pos.oscarPromotedAt === 'number' && pos.oscarPromotedAt > 0
             ? pos.oscarPromotedAt
             : undefined,
+        peakPriceUsd:
+          typeof pos.peakPriceUsd === 'number' && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : undefined,
+        trailArmedAt:
+          typeof pos.trailArmedAt === 'number' && pos.trailArmedAt > 0 ? pos.trailArmedAt : undefined,
       };
     }
     const pendingBuys: PendingBuy[] = (Array.isArray(parsed.pendingBuys) ? parsed.pendingBuys : []).map(
@@ -186,10 +209,39 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
       pendingSells,
       positions,
       leaderLedger: parsed.leaderLedger ?? {},
+      leaderHistory: normalizeLeaderHistory(parsed.leaderHistory),
     };
   } catch {
     return emptyCopyTraderState();
   }
+}
+
+function normalizeLeaderHistory(
+  raw: Record<string, LeaderMintHistory> | undefined,
+): Record<string, LeaderMintHistory> {
+  const out: Record<string, LeaderMintHistory> = {};
+  for (const [mint, row] of Object.entries(raw ?? {})) {
+    const sessions = Number(row?.sessions);
+    const wins = Number(row?.wins);
+    const sumPct = Number(row?.sumPct);
+    if (!Number.isFinite(sessions) || sessions < 0) continue;
+    out[mint] = {
+      sessions: Math.trunc(sessions),
+      wins: Number.isFinite(wins) && wins >= 0 ? Math.trunc(wins) : 0,
+      sumPct: Number.isFinite(sumPct) ? sumPct : 0,
+      lastClosedTs:
+        typeof row.lastClosedTs === 'number' && row.lastClosedTs > 0 ? row.lastClosedTs : undefined,
+      openCostUsd:
+        typeof row.openCostUsd === 'number' && row.openCostUsd > 0 ? row.openCostUsd : undefined,
+      openProceedsUsd:
+        typeof row.openProceedsUsd === 'number' && row.openProceedsUsd > 0
+          ? row.openProceedsUsd
+          : undefined,
+      openStartTs:
+        typeof row.openStartTs === 'number' && row.openStartTs > 0 ? row.openStartTs : undefined,
+    };
+  }
+  return out;
 }
 
 export function writeCopyTraderState(statePath: string, state: CopyTraderState): void {
