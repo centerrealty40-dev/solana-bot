@@ -102,6 +102,25 @@
 
 ---
 
+## [1.11.645] — 2026-08-04
+
+**Тег:** `sa-1.11.645`
+
+### Change: copy pending queue — свежие первыми, мусор не крутить часами
+
+RCA (3XEe/HBrf ~1 мин лага): в `pendingBuys` висели десятки входов с
+mcap $2k–$70k при поле **$150k**. Mcap проверялся только на exec → вечный
+`buy_deferred` 2ч, FIFO душил свежие сигналы.
+
+- pending обрабатываются **newest-first** (`leaderBuyTs`)
+- mcap/liq floor на **schedule** (не ставим в очередь)
+- terminal cancel при `mcap<min` / `liq<min` (не retry)
+- purge уже стоящих doomed pending по `entryMcapUsd`
+
+**Откат:** `git revert`.
+
+---
+
 ## [1.11.644] — 2026-08-04
 
 **Тег:** `sa-1.11.644`

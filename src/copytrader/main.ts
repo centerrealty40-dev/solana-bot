@@ -57,6 +57,11 @@ import {
   computeRetryUntilTs,
 } from './pending-buy-retry.js';
 import {
+  isPendingBuyDoomedByMcap,
+  isTerminalCopyBuyEvalFailure,
+  sortPendingBuysNewestFirst,
+} from './pending-buy-queue.js';
+import {
   cancelPendingSellsForMint,
   findPendingSell,
   isPendingSellExhausted,
@@ -603,6 +608,42 @@ async function onLeaderBuy(
     return;
   }
 
+  /**
+   * Mcap/liq floors live in evaluateCopyEntry (exec time). Without this check at
+   * schedule time, sub-floor mints enter pendingBuys and retry for hours —
+   * starving fresh chases (see 1.11.645 pending-queue RCA).
+   */
+  const dexGate = await fetchDexInfo(mint, getSolUsd());
+  const structural: string[] = [];
+  if (cfg.minMarketCapUsd > 0) {
+    const mcap = dexGate?.marketCap;
+    if (!(mcap != null && mcap > 0)) structural.push(`mcap_missing_or_zero<min=${cfg.minMarketCapUsd}`);
+    else if (mcap < cfg.minMarketCapUsd) {
+      structural.push(`mcap=${Math.round(mcap)}<min=${cfg.minMarketCapUsd}`);
+    }
+  }
+  if (cfg.minLiquidityUsd > 0) {
+    const liq = dexGate?.liquidityUsd;
+    if (!(liq != null && liq > 0)) structural.push(`liq_missing_or_zero<min=${cfg.minLiquidityUsd}`);
+    else if (liq < cfg.minLiquidityUsd) {
+      structural.push(`liq=${Math.round(liq)}<min=${cfg.minLiquidityUsd}`);
+    }
+  }
+  if (structural.length > 0) {
+    appendCopyEvent(cfg, {
+      kind: 'leader_buy_ignored',
+      reason: 'copy_gate',
+      gateReasons: structural,
+      mint,
+      symbol,
+      leaderSignature: row.signature,
+      leaderBuyUsd: swap.amountUsd,
+      marketCapUsd: dexGate?.marketCap ?? null,
+      liquidityUsd: dexGate?.liquidityUsd ?? null,
+    });
+    return;
+  }
+
   if (usesDipOnlyEntry(cfg)) {
     const dex = await fetchDexInfo(mint, getSolUsd());
     const mcap = dex?.marketCap && dex.marketCap > 0 ? dex.marketCap : undefined;
@@ -1037,7 +1078,25 @@ async function onLeaderSell(
 
 export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTraderState): Promise<void> {
   const now = Date.now();
-  const due = state.pendingBuys.filter((p) => p.dueTs <= now);
+
+  /** Purge doomed sub-floor rows left from before schedule-time mcap gate. */
+  if (cfg.minMarketCapUsd > 0) {
+    for (const p of [...state.pendingBuys]) {
+      if (!isPendingBuyDoomedByMcap(p, cfg.minMarketCapUsd)) continue;
+      removePendingBuyById(state, p.id);
+      appendCopyEvent(cfg, {
+        kind: p.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
+        reason: 'entry_gate_terminal',
+        gateReasons: [`mcap=${Math.round(p.entryMcapUsd ?? 0)}<min=${cfg.minMarketCapUsd}`],
+        mint: p.mint,
+        symbol: p.symbol,
+        leaderSignature: p.leaderSignature,
+        entryMcapUsd: p.entryMcapUsd ?? null,
+      });
+    }
+  }
+
+  const due = sortPendingBuysNewestFirst(state.pendingBuys.filter((p) => p.dueTs <= now));
   if (due.length === 0) return;
 
   for (const pending of due) {
@@ -1254,6 +1313,21 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
 
     if (!evalResult.pass) {
       if (isEntryDip) resetEntryDipPassStreak(state, pending.id);
+      if (isTerminalCopyBuyEvalFailure(evalResult.reasons)) {
+        removePendingBuyById(state, pending.id);
+        appendCopyEvent(cfg, {
+          kind: pending.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
+          reason: 'entry_gate_terminal',
+          gateReasons: evalResult.reasons,
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          leaderPriceUsd: pending.leaderPriceUsd,
+          currentPriceUsd: currentPrice,
+          eval: evalResult,
+        });
+        continue;
+      }
       const deferNote = noteBuyDefer(state, pending.id, now, cfg);
       if (deferNote) {
         appendCopyEvent(cfg, {
