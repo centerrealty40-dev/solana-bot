@@ -28,6 +28,11 @@ const CopyTraderConfigSchema = z.object({
   signatureLimit: z.coerce.number().int().min(5).max(50).default(25),
   tickIntervalMs: z.coerce.number().int().min(250).max(30_000).default(2000),
   buyDelayMs: z.coerce.number().int().min(0).max(86_400_000).default(30_000),
+  /**
+   * Skip `buyDelayMs` when the live mark is within this % of the leader fill
+   * (inclusive). e.g. 2 → buy immediately if price ≤ leader×1.02. **0** = never skip.
+   */
+  buyDelaySkipMaxPremiumPct: z.coerce.number().min(0).max(100).default(0),
   /** Probe / full entry: ms after leader buy before first attempt (default 0 = immediate). */
   entryProbeBuyDelayMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
   buyRetryWindowMs: z.coerce.number().int().min(0).max(86_400_000).default(7_200_000),
@@ -269,6 +274,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     signatureLimit: process.env.COPY_TRADER_SIGNATURE_LIMIT,
     tickIntervalMs: process.env.COPY_TRADER_TICK_INTERVAL_MS,
     buyDelayMs: process.env.COPY_TRADER_BUY_DELAY_MS,
+    buyDelaySkipMaxPremiumPct: process.env.COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT,
     entryProbeBuyDelayMs: process.env.COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS,
     buyRetryWindowMs: process.env.COPY_TRADER_BUY_RETRY_WINDOW_MS,
     buyRetryDeferLogMs: process.env.COPY_TRADER_BUY_RETRY_DEFER_LOG_MS,

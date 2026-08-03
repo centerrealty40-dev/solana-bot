@@ -106,6 +106,30 @@ export function entryScheduleDelayMs(
   return cfg.buyDelayMs;
 }
 
+/**
+ * Same as `entryScheduleDelayMs`, but collapses to 0 when the live mark is
+ * already within `buyDelaySkipMaxPremiumPct` of the leader fill.
+ */
+export function resolveEntryBuyDelayMs(
+  cfg: CopyTraderConfig,
+  args: {
+    kind: 'entry' | 'add';
+    entryLeg?: EntryLeg;
+    leaderPriceUsd: number;
+    currentPriceUsd?: number | null;
+  },
+): number {
+  const base = entryScheduleDelayMs(cfg, { kind: args.kind, entryLeg: args.entryLeg });
+  if (base <= 0) return 0;
+  if (!(cfg.buyDelaySkipMaxPremiumPct > 0)) return base;
+  const leader = args.leaderPriceUsd;
+  const mark = args.currentPriceUsd;
+  if (!(leader > 0) || mark == null || !(mark > 0)) return base;
+  const premiumPct = (mark / leader - 1) * 100;
+  if (premiumPct <= cfg.buyDelaySkipMaxPremiumPct + 1e-9) return 0;
+  return base;
+}
+
 export function isEntryProbePending(args: {
   kind: 'entry' | 'add';
   entryLeg?: EntryLeg;

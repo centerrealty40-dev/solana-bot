@@ -17,6 +17,7 @@ import {
   isEntryProbePending,
   leaderDipTargetPx,
   leaderInitialEntryUsd,
+  resolveEntryBuyDelayMs,
   usesDipOnlyEntry,
   usesInitialLeaderMirror,
   usesSplitEntryProbe,
@@ -344,6 +345,45 @@ describe('entryScheduleDelayMs', () => {
 
   it('adds keep leader buy delay', () => {
     expect(entryScheduleDelayMs(cfg, { kind: 'add' })).toBe(30_000);
+  });
+});
+
+describe('resolveEntryBuyDelayMs', () => {
+  const cfg = {
+    ...prodEntryCfg,
+    buyDelayMs: 10_000,
+    entryProbeBuyDelayMs: 0,
+    buyDelaySkipMaxPremiumPct: 2,
+  } as CopyTraderConfig;
+
+  it('skips delay when mark is within +2%', () => {
+    expect(
+      resolveEntryBuyDelayMs(cfg, {
+        kind: 'entry',
+        leaderPriceUsd: 1,
+        currentPriceUsd: 1.02,
+      }),
+    ).toBe(0);
+  });
+
+  it('keeps delay when mark is above +2%', () => {
+    expect(
+      resolveEntryBuyDelayMs(cfg, {
+        kind: 'entry',
+        leaderPriceUsd: 1,
+        currentPriceUsd: 1.021,
+      }),
+    ).toBe(10_000);
+  });
+
+  it('keeps delay when mark is unknown', () => {
+    expect(
+      resolveEntryBuyDelayMs(cfg, {
+        kind: 'entry',
+        leaderPriceUsd: 1,
+        currentPriceUsd: null,
+      }),
+    ).toBe(10_000);
   });
 });
 

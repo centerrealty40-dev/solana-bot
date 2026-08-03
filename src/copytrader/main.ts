@@ -24,6 +24,7 @@ import {
   entryScheduleDelayMs,
   entryTargetUsd,
   isEntryProbePending,
+  resolveEntryBuyDelayMs,
   syncEntryPendingSizing,
   usesDipOnlyEntry,
   usesSplitEntryProbe,
@@ -744,7 +745,16 @@ async function schedulePendingBuy(
     row,
     lateEntryOnLeaderRebuy,
   } = args;
-  const dueTs = Date.now() + entryScheduleDelayMs(cfg, { kind, entryLeg });
+  const dexNow = await fetchDexInfo(mint, getSolUsd());
+  const mark = await resolveCurrentPrice(mint, dexNow?.priceUsd ?? 0, swap.priceUsd);
+  const baseDelayMs = entryScheduleDelayMs(cfg, { kind, entryLeg });
+  const delayMs = resolveEntryBuyDelayMs(cfg, {
+    kind,
+    entryLeg,
+    leaderPriceUsd: swap.priceUsd,
+    currentPriceUsd: mark.priceUsd,
+  });
+  const dueTs = Date.now() + delayMs;
   const leaderHoldingsRawAtSignal = (preLeaderRaw + absRawAmount(swap.baseAmountRaw)).toString();
   const pending: PendingBuy = {
     id: newId('pb'),
@@ -772,6 +782,10 @@ async function schedulePendingBuy(
       : entryLeg === 'dip'
         ? 'leader_buy_scheduled'
         : 'leader_buy_scheduled';
+  const premiumPct =
+    swap.priceUsd > 0 && mark.priceUsd > 0
+      ? Number((((mark.priceUsd / swap.priceUsd - 1) * 100)).toFixed(2))
+      : null;
   appendCopyEvent(cfg, {
     kind: schedKind,
     mint,
@@ -781,7 +795,9 @@ async function schedulePendingBuy(
     leaderBuyUsd: swap.amountUsd,
     leaderAddFraction: leaderAddFraction ?? null,
     buyDueTs: dueTs,
-    buyDelayMs: entryScheduleDelayMs(cfg, { kind, entryLeg }),
+    buyDelayMs: delayMs,
+    buyDelaySkipped: baseDelayMs > 0 && delayMs === 0,
+    markPremiumPct: premiumPct,
     retryUntilTs: pending.retryUntilTs,
     sizeUsd,
     entryLeg: entryLeg ?? null,

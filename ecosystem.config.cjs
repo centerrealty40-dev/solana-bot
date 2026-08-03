@@ -2539,7 +2539,9 @@ const PM2_APPS = [
         COPY_TRADER_EXIT_MODE: 'mirror',
         COPY_TRADER_POLL_INTERVAL_MS: '1000',
         COPY_TRADER_TICK_INTERVAL_MS: '500',
-        COPY_TRADER_BUY_DELAY_MS: '0',
+        COPY_TRADER_BUY_DELAY_MS: '10000',
+        /** Skip the 10s wait when mark ≤ +2% over leader fill. */
+        COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT: '2',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         /** Shared premium policy with the twin: hard 5%, retry until leader exits. */
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
