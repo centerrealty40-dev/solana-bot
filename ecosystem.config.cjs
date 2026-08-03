@@ -2356,9 +2356,9 @@ const PM2_APPS = [
     /**
      * Copy lane — leader `8zkgFGVZ`, own wallet, own state, no Oscar handoff.
      *
-     * Orthogonal A/B vs `copy-trader-8zkg-mirror`: this lane filters on **mcap ≥ $150k**
-     * and mirrors leader sells with **zero sell delay**. Twin filters on vol5m and
-     * delays sells 10–12s. Shared: pair age ≥0.1h, premium ≤5% with retry.
+     * Orthogonal A/B vs `copy-trader-8zkg-mirror`: this lane filters on **mcap ≥ $150k**.
+     * Sell delay: 0 unless mark already down >5% vs entry, then wait max **15s**.
+     * Twin (vol5m): same skip rule, max **30s** when down >5%.
      */
     {
       name: 'copy-trader-8zkg',
@@ -2455,8 +2455,13 @@ const PM2_APPS = [
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
-        COPY_TRADER_SELL_DELAY_MIN_MS: '0',
-        COPY_TRADER_SELL_DELAY_MAX_MS: '0',
+        /**
+         * Conditional sell delay: immediate unless mark is already down >5% vs entry;
+         * then wait up to 15s and sell anyway.
+         */
+        COPY_TRADER_SELL_DELAY_MIN_MS: '15000',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '15000',
+        COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT: '5',
         COPY_TRADER_SLIPPAGE_BPS: '150',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
@@ -2464,9 +2469,8 @@ const PM2_APPS = [
     },
     {
       /**
-       * Twin of `copy-trader-8zkg` on the same leader: **vol5m-only** entry (≥$8k)
-       * + **slow** mirror exit (10–12s sell delay). Orthogonal to the mcap+fast lane
-       * so the live tape can pick a winner without shared wallet/journal.
+       * Twin of `copy-trader-8zkg` on the same leader: **vol5m-only** entry (≥$8k).
+       * Sell delay: 0 unless mark already down >5% vs entry, then wait max **30s**.
        */
       name: 'copy-trader-8zkg-mirror',
       cwd: root,
@@ -2561,11 +2565,12 @@ const PM2_APPS = [
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
         /**
-         * Slow mirror: 10–12s intentional lag after leader sell detection.
-         * Twin (copy-trader-8zkg) uses delay 0 for the fast arm of the A/B.
+         * Conditional sell delay: immediate unless mark is already down >5% vs entry;
+         * then wait up to 30s and sell anyway (twin uses 15s).
          */
-        COPY_TRADER_SELL_DELAY_MIN_MS: '10000',
-        COPY_TRADER_SELL_DELAY_MAX_MS: '12000',
+        COPY_TRADER_SELL_DELAY_MIN_MS: '30000',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '30000',
+        COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT: '5',
         /**
          * Volume-fade exit (this vol lane only): every 5m re-check Dex 5m volume.
          * Full market sell if vol drops under the $8k entry floor, or ≥40% below

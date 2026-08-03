@@ -102,6 +102,23 @@
 
 ---
 
+## [1.11.642] — 2026-08-04
+
+**Тег:** `sa-1.11.642`
+
+### Change: 8zkg — sell delay только если уже −5%+
+
+Оба лейна: `COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT=5` — если mark ещё не
+ниже entry больше чем на **5%**, sell delay = **0**. Если уже упало сильнее:
+- `copy-trader-8zkg` — ждать макс **15s**, потом всё равно продаём
+- `copy-trader-8zkg-mirror` — макс **30s**, потом всё равно продаём
+
+Сняты фиксированные 10–12s на mirror. Ref: entry (fallback — цена продажи лидера).
+
+**Откат:** `SELL_DELAY_SKIP_MAX_DROP_PCT=0` + старые min/max + reload, или `git revert`.
+
+---
+
 ## [1.11.641] — 2026-08-04
 
 **Тег:** `sa-1.11.641`
