@@ -2470,6 +2470,8 @@ const PM2_APPS = [
         COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '20',
         COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
+        /** Force full exit after 30m even if the leader is still holding. */
+        COPY_TRADER_MIRROR_HOLD_CAP_MS: '1800000',
         /** Wider buy slippage — 150bps kept dying on 0x1771 while the tape ran. */
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',

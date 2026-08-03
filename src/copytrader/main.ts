@@ -125,6 +125,7 @@ import {
 import { processTrailingExits, type TrailExitEvent } from './trail-exit.js';
 import { processVolFadeExits } from './vol-fade-exit.js';
 import { processMirrorEarlyTpExits } from './mirror-early-tp.js';
+import { processMirrorHoldCapExits } from './mirror-hold-cap.js';
 import { handoffCopyPositionToOscarExit } from './copy-oscar-exit-handoff.js';
 import {
   copyPositionOscarExitManaged,
@@ -2018,6 +2019,25 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         if (faded.length > 0) console.log('[copy-trader] vol-fade exits scheduled', faded.length);
       } catch (err) {
         console.warn('[copy-trader] vol-fade exit error', (err as Error).message);
+      }
+    }
+
+    if (mirrorsLeaderSells(cfg) && cfg.mirrorHoldCapMs > 0) {
+      try {
+        const timed = processMirrorHoldCapExits(cfg, state, now);
+        for (const row of timed) {
+          if (row.accelerated) continue;
+          appendCopyEvent(cfg, {
+            kind: 'mirror_hold_cap_scheduled',
+            mint: row.mint,
+            symbol: row.symbol,
+            heldSec: Math.round(row.heldMs / 1000),
+            mirrorHoldCapMs: cfg.mirrorHoldCapMs,
+          });
+        }
+        if (timed.length > 0) console.log('[copy-trader] mirror hold-cap exits scheduled', timed.length);
+      } catch (err) {
+        console.warn('[copy-trader] mirror hold-cap error', (err as Error).message);
       }
     }
 
