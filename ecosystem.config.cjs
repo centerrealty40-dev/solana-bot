@@ -11,6 +11,11 @@ const PM2_BIRDEYE_KEY_ENV = BIRDEYE_API_KEY_PM2 ? { BIRDEYE_API_KEY: BIRDEYE_API
 const SA_RPC_HTTP_URL_PM2 = (process.env.SA_RPC_HTTP_URL || '').trim();
 const LIVE_RPC_HTTP_URL_PM2 = (process.env.LIVE_RPC_HTTP_URL || SA_RPC_HTTP_URL_PM2).trim();
 const COPY_TRADER_RPC_URL_PM2 = (process.env.COPY_TRADER_RPC_URL || SA_RPC_HTTP_URL_PM2).trim();
+const HELIUS_API_KEY_PM2 = (process.env.HELIUS_API_KEY || '').trim();
+const HELIUS_RPC_URL_PM2 = (
+  process.env.HELIUS_RPC_URL ||
+  (HELIUS_API_KEY_PM2 ? `https://mainnet.helius-rpc.com/?api-key=${HELIUS_API_KEY_PM2}` : '')
+).trim();
 const PM2_SOLANA_RPC_ENV = SA_RPC_HTTP_URL_PM2
   ? {
       SA_RPC_HTTP_URL: SA_RPC_HTTP_URL_PM2,
@@ -20,6 +25,21 @@ const PM2_SOLANA_RPC_ENV = SA_RPC_HTTP_URL_PM2
       ALCHEMY_HTTP_URL: SA_RPC_HTTP_URL_PM2,
     }
   : {};
+/** Live Oscar trading RPC — Helius (Alchemy monthly cap). Overrides PM2_SOLANA_RPC_ENV Alchemy URLs. */
+const LIVE_OSCAR_HELIUS_RPC_ENV = HELIUS_RPC_URL_PM2
+  ? {
+      HELIUS_RPC_URL: HELIUS_RPC_URL_PM2,
+      ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
+      SOLANA_RPC_HELIUS_PREFER: '1',
+      SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '0',
+      LIVE_RPC_HTTP_URL: HELIUS_RPC_URL_PM2,
+      SA_RPC_HTTP_URL: HELIUS_RPC_URL_PM2,
+      SOLANA_RPC_HTTP_URL: HELIUS_RPC_URL_PM2,
+    }
+  : {
+      SOLANA_RPC_HELIUS_PREFER: '1',
+      SOLANA_RPC_HELIUS_FALLBACK_ENABLED: '1',
+    };
 if (!JUPITER_API_KEY_PM2) {
   console.warn(
     '[ecosystem.config.cjs] JUPITER_API_KEY пуст — Jupiter api.jup.ag free-tier (1 RPS); optional key from .env if present.',
@@ -575,11 +595,12 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + 8zkg copy lanes). */
+        /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + copy lanes). */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_HEALTH_PRODUCT_LABEL: 'Oscar',
         COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
           { pm2: 'live-oscar', heartbeatPath: 'data/ops-heartbeats/live-oscar.json', staleMs: 300_000 },
+          { pm2: 'copy-trader', heartbeatPath: 'data/ops-heartbeats/copy-trader.json', staleMs: 300_000 },
           {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
@@ -723,8 +744,8 @@ const PM2_APPS = [
         ...PM2_SOLANA_RPC_ENV,
         ...QUICKNODE_NO_DAILY_CAP_ENV,
         NODE_ENV: 'production',
-        /** Billable RPC: Alchemy (`SA_RPC_HTTP_URL` / `LIVE_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
-        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
+        /** Billable trading RPC: Helius (`HELIUS_RPC_URL` / key in shell `.env`). Alchemy left for collectors. */
+        ...LIVE_OSCAR_HELIUS_RPC_ENV,
         /** Снимок для дашборда / QuickNode hourly (дефолт в коде тот же файл). */
         LIVE_DISCOVERY_HEALTH_SNAPSHOT_PATH: path.join(root, 'data/live-discovery-health.json'),
         /**
@@ -2227,13 +2248,19 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
-        /** Funded copy lanes only — orphan `copy-trader` (498SW / shared Oscar wallet) removed. */
+        /** live-oscar + 498SW copy + two 8zkg lanes. */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
           {
             pm2: 'live-oscar',
             heartbeatPath: 'data/ops-heartbeats/live-oscar.json',
             staleMs: 300_000,
             fatalPath: 'data/live/last-fatal-live-oscar.json',
+          },
+          {
+            pm2: 'copy-trader',
+            heartbeatPath: 'data/ops-heartbeats/copy-trader.json',
+            staleMs: 300_000,
+            fatalPath: 'data/ops-heartbeats/copy-trader-last-fatal.json',
           },
           {
             pm2: 'copy-trader-8zkg',
@@ -2248,6 +2275,82 @@ const PM2_APPS = [
             fatalPath: 'data/ops-heartbeats/copy-trader-8zkg-mirror-last-fatal.json',
           },
         ]),
+      },
+    },
+    /**
+     * Copy-leader lane — shares live-oscar-micro wallet; leader `498SW…`.
+     * EXIT_MODE=oscar_half8 — live-oscar manages exits after adopt.
+     */
+    {
+      name: 'copy-trader',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/copy-trader.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autorestart: true,
+      max_restarts: 30,
+      restart_delay: 8000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_PRO_TRADING_ENV,
+        ...PM2_SOLANA_RPC_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
+        NODE_ENV: 'production',
+        COPY_TRADER_STRICT_ISOLATION: '1',
+        COPY_TRADER_SHARED_OSCAR_WALLET: '1',
+        COPY_TRADER_EXIT_MODE: 'oscar_half8',
+        COPY_TRADER_SPARE_CAPITAL_GATE: '0',
+        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
+        COPY_TRADER_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
+        COPY_TRADER_TARGET_WALLET: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
+        COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
+        COPY_TRADER_EXECUTION_MODE: 'live',
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.75',
+        COPY_TRADER_POSITION_USD: '500',
+        COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
+        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
+        COPY_TRADER_MAX_POSITION_USD: '0',
+        COPY_TRADER_MAX_ADDS_PER_MINT: '0',
+        COPY_TRADER_MAX_OPEN_POSITIONS: '0',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '0',
+        COPY_TRADER_BUY_DELAY_MS: '5000',
+        COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
+        COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
+        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
+        COPY_TRADER_MIN_MCAP_USD: '0',
+        COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '500',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '500',
+        COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
+        COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '60000',
+        COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
+        COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
+        COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
+        COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
+        COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS: '0',
+        COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
+        COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
+        COPY_TRADER_SELL_DELAY_MIN_MS: '0',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
+        COPY_TRADER_POLL_INTERVAL_MS: '3000',
+        COPY_TRADER_TICK_INTERVAL_MS: '1000',
+        COPY_TRADER_SLIPPAGE_BPS: '100',
+        COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
+        COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
+        COPY_TRADER_TELEGRAM_ENABLED: '0',
+        LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
+        LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
+        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '3000000',
+        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '0',
+        PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '0',
+        /** Same Helius path as live-oscar (Alchemy monthly cap). */
+        ...LIVE_OSCAR_HELIUS_RPC_ENV,
+        ...(HELIUS_RPC_URL_PM2 ? { COPY_TRADER_RPC_URL: HELIUS_RPC_URL_PM2 } : {}),
       },
     },
     /**

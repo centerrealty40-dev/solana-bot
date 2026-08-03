@@ -77,17 +77,16 @@ function pathIsAbsolute(p) {
 export function defaultStrategyWatchTargets(root) {
   return [
     {
-      pm2: 'hl-twap-telegram-watch',
-      heartbeatPath: `${root}/data/hl-twap/heartbeat.json`,
-      staleMs: 300_000,
-      fatalPath: `${root}/data/hl-twap/last-fatal.json`,
-    },
-    {
       pm2: 'live-oscar',
       heartbeatPath: `${root}/data/ops-heartbeats/live-oscar.json`,
-      /** Boot replay on multi-GB journal can block the event loop >5m before first paper heartbeat. */
       staleMs: 900_000,
       fatalPath: `${root}/data/live/last-fatal-live-oscar.json`,
+    },
+    {
+      pm2: 'copy-trader',
+      heartbeatPath: `${root}/data/ops-heartbeats/copy-trader.json`,
+      staleMs: 300_000,
+      fatalPath: `${root}/data/ops-heartbeats/copy-trader-last-fatal.json`,
     },
     {
       pm2: 'copy-trader-8zkg',
