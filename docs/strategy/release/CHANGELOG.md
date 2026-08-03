@@ -106,6 +106,7 @@
 
 **Тег:** `sa-1.11.627`
 
+<<<<<<< HEAD
 ### Change: `copy-trader-8zkg` — 30m dead-trade time cap
 
 `COPY_TRADER_TRAIL_TIME_CAP_MS=1800000` on the trail lane only (`FxQf…`).
@@ -116,6 +117,21 @@ ladder / trail / kill.
 Mirror lane unchanged (`EXIT_MODE=mirror`, no own time cap).
 
 **Откат:** `COPY_TRADER_TRAIL_TIME_CAP_MS: '0'` + revert `priorPeels` gate in `trail-exit.ts`.
+=======
+### Ops: Live Oscar → Helius RPC; restore process + 498SW copy
+
+**Статус до:** `live-oscar` снят с PM2 (Alchemy monthly 429).
+
+- `live-oscar`: `LIVE_STRATEGY_ENABLED=1`, trading RPC = **Helius**
+  (`LIVE_OSCAR_HELIUS_RPC_ENV` — `LIVE_RPC_HTTP_URL` / `SA_RPC_HTTP_URL` =
+  `HELIUS_RPC_URL`, `SOLANA_RPC_HELIUS_PREFER=1`). Collectors remain on Alchemy.
+- Восстановлен `copy-trader` за `498SWfPJ…` (`EXIT_MODE=oscar_half8`, shared
+  Oscar wallet), тоже на Helius poll.
+- Watchdogs снова включают `live-oscar` + `copy-trader` + две 8zkg-линии.
+
+**Откат:** вернуть `...SOLANA_RPC_ALCHEMY_ONLY_ENV` на live-oscar; при необходимости
+`pm2 delete copy-trader`.
+>>>>>>> e855b9c1 (ops(live-oscar): switch trading RPC to Helius and restore the process)
 
 ---
 
