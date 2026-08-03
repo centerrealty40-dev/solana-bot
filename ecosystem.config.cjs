@@ -2356,11 +2356,9 @@ const PM2_APPS = [
     /**
      * Copy lane — leader `8zkgFGVZ`, own wallet, own state, no Oscar handoff.
      *
-     * The leader fires ~590 buys/day and is profitable only on short holds; the
-     * 30d audit (docs/strategy/copytrader/LEADER_8ZKG_AUDIT.md) put his edge in
-     * mints he revisits with a positive record, on pairs 1h–3d old, without
-     * chasing a 5m spike. Exit is ours alone: peak trail + time cap. The twin
-     * `copy-trader-8zkg-mirror` is the lane that follows him out 1:1.
+     * Orthogonal A/B vs `copy-trader-8zkg-mirror`: this lane filters on **mcap ≥ $150k**
+     * and mirrors leader sells with **zero sell delay**. Twin filters on vol5m and
+     * delays sells 10–12s. Shared: pair age ≥0.1h, premium ≤5% with retry.
      */
     {
       name: 'copy-trader-8zkg',
@@ -2397,7 +2395,7 @@ const PM2_APPS = [
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg/state.json'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        /** Oscar never adopts this lane — it manages its own exits. */
+        /** Oscar never adopts this lane — mirror owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /** Flat $100 per trade, single leg, no adds (max position = entry size). */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
@@ -2412,74 +2410,30 @@ const PM2_APPS = [
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
         /**
-         * Gates are market structure only, and only the three features that
-         * held their sign across all three time folds of the 30-day window
-         * (LEADER_8ZKG_AUDIT.md "Market structure, measured properly").
-         *
-         * Copied blind his flow is -0.89% per trade after cost; on turnover +
-         * age it is +1.37%. What does NOT survive: market cap, liquidity and
-         * clip size in absolute terms, 5m buy/sell pressure, the 5m chase cap,
-         * and his own prior record on the mint (rank correlation 0.01).
+         * Orthogonal A/B vs `copy-trader-8zkg-mirror` (2026-08-03 4h live RCA):
+         * this lane = **mcap-only** entry (≥$150k) + **fast** mirror exit.
+         * Twin = vol5m-only + slow mirror. Shared: pair age ≥0.1h, premium ≤5%.
+         * Missing metric → skip (fail closed).
          */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
         COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '-100',
-        /**
-         * Was 1h; 10h live contour (2026-08-03) showed min=1h cutting his +40…+78%
-         * opens under 1h (SKIP sessions mean +7% vs TAKE −0.4%). Floor at 0.3h keeps
-         * brand-new noise out while admitting the winners we were missing.
-         */
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.1',
-        /** Past ~30h his edge is gone: -2.1%, -3.1%, -3.5% in the top age octiles. */
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
-        /**
-         * 5m volume over pool liquidity — the only gate whose cut is actually
-         * negative on the live tape (median leader outcome of what it alone
-         * removed: −3.03%). Loosened 0.09 → 0.06: at 0.09 it also participated
-         * in cutting 13 sessions the leader ran past +30%.
-         */
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0',
-        /**
-         * Off. Over the 22h live window (2026-08-02/03) it took part in
-         * rejecting 88 leader sessions whose mean outcome was +7.8%, including
-         * 11 above +30% and 2 above +100%. On its own it removed 5 sessions
-         * averaging −5.4% — nowhere near enough to pay for the tail it cost.
-         */
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
+        /** Off — twin owns the volume axis. */
+        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '0',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
-        COPY_TRADER_MIN_MCAP_USD: '0',
-        /**
-         * Own exit, runner-shaped. The leader's edge is a fat tail — top 5 of
-         * 362 live sessions carried 40% of his total return — and the old
-         * +8%×0.5 ladder banked half the position before any of it developed.
-         * Measured: on sessions where he made ≥ +15% he averaged +40.4% and we
-         * captured +1.2%.
-         *   +25% / +50% / +75%… → sell 25% of remainder each rung
-         *   trail armed at +15%; each −18% from peak → sell 20% of remainder
-         *   kill at −50%; 30m flush only while no peel has fired.
-         * Does NOT mirror his sells — that is `copy-trader-8zkg-mirror`.
-         */
-        COPY_TRADER_EXIT_MODE: 'trail_runner',
-        COPY_TRADER_TRAIL_ARM_PCT: '15',
-        COPY_TRADER_TRAIL_GIVEBACK_PCT: '18',
-        COPY_TRADER_TRAIL_TAKE_PROFIT_PCT: '0',
-        COPY_TRADER_TRAIL_TP_STEP_PCT: '25',
-        COPY_TRADER_TRAIL_TP_SELL_FRACTION: '0.25',
-        COPY_TRADER_TRAIL_TRAIL_SELL_FRACTION: '0.2',
-        COPY_TRADER_TRAIL_KILL_PCT: '50',
-        /**
-         * Dead-trade flush at 30m: full exit only if no TP rung and no trail peel
-         * has fired. After the first ladder/trail step, the clock is ignored.
-         */
-        COPY_TRADER_TRAIL_TIME_CAP_MS: '1800000',
-        COPY_TRADER_TRAIL_TICK_INTERVAL_MS: '5000',
-        /** Faster leader discovery — entry races his fill. */
+        /** Absolute mcap floor; missing/zero mcap fails closed. */
+        COPY_TRADER_MIN_MCAP_USD: '150000',
+        /** Both lanes mirror leader sells; this one races (delay 0). */
+        COPY_TRADER_EXIT_MODE: 'mirror',
         COPY_TRADER_POLL_INTERVAL_MS: '1000',
         COPY_TRADER_TICK_INTERVAL_MS: '500',
-        /** No artificial wait: a 5s delay was buying into already-elevated quotes. */
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         /**
@@ -2495,7 +2449,7 @@ const PM2_APPS = [
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
-        COPY_TRADER_SELL_RETRY_WINDOW_MS: '3600000',
+        COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
@@ -2509,14 +2463,9 @@ const PM2_APPS = [
     },
     {
       /**
-       * The same leader and the same entry selection as `copy-trader-8zkg`, but the exit is his
-       * too: we sell when he sells, in his proportion, and never on a rule of our own.
-       *
-       * Run as a twin rather than a replacement because the two disagree about exits and only a
-       * side-by-side on identical entries settles which is right. The audit put mirroring at $1411
-       * against $549 for trail-and-cap, measured on his history; this puts that claim on real
-       * money. Separate wallet, journal and state — sharing any of them would make both lanes
-       * fight over the same token balances and neither result would mean anything.
+       * Twin of `copy-trader-8zkg` on the same leader: **vol5m-only** entry (≥$8k)
+       * + **slow** mirror exit (10–12s sell delay). Orthogonal to the mcap+fast lane
+       * so the live tape can pick a winner without shared wallet/journal.
        */
       name: 'copy-trader-8zkg-mirror',
       cwd: root,
@@ -2568,17 +2517,17 @@ const PM2_APPS = [
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
         /**
-         * Identical to the twin — the entry side is the control, only the exit differs. Any drift
-         * here and the comparison stops being about exits at all.
+         * Orthogonal B: vol5m-only (≥$8k). Mcap/liq floors off — twin owns mcap.
+         * Missing volume feed fails closed.
          */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
         COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '-100',
-        /** Keep entry parity with copy-trader-8zkg. */
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.1',
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0',
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
+        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '8000',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
@@ -2586,15 +2535,11 @@ const PM2_APPS = [
         COPY_TRADER_MIN_MCAP_USD: '0',
         /** His sell is the only exit: no trail, no time cap, no stop. */
         COPY_TRADER_EXIT_MODE: 'mirror',
-        /**
-         * Race his sell into the book. Live median lag was 5–17s with a 3s poll;
-         * 1s poll + immediate post-poll sell flush is the structural fix.
-         */
         COPY_TRADER_POLL_INTERVAL_MS: '1000',
         COPY_TRADER_TICK_INTERVAL_MS: '500',
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
-        /** Entry parity with the twin: hard 5% premium, retry until leader exits. */
+        /** Shared premium policy with the twin: hard 5%, retry until leader exits. */
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
         COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '5',
         COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '0',
@@ -2612,11 +2557,11 @@ const PM2_APPS = [
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
         /**
-         * No jitter on the exit. Detection (1s poll) and the swap round trip are
-         * structural; any randomized wait was pure drag.
+         * Slow mirror: 10–12s intentional lag after leader sell detection.
+         * Twin (copy-trader-8zkg) uses delay 0 for the fast arm of the A/B.
          */
-        COPY_TRADER_SELL_DELAY_MIN_MS: '0',
-        COPY_TRADER_SELL_DELAY_MAX_MS: '0',
+        COPY_TRADER_SELL_DELAY_MIN_MS: '10000',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '12000',
         COPY_TRADER_SLIPPAGE_BPS: '150',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,

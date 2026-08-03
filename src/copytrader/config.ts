@@ -143,6 +143,11 @@ const CopyTraderConfigSchema = z.object({
   entryMinTurnover5m: z.coerce.number().min(0).max(1000).default(0),
   /** 1h volume divided by market cap — same idea over a longer window. **0** = off. */
   entryMinVolToMcap1h: z.coerce.number().min(0).max(1000).default(0),
+  /**
+   * Absolute 5m USD volume floor. Orthogonal to mcap/liq so twin lanes can
+   * specialize on one metric. Missing feed fails closed when > 0. **0** = off.
+   */
+  entryMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(0),
   /** Forget leader mint history untouched for this long. */
   leaderHistoryTtlMs: z.coerce.number().int().min(3_600_000).max(31_536_000_000).default(2_592_000_000),
   /** trail_runner: arm the peak trail once the position is this far up, percent. */
@@ -307,6 +312,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryMaxChase5mPct: process.env.COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT,
     entryMinTurnover5m: process.env.COPY_TRADER_ENTRY_MIN_TURNOVER_5M,
     entryMinVolToMcap1h: process.env.COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H,
+    entryMinVolume5mUsd: process.env.COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD,
     leaderHistoryTtlMs: process.env.COPY_TRADER_LEADER_HISTORY_TTL_MS,
     trailArmPct: process.env.COPY_TRADER_TRAIL_ARM_PCT,
     trailGivebackPct: process.env.COPY_TRADER_TRAIL_GIVEBACK_PCT,

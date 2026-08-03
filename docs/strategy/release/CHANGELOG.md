@@ -102,6 +102,27 @@
 
 ---
 
+## [1.11.637] — 2026-08-04
+
+**Тег:** `sa-1.11.637`
+
+### Change: 8zkg — ортогональные лейны (mcap+fast / vol5m+slow), оба mirror
+
+Живой RCA 4h: оба лейна теряли; Spearman положительный у mcap/liq/vol5m.
+Вместо одинаковых гейтов + trail vs mirror — два независимых контура:
+
+| Lane | Entry | Exit |
+|------|-------|------|
+| `copy-trader-8zkg` | mcap ≥ $150k (liq/vol off) | mirror, sell delay 0 |
+| `copy-trader-8zkg-mirror` | vol5m ≥ $8k (mcap/liq off) | mirror, sell delay 10–12s |
+
+Общее: pair age ≥0.1h, premium ≤5% с ретраем, missing metric → skip.
+Новый env: `COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD` (fail closed).
+
+**Откат:** вернуть `EXIT_MODE=trail_runner` на 8zkg + прежние пороги, или `git revert`.
+
+---
+
 ## [1.11.636] — 2026-08-03
 
 **Тег:** `sa-1.11.636`
