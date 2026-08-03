@@ -102,6 +102,7 @@
 
 ---
 
+<<<<<<< Updated upstream
 ## [1.11.637] — 2026-08-04
 
 **Тег:** `sa-1.11.637`
@@ -120,6 +121,24 @@
 Новый env: `COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD` (fail closed).
 
 **Откат:** вернуть `EXIT_MODE=trail_runner` на 8zkg + прежние пороги, или `git revert`.
+=======
+## [1.11.637] — 2026-08-03
+
+**Тег:** `sa-1.11.637`
+
+### Change: copy-trader — не глушить mirror-exit на shared Oscar wallet
+
+RCA `6NwarBvD…pump`: лидер вышел, `leader_flat_tail_sweep` поставил 100% sell,
+но `purgeStaleOscarHandoffPosition` снёс **не-promoted** mirror-ногу с state, а
+`processPendingSells` / `onLeaderSell` при `!pos` + `sharedOscarWallet` молча
+выходили — токены остались на кошельке Oscar.
+
+Фикс:
+- purge только для реально handed-to-Oscar позиций (`oscarPromotedAt` / disk flag);
+- lost state row → rebuild copy leg from wallet и продолжить sell (в т.ч. shared).
+
+**Откат:** `git revert` коммита + reload `copy-trader`.
+>>>>>>> Stashed changes
 
 ---
 

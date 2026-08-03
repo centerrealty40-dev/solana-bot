@@ -135,6 +135,11 @@ export function ensurePositionFromWallet(
     syncPositionFromWallet(existing, tokenRaw, priceUsd, cfg);
     return existing;
   }
+  /**
+   * Shared Oscar wallet: do not invent a copy leg from the full bag by default
+   * (Oscar + copy share the ATA). Callers that recover a known copy fill must
+   * pass tokenRaw and then set `pos.tokenRaw` / sync explicitly (see main.ts).
+   */
   const trackedRaw = cfg?.sharedOscarWallet ? 0n : tokenRaw;
   const sizeUsd = walletNotionalUsdFromRaw(trackedRaw, priceUsd);
   const pos: CopyPosition = {
