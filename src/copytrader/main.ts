@@ -115,6 +115,7 @@ import {
   type LeaderMintStats,
 } from './leader-history.js';
 import { processTrailingExits, type TrailExitEvent } from './trail-exit.js';
+import { processVolFadeExits } from './vol-fade-exit.js';
 import { handoffCopyPositionToOscarExit } from './copy-oscar-exit-handoff.js';
 import {
   copyPositionOscarExitManaged,
@@ -1421,6 +1422,10 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         !cfg.sharedOscarWallet && walletBal > 0n && fillPriceUsd > 0
           ? walletNotionalUsdFromRaw(walletBal, fillPriceUsd)
           : pending.sizeUsd;
+      const entryCtx =
+        cfg.volFadeCheckIntervalMs > 0 ? await fetchCopyEntryContext(pending.mint) : null;
+      const entryVolume5mUsd =
+        entryCtx?.volume5mUsd != null && entryCtx.volume5mUsd > 0 ? entryCtx.volume5mUsd : undefined;
       state.positions[pending.mint] = {
         mint: pending.mint,
         symbol: pending.symbol,
@@ -1433,6 +1438,9 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         entryDeployedCostUsd: pending.sizeUsd,
         entryTargetUsd: pending.entryTargetUsd ?? entryTargetUsd(cfg, pending.entryMcapUsd, pending.leaderBuyUsd),
         entryMcapUsd: pending.entryMcapUsd,
+        entryVolume5mUsd,
+        lastVolFadeCheckTs: Date.now(),
+        lastVolume5mUsd: entryVolume5mUsd,
         leaderWallet: cfg.targetWallet,
         leaderEntrySig: pending.leaderSignature,
         ourEntrySig: exec.signature,
@@ -1870,6 +1878,39 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         console.warn('[copy-trader] trail exit error', (err as Error).message);
       }
       lastTrailTick = now;
+    }
+
+    if (cfg.volFadeCheckIntervalMs > 0) {
+      try {
+        const faded = await processVolFadeExits(
+          cfg,
+          state,
+          {
+            fetchVolume5mUsd: async (mint) => {
+              const ctx = await fetchCopyEntryContext(mint);
+              return ctx?.volume5mUsd ?? null;
+            },
+          },
+          now,
+        );
+        for (const row of faded) {
+          if (row.accelerated) continue;
+          appendCopyEvent(cfg, {
+            kind: 'vol_fade_exit_scheduled',
+            mint: row.mint,
+            symbol: row.symbol,
+            reason: row.reason,
+            volume5mUsd: Math.round(row.volume5mUsd),
+            entryVolume5mUsd:
+              row.entryVolume5mUsd != null ? Math.round(row.entryVolume5mUsd) : null,
+            volFadeMinVolume5mUsd: cfg.volFadeMinVolume5mUsd,
+            volFadeDropPct: cfg.volFadeDropPct,
+          });
+        }
+        if (faded.length > 0) console.log('[copy-trader] vol-fade exits scheduled', faded.length);
+      } catch (err) {
+        console.warn('[copy-trader] vol-fade exit error', (err as Error).message);
+      }
     }
 
     if (now - lastReconcile >= 60_000) {

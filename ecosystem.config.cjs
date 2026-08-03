@@ -2562,6 +2562,14 @@ const PM2_APPS = [
          */
         COPY_TRADER_SELL_DELAY_MIN_MS: '10000',
         COPY_TRADER_SELL_DELAY_MAX_MS: '12000',
+        /**
+         * Volume-fade exit (this vol lane only): every 5m re-check Dex 5m volume.
+         * Full market sell if vol drops under the $8k entry floor, or ≥40% below
+         * the entry snapshot — earlier than waiting for the leader.
+         */
+        COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '300000',
+        COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
+        COPY_TRADER_VOL_FADE_DROP_PCT: '40',
         COPY_TRADER_SLIPPAGE_BPS: '150',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,

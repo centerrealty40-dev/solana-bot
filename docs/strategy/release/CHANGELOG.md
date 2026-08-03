@@ -121,6 +121,26 @@ RCA `6NwarBvD…pump`: лидер вышел, `leader_flat_tail_sweep` пост�
 
 ---
 
+## [1.11.638] — 2026-08-04
+
+**Тег:** `sa-1.11.638`
+
+### Change: 8zkg-mirror — выход по падению 5m volume (не тупой таймаут)
+
+На `copy-trader-8zkg-mirror` (vol5m-лейн): каждые **5 минут** перечитываем
+DexScreener 5m volume. Полный market-sell, если:
+- vol5m &lt; **$8k** (пол входа), или
+- vol5m упал ≥ **40%** относительно снимка на входе.
+
+Независимо от частичных/полных продаж лидера. Missing feed → не выходим.
+`copy-trader-8zkg` (mcap) без этой политики.
+
+Env: `COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS`, `_MIN_VOLUME_5M_USD`, `_DROP_PCT`.
+
+**Откат:** выставить интервал/`DROP`/`MIN` в `0` + reload, или `git revert`.
+
+---
+
 ## [1.11.637] — 2026-08-04
 
 **Тег:** `sa-1.11.637`
