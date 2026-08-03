@@ -2449,7 +2449,8 @@ const PM2_APPS = [
         /** Long window; the real stop for a premium-blocked entry is "leader sold". */
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
-        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
+        /** Failed swap → re-quote fast (was 6s — CaXF rebuy sat ~1min on 0x1771/qn_rate). */
+        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '500',
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
@@ -2462,7 +2463,8 @@ const PM2_APPS = [
         COPY_TRADER_SELL_DELAY_MIN_MS: '15000',
         COPY_TRADER_SELL_DELAY_MAX_MS: '15000',
         COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT: '5',
-        COPY_TRADER_SLIPPAGE_BPS: '150',
+        /** Wider buy slippage — 150bps kept dying on 0x1771 while the tape ran. */
+        COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
@@ -2543,9 +2545,9 @@ const PM2_APPS = [
         COPY_TRADER_EXIT_MODE: 'mirror',
         COPY_TRADER_POLL_INTERVAL_MS: '1000',
         COPY_TRADER_TICK_INTERVAL_MS: '500',
-        COPY_TRADER_BUY_DELAY_MS: '10000',
-        /** Skip the 10s wait when mark ≤ +2% over leader fill. */
-        COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT: '2',
+        /** No intentional buy lag — chase the leader fill before the tape runs. */
+        COPY_TRADER_BUY_DELAY_MS: '0',
+        COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         /** Shared premium policy with the twin: hard 5%, retry until leader exits. */
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
@@ -2554,7 +2556,7 @@ const PM2_APPS = [
         COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '0',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
-        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
+        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '500',
         /**
          * An exit must not be abandoned while the position is still worth something, so the sell
          * window is long and the retries patient.
@@ -2579,7 +2581,7 @@ const PM2_APPS = [
         COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '300000',
         COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
         COPY_TRADER_VOL_FADE_DROP_PCT: '40',
-        COPY_TRADER_SLIPPAGE_BPS: '150',
+        COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
