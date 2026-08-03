@@ -47,6 +47,7 @@ import { fetchParsedTransaction, fetchWalletMintBalanceRaw, fetchWalletSignature
 import {
   cancelPendingBuysForMint,
   findPendingBuy,
+  isBuyTerminalError,
   isPendingBuyExpired,
   leaderHoldingsShrunkSinceSignal,
   removePendingBuyById,
@@ -1362,8 +1363,38 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       evalResult,
       leaderSignature: pending.leaderSignature,
       leaderPriceUsd: pending.leaderPriceUsd,
+      leaderBuyTs: pending.leaderBuyTs,
     });
     if (!exec.ok) {
+      /**
+       * A quote already above the premium cap will not heal by waiting — it
+       * chases the pump. Cancel immediately so we skip rather than fill the dump.
+       */
+      if (isBuyTerminalError(exec.reason)) {
+        removePendingBuyById(state, pending.id);
+        appendCopyEvent(cfg, {
+          kind: pending.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
+          reason: 'quote_premium_terminal',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          leaderPriceUsd: pending.leaderPriceUsd,
+          quotePriceUsd: exec.priceUsd,
+          detail: exec.reason,
+        });
+        await notifyCopyTraderTelegram(
+          cfg,
+          fmtCopyAlert({
+            action: 'skip',
+            mint: pending.mint,
+            symbol: pending.symbol,
+            wallet: cfg.targetWallet,
+            priceUsd: exec.priceUsd || currentPrice,
+            detail: `Skip: quote premium too high · ${String(exec.reason).slice(0, 80)}`,
+          }),
+        );
+        continue;
+      }
       /**
        * Space out the next attempt. A failing swap costs a Jupiter quote plus a
        * build every tick, and a deterministic failure (missing ATA, thin route)
@@ -1827,6 +1858,13 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         console.warn('[copy-trader] poll error', (err as Error).message);
       }
       lastPoll = now;
+      // Flush due sells in the same tick we discovered the leader exit — do not
+      // wait for the next loop after buys/reconcile burned the budget.
+      try {
+        await processPendingSells(cfg, state);
+      } catch (err) {
+        console.warn('[copy-trader] post-poll sell error', (err as Error).message);
+      }
     }
 
     if (now - lastHistoryGc >= 3_600_000) {
@@ -1873,8 +1911,10 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     }
 
     try {
-      await processPendingBuys(cfg, state);
+      // Sells before buys: a just-discovered leader exit must not wait behind an
+      // entry quote round-trip on another mint.
       await processPendingSells(cfg, state);
+      await processPendingBuys(cfg, state);
       /** Flat-tail is leader-follow cleanup — not for trail_runner. */
       if (!usesTrailingExitPolicy(cfg)) {
         const tailSweeps = await scheduleLeaderFlatTailSweeps(cfg, state);

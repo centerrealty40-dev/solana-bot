@@ -13,7 +13,7 @@ import { liveSendSignedSwapPipeline } from '../live/phase6-send.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { rpcCall } from './rpc.js';
 import { appendCopyEvent } from './executor.js';
-import { checkQuotePremium } from './evaluate.js';
+import { checkQuotePremium, effectiveQuotePremiumCap } from './evaluate.js';
 import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
 import {
   copyBuyInputAmountRaw,
@@ -102,8 +102,19 @@ export async function executeLiveCopyBuy(args: {
   leaderSignature: string;
   /** Leader fill price for the post-quote premium guard (0 = guard off). */
   leaderPriceUsd?: number;
+  /** Leader buy timestamp — selects first-shot vs steady premium cap. */
+  leaderBuyTs?: number;
 }): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRaw?: string; reason?: string }> {
-  const { cfg, mint, symbol, sizeUsd, kind, leaderSignature, leaderPriceUsd = 0 } = args;
+  const {
+    cfg,
+    mint,
+    symbol,
+    sizeUsd,
+    kind,
+    leaderSignature,
+    leaderPriceUsd = 0,
+    leaderBuyTs = 0,
+  } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
@@ -134,27 +145,37 @@ export async function executeLiveCopyBuy(args: {
     solUsd,
   });
 
-  if (cfg.quotePremiumGuardPct > 0) {
-    const verdict = checkQuotePremium({
-      quotePriceUsd: priceUsd,
-      leaderPriceUsd,
-      maxPremiumPct: cfg.quotePremiumGuardPct,
+  if (cfg.quotePremiumGuardPct > 0 || cfg.quotePremiumFirstShotPct > 0) {
+    const { maxPremiumPct, firstShot } = effectiveQuotePremiumCap({
+      guardPct: cfg.quotePremiumGuardPct,
+      firstShotPct: cfg.quotePremiumFirstShotPct,
+      graceMs: cfg.quotePremiumGraceMs,
+      leaderBuyTs,
+      nowMs: Date.now(),
     });
-    if (verdict.block) {
-      appendCopyEvent(cfg, {
-        kind: 'buy_quote_premium_blocked',
-        mint,
-        symbol,
-        kindBuy: kind,
-        leaderSignature,
-        leaderPriceUsd,
+    if (maxPremiumPct > 0) {
+      const verdict = checkQuotePremium({
         quotePriceUsd: priceUsd,
-        maxAllowedPriceUsd: verdict.maxAllowedPriceUsd,
-        premiumPct: Number(verdict.premiumPct.toFixed(2)),
-        maxPremiumPct: cfg.quotePremiumGuardPct,
-        sizeUsd,
+        leaderPriceUsd,
+        maxPremiumPct,
       });
-      return { ok: false, priceUsd, reason: verdict.reason };
+      if (verdict.block) {
+        appendCopyEvent(cfg, {
+          kind: 'buy_quote_premium_blocked',
+          mint,
+          symbol,
+          kindBuy: kind,
+          leaderSignature,
+          leaderPriceUsd,
+          quotePriceUsd: priceUsd,
+          maxAllowedPriceUsd: verdict.maxAllowedPriceUsd,
+          premiumPct: Number(verdict.premiumPct.toFixed(2)),
+          maxPremiumPct,
+          firstShot,
+          sizeUsd,
+        });
+        return { ok: false, priceUsd, reason: verdict.reason };
+      }
     }
   }
 
