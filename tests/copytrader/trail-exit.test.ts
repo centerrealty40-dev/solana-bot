@@ -146,6 +146,41 @@ describe('trail exit decision', () => {
     expect(d.reason).toBe('time_cap');
   });
 
+  it('skips the time cap once a TP rung has already peeled', () => {
+    const d = decideTrailExit(
+      { ...oscar, trailTimeCapMs: 1_800_000 },
+      {
+        entryPriceUsd: ENTRY,
+        currentPriceUsd: ENTRY * 1.05,
+        tpRungsTaken: 1,
+        trailArmedAt: T0 + 10_000,
+        sizeUsd: 50,
+        entryTs: T0,
+        nowMs: T0 + 1_800_001,
+      },
+    );
+    expect(d.action).toBe('hold');
+    expect(d.reason).toBeUndefined();
+  });
+
+  it('skips the time cap once a trail giveback has peeled', () => {
+    const d = decideTrailExit(
+      { ...oscar, trailTimeCapMs: 1_800_000 },
+      {
+        entryPriceUsd: ENTRY,
+        currentPriceUsd: ENTRY * 1.12,
+        peakPriceUsd: ENTRY * 1.2,
+        tpRungsTaken: 1,
+        trailGivebackStepsTaken: 1,
+        trailArmedAt: T0 + 10_000,
+        sizeUsd: 50,
+        entryTs: T0,
+        nowMs: T0 + 1_800_001,
+      },
+    );
+    expect(d.action).toBe('hold');
+  });
+
   it('holds when the mark is missing rather than guessing', () => {
     const d = decideTrailExit(cfg, {
       entryPriceUsd: ENTRY,
@@ -298,25 +333,22 @@ describe('processTrailingExits', () => {
     expect(state.positions.Mint111?.peakPriceUsd).toBeCloseTo(ENTRY, 12);
   });
 
-  it('persists ladder counters when a TP rung fires', async () => {
+  it('does not time-cap a position that already took a TP rung', async () => {
     const state = emptyCopyTraderState();
-    state.positions.Mint111 = position();
+    state.positions.Mint111 = position({ trailTpRungsTaken: 1, trailArmedAt: T0 + 10_000 });
     const events: TrailExitEvent[] = [];
 
     const n = await processTrailingExits(
-      runnerCfg(oscar),
+      runnerCfg({ ...oscar, trailTimeCapMs: 1_800_000 }),
       state,
       {
-        resolvePriceUsd: async () => ENTRY * 1.1,
+        resolvePriceUsd: async () => ENTRY * 1.04,
         scheduleExit: (e) => events.push(e),
       },
-      T0 + 60_000,
+      T0 + 1_800_001,
     );
 
-    expect(n).toBe(1);
-    expect(events[0]?.reason).toBe('tp_rung');
-    expect(events[0]?.fraction).toBe(0.5);
-    expect(state.positions.Mint111?.trailTpRungsTaken).toBe(1);
-    expect(state.positions.Mint111?.trailArmedAt).toBe(T0 + 60_000);
+    expect(n).toBe(0);
+    expect(events).toHaveLength(0);
   });
 });

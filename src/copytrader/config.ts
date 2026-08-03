@@ -129,7 +129,11 @@ const CopyTraderConfigSchema = z.object({
   trailTrailSellFraction: z.coerce.number().min(0).max(1).default(1),
   /** Hard full exit at −N% from entry (Oscar kill = 50). **0** = off. */
   trailKillPct: z.coerce.number().min(0).max(100).default(0),
-  /** trail_runner: hard exit after this long in the position. **0** = off. */
+  /**
+   * trail_runner: full exit after this long **only if** no TP rung and no trail
+   * giveback has fired yet (dead-trade flush). Once the ladder/trail has peeled,
+   * the clock is ignored. **0** = off.
+   */
   trailTimeCapMs: z.coerce.number().int().min(0).max(86_400_000).default(2_700_000),
   /** trail_runner: how often open positions are marked. */
   trailTickIntervalMs: z.coerce.number().int().min(1_000).max(300_000).default(5_000),
