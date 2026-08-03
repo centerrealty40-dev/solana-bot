@@ -102,6 +102,20 @@
 
 ---
 
+## [1.11.641] — 2026-08-04
+
+**Тег:** `sa-1.11.641`
+
+### Change: 8zkg-mirror — buy delay 10s, сразу если ≤ +2%
+
+На `copy-trader-8zkg-mirror`: `BUY_DELAY_MS=10000`, но если live mark не дороже
+лидера больше чем на **2%** — delay = 0 (покупаем сразу). Жёсткий premium cap
+5% без изменений. Новый env: `COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT`.
+
+**Откат:** `BUY_DELAY_MS=0` / skip=`0` + reload, или `git revert`.
+
+---
+
 ## [1.11.640] — 2026-08-04
 
 **Тег:** `sa-1.11.640`
