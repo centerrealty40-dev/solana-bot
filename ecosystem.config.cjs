@@ -2408,7 +2408,8 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
         COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
-        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
+        /** Allow entry on leader rebuy/average-down even if we missed his first fill. */
+        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal A/B vs `copy-trader-8zkg-mirror` (2026-08-03 4h live RCA):
          * this lane = **mcap-only** entry (≥$150k) + **fast** mirror exit.
@@ -2515,7 +2516,8 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
         COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
-        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '0',
+        /** Same as twin: enter on average-down / rebuy if we missed his open. */
+        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal B: vol5m-only (≥$8k). Mcap/liq floors off — twin owns mcap.
          * Missing volume feed fails closed.
