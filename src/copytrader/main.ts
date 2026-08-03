@@ -47,7 +47,6 @@ import { fetchParsedTransaction, fetchWalletMintBalanceRaw, fetchWalletSignature
 import {
   cancelPendingBuysForMint,
   findPendingBuy,
-  isBuyTerminalError,
   isPendingBuyExpired,
   leaderHoldingsShrunkSinceSignal,
   removePendingBuyById,
@@ -1367,39 +1366,10 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     });
     if (!exec.ok) {
       /**
-       * A quote already above the premium cap will not heal by waiting — it
-       * chases the pump. Cancel immediately so we skip rather than fill the dump.
-       */
-      if (isBuyTerminalError(exec.reason)) {
-        removePendingBuyById(state, pending.id);
-        appendCopyEvent(cfg, {
-          kind: pending.kind === 'add' ? 'add_cancelled' : 'buy_cancelled',
-          reason: 'quote_premium_terminal',
-          mint: pending.mint,
-          symbol: pending.symbol,
-          leaderSignature: pending.leaderSignature,
-          leaderPriceUsd: pending.leaderPriceUsd,
-          quotePriceUsd: exec.priceUsd,
-          detail: exec.reason,
-        });
-        await notifyCopyTraderTelegram(
-          cfg,
-          fmtCopyAlert({
-            action: 'skip',
-            mint: pending.mint,
-            symbol: pending.symbol,
-            wallet: cfg.targetWallet,
-            priceUsd: exec.priceUsd || currentPrice,
-            detail: `Skip: quote premium too high · ${String(exec.reason).slice(0, 80)}`,
-          }),
-        );
-        continue;
-      }
-      /**
-       * Space out the next attempt. A failing swap costs a Jupiter quote plus a
-       * build every tick, and a deterministic failure (missing ATA, thin route)
-       * will not clear within a second — an unfunded wallet once burned ~100
-       * attempts inside one retry window.
+       * Space out the next attempt. Quote-premium misses keep retrying until the
+       * price cools or the leader starts exiting (leaderHoldingsShrunkSinceSignal
+       * cancels above). A failing swap costs a Jupiter quote plus a build every
+       * tick — interval keeps a hot mint from monopolising the buy loop.
        */
       const retryRow = findPendingBuy(state, pending.id);
       if (retryRow && cfg.buyRetryIntervalMs > 0) {

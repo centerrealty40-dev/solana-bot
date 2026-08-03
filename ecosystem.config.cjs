@@ -2482,20 +2482,17 @@ const PM2_APPS = [
         /** No artificial wait: a 5s delay was buying into already-elevated quotes. */
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
-        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
         /**
-         * Steady post-quote premium cap. A blocked quote is terminal (no retry
-         * chase into the dump). Inside the 8s grace window the first shot may
-         * use 10% so a single immediate attempt can clear route impact.
+         * Hard premium cap vs the leader fill. Above 5% we do not buy — we keep
+         * retrying until the quote cools or the leader starts exiting
+         * (leaderHoldingsShrunkSinceSignal). No first-shot widen.
          */
-        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '6',
-        COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '10',
-        COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '8000',
-        /**
-         * Short window for transient swap/RPC failures only. Quote-premium
-         * blocks cancel the pending buy immediately.
-         */
-        COPY_TRADER_BUY_RETRY_WINDOW_MS: '60000',
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
+        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '5',
+        COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '0',
+        COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '0',
+        /** Long window; the real stop for a premium-blocked entry is "leader sold". */
+        COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '3600000',
@@ -2597,12 +2594,12 @@ const PM2_APPS = [
         COPY_TRADER_TICK_INTERVAL_MS: '500',
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
-        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
-        /** Entry parity with the twin: same post-quote premium guard + first shot. */
-        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '6',
-        COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '10',
-        COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '8000',
-        COPY_TRADER_BUY_RETRY_WINDOW_MS: '60000',
+        /** Entry parity with the twin: hard 5% premium, retry until leader exits. */
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
+        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '5',
+        COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '0',
+        COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '0',
+        COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
         /**
