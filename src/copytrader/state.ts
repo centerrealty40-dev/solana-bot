@@ -47,6 +47,12 @@ export type CopyPosition = {
   lastVolFadeCheckTs?: number;
   /** Last observed 5m volume USD from a vol-fade check. */
   lastVolume5mUsd?: number;
+  /** Leader sold any amount of this mint after our entry — blocks mirror early TP. */
+  leaderSoldSinceEntry?: boolean;
+  /** One-shot +gain peel already scheduled/taken while leader still held. */
+  mirrorEarlyTpTaken?: boolean;
+  /** Last mirror-early-TP mark poll (ms). */
+  lastMirrorEarlyTpCheckTs?: number;
 };
 
 export type LeaderMintLedger = {

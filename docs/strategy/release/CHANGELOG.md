@@ -102,6 +102,23 @@
 
 ---
 
+## [1.11.644] — 2026-08-04
+
+**Тег:** `sa-1.11.644`
+
+### Change: 8zkg — early TP +20% → 50% пока лидер держит
+
+На обоих лейнах (`copy-trader-8zkg`, `copy-trader-8zkg-mirror`): если mark
+≥ **+20%** к entry и лидер ещё **ничего не продал** по минтам — один раз
+продаём **50% остатка**. Вторая половина по-прежнему ждёт его exit (mirror).
+
+Env: `COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT=20`, `_SELL_FRACTION=0.5`,
+`_TICK_INTERVAL_MS=5000`.
+
+**Откат:** `GAIN_PCT=0` + reload, или `git revert`.
+
+---
+
 ## [1.11.643] — 2026-08-04
 
 **Тег:** `sa-1.11.643`

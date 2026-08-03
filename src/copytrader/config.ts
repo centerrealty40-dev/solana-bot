@@ -207,6 +207,15 @@ const CopyTraderConfigSchema = z.object({
    * e.g. 50 + entry 20k → sell when vol &lt; 10k. **0** = off.
    */
   volFadeDropPct: z.coerce.number().min(0).max(100).default(0),
+  /**
+   * Mirror early TP: peel when unrealized gain ≥ this % vs entry and the leader
+   * has not sold yet. **0** = off.
+   */
+  mirrorEarlyTpGainPct: z.coerce.number().min(0).max(1_000).default(0),
+  /** Fraction of remaining size to sell on early TP (e.g. 0.5 = half). */
+  mirrorEarlyTpSellFraction: z.coerce.number().min(0).max(1).default(0.5),
+  /** How often open mirror legs are marked for early TP. */
+  mirrorEarlyTpTickIntervalMs: z.coerce.number().int().min(1_000).max(300_000).default(5_000),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   /** Funding asset for swaps. `USDC` decouples sizing from the SOL price (see quote-mint.ts). */
   quoteAsset: z.enum(['SOL', 'USDC']).default('SOL'),
@@ -354,6 +363,9 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     volFadeMinVolume5mUsd: process.env.COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD,
     volFadeDropPct: process.env.COPY_TRADER_VOL_FADE_DROP_PCT,
     trailTickIntervalMs: process.env.COPY_TRADER_TRAIL_TICK_INTERVAL_MS,
+    mirrorEarlyTpGainPct: process.env.COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT,
+    mirrorEarlyTpSellFraction: process.env.COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION,
+    mirrorEarlyTpTickIntervalMs: process.env.COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
     quoteAsset: parseCopyQuoteAsset(process.env.COPY_TRADER_QUOTE_MINT).asset,
     minFeeSolReserve: process.env.COPY_TRADER_MIN_FEE_SOL_RESERVE,
