@@ -50,13 +50,36 @@ export function syncPositionFromWallet(
     const tracked = copyTrackedTokenRaw(pos);
     pos.tokenRaw = tracked > 0n ? tracked.toString() : pos.tokenRaw;
     const notional = walletNotionalUsdFromRaw(tracked, priceUsd);
-    if (notional > 0) pos.sizeUsd = notional;
+    if (priceUsd > 0) pos.sizeUsd = notional;
     return notional;
   }
   pos.tokenRaw = tokenRaw > 0n ? tokenRaw.toString() : undefined;
   const notional = walletNotionalUsdFromRaw(tokenRaw, priceUsd);
-  if (notional > 0) pos.sizeUsd = notional;
+  // Only a known price may rewrite the notional; a price outage must not zero a
+  // live position. A known price that values the balance at ~0 MUST rewrite it,
+  // otherwise a swept position keeps reporting its last full size forever and
+  // the exit policy keeps scheduling real sells against a phantom.
+  if (priceUsd > 0) pos.sizeUsd = notional;
   return notional;
+}
+
+/**
+ * Residue too small to exit: a sub-cent leftover leg, or an unroutable balance
+ * a swap already swept. Left open, such a position keeps the exit policy firing
+ * sells that no venue will quote.
+ */
+export function copyPositionIsDust(
+  cfg: CopyTraderConfig,
+  tokenRaw: bigint,
+  priceUsd: number,
+): boolean {
+  if (tokenRaw <= 0n) return true;
+  if (cfg.dustMinTokenRaw > 0 && tokenRaw < BigInt(cfg.dustMinTokenRaw)) return true;
+  if (cfg.dustMinUsd > 0 && priceUsd > 0) {
+    const tokens = Number(tokenRaw) / COPY_TRADER_TOKEN_UI_SCALE;
+    if (Number.isFinite(tokens) && tokens * priceUsd < cfg.dustMinUsd) return true;
+  }
+  return false;
 }
 
 /** Retry zero reads — Helius/RPC often lags right after a confirmed buy. */
@@ -141,7 +164,7 @@ export async function refreshPositionFromWallet(
   if (cfg.sharedOscarWallet) {
     if (pos?.oscarPromotedAt) return copyTrackedTokenRaw(pos);
     const tracked = copyTrackedTokenRaw(pos);
-    if (tracked === 0n) {
+    if (copyPositionIsDust(cfg, tracked, priceUsd)) {
       if (pos) {
         delete state.positions[mint];
         cancelPendingBuysForMint(state, mint, 'any');
@@ -154,7 +177,7 @@ export async function refreshPositionFromWallet(
   }
 
   const bal = await fetchExecutionWalletBalanceRawRetry(cfg, mint);
-  if (bal === 0n) {
+  if (copyPositionIsDust(cfg, bal, priceUsd)) {
     if (pos) {
       delete state.positions[mint];
       cancelPendingBuysForMint(state, mint, 'any');
@@ -249,7 +272,8 @@ export async function reconcileGhostPositions(cfg: CopyTraderConfig, state: Copy
         ? await fetchExecutionWalletBalanceRawRetry(cfg, mint, { attempts: 3, delayMs: 2000 })
         : await fetchWalletMintBalanceRaw(cfg.rpcUrl, wallet, mint);
 
-    if (bal !== 0n) {
+    const dust = copyPositionIsDust(cfg, bal, pos.entryPriceUsd);
+    if (!dust) {
       syncPositionFromWallet(pos, bal, pos.entryPriceUsd, cfg);
       continue;
     }
@@ -262,7 +286,9 @@ export async function reconcileGhostPositions(cfg: CopyTraderConfig, state: Copy
       kind: 'position_closed_wallet_empty',
       mint,
       symbol: pos.symbol,
-      reason: 'wallet_balance_zero',
+      reason: bal === 0n ? 'wallet_balance_zero' : 'wallet_balance_dust',
+      tokenRaw: bal.toString(),
+      staleSizeUsd: pos.sizeUsd,
     });
   }
   return cleared;

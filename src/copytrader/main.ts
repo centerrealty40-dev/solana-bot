@@ -54,9 +54,13 @@ import {
   computeRetryUntilTs,
 } from './pending-buy-retry.js';
 import {
+  cancelPendingSellsForMint,
   findPendingSell,
+  isPendingSellExhausted,
   isPendingSellExpired,
   isSellRetryableError,
+  isUnroutableSellError,
+  nextSellRetryDelayMs,
   removePendingSellById,
   shouldLogSellDefer,
 } from './pending-sell-retry.js';
@@ -88,6 +92,7 @@ import {
   syncPositionFromWallet,
   walletNotionalUsdFromRaw,
   accumulateCopyTokenRaw,
+  copyPositionIsDust,
   copySellableTokenRaw,
   copyTrackedTokenRaw,
 } from './position-reconcile.js';
@@ -235,8 +240,24 @@ function scheduleTrailExitSell(
   event: TrailExitEvent,
 ): void {
   const now = Date.now();
+  // The trail policy re-arms every tick, so an unsellable position would rebuild
+  // the same doomed pending sell forever. Honour the post-abandon cooldown.
+  const blockedUntil = event.pos.sellBlockedUntilTs ?? 0;
+  if (blockedUntil > now) return;
+
   const fraction =
     typeof event.fraction === 'number' && event.fraction > 0 ? Math.min(1, event.fraction) : 1;
+
+  // Two concurrent sells on one mint both size off the same pre-sync balance, so
+  // the second drains whatever the first left. Keep one in flight — but let a
+  // full exit supersede a partial rung, or risk management would be stuck behind it.
+  const inFlight = state.pendingSells.filter((p) => p.mint === event.pos.mint);
+  if (inFlight.length > 0) {
+    if (fraction < 0.999) return;
+    if (inFlight.every((p) => p.fraction >= 0.999)) return;
+    cancelPendingSellsForMint(state, event.pos.mint);
+  }
+
   const pending: PendingSell = {
     id: newId('ps'),
     mint: event.pos.mint,
@@ -1556,16 +1577,23 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
       }, cfg);
     }
 
-    const sellableRaw = copySellableTokenRaw(cfg, pos);
-    if (sellableRaw === 0n) {
-      removePendingSellById(state, pending.id);
-      closePositionForMint(cfg, state, pending.mint, 'no_copy_token_balance');
-      continue;
-    }
-
+    // Reconcile before sizing, not after: sizing off the pre-sync state sells an
+    // amount the wallet no longer holds, and every such attempt is unquotable.
     if (!cfg.sharedOscarWallet) {
       const walletBal = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
       syncPositionFromWallet(pos, walletBal, exitPrice, cfg);
+    }
+
+    const sellableRaw = copySellableTokenRaw(cfg, pos);
+    if (copyPositionIsDust(cfg, sellableRaw, exitPrice)) {
+      removePendingSellById(state, pending.id);
+      closePositionForMint(
+        cfg,
+        state,
+        pending.mint,
+        sellableRaw === 0n ? 'no_copy_token_balance' : 'copy_token_balance_dust',
+      );
+      continue;
     }
 
     const sellDelayMs = Math.max(0, now - pending.leaderSellTs);
@@ -1626,13 +1654,31 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
       continue;
     }
 
+    const liveRow = findPendingSell(state, pending.id);
+    const attempts = (liveRow?.attempts ?? pending.attempts ?? 0) + 1;
+    const unroutable = isUnroutableSellError(exec.reason);
+    const unroutableAttempts =
+      (liveRow?.unroutableAttempts ?? pending.unroutableAttempts ?? 0) + (unroutable ? 1 : 0);
+    if (liveRow) {
+      liveRow.attempts = attempts;
+      liveRow.unroutableAttempts = unroutableAttempts;
+    }
+
     const retryable = isSellRetryableError(exec.reason);
-    if (retryable && !isPendingSellExpired(pending, now)) {
-      const row = findPendingSell(state, pending.id);
-      if (row) {
-        row.dueTs = now + cfg.sellRetryIntervalMs;
-        if (shouldLogSellDefer(row, now, cfg.sellRetryDeferLogMs)) {
-          row.lastDeferLogTs = now;
+    const exhausted =
+      isPendingSellExhausted({ ...pending, attempts }, cfg.sellMaxAttempts) ||
+      (unroutable &&
+        isPendingSellExhausted(
+          { ...pending, attempts: unroutableAttempts },
+          cfg.sellMaxUnroutableAttempts,
+        ));
+    if (retryable && !exhausted && !isPendingSellExpired(pending, now)) {
+      if (liveRow) {
+        liveRow.dueTs =
+          now +
+          nextSellRetryDelayMs(attempts, cfg.sellRetryIntervalMs, cfg.sellRetryBackoffMaxMs);
+        if (shouldLogSellDefer(liveRow, now, cfg.sellRetryDeferLogMs)) {
+          liveRow.lastDeferLogTs = now;
           appendCopyEvent(cfg, {
             kind: 'sell_deferred',
             mint: pending.mint,
@@ -1640,8 +1686,10 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
             leaderSignature: pending.leaderSignature,
             sellFraction: pending.fraction,
             reason: exec.reason ?? 'slippage',
-            retryUntilTs: row.retryUntilTs,
-            nextAttemptTs: row.dueTs,
+            attempts,
+            unroutableAttempts,
+            retryUntilTs: liveRow.retryUntilTs,
+            nextAttemptTs: liveRow.dueTs,
           });
         }
       }
@@ -1654,15 +1702,39 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     if (failReason.includes('no_token_balance')) {
       closePositionForMint(cfg, state, pending.mint, failReason);
     }
+    const kind = exhausted
+      ? 'sell_abandoned'
+      : retryable && isPendingSellExpired(pending, now)
+        ? 'sell_expired'
+        : 'sell_failed';
     appendCopyEvent(cfg, {
-      kind: retryable && isPendingSellExpired(pending, now) ? 'sell_expired' : 'sell_failed',
+      kind,
       mint: pending.mint,
       symbol: pending.symbol,
       leaderSignature: pending.leaderSignature,
       sellFraction: pending.fraction,
       reason: failReason,
+      attempts,
+      unroutableAttempts,
+      maxAttempts: cfg.sellMaxAttempts,
+      maxUnroutableAttempts: cfg.sellMaxUnroutableAttempts,
       retryUntilTs: pending.retryUntilTs,
     });
+    if (exhausted) {
+      const stuck = state.positions[pending.mint];
+      if (stuck) stuck.sellBlockedUntilTs = now + cfg.sellAbandonCooldownMs;
+      await notifyCopyTraderTelegram(
+        cfg,
+        fmtCopyAlert({
+          action: 'our_sell',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          wallet: cfg.targetWallet,
+          priceUsd: exitPrice,
+          detail: `Sell abandoned after ${attempts} attempts · ${failReason.slice(0, 60)}`,
+        }),
+      );
+    }
     await sleep(150);
   }
 }

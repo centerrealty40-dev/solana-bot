@@ -36,6 +36,27 @@ const CopyTraderConfigSchema = z.object({
   sellRetryWindowMs: z.coerce.number().int().min(0).max(86_400_000).default(7_200_000),
   sellRetryIntervalMs: z.coerce.number().int().min(1_000).max(600_000).default(6_000),
   sellRetryDeferLogMs: z.coerce.number().int().min(5_000).max(3_600_000).default(30_000),
+  /**
+   * Cap on consecutive failed attempts for one pending sell (**0** = off).
+   *
+   * The retry window alone is not a circuit breaker: an unroutable balance
+   * fails every `sellRetryIntervalMs` for the whole window, burning the shared
+   * Jupiter/RPC budget and delaying sells that would actually fill.
+   */
+  sellMaxAttempts: z.coerce.number().int().min(0).max(1_000).default(40),
+  /**
+   * Tighter budget for unroutable failures (no Jupiter route for the balance).
+   * These never self-heal within a retry window the way slippage does.
+   */
+  sellMaxUnroutableAttempts: z.coerce.number().int().min(0).max(1_000).default(8),
+  /** Ceiling for the exponential retry backoff between attempts (**0** = flat interval). */
+  sellRetryBackoffMaxMs: z.coerce.number().int().min(0).max(600_000).default(60_000),
+  /** After attempts are exhausted, the exit policy may not re-arm this mint for this long. */
+  sellAbandonCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
+  /** Positions worth less than this are residue, not holdings — close, do not sell. */
+  dustMinUsd: z.coerce.number().min(0).max(100).default(1),
+  /** Absolute raw-unit dust floor, applied even when no price is available. */
+  dustMinTokenRaw: z.coerce.number().int().min(0).max(1_000_000_000).default(1_000),
   /** Min ms between sell executions on the same mint (Jupiter 429 mitigation). **0** = off. */
   minSellIntervalMs: z.coerce.number().int().min(0).max(600_000).default(0),
   /** Min ms between Jupiter dip eval quotes per pending buy (eval-only cache). **0** = off. */
@@ -225,6 +246,12 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     sellRetryWindowMs: process.env.COPY_TRADER_SELL_RETRY_WINDOW_MS,
     sellRetryIntervalMs: process.env.COPY_TRADER_SELL_RETRY_INTERVAL_MS,
     sellRetryDeferLogMs: process.env.COPY_TRADER_SELL_RETRY_DEFER_LOG_MS,
+    sellMaxAttempts: process.env.COPY_TRADER_SELL_MAX_ATTEMPTS,
+    sellMaxUnroutableAttempts: process.env.COPY_TRADER_SELL_MAX_UNROUTABLE_ATTEMPTS,
+    sellRetryBackoffMaxMs: process.env.COPY_TRADER_SELL_RETRY_BACKOFF_MAX_MS,
+    sellAbandonCooldownMs: process.env.COPY_TRADER_SELL_ABANDON_COOLDOWN_MS,
+    dustMinUsd: process.env.COPY_TRADER_DUST_MIN_USD,
+    dustMinTokenRaw: process.env.COPY_TRADER_DUST_MIN_TOKEN_RAW,
     minSellIntervalMs: process.env.COPY_TRADER_MIN_SELL_INTERVAL_MS,
     entryDipJupiterMinIntervalMs: process.env.COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS,
     entryDipUseJupiter: process.env.COPY_TRADER_ENTRY_DIP_USE_JUPITER !== '0',
