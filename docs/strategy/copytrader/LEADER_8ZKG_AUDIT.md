@@ -371,7 +371,7 @@ Two things to keep in view:
   3.5% it earns +0.37%, and at 4% it is negative. Cutting entry lag and
   slippage is worth more than any further gate work.
 
-Shipped: pair age **0.3–72h**, 5m volume ≥ 9% of liquidity, 1h volume ≥ **20%** of market cap. Leader mint history, 5m chase, buy/sell pressure,
+Shipped: pair age **≥0.3h (no max)**, 5m volume ≥ 9% of liquidity, 1h volume ≥ **20%** of market cap. Leader mint history, 5m chase, buy/sell pressure,
 clip size, liquidity and market-cap floors are all off. Throughput ~36/day,
 average hold 16 minutes, which occupies well under one of the eight position
 slots.

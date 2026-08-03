@@ -102,6 +102,20 @@
 
 ---
 
+## [1.11.630] — 2026-08-03
+
+**Тег:** `sa-1.11.630`
+
+### Change: 8zkg entry — remove max pair-age cap (both wallets)
+
+`COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: 72 → 0` (off). Upper age ceiling cut
+revisits on old names; keep only the min floor `0.3h`. Turnover `0.09` and
+vol_to_mcap `0.20` unchanged.
+
+**Откат:** вернуть max age (`72` или `30`) на обоих блоках + reload.
+
+---
+
 ## [1.11.629] — 2026-08-03
 
 **Тег:** `sa-1.11.629`
