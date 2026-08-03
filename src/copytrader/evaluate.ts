@@ -19,6 +19,39 @@ export type EvalResult = {
   score: number;
 };
 
+export type QuotePremiumVerdict =
+  | { block: false; premiumPct: number | null }
+  | { block: true; premiumPct: number; maxAllowedPriceUsd: number; reason: string };
+
+/**
+ * Post-quote premium guard.
+ *
+ * `evaluateCopyEntry` caps premium against the DEX snapshot price, which can be
+ * minutes stale by the time the Jupiter quote lands. Without a second check the
+ * swap executes at whatever the route offers — live journals show fills up to
+ * +23% over the leader on a 3% cap, turning the leader's winners into our
+ * losers. This re-checks the executable quote price right before sending.
+ */
+export function checkQuotePremium(args: {
+  quotePriceUsd: number;
+  leaderPriceUsd: number;
+  maxPremiumPct: number;
+}): QuotePremiumVerdict {
+  const { quotePriceUsd, leaderPriceUsd, maxPremiumPct } = args;
+  if (!(quotePriceUsd > 0) || !(leaderPriceUsd > 0) || !(maxPremiumPct >= 0)) {
+    return { block: false, premiumPct: null };
+  }
+  const premiumPct = (quotePriceUsd / leaderPriceUsd - 1) * 100;
+  const maxAllowedPriceUsd = leaderPriceUsd * (1 + maxPremiumPct / 100);
+  if (quotePriceUsd <= maxAllowedPriceUsd) return { block: false, premiumPct };
+  return {
+    block: true,
+    premiumPct,
+    maxAllowedPriceUsd,
+    reason: `quote_premium_too_high premium=${premiumPct.toFixed(2)}%>max=${maxPremiumPct}%`,
+  };
+}
+
 function marketCapEval(cfg: CopyTraderConfig, dex: DexInfo): { fail?: string; scoreInc: number } {
   if (cfg.minMarketCapUsd <= 0) return { scoreInc: 0 };
   if (!(dex.marketCap > 0)) {

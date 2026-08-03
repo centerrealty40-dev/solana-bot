@@ -1340,6 +1340,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       kind: execKind,
       evalResult,
       leaderSignature: pending.leaderSignature,
+      leaderPriceUsd: pending.leaderPriceUsd,
     });
     if (!exec.ok) {
       /**
