@@ -29,6 +29,8 @@ export type CopyPosition = {
   entryDipAbandoned?: boolean;
   /** Last successful sell execution timestamp (ms) — min-interval throttle. */
   lastSellTs?: number;
+  /** Exit policy may not re-arm until this ts (sell attempts were exhausted). */
+  sellBlockedUntilTs?: number;
   /** Live-oscar took over management — stop proportional mirror sells. */
   oscarPromotedAt?: number;
   /** Highest mark seen since entry (trail_runner exit mode). */
@@ -104,6 +106,10 @@ export type PendingSell = {
   /** Keep retrying slippage-class sell errors until this ts. */
   retryUntilTs: number;
   lastDeferLogTs?: number;
+  /** Consecutive failed execution attempts (attempt-budget circuit breaker). */
+  attempts?: number;
+  /** Subset of `attempts` that failed because no venue would route the size. */
+  unroutableAttempts?: number;
 };
 
 export type CopyTraderState = {
