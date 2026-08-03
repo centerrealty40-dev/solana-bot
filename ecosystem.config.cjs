@@ -2321,7 +2321,12 @@ const PM2_APPS = [
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
         COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '-100',
-        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
+        /**
+         * Was 1h; 10h live contour (2026-08-03) showed min=1h cutting his +40…+78%
+         * opens under 1h (SKIP sessions mean +7% vs TAKE −0.4%). Floor at 0.3h keeps
+         * brand-new noise out while admitting the winners we were missing.
+         */
+        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.3',
         /** Past ~30h his edge is gone: -2.1%, -3.1%, -3.5% in the top age octiles. */
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '30',
         /** 5m volume over pool liquidity. Below 0.09 every octile loses money. */
@@ -2440,7 +2445,8 @@ const PM2_APPS = [
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
         COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '-100',
-        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '1',
+        /** Keep entry parity with copy-trader-8zkg (min pair age 0.3h). */
+        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.3',
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '30',
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.09',
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.33',
