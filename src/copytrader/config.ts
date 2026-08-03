@@ -181,6 +181,21 @@ const CopyTraderConfigSchema = z.object({
   trailTimeCapMs: z.coerce.number().int().min(0).max(86_400_000).default(2_700_000),
   /** trail_runner: how often open positions are marked. */
   trailTickIntervalMs: z.coerce.number().int().min(1_000).max(300_000).default(5_000),
+  /**
+   * Volume-fade exit: re-check 5m USD volume this often on open legs. **0** = off.
+   * Pair with `volFadeMinVolume5mUsd` / `volFadeDropPct`.
+   */
+  volFadeCheckIntervalMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
+  /**
+   * Absolute 5m volume floor while holding. Current vol below this → full exit.
+   * **0** = no absolute floor (drop-vs-entry only).
+   */
+  volFadeMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(0),
+  /**
+   * Exit when current 5m vol is this % below the entry snapshot.
+   * e.g. 50 + entry 20k → sell when vol &lt; 10k. **0** = off.
+   */
+  volFadeDropPct: z.coerce.number().min(0).max(100).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   /** Funding asset for swaps. `USDC` decouples sizing from the SOL price (see quote-mint.ts). */
   quoteAsset: z.enum(['SOL', 'USDC']).default('SOL'),
@@ -322,6 +337,9 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     trailTrailSellFraction: process.env.COPY_TRADER_TRAIL_TRAIL_SELL_FRACTION,
     trailKillPct: process.env.COPY_TRADER_TRAIL_KILL_PCT,
     trailTimeCapMs: process.env.COPY_TRADER_TRAIL_TIME_CAP_MS,
+    volFadeCheckIntervalMs: process.env.COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS,
+    volFadeMinVolume5mUsd: process.env.COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD,
+    volFadeDropPct: process.env.COPY_TRADER_VOL_FADE_DROP_PCT,
     trailTickIntervalMs: process.env.COPY_TRADER_TRAIL_TICK_INTERVAL_MS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
     quoteAsset: parseCopyQuoteAsset(process.env.COPY_TRADER_QUOTE_MINT).asset,

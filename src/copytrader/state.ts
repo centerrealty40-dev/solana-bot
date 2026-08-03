@@ -41,6 +41,12 @@ export type CopyPosition = {
   trailTpRungsTaken?: number;
   /** Giveback steps fired from the current peak epoch. */
   trailGivebackStepsTaken?: number;
+  /** DexScreener 5m volume USD at entry fill (vol-fade exit baseline). */
+  entryVolume5mUsd?: number;
+  /** Last vol-fade poll timestamp (ms). */
+  lastVolFadeCheckTs?: number;
+  /** Last observed 5m volume USD from a vol-fade check. */
+  lastVolume5mUsd?: number;
 };
 
 export type LeaderMintLedger = {
