@@ -330,4 +330,47 @@ describe('copy-trader oscar position guard', () => {
       }),
     ).toEqual({ ignore: false });
   });
+
+  it('does not purge an active mirror copy leg that was never handed to Oscar', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'copy-purge-mirror-'));
+    const statePath = path.join(dir, 'state.json');
+    const snapshotPath = path.join(dir, 'oscar-open.json');
+    fs.writeFileSync(statePath, JSON.stringify({ positions: {} }));
+    fs.writeFileSync(
+      snapshotPath,
+      JSON.stringify({ version: 1, strategyId: 'live-oscar', updatedAtMs: Date.now(), openCount: 0, positions: {} }),
+    );
+
+    const mint = '6NwarBvDkXhByqVp2Qkq5i9XbtA2B3Bwe8SWGu9vpump';
+    const pos: CopyPosition = {
+      mint,
+      symbol: '6NwarBvD',
+      positionSource: 'copy_leader',
+      entryTs: Date.now(),
+      entryPriceUsd: 0.01,
+      sizeUsd: 750,
+      tokenRaw: '81097543775',
+      addCount: 0,
+      leaderWallet: baseCfg.targetWallet,
+      leaderEntrySig: 'sig',
+    };
+    const state: CopyTraderState = {
+      seenSignatures: {},
+      pendingBuys: [],
+      pendingSells: [],
+      positions: { [mint]: pos },
+      leaderLedger: {},
+    };
+
+    expect(
+      purgeStaleOscarHandoffPosition({
+        cfg: { ...baseCfg, statePath },
+        state,
+        mint,
+        walletMintRaw: 81097543775n,
+        snapshotPath,
+      }),
+    ).toBe(false);
+    expect(state.positions[mint]?.tokenRaw).toBe('81097543775');
+  });
 });

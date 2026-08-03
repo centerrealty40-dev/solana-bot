@@ -932,7 +932,8 @@ async function onLeaderSell(
   }
 
   let tracked = pos;
-  if (!tracked && !cfg.sharedOscarWallet) {
+  if (!tracked) {
+    if (walletBal === 0n) return;
     tracked = ensurePositionFromWallet(state, {
       mint,
       symbol,
@@ -940,10 +941,12 @@ async function onLeaderSell(
       priceUsd: swap.priceUsd,
       leaderWallet: cfg.targetWallet,
     }, cfg);
-  } else if (tracked && !cfg.sharedOscarWallet) {
+    if (cfg.sharedOscarWallet && !copyTrackedTokenRaw(tracked)) {
+      tracked.tokenRaw = walletBal.toString();
+      syncPositionFromWallet(tracked, walletBal, swap.priceUsd, cfg);
+    }
+  } else if (!cfg.sharedOscarWallet) {
     syncPositionFromWallet(tracked, walletBal, swap.priceUsd, cfg);
-  } else if (!tracked) {
-    return;
   }
 
   markEntryDipAbandoned(cfg, state, tracked, {
@@ -1560,15 +1563,12 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     const dex = await fetchDexInfo(pending.mint, getSolUsd());
     const exitPrice = (await resolveCurrentPrice(pending.mint, dex?.priceUsd ?? 0)).priceUsd;
     if (!pos) {
-      if (cfg.sharedOscarWallet) {
-        removePendingSellById(state, pending.id);
-        continue;
-      }
       const walletBal = await fetchExecutionWalletBalanceRaw(cfg, pending.mint);
       if (walletBal === 0n) {
         removePendingSellById(state, pending.id);
         continue;
       }
+      /** Shared Oscar: rebuild copy leg from wallet so a lost state row cannot mute a due sell. */
       pos = ensurePositionFromWallet(state, {
         mint: pending.mint,
         symbol: pending.symbol,
@@ -1576,6 +1576,10 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
         priceUsd: exitPrice,
         leaderWallet: cfg.targetWallet,
       }, cfg);
+      if (cfg.sharedOscarWallet && !copyTrackedTokenRaw(pos)) {
+        pos.tokenRaw = walletBal.toString();
+        syncPositionFromWallet(pos, walletBal, exitPrice, cfg);
+      }
     }
 
     // Reconcile before sizing, not after: sizing off the pre-sync state sells an

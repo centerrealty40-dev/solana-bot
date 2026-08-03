@@ -118,6 +118,7 @@ function copyHandoffStillActive(args: {
 
 /**
  * Drop zombie handoff rows after Oscar full close + empty wallet (copy in-memory can outlive disk).
+ * Only touches legs that were actually handed to Oscar — never active mirror-copy positions.
  */
 export function purgeStaleOscarHandoffPosition(args: {
   cfg: CopyTraderConfig;
@@ -130,12 +131,21 @@ export function purgeStaleOscarHandoffPosition(args: {
 
   const mint = args.mint.trim();
   if (!mint) return false;
+
+  const copyPosition = args.state.positions[mint];
+  const statePath = args.cfg.statePath;
+  const wasPromoted =
+    (copyPosition?.oscarPromotedAt != null && copyPosition.oscarPromotedAt > 0) ||
+    isCopyLeaderPromotedToOscar(mint, statePath);
+  /** Active mirror legs have no handoff — deleting them here swallowed leader exits (6Nwar RCA). */
+  if (!wasPromoted) return false;
+
   if (
     copyHandoffStillActive({
       cfg: args.cfg,
       mint,
-      copyPosition: args.state.positions[mint],
-      statePath: args.cfg.statePath,
+      copyPosition,
+      statePath,
       snapshotPath: args.snapshotPath,
       walletMintRaw: args.walletMintRaw,
     })
@@ -143,11 +153,11 @@ export function purgeStaleOscarHandoffPosition(args: {
     return false;
   }
 
-  const hadMemory = args.state.positions[mint] != null;
+  const hadMemory = copyPosition != null;
   if (hadMemory) delete args.state.positions[mint];
   const clearedDisk = finalizeCopyLeaderOscarHandoffClose({
     mint,
-    statePath: args.cfg.statePath,
+    statePath,
   });
   return hadMemory || clearedDisk;
 }
