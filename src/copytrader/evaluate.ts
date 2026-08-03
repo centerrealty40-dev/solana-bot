@@ -55,7 +55,7 @@ export function checkQuotePremium(args: {
 /**
  * Cap used for the live Jupiter quote check. Inside the grace window after the
  * leader fill we allow a wider first shot; past that we fall back to the steady
- * guard. A miss is terminal either way — see `isBuyTerminalError`.
+ * guard. Prefer leaving firstShot/grace at 0 and using a single hard cap.
  */
 export function effectiveQuotePremiumCap(args: {
   guardPct: number;

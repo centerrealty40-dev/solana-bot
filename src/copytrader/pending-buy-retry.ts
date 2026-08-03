@@ -5,22 +5,6 @@ export function isPendingBuyExpired(pending: PendingBuy, nowMs: number): boolean
   return nowMs > pending.retryUntilTs;
 }
 
-/**
- * Failures that must not be retried inside the buy window.
- *
- * A Jupiter quote already above the premium cap will not get cheaper because we
- * wait — it gets worse as the pump runs. Retrying turns the guard into a chase
- * that fills the dump (HgU5fJ88: 14 blocked quotes, then a late fill into −20%
- * while the leader closed +23% two minutes earlier).
- */
-export function isBuyTerminalError(reason: string | undefined): boolean {
-  if (!reason) return false;
-  const m = reason.toLowerCase();
-  if (m.includes('quote_premium_too_high')) return true;
-  if (m.includes('buy_quote_premium_blocked')) return true;
-  return false;
-}
-
 export function shouldLogBuyDefer(pending: PendingBuy, nowMs: number, intervalMs: number): boolean {
   if (!(intervalMs > 0)) return true;
   const last = pending.lastDeferLogTs ?? 0;
