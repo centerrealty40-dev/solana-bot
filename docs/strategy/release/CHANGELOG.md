@@ -102,6 +102,22 @@
 
 ---
 
+## [1.11.636] — 2026-08-03
+
+**Тег:** `sa-1.11.636`
+
+### Change: Live Oscar / 498SW copy — выход зеркалом лидера
+
+Выход copy-ноги на кошельке Oscar больше не через Oscar `half8_runner`.
+`copy-trader` (лидер `498SWfPJ…`) → `COPY_TRADER_EXIT_MODE=mirror`: продаём
+пропорционально продажам лидера. `LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED=0`, чтобы
+Oscar не забирал exit ownership и не глушил mirror sells.
+
+**Откат:** `COPY_TRADER_EXIT_MODE=oscar_half8`, `LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED=1`
++ reload `live-oscar,copy-trader`.
+
+---
+
 ## [1.11.635] — 2026-08-03
 
 **Тег:** `sa-1.11.635`

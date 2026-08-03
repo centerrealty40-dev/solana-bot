@@ -1617,9 +1617,9 @@ const PM2_APPS = [
         /** Subtract copy-leader cost basis from wallet-holds-mint gate. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
         LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
-        /** Copy buy → live-oscar wave_b half8_runner exit (no leader mirror sell). */
+        /** Copy exits are leader-mirror (`copy-trader` EXIT_MODE=mirror) — do not adopt into Oscar half8. */
         LIVE_COPY_LEADER_ADOPT_STAGED_ENTRY_ENABLED: '0',
-        LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED: '1',
+        LIVE_COPY_LEADER_EXIT_ADOPT_ENABLED: '0',
         LIVE_COPY_LEADER_ADOPT_AVG_LEG_PCT: '25',
         /** `live_discovery_eval` / `live_discovery_skip_open` в JSONL (отключить: `0`). */
         LIVE_DISCOVERY_AUDIT_JSONL: '1',
@@ -2279,7 +2279,7 @@ const PM2_APPS = [
     },
     /**
      * Copy-leader lane — shares live-oscar-micro wallet; leader `498SW…`.
-     * EXIT_MODE=oscar_half8 — live-oscar manages exits after adopt.
+     * EXIT_MODE=mirror — proportional sell when the leader sells (full leader copy).
      */
     {
       name: 'copy-trader',
@@ -2302,7 +2302,7 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         COPY_TRADER_STRICT_ISOLATION: '1',
         COPY_TRADER_SHARED_OSCAR_WALLET: '1',
-        COPY_TRADER_EXIT_MODE: 'oscar_half8',
+        COPY_TRADER_EXIT_MODE: 'mirror',
         COPY_TRADER_SPARE_CAPITAL_GATE: '0',
         COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         COPY_TRADER_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
