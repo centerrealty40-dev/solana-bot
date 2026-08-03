@@ -2463,6 +2463,13 @@ const PM2_APPS = [
         COPY_TRADER_SELL_DELAY_MIN_MS: '15000',
         COPY_TRADER_SELL_DELAY_MAX_MS: '15000',
         COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT: '5',
+        /**
+         * One-shot early TP while leader still holds: +20% → sell 50% of remainder.
+         * Remaining half still mirrors his exit.
+         */
+        COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '20',
+        COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
+        COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
         /** Wider buy slippage — 150bps kept dying on 0x1771 while the tape ran. */
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
@@ -2581,6 +2588,12 @@ const PM2_APPS = [
         COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '300000',
         COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
         COPY_TRADER_VOL_FADE_DROP_PCT: '40',
+        /**
+         * One-shot early TP while leader still holds: +20% → sell 50% of remainder.
+         */
+        COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '20',
+        COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
+        COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,

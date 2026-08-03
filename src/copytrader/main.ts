@@ -108,7 +108,7 @@ import {
 } from './oscar-position-guard.js';
 import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
 import { checkCopyFundingGate } from './funding-gate.js';
-import { usesOscarExitPolicy, usesTrailingExitPolicy } from './exit-mode.js';
+import { mirrorsLeaderSells, usesOscarExitPolicy, usesTrailingExitPolicy } from './exit-mode.js';
 import { fetchCopyEntryContext, type CopyEntryContext } from './entry-context.js';
 import { evaluateLeaderMarketGate, evaluateLeaderPriorGate } from './entry-gates.js';
 import {
@@ -119,6 +119,7 @@ import {
 } from './leader-history.js';
 import { processTrailingExits, type TrailExitEvent } from './trail-exit.js';
 import { processVolFadeExits } from './vol-fade-exit.js';
+import { processMirrorEarlyTpExits } from './mirror-early-tp.js';
 import { handoffCopyPositionToOscarExit } from './copy-oscar-exit-handoff.js';
 import {
   copyPositionOscarExitManaged,
@@ -838,6 +839,8 @@ async function onLeaderSell(
   const walletBal = await fetchExecutionWalletBalanceRaw(cfg, mint);
   purgeStaleOscarHandoffPosition({ cfg, state, mint, walletMintRaw: walletBal });
   const pos = state.positions[mint];
+  /** Any leader peel after our entry blocks the one-shot early TP. */
+  if (pos) pos.leaderSoldSinceEntry = true;
   const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: pos, walletMintRaw: walletBal });
   if (leaderIgnore) {
     logCopyLeaderIgnored(cfg, {
@@ -1941,6 +1944,38 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         if (faded.length > 0) console.log('[copy-trader] vol-fade exits scheduled', faded.length);
       } catch (err) {
         console.warn('[copy-trader] vol-fade exit error', (err as Error).message);
+      }
+    }
+
+    if (mirrorsLeaderSells(cfg) && cfg.mirrorEarlyTpGainPct > 0) {
+      try {
+        const peels = await processMirrorEarlyTpExits(
+          cfg,
+          state,
+          {
+            resolvePriceUsd: async (mint) => {
+              const dex = await fetchDexInfo(mint, getSolUsd());
+              const resolved = await resolveCurrentPrice(mint, dex?.priceUsd ?? 0);
+              return resolved.priceUsd;
+            },
+          },
+          now,
+        );
+        for (const row of peels) {
+          appendCopyEvent(cfg, {
+            kind: 'mirror_early_tp_scheduled',
+            mint: row.mint,
+            symbol: row.symbol,
+            gainPct: row.gainPct,
+            sellFraction: row.sellFraction,
+            entryPriceUsd: row.entryPriceUsd,
+            priceUsd: row.priceUsd,
+            mirrorEarlyTpGainPct: cfg.mirrorEarlyTpGainPct,
+          });
+        }
+        if (peels.length > 0) console.log('[copy-trader] mirror early TP scheduled', peels.length);
+      } catch (err) {
+        console.warn('[copy-trader] mirror early TP error', (err as Error).message);
       }
     }
 
