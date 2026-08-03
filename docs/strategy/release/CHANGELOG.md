@@ -102,6 +102,21 @@
 
 ---
 
+## [1.11.640] — 2026-08-04
+
+**Тег:** `sa-1.11.640`
+
+### Change: 8zkg — разрешить вход на rebuy / усреднение лидера
+
+`COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY=1` на обоих лейнах
+(`copy-trader-8zkg`, `copy-trader-8zkg-mirror`). Раньше `0` резал докупы вроде
+`BDdz…pump` через `missed_entry_leader_already_in`, даже когда лидер усреднялся
+ниже своего первого входа. Гейты mcap/vol/premium по-прежнему действуют.
+
+**Откат:** вернуть `0` + reload, или `git revert`.
+
+---
+
 ## [1.11.639] — 2026-08-04
 
 **Тег:** `sa-1.11.639`
