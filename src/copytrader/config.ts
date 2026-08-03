@@ -23,9 +23,10 @@ const CopyTraderConfigSchema = z.object({
   executionMode: ExecutionModeSchema,
   journalPath: z.string().min(1),
   statePath: z.string().min(1),
-  pollIntervalMs: z.coerce.number().int().min(2000).max(120_000).default(12_000),
+  /** Leader signature poll. Floor 1s — mirror exits race his sell into the book. */
+  pollIntervalMs: z.coerce.number().int().min(1000).max(120_000).default(12_000),
   signatureLimit: z.coerce.number().int().min(5).max(50).default(25),
-  tickIntervalMs: z.coerce.number().int().min(500).max(30_000).default(2000),
+  tickIntervalMs: z.coerce.number().int().min(250).max(30_000).default(2000),
   buyDelayMs: z.coerce.number().int().min(0).max(86_400_000).default(30_000),
   /** Probe / full entry: ms after leader buy before first attempt (default 0 = immediate). */
   entryProbeBuyDelayMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
@@ -86,6 +87,15 @@ const CopyTraderConfigSchema = z.object({
    * Keep it looser than the snapshot cap — the quote includes route impact.
    */
   quotePremiumGuardPct: z.coerce.number().min(0).max(100).default(0),
+  /**
+   * Wider post-quote ceiling for the first shot only, while we are still inside
+   * `quotePremiumGraceMs` of the leader fill. 0 = use `quotePremiumGuardPct`.
+   *
+   * A blocked quote is terminal either way — we do not retry into a chase.
+   */
+  quotePremiumFirstShotPct: z.coerce.number().min(0).max(100).default(0),
+  /** Age of the leader buy under which `quotePremiumFirstShotPct` applies. */
+  quotePremiumGraceMs: z.coerce.number().int().min(0).max(120_000).default(8_000),
   /** Mcap ≥ this → full `positionUsd` split (default $1M). Below → `entryMidPositionUsd` ($300+$300). */
   entryFullMcapUsd: z.coerce.number().min(0).max(1_000_000_000).default(1_000_000),
   /** Total staged entry when mcap ∈ [minMarketCapUsd, entryFullMcapUsd) (default $600). */
@@ -268,6 +278,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     minProportionalSellFraction: process.env.COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION,
     buyPriceMaxPremiumPct: process.env.COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT,
     quotePremiumGuardPct: process.env.COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT,
+    quotePremiumFirstShotPct: process.env.COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT,
+    quotePremiumGraceMs: process.env.COPY_TRADER_QUOTE_PREMIUM_GRACE_MS,
     entryFullMcapUsd: process.env.COPY_TRADER_ENTRY_FULL_MCAP_USD,
     entryMidPositionUsd: process.env.COPY_TRADER_ENTRY_MID_POSITION_USD,
     entryMidLegUsd: process.env.COPY_TRADER_ENTRY_MID_LEG_USD,

@@ -2438,7 +2438,7 @@ const PM2_APPS = [
          * removed: −3.03%). Loosened 0.09 → 0.06: at 0.09 it also participated
          * in cutting 13 sessions the leader ran past +30%.
          */
-        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.06',
+        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0',
         /**
          * Off. Over the 22h live window (2026-08-02/03) it took part in
          * rejecting 88 leader sessions whose mean outcome was +7.8%, including
@@ -2476,24 +2476,27 @@ const PM2_APPS = [
          */
         COPY_TRADER_TRAIL_TIME_CAP_MS: '1800000',
         COPY_TRADER_TRAIL_TICK_INTERVAL_MS: '5000',
-        /** Follow the leader within ~5s; his median session is 28 min. */
-        COPY_TRADER_POLL_INTERVAL_MS: '3000',
-        COPY_TRADER_TICK_INTERVAL_MS: '1000',
-        COPY_TRADER_BUY_DELAY_MS: '5000',
+        /** Faster leader discovery — entry races his fill. */
+        COPY_TRADER_POLL_INTERVAL_MS: '1000',
+        COPY_TRADER_TICK_INTERVAL_MS: '500',
+        /** No artificial wait: a 5s delay was buying into already-elevated quotes. */
+        COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
         /**
-         * Second premium check, against the executable Jupiter quote instead of
-         * the DEX snapshot the gate above reads. Live fills reached +22.8% and
-         * +23.8% over the leader under a 3% snapshot cap and both turned his
-         * winners into our losses. Looser than the snapshot cap on purpose —
-         * the quote already carries route impact — but it stops the runaway.
+         * Steady post-quote premium cap. A blocked quote is terminal (no retry
+         * chase into the dump). Inside the 8s grace window the first shot may
+         * use 10% so a single immediate attempt can clear route impact.
          */
         COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '6',
-        /** Entry is one-shot: a missed fill is a skipped trade, not a late chase. */
-        COPY_TRADER_BUY_RETRY_WINDOW_MS: '120000',
+        COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '10',
+        COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '8000',
+        /**
+         * Short window for transient swap/RPC failures only. Quote-premium
+         * blocks cancel the pending buy immediately.
+         */
+        COPY_TRADER_BUY_RETRY_WINDOW_MS: '60000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
-        /** 20 attempts per window instead of ~120; a failing swap costs a Jupiter round trip. */
         COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '3600000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
@@ -2501,7 +2504,7 @@ const PM2_APPS = [
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
         COPY_TRADER_SELL_DELAY_MIN_MS: '0',
-        COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '0',
         COPY_TRADER_SLIPPAGE_BPS: '150',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
@@ -2577,7 +2580,7 @@ const PM2_APPS = [
         /** Keep entry parity with copy-trader-8zkg. */
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.1',
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
-        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.06',
+        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0',
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
@@ -2586,14 +2589,20 @@ const PM2_APPS = [
         COPY_TRADER_MIN_MCAP_USD: '0',
         /** His sell is the only exit: no trail, no time cap, no stop. */
         COPY_TRADER_EXIT_MODE: 'mirror',
-        COPY_TRADER_POLL_INTERVAL_MS: '3000',
-        COPY_TRADER_TICK_INTERVAL_MS: '1000',
-        COPY_TRADER_BUY_DELAY_MS: '5000',
+        /**
+         * Race his sell into the book. Live median lag was 5–17s with a 3s poll;
+         * 1s poll + immediate post-poll sell flush is the structural fix.
+         */
+        COPY_TRADER_POLL_INTERVAL_MS: '1000',
+        COPY_TRADER_TICK_INTERVAL_MS: '500',
+        COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
-        /** Entry parity with the twin: same post-quote premium guard. */
+        /** Entry parity with the twin: same post-quote premium guard + first shot. */
         COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '6',
-        COPY_TRADER_BUY_RETRY_WINDOW_MS: '120000',
+        COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '10',
+        COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '8000',
+        COPY_TRADER_BUY_RETRY_WINDOW_MS: '60000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
         /**
@@ -2606,10 +2615,8 @@ const PM2_APPS = [
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
         /**
-         * No jitter on the exit. We are racing the leader's own sell into the
-         * book: median lag from his fill to ours was 7s and our exit price came
-         * in 4.25% below his. Detection (3s poll) and the swap round trip are
-         * structural; the randomized 0–2s wait was not.
+         * No jitter on the exit. Detection (1s poll) and the swap round trip are
+         * structural; any randomized wait was pure drag.
          */
         COPY_TRADER_SELL_DELAY_MIN_MS: '0',
         COPY_TRADER_SELL_DELAY_MAX_MS: '0',

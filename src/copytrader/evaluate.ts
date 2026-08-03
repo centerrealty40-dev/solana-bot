@@ -52,6 +52,28 @@ export function checkQuotePremium(args: {
   };
 }
 
+/**
+ * Cap used for the live Jupiter quote check. Inside the grace window after the
+ * leader fill we allow a wider first shot; past that we fall back to the steady
+ * guard. A miss is terminal either way — see `isBuyTerminalError`.
+ */
+export function effectiveQuotePremiumCap(args: {
+  guardPct: number;
+  firstShotPct: number;
+  graceMs: number;
+  leaderBuyTs: number;
+  nowMs: number;
+}): { maxPremiumPct: number; firstShot: boolean } {
+  const { guardPct, firstShotPct, graceMs, leaderBuyTs, nowMs } = args;
+  if (!(guardPct > 0) && !(firstShotPct > 0)) return { maxPremiumPct: 0, firstShot: false };
+  const ageMs = leaderBuyTs > 0 ? nowMs - leaderBuyTs : Number.POSITIVE_INFINITY;
+  const inGrace = graceMs > 0 && ageMs >= 0 && ageMs <= graceMs;
+  if (inGrace && firstShotPct > 0) {
+    return { maxPremiumPct: Math.max(guardPct, firstShotPct), firstShot: true };
+  }
+  return { maxPremiumPct: guardPct, firstShot: false };
+}
+
 function marketCapEval(cfg: CopyTraderConfig, dex: DexInfo): { fail?: string; scoreInc: number } {
   if (cfg.minMarketCapUsd <= 0) return { scoreInc: 0 };
   if (!(dex.marketCap > 0)) {

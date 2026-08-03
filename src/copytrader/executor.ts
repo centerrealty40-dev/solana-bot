@@ -41,6 +41,8 @@ export async function executeCopyBuy(args: {
   leaderSignature: string;
   /** Leader fill price — anchor for the post-quote premium guard. */
   leaderPriceUsd?: number;
+  /** Leader buy timestamp — selects first-shot vs steady premium cap. */
+  leaderBuyTs?: number;
 }): Promise<BuyExecutionResult> {
   const { cfg, mint, symbol, priceUsd, sizeUsd, kind, evalResult, leaderSignature } = args;
 
@@ -79,6 +81,7 @@ export async function executeCopyBuy(args: {
       kind,
       leaderSignature,
       leaderPriceUsd: args.leaderPriceUsd ?? 0,
+      leaderBuyTs: args.leaderBuyTs ?? 0,
     });
     appendJsonl(cfg.journalPath, {
       kind: kind === 'add' ? 'copy_add' : 'copy_buy',

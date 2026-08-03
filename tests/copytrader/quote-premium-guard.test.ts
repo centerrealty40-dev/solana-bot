@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { checkQuotePremium } from '../../src/copytrader/evaluate.js';
+import {
+  checkQuotePremium,
+  effectiveQuotePremiumCap,
+} from '../../src/copytrader/evaluate.js';
+import { isBuyTerminalError } from '../../src/copytrader/pending-buy-retry.js';
 
 describe('checkQuotePremium', () => {
   it('passes a quote at the leader price', () => {
@@ -63,5 +67,71 @@ describe('checkQuotePremium', () => {
     expect(
       checkQuotePremium({ quotePriceUsd: 100.5, leaderPriceUsd: 100, maxPremiumPct: 0 }).block,
     ).toBe(true);
+  });
+});
+
+describe('effectiveQuotePremiumCap', () => {
+  it('uses the wider first-shot cap inside the grace window', () => {
+    const v = effectiveQuotePremiumCap({
+      guardPct: 6,
+      firstShotPct: 10,
+      graceMs: 8_000,
+      leaderBuyTs: 1_000,
+      nowMs: 1_000 + 3_000,
+    });
+    expect(v.firstShot).toBe(true);
+    expect(v.maxPremiumPct).toBe(10);
+  });
+
+  it('falls back to the steady guard after the grace window', () => {
+    const v = effectiveQuotePremiumCap({
+      guardPct: 6,
+      firstShotPct: 10,
+      graceMs: 8_000,
+      leaderBuyTs: 1_000,
+      nowMs: 1_000 + 9_000,
+    });
+    expect(v.firstShot).toBe(false);
+    expect(v.maxPremiumPct).toBe(6);
+  });
+
+  it('lets a 9% quote clear on the first shot but not after grace', () => {
+    const first = effectiveQuotePremiumCap({
+      guardPct: 6,
+      firstShotPct: 10,
+      graceMs: 8_000,
+      leaderBuyTs: 1_000,
+      nowMs: 1_000 + 4_000,
+    });
+    expect(
+      checkQuotePremium({ quotePriceUsd: 109, leaderPriceUsd: 100, maxPremiumPct: first.maxPremiumPct })
+        .block,
+    ).toBe(false);
+
+    const late = effectiveQuotePremiumCap({
+      guardPct: 6,
+      firstShotPct: 10,
+      graceMs: 8_000,
+      leaderBuyTs: 1_000,
+      nowMs: 1_000 + 20_000,
+    });
+    expect(
+      checkQuotePremium({ quotePriceUsd: 109, leaderPriceUsd: 100, maxPremiumPct: late.maxPremiumPct })
+        .block,
+    ).toBe(true);
+  });
+});
+
+describe('isBuyTerminalError', () => {
+  it('treats a quote-premium miss as terminal so we skip instead of chase', () => {
+    // HgU5fJ88: 14 blocked retries then a late fill into −20% while the leader
+    // closed +23% two minutes earlier.
+    expect(isBuyTerminalError('quote_premium_too_high premium=10.69%>max=6%')).toBe(true);
+  });
+
+  it('still retries transient swap failures', () => {
+    expect(isBuyTerminalError('jupiter_buy_quote_failed')).toBe(false);
+    expect(isBuyTerminalError('sim_failed:{"InstructionError":[3,{"Custom":6024}]}')).toBe(false);
+    expect(isBuyTerminalError('qn_rate:Too Many Requests')).toBe(false);
   });
 });

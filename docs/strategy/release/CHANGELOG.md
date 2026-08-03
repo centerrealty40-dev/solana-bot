@@ -102,6 +102,50 @@
 
 ---
 
+## [1.11.634] — 2026-08-03
+
+**Тег:** `sa-1.11.634`
+
+### Fix + Change: 8zkg — stop cutting the leader's tail, stop chasing premium, race his sell
+
+После #526/#527 шторм продаж ушёл, но gap лидер↔мы остался. Живое окно с
+выката 1.11.632 (~3h): лидер mean **+7.8%** (27/42), trail engine **+$27**,
+mirror **−$102** (1/11). На общих минтах mean gap **−6.5 pp** (trail) /
+**−15 pp** (mirror). Три рычага по факту этой ленты.
+
+**1. `turnover_5m` off (оба лейна).**  
+Гейт `≥0.06` срезал 5 его сессий **>+20%** за несколько часов (`CMmMKQJZ +31%`,
+`3anzRVka +29%/+23%`, `CF7JzBmY +22%`, `FVZhiS1u +22%`). На взятых минтах лидер
+был даже лучше среднего (+11.9%) — гейт резал хвост, а не лосей.
+`COPY_TRADER_ENTRY_MIN_TURNOVER_5M: 0.06 → 0`.
+
+**2. Premium-guard: один выстрел, не ретрай в пампа.**  
+`HgU5fJ88`: 14 `buy_quote_premium_blocked`, потом late fill → суммарно −$20,
+пока лидер закрыл **+23.6% за ~2 мин**. Mirror так и не вошёл.  
+- `quote_premium_too_high` теперь **терминальный** (`isBuyTerminalError`) —
+  pending buy отменяется, а не гоняется 2 минуты.  
+- First-shot cap **10%** в первые **8 с** после покупки лидера
+  (`QUOTE_PREMIUM_FIRST_SHOT_PCT` / `GRACE_MS`); дальше steady **6%**.  
+- `BUY_DELAY_MS: 5000 → 0` — искусственная пауза сама поднимала премию.  
+- `BUY_RETRY_WINDOW_MS: 120s → 60s` (только для транзиентных RPC/sim ошибок).
+
+**3. Mirror (и trail) — быстрее видеть его sell.**  
+Живой `sellDelayMs` 5–17 с при `SELL_DELAY_MAX=0` — это лаг poll+очереди, не
+конфиг.  
+- `POLL_INTERVAL_MS: 3000 → 1000`, `TICK_INTERVAL_MS: 1000 → 500` (оба лейна).  
+- Сразу после `pollLeaderWallet` — flush due sells.  
+- В тике: `processPendingSells` **перед** `processPendingBuys`.  
+- Trail `SELL_DELAY_MAX: 2000 → 0`.  
+- Zod floor `pollIntervalMs` снижен до 1000, `tickIntervalMs` до 250.
+
+**Тесты:** `quote-premium-guard.test.ts` — first-shot/grace + terminal error
+(228+ зелёных в `tests/copytrader`).
+
+**Откат:** `git revert` + reload. Точечно: вернуть turnover `0.06`, убрать
+`FIRST_SHOT`/`GRACE`, `BUY_DELAY=5000`, `POLL=3000`.
+
+---
+
 ## [1.11.633] — 2026-08-03
 
 **Тег:** `sa-1.11.633`
