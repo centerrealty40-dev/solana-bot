@@ -26,6 +26,7 @@ export type LeaderGateConfig = Pick<
   | 'entryMaxChase5mPct'
   | 'entryMinTurnover5m'
   | 'entryMinVolToMcap1h'
+  | 'entryMinVolume5mUsd'
 >;
 
 export type LeaderGateResult = {
@@ -93,7 +94,10 @@ export function evaluateLeaderMarketGate(
   const wantsChase = cfg.entryMaxChase5mPct > 0;
   const wantsTurnover = cfg.entryMinTurnover5m > 0;
   const wantsVolToMcap = cfg.entryMinVolToMcap1h > 0;
-  if (!wantsAge && !wantsPressure && !wantsChase && !wantsTurnover && !wantsVolToMcap) return PASS;
+  const wantsVol5m = cfg.entryMinVolume5mUsd > 0;
+  if (!wantsAge && !wantsPressure && !wantsChase && !wantsTurnover && !wantsVolToMcap && !wantsVol5m) {
+    return PASS;
+  }
 
   if (!ctx) return { pass: false, reasons: ['no_entry_context'] };
 
@@ -145,6 +149,16 @@ export function evaluateLeaderMarketGate(
       reasons.push('vol_to_mcap_1h_unknown');
     } else if (share < cfg.entryMinVolToMcap1h) {
       reasons.push(`vol_to_mcap_1h=${share.toFixed(3)}<min=${cfg.entryMinVolToMcap1h}`);
+    }
+  }
+
+  if (wantsVol5m) {
+    if (ctx.volume5mUsd == null || !(ctx.volume5mUsd > 0)) {
+      reasons.push('volume_5m_unknown');
+    } else if (ctx.volume5mUsd < cfg.entryMinVolume5mUsd) {
+      reasons.push(
+        `volume_5m_usd=${Math.round(ctx.volume5mUsd)}<min=${cfg.entryMinVolume5mUsd}`,
+      );
     }
   }
 

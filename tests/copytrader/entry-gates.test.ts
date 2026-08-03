@@ -18,6 +18,7 @@ const cfg: LeaderGateConfig = {
   entryMaxChase5mPct: 15,
   entryMinTurnover5m: 0,
   entryMinVolToMcap1h: 0,
+  entryMinVolume5mUsd: 0,
 };
 
 /** What copy-trader-8zkg actually runs: market structure, no mint memory. */
@@ -31,6 +32,7 @@ const shipped: LeaderGateConfig = {
   entryMaxChase5mPct: 0,
   entryMinTurnover5m: 0.09,
   entryMinVolToMcap1h: 0.33,
+  entryMinVolume5mUsd: 0,
 };
 
 const goodStats: LeaderMintStats = {
@@ -141,8 +143,37 @@ describe('leader market-context gate', () => {
       entryMaxChase5mPct: 0,
       entryMinTurnover5m: 0,
       entryMinVolToMcap1h: 0,
+      entryMinVolume5mUsd: 0,
     };
     expect(evaluateLeaderMarketGate(off, null).pass).toBe(true);
+  });
+
+  it('rejects thin 5m volume when absolute floor is set', () => {
+    const volOnly: LeaderGateConfig = {
+      ...cfg,
+      entryMinPairAgeHours: 0,
+      entryMaxPairAgeHours: 0,
+      entryMinBuySellRatio5m: 0,
+      entryMaxChase5mPct: 0,
+      entryMinVolume5mUsd: 8000,
+    };
+    const res = evaluateLeaderMarketGate(volOnly, ctx({ volume5mUsd: 2500 }));
+    expect(res.pass).toBe(false);
+    expect(res.reasons[0]).toContain('volume_5m_usd=2500<min=8000');
+  });
+
+  it('fails closed when volume floor is on but feed is missing', () => {
+    const volOnly: LeaderGateConfig = {
+      ...cfg,
+      entryMinPairAgeHours: 0,
+      entryMaxPairAgeHours: 0,
+      entryMinBuySellRatio5m: 0,
+      entryMaxChase5mPct: 0,
+      entryMinVolume5mUsd: 8000,
+    };
+    const res = evaluateLeaderMarketGate(volOnly, ctx({ volume5mUsd: null }));
+    expect(res.pass).toBe(false);
+    expect(res.reasons).toEqual(['volume_5m_unknown']);
   });
 });
 
