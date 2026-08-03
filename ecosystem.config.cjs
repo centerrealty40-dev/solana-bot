@@ -2353,7 +2353,11 @@ const PM2_APPS = [
         COPY_TRADER_TRAIL_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_TRAIL_TRAIL_SELL_FRACTION: '0.2',
         COPY_TRADER_TRAIL_KILL_PCT: '50',
-        COPY_TRADER_TRAIL_TIME_CAP_MS: '0',
+        /**
+         * Dead-trade flush at 30m: full exit only if no TP rung and no trail peel
+         * has fired. After the first ladder/trail step, the clock is ignored.
+         */
+        COPY_TRADER_TRAIL_TIME_CAP_MS: '1800000',
         COPY_TRADER_TRAIL_TICK_INTERVAL_MS: '5000',
         /** Follow the leader within ~5s; his median session is 28 min. */
         COPY_TRADER_POLL_INTERVAL_MS: '3000',

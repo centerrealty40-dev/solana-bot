@@ -102,6 +102,23 @@
 
 ---
 
+## [1.11.627] — 2026-08-03
+
+**Тег:** `sa-1.11.627`
+
+### Change: `copy-trader-8zkg` — 30m dead-trade time cap
+
+`COPY_TRADER_TRAIL_TIME_CAP_MS=1800000` on the trail lane only (`FxQf…`).
+Full exit at 30m **only if** no TP rung and no trail giveback has fired yet.
+After the first peel, the clock is ignored and the position stays under
+ladder / trail / kill.
+
+Mirror lane unchanged (`EXIT_MODE=mirror`, no own time cap).
+
+**Откат:** `COPY_TRADER_TRAIL_TIME_CAP_MS: '0'` + revert `priorPeels` gate in `trail-exit.ts`.
+
+---
+
 ## [1.11.626] — 2026-08-03
 
 **Тег:** `sa-1.11.626`

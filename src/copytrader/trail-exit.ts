@@ -144,7 +144,19 @@ export function decideTrailExit(cfg: TrailExitConfig, input: TrailExitInput): Tr
     }
   }
 
-  if (cfg.trailTimeCapMs > 0 && input.nowMs - input.entryTs >= cfg.trailTimeCapMs) {
+  /**
+   * Dead-trade flush: full exit only while nothing has peeled yet. Once a TP
+   * rung or trail giveback has fired, the runner stays under trail/kill — the
+   * clock no longer forces us out.
+   */
+  const priorPeels =
+    Math.max(0, Math.floor(input.tpRungsTaken ?? 0)) > 0 ||
+    Math.max(0, Math.floor(input.trailGivebackStepsTaken ?? 0)) > 0;
+  if (
+    cfg.trailTimeCapMs > 0 &&
+    !priorPeels &&
+    input.nowMs - input.entryTs >= cfg.trailTimeCapMs
+  ) {
     return {
       action: 'sell',
       reason: 'time_cap',
@@ -231,7 +243,10 @@ export async function processTrailingExits(
 
     const price = await deps.resolvePriceUsd(pos.mint);
     const heldMs = Math.max(0, nowMs - pos.entryTs);
-    const capReached = cfg.trailTimeCapMs > 0 && heldMs >= cfg.trailTimeCapMs;
+    const priorPeels =
+      (pos.trailTpRungsTaken ?? 0) > 0 || (pos.trailGivebackStepsTaken ?? 0) > 0;
+    const capReached =
+      cfg.trailTimeCapMs > 0 && !priorPeels && heldMs >= cfg.trailTimeCapMs;
 
     if (!isSaneTrailMark(pos.entryPriceUsd, price)) {
       if (!capReached) continue;
