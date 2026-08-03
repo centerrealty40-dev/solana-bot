@@ -216,6 +216,11 @@ const CopyTraderConfigSchema = z.object({
   mirrorEarlyTpSellFraction: z.coerce.number().min(0).max(1).default(0.5),
   /** How often open mirror legs are marked for early TP. */
   mirrorEarlyTpTickIntervalMs: z.coerce.number().int().min(1_000).max(300_000).default(5_000),
+  /**
+   * Mirror hold cap: full market sell after this many ms open, even if the leader
+   * has not exited. **0** = off.
+   */
+  mirrorHoldCapMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   /** Funding asset for swaps. `USDC` decouples sizing from the SOL price (see quote-mint.ts). */
   quoteAsset: z.enum(['SOL', 'USDC']).default('SOL'),
@@ -366,6 +371,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     mirrorEarlyTpGainPct: process.env.COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT,
     mirrorEarlyTpSellFraction: process.env.COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION,
     mirrorEarlyTpTickIntervalMs: process.env.COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS,
+    mirrorHoldCapMs: process.env.COPY_TRADER_MIRROR_HOLD_CAP_MS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
     quoteAsset: parseCopyQuoteAsset(process.env.COPY_TRADER_QUOTE_MINT).asset,
     minFeeSolReserve: process.env.COPY_TRADER_MIN_FEE_SOL_RESERVE,
