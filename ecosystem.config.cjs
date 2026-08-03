@@ -2429,31 +2429,45 @@ const PM2_APPS = [
          * opens under 1h (SKIP sessions mean +7% vs TAKE −0.4%). Floor at 0.3h keeps
          * brand-new noise out while admitting the winners we were missing.
          */
-        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.3',
+        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.1',
         /** Past ~30h his edge is gone: -2.1%, -3.1%, -3.5% in the top age octiles. */
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
-        /** 5m volume over pool liquidity. Below 0.09 every octile loses money. */
-        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.09',
-        /** 1h volume over market cap — the same signal on a slower clock. */
-        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.20',
+        /**
+         * 5m volume over pool liquidity — the only gate whose cut is actually
+         * negative on the live tape (median leader outcome of what it alone
+         * removed: −3.03%). Loosened 0.09 → 0.06: at 0.09 it also participated
+         * in cutting 13 sessions the leader ran past +30%.
+         */
+        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.06',
+        /**
+         * Off. Over the 22h live window (2026-08-02/03) it took part in
+         * rejecting 88 leader sessions whose mean outcome was +7.8%, including
+         * 11 above +30% and 2 above +100%. On its own it removed 5 sessions
+         * averaging −5.4% — nowhere near enough to pay for the tail it cost.
+         */
+        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
         /**
-         * Own exit — Oscar half8_runner shape, not a hard +25% bank:
-         *   +8% / +16% / +24%… → sell 50% of remainder each rung
-         *   trail armed at +8%; each −8% from peak → sell 20% of remainder
-         *   kill at −50%; no time cap (a +200% candle rides under the trail).
+         * Own exit, runner-shaped. The leader's edge is a fat tail — top 5 of
+         * 362 live sessions carried 40% of his total return — and the old
+         * +8%×0.5 ladder banked half the position before any of it developed.
+         * Measured: on sessions where he made ≥ +15% he averaged +40.4% and we
+         * captured +1.2%.
+         *   +25% / +50% / +75%… → sell 25% of remainder each rung
+         *   trail armed at +15%; each −18% from peak → sell 20% of remainder
+         *   kill at −50%; 30m flush only while no peel has fired.
          * Does NOT mirror his sells — that is `copy-trader-8zkg-mirror`.
          */
         COPY_TRADER_EXIT_MODE: 'trail_runner',
-        COPY_TRADER_TRAIL_ARM_PCT: '8',
-        COPY_TRADER_TRAIL_GIVEBACK_PCT: '8',
+        COPY_TRADER_TRAIL_ARM_PCT: '15',
+        COPY_TRADER_TRAIL_GIVEBACK_PCT: '18',
         COPY_TRADER_TRAIL_TAKE_PROFIT_PCT: '0',
-        COPY_TRADER_TRAIL_TP_STEP_PCT: '8',
-        COPY_TRADER_TRAIL_TP_SELL_FRACTION: '0.5',
+        COPY_TRADER_TRAIL_TP_STEP_PCT: '25',
+        COPY_TRADER_TRAIL_TP_SELL_FRACTION: '0.25',
         COPY_TRADER_TRAIL_TRAIL_SELL_FRACTION: '0.2',
         COPY_TRADER_TRAIL_KILL_PCT: '50',
         /**
@@ -2468,6 +2482,14 @@ const PM2_APPS = [
         COPY_TRADER_BUY_DELAY_MS: '5000',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
+        /**
+         * Second premium check, against the executable Jupiter quote instead of
+         * the DEX snapshot the gate above reads. Live fills reached +22.8% and
+         * +23.8% over the leader under a 3% snapshot cap and both turned his
+         * winners into our losses. Looser than the snapshot cap on purpose —
+         * the quote already carries route impact — but it stops the runaway.
+         */
+        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '6',
         /** Entry is one-shot: a missed fill is a skipped trade, not a late chase. */
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '120000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
@@ -2552,11 +2574,11 @@ const PM2_APPS = [
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
         COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '-100',
-        /** Keep entry parity with copy-trader-8zkg (min pair age 0.3h). */
-        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.3',
+        /** Keep entry parity with copy-trader-8zkg. */
+        COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.1',
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
-        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.09',
-        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.20',
+        COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.06',
+        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
@@ -2569,6 +2591,8 @@ const PM2_APPS = [
         COPY_TRADER_BUY_DELAY_MS: '5000',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
+        /** Entry parity with the twin: same post-quote premium guard. */
+        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '6',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '120000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_BUY_RETRY_INTERVAL_MS: '6000',
@@ -2581,8 +2605,14 @@ const PM2_APPS = [
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
         COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
+        /**
+         * No jitter on the exit. We are racing the leader's own sell into the
+         * book: median lag from his fill to ours was 7s and our exit price came
+         * in 4.25% below his. Detection (3s poll) and the swap round trip are
+         * structural; the randomized 0–2s wait was not.
+         */
         COPY_TRADER_SELL_DELAY_MIN_MS: '0',
-        COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
+        COPY_TRADER_SELL_DELAY_MAX_MS: '0',
         COPY_TRADER_SLIPPAGE_BPS: '150',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,

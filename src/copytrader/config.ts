@@ -57,6 +57,14 @@ const CopyTraderConfigSchema = z.object({
   minProportionalAddUsd: z.coerce.number().min(0).max(100_000).default(0),
   minProportionalSellFraction: z.coerce.number().min(0).max(1).default(0),
   buyPriceMaxPremiumPct: z.coerce.number().min(0).max(50).default(3),
+  /**
+   * Post-quote premium guard, percent over the leader fill price (0 = off).
+   *
+   * `buyPriceMaxPremiumPct` is checked against the DEX snapshot; this one is
+   * checked against the executable Jupiter quote right before the swap is sent.
+   * Keep it looser than the snapshot cap — the quote includes route impact.
+   */
+  quotePremiumGuardPct: z.coerce.number().min(0).max(100).default(0),
   /** Mcap ≥ this → full `positionUsd` split (default $1M). Below → `entryMidPositionUsd` ($300+$300). */
   entryFullMcapUsd: z.coerce.number().min(0).max(1_000_000_000).default(1_000_000),
   /** Total staged entry when mcap ∈ [minMarketCapUsd, entryFullMcapUsd) (default $600). */
@@ -232,6 +240,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     minProportionalAddUsd: process.env.COPY_TRADER_MIN_PROPORTIONAL_ADD_USD,
     minProportionalSellFraction: process.env.COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION,
     buyPriceMaxPremiumPct: process.env.COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT,
+    quotePremiumGuardPct: process.env.COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT,
     entryFullMcapUsd: process.env.COPY_TRADER_ENTRY_FULL_MCAP_USD,
     entryMidPositionUsd: process.env.COPY_TRADER_ENTRY_MID_POSITION_USD,
     entryMidLegUsd: process.env.COPY_TRADER_ENTRY_MID_LEG_USD,

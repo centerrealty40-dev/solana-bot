@@ -13,6 +13,7 @@ import { liveSendSignedSwapPipeline } from '../live/phase6-send.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { rpcCall } from './rpc.js';
 import { appendCopyEvent } from './executor.js';
+import { checkQuotePremium } from './evaluate.js';
 import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
 import {
   copyBuyInputAmountRaw,
@@ -99,8 +100,10 @@ export async function executeLiveCopyBuy(args: {
   sizeUsd: number;
   kind: 'entry' | 'add';
   leaderSignature: string;
+  /** Leader fill price for the post-quote premium guard (0 = guard off). */
+  leaderPriceUsd?: number;
 }): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRaw?: string; reason?: string }> {
-  const { cfg, mint, symbol, sizeUsd, kind, leaderSignature } = args;
+  const { cfg, mint, symbol, sizeUsd, kind, leaderSignature, leaderPriceUsd = 0 } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
@@ -123,6 +126,38 @@ export async function executeLiveCopyBuy(args: {
     return { ok: false, priceUsd: 0, reason: 'jupiter_buy_quote_failed' };
   }
 
+  const outRaw = quote.quoteResponse.outAmount;
+  const priceUsd = copyBuyQuotePriceUsd({
+    spec: quoteSpec,
+    inAmountRaw: quote.quoteResponse.inAmount,
+    outAmountRaw: outRaw,
+    solUsd,
+  });
+
+  if (cfg.quotePremiumGuardPct > 0) {
+    const verdict = checkQuotePremium({
+      quotePriceUsd: priceUsd,
+      leaderPriceUsd,
+      maxPremiumPct: cfg.quotePremiumGuardPct,
+    });
+    if (verdict.block) {
+      appendCopyEvent(cfg, {
+        kind: 'buy_quote_premium_blocked',
+        mint,
+        symbol,
+        kindBuy: kind,
+        leaderSignature,
+        leaderPriceUsd,
+        quotePriceUsd: priceUsd,
+        maxAllowedPriceUsd: verdict.maxAllowedPriceUsd,
+        premiumPct: Number(verdict.premiumPct.toFixed(2)),
+        maxPremiumPct: cfg.quotePremiumGuardPct,
+        sizeUsd,
+      });
+      return { ok: false, priceUsd, reason: verdict.reason };
+    }
+  }
+
   const build = await liveBuildUnsignedSwapTx({
     cfg: liveCfg,
     quoteResponse: quote.quoteResponse,
@@ -131,14 +166,6 @@ export async function executeLiveCopyBuy(args: {
   if (!build.ok) {
     return { ok: false, priceUsd: 0, reason: build.reason };
   }
-
-  const outRaw = quote.quoteResponse.outAmount;
-  const priceUsd = copyBuyQuotePriceUsd({
-    spec: quoteSpec,
-    inAmountRaw: quote.quoteResponse.inAmount,
-    outAmountRaw: outRaw,
-    solUsd,
-  });
 
   const sent = await sendSwap(cfg, build.b64, {
     side: 'buy',
