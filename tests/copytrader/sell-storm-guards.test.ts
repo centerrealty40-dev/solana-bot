@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { CopyTraderConfig } from '../../src/copytrader/config.js';
 import {
   isPendingSellExhausted,
+  isSellRetryableError,
   isUnroutableSellError,
   nextSellRetryDelayMs,
 } from '../../src/copytrader/pending-sell-retry.js';
@@ -117,6 +118,24 @@ describe('isPendingSellExhausted', () => {
 
   it('handles a pending sell written before the field existed', () => {
     expect(isPendingSellExhausted(pending(), 12)).toBe(false);
+  });
+});
+
+describe('rate-limited sells stay retryable', () => {
+  it('retries a throttled provider instead of dropping the exit', () => {
+    // Observed 6 times in 28 min on the trail lane: the sell was classified
+    // terminal and removed, leaving the exit unfilled.
+    expect(isSellRetryableError('qn_rate:Too Many Requests')).toBe(true);
+    expect(isSellRetryableError('http 429 Too Many Requests')).toBe(true);
+    expect(isSellRetryableError('provider rate limit exceeded')).toBe(true);
+  });
+
+  it('does not make a throttle look unroutable', () => {
+    expect(isUnroutableSellError('qn_rate:Too Many Requests')).toBe(false);
+  });
+
+  it('still refuses to retry a missing balance', () => {
+    expect(isSellRetryableError('no_token_balance')).toBe(false);
   });
 });
 

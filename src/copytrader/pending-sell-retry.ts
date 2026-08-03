@@ -58,6 +58,10 @@ export function isSellRetryableError(reason: string | undefined): boolean {
   if (m.includes('swap-http-429') || m.includes('swap_http_429')) return true;
   if (m.includes('send_failed') && (m.includes('429') || m.includes('timeout'))) return true;
   if (m.includes('jupiter_sell_quote_failed')) return true;
+  // A throttled provider says "later", not "never" — dropping the sell here
+  // leaves the exit unfilled until the policy happens to re-arm.
+  if (m.includes('too many requests') || m.includes('rate limit')) return true;
+  if (m.startsWith('qn_rate')) return true;
   return false;
 }
 
