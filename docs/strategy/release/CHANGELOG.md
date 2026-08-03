@@ -102,6 +102,27 @@
 
 ---
 
+## [1.11.625] — 2026-08-03
+
+**Тег:** `sa-1.11.625`
+
+### Removed: orphan `copy-trader` (leader 498SW, shared Oscar wallet)
+
+Третий процесс `copy-trader` копировал лидера `498SWfPJ…` и **не имел своего
+торгового кошелька** — `COPY_TRADER_SHARED_OSCAR_WALLET=1`, pubkey =
+`2sSu7dSw…` (кошелёк Live Oscar). USDC-книги у него нет; с 01:09 UTC он ещё и
+слеп на исчерпанном Alchemy. Реальные copy-линии с деньгами — только две:
+
+- `copy-trader-8zkg` → `FxQfFTmj…`
+- `copy-trader-8zkg-mirror` → `2fMzAm6a…`
+
+Удалён блок PM2, watchdogs переведены на две 8zkg-линии. Процесс уже снят с
+прод-PM2; этот релиз не даст ему воскреснуть на `pm2 reload`.
+
+**Откат:** вернуть блок `copy-trader` из `v2` до этого SHA + `pm2 start … --only copy-trader`.
+
+---
+
 ## [1.11.624] — 2026-08-02
 
 ### Change: `trail_runner` — лестница как у Oscar `half8_runner`, без потолка +25%

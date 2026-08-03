@@ -575,15 +575,19 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
-        /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + copy-trader). */
+        /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + 8zkg copy lanes). */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_HEALTH_PRODUCT_LABEL: 'Oscar',
         COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
           { pm2: 'live-oscar', heartbeatPath: 'data/ops-heartbeats/live-oscar.json', staleMs: 300_000 },
-          { pm2: 'copy-trader', heartbeatPath: 'data/ops-heartbeats/copy-trader.json', staleMs: 300_000 },
           {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
+            staleMs: 300_000,
+          },
+          {
+            pm2: 'copy-trader-8zkg-mirror',
+            heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg-mirror.json',
             staleMs: 300_000,
           },
         ]),
@@ -2200,7 +2204,7 @@ const PM2_APPS = [
       },
     },
     /**
-     * Unified watchdog: hl-twap, live-oscar, copy-trader.
+     * Unified watchdog: live-oscar + the two funded 8zkg copy lanes.
      * PM2 status + heartbeat.json every 30s → auto-restart + [ALERT][strategy_watch].
      */
     {
@@ -2223,7 +2227,7 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
-        /** Bare Oscar: watchdog live-oscar + copy-trader. */
+        /** Funded copy lanes only — orphan `copy-trader` (498SW / shared Oscar wallet) removed. */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
           {
             pm2: 'live-oscar',
@@ -2232,104 +2236,22 @@ const PM2_APPS = [
             fatalPath: 'data/live/last-fatal-live-oscar.json',
           },
           {
-            pm2: 'copy-trader',
-            heartbeatPath: 'data/ops-heartbeats/copy-trader.json',
-            staleMs: 300_000,
-            fatalPath: 'data/ops-heartbeats/copy-trader-last-fatal.json',
-          },
-          {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
             staleMs: 300_000,
             fatalPath: 'data/ops-heartbeats/copy-trader-8zkg-last-fatal.json',
           },
+          {
+            pm2: 'copy-trader-8zkg-mirror',
+            heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg-mirror.json',
+            staleMs: 300_000,
+            fatalPath: 'data/ops-heartbeats/copy-trader-8zkg-mirror-last-fatal.json',
+          },
         ]),
       },
     },
     /**
-     * Copy-leader lane — shares live-oscar-micro wallet; parallel `positionSource: copy_leader` accounting.
-     * Golden-goose: oscar open/discovery ignores copy legs; copy only uses spare capital.
-     */
-    {
-      name: 'copy-trader',
-      cwd: root,
-      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
-      args: 'src/scripts/copy-trader.ts',
-      interpreter: 'node',
-      exec_mode: 'fork',
-      instances: 1,
-      autorestart: true,
-      max_restarts: 30,
-      restart_delay: 8000,
-      merge_logs: true,
-      time: true,
-      env: {
-        ...PM2_JUPITER_KEY_ENV,
-        ...JUPITER_PRO_TRADING_ENV,
-        ...PM2_SOLANA_RPC_ENV,
-        ...DEX_QUOTE_CACHE_ENV,
-        NODE_ENV: 'production',
-        COPY_TRADER_STRICT_ISOLATION: '1',
-        COPY_TRADER_SHARED_OSCAR_WALLET: '1',
-        COPY_TRADER_EXIT_MODE: 'oscar_half8',
-        COPY_TRADER_SPARE_CAPITAL_GATE: '0',
-        /** Same execution wallet as live-oscar (one SOL pool). */
-        COPY_TRADER_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
-        COPY_TRADER_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
-        COPY_TRADER_TARGET_WALLET: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
-        COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
-        COPY_TRADER_EXECUTION_MODE: 'live',
-        /** Leader-mirror initial entry: 75% of leader buy USD (0 = fixed positionUsd). */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.75',
-        /** Fallback / cap when initialMirrorRatio=0; ignored for entry when mirror is on. */
-        COPY_TRADER_POSITION_USD: '500',
-        COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
-        COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
-        COPY_TRADER_MAX_POSITION_USD: '0',
-        COPY_TRADER_MAX_ADDS_PER_MINT: '0',
-        COPY_TRADER_MAX_OPEN_POSITIONS: '0',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '0',
-        /** ~5s follow on leader buy/add (was 30s). */
-        COPY_TRADER_BUY_DELAY_MS: '5000',
-        COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
-        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
-        COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
-        COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
-        /** No mcap gate — leader filter only. */
-        COPY_TRADER_MIN_MCAP_USD: '0',
-        COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
-        COPY_TRADER_ENTRY_MID_POSITION_USD: '500',
-        COPY_TRADER_ENTRY_MID_LEG_USD: '500',
-        COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
-        COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '60000',
-        COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
-        COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
-        COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
-        COPY_TRADER_MIN_SELL_INTERVAL_MS: '500',
-        COPY_TRADER_ENTRY_DIP_JUPITER_MIN_INTERVAL_MS: '0',
-        COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
-        COPY_TRADER_SELL_DELAY_MIN_MS: '0',
-        COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
-        /** Faster leader poll for ~5s latency (was 12s). */
-        COPY_TRADER_POLL_INTERVAL_MS: '3000',
-        COPY_TRADER_TICK_INTERVAL_MS: '1000',
-        COPY_TRADER_SLIPPAGE_BPS: '100',
-        COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
-        COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
-        COPY_TRADER_TELEGRAM_ENABLED: '0',
-        LIVE_COPY_LEADER_STATE_PATH: path.join(root, 'data/copytrader/state.json'),
-        LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '1',
-        /** Match live-oscar adopt floor — handoff only when Oscar can manage exit. */
-        PAPER_DISCOVERY_MIN_MARKET_CAP_USD: '3000000',
-        PAPER_LIVE_OSCAR_LOW_MCAP_LANE_ENABLED: '0',
-        PAPER_LIVE_OSCAR_MICRO_MCAP_LANE_ENABLED: '0',
-        /** Poll + parse leader txs: Alchemy (`COPY_TRADER_RPC_URL` или `SA_RPC_HTTP_URL` в `.env`). QN/Helius — резерв, fallback off. */
-        ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
-      },
-    },
-    /**
-     * Second copy lane — leader `8zkgFGVZ`, own wallet, own state, no Oscar handoff.
+     * Copy lane — leader `8zkgFGVZ`, own wallet, own state, no Oscar handoff.
      *
      * The leader fires ~590 buys/day and is profitable only on short holds; the
      * 30d audit (docs/strategy/copytrader/LEADER_8ZKG_AUDIT.md) put his edge in
