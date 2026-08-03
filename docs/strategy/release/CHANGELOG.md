@@ -102,22 +102,31 @@
 
 ---
 
-## [1.11.627] — 2026-08-03
+## [1.11.629] — 2026-08-03
 
-**Тег:** `sa-1.11.627`
+**Тег:** `sa-1.11.629`
 
-<<<<<<< HEAD
-### Change: `copy-trader-8zkg` — 30m dead-trade time cap
+### Change: 8zkg entry — loosen age max + vol_to_mcap (both wallets)
 
-`COPY_TRADER_TRAIL_TIME_CAP_MS=1800000` on the trail lane only (`FxQf…`).
-Full exit at 30m **only if** no TP rung and no trail giveback has fired yet.
-After the first peel, the clock is ignored and the position stays under
-ladder / trail / kill.
+3h live contour: SKIP sessions the gates blocked were dollar-positive for the
+leader while TAKE was not. Main false cuts were `pair_age > 30h` and
+`vol_to_mcap_1h ≥ 0.33` (old-name revisits he still prints on).
 
-Mirror lane unchanged (`EXIT_MODE=mirror`, no own time cap).
+Both lanes (entry parity):
 
-**Откат:** `COPY_TRADER_TRAIL_TIME_CAP_MS: '0'` + revert `priorPeels` gate in `trail-exit.ts`.
-=======
+- `COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS`: `30` → `72`
+- `COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H`: `0.33` → `0.20`
+- `COPY_TRADER_ENTRY_MIN_TURNOVER_5M`: unchanged `0.09`
+- min pair age unchanged `0.3`
+
+**Откат:** вернуть `30` / `0.33` на обоих блоках 8zkg + `pm2 reload … --update-env`.
+
+---
+
+## [1.11.628] — 2026-08-03
+
+**Тег:** `sa-1.11.628`
+
 ### Ops: Live Oscar → Helius RPC; restore process + 498SW copy
 
 **Статус до:** `live-oscar` снят с PM2 (Alchemy monthly 429).
@@ -131,11 +140,28 @@ Mirror lane unchanged (`EXIT_MODE=mirror`, no own time cap).
 
 **Откат:** вернуть `...SOLANA_RPC_ALCHEMY_ONLY_ENV` на live-oscar; при необходимости
 `pm2 delete copy-trader`.
->>>>>>> e855b9c1 (ops(live-oscar): switch trading RPC to Helius and restore the process)
+
+---
+
+## [1.11.627] — 2026-08-03
+
+**Тег:** `sa-1.11.627`
+
+### Change: `copy-trader-8zkg` — 30m dead-trade time cap
+
+`COPY_TRADER_TRAIL_TIME_CAP_MS=1800000` on the trail lane only (`FxQf…`).
+Full exit at 30m **only if** no TP rung and no trail giveback has fired yet.
+After the first peel, the clock is ignored and the position stays under
+ladder / trail / kill.
+
+Mirror lane unchanged (`EXIT_MODE=mirror`, no own time cap).
+
+**Откат:** `COPY_TRADER_TRAIL_TIME_CAP_MS: '0'` + revert `priorPeels` gate in `trail-exit.ts`.
 
 ---
 
 ## [1.11.626] — 2026-08-03
+
 
 **Тег:** `sa-1.11.626`
 

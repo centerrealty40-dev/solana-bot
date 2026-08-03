@@ -2431,11 +2431,11 @@ const PM2_APPS = [
          */
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.3',
         /** Past ~30h his edge is gone: -2.1%, -3.1%, -3.5% in the top age octiles. */
-        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '30',
+        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '72',
         /** 5m volume over pool liquidity. Below 0.09 every octile loses money. */
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.09',
         /** 1h volume over market cap — the same signal on a slower clock. */
-        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.33',
+        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.20',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
@@ -2554,9 +2554,9 @@ const PM2_APPS = [
         COPY_TRADER_MIN_LEADER_PRIOR_AVG_PCT: '-100',
         /** Keep entry parity with copy-trader-8zkg (min pair age 0.3h). */
         COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS: '0.3',
-        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '30',
+        COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '72',
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0.09',
-        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.33',
+        COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0.20',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
