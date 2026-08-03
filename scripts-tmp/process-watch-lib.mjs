@@ -90,10 +90,16 @@ export function defaultStrategyWatchTargets(root) {
       fatalPath: `${root}/data/live/last-fatal-live-oscar.json`,
     },
     {
-      pm2: 'copy-trader',
-      heartbeatPath: `${root}/data/ops-heartbeats/copy-trader.json`,
+      pm2: 'copy-trader-8zkg',
+      heartbeatPath: `${root}/data/ops-heartbeats/copy-trader-8zkg.json`,
       staleMs: 300_000,
-      fatalPath: `${root}/data/ops-heartbeats/copy-trader-last-fatal.json`,
+      fatalPath: `${root}/data/ops-heartbeats/copy-trader-8zkg-last-fatal.json`,
+    },
+    {
+      pm2: 'copy-trader-8zkg-mirror',
+      heartbeatPath: `${root}/data/ops-heartbeats/copy-trader-8zkg-mirror.json`,
+      staleMs: 300_000,
+      fatalPath: `${root}/data/ops-heartbeats/copy-trader-8zkg-mirror-last-fatal.json`,
     },
   ];
 }
