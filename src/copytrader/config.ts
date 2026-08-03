@@ -71,6 +71,12 @@ const CopyTraderConfigSchema = z.object({
   entryDipUseJupiter: z.boolean().default(true),
   sellDelayMinMs: z.coerce.number().int().min(0).max(3_600_000).default(20_000),
   sellDelayMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(30_000),
+  /**
+   * Skip sell delay when mark drop from entry ≤ this % (inclusive).
+   * e.g. 5 → sell immediately unless price is already down more than 5%.
+   * **0** = never skip (always use min/max delay).
+   */
+  sellDelaySkipMaxDropPct: z.coerce.number().min(0).max(100).default(0),
   /** Second on-chain zero read before leader-flat tail sweep (default 3s). */
   leaderFlatConfirmDelayMs: z.coerce.number().int().min(0).max(60_000).default(3_000),
   /** Leader wallet balance ≤ this raw amount counts as flat (post-exit dust). */
@@ -293,6 +299,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryDipUseJupiter: process.env.COPY_TRADER_ENTRY_DIP_USE_JUPITER !== '0',
     sellDelayMinMs,
     sellDelayMaxMs,
+    sellDelaySkipMaxDropPct: process.env.COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT,
     leaderFlatConfirmDelayMs: process.env.COPY_TRADER_LEADER_FLAT_CONFIRM_DELAY_MS,
     leaderFlatDustRaw: process.env.COPY_TRADER_LEADER_FLAT_DUST_RAW,
     positionUsd: process.env.COPY_TRADER_POSITION_USD,

@@ -31,6 +31,7 @@ import {
 } from './entry-probe.js';
 import { shouldIgnoreMissedEntryLeaderRebuy } from './entry-late.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
+import { resolveSellDelayMs } from './sell-delay.js';
 import {
   applyLeaderSwapToLedger,
   bootstrapLeaderPreSellBalance,
@@ -290,11 +291,6 @@ function scheduleTrailExitSell(
   });
 }
 
-function randomSellDelayMs(cfg: CopyTraderConfig): number {
-  const span = cfg.sellDelayMaxMs - cfg.sellDelayMinMs;
-  if (span <= 0) return cfg.sellDelayMinMs;
-  return cfg.sellDelayMinMs + Math.floor(Math.random() * (span + 1));
-}
 
 function decodeSwapForWallet(tx: TxJsonParsed, wallet: string, solUsd: number): SwapInsert | null {
   const pf = decodePumpfunSwap(tx, PUMP_FUN_PROGRAM_ID, solUsd).find((s) => s.wallet === wallet);
@@ -978,7 +974,14 @@ async function onLeaderSell(
     postLeaderBalanceRaw: postLeaderOnChain,
     dustRaw: cfg.leaderFlatDustRaw,
   });
-  const delayMs = randomSellDelayMs(cfg);
+  const dexNow = await fetchDexInfo(mint, getSolUsd());
+  const mark = await resolveCurrentPrice(mint, dexNow?.priceUsd ?? 0, swap.priceUsd);
+  const sellDelay = resolveSellDelayMs(cfg, {
+    entryPriceUsd: tracked.entryPriceUsd,
+    currentPriceUsd: mark.priceUsd > 0 ? mark.priceUsd : null,
+    leaderSellPriceUsd: swap.priceUsd,
+  });
+  const delayMs = sellDelay.delayMs;
   const dueTs = Date.now() + delayMs;
   const pending: PendingSell = {
     id: newId('ps'),
@@ -1003,6 +1006,11 @@ async function onLeaderSell(
     ourSellFraction: ourSellFrac,
     sellDueTs: pending.dueTs,
     sellDelayMs: delayMs,
+    sellDelaySkipMaxDropPct: cfg.sellDelaySkipMaxDropPct,
+    sellDelayDropPct: sellDelay.dropPct != null ? Number(sellDelay.dropPct.toFixed(2)) : null,
+    sellDelaySkipped: sellDelay.skipped,
+    markPriceUsd: mark.priceUsd > 0 ? mark.priceUsd : null,
+    entryPriceUsd: tracked.entryPriceUsd > 0 ? tracked.entryPriceUsd : null,
   });
 
   await notifyCopyTraderTelegram(
@@ -1013,7 +1021,12 @@ async function onLeaderSell(
       symbol,
       wallet: cfg.targetWallet,
       priceUsd: swap.priceUsd,
-      detail: `Our ${(ourSellFrac * 100).toFixed(0)}% sell in ~${Math.round(delayMs / 1000)}s`,
+      detail:
+        delayMs <= 0
+          ? `Our ${(ourSellFrac * 100).toFixed(0)}% sell now` +
+            (sellDelay.dropPct != null ? ` (drop ${sellDelay.dropPct.toFixed(1)}%)` : '')
+          : `Our ${(ourSellFrac * 100).toFixed(0)}% sell in ~${Math.round(delayMs / 1000)}s` +
+            (sellDelay.dropPct != null ? ` (drop ${sellDelay.dropPct.toFixed(1)}%)` : ''),
     }),
   );
 }
@@ -1808,6 +1821,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     sellRetryWindowMin: Math.round(cfg.sellRetryWindowMs / 60_000),
     sellRetryIntervalSec: Math.round(cfg.sellRetryIntervalMs / 1000),
     sellDelaySec: `${Math.round(cfg.sellDelayMinMs / 1000)}-${Math.round(cfg.sellDelayMaxMs / 1000)}`,
+    sellDelaySkipMaxDropPct: cfg.sellDelaySkipMaxDropPct,
     exitMode: cfg.exitMode,
     trail: usesTrailingExitPolicy(cfg)
       ? [
