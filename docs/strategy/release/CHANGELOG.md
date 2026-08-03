@@ -102,6 +102,25 @@
 
 ---
 
+## [1.11.626] — 2026-08-03
+
+**Тег:** `sa-1.11.626`
+
+### Change: 8zkg entry — pair-age floor 1h → 0.3h (both wallets)
+
+Live 10h contour: `pair_age < 1h` was the only gate that clearly cut the
+leader's winners (SKIP closes mean +7%, young-pair bucket proxy ~+$317). Both
+lanes lowered together so entry stays identical:
+
+- `copy-trader-8zkg` (`FxQfFTmj…`) — `COPY_TRADER_ENTRY_MIN_PAIR_AGE_HOURS=0.3`
+- `copy-trader-8zkg-mirror` (`2fMzAm6a…`) — same
+
+Turnover / vol-to-mcap / max age unchanged.
+
+**Откат:** вернуть `'1'` на обоих блоках + `pm2 reload … --update-env --only copy-trader-8zkg` и `--only copy-trader-8zkg-mirror`.
+
+---
+
 ## [1.11.625] — 2026-08-03
 
 **Тег:** `sa-1.11.625`
