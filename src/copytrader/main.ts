@@ -32,6 +32,7 @@ import {
 import { shouldIgnoreMissedEntryLeaderRebuy } from './entry-late.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
 import { resolveSellDelayMs } from './sell-delay.js';
+import { resolveBuyRetryDelayMs } from './buy-retry-delay.js';
 import {
   applyLeaderSwapToLedger,
   bootstrapLeaderPreSellBalance,
@@ -1406,7 +1407,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
        */
       const retryRow = findPendingBuy(state, pending.id);
       if (retryRow && cfg.buyRetryIntervalMs > 0) {
-        retryRow.dueTs = now + cfg.buyRetryIntervalMs;
+        retryRow.dueTs = now + resolveBuyRetryDelayMs(cfg.buyRetryIntervalMs, exec.reason);
       }
       if (noteBuyDefer(state, pending.id, now, cfg)) {
         appendCopyEvent(cfg, {

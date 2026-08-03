@@ -102,6 +102,26 @@
 
 ---
 
+## [1.11.643] — 2026-08-04
+
+**Тег:** `sa-1.11.643`
+
+### Change: 8zkg — быстрее догонять покупку лидера
+
+RCA `CaXFn…pump`: `buyDelay=0`, но между failed swap стояло **6s**
+(`BUY_RETRY_INTERVAL`), плюс `0x1771` / `BlockhashNotFound` / `qn_rate` → fill
+через ~25–60s уже у потолка premium 5%.
+
+- оба лейна: `BUY_RETRY_INTERVAL_MS=500` (было 6000)
+- adaptive: slippage/blockhash ещё короче, `qn_rate` ≥2s
+- `SLIPPAGE_BPS=300` (было 150)
+- mirror: `BUY_DELAY_MS=0` (снят намеренный 10s lag)
+
+**Откат:** вернуть interval=6000 / slippage=150 / mirror delay=10000 + reload,
+или `git revert`.
+
+---
+
 ## [1.11.642] — 2026-08-04
 
 **Тег:** `sa-1.11.642`
