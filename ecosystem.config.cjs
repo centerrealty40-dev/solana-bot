@@ -2323,6 +2323,8 @@ const PM2_APPS = [
          */
         COPY_TRADER_ENTER_ONLY_ON_LEADER_ADD: '1',
         COPY_TRADER_ENTER_ON_LEADER_ADD_BAG_RATIO: '0.7',
+        /** 1.11.666 — keep early TP off if this lane is ever re-enabled. */
+        COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '500',
