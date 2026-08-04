@@ -55,6 +55,7 @@ describe('entry-probe sizing', () => {
     const mirrorCfg = {
       ...prodEntryCfg,
       initialMirrorRatio: 0.5,
+      minMirrorEntryUsd: 0,
       entryProbeFraction: 1,
       entryDipDiscountPct: 0,
     } as CopyTraderConfig;
@@ -64,6 +65,19 @@ describe('entry-probe sizing', () => {
     expect(entryProbeSizeUsd(mirrorCfg, undefined, 1000)).toBe(500);
     expect(entryDipSizeUsd(mirrorCfg, undefined, 1000)).toBe(0);
     expect(entryTargetUsd(mirrorCfg, undefined, 400)).toBe(200);
+  });
+
+  it('floors mirrored entry at minMirrorEntryUsd', () => {
+    const mirrorCfg = {
+      ...prodEntryCfg,
+      initialMirrorRatio: 0.5,
+      minMirrorEntryUsd: 100,
+      entryProbeFraction: 1,
+      entryDipDiscountPct: 0,
+    } as CopyTraderConfig;
+    expect(leaderInitialEntryUsd(mirrorCfg, 1000)).toBe(500);
+    expect(leaderInitialEntryUsd(mirrorCfg, 150)).toBe(100);
+    expect(entryTargetUsd(mirrorCfg, undefined, 150)).toBe(100);
   });
 
   it('keeps fixed positionUsd when initialMirrorRatio is 0', () => {

@@ -84,6 +84,11 @@ const CopyTraderConfigSchema = z.object({
   positionUsd: z.coerce.number().positive().max(100_000).default(600),
   /** Initial entry: mirror this fraction of leader buy USD (0 = fixed positionUsd). */
   initialMirrorRatio: z.coerce.number().min(0).max(1).default(0),
+  /**
+   * Floor on mirrored initial entry USD when `initialMirrorRatio` > 0.
+   * Example: ratio 0.5 + floor 100 → buy max($100, 50% of leader buy). **0** = no floor.
+   */
+  minMirrorEntryUsd: z.coerce.number().min(0).max(100_000).default(0),
   addPositionUsd: z.coerce.number().positive().max(100_000).default(600),
   maxPositionUsd: z.coerce.number().min(0).max(500_000).default(0),
   maxAddsPerMint: z.coerce.number().int().min(0).max(999).default(0),
@@ -318,6 +323,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     leaderFlatDustRaw: process.env.COPY_TRADER_LEADER_FLAT_DUST_RAW,
     positionUsd: process.env.COPY_TRADER_POSITION_USD,
     initialMirrorRatio: process.env.COPY_TRADER_INITIAL_MIRROR_RATIO,
+    minMirrorEntryUsd: process.env.COPY_TRADER_MIN_MIRROR_ENTRY_USD,
     addPositionUsd: process.env.COPY_TRADER_ADD_POSITION_USD,
     maxPositionUsd: process.env.COPY_TRADER_MAX_POSITION_USD,
     maxAddsPerMint: process.env.COPY_TRADER_MAX_ADDS_PER_MINT,

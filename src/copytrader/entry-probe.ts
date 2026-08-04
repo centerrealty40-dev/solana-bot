@@ -28,7 +28,9 @@ export function usesInitialLeaderMirror(cfg: CopyTraderConfig): boolean {
 /** Initial entry notional from leader buy USD when mirror ratio is enabled. */
 export function leaderInitialEntryUsd(cfg: CopyTraderConfig, leaderBuyUsd: number): number {
   if (!(leaderBuyUsd > 0) || !usesInitialLeaderMirror(cfg)) return 0;
-  return roundUsd(leaderBuyUsd * cfg.initialMirrorRatio);
+  const mirrored = leaderBuyUsd * cfg.initialMirrorRatio;
+  const floored = cfg.minMirrorEntryUsd > 0 ? Math.max(cfg.minMirrorEntryUsd, mirrored) : mirrored;
+  return roundUsd(floored);
 }
 
 /** Planned total entry deploy (probe + dip) for this mcap / leader buy. */
