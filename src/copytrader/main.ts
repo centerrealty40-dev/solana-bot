@@ -2135,6 +2135,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     }
 
     // Mid-tick: if WS drops, degrade to fast poll immediately (don't wait 5s).
+    // Skip forceReconnect spam during the first subscribe handshake.
     if (cfg.leaderStreamEnabled) {
       const linkDecision = evaluateStreamWatchdog({
         nowMs: now,
@@ -2152,16 +2153,25 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           now - lastStreamForceReconnectMs >= 10_000
         ) {
           lastStreamForceReconnectMs = now;
+          console.warn('[copy-trader] stream watchdog force reconnect', {
+            reason: linkDecision.reason,
+            health: leaderStream.getHealth(),
+          });
           leaderStream.forceReconnect();
         }
         if (streamHealthy || linkDecision.reason !== lastStreamWatchdogReason) {
-          console.warn('[copy-trader] stream watchdog link', {
-            reason: linkDecision.reason,
-            health: leaderStream?.getHealth() ?? null,
-          });
+          // Boot: connected=false is expected for ~1s — don't spam until we opened once.
+          if (linkDecision.reason !== 'disconnected' || (leaderStream?.getHealth().lastOpenAtMs ?? 0) > 0) {
+            console.warn('[copy-trader] stream watchdog link', {
+              reason: linkDecision.reason,
+              health: leaderStream?.getHealth() ?? null,
+            });
+          }
           lastStreamWatchdogReason = linkDecision.reason;
+          const everOpened = (leaderStream?.getHealth().lastOpenAtMs ?? 0) > 0;
           if (
             streamHealthy &&
+            everOpened &&
             (cfg.leaderStreamWatchdogAlertCooldownMs === 0 ||
               now - lastStreamWatchdogAlertMs >= cfg.leaderStreamWatchdogAlertCooldownMs)
           ) {
@@ -2175,6 +2185,16 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           }
         }
         streamHealthy = false;
+      } else if (!streamHealthy && streamMissStreak === 0) {
+        // Link recovered between polls (reconnect finished + subscribed).
+        streamHealthy = true;
+        if (lastStreamWatchdogReason !== 'ok') {
+          console.log('[copy-trader] stream watchdog recovered', {
+            reason: 'ok',
+            health: leaderStream?.getHealth() ?? null,
+          });
+          lastStreamWatchdogReason = 'ok';
+        }
       }
     }
 

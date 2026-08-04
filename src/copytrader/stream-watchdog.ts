@@ -73,10 +73,12 @@ export function evaluateStreamWatchdog(input: {
   const subscribeGraceMs = input.subscribeGraceMs ?? 15_000;
 
   if (!h.connected) {
+    // Never connected yet (boot) — wait for open; do not kill the handshake.
+    const everOpened = h.lastOpenAtMs > 0;
     return {
       healthy: false,
       reason: 'disconnected',
-      forceReconnect: true,
+      forceReconnect: everOpened,
       useFastPoll: true,
       nextMissStreak: input.missStreak,
     };

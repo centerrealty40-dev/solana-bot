@@ -45,16 +45,36 @@ describe('evaluateStreamWatchdog', () => {
     expect(d.reason).toBe('ok');
   });
 
-  it('fast-polls when disconnected and forces reconnect', () => {
-    const d = evaluateStreamWatchdog({
+  it('fast-polls when disconnected but does not reconnect before first open', () => {
+    const boot = evaluateStreamWatchdog({
       nowMs: 10_000,
       enabled: true,
-      health: { ...healthySnap, connected: false, subscribed: false },
+      health: {
+        ...healthySnap,
+        connected: false,
+        subscribed: false,
+        lastOpenAtMs: 0,
+      },
       pollMissesThisCycle: 0,
       missStreak: 0,
       missThreshold: 2,
     });
-    expect(d).toMatchObject({
+    expect(boot).toMatchObject({
+      healthy: false,
+      reason: 'disconnected',
+      forceReconnect: false,
+      useFastPoll: true,
+    });
+
+    const dropped = evaluateStreamWatchdog({
+      nowMs: 10_000,
+      enabled: true,
+      health: { ...healthySnap, connected: false, subscribed: false, lastOpenAtMs: 1_000 },
+      pollMissesThisCycle: 0,
+      missStreak: 0,
+      missThreshold: 2,
+    });
+    expect(dropped).toMatchObject({
       healthy: false,
       reason: 'disconnected',
       forceReconnect: true,
