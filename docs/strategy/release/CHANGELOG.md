@@ -1,4 +1,23 @@
 # So
+## [1.11.664] — 2026-08-04
+
+**Тег:** `sa-1.11.664`
+
+### Change: disable 8zkg low-mcap $50 tier; min mcap $150k
+
+Live RCA since the $50 clip went on (~05:20 UTC): closed clip PnL ~−$140…−$250
+across both lanes. PG-joined mcap buckets (24/51 buys resolved): every band
+below $100k was red; $100–150k was +$11.5 on **n=2** closes (noise). Unresolved
+majority also red. No credible raise-threshold — **tier off**.
+
+Both lanes: `ENTRY_LOW_*=0`, `MIN_MCAP_USD=150000` (mirror previously 0).
+Sizing ≥$150k unchanged: 70% leader, floor $150, cap $700.
+
+**Откат:** restore `ENTRY_LOW` $30k–$150k→$50 and prior `MIN_MCAP` (FxQf 30k /
+mirror 0); reload PM2.
+
+---
+
 ## [1.11.663] — 2026-08-04
 
 **Тег:** `sa-1.11.663`
