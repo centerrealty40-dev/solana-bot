@@ -26,6 +26,21 @@ const CopyTraderConfigSchema = z.object({
   /** Leader signature poll. Floor 1s — mirror exits race his sell into the book. */
   pollIntervalMs: z.coerce.number().int().min(1000).max(120_000).default(12_000),
   signatureLimit: z.coerce.number().int().min(5).max(50).default(25),
+  /**
+   * Helius LaserStream WebSocket (`transactionSubscribe`) for leader buys/sells.
+   * When on, poll becomes a slower safety net. Needs Business+ for the Helius
+   * transactionSubscribe method (falls back to logsSubscribe).
+   */
+  leaderStreamEnabled: z.boolean().default(false),
+  /** Override WS URL; default `wss://mainnet.helius-rpc.com/?api-key=…`. */
+  leaderStreamWsUrl: z.string().optional(),
+  /** When stream is on: poll interval used as backup (default 15s). */
+  leaderStreamPollBackupMs: z.coerce.number().int().min(1000).max(120_000).default(15_000),
+  /**
+   * Prefetch parsed txs for a poll batch in parallel (still applied serially).
+   * **1** = legacy sequential. Default **4**.
+   */
+  leaderIngressConcurrency: z.coerce.number().int().min(1).max(10).default(4),
   tickIntervalMs: z.coerce.number().int().min(250).max(30_000).default(2000),
   buyDelayMs: z.coerce.number().int().min(0).max(86_400_000).default(30_000),
   /**
@@ -336,6 +351,10 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
       path.join('data', 'copytrader', 'state.json'),
     pollIntervalMs: process.env.COPY_TRADER_POLL_INTERVAL_MS,
     signatureLimit: process.env.COPY_TRADER_SIGNATURE_LIMIT,
+    leaderStreamEnabled: envBool(process.env.COPY_TRADER_LEADER_STREAM, false),
+    leaderStreamWsUrl: process.env.COPY_TRADER_LEADER_STREAM_WS_URL?.trim() || undefined,
+    leaderStreamPollBackupMs: process.env.COPY_TRADER_LEADER_STREAM_POLL_BACKUP_MS,
+    leaderIngressConcurrency: process.env.COPY_TRADER_LEADER_INGRESS_CONCURRENCY,
     tickIntervalMs: process.env.COPY_TRADER_TICK_INTERVAL_MS,
     buyDelayMs: process.env.COPY_TRADER_BUY_DELAY_MS,
     buyDelaySkipMaxPremiumPct: process.env.COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT,

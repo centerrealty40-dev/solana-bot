@@ -16,6 +16,40 @@ Env: `COPY_TRADER_VOL_FADE_SAMPLE_WINDOW=3`, `COPY_TRADER_VOL_FADE_MIN_WEAK_SAMP
 
 ---
 
+## [1.11.656] — 2026-08-04
+
+**Тег:** `sa-1.11.656`
+
+### Change: Helius leader stream on copy-trader-8zkg (FxQf)
+
+- `copy-trader-8zkg` (wallet FxQf…): Helius WS `transactionSubscribe` on leader
+  `8zkgFGVZ…` (fallback `logsSubscribe`); poll backup 15s.
+- `copy-trader-8zkg-mirror`: poll-only unchanged (5s).
+- Both: parallel `getTransaction` prefetch (`LEADER_INGRESS_CONCURRENCY=4`).
+
+Env: `COPY_TRADER_LEADER_STREAM=1`, `HELIUS_API_KEY` (or `LEADER_STREAM_WS_URL`).
+
+**Откат:** `LEADER_STREAM=0` on 8zkg + reload; mirror untouched.
+
+---
+
+## [1.11.655] — 2026-08-04
+
+**Тег:** `sa-1.11.655`
+
+### Change: multi-window 5m volume for vol-fade / hold-cap
+
+Dex only exposes a rolling `volume.m5`. We now sample it over time and decide
+on the last **3** readings (exit when **≥2** look weak) instead of one noisy tick.
+Both 8zkg lanes. Hold-cap also samples every 5m before the 30m mark so the
+window is warm at extension time.
+
+Env: `COPY_TRADER_VOL_FADE_SAMPLE_WINDOW=3`, `COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES=2`.
+
+**Откат:** set window/minWeak to `1` (legacy single-tick) and reload PM2.
+
+---
+
 ## [1.11.654] — 2026-08-04
 
 **Тег:** `sa-1.11.654`

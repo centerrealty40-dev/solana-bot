@@ -2453,8 +2453,18 @@ const PM2_APPS = [
         COPY_TRADER_MIN_MCAP_USD: '30000',
         /** Both lanes mirror leader sells; this one races (delay 0). */
         COPY_TRADER_EXIT_MODE: 'mirror',
-        /** 5s — fits Helius Developer (~10M credits/mo); 1Hz ×2 lanes alone ≈5M+/mo. */
+        /**
+         * A/B: this lane (FxQf) uses Helius LaserStream WS for leader ingress.
+         * Poll is a 15s safety net. Twin mirror stays poll-only @ 5s.
+         */
         COPY_TRADER_POLL_INTERVAL_MS: '5000',
+        COPY_TRADER_LEADER_STREAM: '1',
+        COPY_TRADER_LEADER_STREAM_POLL_BACKUP_MS: '15000',
+        COPY_TRADER_LEADER_INGRESS_CONCURRENCY: '4',
+        ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
+        ...(HELIUS_RPC_URL_PM2
+          ? { HELIUS_RPC_URL: HELIUS_RPC_URL_PM2, COPY_TRADER_RPC_URL: HELIUS_RPC_URL_PM2 }
+          : {}),
         COPY_TRADER_TICK_INTERVAL_MS: '1000',
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
@@ -2597,8 +2607,10 @@ const PM2_APPS = [
         COPY_TRADER_MIN_MCAP_USD: '0',
         /** His sell is the only exit: no trail, no time cap, no stop. */
         COPY_TRADER_EXIT_MODE: 'mirror',
-        /** 5s — Helius Developer 10M/mo; was 1s and burned the plan with twin lane. */
+        /** Poll-only A/B twin (stream lives on copy-trader-8zkg / FxQf). */
         COPY_TRADER_POLL_INTERVAL_MS: '5000',
+        COPY_TRADER_LEADER_STREAM: '0',
+        COPY_TRADER_LEADER_INGRESS_CONCURRENCY: '4',
         COPY_TRADER_TICK_INTERVAL_MS: '1000',
         /** No intentional buy lag — chase the leader fill before the tape runs. */
         COPY_TRADER_BUY_DELAY_MS: '0',
