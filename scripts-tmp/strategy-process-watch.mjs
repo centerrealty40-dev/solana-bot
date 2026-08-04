@@ -1,7 +1,7 @@
 /**
  * Unified PM2 watchdog for live trading bots: status + heartbeat + auto-restart + Telegram.
  *
- * Watches by default: live-oscar, copy-trader, copy-trader-8zkg, copy-trader-8zkg-mirror.
+ * Watches by default: copy-trader-8zkg, copy-trader-8zkg-mirror (Oscar lane stopped 1.11.651).
  * Override: STRATEGY_PROCESS_WATCH_TARGETS JSON array [{ pm2, heartbeatPath, staleMs?, fatalPath? }]
  */
 import 'dotenv/config';
