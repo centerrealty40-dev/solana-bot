@@ -214,6 +214,14 @@ const CopyTraderConfigSchema = z.object({
    */
   entryMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(0),
   /**
+   * When the live rolling m5 is below `entryMinVolume5mUsd`, still pass if
+   * 1h volume covers this many adjacent 5m windows
+   * (`volume1h >= minVolume5m * windows`). Dex only exposes rolling m5 + h1,
+   * not discrete candles — h1 is the proxy for neighbouring windows.
+   * Default **3**. **0** = single-tick m5 only (legacy).
+   */
+  entryVol5mAdjacentWindows: z.coerce.number().int().min(0).max(12).default(3),
+  /**
    * Shadow selection model (paper). On every leader entry buy, fetch market ctx
    * and log `shadow_select` with wouldBuy. Fitted rule: vol5m≥$2k & buys/sells≥1.
    */
@@ -470,6 +478,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryMinTurnover5m: process.env.COPY_TRADER_ENTRY_MIN_TURNOVER_5M,
     entryMinVolToMcap1h: process.env.COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H,
     entryMinVolume5mUsd: process.env.COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD,
+    entryVol5mAdjacentWindows: process.env.COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS,
     shadowSelectEnabled: envBool(process.env.COPY_TRADER_SHADOW_SELECT, false),
     shadowSelectFilterLive: envBool(process.env.COPY_TRADER_SHADOW_SELECT_FILTER_LIVE, false),
     shadowSelectMinVolume5mUsd: process.env.COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD,

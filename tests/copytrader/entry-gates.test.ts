@@ -19,6 +19,7 @@ const cfg: LeaderGateConfig = {
   entryMinTurnover5m: 0,
   entryMinVolToMcap1h: 0,
   entryMinVolume5mUsd: 0,
+  entryVol5mAdjacentWindows: 3,
   leaderFollowOnlyMinMcapUsd: 0,
   leaderFollowOnlyMinVolume1hUsd: 0,
 };
@@ -35,6 +36,7 @@ const shipped: LeaderGateConfig = {
   entryMinTurnover5m: 0.09,
   entryMinVolToMcap1h: 0.33,
   entryMinVolume5mUsd: 0,
+  entryVol5mAdjacentWindows: 3,
   leaderFollowOnlyMinMcapUsd: 0,
   leaderFollowOnlyMinVolume1hUsd: 0,
 };
@@ -160,10 +162,45 @@ describe('leader market-context gate', () => {
       entryMinBuySellRatio5m: 0,
       entryMaxChase5mPct: 0,
       entryMinVolume5mUsd: 8000,
+      entryVol5mAdjacentWindows: 0,
     };
     const res = evaluateLeaderMarketGate(volOnly, ctx({ volume5mUsd: 2500 }));
     expect(res.pass).toBe(false);
     expect(res.reasons[0]).toContain('volume_5m_usd=2500<min=8000');
+  });
+
+  it('passes quiet m5 when 1h volume covers adjacent 5m windows', () => {
+    const volOnly: LeaderGateConfig = {
+      ...cfg,
+      entryMinPairAgeHours: 0,
+      entryMaxPairAgeHours: 0,
+      entryMinBuySellRatio5m: 0,
+      entryMaxChase5mPct: 0,
+      entryMinVolume5mUsd: 8000,
+      entryVol5mAdjacentWindows: 3,
+    };
+    // F6Tbmw-class: lull in current m5, but ~$115k/h sustained.
+    const res = evaluateLeaderMarketGate(
+      volOnly,
+      ctx({ volume5mUsd: 2948, volume1hUsd: 114_829, marketCapUsd: 421_313 }),
+    );
+    expect(res.pass).toBe(true);
+  });
+
+  it('still rejects when both m5 and 1h-adjacent cover fail', () => {
+    const volOnly: LeaderGateConfig = {
+      ...cfg,
+      entryMinPairAgeHours: 0,
+      entryMaxPairAgeHours: 0,
+      entryMinBuySellRatio5m: 0,
+      entryMaxChase5mPct: 0,
+      entryMinVolume5mUsd: 8000,
+      entryVol5mAdjacentWindows: 3,
+    };
+    const res = evaluateLeaderMarketGate(volOnly, ctx({ volume5mUsd: 2500, volume1hUsd: 10_000 }));
+    expect(res.pass).toBe(false);
+    expect(res.reasons[0]).toContain('volume_5m_usd=2500<min=8000');
+    expect(res.reasons[0]).toContain('volume_1h_usd=10000<min=24000(3x5m)');
   });
 
   it('fails closed when volume floor is on but feed is missing', () => {
@@ -231,6 +268,7 @@ describe('turnover gates', () => {
       entryMaxPairAgeHours: 0,
       entryMinPairAgeHours: 0.1,
       entryMinVolume5mUsd: 8_000,
+      entryVol5mAdjacentWindows: 0,
       leaderFollowOnlyMinMcapUsd: 1_000_000,
       leaderFollowOnlyMinVolume1hUsd: 50_000,
     };

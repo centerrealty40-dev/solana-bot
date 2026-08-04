@@ -1,4 +1,21 @@
 # So
+## [1.11.676] — 2026-08-04
+
+**Тег:** `sa-1.11.676`
+
+### Change: mirror vol5m floor accepts adjacent 5m windows via 1h volume
+
+Dex only exposes rolling `volume.m5` + `h1`. A quiet current m5 was blocking
+`copy-trader-8zkg-mirror` (min $8k) on names with ~$100k+/h (e.g. F6Tbmw).
+
+- If `volume5m < ENTRY_MIN_VOLUME_5M` but
+  `volume1h >= ENTRY_MIN_VOLUME_5M * ENTRY_VOL5M_ADJACENT_WINDOWS` → pass
+- Default windows **3** (`COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS`); **0** = legacy single-tick
+
+**Откат:** `ENTRY_VOL5M_ADJACENT_WINDOWS=0` + reload mirror.
+
+---
+
 ## [1.11.675] — 2026-08-04
 
 **Тег:** `sa-1.11.675`
