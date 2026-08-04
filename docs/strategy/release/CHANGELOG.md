@@ -1,4 +1,25 @@
 # So
+## [1.11.675] — 2026-08-04
+
+**Тег:** `sa-1.11.675`
+
+### Change: strategy keepalive outside PM2 + hard TG alerts
+
+Incident: at 20:11 UTC another PM2 start wiped salpha apps including
+**copy-trader twins and strategy-process-watch**. Watchdog died with them →
+no Telegram while leader traded.
+
+- New **cron** `strategy-keepalive-cron.mjs` (every 1m, outside PM2):
+  ensure `copy-trader-8zkg`, `copy-trader-8zkg-mirror`, `strategy-process-watch`
+  via `pm2 start ecosystem --only …` if missing; `[ALERT][strategy_keepalive]`
+- `strategy-process-watch`: on missing use **start** (not only restart);
+  alert repeat **5m**
+- Install: `bash scripts/ops/install-strategy-keepalive-cron.sh`
+
+**Откат:** remove cron markers; `ALERT_REPEAT_MIN=15`; reload process-watch.
+
+---
+
 ## [1.11.674] — 2026-08-04
 
 **Тег:** `sa-1.11.674`
