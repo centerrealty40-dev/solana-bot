@@ -2402,6 +2402,7 @@ const PM2_APPS = [
         /**
          * Entry = 70% of leader buy USD, floor $150, **ceiling $700** (mcap ≥ $150k).
          * Adds = stack-fraction proportional mirror up to the same cap.
+         * Low-mcap $50 clip **off** (1.11.664): live band <$150k was net negative.
          */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0.7',
         COPY_TRADER_MIN_MIRROR_ENTRY_USD: '150',
@@ -2409,10 +2410,10 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '150',
         COPY_TRADER_ENTRY_MID_LEG_USD: '150',
-        /** mcap $30k–$150k → fixed $50; ≥$150k → 70% leader (floor $150, cap $700). */
-        COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '30000',
-        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '150000',
-        COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
+        /** Off — no fixed $50 band; floor is MIN_MCAP $150k + mirror sizing. */
+        COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '0',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '0',
+        COPY_TRADER_ENTRY_LOW_POSITION_USD: '0',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
@@ -2424,7 +2425,7 @@ const PM2_APPS = [
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal A/B vs `copy-trader-8zkg-mirror` (2026-08-03 4h live RCA):
-         * this lane = **mcap-only** entry (≥$30k; $30–150k clip $50) + **fast** mirror exit.
+         * this lane = **mcap-only** entry (≥$150k) + **fast** mirror exit.
          * Twin = vol5m-only + slow mirror. Shared: pair age ≥0.1h, premium ≤5%.
          * Missing metric → skip (fail closed).
          */
@@ -2441,8 +2442,8 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
-        /** Absolute mcap floor; missing/zero mcap fails closed. Low band $30–150k uses $50 clip. */
-        COPY_TRADER_MIN_MCAP_USD: '30000',
+        /** Absolute mcap floor; missing/zero mcap fails closed. No sub-$150k entries. */
+        COPY_TRADER_MIN_MCAP_USD: '150000',
         /** Both lanes mirror leader sells; this one races (delay 0). */
         COPY_TRADER_EXIT_MODE: 'mirror',
         /**
@@ -2562,7 +2563,7 @@ const PM2_APPS = [
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
          * Same sizing as twin: 70% of leader buy, floor $150, ceiling $700;
-         * low-mcap $50 band unchanged; exits stay fraction-of-holdings mirror.
+         * low-mcap $50 band off (1.11.664); exits stay fraction-of-holdings mirror.
          */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0.7',
         COPY_TRADER_MIN_MIRROR_ENTRY_USD: '150',
@@ -2570,10 +2571,10 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '150',
         COPY_TRADER_ENTRY_MID_LEG_USD: '150',
-        /** Same low-mcap clip as twin: $30k–$150k → $50 fixed. */
-        COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '30000',
-        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '150000',
-        COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
+        /** Off — same as twin; no sub-$150k fixed clip. */
+        COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '0',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '0',
+        COPY_TRADER_ENTRY_LOW_POSITION_USD: '0',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
@@ -2585,8 +2586,8 @@ const PM2_APPS = [
         /** Same as twin: enter on average-down / rebuy if we missed his open. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
-         * Orthogonal B: vol5m-only (≥$8k). Mcap/liq floors off — twin owns mcap.
-         * Missing volume feed fails closed. Low-mcap sizing still applies when mcap known.
+         * Orthogonal B: vol5m-only (≥$8k) **and** mcap ≥$150k (low band killed 1.11.664).
+         * Missing volume feed fails closed.
          */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
@@ -2600,7 +2601,7 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
-        COPY_TRADER_MIN_MCAP_USD: '0',
+        COPY_TRADER_MIN_MCAP_USD: '150000',
         /** His sell is the only exit: no trail, no time cap, no stop. */
         COPY_TRADER_EXIT_MODE: 'mirror',
         /** Same Helius stream as FxQf — poll alone was ~20s detect lag. */
