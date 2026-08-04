@@ -1,4 +1,23 @@
 # So
+## [1.11.666] — 2026-08-04
+
+**Тег:** `sa-1.11.666`
+
+### Change: disable mirror early TP (+20%→50%) on all copy lanes
+
+12h CF on both funded 8zkg lanes: feature fired on 28 closed rounds,
+helped 20 / hurt 8 by count, but **−$114** vs holding the peeled half to
+the eventual exit (dollar-weighted runners after +20%).
+
+- `COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT=0` on `copy-trader-8zkg` +
+  `copy-trader-8zkg-mirror` (code already no-ops when gain≤0)
+- Default in config stays `0`; do not re-enable without a fresh CF
+- Oscar / 498SW copy already excluded from VPS ecosystem
+
+**Откат:** set GAIN_PCT back to `20` on both lanes + reload PM2.
+
+---
+
 ## [1.11.665] — 2026-08-04
 
 **Тег:** `sa-1.11.665`
