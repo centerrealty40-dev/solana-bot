@@ -2015,9 +2015,13 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           cfg,
           state,
           {
-            fetchVolume5mUsd: async (mint) => {
+            fetchMarketSnapshot: async (mint) => {
               const ctx = await fetchCopyEntryContext(mint);
-              return ctx?.volume5mUsd ?? null;
+              return {
+                volume5mUsd: ctx?.volume5mUsd ?? null,
+                volume1hUsd: ctx?.volume1hUsd ?? null,
+                marketCapUsd: ctx?.marketCapUsd ?? null,
+              };
             },
           },
           now,
@@ -2048,9 +2052,13 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           cfg,
           state,
           {
-            fetchVolume5mUsd: async (mint) => {
+            fetchMarketSnapshot: async (mint) => {
               const ctx = await fetchCopyEntryContext(mint);
-              return ctx?.volume5mUsd ?? null;
+              return {
+                volume5mUsd: ctx?.volume5mUsd ?? null,
+                volume1hUsd: ctx?.volume1hUsd ?? null,
+                marketCapUsd: ctx?.marketCapUsd ?? null,
+              };
             },
           },
           now,
