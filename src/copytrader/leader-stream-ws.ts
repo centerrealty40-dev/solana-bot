@@ -25,21 +25,45 @@ function jitter(ms: number): number {
   return Math.round(ms * (0.8 + Math.random() * 0.4));
 }
 
-function extractSignature(payload: unknown): string | null {
+function asSigString(v: unknown): string | null {
+  if (typeof v === 'string' && v.length >= 64) return v;
+  return null;
+}
+
+/** Pull base58 signature from Helius/Agave transactionNotification / logsNotification. */
+export function extractSignature(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null;
   const o = payload as Record<string, unknown>;
-  if (typeof o.signature === 'string' && o.signature.length >= 64) return o.signature;
-  const tx = o.transaction;
-  if (tx && typeof tx === 'object') {
-    const t = tx as Record<string, unknown>;
-    if (typeof t.signature === 'string') return t.signature;
-    const sigs = t.signatures;
-    if (Array.isArray(sigs) && typeof sigs[0] === 'string') return sigs[0];
+  const direct = asSigString(o.signature);
+  if (direct) return direct;
+
+  // Helius: result.transaction.transaction.signatures[0] or result.transaction.signature
+  const txWrap = o.transaction;
+  if (txWrap && typeof txWrap === 'object') {
+    const tw = txWrap as Record<string, unknown>;
+    const fromWrap = asSigString(tw.signature);
+    if (fromWrap) return fromWrap;
+    const inner = tw.transaction;
+    if (inner && typeof inner === 'object') {
+      const inn = inner as Record<string, unknown>;
+      const sigs = inn.signatures;
+      if (Array.isArray(sigs)) {
+        const s0 = asSigString(sigs[0]);
+        if (s0) return s0;
+      }
+    }
+    const sigs = tw.signatures;
+    if (Array.isArray(sigs)) {
+      const s0 = asSigString(sigs[0]);
+      if (s0) return s0;
+    }
   }
+
   const value = o.value;
   if (value && typeof value === 'object') {
     const v = value as Record<string, unknown>;
-    if (typeof v.signature === 'string') return v.signature;
+    const fromVal = asSigString(v.signature);
+    if (fromVal) return fromVal;
   }
   return null;
 }
@@ -183,6 +207,8 @@ export class LeaderWalletStream {
             this.handlers.onSignature(sig, {
               source: msg.method === 'transactionNotification' ? 'transactionSubscribe' : 'logsSubscribe',
             });
+          } else {
+            this.handlers.onStatus?.('notify_no_signature', { method: msg.method });
           }
         }
       });
@@ -218,9 +244,11 @@ export class LeaderWalletStream {
             accountInclude: [this.opts.leaderWallet],
             accountExclude: [],
             accountRequired: [],
+            // Critical: leader swaps usually touch ATAs, not the wallet pubkey directly.
+            tokenAccounts: 'balanceChanged',
           },
           {
-            commitment: 'confirmed',
+            commitment: 'processed',
             encoding: 'jsonParsed',
             transactionDetails: 'full',
             showRewards: false,

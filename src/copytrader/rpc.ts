@@ -11,6 +11,8 @@ export type SignatureRow = {
   signature: string;
   blockTime?: number;
   err?: unknown;
+  /** Set by ingest path: poll backup vs Helius stream. */
+  ingressSource?: 'poll' | 'stream';
 };
 
 /** Hard capacity / plan exhaustion — retrying only burns remaining credits. */
