@@ -1,4 +1,26 @@
 # So
+## [1.11.660] — 2026-08-04
+
+**Тег:** `sa-1.11.660`
+
+### Change: fully disable Live Oscar lane (no revive after reload)
+
+Оператор: выключить Живой Оскар так, чтобы не жрал RPC/Dex и не поднимался
+после релога.
+
+- `live-oscar` + `copy-trader` (498SW / shared wallet): `autostart/autorestart false`
+- оба добавлены в `OSCAR_VPS_EXCLUDED_APPS` — `pm2 start/reload ecosystem` их
+  **не** создаёт
+- watch + collector-health + default watch targets: только funded 8zkg
+- VPS: процессы `pm2 delete`; `.env` watch targets без Oscar
+
+8zkg lanes **не** трогаем.
+
+**Откат:** убрать из `OSCAR_VPS_EXCLUDED_APPS`, `autostart/autorestart true`,
+вернуть watch/health targets, `pm2 start ecosystem --only live-oscar,copy-trader`.
+
+---
+
 ## [1.11.659] — 2026-08-04
 
 **Тег:** `sa-1.11.659`
