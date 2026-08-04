@@ -3,7 +3,11 @@ import { describe, expect, it } from 'vitest';
 import {
   assessLiveOscarProcessSingleton,
   assessProcessHealth,
+  defaultFeeSolWatchWallets,
   defaultStrategyWatchTargets,
+  evaluateFeeSolLow,
+  lamportsFromGetBalanceResult,
+  parseFeeSolWatchWalletsJson,
   parseHeartbeatJson,
   parseProcEnvironKey,
   parseWatchTargetsJson,
@@ -77,5 +81,47 @@ describe('process-watch-lib', () => {
     );
     expect(t?.[0].heartbeatPath).toBe('/root/data/x.json');
     expect(t?.[0].staleMs).toBe(120_000);
+  });
+
+  it('default fee SOL wallets cover three funded bots', () => {
+    const w = defaultFeeSolWatchWallets();
+    expect(w.map((x) => x.label)).toEqual([
+      'copy-trader-8zkg',
+      'copy-trader-8zkg-mirror',
+      'live-oscar',
+    ]);
+  });
+
+  it('evaluateFeeSolLow alerts under $20', () => {
+    const { low, lines } = evaluateFeeSolLow(
+      [
+        {
+          label: 'copy-trader-8zkg',
+          pubkey: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
+          solAmount: 0.05,
+          solUsd: 8.5,
+        },
+        {
+          label: 'live-oscar',
+          pubkey: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
+          solAmount: 0.5,
+          solUsd: 85,
+        },
+      ],
+      20,
+    );
+    expect(low.map((r) => r.label)).toEqual(['copy-trader-8zkg']);
+    expect(lines[0]).toContain('$8.50');
+  });
+
+  it('lamportsFromGetBalanceResult accepts nested value', () => {
+    expect(lamportsFromGetBalanceResult({ value: 1_500_000_000 })).toBe(1_500_000_000);
+  });
+
+  it('parses fee SOL wallets json', () => {
+    const w = parseFeeSolWatchWalletsJson(
+      JSON.stringify([{ label: 'x', pubkey: 'Abc111' }]),
+    );
+    expect(w?.[0]).toEqual({ label: 'x', pubkey: 'Abc111' });
   });
 });

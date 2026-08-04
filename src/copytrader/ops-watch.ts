@@ -2,6 +2,8 @@
  * Serious ops-only watch for copy-trader.
  * Trade chatter / yellow stream flags stay out of Telegram — only stalls,
  * stuck exits, dead ingress, and prolonged leader silence.
+ * Native SOL fee balance is watched centrally by strategy-process-watch
+ * (all three funded wallets).
  */
 
 export type CopyOpsWatchSnapshot = {
