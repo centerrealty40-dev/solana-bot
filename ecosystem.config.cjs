@@ -2325,6 +2325,12 @@ const PM2_APPS = [
         COPY_TRADER_ENTER_ON_LEADER_ADD_BAG_RATIO: '0.7',
         /** 1.11.666 — keep early TP off if this lane is ever re-enabled. */
         COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '0',
+        /** 1.11.672 — vol-fade / hold-cap OFF (5h CF: early exits hurt vs leader). */
+        COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '0',
+        COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '0',
+        COPY_TRADER_VOL_FADE_DROP_PCT: '0',
+        COPY_TRADER_MIRROR_HOLD_CAP_MS: '0',
+        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '500',
@@ -2510,21 +2516,17 @@ const PM2_APPS = [
         COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '0',
         COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
-        /** Force full exit after 30m; stretch to 60m while 5m volume stays healthy. */
-        COPY_TRADER_MIRROR_HOLD_CAP_MS: '1800000',
-        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '3600000',
         /**
-         * Large liquid names: no hold-cap / vol-fade — exit only with the leader.
-         * Live mcap ≥ $1M and 1h volume ≥ $50k.
+         * 1.11.672 — OFF. 5h CF: vol-fade + hold-cap cost ~$300+ vs hold-to-leader.
+         * Exit only with the leader (and existing sell-delay / abandoned-sell paths).
          */
+        COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '0',
+        COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '0',
+        COPY_TRADER_VOL_FADE_DROP_PCT: '0',
+        COPY_TRADER_MIRROR_HOLD_CAP_MS: '0',
+        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '0',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD: '1000000',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD: '50000',
-        /** Volume health for hold-cap extension (same floors as vol-fade twin). */
-        COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
-        COPY_TRADER_VOL_FADE_DROP_PCT: '40',
-        /** Multi-window: last 3 m5 samples, exit when ≥2 look weak. */
-        COPY_TRADER_VOL_FADE_SAMPLE_WINDOW: '3',
-        COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES: '2',
         /** Control lane — wide 300bps. Economy A/B is on mirror (Oscar 10bps + guards). */
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
@@ -2674,22 +2676,13 @@ const PM2_APPS = [
         COPY_TRADER_SELL_DELAY_MAX_MS: '0',
         COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT: '5',
         /**
-         * Volume-fade exit (this vol lane only): every 5m re-check Dex 5m volume.
-         * Full market sell if vol drops under the $8k entry floor, or ≥40% below
-         * the entry snapshot — earlier than waiting for the leader.
+         * 1.11.672 — OFF (same as mcap twin). 5h CF: early vol exits hurt vs leader.
          */
-        COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '300000',
-        COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
-        COPY_TRADER_VOL_FADE_DROP_PCT: '40',
-        /** Multi-window: last 3 m5 samples, exit when ≥2 look weak. */
-        COPY_TRADER_VOL_FADE_SAMPLE_WINDOW: '3',
-        COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES: '2',
-        /**
-         * Same hold-cap as twin: 30m base, stretch to 60m while volume stays healthy.
-         * Vol-fade still exits earlier if volume collapses — unless leader-follow-only.
-         */
-        COPY_TRADER_MIRROR_HOLD_CAP_MS: '1800000',
-        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '3600000',
+        COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '0',
+        COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '0',
+        COPY_TRADER_VOL_FADE_DROP_PCT: '0',
+        COPY_TRADER_MIRROR_HOLD_CAP_MS: '0',
+        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '0',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD: '1000000',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD: '50000',
         /**

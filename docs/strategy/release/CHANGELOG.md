@@ -1,4 +1,25 @@
 # So
+## [1.11.672] — 2026-08-04
+
+**Тег:** `sa-1.11.672`
+
+### Change: disable vol-fade + mirror hold-cap on all copy lanes
+
+Operator: 5h counterfactual — early exits on volume drop / 30m hold-cap
+cost ~$300+ vs holding to leader sell. Kill the feature.
+
+- `copy-trader`, `copy-trader-8zkg`, `copy-trader-8zkg-mirror`:
+  - `COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS=0`
+  - `COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD=0`
+  - `COPY_TRADER_VOL_FADE_DROP_PCT=0`
+  - `COPY_TRADER_MIRROR_HOLD_CAP_MS=0`
+  - `COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS=0`
+- Exit path: follow leader only (+ existing sell-delay / abandoned-sell)
+
+**Откат:** restore prior env values on the two 8zkg lanes + reload.
+
+---
+
 ## [1.11.671] — 2026-08-04
 
 **Тег:** `sa-1.11.671`
