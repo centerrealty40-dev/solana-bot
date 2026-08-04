@@ -104,6 +104,28 @@
 
 ---
 
+---
+
+## [1.11.649] — 2026-08-04
+
+**Тег:** `sa-1.11.649`
+
+### Change: 8zkg hold-cap 30m → 60m while volume stays healthy
+
+Оба `copy-trader-8zkg` / `copy-trader-8zkg-mirror`: базовый mirror hold-cap
+**30m**; если 5m volume ещё ок (пол $8k и не −40% vs entry) — растягиваем до
+**60m**. Слабый/unknown volume → выход на 30m. Vol-fade на mirror-lane без
+изменений (ранний выход при обвале объёма).
+
+- `COPY_TRADER_MIRROR_HOLD_CAP_MS=1800000`
+- `COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS=3600000`
+- mcap-lane: те же vol floors для health-check (без vol-fade interval)
+
+**Откат:** убрать `MIRROR_HOLD_CAP_VOL_OK_MS`; на mirror убрать `MIRROR_HOLD_CAP_*`;
+redeploy `1.11.648`.
+
+---
+
 ## [1.11.648] — 2026-08-04
 
 **Тег:** `sa-1.11.648`

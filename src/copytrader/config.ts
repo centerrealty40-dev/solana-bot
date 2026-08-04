@@ -226,6 +226,11 @@ const CopyTraderConfigSchema = z.object({
    * has not exited. **0** = off.
    */
   mirrorHoldCapMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+  /**
+   * When volume is still healthy (same floors as vol-fade), stretch the hold cap
+   * to this longer timeout. Must be > `mirrorHoldCapMs`. **0** = no extension.
+   */
+  mirrorHoldCapVolOkMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   /** Funding asset for swaps. `USDC` decouples sizing from the SOL price (see quote-mint.ts). */
   quoteAsset: z.enum(['SOL', 'USDC']).default('SOL'),
@@ -378,6 +383,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     mirrorEarlyTpSellFraction: process.env.COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION,
     mirrorEarlyTpTickIntervalMs: process.env.COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS,
     mirrorHoldCapMs: process.env.COPY_TRADER_MIRROR_HOLD_CAP_MS,
+    mirrorHoldCapVolOkMs: process.env.COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
     quoteAsset: parseCopyQuoteAsset(process.env.COPY_TRADER_QUOTE_MINT).asset,
     minFeeSolReserve: process.env.COPY_TRADER_MIN_FEE_SOL_RESERVE,

@@ -2479,8 +2479,12 @@ const PM2_APPS = [
         COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '20',
         COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
-        /** Force full exit after 30m even if the leader is still holding. */
+        /** Force full exit after 30m; stretch to 60m while 5m volume stays healthy. */
         COPY_TRADER_MIRROR_HOLD_CAP_MS: '1800000',
+        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '3600000',
+        /** Volume health for hold-cap extension (same floors as vol-fade twin). */
+        COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
+        COPY_TRADER_VOL_FADE_DROP_PCT: '40',
         /** Wider buy slippage — 150bps kept dying on 0x1771 while the tape ran. */
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
@@ -2607,6 +2611,12 @@ const PM2_APPS = [
         COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '300000',
         COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
         COPY_TRADER_VOL_FADE_DROP_PCT: '40',
+        /**
+         * Same hold-cap as twin: 30m base, stretch to 60m while volume stays healthy.
+         * Vol-fade still exits earlier if volume collapses.
+         */
+        COPY_TRADER_MIRROR_HOLD_CAP_MS: '1800000',
+        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '3600000',
         /**
          * One-shot early TP while leader still holds: +20% → sell 50% of remainder.
          */

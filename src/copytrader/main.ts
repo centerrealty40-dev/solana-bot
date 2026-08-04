@@ -1547,8 +1547,10 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         !cfg.sharedOscarWallet && walletBal > 0n && fillPriceUsd > 0
           ? walletNotionalUsdFromRaw(walletBal, fillPriceUsd)
           : pending.sizeUsd;
-      const entryCtx =
-        cfg.volFadeCheckIntervalMs > 0 ? await fetchCopyEntryContext(pending.mint) : null;
+      const needsEntryVolume =
+        cfg.volFadeCheckIntervalMs > 0 ||
+        (cfg.mirrorHoldCapMs > 0 && cfg.mirrorHoldCapVolOkMs > cfg.mirrorHoldCapMs);
+      const entryCtx = needsEntryVolume ? await fetchCopyEntryContext(pending.mint) : null;
       const entryVolume5mUsd =
         entryCtx?.volume5mUsd != null && entryCtx.volume5mUsd > 0 ? entryCtx.volume5mUsd : undefined;
       state.positions[pending.mint] = {
@@ -2042,7 +2044,17 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
 
     if (mirrorsLeaderSells(cfg) && cfg.mirrorHoldCapMs > 0) {
       try {
-        const timed = processMirrorHoldCapExits(cfg, state, now);
+        const timed = await processMirrorHoldCapExits(
+          cfg,
+          state,
+          {
+            fetchVolume5mUsd: async (mint) => {
+              const ctx = await fetchCopyEntryContext(mint);
+              return ctx?.volume5mUsd ?? null;
+            },
+          },
+          now,
+        );
         for (const row of timed) {
           if (row.accelerated) continue;
           appendCopyEvent(cfg, {
@@ -2050,7 +2062,9 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             mint: row.mint,
             symbol: row.symbol,
             heldSec: Math.round(row.heldMs / 1000),
+            reason: row.reason,
             mirrorHoldCapMs: cfg.mirrorHoldCapMs,
+            mirrorHoldCapVolOkMs: cfg.mirrorHoldCapVolOkMs > 0 ? cfg.mirrorHoldCapVolOkMs : null,
           });
         }
         if (timed.length > 0) console.log('[copy-trader] mirror hold-cap exits scheduled', timed.length);
