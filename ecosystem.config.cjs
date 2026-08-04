@@ -2409,7 +2409,8 @@ const PM2_APPS = [
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
          * ≥$300k: 80% of leader buy, floor $200, ceiling $700.
-         * $100k–$300k: fixed $50 clip (tier-1 / stats, 1.11.673).
+         * Fixed clips (this lane only, 1.11.674):
+         *   $100k–$200k → $50; $200k–$300k → $100.
          */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0.8',
         COPY_TRADER_MIN_MIRROR_ENTRY_USD: '200',
@@ -2417,10 +2418,14 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '200',
         COPY_TRADER_ENTRY_MID_LEG_USD: '200',
-        /** Tier-1: mcap ∈ [$100k, $300k) → $50 fixed (was $150k floor). */
+        /** Tier-1: mcap ∈ [$100k, $200k) → $50 fixed. */
         COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '100000',
-        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '300000',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '200000',
         COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
+        /** Tier-2: mcap ∈ [$200k, $300k) → $100 fixed. */
+        COPY_TRADER_ENTRY_LOW2_MCAP_MIN_USD: '200000',
+        COPY_TRADER_ENTRY_LOW2_MCAP_MAX_USD: '300000',
+        COPY_TRADER_ENTRY_LOW2_POSITION_USD: '100',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
