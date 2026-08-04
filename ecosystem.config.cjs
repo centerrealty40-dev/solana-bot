@@ -2323,6 +2323,8 @@ const PM2_APPS = [
          */
         COPY_TRADER_ENTER_ONLY_ON_LEADER_ADD: '1',
         COPY_TRADER_ENTER_ON_LEADER_ADD_BAG_RATIO: '0.7',
+        /** 1.11.666 — keep early TP off if this lane is ever re-enabled. */
+        COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '0',
         COPY_TRADER_MIN_MCAP_USD: '0',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '500',
@@ -2489,10 +2491,10 @@ const PM2_APPS = [
         COPY_TRADER_SELL_DELAY_MAX_MS: '0',
         COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT: '5',
         /**
-         * One-shot early TP while leader still holds: +20% → sell 50% of remainder.
-         * Remaining half still mirrors his exit.
+         * 1.11.666 — OFF. 12h CF: +20%/50% early peel hurt ~$114 vs holding to exit.
+         * Keep GAIN_PCT=0 so reload cannot revive the feature.
          */
-        COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '20',
+        COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '0',
         COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
         /** Force full exit after 30m; stretch to 60m while 5m volume stays healthy. */
@@ -2659,9 +2661,9 @@ const PM2_APPS = [
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD: '1000000',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD: '50000',
         /**
-         * One-shot early TP while leader still holds: +20% → sell 50% of remainder.
+         * 1.11.666 — OFF (same as mcap lane). Do not set GAIN_PCT > 0 without CF.
          */
-        COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '20',
+        COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '0',
         COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
         COPY_TRADER_SLIPPAGE_BPS: '300',
