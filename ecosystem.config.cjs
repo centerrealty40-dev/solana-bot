@@ -598,9 +598,8 @@ const PM2_APPS = [
         /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + copy lanes). */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_HEALTH_PRODUCT_LABEL: 'Oscar',
-        /** live-oscar stopped; health = 498SW copy + funded 8zkg lanes. */
+        /** 1.11.660 — Oscar lane off (live-oscar + 498SW copy); health = funded 8zkg only. */
         COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
-          { pm2: 'copy-trader', heartbeatPath: 'data/ops-heartbeats/copy-trader.json', staleMs: 300_000 },
           {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
@@ -731,8 +730,8 @@ const PM2_APPS = [
       exec_mode: 'fork',
       instances: 1,
       /**
-       * 1.11.651 — fully stopped by operator request.
-       * Do not autostart / autorestart until explicitly re-enabled.
+       * 1.11.660 — operator: fully off (no RPC/Dex burn, no revive after reload).
+       * Also listed in OSCAR_VPS_EXCLUDED_APPS so ecosystem reload cannot start it.
        */
       autostart: false,
       autorestart: false,
@@ -2253,14 +2252,8 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
-        /** live-oscar stopped; watch = 498SW copy + funded 8zkg lanes. */
+        /** 1.11.660 — Oscar lane off; watch only funded 8zkg lanes. */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
-          {
-            pm2: 'copy-trader',
-            heartbeatPath: 'data/ops-heartbeats/copy-trader.json',
-            staleMs: 300_000,
-            fatalPath: 'data/ops-heartbeats/copy-trader-last-fatal.json',
-          },
           {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
@@ -2278,8 +2271,8 @@ const PM2_APPS = [
     },
     /**
      * Copy-leader lane — shares live-oscar-micro wallet; leader `498SW…`.
-     * EXIT_MODE=mirror. Entry: only when leader averages (not first buy);
-     * size = 70% of leader total bag after that add.
+     * 1.11.660 — fully off with live-oscar (no RPC/Dex). Re-enable: remove from
+     * OSCAR_VPS_EXCLUDED_APPS + autostart/autorestart true + watch targets.
      */
     {
       name: 'copy-trader',
@@ -2289,8 +2282,8 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autostart: true,
-      autorestart: true,
+      autostart: false,
+      autorestart: false,
       max_restarts: 30,
       restart_delay: 8000,
       merge_logs: true,
@@ -2743,10 +2736,13 @@ const PM2_APPS = [
 ];
 
 /**
- * Oscar VPS 2026-07-16: live-oscar half8_runner + copy-trader (75% mirror, oscar_half8 exit).
- * dc-trader / dcafr-dc-alert are separate product (`/opt/dc-trader`) — not in this ecosystem file.
+ * Apps filtered out of PM2 on Oscar VPS so `pm2 start/reload ecosystem` cannot revive them.
+ * 1.11.660 — live-oscar + 498SW copy-trader excluded (operator: no RPC/Dex burn).
+ * dc-trader is a separate product (`/opt/dc-trader`) — not in this file.
  */
 const OSCAR_VPS_EXCLUDED_APPS = new Set([
+  'live-oscar',
+  'copy-trader',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',
