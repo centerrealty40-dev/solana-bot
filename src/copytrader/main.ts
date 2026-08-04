@@ -2336,9 +2336,12 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             reason: decision.reason,
             pollMisses,
             swapMisses,
+            preferLogsSubscribe: decision.preferLogsSubscribe === true,
             health: leaderStream.getHealth(),
           });
-          leaderStream.forceReconnect();
+          leaderStream.forceReconnect({
+            preferLogsSubscribe: decision.preferLogsSubscribe === true,
+          });
         }
 
         if (wasHealthy !== streamHealthy || decision.reason !== lastStreamWatchdogReason) {

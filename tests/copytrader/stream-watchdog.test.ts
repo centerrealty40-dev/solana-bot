@@ -138,6 +138,30 @@ describe('evaluateStreamWatchdog', () => {
     expect(second.nextMissStreak).toBeGreaterThanOrEqual(2);
   });
 
+  it('silent subscribed stream + poll miss → reconnect to logsSubscribe', () => {
+    const d = evaluateStreamWatchdog({
+      nowMs: 20_000,
+      enabled: true,
+      health: {
+        ...healthySnap,
+        notifyCount: 0,
+        lastNotifyAtMs: 0,
+        lastSubscribedAtMs: 1_100,
+      },
+      pollMissesThisCycle: 1,
+      missStreak: 0,
+      missThreshold: 5,
+      silentStreamGraceMs: 5_000,
+    });
+    expect(d).toMatchObject({
+      healthy: false,
+      reason: 'silent_stream',
+      forceReconnect: true,
+      preferLogsSubscribe: true,
+      useFastPoll: true,
+    });
+  });
+
   it('clears miss streak when poll finds nothing stream missed', () => {
     const d = evaluateStreamWatchdog({
       nowMs: 10_000,
