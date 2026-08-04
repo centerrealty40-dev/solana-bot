@@ -2529,6 +2529,8 @@ const PM2_APPS = [
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         COPY_TRADER_LEADER_STREAM_WATCHDOG_ALERT_COOLDOWN_MS: '60000',
+        /** Trade spam off — keep [ALERT]/[OK] only. */
+        COPY_TRADER_TELEGRAM_TRADE_NOTICES: '0',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
@@ -2708,8 +2710,13 @@ const PM2_APPS = [
         LIVE_BUY_MAX_CHASE_PCT: '2',
         COPY_TRADER_MAX_QUOTE_REGRESSION_PCT: '1.5',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
+<<<<<<< HEAD
         /** Page operator when WS is silent (was easy to miss before Am8i). */
         COPY_TRADER_LEADER_STREAM_WATCHDOG_ALERT_COOLDOWN_MS: '60000',
+=======
+        /** Trade spam off — keep [ALERT]/[OK] only. */
+        COPY_TRADER_TELEGRAM_TRADE_NOTICES: '0',
+>>>>>>> 2ad17103 (fix(copytrader): mute trade Telegram notices, keep alerts only)
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },

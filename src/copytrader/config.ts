@@ -539,3 +539,12 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
 export function copyTraderTelegramEnabled(cfg: CopyTraderConfig): boolean {
   return envBool(process.env.COPY_TRADER_TELEGRAM_ENABLED, true) && Boolean(cfg.telegramBotToken && cfg.telegramChatId);
 }
+
+/**
+ * Trade notices (`leader_buy` / `our_buy` / `leader_sell` / `our_sell` / `skip`).
+ * Default OFF — keep `[ALERT]` / `[OK]` via `notifyCopyTraderTelegram` only.
+ * Env: `COPY_TRADER_TELEGRAM_TRADE_NOTICES`.
+ */
+export function copyTraderTelegramTradeNoticesEnabled(cfg: CopyTraderConfig): boolean {
+  return copyTraderTelegramEnabled(cfg) && envBool(process.env.COPY_TRADER_TELEGRAM_TRADE_NOTICES, false);
+}

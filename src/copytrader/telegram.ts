@@ -1,5 +1,5 @@
 import type { CopyTraderConfig } from './config.js';
-import { copyTraderTelegramEnabled } from './config.js';
+import { copyTraderTelegramEnabled, copyTraderTelegramTradeNoticesEnabled } from './config.js';
 
 export async function notifyCopyTraderTelegram(
   cfg: CopyTraderConfig,
@@ -41,6 +41,15 @@ export async function notifyCopyTraderTelegram(
   } catch (err) {
     console.warn('[copy-trader] telegram error', (err as Error).message);
   }
+}
+
+/** Trade-fill / schedule spam — gated by `COPY_TRADER_TELEGRAM_TRADE_NOTICES` (default off). */
+export async function notifyCopyTradeNotice(
+  cfg: CopyTraderConfig,
+  text: string,
+): Promise<void> {
+  if (!copyTraderTelegramTradeNoticesEnabled(cfg)) return;
+  await notifyCopyTraderTelegram(cfg, text);
 }
 
 export function fmtCopyAlert(args: {
