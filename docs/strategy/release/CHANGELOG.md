@@ -8,6 +8,21 @@
 
 ---
 
+## [1.11.654] — 2026-08-04
+
+**Тег:** `sa-1.11.654`
+
+### Change: 8zkg mirror size 70% + $120 floor
+
+Both funded 8zkg lanes (low-mcap $50 band unchanged):
+
+- `INITIAL_MIRROR_RATIO` 0.5 → **0.7**
+- `MIN_MIRROR_ENTRY_USD` 100 → **120**
+
+**Откат:** restore 0.5 / 100 in ecosystem and reload PM2.
+
+---
+
 ## [1.11.653] — 2026-08-04
 
 **Тег:** `sa-1.11.653`
