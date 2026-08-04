@@ -2409,7 +2409,7 @@ const PM2_APPS = [
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
          * ≥$300k: 80% of leader buy, floor $200, ceiling $700.
-         * $150k–$300k: fixed $50 clip (stats only, 1.11.665).
+         * $100k–$300k: fixed $50 clip (tier-1 / stats, 1.11.673).
          */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0.8',
         COPY_TRADER_MIN_MIRROR_ENTRY_USD: '200',
@@ -2417,8 +2417,8 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '200',
         COPY_TRADER_ENTRY_MID_LEG_USD: '200',
-        /** Stats tier: mcap ∈ [$150k, $300k) → $50 fixed. */
-        COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '150000',
+        /** Tier-1: mcap ∈ [$100k, $300k) → $50 fixed (was $150k floor). */
+        COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '100000',
         COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '300000',
         COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
@@ -2432,7 +2432,7 @@ const PM2_APPS = [
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal A/B vs `copy-trader-8zkg-mirror`:
-         * this lane = **mcap-only** (≥$150k; full size ≥$300k) + **fast** mirror exit.
+         * this lane = **mcap-only** (≥$100k; full size ≥$300k) + **fast** mirror exit.
          * Twin = vol5m + same mcap/sizing. Shared: pair age ≥0.1h, premium ≤5%.
          */
         COPY_TRADER_LEADER_GATES: '1',
@@ -2448,7 +2448,7 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
-        COPY_TRADER_MIN_MCAP_USD: '150000',
+        COPY_TRADER_MIN_MCAP_USD: '100000',
         /**
          * Shadow select (1.11.666): score every leader entry buy with
          * vol5m≥$2k & buys/sells≥1 → target ~76% recall / ~4× lift.
