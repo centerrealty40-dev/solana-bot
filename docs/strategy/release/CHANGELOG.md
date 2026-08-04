@@ -1,18 +1,27 @@
 # So
-## [1.11.655] — 2026-08-04
+## [1.11.657] — 2026-08-04
 
-**Тег:** `sa-1.11.655`
+**Тег:** `sa-1.11.657`
 
-### Change: multi-window 5m volume for vol-fade / hold-cap
+### Change: FxQf stream ATA + seenSignatures poison + faster mirror poll
 
-Dex only exposes a rolling `volume.m5`. We now sample it over time and decide
-on the last **3** readings (exit when **≥2** look weak) instead of one noisy tick.
-Both 8zkg lanes. Hold-cap also samples every 5m before the 30m mark so the
-window is warm at extension time.
+Urgent RCA: FxQf (copy-trader-8zkg) stopped scheduling new leader buys after
+Helius stream deploy; mirror still bought but lagged ~poll interval.
 
-Env: `COPY_TRADER_VOL_FADE_SAMPLE_WINDOW=3`, `COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES=2`.
+Fixes:
+- Stream `transactionSubscribe` adds `tokenAccounts: 'balanceChanged'` +
+  `commitment: processed` (leader swaps touch ATAs).
+- Robust `extractSignature` for Helius notification shapes.
+- Do **not** mark `seenSignatures` before a successful `getTransaction`
+  (null fetch under RPC pressure permanently silenced leader sigs).
+- Stream re-queues if fetch failed (clear in-memory streamSeen).
+- FxQf poll backup 15s → **5s**; mirror poll 5s → **1.5s**.
+- Journal `ingressSource` on schedule events.
 
-**Откат:** set window/minWeak to `1` (legacy single-tick) and reload PM2.
+Note: both lanes can still fail closed when USDC balance is 0
+(`buy_deferred: insufficient_usdc`) — fund wallets separately.
+
+**Откат:** `LEADER_STREAM=0` + prior poll 5s/15s; revert seenSignatures mark order.
 
 ---
 

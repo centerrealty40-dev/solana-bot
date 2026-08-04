@@ -417,7 +417,7 @@ export async function ingestLeaderSignatureRows(
     const chunk = fresh.slice(i, i + concurrency);
     const part = await Promise.all(
       chunk.map(async (row) => ({
-        row,
+        row: { ...row, ingressSource: source },
         raw: await fetchParsedTransaction(cfg.rpcUrl, row.signature),
       })),
     );
@@ -427,9 +427,11 @@ export async function ingestLeaderSignatureRows(
   let applied = 0;
   for (const { row, raw } of fetched) {
     if (state.seenSignatures[row.signature]) continue;
+    // Do NOT mark seen before a successful getTransaction — a null fetch under
+    // RPC pressure would permanently silence that leader sig (FxQf RCA 2026-08-04).
+    if (!raw) continue;
     state.seenSignatures[row.signature] = Date.now();
     // Poll owns `lastSignature` tip cursor; stream must not rewind it.
-    if (!raw) continue;
     const tx = raw as TxJsonParsed;
     const swap = decodeSwapForWallet(tx, cfg.targetWallet, getSolUsd());
     if (!swap || swap.priceUsd <= 0) continue;
@@ -955,6 +957,7 @@ async function schedulePendingBuy(
     retryUntilTs: pending.retryUntilTs,
     sizeUsd,
     entryLeg: entryLeg ?? null,
+    ingressSource: row.ingressSource ?? undefined,
     entryProbeFraction: entryLeg === 'probe' ? cfg.entryProbeFraction : null,
     entryDipDiscountPct: entryLeg === 'dip' ? cfg.entryDipDiscountPct : null,
     lateEntryOnLeaderRebuy: lateEntryOnLeaderRebuy ?? false,
@@ -2103,12 +2106,17 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
       const batch = streamQueue.splice(0, streamQueue.length).map((signature) => ({ signature }));
       try {
         const applied = await ingestLeaderSignatureRows(cfg, state, batch, 'stream');
+        // Allow stream re-queue if getTransaction failed (sig not yet in seenSignatures).
+        for (const { signature } of batch) {
+          if (!state.seenSignatures[signature]) streamSeen.delete(signature);
+        }
         if (applied > 0) {
           writeCopyTraderState(cfg.statePath, state);
           await processPendingSells(cfg, state);
           console.log('[copy-trader] stream ingress applied', applied);
         }
       } catch (err) {
+        for (const { signature } of batch) streamSeen.delete(signature);
         console.warn('[copy-trader] stream ingress error', (err as Error).message);
       }
     }
