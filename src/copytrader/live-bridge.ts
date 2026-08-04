@@ -70,6 +70,10 @@ export function copyTraderLiveOscarBridge(cfg: CopyTraderConfig): LiveOscarConfi
     liveConfirmCommitment: 'confirmed',
     liveJupiterPriorityMaxLamports: readJupiterPriorityMaxLamports(),
     liveJupiterSwapPriorityLevel: readJupiterSwapPriorityLevel(),
+    /** Oscar-like buy envelope (PM2/JUPITER_PRO usually sets attempts=2; economy A/B overrides). */
+    liveBuySimRetryAttempts: readBoundedIntEnv('LIVE_BUY_SIM_RETRY_ATTEMPTS', 2, 0, 15),
+    liveBuySimRetryDelayMs: readBoundedIntEnv('LIVE_BUY_SIM_RETRY_DELAY_MS', 800, 50, 30_000),
+    liveBuySimSlippageRetryAttempts: readBoundedIntEnv('LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS', 2, 0, 15),
     liveSellSimRetryAttempts: readBoundedIntEnv('LIVE_SELL_SIM_RETRY_ATTEMPTS', 15, 0, 15),
     liveSellSimRetryDelayMs: readBoundedIntEnv('LIVE_SELL_SIM_RETRY_DELAY_MS', 150, 50, 30_000),
     liveSellSimSlippageRetryAttempts: readBoundedIntEnv('LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS', 12, 0, 15),
