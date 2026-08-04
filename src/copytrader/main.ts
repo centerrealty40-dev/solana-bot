@@ -37,6 +37,7 @@ import {
   usesEnterOnlyOnLeaderAdd,
 } from './entry-on-leader-add.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
+import { LeaderWalletStream, resolveLeaderStreamWsUrl } from './leader-stream-ws.js';
 import { resolveSellDelayMs } from './sell-delay.js';
 import { resolveBuyRetryDelayMs } from './buy-retry-delay.js';
 import {
@@ -395,9 +396,39 @@ export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderS
   state.lastSignature = latest;
   newRows.reverse();
 
-  for (const row of newRows) {
+  await ingestLeaderSignatureRows(cfg, state, newRows, 'poll');
+}
+
+/** Apply one or more leader signatures (stream or poll). Dedupes via seenSignatures. */
+export async function ingestLeaderSignatureRows(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+  rows: SignatureRow[],
+  source: 'poll' | 'stream',
+): Promise<number> {
+  if (rows.length === 0) return 0;
+  const fresh = rows.filter((row) => !state.seenSignatures[row.signature]);
+  if (fresh.length === 0) return 0;
+
+  const concurrency = Math.max(1, cfg.leaderIngressConcurrency || 1);
+  type Fetched = { row: SignatureRow; raw: unknown | null };
+  const fetched: Fetched[] = [];
+  for (let i = 0; i < fresh.length; i += concurrency) {
+    const chunk = fresh.slice(i, i + concurrency);
+    const part = await Promise.all(
+      chunk.map(async (row) => ({
+        row,
+        raw: await fetchParsedTransaction(cfg.rpcUrl, row.signature),
+      })),
+    );
+    fetched.push(...part);
+  }
+
+  let applied = 0;
+  for (const { row, raw } of fetched) {
+    if (state.seenSignatures[row.signature]) continue;
     state.seenSignatures[row.signature] = Date.now();
-    const raw = await fetchParsedTransaction(cfg.rpcUrl, row.signature);
+    // Poll owns `lastSignature` tip cursor; stream must not rewind it.
     if (!raw) continue;
     const tx = raw as TxJsonParsed;
     const swap = decodeSwapForWallet(tx, cfg.targetWallet, getSolUsd());
@@ -437,10 +468,12 @@ export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderS
         sessionPct: Number(closedPct.toFixed(2)),
         leaderPriorSessions: stats?.sessions ?? 0,
         leaderPriorAvgPct: stats != null ? Number(stats.avgPct.toFixed(2)) : null,
+        ingressSource: source,
       });
     }
-    await sleep(120);
+    applied += 1;
   }
+  return applied;
 }
 
 async function onLeaderBuy(
@@ -2015,7 +2048,49 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     quoteAsset: cfg.quoteAsset,
     minFeeSolReserve: cfg.minFeeSolReserve,
     isolated: true,
+    leaderStream: cfg.leaderStreamEnabled,
+    leaderIngressConcurrency: cfg.leaderIngressConcurrency,
   });
+
+  const streamQueue: string[] = [];
+  const streamSeen = new Set<string>();
+  let leaderStream: LeaderWalletStream | null = null;
+  const pollMs = cfg.leaderStreamEnabled
+    ? Math.max(cfg.pollIntervalMs, cfg.leaderStreamPollBackupMs)
+    : cfg.pollIntervalMs;
+
+  if (cfg.leaderStreamEnabled) {
+    const wsUrl = (cfg.leaderStreamWsUrl?.trim() || resolveLeaderStreamWsUrl() || '').trim();
+    if (!wsUrl) {
+      console.warn(
+        '[copy-trader] LEADER_STREAM=1 but no WS URL (set COPY_TRADER_LEADER_STREAM_WS_URL or HELIUS_API_KEY)',
+      );
+    } else {
+      leaderStream = new LeaderWalletStream(
+        { wsUrl, leaderWallet: cfg.targetWallet },
+        {
+          onSignature: (sig) => {
+            if (streamSeen.has(sig) || state.seenSignatures[sig]) return;
+            streamSeen.add(sig);
+            streamQueue.push(sig);
+            if (streamQueue.length > 300) {
+              const drop = streamQueue.splice(0, streamQueue.length - 300);
+              for (const d of drop) streamSeen.delete(d);
+            }
+            if (streamSeen.size > 2_000) streamSeen.clear();
+          },
+          onStatus: (msg, detail) => {
+            console.log('[copy-trader] leader-stream', msg, detail ?? '');
+          },
+        },
+      );
+      leaderStream.start();
+      console.log('[copy-trader] leader stream started (Helius WS)', {
+        pollBackupMs: pollMs,
+        wallet: cfg.targetWallet.slice(0, 8),
+      });
+    }
+  }
 
   for (;;) {
     const now = Date.now();
@@ -2024,7 +2099,21 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
       lastSolRefresh = now;
     }
 
-    if (now - lastPoll >= cfg.pollIntervalMs) {
+    if (streamQueue.length > 0) {
+      const batch = streamQueue.splice(0, streamQueue.length).map((signature) => ({ signature }));
+      try {
+        const applied = await ingestLeaderSignatureRows(cfg, state, batch, 'stream');
+        if (applied > 0) {
+          writeCopyTraderState(cfg.statePath, state);
+          await processPendingSells(cfg, state);
+          console.log('[copy-trader] stream ingress applied', applied);
+        }
+      } catch (err) {
+        console.warn('[copy-trader] stream ingress error', (err as Error).message);
+      }
+    }
+
+    if (now - lastPoll >= pollMs) {
       try {
         await pollLeaderWallet(cfg, state);
         gcSeenSignatures(state, 48 * 3600_000);
