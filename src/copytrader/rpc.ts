@@ -13,6 +13,18 @@ export type SignatureRow = {
   err?: unknown;
 };
 
+/** Hard capacity / plan exhaustion — retrying only burns remaining credits. */
+export function isRpcCapacityError(status: number, message?: string): boolean {
+  const msg = String(message || '').toLowerCase();
+  if (msg.includes('max usage') || msg.includes('capacity limit') || msg.includes('monthly capacity')) {
+    return true;
+  }
+  if (status === 429 && (msg.includes('capacity') || msg.includes('max usage') || msg.includes('credit'))) {
+    return true;
+  }
+  return false;
+}
+
 export async function rpcCall<T>(
   rpcUrl: string,
   method: string,
@@ -28,6 +40,10 @@ export async function rpcCall<T>(
         body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
       });
       const body = (await res.json()) as JsonRpcResponse<T>;
+      const errMsg = body.error?.message;
+      if (isRpcCapacityError(res.status, errMsg) || (typeof errMsg === 'string' && /max usage/i.test(errMsg))) {
+        return null;
+      }
       if (res.status === 429 || body.error?.code === 429 || body.error?.code === -32005) {
         await sleep(wait);
         wait = Math.min(wait * 2, 8000);

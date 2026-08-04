@@ -216,6 +216,11 @@ function oscarDupGuardBlocksBuy(
 
 let lastPollRpcFailLogMs = 0;
 const POLL_RPC_FAIL_LOG_MS = 60_000;
+/** Sustained RPC failure → Telegram ALERT (process-watch alone misses this). */
+let pollRpcFailStreak = 0;
+let lastPollRpcFailAlertMs = 0;
+const POLL_RPC_FAIL_ALERT_AFTER = 3;
+const POLL_RPC_FAIL_ALERT_COOLDOWN_MS = 15 * 60_000;
 
 type LeaderGateBlock = {
   reasons: string[];
@@ -347,12 +352,24 @@ export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderS
   const { rows, rpcFailed } = await fetchWalletSignatures(cfg.rpcUrl, cfg.targetWallet, cfg.signatureLimit);
   if (rpcFailed) {
     const now = Date.now();
+    pollRpcFailStreak += 1;
     if (now - lastPollRpcFailLogMs >= POLL_RPC_FAIL_LOG_MS) {
       lastPollRpcFailLogMs = now;
       console.warn('[copy-trader] poll: getSignaturesForAddress failed (RPC unreachable or error)');
     }
+    if (
+      pollRpcFailStreak >= POLL_RPC_FAIL_ALERT_AFTER &&
+      now - lastPollRpcFailAlertMs >= POLL_RPC_FAIL_ALERT_COOLDOWN_MS
+    ) {
+      lastPollRpcFailAlertMs = now;
+      void notifyCopyTraderTelegram(
+        cfg,
+        `[ALERT][copy_rpc] ${process.env.COPY_TRADER_APP_NAME || 'copy-trader'}: leader poll RPC failed ×${pollRpcFailStreak} (capacity/unreachable). Trading paused until RPC recovers.`,
+      );
+    }
     return;
   }
+  pollRpcFailStreak = 0;
   if (rows.length === 0) return;
 
   const latest = rows[0]!.signature;

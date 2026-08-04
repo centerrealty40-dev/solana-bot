@@ -102,6 +102,25 @@
 
 ---
 
+## [1.11.647] — 2026-08-04
+
+**Тег:** `sa-1.11.647`
+
+### Change: Helius Developer budget — copy poll 5s + RPC capacity alerts
+
+Copy/8zkg жгли Helius Free/Dev: poll **1 Гц ×2** + retry-storm на 429.
+Knife+Awakening на catchers VPS сидели на **том же** Helius-ключе.
+
+- Poll всех copy-lane → **5s**; buy-retry **2s**
+- Hard capacity (`max usage` / monthly) — без 5× retry
+- Telegram `[ALERT][copy_rpc]` при серии poll fail
+- Alchemy usage watch шлёт **ALERT** при capacity (не только REPORT)
+- Catchers (lera-catchers): live RPC → `QUICKNODE_HTTP_URL` (нужен живой endpoint в `.env`)
+
+**Откат:** poll 1000 + revert.
+
+---
+
 ## [1.11.646] — 2026-08-04
 
 **Тег:** `sa-1.11.646`
