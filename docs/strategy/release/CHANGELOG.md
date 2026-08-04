@@ -1,4 +1,20 @@
 # So
+## [1.11.667] — 2026-08-04
+
+**Тег:** `sa-1.11.667`
+
+### Change: 8zkg shadow-select (vol5m≥$2k & buys/sells≥1)
+
+Paper filter on every leader entry buy: fetch Dex context, log `shadow_select`
++ periodic `shadow_select_summary` (recall%). Fitted on 36h case-control
+(PG-covered): **~76% recall**, **~4× lift** vs same-minute universe.
+
+`FILTER_LIVE=0` — does not change fills yet. Both funded lanes.
+
+**Откат:** `COPY_TRADER_SHADOW_SELECT=0`; reload PM2.
+
+---
+
 ## [1.11.666] — 2026-08-04
 
 **Тег:** `sa-1.11.666`

@@ -2442,8 +2442,20 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
-        /** Absolute mcap floor; missing/zero fails closed. <$150k blocked; $150–300k = $50 stats. */
         COPY_TRADER_MIN_MCAP_USD: '150000',
+        /**
+         * Shadow select (1.11.666): score every leader entry buy with
+         * vol5m≥$2k & buys/sells≥1 → target ~76% recall / ~4× lift.
+         * FILTER_LIVE=0 → journal only, does not change fills yet.
+         */
+        COPY_TRADER_SHADOW_SELECT: '1',
+        COPY_TRADER_SHADOW_SELECT_FILTER_LIVE: '0',
+        COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD: '2000',
+        COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M: '1',
+        COPY_TRADER_SHADOW_SELECT_MIN_MCAP_USD: '0',
+        COPY_TRADER_SHADOW_SELECT_MIN_LIQ_USD: '0',
+        COPY_TRADER_SHADOW_SELECT_REQUIRE_CTX: '1',
+        COPY_TRADER_SHADOW_SELECT_SUMMARY_MS: '600000',
         /** Both lanes mirror leader sells; this one races (delay 0). */
         COPY_TRADER_EXIT_MODE: 'mirror',
         /**
@@ -2602,6 +2614,15 @@ const PM2_APPS = [
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
         COPY_TRADER_MIN_MCAP_USD: '150000',
+        /** Same shadow select as twin (paper; FILTER_LIVE off). */
+        COPY_TRADER_SHADOW_SELECT: '1',
+        COPY_TRADER_SHADOW_SELECT_FILTER_LIVE: '0',
+        COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD: '2000',
+        COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M: '1',
+        COPY_TRADER_SHADOW_SELECT_MIN_MCAP_USD: '0',
+        COPY_TRADER_SHADOW_SELECT_MIN_LIQ_USD: '0',
+        COPY_TRADER_SHADOW_SELECT_REQUIRE_CTX: '1',
+        COPY_TRADER_SHADOW_SELECT_SUMMARY_MS: '600000',
         /** His sell is the only exit: no trail, no time cap, no stop. */
         COPY_TRADER_EXIT_MODE: 'mirror',
         /** Same Helius stream as FxQf — poll alone was ~20s detect lag. */
