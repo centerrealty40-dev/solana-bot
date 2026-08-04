@@ -95,7 +95,7 @@ import {
   type PendingBuy,
   type PendingSell,
 } from './state.js';
-import { fmtCopyAlert, notifyCopyTraderTelegram } from './telegram.js';
+import { fmtCopyAlert, notifyCopyTradeNotice, notifyCopyTraderTelegram } from './telegram.js';
 import { fetchJupiterTokenUsdPrice, getSolUsd, refreshSolPrice } from '../papertrader/pricing.js';
 import { isUsdPriceOutlierVsAnchor } from '../papertrader/pricing/dexscreener-pair-pick.js';
 import {
@@ -1061,7 +1061,7 @@ async function schedulePendingBuy(
     kind === 'add' && leaderAddFraction != null
       ? ` · ${(leaderAddFraction * 100).toFixed(0)}% of our stack`
       : '';
-  await notifyCopyTraderTelegram(
+  await notifyCopyTradeNotice(
     cfg,
     fmtCopyAlert({
       action: 'leader_buy',
@@ -1269,7 +1269,7 @@ async function onLeaderSell(
     entryPriceUsd: tracked.entryPriceUsd > 0 ? tracked.entryPriceUsd : null,
   });
 
-  await notifyCopyTraderTelegram(
+  await notifyCopyTradeNotice(
     cfg,
     fmtCopyAlert({
       action: 'leader_sell',
@@ -1555,7 +1555,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           retryUntilTs: pending.retryUntilTs,
         });
         if (deferNote === 'first') {
-          await notifyCopyTraderTelegram(
+          await notifyCopyTradeNotice(
             cfg,
             fmtCopyAlert({
               action: 'skip',
@@ -1835,7 +1835,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       });
     }
 
-    await notifyCopyTraderTelegram(
+    await notifyCopyTradeNotice(
       cfg,
       fmtCopyAlert({
         action: 'our_buy',
@@ -1980,7 +1980,7 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
         await refreshPositionFromWallet(cfg, state, pending.mint, exitPrice);
       }
 
-      await notifyCopyTraderTelegram(
+      await notifyCopyTradeNotice(
         cfg,
         fmtCopyAlert({
           action: 'our_sell',
@@ -2064,7 +2064,7 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     if (exhausted) {
       const stuck = state.positions[pending.mint];
       if (stuck) stuck.sellBlockedUntilTs = now + cfg.sellAbandonCooldownMs;
-      await notifyCopyTraderTelegram(
+      await notifyCopyTradeNotice(
         cfg,
         fmtCopyAlert({
           action: 'our_sell',

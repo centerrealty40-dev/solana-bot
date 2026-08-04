@@ -2527,6 +2527,8 @@ const PM2_APPS = [
         /** Wider buy slippage — 150bps kept dying on 0x1771 while the tape ran. */
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
+        /** Trade spam off — keep [ALERT]/[OK] only. */
+        COPY_TRADER_TELEGRAM_TRADE_NOTICES: '0',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
@@ -2689,6 +2691,8 @@ const PM2_APPS = [
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
+        /** Trade spam off — keep [ALERT]/[OK] only. */
+        COPY_TRADER_TELEGRAM_TRADE_NOTICES: '0',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
