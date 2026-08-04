@@ -25,9 +25,13 @@ export type StreamWatchdogDecision = {
     | 'not_started'
     | 'disconnected'
     | 'not_subscribed'
-    | 'poll_miss_streak';
+    | 'poll_miss_streak'
+    /** Subscribed but zero notifies while poll found a leader swap — dead WS. */
+    | 'silent_stream';
   /** Close WS so the reconnect loop starts a fresh subscription. */
   forceReconnect: boolean;
+  /** Prefer logsSubscribe on the next reconnect (transactionSubscribe went silent). */
+  preferLogsSubscribe?: boolean;
   /** Use fast poll while unhealthy. */
   useFastPoll: boolean;
   nextMissStreak: number;
@@ -44,6 +48,8 @@ export function evaluateStreamWatchdog(input: {
   missThreshold: number;
   /** After WS open, how long we tolerate missing `subscribed` before reconnect. */
   subscribeGraceMs?: number;
+  /** Min age after subscribe before a poll miss + zero notifies counts as silent. */
+  silentStreamGraceMs?: number;
   /**
    * When false (mid-tick link check), keep missStreak unchanged.
    * Default true — call after each poll.
@@ -98,6 +104,30 @@ export function evaluateStreamWatchdog(input: {
   if (input.updateMissStreak !== false) {
     if (input.pollMissesThisCycle > 0) missStreak += 1;
     else missStreak = 0;
+  }
+
+  /**
+   * Am8i RCA (2026-08-04): WS reported subscribed with notifyCount=0 after reload;
+   * poll found the leader buy ~17s later. If poll applies a swap the stream never
+   * queued AND we have never received a notify since subscribe → reconnect and
+   * fall back to logsSubscribe (mentions).
+   */
+  const subscribeAgeMs =
+    h.lastSubscribedAtMs > 0 ? input.nowMs - h.lastSubscribedAtMs : 0;
+  const neverNotified = h.notifyCount === 0 || h.lastNotifyAtMs === 0;
+  if (
+    input.pollMissesThisCycle > 0 &&
+    neverNotified &&
+    subscribeAgeMs >= (input.silentStreamGraceMs ?? 5_000)
+  ) {
+    return {
+      healthy: false,
+      reason: 'silent_stream',
+      forceReconnect: true,
+      preferLogsSubscribe: true,
+      useFastPoll: true,
+      nextMissStreak: Math.max(missStreak, 1),
+    };
   }
 
   if (missStreak >= Math.max(1, input.missThreshold)) {

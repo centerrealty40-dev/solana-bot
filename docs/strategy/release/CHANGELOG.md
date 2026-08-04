@@ -1,4 +1,24 @@
 # So
+## [1.11.669] — 2026-08-04
+
+**Тег:** `sa-1.11.669`
+
+### Change: revert Oscar slippage A/B + fix silent stream detect lag
+
+Am8i…pump (both lanes): economy mirror filled **−3.1% tokens (~$21 worse)**
+after 10→70bps bump; control @300 was better. Stream was `subscribed` with
+`notifyCount=0` → both buys via **poll** (+17s / +19s vs leader).
+
+- Mirror + 8zkg: `COPY_TRADER_SLIPPAGE_BPS=300` (drop 1.11.668 Oscar overrides)
+- Both: poll backup **1.5s**, missThreshold **1** (8zkg was 5s × 5)
+- Watchdog: `silent_stream` (subscribed, zero notifies, poll found swap) →
+  forceReconnect + prefer `logsSubscribe`
+
+**Откат:** restore mirror `SLIPPAGE_BPS=10` + LIVE_* envelope; 8zkg poll 5s /
+missThreshold 5; reload PM2.
+
+---
+
 ## [1.11.668] — 2026-08-04
 
 **Тег:** `sa-1.11.668`

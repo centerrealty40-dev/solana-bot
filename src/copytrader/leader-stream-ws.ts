@@ -79,6 +79,8 @@ export class LeaderWalletStream {
   private pendingSubId: number | null = null;
   private connected = false;
   private subscribed = false;
+  /** After silent transactionSubscribe, stick to logsSubscribe until process restart. */
+  private forceLogsSubscribe = false;
   private lastOpenAtMs = 0;
   private lastSubscribedAtMs = 0;
   private lastNotifyAtMs = 0;
@@ -115,13 +117,17 @@ export class LeaderWalletStream {
   }
 
   /** Drop the live socket so `runLoop` reconnects (watchdog / operator). */
-  forceReconnect(): void {
+  forceReconnect(opts?: { preferLogsSubscribe?: boolean }): void {
+    if (opts?.preferLogsSubscribe) this.forceLogsSubscribe = true;
     this.reconnectCount += 1;
     this.connected = false;
     this.subscribed = false;
     this.subMode = null;
     this.pendingSubId = null;
-    this.handlers.onStatus?.('force_reconnect', { reconnectCount: this.reconnectCount });
+    this.handlers.onStatus?.('force_reconnect', {
+      reconnectCount: this.reconnectCount,
+      preferLogsSubscribe: this.forceLogsSubscribe,
+    });
     try {
       this.ws?.close();
     } catch {
@@ -199,7 +205,8 @@ export class LeaderWalletStream {
         this.subscribed = false;
         this.lastOpenAtMs = Date.now();
         this.handlers.onStatus?.('ws_open', { urlHost: safeHost(this.opts.wsUrl) });
-        const preferTx = this.opts.preferTransactionSubscribe !== false;
+        const preferTx =
+          !this.forceLogsSubscribe && this.opts.preferTransactionSubscribe !== false;
         if (preferTx) this.subscribeTransaction(ws);
         else this.subscribeLogs(ws);
         this.pingTimer = setInterval(() => {
