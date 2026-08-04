@@ -3,9 +3,12 @@ import type { CopyTraderConfig } from './config.js';
 import { copyTraderLiveOscarBridge } from './live-bridge.js';
 import { loadLiveKeypairFromSecretEnv } from '../live/wallet.js';
 import {
+  isBuyQuoteChasingAnchor,
+  isQuotePriceImpactTooHigh,
   liveBuildUnsignedSwapTx,
   liveFetchBuyQuote,
   liveSellQuoteAndPrepareSnapshot,
+  tokensPerInLamportFromQuote,
 } from '../live/jupiter.js';
 import { signLiveJupiterSwapBase64 } from '../live/simulate.js';
 import { isRetryableSellSimError, isSlippageClassSimError } from '../live/phase4-execution.js';
@@ -23,6 +26,7 @@ import {
   copySellQuotePriceUsd,
 } from './quote-mint.js';
 import { bumpSlippageBps } from './slippage-bump.js';
+import { isQuoteOutRegressed, parseTokenRaw } from './quote-quality.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -38,7 +42,10 @@ function isRetryableBuyPreSendError(reason: string): boolean {
   if (!reason) return false;
   if (reason.startsWith('confirm_timeout')) return false;
   if (reason === 'buy_quote_premium_blocked') return false;
+  if (reason.startsWith('chase_aborted')) return false;
   if (reason === 'jupiter_buy_quote_failed') return true;
+  if (reason.startsWith('quote_quality_regressed')) return true;
+  if (reason.startsWith('route_too_impactful')) return true;
   if (reason.includes('swap-http-429')) return true;
   return isRetryableBuySimError(reason);
 }
@@ -134,6 +141,8 @@ export async function executeLiveCopyBuy(args: {
   let currentSlippageBps = liveCfg.liveDefaultSlippageBps;
   let lastReason = 'jupiter_buy_quote_failed';
   let lastPriceUsd = 0;
+  let bestOutRaw = 0n;
+  let anchorTokensPerLamport: number | null = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const quote = await liveFetchBuyQuote({
@@ -155,6 +164,9 @@ export async function executeLiveCopyBuy(args: {
     }
 
     const outRaw = quote.quoteResponse.outAmount;
+    const outParsed = parseTokenRaw(outRaw);
+    if (outParsed != null && outParsed > bestOutRaw) bestOutRaw = outParsed;
+
     const priceUsd = copyBuyQuotePriceUsd({
       spec: quoteSpec,
       inAmountRaw: quote.quoteResponse.inAmount,
@@ -162,6 +174,87 @@ export async function executeLiveCopyBuy(args: {
       solUsd,
     });
     lastPriceUsd = priceUsd;
+
+    const impactCheck = isQuotePriceImpactTooHigh(
+      quote.quoteResponse,
+      liveCfg.liveBuyMaxPriceImpactPct,
+    );
+    if (impactCheck.blocked && impactCheck.pct != null) {
+      lastReason = `route_too_impactful:buy:${impactCheck.pct.toFixed(2)}%>${liveCfg.liveBuyMaxPriceImpactPct}%`;
+      appendCopyEvent(cfg, {
+        kind: 'buy_quote_impact_blocked',
+        mint,
+        symbol,
+        kindBuy: kind,
+        leaderSignature,
+        sizeUsd,
+        priceImpactPct: impactCheck.pct,
+        maxPriceImpactPct: liveCfg.liveBuyMaxPriceImpactPct,
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+      });
+      if (attempt < maxAttempts - 1) {
+        await sleep(liveCfg.liveBuySimRetryDelayMs);
+        continue;
+      }
+      return { ok: false, priceUsd, reason: lastReason };
+    }
+
+    const currentTpl = tokensPerInLamportFromQuote(quote.quoteResponse);
+    if (anchorTokensPerLamport == null && currentTpl != null) {
+      anchorTokensPerLamport = currentTpl;
+    } else {
+      const chase = isBuyQuoteChasingAnchor({
+        anchorTokensPerLamport,
+        currentTokensPerLamport: currentTpl,
+        maxChasePct: liveCfg.liveBuyMaxChasePct,
+      });
+      if (chase.chased && chase.chasePct != null) {
+        lastReason = `chase_aborted:buy:${chase.chasePct.toFixed(2)}%>+${liveCfg.liveBuyMaxChasePct}%`;
+        appendCopyEvent(cfg, {
+          kind: 'buy_quote_chase_aborted',
+          mint,
+          symbol,
+          kindBuy: kind,
+          leaderSignature,
+          sizeUsd,
+          chasePct: Number(chase.chasePct.toFixed(2)),
+          maxChasePct: liveCfg.liveBuyMaxChasePct,
+          slippageBps: currentSlippageBps,
+          buySimRetryAttempt: attempt,
+        });
+        return { ok: false, priceUsd, reason: lastReason };
+      }
+    }
+
+    if (
+      outParsed != null &&
+      isQuoteOutRegressed({
+        outRaw: outParsed,
+        bestOutRaw,
+        maxRegressionPct: cfg.maxQuoteRegressionPct,
+      })
+    ) {
+      lastReason = `quote_quality_regressed:out<best-${cfg.maxQuoteRegressionPct}%`;
+      appendCopyEvent(cfg, {
+        kind: 'buy_quote_quality_regressed',
+        mint,
+        symbol,
+        kindBuy: kind,
+        leaderSignature,
+        sizeUsd,
+        quoteOutAmount: outParsed.toString(),
+        bestOutAmount: bestOutRaw.toString(),
+        maxRegressionPct: cfg.maxQuoteRegressionPct,
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+      });
+      if (attempt < maxAttempts - 1) {
+        await sleep(liveCfg.liveBuySimRetryDelayMs);
+        continue;
+      }
+      return { ok: false, priceUsd, reason: lastReason };
+    }
 
     if (cfg.quotePremiumGuardPct > 0 || cfg.quotePremiumFirstShotPct > 0) {
       const { maxPremiumPct, firstShot } = effectiveQuotePremiumCap({

@@ -30,7 +30,10 @@ export function resolveBuyRetryDelayMs(
     r.includes('6001') ||
     r.includes('slippage') ||
     r.includes('sim_failed') ||
-    r.includes('instructionerror')
+    r.includes('instructionerror') ||
+    r.includes('quote_quality_regressed') ||
+    r.includes('route_too_impactful') ||
+    r.includes('chase_aborted')
   ) {
     return Math.min(base, 500);
   }
