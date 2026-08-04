@@ -1,4 +1,23 @@
 # So
+## [1.11.677] — 2026-08-04
+
+**Тег:** `sa-1.11.677`
+
+### Change: copy-trader funding partial clip (50%) + later top-up
+
+Operator: when free USDC cannot cover the full pending buy, take **50% of the
+planned size** if the wallet can fund that clip; keep the remainder queued and
+**top up** when USDC returns and the premium corridor still allows. Leader exit
+/ retry window cancel paths unchanged.
+
+- `COPY_TRADER_FUNDING_PARTIAL_CLIP=1` on both 8zkg twins
+- Fraction **0.5**, min clip/top-up **$50**
+- Events: `buy_funding_partial_clip`, `funding_topup_scheduled`
+
+**Откат:** `COPY_TRADER_FUNDING_PARTIAL_CLIP=0` + reload twins.
+
+---
+
 ## [1.11.676] — 2026-08-04
 
 **Тег:** `sa-1.11.676`

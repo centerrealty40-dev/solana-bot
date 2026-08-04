@@ -108,6 +108,13 @@ export type PendingBuy = {
   /** Cached Jupiter dip eval quote (eval-only; not used for execution sizing). */
   lastDipQuoteTs?: number;
   lastDipQuotePriceUsd?: number;
+  /**
+   * Remainder after a funding partial clip — allowed even when a position already
+   * exists for this mint (unlike a fresh entry pending).
+   */
+  fundingTopUp?: boolean;
+  /** Deployed-cost ceiling this funding top-up is trying to reach (probe or full entry). */
+  fundingTopUpToUsd?: number;
 };
 
 export type PendingSell = {
@@ -215,6 +222,11 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         lastDeferLogTs: typeof p.lastDeferLogTs === 'number' ? p.lastDeferLogTs : undefined,
         dipPassStreak:
           typeof p.dipPassStreak === 'number' && p.dipPassStreak >= 0 ? p.dipPassStreak : undefined,
+        fundingTopUp: p.fundingTopUp === true,
+        fundingTopUpToUsd:
+          typeof p.fundingTopUpToUsd === 'number' && p.fundingTopUpToUsd > 0
+            ? p.fundingTopUpToUsd
+            : undefined,
       }),
     );
     const pendingSells: PendingSell[] = (Array.isArray(parsed.pendingSells) ? parsed.pendingSells : []).map(

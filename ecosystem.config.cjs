@@ -2402,6 +2402,13 @@ const PM2_APPS = [
         COPY_TRADER_QUOTE_MINT: 'USDC',
         /** Native SOL is still needed for priority fees + ATA rent. */
         COPY_TRADER_MIN_FEE_SOL_RESERVE: '0.02',
+        /**
+         * Funding short: take 50% of planned size if USDC covers that clip;
+         * queue remainder top-up when cash returns + premium corridor still OK.
+         */
+        COPY_TRADER_FUNDING_PARTIAL_CLIP: '1',
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_FRACTION: '0.5',
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '50',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg/target-wallet.txt'),
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg/state.json'),
@@ -2586,6 +2593,10 @@ const PM2_APPS = [
         COPY_TRADER_TARGET_WALLET: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
         COPY_TRADER_QUOTE_MINT: 'USDC',
         COPY_TRADER_MIN_FEE_SOL_RESERVE: '0.02',
+        /** Same funding partial-clip as twin (50% now, top-up later). */
+        COPY_TRADER_FUNDING_PARTIAL_CLIP: '1',
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_FRACTION: '0.5',
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '50',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg-mirror/target-wallet.txt'),
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg-mirror/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg-mirror/state.json'),
