@@ -1,4 +1,19 @@
 # So
+## [1.11.665] — 2026-08-04
+
+**Тег:** `sa-1.11.665`
+
+### Change: 8zkg full size from $300k; $50 stats tier $150–300k
+
+Both funded lanes:
+- **≥$300k:** 80% of leader buy, floor **$200**, ceiling **$700**
+- **$150k–$300k:** fixed **$50** clip (stats accumulation only)
+- **<$150k / missing mcap:** still blocked (`MIN_MCAP=150000`, fail closed)
+
+**Откат:** restore 1.11.664 (`ENTRY_LOW=0`, mirror 70%/floor $150); reload PM2.
+
+---
+
 ## [1.11.664] — 2026-08-04
 
 **Тег:** `sa-1.11.664`
