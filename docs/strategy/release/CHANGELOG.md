@@ -1,4 +1,20 @@
 # So
+## [1.11.673] — 2026-08-04
+
+**Тег:** `sa-1.11.673`
+
+### Change: copy-trader-8zkg tier-1 mcap floor $150k → $100k
+
+Operator: on mcap lane (`FxQf…`) open tier-1 from market cap **$100k**.
+
+- `COPY_TRADER_MIN_MCAP_USD=100000`
+- `COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD=100000` (band still `[$100k,$300k)` → $50)
+- Mirror lane unchanged (still vol5m + its own floors)
+
+**Откат:** both envs back to `150000` + reload `copy-trader-8zkg`.
+
+---
+
 ## [1.11.672] — 2026-08-04
 
 **Тег:** `sa-1.11.672`
