@@ -104,9 +104,12 @@ export function evaluateStreamWatchdog(input: {
     return {
       healthy: false,
       reason: 'poll_miss_streak',
-      forceReconnect: true,
+      // Do NOT forceReconnect here — poll also sees non-swap leader txs that
+      // tokenAccounts stream correctly ignores; reconnect was self-killing the WS
+      // every few minutes (FxQf stuck on ~20s poll, 2026-08-04).
+      forceReconnect: false,
       useFastPoll: true,
-      nextMissStreak: 0, // reset after we act
+      nextMissStreak: missStreak,
     };
   }
 

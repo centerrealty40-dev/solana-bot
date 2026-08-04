@@ -105,7 +105,7 @@ describe('evaluateStreamWatchdog', () => {
     });
   });
 
-  it('accumulates miss streak then forces reconnect', () => {
+  it('accumulates miss streak then fast-polls WITHOUT force reconnect', () => {
     const first = evaluateStreamWatchdog({
       nowMs: 10_000,
       enabled: true,
@@ -132,10 +132,10 @@ describe('evaluateStreamWatchdog', () => {
     expect(second).toMatchObject({
       healthy: false,
       reason: 'poll_miss_streak',
-      forceReconnect: true,
+      forceReconnect: false,
       useFastPoll: true,
-      nextMissStreak: 0,
     });
+    expect(second.nextMissStreak).toBeGreaterThanOrEqual(2);
   });
 
   it('clears miss streak when poll finds nothing stream missed', () => {
