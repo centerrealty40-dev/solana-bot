@@ -10,6 +10,9 @@ const cfg = {
   mirrorHoldCapVolOkMs: 0,
   volFadeMinVolume5mUsd: 8_000,
   volFadeDropPct: 40,
+  volFadeSampleWindow: 1,
+  volFadeMinWeakSamples: 1,
+  volFadeCheckIntervalMs: 0,
   sellRetryWindowMs: 7_200_000,
   leaderFollowOnlyMinMcapUsd: 0,
   leaderFollowOnlyMinVolume1hUsd: 0,
@@ -110,7 +113,12 @@ describe('isLeaderFollowOnlyMarket', () => {
 });
 
 describe('volumeSupportsHoldExtension', () => {
-  const volCfg = { volFadeMinVolume5mUsd: 8_000, volFadeDropPct: 40 };
+  const volCfg = {
+    volFadeMinVolume5mUsd: 8_000,
+    volFadeDropPct: 40,
+    volFadeSampleWindow: 1,
+    volFadeMinWeakSamples: 1,
+  };
 
   it('ok when above floor and not dropped vs entry', () => {
     expect(
@@ -134,5 +142,26 @@ describe('volumeSupportsHoldExtension', () => {
         volume5mUsd: 11_000,
       }),
     ).toBe(false);
+  });
+
+  it('multi-window: one weak sample does not kill extension while warming with prior ok', () => {
+    const multi = {
+      volFadeMinVolume5mUsd: 8_000,
+      volFadeDropPct: 40,
+      volFadeSampleWindow: 3,
+      volFadeMinWeakSamples: 2,
+    };
+    expect(
+      volumeSupportsHoldExtension(multi, {
+        entryVolume5mUsd: 15_437,
+        samples: [15_437, 8_663],
+      }),
+    ).toBe(false); // warming + already 1 weak → provisional extend only if weakCount===0
+    expect(
+      volumeSupportsHoldExtension(multi, {
+        entryVolume5mUsd: 15_437,
+        samples: [15_437, 14_000],
+      }),
+    ).toBe(true);
   });
 });

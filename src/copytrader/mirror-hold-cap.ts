@@ -17,7 +17,10 @@ import { computeRetryUntilTs } from './pending-buy-retry.js';
 import { cancelPendingSellsForMint } from './pending-sell-retry.js';
 import type { CopyPosition, CopyTraderState, PendingSell } from './state.js';
 import { newId } from './state.js';
-import { decideVolFadeExit } from './vol-fade-exit.js';
+import {
+  decideMultiWindowVolume,
+  pushVolume5mSample,
+} from './volume-health.js';
 
 export const MIRROR_HOLD_CAP_LEADER_SIG = 'mirror_hold_cap:time';
 
@@ -27,6 +30,9 @@ export type MirrorHoldCapConfig = Pick<
   | 'mirrorHoldCapVolOkMs'
   | 'volFadeMinVolume5mUsd'
   | 'volFadeDropPct'
+  | 'volFadeSampleWindow'
+  | 'volFadeMinWeakSamples'
+  | 'volFadeCheckIntervalMs'
   | 'sellRetryWindowMs'
   | 'leaderFollowOnlyMinMcapUsd'
   | 'leaderFollowOnlyMinVolume1hUsd'
@@ -57,21 +63,40 @@ export function effectiveMirrorHoldCapMs(cfg: MirrorHoldCapConfig): number {
 }
 
 export function volumeSupportsHoldExtension(
-  cfg: Pick<MirrorHoldCapConfig, 'volFadeMinVolume5mUsd' | 'volFadeDropPct'>,
-  input: { entryVolume5mUsd?: number | null; volume5mUsd: number | null },
+  cfg: Pick<
+    MirrorHoldCapConfig,
+    | 'volFadeMinVolume5mUsd'
+    | 'volFadeDropPct'
+    | 'volFadeSampleWindow'
+    | 'volFadeMinWeakSamples'
+  >,
+  input: {
+    entryVolume5mUsd?: number | null;
+    volume5mUsd?: number | null;
+    samples?: number[];
+  },
 ): boolean {
-  const d = decideVolFadeExit(
+  const samples =
+    input.samples && input.samples.length > 0
+      ? input.samples
+      : input.volume5mUsd != null && input.volume5mUsd >= 0
+        ? [input.volume5mUsd]
+        : [];
+  if (samples.length === 0) return false;
+  const d = decideMultiWindowVolume(
     {
-      volFadeCheckIntervalMs: 1,
-      volFadeMinVolume5mUsd: cfg.volFadeMinVolume5mUsd,
-      volFadeDropPct: cfg.volFadeDropPct,
-      sellRetryWindowMs: 0,
-      leaderFollowOnlyMinMcapUsd: 0,
-      leaderFollowOnlyMinVolume1hUsd: 0,
+      minVolume5mUsd: cfg.volFadeMinVolume5mUsd,
+      dropPct: cfg.volFadeDropPct,
+      sampleWindow: cfg.volFadeSampleWindow > 0 ? cfg.volFadeSampleWindow : 1,
+      minWeakSamples: cfg.volFadeMinWeakSamples > 0 ? cfg.volFadeMinWeakSamples : 1,
     },
-    input,
+    { entryVolume5mUsd: input.entryVolume5mUsd, samples },
   );
-  return d.action === 'hold' && d.reason === 'volume_ok';
+  if (d.shouldExit) return false;
+  if (d.reason === 'unknown') return false;
+  // While the window is still filling, provisionally extend if no sample is weak yet.
+  if (d.reason === 'warming') return d.weakCount === 0;
+  return d.healthy;
 }
 
 export function decideMirrorHoldCap(
@@ -199,6 +224,14 @@ export async function processMirrorHoldCapExits(
     (cfg.mirrorHoldCapVolOkMs > cfg.mirrorHoldCapMs ||
       (cfg.leaderFollowOnlyMinMcapUsd > 0 && cfg.leaderFollowOnlyMinVolume1hUsd > 0));
 
+  /** Sample rolling m5 even before the 30m mark so the window is warm at decision time. */
+  const sampleIntervalMs =
+    cfg.volFadeCheckIntervalMs > 0
+      ? cfg.volFadeCheckIntervalMs
+      : cfg.mirrorHoldCapVolOkMs > cfg.mirrorHoldCapMs
+        ? 300_000
+        : 0;
+
   const out: MirrorHoldCapScheduleResult[] = [];
   for (const pos of Object.values(state.positions)) {
     const heldMs = Math.max(0, nowMs - (pos.entryTs || 0));
@@ -207,7 +240,12 @@ export async function processMirrorHoldCapExits(
     let volume1hUsd: number | null | undefined;
 
     const pastBase = heldMs + 1e-9 >= cfg.mirrorHoldCapMs;
-    if (needsMarket && pastBase) {
+    const sampleDue =
+      sampleIntervalMs > 0 &&
+      needsMarket &&
+      nowMs - (pos.lastVolFadeCheckTs ?? pos.entryTs) >= sampleIntervalMs;
+
+    if (needsMarket && (pastBase || sampleDue)) {
       let snap: MirrorHoldCapMarketSnapshot | null = null;
       if (deps!.fetchMarketSnapshot) {
         snap = await deps!.fetchMarketSnapshot(pos.mint);
@@ -219,7 +257,10 @@ export async function processMirrorHoldCapExits(
         };
       }
       if (snap) {
-        if (snap.volume5mUsd != null && snap.volume5mUsd >= 0) pos.lastVolume5mUsd = snap.volume5mUsd;
+        if (snap.volume5mUsd != null && snap.volume5mUsd >= 0) {
+          pos.volume5mSamples = pushVolume5mSample(pos.volume5mSamples, snap.volume5mUsd);
+          pos.lastVolume5mUsd = snap.volume5mUsd;
+        }
         pos.lastVolFadeCheckTs = nowMs;
         marketCapUsd = snap.marketCapUsd;
         volume1hUsd = snap.volume1hUsd;
@@ -230,6 +271,7 @@ export async function processMirrorHoldCapExits(
           volumeHealthy = volumeSupportsHoldExtension(cfg, {
             entryVolume5mUsd: pos.entryVolume5mUsd,
             volume5mUsd: snap.volume5mUsd,
+            samples: pos.volume5mSamples,
           });
         }
       }

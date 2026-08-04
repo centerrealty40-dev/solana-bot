@@ -1,10 +1,18 @@
-# Solana Alpha — журнал релизов продукта
+# So
+## [1.11.655] — 2026-08-04
 
-Версия в файле [`VERSION`](./VERSION) — **semver продукта** (торговое/paper ядро + конфиги стратегий + восстановление состояния из журнала). Она **не обязана** совпадать с полем `version` в `package.json` (npm); при желании их можно синхронизировать только для крупных релизов.
+**Тег:** `sa-1.11.655`
 
-Каждая запись ниже обязана содержать: дату, номер версии, краткое описание, **git-тег** (если применимо), **инструкцию отката**.
+### Change: multi-window 5m volume for vol-fade / hold-cap
 
-Формат записей — [Keep a Changelog](https://keepachangelog.com/ru/1.1.0/), семвер — [Semantic Versioning 2.0.0](https://semver.org/lang/ru/).
+Dex only exposes a rolling `volume.m5`. We now sample it over time and decide
+on the last **3** readings (exit when **≥2** look weak) instead of one noisy tick.
+Both 8zkg lanes. Hold-cap also samples every 5m before the 30m mark so the
+window is warm at extension time.
+
+Env: `COPY_TRADER_VOL_FADE_SAMPLE_WINDOW=3`, `COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES=2`.
+
+**Откат:** set window/minWeak to `1` (legacy single-tick) and reload PM2.
 
 ---
 

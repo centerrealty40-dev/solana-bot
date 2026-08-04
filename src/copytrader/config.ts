@@ -228,6 +228,17 @@ const CopyTraderConfigSchema = z.object({
    */
   volFadeDropPct: z.coerce.number().min(0).max(100).default(0),
   /**
+   * Multi-window volume: how many recent 5m samples form the decision window.
+   * Dex only gives a rolling m5 — we sample it over time (≈ adjacent windows).
+   * Default **3**. **1** = legacy single-tick behavior.
+   */
+  volFadeSampleWindow: z.coerce.number().int().min(1).max(12).default(3),
+  /**
+   * Exit / treat volume as weak when at least this many samples in the window
+   * fail the floor/drop checks. Default **2** (of 3). Clamped to window size.
+   */
+  volFadeMinWeakSamples: z.coerce.number().int().min(1).max(12).default(2),
+  /**
    * Mirror early TP: peel when unrealized gain ≥ this % vs entry and the leader
    * has not sold yet. **0** = off.
    */
@@ -406,6 +417,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     volFadeCheckIntervalMs: process.env.COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS,
     volFadeMinVolume5mUsd: process.env.COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD,
     volFadeDropPct: process.env.COPY_TRADER_VOL_FADE_DROP_PCT,
+    volFadeSampleWindow: process.env.COPY_TRADER_VOL_FADE_SAMPLE_WINDOW,
+    volFadeMinWeakSamples: process.env.COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES,
     trailTickIntervalMs: process.env.COPY_TRADER_TRAIL_TICK_INTERVAL_MS,
     mirrorEarlyTpGainPct: process.env.COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT,
     mirrorEarlyTpSellFraction: process.env.COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION,
