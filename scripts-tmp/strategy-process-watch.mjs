@@ -12,7 +12,11 @@ import { sendTagged } from '../scripts/lib/telegram.mjs';
 import {
   assessLiveOscarProcessSingleton,
   assessProcessHealth,
+  defaultFeeSolWatchWallets,
   defaultStrategyWatchTargets,
+  evaluateFeeSolLow,
+  lamportsFromGetBalanceResult,
+  parseFeeSolWatchWalletsJson,
   parseHeartbeatJson,
   parseWatchTargetsJson,
   readExpectedLiveOscarEntrySplitLegUsd,
@@ -25,6 +29,12 @@ const POLL_MS = Number(process.env.STRATEGY_PROCESS_WATCH_POLL_MS || 30_000);
 const TELEGRAM_ON = process.env.STRATEGY_PROCESS_WATCH_TELEGRAM !== '0';
 const AUTO_RESTART = process.env.STRATEGY_PROCESS_WATCH_AUTO_RESTART !== '0';
 const REPEAT_MIN = Number(process.env.STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN || 15);
+const FEE_SOL_WATCH_ON = process.env.STRATEGY_PROCESS_WATCH_FEE_SOL !== '0';
+const FEE_SOL_MIN_USD = Number(process.env.STRATEGY_PROCESS_WATCH_FEE_SOL_MIN_USD || 20);
+const FEE_SOL_REPEAT_MIN = Number(
+  process.env.STRATEGY_PROCESS_WATCH_FEE_SOL_ALERT_REPEAT_MIN || 60,
+);
+const SOL_MINT = 'So11111111111111111111111111111111111111112';
 const STATE_PATH =
   process.env.STRATEGY_PROCESS_WATCH_STATE_PATH ||
   path.join(ROOT, 'data/ops-heartbeats/process-watch-state.json');
@@ -88,6 +98,112 @@ function readFatal(fatalPath) {
 
 function pm2Restart(pm2Name) {
   execSync(`pm2 restart ${pm2Name}`, { cwd: ROOT, stdio: 'pipe' });
+}
+
+function resolveRpcUrl() {
+  return (
+    process.env.STRATEGY_PROCESS_WATCH_RPC_URL?.trim() ||
+    process.env.COPY_TRADER_RPC_URL?.trim() ||
+    process.env.LIVE_RPC_HTTP_URL?.trim() ||
+    process.env.SA_RPC_HTTP_URL?.trim() ||
+    process.env.SOLANA_RPC_HTTP_URL?.trim() ||
+    process.env.HELIUS_RPC_URL?.trim() ||
+    ''
+  );
+}
+
+async function rpcJson(rpcUrl, method, params) {
+  const res = await fetch(rpcUrl, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+  });
+  if (!res.ok) throw new Error(`rpc HTTP ${res.status}`);
+  const j = await res.json();
+  if (j.error) throw new Error(j.error.message || String(j.error));
+  return j.result;
+}
+
+async function fetchSolUsdPrice() {
+  const url = new URL('https://api.jup.ag/price/v3');
+  url.searchParams.set('ids', SOL_MINT);
+  const headers = { accept: 'application/json' };
+  const key = process.env.JUPITER_API_KEY?.trim() || process.env.JUP_API_KEY?.trim();
+  if (key) headers['x-api-key'] = key;
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`jup price HTTP ${res.status}`);
+  const j = await res.json();
+  const px = Number(j?.[SOL_MINT]?.usdPrice ?? j?.data?.[SOL_MINT]?.price ?? 0);
+  if (!(px > 20 && px < 5000)) throw new Error(`bad SOL usd price ${px}`);
+  return px;
+}
+
+function loadFeeSolWallets() {
+  return (
+    parseFeeSolWatchWalletsJson(process.env.STRATEGY_PROCESS_WATCH_FEE_SOL_WALLETS) ??
+    defaultFeeSolWatchWallets()
+  );
+}
+
+async function tickFeeSolWatch(now, state) {
+  if (!FEE_SOL_WATCH_ON || !(FEE_SOL_MIN_USD > 0)) return null;
+  const rpcUrl = resolveRpcUrl();
+  if (!rpcUrl) {
+    console.warn('[strategy-process-watch] fee SOL watch skipped: no RPC URL');
+    return null;
+  }
+  let solUsd;
+  try {
+    solUsd = await fetchSolUsdPrice();
+  } catch (e) {
+    console.warn('[strategy-process-watch] fee SOL price failed', String(e?.message || e));
+    return null;
+  }
+  const wallets = loadFeeSolWallets();
+  const rows = [];
+  for (const w of wallets) {
+    try {
+      const raw = await rpcJson(rpcUrl, 'getBalance', [w.pubkey, { commitment: 'processed' }]);
+      const lamports = lamportsFromGetBalanceResult(raw);
+      const solAmount = Number.isFinite(lamports) ? lamports / 1e9 : null;
+      const usd = solAmount != null ? solAmount * solUsd : null;
+      rows.push({ ...w, solAmount, solUsd: usd });
+    } catch (e) {
+      console.warn(
+        '[strategy-process-watch] fee SOL balance failed',
+        w.label,
+        String(e?.message || e),
+      );
+      rows.push({ ...w, solAmount: null, solUsd: null });
+    }
+  }
+  const { low, alertKey, lines } = evaluateFeeSolLow(rows, FEE_SOL_MIN_USD);
+  const prev = state.alerts.__fee_sol ?? {};
+  if (low.length === 0) {
+    if (prev.lastAlertKey) {
+      if (TELEGRAM_ON) {
+        await sendTagged(
+          'ALERT',
+          'fee_sol',
+          'Fee SOL watch: all watched wallets ≥ $' + FEE_SOL_MIN_USD + ' native SOL',
+        );
+      }
+      state.alerts.__fee_sol = { lastAlertAt: 0, lastAlertKey: '' };
+    }
+    return { ok: true, rows, solUsd };
+  }
+  const due =
+    now - (prev.lastAlertAt ?? 0) >= FEE_SOL_REPEAT_MIN * 60_000 || prev.lastAlertKey !== alertKey;
+  if (due && TELEGRAM_ON) {
+    const body = [
+      `[ALERT][fee_sol] native SOL for fees < $${FEE_SOL_MIN_USD} (SOL≈$${solUsd.toFixed(2)}):`,
+      ...lines,
+      'Top up native SOL on these wallets for fees/rent.',
+    ].join('\n');
+    await sendTagged('ALERT', 'fee_sol', body);
+    state.alerts.__fee_sol = { lastAlertAt: now, lastAlertKey: alertKey };
+  }
+  return { ok: false, rows, solUsd, low };
 }
 
 function issueDetail(issue, target, status, heartbeatAgeMs) {
@@ -199,8 +315,23 @@ async function tick() {
     });
   }
 
+  const feeSol = await tickFeeSolWatch(now, state);
+
   saveState(state);
-  console.log(JSON.stringify({ ok: summary.every((s) => s.ok), targets: summary, ts: new Date(now).toISOString() }));
+  console.log(
+    JSON.stringify({
+      ok: summary.every((s) => s.ok) && (feeSol?.ok !== false),
+      targets: summary,
+      feeSol: feeSol
+        ? {
+            ok: feeSol.ok,
+            solUsd: feeSol.solUsd,
+            low: (feeSol.low ?? []).map((r) => r.label),
+          }
+        : null,
+      ts: new Date(now).toISOString(),
+    }),
+  );
 }
 
 async function main() {

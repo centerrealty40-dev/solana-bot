@@ -198,3 +198,79 @@ export function rootPm2HasOnlineLiveOscar(execSyncFn = execSync) {
     return false;
   }
 }
+
+/** Funded fee wallets: 8zkg mcap, 8zkg mirror, shared Oscar/copy wallet. */
+export function defaultFeeSolWatchWallets() {
+  return [
+    {
+      label: 'copy-trader-8zkg',
+      pubkey: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
+    },
+    {
+      label: 'copy-trader-8zkg-mirror',
+      pubkey: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
+    },
+    {
+      label: 'live-oscar',
+      pubkey: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
+    },
+  ];
+}
+
+/**
+ * @param {string | undefined | null} raw
+ * @returns {Array<{ label: string, pubkey: string }> | null}
+ */
+export function parseFeeSolWatchWalletsJson(raw) {
+  if (raw == null || String(raw).trim() === '') return null;
+  try {
+    const arr = JSON.parse(String(raw));
+    if (!Array.isArray(arr)) return null;
+    const out = [];
+    for (const row of arr) {
+      const pubkey = String(row?.pubkey ?? '').trim();
+      const label = String(row?.label ?? pubkey.slice(0, 8)).trim();
+      if (pubkey) out.push({ label, pubkey });
+    }
+    return out.length ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+/** @param {unknown} result */
+export function lamportsFromGetBalanceResult(result) {
+  if (typeof result === 'number' && Number.isFinite(result)) return result;
+  if (typeof result === 'string' && /^\d+$/.test(result)) return Number(result);
+  if (result && typeof result === 'object' && 'value' in result) {
+    return lamportsFromGetBalanceResult(/** @type {{ value: unknown }} */ (result).value);
+  }
+  return NaN;
+}
+
+/**
+ * @param {Array<{ label: string, pubkey: string, solAmount: number | null, solUsd: number | null }>} rows
+ * @param {number} minUsd
+ * @returns {{ low: typeof rows, alertKey: string, lines: string[] }}
+ */
+export function evaluateFeeSolLow(rows, minUsd) {
+  const threshold = Number(minUsd);
+  const low = (rows ?? []).filter(
+    (r) =>
+      r.solUsd != null &&
+      Number.isFinite(r.solUsd) &&
+      Number.isFinite(threshold) &&
+      threshold > 0 &&
+      r.solUsd < threshold,
+  );
+  const alertKey = low
+    .map((r) => r.pubkey)
+    .sort()
+    .join('|');
+  const lines = low.map((r) => {
+    const sol =
+      r.solAmount != null && Number.isFinite(r.solAmount) ? `${r.solAmount.toFixed(4)} SOL` : 'SOL';
+    return `• ${r.label} (${r.pubkey.slice(0, 8)}…): ≈$${Number(r.solUsd).toFixed(2)} (${sol})`;
+  });
+  return { low, alertKey, lines };
+}

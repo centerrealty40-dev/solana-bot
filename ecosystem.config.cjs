@@ -2252,6 +2252,24 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
+        /** 1.11.672 — native SOL fee balance <$20 USD across funded wallets. */
+        STRATEGY_PROCESS_WATCH_FEE_SOL: '1',
+        STRATEGY_PROCESS_WATCH_FEE_SOL_MIN_USD: '20',
+        STRATEGY_PROCESS_WATCH_FEE_SOL_ALERT_REPEAT_MIN: '60',
+        STRATEGY_PROCESS_WATCH_FEE_SOL_WALLETS: JSON.stringify([
+          {
+            label: 'copy-trader-8zkg',
+            pubkey: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
+          },
+          {
+            label: 'copy-trader-8zkg-mirror',
+            pubkey: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
+          },
+          {
+            label: 'live-oscar',
+            pubkey: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
+          },
+        ]),
         /** 1.11.660 — Oscar lane off; watch only funded 8zkg lanes. */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
           {

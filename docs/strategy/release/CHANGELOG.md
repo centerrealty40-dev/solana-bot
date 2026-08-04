@@ -1,4 +1,22 @@
 # So
+## [1.11.672] — 2026-08-04
+
+**Тег:** `sa-1.11.672`
+
+### Change: fee SOL <$20 Telegram alert for all three funded wallets
+
+Operator: page when native SOL for fees drops under **$20 USD** on any of
+the three funded bot wallets (8zkg mcap, 8zkg mirror, live-oscar / shared).
+
+- `strategy-process-watch` polls balances + Jupiter SOL USD price
+- TG `[ALERT][fee_sol]` lists every wallet below the floor; repeat 60m
+- Defaults: `STRATEGY_PROCESS_WATCH_FEE_SOL=1`, `FEE_SOL_MIN_USD=20`
+- Wallets configurable via `STRATEGY_PROCESS_WATCH_FEE_SOL_WALLETS` JSON
+
+**Откат:** `STRATEGY_PROCESS_WATCH_FEE_SOL=0` + reload `strategy-process-watch`.
+
+---
+
 ## [1.11.671] — 2026-08-04
 
 **Тег:** `sa-1.11.671`
