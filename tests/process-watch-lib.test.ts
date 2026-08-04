@@ -24,12 +24,11 @@ describe('process-watch-lib', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('default targets include live-oscar and copy-trader', () => {
+  it('default targets are funded 8zkg lanes only (Oscar stopped)', () => {
     const t = defaultStrategyWatchTargets('/opt/solana-alpha');
     expect(t.map((x) => x.pm2)).toEqual([
-      'hl-twap-telegram-watch',
-      'live-oscar',
-      'copy-trader',
+      'copy-trader-8zkg',
+      'copy-trader-8zkg-mirror',
     ]);
   });
 
