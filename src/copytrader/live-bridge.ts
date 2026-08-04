@@ -10,6 +10,14 @@ function readBoundedIntEnv(name: string, fallback: number, min: number, max: num
   return Math.min(max, Math.max(min, n));
 }
 
+function readBoundedFloatEnv(name: string, fallback: number, min: number, max: number): number {
+  const s = process.env[name]?.trim();
+  if (!s) return fallback;
+  const n = Number(s);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+
 function readJupiterPriorityMaxLamports(): number | undefined {
   const sol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim();
   if (sol) {
@@ -79,5 +87,8 @@ export function copyTraderLiveOscarBridge(cfg: CopyTraderConfig): LiveOscarConfi
     liveSellSimSlippageRetryAttempts: readBoundedIntEnv('LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS', 12, 0, 15),
     liveSimSlippageRetryBumpBps: readBoundedIntEnv('LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS', 10, 0, 500),
     liveSimSlippageRetryMaxBps: readBoundedIntEnv('LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS', 100, 10, 5000),
+    /** Oscar economy: block / abort when Jupiter route is too deep or chases. */
+    liveBuyMaxPriceImpactPct: readBoundedFloatEnv('LIVE_BUY_MAX_PRICE_IMPACT_PCT', 0, 0, 50),
+    liveBuyMaxChasePct: readBoundedFloatEnv('LIVE_BUY_MAX_CHASE_PCT', 0, 0, 50),
   } as LiveOscarConfig;
 }

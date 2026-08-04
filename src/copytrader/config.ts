@@ -313,6 +313,11 @@ const CopyTraderConfigSchema = z.object({
   /** USDC funding: keep this much SOL for fees/rent; below it, buys are skipped. */
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(100),
+  /**
+   * Economy guard: within one buy attempt cycle, refuse to send if outAmount is
+   * worse than the best quote already seen by more than this %. **0** = off.
+   */
+  maxQuoteRegressionPct: z.coerce.number().min(0).max(50).default(0),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
   /** Share live-oscar-micro wallet; track copy tokenRaw separately from oscar legs. */
@@ -489,6 +494,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     quoteAsset: parseCopyQuoteAsset(process.env.COPY_TRADER_QUOTE_MINT).asset,
     minFeeSolReserve: process.env.COPY_TRADER_MIN_FEE_SOL_RESERVE,
     slippageBps: process.env.COPY_TRADER_SLIPPAGE_BPS,
+    maxQuoteRegressionPct: process.env.COPY_TRADER_MAX_QUOTE_REGRESSION_PCT,
     walletSecret: process.env.COPY_TRADER_WALLET_SECRET?.trim(),
     walletPubkeyExpected: process.env.COPY_TRADER_WALLET_PUBKEY?.trim() || undefined,
     sharedOscarWallet: envBool(process.env.COPY_TRADER_SHARED_OSCAR_WALLET, false),

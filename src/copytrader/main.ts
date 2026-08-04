@@ -2167,6 +2167,8 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
   let lastStreamWatchdogAlertMs = 0;
   let lastStreamWatchdogReason = '';
   let lastStreamForceReconnectMs = 0;
+  /** Proactive TG when subscribed but zero notifies (do not wait for a missed swap). */
+  let lastSilentSubscribeAlertMs = 0;
 
   if (cfg.leaderStreamEnabled) {
     const wsUrl = (cfg.leaderStreamWsUrl?.trim() || resolveLeaderStreamWsUrl() || '').trim();
@@ -2232,10 +2234,33 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     // Mid-tick: if WS drops, degrade to fast poll immediately (don't wait 5s).
     // Skip forceReconnect spam during the first subscribe handshake.
     if (cfg.leaderStreamEnabled) {
+      const healthNow = leaderStream?.getHealth() ?? null;
+      if (
+        healthNow?.subscribed &&
+        healthNow.notifyCount === 0 &&
+        healthNow.lastSubscribedAtMs > 0 &&
+        now - healthNow.lastSubscribedAtMs >= 120_000 &&
+        (cfg.leaderStreamWatchdogAlertCooldownMs === 0 ||
+          now - lastSilentSubscribeAlertMs >= Math.max(60_000, cfg.leaderStreamWatchdogAlertCooldownMs))
+      ) {
+        lastSilentSubscribeAlertMs = now;
+        const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
+        const ageSec = Math.round((now - healthNow.lastSubscribedAtMs) / 1000);
+        void notifyCopyTraderTelegram(
+          cfg,
+          `[ALERT][stream_silent] ${app}: WS subscribed ${ageSec}s with 0 notifies — running poll-only until traffic or reconnect`,
+        );
+        console.warn('[copy-trader] stream_silent alert', {
+          ageSec,
+          mode: healthNow.mode,
+          reconnectCount: healthNow.reconnectCount,
+        });
+      }
+
       const linkDecision = evaluateStreamWatchdog({
         nowMs: now,
         enabled: true,
-        health: leaderStream?.getHealth() ?? null,
+        health: healthNow,
         pollMissesThisCycle: 0,
         missStreak: streamMissStreak,
         missThreshold: cfg.leaderStreamMissThreshold,
@@ -2356,15 +2381,26 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             effectivePollMs: streamHealthy ? streamBackupPollMs : streamFastPollMs,
           });
           lastStreamWatchdogReason = decision.reason;
-          const cooldown = cfg.leaderStreamWatchdogAlertCooldownMs;
+          /** silent_stream always pages; other reasons keep the normal cooldown. */
+          const cooldown =
+            decision.reason === 'silent_stream'
+              ? Math.min(60_000, cfg.leaderStreamWatchdogAlertCooldownMs || 60_000)
+              : cfg.leaderStreamWatchdogAlertCooldownMs;
           if (cooldown === 0 || now - lastStreamWatchdogAlertMs >= cooldown) {
             lastStreamWatchdogAlertMs = now;
             const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
+            const h = leaderStream?.getHealth();
             if (!streamHealthy) {
+              const silentExtra =
+                decision.reason === 'silent_stream'
+                  ? ` notifyCount=${h?.notifyCount ?? 0} mode=${h?.mode ?? '?'}`
+                  : '';
               void notifyCopyTraderTelegram(
                 cfg,
                 `[ALERT][stream_watchdog] ${app}: degraded (${decision.reason}) → fast poll ${streamFastPollMs}ms` +
-                  (decision.forceReconnect ? ' + reconnect' : ''),
+                  (decision.forceReconnect ? ' + reconnect' : '') +
+                  (decision.preferLogsSubscribe ? ' + logsSubscribe' : '') +
+                  silentExtra,
               );
             } else if (wasHealthy === false) {
               void notifyCopyTraderTelegram(

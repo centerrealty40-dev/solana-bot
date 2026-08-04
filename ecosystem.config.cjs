@@ -2525,16 +2525,17 @@ const PM2_APPS = [
         /** Multi-window: last 3 m5 samples, exit when ≥2 look weak. */
         COPY_TRADER_VOL_FADE_SAMPLE_WINDOW: '3',
         COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES: '2',
-        /** Wide Jupiter tolerance — Am8i 1.11.668 A/B proved tight slip costs fills. */
+        /** Control lane — wide 300bps. Economy A/B is on mirror (Oscar 10bps + guards). */
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
+        COPY_TRADER_LEADER_STREAM_WATCHDOG_ALERT_COOLDOWN_MS: '60000',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },
     {
       /**
        * Twin of `copy-trader-8zkg` on the same leader: **vol5m-only** entry (≥$8k).
-       * Sell delay: 0 unless mark already down >5% vs entry, then wait max **30s**.
+       * 1.11.670 — Oscar economy execution (10bps + quality guards).
        */
       name: 'copy-trader-8zkg-mirror',
       cwd: root,
@@ -2689,11 +2690,26 @@ const PM2_APPS = [
         COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
         /**
-         * 1.11.669 — revert Oscar slippage A/B (1.11.668). Am8i: tight slip filled
-         * worse (−3% tokens / ~$21) after 10→70 bump; both lanes back to 300.
+         * 1.11.670 — Oscar economy lane (real): base 10bps + bump≤100, BUT refuse
+         * worse fills (Am8i −3% tokens). Control twin stays at 300.
+         * - impact >4% blocked; chase >2% vs first quote aborted
+         * - outAmount may not regress >1.5% vs best quote in the ladder
          */
-        COPY_TRADER_SLIPPAGE_BPS: '300',
+        COPY_TRADER_SLIPPAGE_BPS: '10',
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '10',
+        LIVE_BUY_SIM_RETRY_DELAY_MS: '800',
+        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '8',
+        LIVE_SELL_SIM_RETRY_ATTEMPTS: '12',
+        LIVE_SELL_SIM_RETRY_DELAY_MS: '1000',
+        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '12',
+        LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '10',
+        LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '100',
+        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '4',
+        LIVE_BUY_MAX_CHASE_PCT: '2',
+        COPY_TRADER_MAX_QUOTE_REGRESSION_PCT: '1.5',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
+        /** Page operator when WS is silent (was easy to miss before Am8i). */
+        COPY_TRADER_LEADER_STREAM_WATCHDOG_ALERT_COOLDOWN_MS: '60000',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },
     },

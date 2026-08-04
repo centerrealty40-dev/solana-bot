@@ -1,4 +1,24 @@
 # So
+## [1.11.670] — 2026-08-04
+
+**Тег:** `sa-1.11.670`
+
+### Change: real Oscar economy on mirror + stream silent TG alerts
+
+Operator ask: one bot must actually run Oscar-tight slippage **without**
+accepting worse fills; silent WS must page Telegram.
+
+- **Economy (`copy-trader-8zkg-mirror`):** `SLIPPAGE_BPS=10`, bump +10→100,
+  `LIVE_BUY_MAX_PRICE_IMPACT_PCT=4`, `LIVE_BUY_MAX_CHASE_PCT=2`,
+  `COPY_TRADER_MAX_QUOTE_REGRESSION_PCT=1.5` (blocks Am8i-style −3% outAmount)
+- **Control (`copy-trader-8zkg`):** stays `300`
+- TG: `[ALERT][stream_silent]` after 120s subscribed with 0 notifies; cooldown 60s;
+  `silent_stream` watchdog pages with notifyCount/mode
+
+**Откат:** mirror slip=300 + drop LIVE_*/REGRESSION overrides; reload PM2.
+
+---
+
 ## [1.11.669] — 2026-08-04
 
 **Тег:** `sa-1.11.669`
