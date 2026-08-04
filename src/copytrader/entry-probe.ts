@@ -21,6 +21,17 @@ export function isMidMcapEntryTier(cfg: CopyTraderConfig, marketCapUsd: number |
   return marketCapUsd < cfg.entryFullMcapUsd;
 }
 
+/**
+ * Fixed clip for the low-mcap band (e.g. $30k–$150k → $50), takes priority over
+ * leader-mirror sizing.
+ */
+export function isLowMcapEntryTier(cfg: CopyTraderConfig, marketCapUsd: number | undefined): boolean {
+  if (!(cfg.entryLowPositionUsd > 0) || !(cfg.entryLowMcapMaxUsd > 0)) return false;
+  if (!(marketCapUsd != null && marketCapUsd > 0)) return false;
+  const min = cfg.entryLowMcapMinUsd > 0 ? cfg.entryLowMcapMinUsd : 0;
+  return marketCapUsd + 1e-9 >= min && marketCapUsd + 1e-9 < cfg.entryLowMcapMaxUsd;
+}
+
 export function usesInitialLeaderMirror(cfg: CopyTraderConfig): boolean {
   return cfg.initialMirrorRatio > 0;
 }
@@ -39,6 +50,7 @@ export function entryTargetUsd(
   marketCapUsd?: number,
   leaderBuyUsd?: number,
 ): number {
+  if (isLowMcapEntryTier(cfg, marketCapUsd)) return roundUsd(cfg.entryLowPositionUsd);
   if (usesInitialLeaderMirror(cfg) && leaderBuyUsd != null && leaderBuyUsd > 0) {
     return leaderInitialEntryUsd(cfg, leaderBuyUsd);
   }

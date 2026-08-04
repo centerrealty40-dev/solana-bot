@@ -2416,6 +2416,10 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
         COPY_TRADER_ENTRY_MID_LEG_USD: '100',
+        /** mcap $30k–$150k → fixed $50; ≥$150k → 50% leader (floor $100). */
+        COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '30000',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '150000',
+        COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
@@ -2428,7 +2432,7 @@ const PM2_APPS = [
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal A/B vs `copy-trader-8zkg-mirror` (2026-08-03 4h live RCA):
-         * this lane = **mcap-only** entry (≥$150k) + **fast** mirror exit.
+         * this lane = **mcap-only** entry (≥$30k; $30–150k clip $50) + **fast** mirror exit.
          * Twin = vol5m-only + slow mirror. Shared: pair age ≥0.1h, premium ≤5%.
          * Missing metric → skip (fail closed).
          */
@@ -2445,8 +2449,8 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
         COPY_TRADER_MIN_LIQUIDITY_USD: '0',
-        /** Absolute mcap floor; missing/zero mcap fails closed. */
-        COPY_TRADER_MIN_MCAP_USD: '150000',
+        /** Absolute mcap floor; missing/zero mcap fails closed. Low band $30–150k uses $50 clip. */
+        COPY_TRADER_MIN_MCAP_USD: '30000',
         /** Both lanes mirror leader sells; this one races (delay 0). */
         COPY_TRADER_EXIT_MODE: 'mirror',
         /** 5s — fits Helius Developer (~10M credits/mo); 1Hz ×2 lanes alone ≈5M+/mo. */
@@ -2558,6 +2562,10 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
         COPY_TRADER_ENTRY_MID_LEG_USD: '100',
+        /** Same low-mcap clip as twin: $30k–$150k → $50 fixed. */
+        COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '30000',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '150000',
+        COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
@@ -2569,7 +2577,7 @@ const PM2_APPS = [
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal B: vol5m-only (≥$8k). Mcap/liq floors off — twin owns mcap.
-         * Missing volume feed fails closed.
+         * Missing volume feed fails closed. Low-mcap sizing still applies when mcap known.
          */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',

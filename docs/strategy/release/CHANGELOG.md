@@ -8,103 +8,22 @@
 
 ---
 
----
+## [1.11.653] — 2026-08-04
 
----
+**Тег:** `sa-1.11.653`
 
----
+### Change: 8zkg low-mcap fixed $50 entry ($30k–$150k)
 
----
+Both funded 8zkg lanes:
 
----
+- live mcap in `[$30k, $150k)` → fixed entry **$50** (overrides 50% leader mirror);
+- mcap >= $150k → keep existing 50% mirror + $100 floor;
+- mcap-lane floor `MIN_MCAP_USD=30000` so the band is enterable.
 
----
+Env: `COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD`, `COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD`,
+`COPY_TRADER_ENTRY_LOW_POSITION_USD`.
 
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
-
----
-
----
-
----
-
----
-
----
-
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
-
----
+**Откат:** set `ENTRY_LOW_POSITION_USD=0` (or unset) and restore prior `MIN_MCAP` on mcap-lane; reload PM2.
 
 ---
 
