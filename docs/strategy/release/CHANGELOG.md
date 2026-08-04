@@ -108,6 +108,25 @@
 
 ---
 
+## [1.11.651] — 2026-08-04
+
+**Тег:** `sa-1.11.651`
+
+### Change: fully stop Live Oscar lane (self + 498SW copy)
+
+Оператор: остановить стратегию «Живой Оскар» полностью.
+
+- `live-oscar` + `copy-trader` (общий wallet `2sSu…`): `autostart: false`,
+  `autorestart: false`
+- `strategy-process-watch` и collector-health: targets только funded 8zkg lanes
+  (без Oscar), чтобы watch не поднимал их снова
+- 8zkg lanes **не** трогаем
+
+**Откат:** вернуть `autostart/autorestart: true` и Oscar targets в watch/health,
+`pm2 start live-oscar copy-trader`, reload watch.
+
+---
+
 ## [1.11.650] — 2026-08-04
 
 **Тег:** `sa-1.11.650`

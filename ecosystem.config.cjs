@@ -598,9 +598,8 @@ const PM2_APPS = [
         /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + copy lanes). */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_HEALTH_PRODUCT_LABEL: 'Oscar',
+        /** live-oscar + 498SW copy stopped (1.11.651) — health only funded 8zkg lanes. */
         COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
-          { pm2: 'live-oscar', heartbeatPath: 'data/ops-heartbeats/live-oscar.json', staleMs: 300_000 },
-          { pm2: 'copy-trader', heartbeatPath: 'data/ops-heartbeats/copy-trader.json', staleMs: 300_000 },
           {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
@@ -730,7 +729,12 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autorestart: true,
+      /**
+       * 1.11.651 — fully stopped by operator request.
+       * Do not autostart / autorestart until explicitly re-enabled.
+       */
+      autostart: false,
+      autorestart: false,
       max_restarts: 20,
       restart_delay: 5000,
       kill_timeout: 15000,
@@ -2248,20 +2252,8 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
-        /** live-oscar + 498SW copy + two 8zkg lanes. */
+        /** 1.11.651 — Oscar lane stopped; watch only funded 8zkg lanes. */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
-          {
-            pm2: 'live-oscar',
-            heartbeatPath: 'data/ops-heartbeats/live-oscar.json',
-            staleMs: 300_000,
-            fatalPath: 'data/live/last-fatal-live-oscar.json',
-          },
-          {
-            pm2: 'copy-trader',
-            heartbeatPath: 'data/ops-heartbeats/copy-trader.json',
-            staleMs: 300_000,
-            fatalPath: 'data/ops-heartbeats/copy-trader-last-fatal.json',
-          },
           {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
@@ -2280,6 +2272,7 @@ const PM2_APPS = [
     /**
      * Copy-leader lane — shares live-oscar-micro wallet; leader `498SW…`.
      * EXIT_MODE=mirror — proportional sell when the leader sells (full leader copy).
+     * 1.11.651 — stopped with live-oscar (same wallet); do not autostart until re-enabled.
      */
     {
       name: 'copy-trader',
@@ -2289,7 +2282,8 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autorestart: true,
+      autostart: false,
+      autorestart: false,
       max_restarts: 30,
       restart_delay: 8000,
       merge_logs: true,
