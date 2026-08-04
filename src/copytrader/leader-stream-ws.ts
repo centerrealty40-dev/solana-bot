@@ -6,6 +6,7 @@
  * is rejected. Poll remains a safety net in main.
  */
 import WebSocket from 'ws';
+import type { LeaderStreamHealthSnapshot } from './stream-watchdog.js';
 
 export type LeaderStreamHandlers = {
   onSignature: (signature: string, meta?: { source: 'transactionSubscribe' | 'logsSubscribe' }) => void;
@@ -76,6 +77,14 @@ export class LeaderWalletStream {
   private pingTimer: ReturnType<typeof setInterval> | null = null;
   private subMode: 'transactionSubscribe' | 'logsSubscribe' | null = null;
   private pendingSubId: number | null = null;
+  private connected = false;
+  private subscribed = false;
+  private lastOpenAtMs = 0;
+  private lastSubscribedAtMs = 0;
+  private lastNotifyAtMs = 0;
+  private lastSignatureAtMs = 0;
+  private notifyCount = 0;
+  private reconnectCount = 0;
 
   constructor(
     private readonly opts: LeaderStreamOptions,
@@ -101,6 +110,37 @@ export class LeaderWalletStream {
       /* ignore */
     }
     this.ws = null;
+    this.connected = false;
+    this.subscribed = false;
+  }
+
+  /** Drop the live socket so `runLoop` reconnects (watchdog / operator). */
+  forceReconnect(): void {
+    this.reconnectCount += 1;
+    this.connected = false;
+    this.subscribed = false;
+    this.subMode = null;
+    this.pendingSubId = null;
+    this.handlers.onStatus?.('force_reconnect', { reconnectCount: this.reconnectCount });
+    try {
+      this.ws?.close();
+    } catch {
+      /* ignore */
+    }
+  }
+
+  getHealth(): LeaderStreamHealthSnapshot {
+    return {
+      connected: this.connected,
+      subscribed: this.subscribed,
+      mode: this.subMode,
+      lastOpenAtMs: this.lastOpenAtMs,
+      lastSubscribedAtMs: this.lastSubscribedAtMs,
+      lastNotifyAtMs: this.lastNotifyAtMs,
+      lastSignatureAtMs: this.lastSignatureAtMs,
+      notifyCount: this.notifyCount,
+      reconnectCount: this.reconnectCount,
+    };
   }
 
   get mode(): typeof this.subMode {
@@ -149,10 +189,15 @@ export class LeaderWalletStream {
           /* ignore */
         }
         if (this.ws === ws) this.ws = null;
+        this.connected = false;
+        this.subscribed = false;
         this.subMode = null;
       };
 
       ws.on('open', () => {
+        this.connected = true;
+        this.subscribed = false;
+        this.lastOpenAtMs = Date.now();
         this.handlers.onStatus?.('ws_open', { urlHost: safeHost(this.opts.wsUrl) });
         const preferTx = this.opts.preferTransactionSubscribe !== false;
         if (preferTx) this.subscribeTransaction(ws);
@@ -192,6 +237,8 @@ export class LeaderWalletStream {
         }
 
         if (typeof msg.result === 'number' && msg.id === this.pendingSubId) {
+          this.subscribed = true;
+          this.lastSubscribedAtMs = Date.now();
           this.handlers.onStatus?.('subscribed', {
             mode: this.subMode,
             subscriptionId: msg.result,
@@ -201,9 +248,12 @@ export class LeaderWalletStream {
         }
 
         if (msg.method === 'transactionNotification' || msg.method === 'logsNotification') {
+          this.lastNotifyAtMs = Date.now();
+          this.notifyCount += 1;
           const params = msg.params as { result?: unknown } | undefined;
           const sig = extractSignature(params?.result ?? params);
           if (sig) {
+            this.lastSignatureAtMs = Date.now();
             this.handlers.onSignature(sig, {
               source: msg.method === 'transactionNotification' ? 'transactionSubscribe' : 'logsSubscribe',
             });

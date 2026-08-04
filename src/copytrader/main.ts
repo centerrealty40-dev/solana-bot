@@ -38,6 +38,7 @@ import {
 } from './entry-on-leader-add.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
 import { LeaderWalletStream, resolveLeaderStreamWsUrl } from './leader-stream-ws.js';
+import { evaluateStreamWatchdog } from './stream-watchdog.js';
 import { resolveSellDelayMs } from './sell-delay.js';
 import { resolveBuyRetryDelayMs } from './buy-retry-delay.js';
 import {
@@ -355,7 +356,10 @@ async function resolveCurrentPrice(
   return { priceUsd: jup ?? 0, source: jup != null && jup > 0 ? 'jupiter' : 'none', rejectedDex };
 }
 
-export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderState): Promise<void> {
+export async function pollLeaderWallet(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+): Promise<{ discovered: string[] }> {
   const { rows, rpcFailed } = await fetchWalletSignatures(cfg.rpcUrl, cfg.targetWallet, cfg.signatureLimit);
   if (rpcFailed) {
     const now = Date.now();
@@ -374,17 +378,17 @@ export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderS
         `[ALERT][copy_rpc] ${process.env.COPY_TRADER_APP_NAME || 'copy-trader'}: leader poll RPC failed ×${pollRpcFailStreak} (capacity/unreachable). Trading paused until RPC recovers.`,
       );
     }
-    return;
+    return { discovered: [] };
   }
   pollRpcFailStreak = 0;
-  if (rows.length === 0) return;
+  if (rows.length === 0) return { discovered: [] };
 
   const latest = rows[0]!.signature;
   const prev = state.lastSignature;
   if (!prev) {
     state.lastSignature = latest;
     for (const row of rows) state.seenSignatures[row.signature] = Date.now();
-    return;
+    return { discovered: [] };
   }
 
   const newRows: SignatureRow[] = [];
@@ -397,6 +401,7 @@ export async function pollLeaderWallet(cfg: CopyTraderConfig, state: CopyTraderS
   newRows.reverse();
 
   await ingestLeaderSignatureRows(cfg, state, newRows, 'poll');
+  return { discovered: newRows.map((r) => r.signature) };
 }
 
 /** Apply one or more leader signatures (stream or poll). Dedupes via seenSignatures. */
@@ -2058,9 +2063,15 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
   const streamQueue: string[] = [];
   const streamSeen = new Set<string>();
   let leaderStream: LeaderWalletStream | null = null;
-  const pollMs = cfg.leaderStreamEnabled
+  const streamBackupPollMs = cfg.leaderStreamEnabled
     ? Math.max(cfg.pollIntervalMs, cfg.leaderStreamPollBackupMs)
     : cfg.pollIntervalMs;
+  const streamFastPollMs = Math.max(1_000, cfg.leaderStreamFastPollMs);
+  let streamHealthy = true;
+  let streamMissStreak = 0;
+  let lastStreamWatchdogAlertMs = 0;
+  let lastStreamWatchdogReason = '';
+  let lastStreamForceReconnectMs = 0;
 
   if (cfg.leaderStreamEnabled) {
     const wsUrl = (cfg.leaderStreamWsUrl?.trim() || resolveLeaderStreamWsUrl() || '').trim();
@@ -2088,8 +2099,10 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         },
       );
       leaderStream.start();
-      console.log('[copy-trader] leader stream started (Helius WS)', {
-        pollBackupMs: pollMs,
+      console.log('[copy-trader] leader stream started (Helius WS + watchdog)', {
+        pollBackupMs: streamBackupPollMs,
+        fastPollMs: streamFastPollMs,
+        missThreshold: cfg.leaderStreamMissThreshold,
         wallet: cfg.targetWallet.slice(0, 8),
       });
     }
@@ -2121,9 +2134,60 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
       }
     }
 
-    if (now - lastPoll >= pollMs) {
+    // Mid-tick: if WS drops, degrade to fast poll immediately (don't wait 5s).
+    if (cfg.leaderStreamEnabled) {
+      const linkDecision = evaluateStreamWatchdog({
+        nowMs: now,
+        enabled: true,
+        health: leaderStream?.getHealth() ?? null,
+        pollMissesThisCycle: 0,
+        missStreak: streamMissStreak,
+        missThreshold: cfg.leaderStreamMissThreshold,
+        updateMissStreak: false,
+      });
+      if (!linkDecision.healthy) {
+        if (
+          linkDecision.forceReconnect &&
+          leaderStream &&
+          now - lastStreamForceReconnectMs >= 10_000
+        ) {
+          lastStreamForceReconnectMs = now;
+          leaderStream.forceReconnect();
+        }
+        if (streamHealthy || linkDecision.reason !== lastStreamWatchdogReason) {
+          console.warn('[copy-trader] stream watchdog link', {
+            reason: linkDecision.reason,
+            health: leaderStream?.getHealth() ?? null,
+          });
+          lastStreamWatchdogReason = linkDecision.reason;
+          if (
+            streamHealthy &&
+            (cfg.leaderStreamWatchdogAlertCooldownMs === 0 ||
+              now - lastStreamWatchdogAlertMs >= cfg.leaderStreamWatchdogAlertCooldownMs)
+          ) {
+            lastStreamWatchdogAlertMs = now;
+            const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
+            void notifyCopyTraderTelegram(
+              cfg,
+              `[ALERT][stream_watchdog] ${app}: degraded (${linkDecision.reason}) → fast poll ${streamFastPollMs}ms` +
+                (linkDecision.forceReconnect ? ' + reconnect' : ''),
+            );
+          }
+        }
+        streamHealthy = false;
+      }
+    }
+
+    const effectivePollMs =
+      cfg.leaderStreamEnabled && (!streamHealthy || !leaderStream)
+        ? Math.min(streamBackupPollMs, streamFastPollMs)
+        : streamBackupPollMs;
+
+    if (now - lastPoll >= effectivePollMs) {
+      let discovered: string[] = [];
       try {
-        await pollLeaderWallet(cfg, state);
+        const pollResult = await pollLeaderWallet(cfg, state);
+        discovered = pollResult.discovered;
         gcSeenSignatures(state, 48 * 3600_000);
         reconcileOscarHandoffClosedFromDisk(cfg, state);
         writeCopyTraderState(cfg.statePath, state);
@@ -2131,6 +2195,61 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         console.warn('[copy-trader] poll error', (err as Error).message);
       }
       lastPoll = now;
+
+      if (cfg.leaderStreamEnabled) {
+        const pollMisses = discovered.filter((sig) => !streamSeen.has(sig)).length;
+        const decision = evaluateStreamWatchdog({
+          nowMs: now,
+          enabled: true,
+          health: leaderStream?.getHealth() ?? null,
+          pollMissesThisCycle: pollMisses,
+          missStreak: streamMissStreak,
+          missThreshold: cfg.leaderStreamMissThreshold,
+        });
+        streamMissStreak = decision.nextMissStreak;
+        const wasHealthy: boolean = streamHealthy;
+        streamHealthy = decision.healthy;
+
+        if (decision.forceReconnect && leaderStream && now - lastStreamForceReconnectMs >= 10_000) {
+          lastStreamForceReconnectMs = now;
+          console.warn('[copy-trader] stream watchdog force reconnect', {
+            reason: decision.reason,
+            pollMisses,
+            health: leaderStream.getHealth(),
+          });
+          leaderStream.forceReconnect();
+        }
+
+        if (wasHealthy !== streamHealthy || decision.reason !== lastStreamWatchdogReason) {
+          console.log('[copy-trader] stream watchdog', {
+            healthy: streamHealthy,
+            reason: decision.reason,
+            useFastPoll: decision.useFastPoll,
+            pollMisses,
+            missStreak: streamMissStreak,
+            effectivePollMs: streamHealthy ? streamBackupPollMs : streamFastPollMs,
+          });
+          lastStreamWatchdogReason = decision.reason;
+          const cooldown = cfg.leaderStreamWatchdogAlertCooldownMs;
+          if (cooldown === 0 || now - lastStreamWatchdogAlertMs >= cooldown) {
+            lastStreamWatchdogAlertMs = now;
+            const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
+            if (!streamHealthy) {
+              void notifyCopyTraderTelegram(
+                cfg,
+                `[ALERT][stream_watchdog] ${app}: degraded (${decision.reason}) → fast poll ${streamFastPollMs}ms` +
+                  (decision.forceReconnect ? ' + reconnect' : ''),
+              );
+            } else if (wasHealthy === false) {
+              void notifyCopyTraderTelegram(
+                cfg,
+                `[OK][stream_watchdog] ${app}: recovered → backup poll ${streamBackupPollMs}ms`,
+              );
+            }
+          }
+        }
+      }
+
       // Flush due sells in the same tick we discovered the leader exit — do not
       // wait for the next loop after buys/reconcile burned the budget.
       try {

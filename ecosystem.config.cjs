@@ -2460,6 +2460,9 @@ const PM2_APPS = [
         COPY_TRADER_POLL_INTERVAL_MS: '5000',
         COPY_TRADER_LEADER_STREAM: '1',
         COPY_TRADER_LEADER_STREAM_POLL_BACKUP_MS: '5000',
+        /** Watchdog: if stream dies / misses poll, fall back to 1.5s poll + reconnect. */
+        COPY_TRADER_LEADER_STREAM_FAST_POLL_MS: '1500',
+        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '2',
         COPY_TRADER_LEADER_INGRESS_CONCURRENCY: '4',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
         ...(HELIUS_RPC_URL_PM2

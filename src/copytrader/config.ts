@@ -37,6 +37,18 @@ const CopyTraderConfigSchema = z.object({
   /** When stream is on: poll interval used as backup (default 15s). */
   leaderStreamPollBackupMs: z.coerce.number().int().min(1000).max(120_000).default(15_000),
   /**
+   * While stream watchdog marks unhealthy: poll this fast so buys still land
+   * (mirror-class lag). Default **1500** ms.
+   */
+  leaderStreamFastPollMs: z.coerce.number().int().min(1000).max(30_000).default(1_500),
+  /**
+   * Consecutive poll cycles where poll finds ≥1 leader sig the stream never
+   * queued → force reconnect + stay on fast poll. Default **2**.
+   */
+  leaderStreamMissThreshold: z.coerce.number().int().min(1).max(20).default(2),
+  /** Telegram cooldown for stream degrade/recover alerts (default 5m). */
+  leaderStreamWatchdogAlertCooldownMs: z.coerce.number().int().min(0).max(3_600_000).default(300_000),
+  /**
    * Prefetch parsed txs for a poll batch in parallel (still applied serially).
    * **1** = legacy sequential. Default **4**.
    */
@@ -354,6 +366,10 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     leaderStreamEnabled: envBool(process.env.COPY_TRADER_LEADER_STREAM, false),
     leaderStreamWsUrl: process.env.COPY_TRADER_LEADER_STREAM_WS_URL?.trim() || undefined,
     leaderStreamPollBackupMs: process.env.COPY_TRADER_LEADER_STREAM_POLL_BACKUP_MS,
+    leaderStreamFastPollMs: process.env.COPY_TRADER_LEADER_STREAM_FAST_POLL_MS,
+    leaderStreamMissThreshold: process.env.COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD,
+    leaderStreamWatchdogAlertCooldownMs:
+      process.env.COPY_TRADER_LEADER_STREAM_WATCHDOG_ALERT_COOLDOWN_MS,
     leaderIngressConcurrency: process.env.COPY_TRADER_LEADER_INGRESS_CONCURRENCY,
     tickIntervalMs: process.env.COPY_TRADER_TICK_INTERVAL_MS,
     buyDelayMs: process.env.COPY_TRADER_BUY_DELAY_MS,
