@@ -95,7 +95,14 @@ import {
   type PendingBuy,
   type PendingSell,
 } from './state.js';
-import { fmtCopyAlert, notifyCopyTraderTelegram } from './telegram.js';
+import {
+  fmtCopyAlert,
+  notifyCopyOpsAlert,
+  notifyCopyTradePing,
+  notifyCopyTraderTelegram,
+} from './telegram.js';
+import { evaluateCopyOpsWatch } from './ops-watch.js';
+import { copyTraderStreamNoiseAlertsEnabled } from './config.js';
 import { fetchJupiterTokenUsdPrice, getSolUsd, refreshSolPrice } from '../papertrader/pricing.js';
 import { isUsdPriceOutlierVsAnchor } from '../papertrader/pricing/dexscreener-pair-pick.js';
 import {
@@ -414,9 +421,9 @@ export async function pollLeaderWallet(
       now - lastPollRpcFailAlertMs >= POLL_RPC_FAIL_ALERT_COOLDOWN_MS
     ) {
       lastPollRpcFailAlertMs = now;
-      void notifyCopyTraderTelegram(
+      void notifyCopyOpsAlert(
         cfg,
-        `[ALERT][copy_rpc] ${process.env.COPY_TRADER_APP_NAME || 'copy-trader'}: leader poll RPC failed ×${pollRpcFailStreak} (capacity/unreachable). Trading paused until RPC recovers.`,
+        `[ALERT][copy_rpc] ${process.env.COPY_TRADER_APP_NAME || 'copy-trader'}: leader poll RPC failed ×${pollRpcFailStreak} (capacity/unreachable / Helius?). Trading paused until RPC recovers.`,
       );
     }
     return { discovered: [], applied: 0 };
@@ -494,8 +501,10 @@ export async function ingestLeaderSignatureRows(
 
     if (swap.side === 'buy') {
       await onLeaderBuy(cfg, state, swap, symbol, row, preLeaderRaw);
+      noteOpsLeaderBuy(Date.now());
     } else {
       await onLeaderSell(cfg, state, swap, symbol, row, preLeaderRaw);
+      noteOpsLeaderActivity(Date.now());
     }
     applyLeaderSwapToLedger(state, mint, swap.side, swap.baseAmountRaw);
     const closedPct = applyLeaderSwapToHistory(state, {
@@ -1061,7 +1070,7 @@ async function schedulePendingBuy(
     kind === 'add' && leaderAddFraction != null
       ? ` · ${(leaderAddFraction * 100).toFixed(0)}% of our stack`
       : '';
-  await notifyCopyTraderTelegram(
+  await notifyCopyTradePing(
     cfg,
     fmtCopyAlert({
       action: 'leader_buy',
@@ -1269,7 +1278,7 @@ async function onLeaderSell(
     entryPriceUsd: tracked.entryPriceUsd > 0 ? tracked.entryPriceUsd : null,
   });
 
-  await notifyCopyTraderTelegram(
+  await notifyCopyTradePing(
     cfg,
     fmtCopyAlert({
       action: 'leader_sell',
@@ -1555,7 +1564,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           retryUntilTs: pending.retryUntilTs,
         });
         if (deferNote === 'first') {
-          await notifyCopyTraderTelegram(
+          await notifyCopyTradePing(
             cfg,
             fmtCopyAlert({
               action: 'skip',
@@ -1835,7 +1844,8 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       });
     }
 
-    await notifyCopyTraderTelegram(
+    noteOpsOurBuy(Date.now());
+    await notifyCopyTradePing(
       cfg,
       fmtCopyAlert({
         action: 'our_buy',
@@ -1854,6 +1864,100 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       }),
     );
     await sleep(150);
+  }
+}
+
+/** ---- ops-only watch metrics (no trade TG) ---- */
+const opsMetrics = {
+  lastLeaderActivityTs: 0,
+  lastOurBuyTs: 0,
+  leaderBuyTs: [] as number[],
+  lastAlertByKey: {} as Record<string, number>,
+  lastTickMs: 0,
+};
+
+function noteOpsLeaderActivity(ts: number): void {
+  opsMetrics.lastLeaderActivityTs = Math.max(opsMetrics.lastLeaderActivityTs, ts);
+}
+
+function noteOpsLeaderBuy(ts: number): void {
+  noteOpsLeaderActivity(ts);
+  opsMetrics.leaderBuyTs.push(ts);
+  if (opsMetrics.leaderBuyTs.length > 200) {
+    opsMetrics.leaderBuyTs.splice(0, opsMetrics.leaderBuyTs.length - 200);
+  }
+}
+
+function noteOpsOurBuy(ts: number): void {
+  opsMetrics.lastOurBuyTs = Math.max(opsMetrics.lastOurBuyTs, ts);
+}
+
+function readOpsIntEnv(name: string, fallback: number): number {
+  const s = process.env[name]?.trim();
+  if (!s) return fallback;
+  const n = Number.parseInt(s, 10);
+  return Number.isFinite(n) && n >= 0 ? n : fallback;
+}
+
+async function tickCopyOpsWatch(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+  leaderStream: LeaderWalletStream | null,
+  now: number,
+): Promise<void> {
+  if (process.env.COPY_TRADER_OPS_WATCH_ENABLED === '0') return;
+  const intervalMs = readOpsIntEnv('COPY_TRADER_OPS_WATCH_INTERVAL_MS', 60_000);
+  if (now - opsMetrics.lastTickMs < intervalMs) return;
+  opsMetrics.lastTickMs = now;
+
+  const buyStallMs = readOpsIntEnv('COPY_TRADER_OPS_BUY_STALL_ALERT_MS', 7_200_000);
+  const cutoff = now - Math.max(buyStallMs, 1);
+  const leaderBuysInWindow = opsMetrics.leaderBuyTs.filter((t) => t >= cutoff).length;
+  const health = leaderStream?.getHealth() ?? null;
+
+  const alerts = evaluateCopyOpsWatch(
+    {
+      nowMs: now,
+      appName: process.env.COPY_TRADER_APP_NAME || 'copy-trader',
+      lastLeaderActivityTs: opsMetrics.lastLeaderActivityTs,
+      lastOurBuyTs: opsMetrics.lastOurBuyTs,
+      leaderBuysInWindow,
+      positions: Object.values(state.positions).map((p) => ({
+        mint: p.mint,
+        entryTs: p.entryTs,
+        sellBlockedUntilTs: p.sellBlockedUntilTs,
+        symbol: p.symbol,
+      })),
+      pendingSells: state.pendingSells.map((s) => ({
+        mint: s.mint,
+        leaderSellTs: s.leaderSellTs,
+        attempts: s.attempts,
+        symbol: s.symbol,
+      })),
+      stream: cfg.leaderStreamEnabled
+        ? {
+            subscribed: health?.subscribed ?? false,
+            notifyCount: health?.notifyCount ?? 0,
+            lastSubscribedAtMs: health?.lastSubscribedAtMs ?? 0,
+            lastNotifyAtMs: health?.lastNotifyAtMs ?? 0,
+          }
+        : null,
+    },
+    {
+      leaderIdleMs: readOpsIntEnv('COPY_TRADER_OPS_LEADER_IDLE_ALERT_MS', 21_600_000),
+      buyStallMs,
+      stuckSellMs: readOpsIntEnv('COPY_TRADER_OPS_STUCK_SELL_ALERT_MS', 1_800_000),
+      streamDeadMs: readOpsIntEnv('COPY_TRADER_OPS_STREAM_DEAD_ALERT_MS', 900_000),
+    },
+  );
+
+  const cooldownMs = readOpsIntEnv('COPY_TRADER_OPS_ALERT_COOLDOWN_MS', 3_600_000);
+  for (const alert of alerts) {
+    const last = opsMetrics.lastAlertByKey[alert.key] ?? 0;
+    if (cooldownMs > 0 && now - last < cooldownMs) continue;
+    opsMetrics.lastAlertByKey[alert.key] = now;
+    console.warn('[copy-trader] ops alert', alert.key, alert.text);
+    await notifyCopyOpsAlert(cfg, alert.text);
   }
 }
 
@@ -1980,7 +2084,7 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
         await refreshPositionFromWallet(cfg, state, pending.mint, exitPrice);
       }
 
-      await notifyCopyTraderTelegram(
+      await notifyCopyTradePing(
         cfg,
         fmtCopyAlert({
           action: 'our_sell',
@@ -2064,16 +2168,10 @@ export async function processPendingSells(cfg: CopyTraderConfig, state: CopyTrad
     if (exhausted) {
       const stuck = state.positions[pending.mint];
       if (stuck) stuck.sellBlockedUntilTs = now + cfg.sellAbandonCooldownMs;
-      await notifyCopyTraderTelegram(
+      await notifyCopyOpsAlert(
         cfg,
-        fmtCopyAlert({
-          action: 'our_sell',
-          mint: pending.mint,
-          symbol: pending.symbol,
-          wallet: cfg.targetWallet,
-          priceUsd: exitPrice,
-          detail: `Sell abandoned after ${attempts} attempts · ${failReason.slice(0, 60)}`,
-        }),
+        `[ALERT][copy_ops] ${process.env.COPY_TRADER_APP_NAME || 'copy-trader'}: ` +
+          `sell abandoned on ${pending.symbol} after ${attempts} attempts — orphan bag risk · ${failReason.slice(0, 80)}`,
       );
     }
     await sleep(150);
@@ -2087,6 +2185,12 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
   let lastReconcile = 0;
   let lastTrailTick = 0;
   let lastHistoryGc = 0;
+
+  /** Boot grace: don't page leader_idle immediately; seed our buy from open positions. */
+  opsMetrics.lastLeaderActivityTs = Date.now();
+  for (const p of Object.values(state.positions)) {
+    if (p.entryTs > opsMetrics.lastOurBuyTs) opsMetrics.lastOurBuyTs = p.entryTs;
+  }
 
   try {
     const reverted = reconcileIneligibleOscarHandoffs(cfg, state);
@@ -2235,23 +2339,17 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     // Skip forceReconnect spam during the first subscribe handshake.
     if (cfg.leaderStreamEnabled) {
       const healthNow = leaderStream?.getHealth() ?? null;
+      /** Yellow stream_silent spam removed — serious stream_dead is in ops-watch (15m). */
       if (
         healthNow?.subscribed &&
         healthNow.notifyCount === 0 &&
         healthNow.lastSubscribedAtMs > 0 &&
         now - healthNow.lastSubscribedAtMs >= 120_000 &&
-        (cfg.leaderStreamWatchdogAlertCooldownMs === 0 ||
-          now - lastSilentSubscribeAlertMs >= Math.max(60_000, cfg.leaderStreamWatchdogAlertCooldownMs))
+        now - lastSilentSubscribeAlertMs >= 120_000
       ) {
         lastSilentSubscribeAlertMs = now;
-        const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
-        const ageSec = Math.round((now - healthNow.lastSubscribedAtMs) / 1000);
-        void notifyCopyTraderTelegram(
-          cfg,
-          `[ALERT][stream_silent] ${app}: WS subscribed ${ageSec}s with 0 notifies — running poll-only until traffic or reconnect`,
-        );
-        console.warn('[copy-trader] stream_silent alert', {
-          ageSec,
+        console.warn('[copy-trader] stream_silent (no TG)', {
+          ageSec: Math.round((now - healthNow.lastSubscribedAtMs) / 1000),
           mode: healthNow.mode,
           reconnectCount: healthNow.reconnectCount,
         });
@@ -2288,20 +2386,22 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             });
           }
           lastStreamWatchdogReason = linkDecision.reason;
-          const everOpened = (leaderStream?.getHealth().lastOpenAtMs ?? 0) > 0;
-          if (
-            streamHealthy &&
-            everOpened &&
-            (cfg.leaderStreamWatchdogAlertCooldownMs === 0 ||
-              now - lastStreamWatchdogAlertMs >= cfg.leaderStreamWatchdogAlertCooldownMs)
-          ) {
-            lastStreamWatchdogAlertMs = now;
-            const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
-            void notifyCopyTraderTelegram(
-              cfg,
-              `[ALERT][stream_watchdog] ${app}: degraded (${linkDecision.reason}) → fast poll ${streamFastPollMs}ms` +
-                (linkDecision.forceReconnect ? ' + reconnect' : ''),
-            );
+          if (copyTraderStreamNoiseAlertsEnabled()) {
+            const everOpened = (leaderStream?.getHealth().lastOpenAtMs ?? 0) > 0;
+            if (
+              streamHealthy &&
+              everOpened &&
+              (cfg.leaderStreamWatchdogAlertCooldownMs === 0 ||
+                now - lastStreamWatchdogAlertMs >= cfg.leaderStreamWatchdogAlertCooldownMs)
+            ) {
+              lastStreamWatchdogAlertMs = now;
+              const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
+              void notifyCopyTraderTelegram(
+                cfg,
+                `[ALERT][stream_watchdog] ${app}: degraded (${linkDecision.reason}) → fast poll ${streamFastPollMs}ms` +
+                  (linkDecision.forceReconnect ? ' + reconnect' : ''),
+              );
+            }
           }
         }
         streamHealthy = false;
@@ -2381,32 +2481,24 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             effectivePollMs: streamHealthy ? streamBackupPollMs : streamFastPollMs,
           });
           lastStreamWatchdogReason = decision.reason;
-          /** silent_stream always pages; other reasons keep the normal cooldown. */
-          const cooldown =
-            decision.reason === 'silent_stream'
-              ? Math.min(60_000, cfg.leaderStreamWatchdogAlertCooldownMs || 60_000)
-              : cfg.leaderStreamWatchdogAlertCooldownMs;
-          if (cooldown === 0 || now - lastStreamWatchdogAlertMs >= cooldown) {
-            lastStreamWatchdogAlertMs = now;
-            const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
-            const h = leaderStream?.getHealth();
-            if (!streamHealthy) {
-              const silentExtra =
-                decision.reason === 'silent_stream'
-                  ? ` notifyCount=${h?.notifyCount ?? 0} mode=${h?.mode ?? '?'}`
-                  : '';
-              void notifyCopyTraderTelegram(
-                cfg,
-                `[ALERT][stream_watchdog] ${app}: degraded (${decision.reason}) → fast poll ${streamFastPollMs}ms` +
-                  (decision.forceReconnect ? ' + reconnect' : '') +
-                  (decision.preferLogsSubscribe ? ' + logsSubscribe' : '') +
-                  silentExtra,
-              );
-            } else if (wasHealthy === false) {
-              void notifyCopyTraderTelegram(
-                cfg,
-                `[OK][stream_watchdog] ${app}: recovered → backup poll ${streamBackupPollMs}ms`,
-              );
+          /** Yellow poll_miss / recovered — logs only unless STREAM_NOISE=1. */
+          if (copyTraderStreamNoiseAlertsEnabled()) {
+            const cooldown = cfg.leaderStreamWatchdogAlertCooldownMs;
+            if (cooldown === 0 || now - lastStreamWatchdogAlertMs >= cooldown) {
+              lastStreamWatchdogAlertMs = now;
+              const app = process.env.COPY_TRADER_APP_NAME || 'copy-trader';
+              if (!streamHealthy) {
+                void notifyCopyTraderTelegram(
+                  cfg,
+                  `[ALERT][stream_watchdog] ${app}: degraded (${decision.reason}) → fast poll ${streamFastPollMs}ms` +
+                    (decision.forceReconnect ? ' + reconnect' : ''),
+                );
+              } else if (wasHealthy === false) {
+                void notifyCopyTraderTelegram(
+                  cfg,
+                  `[OK][stream_watchdog] ${app}: recovered → backup poll ${streamBackupPollMs}ms`,
+                );
+              }
             }
           }
         }
@@ -2588,6 +2680,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
       }
       maybeSummarizeShadowSelect(cfg);
       writeCopyTraderState(cfg.statePath, state);
+      await tickCopyOpsWatch(cfg, state, leaderStream, now);
     } catch (err) {
       console.warn('[copy-trader] tick error', (err as Error).message);
     }

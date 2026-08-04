@@ -1,5 +1,9 @@
 import type { CopyTraderConfig } from './config.js';
-import { copyTraderTelegramEnabled } from './config.js';
+import {
+  copyTraderOpsAlertsEnabled,
+  copyTraderTelegramEnabled,
+  copyTraderTradePingsEnabled,
+} from './config.js';
 
 export async function notifyCopyTraderTelegram(
   cfg: CopyTraderConfig,
@@ -60,4 +64,16 @@ export function fmtCopyAlert(args: {
   if (args.priceUsd && args.priceUsd > 0) lines.push(`Price: $${args.priceUsd.toPrecision(4)}`);
   if (args.detail) lines.push(args.detail);
   return lines.join('\n');
+}
+
+/** Routine fill / queue chatter — off by default (ops alerts only). */
+export async function notifyCopyTradePing(cfg: CopyTraderConfig, text: string): Promise<void> {
+  if (!copyTraderTradePingsEnabled()) return;
+  await notifyCopyTraderTelegram(cfg, text);
+}
+
+/** Serious operational failures only. */
+export async function notifyCopyOpsAlert(cfg: CopyTraderConfig, text: string): Promise<void> {
+  if (!copyTraderOpsAlertsEnabled(cfg)) return;
+  await notifyCopyTraderTelegram(cfg, text);
 }

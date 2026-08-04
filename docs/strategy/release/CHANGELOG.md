@@ -1,4 +1,25 @@
 # So
+## [1.11.671] — 2026-08-04
+
+**Тег:** `sa-1.11.671`
+
+### Change: copy-trader Telegram = serious ops only
+
+Operator: no trade pings / yellow `poll_miss_streak` flags — only breakage.
+
+- `COPY_TRADER_TELEGRAM_TRADE_PINGS=0` (default) — silence our_buy/our_sell/leader_*
+- `COPY_TRADER_TELEGRAM_STREAM_NOISE=0` — silence stream_watchdog degraded/recovered
+- Keep: `[ALERT][copy_rpc]`, sell abandoned / stuck bag, plus new ops-watch:
+  - leader idle 6h (wallet may have changed)
+  - buy stall 2h (leader bought, we did not)
+  - stuck sell 30m / sell-blocked (orphan risk)
+  - stream dead 15m with 0 notifies
+- `strategy-process-watch` still pages PM2/heartbeat death
+
+**Откат:** `TRADE_PINGS=1` / `STREAM_NOISE=1`; `OPS_WATCH_ENABLED=0`; reload.
+
+---
+
 ## [1.11.670] — 2026-08-04
 
 **Тег:** `sa-1.11.670`
