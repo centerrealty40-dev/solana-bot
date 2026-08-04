@@ -539,3 +539,20 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
 export function copyTraderTelegramEnabled(cfg: CopyTraderConfig): boolean {
   return envBool(process.env.COPY_TRADER_TELEGRAM_ENABLED, true) && Boolean(cfg.telegramBotToken && cfg.telegramChatId);
 }
+
+/** Per-trade TG (our_buy / our_sell / leader_*). Default OFF — ops alerts only. */
+export function copyTraderTradePingsEnabled(): boolean {
+  return envBool(process.env.COPY_TRADER_TELEGRAM_TRADE_PINGS, false);
+}
+
+/** Serious ops TG (RPC dead, stuck sells, leader idle, buy stall, stream dead). */
+export function copyTraderOpsAlertsEnabled(cfg: CopyTraderConfig): boolean {
+  return (
+    copyTraderTelegramEnabled(cfg) && envBool(process.env.COPY_TRADER_TELEGRAM_OPS_ALERTS, true)
+  );
+}
+
+/** Yellow stream flags (poll_miss_streak / recovered). Default OFF. */
+export function copyTraderStreamNoiseAlertsEnabled(): boolean {
+  return envBool(process.env.COPY_TRADER_TELEGRAM_STREAM_NOISE, false);
+}
