@@ -1549,6 +1549,13 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       }
     }
 
+    if (cfg.maxPositionUsd > 0 && pending.sizeUsd > cfg.maxPositionUsd) {
+      pending.sizeUsd = cfg.maxPositionUsd;
+      if (pending.entryTargetUsd != null && pending.entryTargetUsd > cfg.maxPositionUsd) {
+        pending.entryTargetUsd = cfg.maxPositionUsd;
+      }
+    }
+
     const funding = await checkCopyFundingGate(cfg, pending.sizeUsd, now);
     if (!funding.ok) {
       if (noteBuyDefer(state, pending.id, now, cfg)) {

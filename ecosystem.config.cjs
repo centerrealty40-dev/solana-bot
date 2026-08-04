@@ -2400,8 +2400,8 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — mirror owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * Entry = 70% of leader buy USD, floor $120. Adds = existing stack-fraction
-         * proportional mirror. Low-mcap $50 band unchanged. Exits untouched.
+         * Entry = 70% of leader buy USD, floor $120, **ceiling $500**.
+         * Adds = stack-fraction proportional mirror up to the same cap.
          */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0.7',
         COPY_TRADER_MIN_MIRROR_ENTRY_USD: '120',
@@ -2409,15 +2409,14 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '120',
         COPY_TRADER_ENTRY_MID_LEG_USD: '120',
-        /** mcap $30k–$150k → fixed $50; ≥$150k → 70% leader (floor $120). */
+        /** mcap $30k–$150k → fixed $50; ≥$150k → 70% leader (floor $120, cap $500). */
         COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '30000',
         COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '150000',
         COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        /** 0 = unlimited — room for proportional averaging after the $120 floor entry. */
-        COPY_TRADER_MAX_POSITION_USD: '0',
+        COPY_TRADER_MAX_POSITION_USD: '500',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '120',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
@@ -2578,7 +2577,8 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '0',
+        /** Same ceiling as twin: 70% leader entry, floor $120, cap $500. */
+        COPY_TRADER_MAX_POSITION_USD: '500',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '120',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',

@@ -41,7 +41,14 @@ export function leaderInitialEntryUsd(cfg: CopyTraderConfig, leaderBuyUsd: numbe
   if (!(leaderBuyUsd > 0) || !usesInitialLeaderMirror(cfg)) return 0;
   const mirrored = leaderBuyUsd * cfg.initialMirrorRatio;
   const floored = cfg.minMirrorEntryUsd > 0 ? Math.max(cfg.minMirrorEntryUsd, mirrored) : mirrored;
-  return roundUsd(floored);
+  return clampEntryUsd(cfg, roundUsd(floored));
+}
+
+/** Cap entry notional when `maxPositionUsd` is set (>0). */
+export function clampEntryUsd(cfg: Pick<CopyTraderConfig, 'maxPositionUsd'>, usd: number): number {
+  if (!(usd > 0)) return 0;
+  if (!(cfg.maxPositionUsd > 0)) return usd;
+  return roundUsd(Math.min(usd, cfg.maxPositionUsd));
 }
 
 /** Planned total entry deploy (probe + dip) for this mcap / leader buy. */
@@ -50,12 +57,13 @@ export function entryTargetUsd(
   marketCapUsd?: number,
   leaderBuyUsd?: number,
 ): number {
-  if (isLowMcapEntryTier(cfg, marketCapUsd)) return roundUsd(cfg.entryLowPositionUsd);
-  if (usesInitialLeaderMirror(cfg) && leaderBuyUsd != null && leaderBuyUsd > 0) {
-    return leaderInitialEntryUsd(cfg, leaderBuyUsd);
-  }
-  if (isMidMcapEntryTier(cfg, marketCapUsd)) return cfg.entryMidPositionUsd;
-  return cfg.positionUsd;
+  let target: number;
+  if (isLowMcapEntryTier(cfg, marketCapUsd)) target = roundUsd(cfg.entryLowPositionUsd);
+  else if (usesInitialLeaderMirror(cfg) && leaderBuyUsd != null && leaderBuyUsd > 0) {
+    target = leaderInitialEntryUsd(cfg, leaderBuyUsd);
+  } else if (isMidMcapEntryTier(cfg, marketCapUsd)) target = cfg.entryMidPositionUsd;
+  else target = cfg.positionUsd;
+  return clampEntryUsd(cfg, target);
 }
 
 export function entryProbeSizeUsd(
