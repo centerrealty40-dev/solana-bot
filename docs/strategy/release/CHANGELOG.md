@@ -1,4 +1,19 @@
 # So
+## [1.11.674] — 2026-08-04
+
+**Тег:** `sa-1.11.674`
+
+### Ops: Oscar VPS — only DCA-Alert4Risky Telegram; all collectors off
+
+Operator request: stop RPC/Dex burn; run **only** `dcafr-dc-alert` (`/opt/dc-trader/scripts-tmp/viralflow-dc-alert.ts` → chat `-1003891493411`).
+
+- `ecosystem.config.cjs`: exclude **all** remaining PM2 apps (collectors `sa-*`, copy lanes, strategy-process-watch, alchemy watch).
+- Deploy: `bash scripts/platform/vps-dca-alert-only.sh` — fixes dc-trader import path `../src/core/`, starts sole `dcafr-dc-alert`.
+
+**Откат:** remove names from `OSCAR_VPS_EXCLUDED_APPS` + restore dc-trader `ecosystem.config.disabled.cjs` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.673] — 2026-08-04
 
 **Тег:** `sa-1.11.673`

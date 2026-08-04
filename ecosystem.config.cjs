@@ -2794,8 +2794,10 @@ const PM2_APPS = [
 
 /**
  * Apps filtered out of PM2 on Oscar VPS so `pm2 start/reload ecosystem` cannot revive them.
- * 1.11.660 — live-oscar + 498SW copy-trader excluded (operator: no RPC/Dex burn).
- * dc-trader is a separate product (`/opt/dc-trader`) — not in this file.
+ *
+ * 2026-08-04 — operator: **only** DCA Telegram (`dcafr-dc-alert` in `/opt/dc-trader`) may run.
+ * All solana-alpha PM2 apps stay excluded (collectors, copy lanes, watches, dashboard).
+ * Rollback: remove names from this set + `pm2 reload ecosystem.config.cjs --update-env`.
  */
 const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'live-oscar',
@@ -2811,6 +2813,24 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'bscpulse-journal-sync',
   'rh-sniper-discovery',
   'rh-sniper-executor',
+  /** Collectors + orchestrator — zero PG/Dex/RPC burn on Oscar VPS. */
+  'sa-raydium',
+  'sa-meteora',
+  'sa-orca',
+  'sa-moonshot',
+  'sa-pumpswap',
+  'sa-wallet-orchestrator',
+  'sa-collector-watch',
+  'sa-collector-health-telegram',
+  'sa-snapshot-freshness-watch',
+  'sa-rate-429-report',
+  'sa-jupiter',
+  'sa-direct-lp',
+  'sa-alchemy-usage-watch',
+  /** Copy lanes + watchdog. */
+  'copy-trader-8zkg',
+  'copy-trader-8zkg-mirror',
+  'strategy-process-watch',
 ]);
 
 module.exports = {
