@@ -2251,7 +2251,8 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_POLL_MS: '30000',
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
-        STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
+        /** 1.11.675 — page every 5m on missing/stale (PM2 wipe killed watch at 20:11). */
+        STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '5',
         /** 1.11.660 — Oscar lane off; watch only funded 8zkg lanes. */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
           {

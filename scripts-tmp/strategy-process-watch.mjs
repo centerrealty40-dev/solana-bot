@@ -19,12 +19,14 @@ import {
   rootPm2HasOnlineLiveOscar,
   scanLiveOscarScriptProcesses,
 } from './process-watch-lib.mjs';
+import { ensurePm2App } from './strategy-keepalive-lib.mjs';
 
 const ROOT = process.cwd();
 const POLL_MS = Number(process.env.STRATEGY_PROCESS_WATCH_POLL_MS || 30_000);
 const TELEGRAM_ON = process.env.STRATEGY_PROCESS_WATCH_TELEGRAM !== '0';
 const AUTO_RESTART = process.env.STRATEGY_PROCESS_WATCH_AUTO_RESTART !== '0';
-const REPEAT_MIN = Number(process.env.STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN || 15);
+/** Missing/dead strategy apps page every 5m (was 15m — too slow after PM2 wipe). */
+const REPEAT_MIN = Number(process.env.STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN || 5);
 const STATE_PATH =
   process.env.STRATEGY_PROCESS_WATCH_STATE_PATH ||
   path.join(ROOT, 'data/ops-heartbeats/process-watch-state.json');
@@ -84,10 +86,6 @@ function readFatal(fatalPath) {
   } catch {
     return null;
   }
-}
-
-function pm2Restart(pm2Name) {
-  execSync(`pm2 restart ${pm2Name}`, { cwd: ROOT, stdio: 'pipe' });
 }
 
 function issueDetail(issue, target, status, heartbeatAgeMs) {
@@ -152,13 +150,12 @@ async function tick() {
       if (rootPm2HasOnlineLiveOscar(execSync)) health.issues.push('root_pm2_live_oscar_online');
     }
 
-    let restarted = false;
+    let ensureAction = 'none';
     if (!health.ok && AUTO_RESTART) {
-      try {
-        pm2Restart(target.pm2);
-        restarted = true;
-      } catch (e) {
-        health.issues.push(`restart_failed:${String(e?.message || e).slice(0, 160)}`);
+      const ensured = ensurePm2App({ root: ROOT, pm2Name: target.pm2, status });
+      ensureAction = ensured.action;
+      if (!ensured.ok) {
+        health.issues.push(`ensure_failed:${String(ensured.error || ensured.action).slice(0, 160)}`);
       }
     }
 
@@ -177,7 +174,7 @@ async function tick() {
         now - (prev.lastAlertAt ?? 0) >= REPEAT_MIN * 60_000 || prev.lastAlertKey !== alertKey;
       if (due) {
         const lines = health.issues.map((i) => `• ${issueDetail(i, target, status, heartbeatAgeMs)}`);
-        if (restarted) lines.push(`• pm2 restart ${target.pm2} issued`);
+        if (ensureAction !== 'none') lines.push(`• pm2 ${ensureAction} ${target.pm2} issued`);
         const body = [`Strategy watchdog:`, ...lines].join('\n');
         if (TELEGRAM_ON) await sendTagged('ALERT', 'strategy_watch', body);
         state.alerts[target.pm2] = { lastAlertAt: now, lastAlertKey: alertKey };
@@ -195,7 +192,7 @@ async function tick() {
       status,
       heartbeatAgeSec: Number.isFinite(heartbeatAgeMs) ? Math.round(heartbeatAgeMs / 1000) : null,
       issues: health.issues,
-      restarted,
+      ensureAction,
     });
   }
 
