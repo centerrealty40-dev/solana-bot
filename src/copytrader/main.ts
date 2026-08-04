@@ -1905,6 +1905,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     mode: cfg.executionMode,
     entryUsd: cfg.positionUsd,
     initialMirrorRatio: cfg.initialMirrorRatio > 0 ? cfg.initialMirrorRatio : null,
+    minMirrorEntryUsd: cfg.minMirrorEntryUsd > 0 ? cfg.minMirrorEntryUsd : null,
     addMirror: 'proportional_to_leader',
     maxPositionUsd: cfg.maxPositionUsd > 0 ? cfg.maxPositionUsd : 'unlimited',
     maxAddsPerMint: cfg.maxAddsPerMint > 0 ? cfg.maxAddsPerMint : 'unlimited',

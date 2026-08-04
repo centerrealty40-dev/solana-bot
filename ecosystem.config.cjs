@@ -2398,8 +2398,12 @@ const PM2_APPS = [
         COPY_TRADER_EXECUTION_MODE: 'live',
         /** Oscar never adopts this lane — mirror owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
-        /** Flat $100 per trade, single leg, no adds (max position = entry size). */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
+        /**
+         * Entry = 50% of leader buy USD, floor $100. Adds = existing stack-fraction
+         * proportional mirror (≈50% of his add when we entered at 50%). Exits untouched.
+         */
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
+        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '100',
         COPY_TRADER_POSITION_USD: '100',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
@@ -2407,7 +2411,10 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '100',
+        /** 0 = unlimited — room for proportional averaging after the $100 floor entry. */
+        COPY_TRADER_MAX_POSITION_USD: '0',
+        COPY_TRADER_MAX_ADDS_PER_MINT: '0',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         /** Allow entry on leader rebuy/average-down even if we missed his first fill. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
@@ -2523,7 +2530,12 @@ const PM2_APPS = [
         COPY_TRADER_EXECUTION_MODE: 'live',
         /** Oscar never adopts this lane — the leader owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
+        /**
+         * Same sizing as twin: 50% of leader buy, floor $100; proportional adds;
+         * exits stay fraction-of-holdings mirror.
+         */
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
+        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '100',
         COPY_TRADER_POSITION_USD: '100',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
@@ -2531,7 +2543,9 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '100',
+        COPY_TRADER_MAX_POSITION_USD: '0',
+        COPY_TRADER_MAX_ADDS_PER_MINT: '0',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         /** Same as twin: enter on average-down / rebuy if we missed his open. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',

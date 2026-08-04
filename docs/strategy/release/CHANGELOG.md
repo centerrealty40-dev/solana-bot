@@ -102,6 +102,29 @@
 
 ---
 
+---
+
+## [1.11.648] — 2026-08-04
+
+**Тег:** `sa-1.11.648`
+
+### Change: 8zkg twin lanes — 50% of leader buy, floor $100, proportional adds
+
+Оба `copy-trader-8zkg` и `copy-trader-8zkg-mirror`: вместо flat $100 / no-adds —
+вход **50%** USD покупки лидера с полом **$100**; усреднение — прежний
+stack-fraction proportional add (≈50% его add при входе 50%); выходы mirror
+не трогали.
+
+- `COPY_TRADER_INITIAL_MIRROR_RATIO=0.5`
+- `COPY_TRADER_MIN_MIRROR_ENTRY_USD=100` (новый floor в `leaderInitialEntryUsd`)
+- `COPY_TRADER_MAX_POSITION_USD=0` (unlimited room for adds)
+- `COPY_TRADER_MIN_PROPORTIONAL_ADD_USD=100` (skip микро-adds)
+
+**Откат:** `COPY_TRADER_INITIAL_MIRROR_RATIO=0`, `MIN_MIRROR_ENTRY_USD` убрать,
+`MAX_POSITION_USD=100`, `MIN_PROPORTIONAL_ADD_USD` убрать; redeploy `1.11.647`.
+
+---
+
 ## [1.11.647] — 2026-08-04
 
 **Тег:** `sa-1.11.647`
