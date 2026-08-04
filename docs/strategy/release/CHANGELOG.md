@@ -1,4 +1,23 @@
 # So
+## [1.11.674] — 2026-08-04
+
+**Тег:** `sa-1.11.674`
+
+### Change: copy-trader-8zkg two fixed mcap clips ($50 / $100)
+
+Operator: only on mcap lane (`FxQf…` / `copy-trader-8zkg`):
+
+- mcap **$100k–$200k** → clip **$50**
+- mcap **$200k–$300k** → clip **$100**
+- ≥$300k unchanged (80% leader, $200–$700)
+
+Adds `COPY_TRADER_ENTRY_LOW2_*` fixed band (priority over leader-mirror).
+Mirror lane untouched.
+
+**Откат:** drop `ENTRY_LOW2_*`; restore `ENTRY_LOW_MAX=300000` + reload 8zkg.
+
+---
+
 ## [1.11.673] — 2026-08-04
 
 **Тег:** `sa-1.11.673`

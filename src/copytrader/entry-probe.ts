@@ -21,15 +21,44 @@ export function isMidMcapEntryTier(cfg: CopyTraderConfig, marketCapUsd: number |
   return marketCapUsd < cfg.entryFullMcapUsd;
 }
 
+function inFixedMcapBand(
+  marketCapUsd: number,
+  minUsd: number,
+  maxUsd: number,
+): boolean {
+  if (!(maxUsd > 0) || !(marketCapUsd > 0)) return false;
+  const min = minUsd > 0 ? minUsd : 0;
+  return marketCapUsd + 1e-9 >= min && marketCapUsd + 1e-9 < maxUsd;
+}
+
 /**
- * Fixed clip for the low-mcap band (e.g. $30k–$150k → $50), takes priority over
- * leader-mirror sizing.
+ * Fixed clip for configured low-mcap band(s), takes priority over leader-mirror.
+ * Band1: [`entryLowMcapMinUsd`, `entryLowMcapMaxUsd`) → `entryLowPositionUsd`
+ * Band2: [`entryLow2McapMinUsd`, `entryLow2McapMaxUsd`) → `entryLow2PositionUsd`
  */
+export function fixedMcapClipUsd(
+  cfg: CopyTraderConfig,
+  marketCapUsd: number | undefined,
+): number | null {
+  if (!(marketCapUsd != null && marketCapUsd > 0)) return null;
+  if (
+    cfg.entryLowPositionUsd > 0 &&
+    inFixedMcapBand(marketCapUsd, cfg.entryLowMcapMinUsd, cfg.entryLowMcapMaxUsd)
+  ) {
+    return roundUsd(cfg.entryLowPositionUsd);
+  }
+  if (
+    cfg.entryLow2PositionUsd > 0 &&
+    inFixedMcapBand(marketCapUsd, cfg.entryLow2McapMinUsd, cfg.entryLow2McapMaxUsd)
+  ) {
+    return roundUsd(cfg.entryLow2PositionUsd);
+  }
+  return null;
+}
+
+/** True when any fixed mcap clip band applies. */
 export function isLowMcapEntryTier(cfg: CopyTraderConfig, marketCapUsd: number | undefined): boolean {
-  if (!(cfg.entryLowPositionUsd > 0) || !(cfg.entryLowMcapMaxUsd > 0)) return false;
-  if (!(marketCapUsd != null && marketCapUsd > 0)) return false;
-  const min = cfg.entryLowMcapMinUsd > 0 ? cfg.entryLowMcapMinUsd : 0;
-  return marketCapUsd + 1e-9 >= min && marketCapUsd + 1e-9 < cfg.entryLowMcapMaxUsd;
+  return fixedMcapClipUsd(cfg, marketCapUsd) != null;
 }
 
 export function usesInitialLeaderMirror(cfg: CopyTraderConfig): boolean {
@@ -58,7 +87,8 @@ export function entryTargetUsd(
   leaderBuyUsd?: number,
 ): number {
   let target: number;
-  if (isLowMcapEntryTier(cfg, marketCapUsd)) target = roundUsd(cfg.entryLowPositionUsd);
+  const fixedClip = fixedMcapClipUsd(cfg, marketCapUsd);
+  if (fixedClip != null) target = fixedClip;
   else if (usesInitialLeaderMirror(cfg) && leaderBuyUsd != null && leaderBuyUsd > 0) {
     target = leaderInitialEntryUsd(cfg, leaderBuyUsd);
   } else if (isMidMcapEntryTier(cfg, marketCapUsd)) target = cfg.entryMidPositionUsd;

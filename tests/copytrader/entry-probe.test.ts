@@ -114,6 +114,29 @@ describe('entry-probe sizing', () => {
     expect(entryTargetUsd(cfg, 20_000, 1_000)).toBe(500);
   });
 
+  it('uses two fixed mcap clips: $100k–$200k → $50, $200k–$300k → $100', () => {
+    const cfg = {
+      ...prodEntryCfg,
+      initialMirrorRatio: 0.8,
+      minMirrorEntryUsd: 200,
+      maxPositionUsd: 700,
+      entryProbeFraction: 1,
+      entryDipDiscountPct: 0,
+      entryLowMcapMinUsd: 100_000,
+      entryLowMcapMaxUsd: 200_000,
+      entryLowPositionUsd: 50,
+      entryLow2McapMinUsd: 200_000,
+      entryLow2McapMaxUsd: 300_000,
+      entryLow2PositionUsd: 100,
+    } as CopyTraderConfig;
+    expect(entryTargetUsd(cfg, 150_000, 1_000)).toBe(50);
+    expect(entryTargetUsd(cfg, 199_999, 1_000)).toBe(50);
+    expect(entryTargetUsd(cfg, 200_000, 1_000)).toBe(100);
+    expect(entryTargetUsd(cfg, 250_000, 1_000)).toBe(100);
+    expect(isLowMcapEntryTier(cfg, 300_000)).toBe(false);
+    expect(entryTargetUsd(cfg, 300_000, 1_000)).toBe(700);
+  });
+
   it('keeps fixed positionUsd when initialMirrorRatio is 0', () => {
     const fixedCfg = { ...prodEntryCfg, initialMirrorRatio: 0 } as CopyTraderConfig;
     expect(usesInitialLeaderMirror(fixedCfg)).toBe(false);
