@@ -1,4 +1,25 @@
 # So
+## [1.11.658] — 2026-08-04
+
+**Тег:** `sa-1.11.658`
+
+### Change: FxQf leader-stream watchdog (fast poll + reconnect)
+
+656 shipped Helius WS without health fallback — when stream went quiet, FxQf
+stopped buying until RCA. 658 adds a real watchdog:
+- Track stream connected/subscribed/notify health; `forceReconnect()`.
+- If poll finds leader sigs stream never queued (≥2 cycles) → reconnect +
+  degrade to **1.5s** poll (same class as mirror).
+- Disconnected / not subscribed → fast poll immediately; Telegram on
+  degrade/recover (cooldown).
+- Quiet markets alone do **not** force reconnect.
+
+Env: `LEADER_STREAM_FAST_POLL_MS`, `LEADER_STREAM_MISS_THRESHOLD`.
+
+**Откат:** revert; or set `LEADER_STREAM=0` (poll-only).
+
+---
+
 ## [1.11.657] — 2026-08-04
 
 **Тег:** `sa-1.11.657`
