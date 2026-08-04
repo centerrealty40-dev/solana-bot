@@ -118,6 +118,13 @@ const CopyTraderConfigSchema = z.object({
   entryMidPositionUsd: z.coerce.number().positive().max(100_000).default(600),
   /** Each probe/dip leg for mid mcap tier (default $300). */
   entryMidLegUsd: z.coerce.number().positive().max(100_000).default(300),
+  /**
+   * Fixed-size band: when live mcap ∈ [`entryLowMcapMinUsd`, `entryLowMcapMaxUsd`)
+   * use `entryLowPositionUsd` instead of leader-mirror / positionUsd. **0** max = off.
+   */
+  entryLowMcapMinUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
+  entryLowMcapMaxUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
+  entryLowPositionUsd: z.coerce.number().min(0).max(100_000).default(0),
   /** Fraction of positionUsd for immediate probe buy at leader+premium (default 500/1000). */
   entryProbeFraction: z.coerce.number().min(0).max(1).default(500 / 1000),
   /** Remainder fills when price ≤ leader × (1 − discount/100) (default 10%). */
@@ -357,6 +364,9 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryFullMcapUsd: process.env.COPY_TRADER_ENTRY_FULL_MCAP_USD,
     entryMidPositionUsd: process.env.COPY_TRADER_ENTRY_MID_POSITION_USD,
     entryMidLegUsd: process.env.COPY_TRADER_ENTRY_MID_LEG_USD,
+    entryLowMcapMinUsd: process.env.COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD,
+    entryLowMcapMaxUsd: process.env.COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD,
+    entryLowPositionUsd: process.env.COPY_TRADER_ENTRY_LOW_POSITION_USD,
     entryProbeFraction: process.env.COPY_TRADER_ENTRY_PROBE_FRACTION,
     entryDipDiscountPct: process.env.COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT,
     entryDipConfirmTicks: process.env.COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS,

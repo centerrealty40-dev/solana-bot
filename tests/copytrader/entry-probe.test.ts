@@ -15,6 +15,7 @@ import {
   entryScheduleDelayMs,
   entryTargetUsd,
   isEntryProbePending,
+  isLowMcapEntryTier,
   leaderDipTargetPx,
   leaderInitialEntryUsd,
   resolveEntryBuyDelayMs,
@@ -78,6 +79,25 @@ describe('entry-probe sizing', () => {
     expect(leaderInitialEntryUsd(mirrorCfg, 1000)).toBe(500);
     expect(leaderInitialEntryUsd(mirrorCfg, 150)).toBe(100);
     expect(entryTargetUsd(mirrorCfg, undefined, 150)).toBe(100);
+  });
+
+  it('uses fixed $50 clip for mcap $30k–$150k even with leader mirror', () => {
+    const cfg = {
+      ...prodEntryCfg,
+      initialMirrorRatio: 0.5,
+      minMirrorEntryUsd: 100,
+      entryProbeFraction: 1,
+      entryDipDiscountPct: 0,
+      entryLowMcapMinUsd: 30_000,
+      entryLowMcapMaxUsd: 150_000,
+      entryLowPositionUsd: 50,
+    } as CopyTraderConfig;
+    expect(isLowMcapEntryTier(cfg, 80_000)).toBe(true);
+    expect(entryTargetUsd(cfg, 80_000, 1_000)).toBe(50);
+    expect(entryTargetUsd(cfg, 30_000, 1_000)).toBe(50);
+    expect(isLowMcapEntryTier(cfg, 150_000)).toBe(false);
+    expect(entryTargetUsd(cfg, 150_000, 1_000)).toBe(500);
+    expect(entryTargetUsd(cfg, 20_000, 1_000)).toBe(500);
   });
 
   it('keeps fixed positionUsd when initialMirrorRatio is 0', () => {
