@@ -81,7 +81,7 @@ chown salpha:salpha /opt/dc-trader/ecosystem.config.cjs
 sudo -u salpha -H bash -lc '
   set -euo pipefail
   cd /opt/solana-alpha
-  git fetch origin v2 origin/cursor/dca-alert-only-no-collectors-5b8b
+  git fetch origin v2 cursor/dca-alert-only-no-collectors-5b8b
   git reset --hard origin/cursor/dca-alert-only-no-collectors-5b8b
 
   # Delete every PM2 app except pm2-logrotate
