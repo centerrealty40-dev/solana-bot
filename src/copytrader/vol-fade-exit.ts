@@ -1,7 +1,7 @@
 /**
  * Volume-fade exit: periodically re-check DexScreener 5m volume on open legs.
- * If volume has fallen vs entry (or under an absolute floor), force a full market
- * sell — independent of leader peels. Complements mirror exits on the vol lane.
+ * Uses a multi-window majority over recent samples so one noisy m5 tick does
+ * not dump the book. Complements mirror exits on the vol lane.
  *
  * Skipped on leader-follow-only markets (large mcap + strong 1h volume).
  */
@@ -11,6 +11,11 @@ import { computeRetryUntilTs } from './pending-buy-retry.js';
 import { cancelPendingSellsForMint } from './pending-sell-retry.js';
 import type { CopyPosition, CopyTraderState, PendingSell } from './state.js';
 import { newId } from './state.js';
+import {
+  decideMultiWindowVolume,
+  pushVolume5mSample,
+  type MultiWindowVolumeDecision,
+} from './volume-health.js';
 
 export const VOL_FADE_LEADER_SIG = 'vol_fade:drop';
 
@@ -19,25 +24,43 @@ export type VolFadeConfig = Pick<
   | 'volFadeCheckIntervalMs'
   | 'volFadeMinVolume5mUsd'
   | 'volFadeDropPct'
+  | 'volFadeSampleWindow'
+  | 'volFadeMinWeakSamples'
   | 'sellRetryWindowMs'
   | 'leaderFollowOnlyMinMcapUsd'
   | 'leaderFollowOnlyMinVolume1hUsd'
 >;
 
 export type VolFadeDecision =
-  | { action: 'hold'; reason: 'disabled' | 'volume_ok' | 'volume_unknown' | 'leader_follow_only' }
+  | { action: 'hold'; reason: 'disabled' | 'volume_ok' | 'volume_unknown' | 'leader_follow_only' | 'warming' }
   | {
       action: 'sell';
       reason: 'below_floor' | 'dropped_vs_entry';
       volume5mUsd: number;
       entryVolume5mUsd: number | null;
+      medianVolume5mUsd: number | null;
+      weakCount: number;
+      sampleCount: number;
     };
 
+function windowCfg(cfg: VolFadeConfig) {
+  return {
+    minVolume5mUsd: cfg.volFadeMinVolume5mUsd,
+    dropPct: cfg.volFadeDropPct,
+    sampleWindow: cfg.volFadeSampleWindow > 0 ? cfg.volFadeSampleWindow : 1,
+    minWeakSamples: cfg.volFadeMinWeakSamples > 0 ? cfg.volFadeMinWeakSamples : 1,
+  };
+}
+
+/** Pure decision from an already-updated sample series (newest included). */
 export function decideVolFadeExit(
   cfg: VolFadeConfig,
   input: {
     entryVolume5mUsd?: number | null;
+    /** Latest reading; when `samples` omitted, treated as a 1-length series. */
     volume5mUsd: number | null;
+    /** Prefer full series (includes latest). */
+    samples?: number[];
     marketCapUsd?: number | null;
     volume1hUsd?: number | null;
   },
@@ -56,36 +79,40 @@ export function decideVolFadeExit(
     return { action: 'hold', reason: 'leader_follow_only' };
   }
 
-  const vol = input.volume5mUsd;
-  if (vol == null || !(vol >= 0)) {
+  const samples =
+    input.samples && input.samples.length > 0
+      ? input.samples
+      : input.volume5mUsd != null && input.volume5mUsd >= 0
+        ? [input.volume5mUsd]
+        : [];
+
+  if (samples.length === 0) {
     return { action: 'hold', reason: 'volume_unknown' };
+  }
+
+  const multi: MultiWindowVolumeDecision = decideMultiWindowVolume(windowCfg(cfg), {
+    entryVolume5mUsd: input.entryVolume5mUsd,
+    samples,
+  });
+
+  if (!multi.shouldExit) {
+    if (multi.reason === 'warming') return { action: 'hold', reason: 'warming' };
+    if (multi.reason === 'unknown') return { action: 'hold', reason: 'volume_unknown' };
+    return { action: 'hold', reason: 'volume_ok' };
   }
 
   const entryVol =
     input.entryVolume5mUsd != null && input.entryVolume5mUsd > 0 ? input.entryVolume5mUsd : null;
-
-  if (cfg.volFadeMinVolume5mUsd > 0 && vol < cfg.volFadeMinVolume5mUsd) {
-    return {
-      action: 'sell',
-      reason: 'below_floor',
-      volume5mUsd: vol,
-      entryVolume5mUsd: entryVol,
-    };
-  }
-
-  if (entryVol != null && cfg.volFadeDropPct > 0) {
-    const floor = entryVol * (1 - cfg.volFadeDropPct / 100);
-    if (vol + 1e-9 < floor) {
-      return {
-        action: 'sell',
-        reason: 'dropped_vs_entry',
-        volume5mUsd: vol,
-        entryVolume5mUsd: entryVol,
-      };
-    }
-  }
-
-  return { action: 'hold', reason: 'volume_ok' };
+  const latest = samples[samples.length - 1]!;
+  return {
+    action: 'sell',
+    reason: multi.reason === 'below_floor' ? 'below_floor' : 'dropped_vs_entry',
+    volume5mUsd: latest,
+    entryVolume5mUsd: entryVol,
+    medianVolume5mUsd: multi.medianUsd,
+    weakCount: multi.weakCount,
+    sampleCount: multi.sampleCount,
+  };
 }
 
 export type VolFadeScheduleResult = {
@@ -94,6 +121,9 @@ export type VolFadeScheduleResult = {
   reason: 'below_floor' | 'dropped_vs_entry';
   volume5mUsd: number;
   entryVolume5mUsd: number | null;
+  medianVolume5mUsd: number | null;
+  weakCount: number;
+  sampleCount: number;
   accelerated: boolean;
 };
 
@@ -181,14 +211,20 @@ export async function processVolFadeExits(
         marketCapUsd: null,
       };
     }
+
+    if (snap.volume5mUsd != null && snap.volume5mUsd >= 0) {
+      pos.volume5mSamples = pushVolume5mSample(pos.volume5mSamples, snap.volume5mUsd);
+      pos.lastVolume5mUsd = snap.volume5mUsd;
+    }
+
     const decision = decideVolFadeExit(cfg, {
       entryVolume5mUsd: pos.entryVolume5mUsd,
       volume5mUsd: snap.volume5mUsd,
+      samples: pos.volume5mSamples,
       marketCapUsd: snap.marketCapUsd,
       volume1hUsd: snap.volume1hUsd,
     });
     pos.lastVolFadeCheckTs = nowMs;
-    if (snap.volume5mUsd != null && snap.volume5mUsd >= 0) pos.lastVolume5mUsd = snap.volume5mUsd;
 
     if (decision.action !== 'sell') continue;
 
@@ -199,6 +235,9 @@ export async function processVolFadeExits(
       reason: decision.reason,
       volume5mUsd: decision.volume5mUsd,
       entryVolume5mUsd: decision.entryVolume5mUsd,
+      medianVolume5mUsd: decision.medianVolume5mUsd,
+      weakCount: decision.weakCount,
+      sampleCount: decision.sampleCount,
       accelerated,
     });
   }

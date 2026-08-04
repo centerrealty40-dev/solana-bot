@@ -43,10 +43,15 @@ export type CopyPosition = {
   trailGivebackStepsTaken?: number;
   /** DexScreener 5m volume USD at entry fill (vol-fade exit baseline). */
   entryVolume5mUsd?: number;
-  /** Last vol-fade poll timestamp (ms). */
+  /** Last vol-fade / volume-sample poll timestamp (ms). */
   lastVolFadeCheckTs?: number;
   /** Last observed 5m volume USD from a vol-fade check. */
   lastVolume5mUsd?: number;
+  /**
+   * Rolling Dex `volume.m5` samples (oldest→newest). Used for multi-window
+   * vol-fade / hold-cap decisions instead of a single noisy tick.
+   */
+  volume5mSamples?: number[];
   /** Leader sold any amount of this mint after our entry — blocks mirror early TP. */
   leaderSoldSinceEntry?: boolean;
   /** One-shot +gain peel already scheduled/taken while leader still held. */

@@ -1630,6 +1630,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         entryTargetUsd: pending.entryTargetUsd ?? entryTargetUsd(cfg, pending.entryMcapUsd, pending.leaderBuyUsd),
         entryMcapUsd: pending.entryMcapUsd,
         entryVolume5mUsd,
+        volume5mSamples: entryVolume5mUsd != null ? [entryVolume5mUsd] : undefined,
         lastVolFadeCheckTs: Date.now(),
         lastVolume5mUsd: entryVolume5mUsd,
         leaderWallet: cfg.targetWallet,
@@ -2100,8 +2101,14 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             volume5mUsd: Math.round(row.volume5mUsd),
             entryVolume5mUsd:
               row.entryVolume5mUsd != null ? Math.round(row.entryVolume5mUsd) : null,
+            medianVolume5mUsd:
+              row.medianVolume5mUsd != null ? Math.round(row.medianVolume5mUsd) : null,
+            weakCount: row.weakCount,
+            sampleCount: row.sampleCount,
             volFadeMinVolume5mUsd: cfg.volFadeMinVolume5mUsd,
             volFadeDropPct: cfg.volFadeDropPct,
+            volFadeSampleWindow: cfg.volFadeSampleWindow,
+            volFadeMinWeakSamples: cfg.volFadeMinWeakSamples,
           });
         }
         if (faded.length > 0) console.log('[copy-trader] vol-fade exits scheduled', faded.length);

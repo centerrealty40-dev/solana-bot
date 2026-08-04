@@ -2503,6 +2503,9 @@ const PM2_APPS = [
         /** Volume health for hold-cap extension (same floors as vol-fade twin). */
         COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
         COPY_TRADER_VOL_FADE_DROP_PCT: '40',
+        /** Multi-window: last 3 m5 samples, exit when ≥2 look weak. */
+        COPY_TRADER_VOL_FADE_SAMPLE_WINDOW: '3',
+        COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES: '2',
         /** Wider buy slippage — 150bps kept dying on 0x1771 while the tape ran. */
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
@@ -2633,6 +2636,9 @@ const PM2_APPS = [
         COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '300000',
         COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
         COPY_TRADER_VOL_FADE_DROP_PCT: '40',
+        /** Multi-window: last 3 m5 samples, exit when ≥2 look weak. */
+        COPY_TRADER_VOL_FADE_SAMPLE_WINDOW: '3',
+        COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES: '2',
         /**
          * Same hold-cap as twin: 30m base, stretch to 60m while volume stays healthy.
          * Vol-fade still exits earlier if volume collapses — unless leader-follow-only.
