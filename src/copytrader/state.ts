@@ -115,6 +115,11 @@ export type PendingBuy = {
   fundingTopUp?: boolean;
   /** Deployed-cost ceiling this funding top-up is trying to reach (probe or full entry). */
   fundingTopUpToUsd?: number;
+  /**
+   * Sticky attempt size after a funding partial clip so syncEntryPendingSizing
+   * does not restore the full target every retry tick.
+   */
+  fundingClipUsd?: number;
 };
 
 export type PendingSell = {
@@ -227,6 +232,8 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof p.fundingTopUpToUsd === 'number' && p.fundingTopUpToUsd > 0
             ? p.fundingTopUpToUsd
             : undefined,
+        fundingClipUsd:
+          typeof p.fundingClipUsd === 'number' && p.fundingClipUsd > 0 ? p.fundingClipUsd : undefined,
       }),
     );
     const pendingSells: PendingSell[] = (Array.isArray(parsed.pendingSells) ? parsed.pendingSells : []).map(

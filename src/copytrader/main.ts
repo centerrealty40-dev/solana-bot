@@ -1794,37 +1794,49 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       }
     }
 
-    let funding = await checkCopyFundingGate(cfg, pending.sizeUsd, now);
-    if (
-      !funding.ok &&
+    /**
+     * Always probe the full synced size first. On shortfall, shrink to the 50%
+     * clip and remember it so we only journal `*_funding_partial_clip` once
+     * per size (retries keep the clip without re-expanding every tick).
+     */
+    const fullAttemptUsd = pending.sizeUsd;
+    let funding = await checkCopyFundingGate(cfg, fullAttemptUsd, now);
+    if (funding.ok) {
+      pending.fundingClipUsd = undefined;
+    } else if (
       funding.reason === 'insufficient_usdc' &&
       cfg.fundingPartialClipEnabled
     ) {
       const decision = resolveFundingPartialClip({
         enabled: true,
-        requiredUsd: pending.sizeUsd,
+        requiredUsd: fullAttemptUsd,
         availableUsd: funding.quoteUsd,
         fraction: cfg.fundingPartialClipFraction,
         minUsd: cfg.fundingPartialClipMinUsd,
       });
       if (decision.action === 'clip') {
-        const fromUsd = pending.sizeUsd;
         if (pending.entryTargetUsd == null || pending.entryTargetUsd < decision.originalUsd) {
           pending.entryTargetUsd = Math.max(pending.entryTargetUsd ?? 0, decision.originalUsd);
         }
+        const alreadyClipped =
+          pending.fundingClipUsd != null &&
+          Math.abs(pending.fundingClipUsd - decision.clipUsd) < 0.02;
         pending.sizeUsd = decision.clipUsd;
-        appendCopyEvent(cfg, {
-          kind: pending.kind === 'add' ? 'add_funding_partial_clip' : 'buy_funding_partial_clip',
-          mint: pending.mint,
-          symbol: pending.symbol,
-          leaderSignature: pending.leaderSignature,
-          fromUsd,
-          toUsd: decision.clipUsd,
-          remainderUsd: decision.remainderUsd,
-          quoteUsd: funding.quoteUsd,
-          entryTargetUsd: pending.entryTargetUsd ?? null,
-          fundingTopUp: pending.fundingTopUp === true,
-        });
+        pending.fundingClipUsd = decision.clipUsd;
+        if (!alreadyClipped) {
+          appendCopyEvent(cfg, {
+            kind: pending.kind === 'add' ? 'add_funding_partial_clip' : 'buy_funding_partial_clip',
+            mint: pending.mint,
+            symbol: pending.symbol,
+            leaderSignature: pending.leaderSignature,
+            fromUsd: fullAttemptUsd,
+            toUsd: decision.clipUsd,
+            remainderUsd: decision.remainderUsd,
+            quoteUsd: funding.quoteUsd,
+            entryTargetUsd: pending.entryTargetUsd ?? null,
+            fundingTopUp: pending.fundingTopUp === true,
+          });
+        }
         funding = await checkCopyFundingGate(cfg, pending.sizeUsd, now);
       }
     }
