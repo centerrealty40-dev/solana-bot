@@ -132,6 +132,14 @@ const CopyTraderConfigSchema = z.object({
   addPriceMaxPremiumPct: z.coerce.number().min(0).max(50).default(0),
   /** Enter when leader rebuys/averages into a mint we missed on first buy (default on). */
   allowLateEntryOnLeaderRebuy: z.boolean().default(true),
+  /**
+   * Skip leader's first buy; enter only on his next add (average-down / rebuy).
+   * Size = `enterOnLeaderAddBagRatio` × leader's total bag USD after that add.
+   * Further proportional adds are ignored once we are in.
+   */
+  enterOnlyOnLeaderAdd: z.boolean().default(false),
+  /** Fraction of leader total position USD used for our first (and only) entry. */
+  enterOnLeaderAddBagRatio: z.coerce.number().min(0).max(2).default(0.7),
   minLeaderBuyUsd: z.coerce.number().min(0).max(1_000_000).default(50),
   minLiquidityUsd: z.coerce.number().min(0).max(1_000_000_000).default(15_000),
   minMarketCapUsd: z.coerce.number().min(0).max(1_000_000_000).default(500_000),
@@ -359,6 +367,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
       process.env.COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY,
       true,
     ),
+    enterOnlyOnLeaderAdd: envBool(process.env.COPY_TRADER_ENTER_ONLY_ON_LEADER_ADD, false),
+    enterOnLeaderAddBagRatio: process.env.COPY_TRADER_ENTER_ON_LEADER_ADD_BAG_RATIO,
     minLeaderBuyUsd: process.env.COPY_TRADER_MIN_LEADER_BUY_USD,
     minLiquidityUsd: process.env.COPY_TRADER_MIN_LIQUIDITY_USD,
     minMarketCapUsd: process.env.COPY_TRADER_MIN_MCAP_USD,

@@ -30,6 +30,12 @@ import {
   usesSplitEntryProbe,
 } from './entry-probe.js';
 import { shouldIgnoreMissedEntryLeaderRebuy } from './entry-late.js';
+import {
+  enterOnLeaderAddSizeUsd,
+  shouldIgnoreFurtherAddsAfterBagEntry,
+  shouldIgnoreLeaderFirstBuyForAddEntry,
+  usesEnterOnlyOnLeaderAdd,
+} from './entry-on-leader-add.js';
 import { appendCopyEvent, executeCopyBuy, executeCopySell } from './executor.js';
 import { resolveSellDelayMs } from './sell-delay.js';
 import { resolveBuyRetryDelayMs } from './buy-retry-delay.js';
@@ -467,6 +473,16 @@ async function onLeaderBuy(
 
   if (existing) {
     if (hasPendingBuyForMint(state, mint)) return;
+    if (shouldIgnoreFurtherAddsAfterBagEntry(cfg)) {
+      appendCopyEvent(cfg, {
+        kind: 'leader_add_ignored',
+        reason: 'enter_only_on_leader_add_no_further_adds',
+        mint,
+        leaderSignature: row.signature,
+        positionUsd: existing.sizeUsd,
+      });
+      return;
+    }
     const leaderIgnore = leaderIgnoreBlocksAction(cfg, { mint, copyPosition: existing, walletMintRaw: walletBal });
     if (leaderIgnore) {
       logCopyLeaderIgnored(cfg, {
@@ -582,6 +598,18 @@ async function onLeaderBuy(
     return;
   }
   const lateEntryOnLeaderRebuy = preLeaderRaw > 0n;
+  if (shouldIgnoreLeaderFirstBuyForAddEntry(cfg, preLeaderRaw)) {
+    appendCopyEvent(cfg, {
+      kind: 'leader_buy_ignored',
+      reason: 'wait_leader_add',
+      mint,
+      symbol,
+      leaderSignature: row.signature,
+      leaderBuyUsd: swap.amountUsd,
+      leaderPreBalanceRaw: preLeaderRaw.toString(),
+    });
+    return;
+  }
   if (shouldIgnoreMissedEntryLeaderRebuy(cfg, preLeaderRaw)) {
     appendCopyEvent(cfg, {
       kind: 'leader_buy_ignored',
@@ -658,6 +686,42 @@ async function onLeaderBuy(
       leaderBuyUsd: swap.amountUsd,
       marketCapUsd: dexGate?.marketCap ?? null,
       liquidityUsd: dexGate?.liquidityUsd ?? null,
+    });
+    return;
+  }
+
+  if (usesEnterOnlyOnLeaderAdd(cfg) && lateEntryOnLeaderRebuy) {
+    const bagEntryUsd = enterOnLeaderAddSizeUsd(cfg, {
+      preLeaderRaw,
+      buyRaw: swap.baseAmountRaw,
+      priceUsd: swap.priceUsd > 0 ? swap.priceUsd : priceUsd,
+    });
+    if (!(bagEntryUsd > 0) || bagEntryUsd < cfg.minLeaderBuyUsd) {
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_ignored',
+        reason: 'leader_add_bag_entry_too_small',
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        ourEntryUsd: bagEntryUsd,
+        enterOnLeaderAddBagRatio: cfg.enterOnLeaderAddBagRatio,
+      });
+      return;
+    }
+    const dexBag = await fetchDexInfo(mint, getSolUsd());
+    const mcapBag = dexBag?.marketCap && dexBag.marketCap > 0 ? dexBag.marketCap : undefined;
+    await schedulePendingBuy(cfg, state, {
+      mint,
+      symbol,
+      kind: 'entry',
+      sizeUsd: bagEntryUsd,
+      entryTargetUsd: bagEntryUsd,
+      entryMcapUsd: mcapBag,
+      preLeaderRaw,
+      swap,
+      row,
+      lateEntryOnLeaderRebuy: true,
     });
     return;
   }

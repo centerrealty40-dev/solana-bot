@@ -598,8 +598,9 @@ const PM2_APPS = [
         /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + copy lanes). */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_HEALTH_PRODUCT_LABEL: 'Oscar',
-        /** live-oscar + 498SW copy stopped (1.11.651) — health only funded 8zkg lanes. */
+        /** live-oscar stopped; health = 498SW copy + funded 8zkg lanes. */
         COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
+          { pm2: 'copy-trader', heartbeatPath: 'data/ops-heartbeats/copy-trader.json', staleMs: 300_000 },
           {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
@@ -2252,8 +2253,14 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_AUTO_RESTART: '1',
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '15',
-        /** 1.11.651 — Oscar lane stopped; watch only funded 8zkg lanes. */
+        /** live-oscar stopped; watch = 498SW copy + funded 8zkg lanes. */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
+          {
+            pm2: 'copy-trader',
+            heartbeatPath: 'data/ops-heartbeats/copy-trader.json',
+            staleMs: 300_000,
+            fatalPath: 'data/ops-heartbeats/copy-trader-last-fatal.json',
+          },
           {
             pm2: 'copy-trader-8zkg',
             heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
@@ -2271,8 +2278,8 @@ const PM2_APPS = [
     },
     /**
      * Copy-leader lane — shares live-oscar-micro wallet; leader `498SW…`.
-     * EXIT_MODE=mirror — proportional sell when the leader sells (full leader copy).
-     * 1.11.651 — stopped with live-oscar (same wallet); do not autostart until re-enabled.
+     * EXIT_MODE=mirror. Entry: only when leader averages (not first buy);
+     * size = 70% of leader total bag after that add.
      */
     {
       name: 'copy-trader',
@@ -2282,8 +2289,8 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autostart: false,
-      autorestart: false,
+      autostart: true,
+      autorestart: true,
       max_restarts: 30,
       restart_delay: 8000,
       merge_logs: true,
@@ -2303,7 +2310,8 @@ const PM2_APPS = [
         COPY_TRADER_TARGET_WALLET: '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader/target-wallet.txt'),
         COPY_TRADER_EXECUTION_MODE: 'live',
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.75',
+        /** Bag-ratio entry owns sizing; classic first-buy mirror off. */
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
         COPY_TRADER_POSITION_USD: '500',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
@@ -2316,6 +2324,12 @@ const PM2_APPS = [
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '3',
         COPY_TRADER_ADD_PRICE_MAX_PREMIUM_PCT: '0',
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
+        /**
+         * 1.11.652 — enter only when leader averages (not first buy);
+         * our clip = 70% of his total bag after that add. No further adds.
+         */
+        COPY_TRADER_ENTER_ONLY_ON_LEADER_ADD: '1',
+        COPY_TRADER_ENTER_ON_LEADER_ADD_BAG_RATIO: '0.7',
         COPY_TRADER_MIN_MCAP_USD: '0',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '500',

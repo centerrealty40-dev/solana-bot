@@ -108,6 +108,28 @@
 
 ---
 
+## [1.11.652] — 2026-08-04
+
+**Тег:** `sa-1.11.652`
+
+### Change: copy-trader 498SW — вход только на усреднении лидера (70% bag)
+
+`live-oscar` остаётся **stopped**. `copy-trader` снова online:
+
+- первый buy лидера → только watch (`wait_leader_add`);
+- когда лидер усредняется (`preLeaderRaw > 0`) → наш **первый** вход =
+  `0.7 ×` его суммарной позиции (USD bag после add);
+- дальнейшие add лидера не копируем;
+- exit по-прежнему `mirror`.
+
+Env: `COPY_TRADER_ENTER_ONLY_ON_LEADER_ADD=1`,
+`COPY_TRADER_ENTER_ON_LEADER_ADD_BAG_RATIO=0.7`.
+
+**Откат:** `ENTER_ONLY_ON_LEADER_ADD=0` + прежний `INITIAL_MIRROR_RATIO`,
+или stop `copy-trader`.
+
+---
+
 ## [1.11.651] — 2026-08-04
 
 **Тег:** `sa-1.11.651`
