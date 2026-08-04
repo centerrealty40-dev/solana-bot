@@ -81,6 +81,20 @@ describe('entry-probe sizing', () => {
     expect(entryTargetUsd(mirrorCfg, undefined, 150)).toBe(100);
   });
 
+  it('caps mirrored entry at maxPositionUsd', () => {
+    const mirrorCfg = {
+      ...prodEntryCfg,
+      initialMirrorRatio: 0.7,
+      minMirrorEntryUsd: 120,
+      maxPositionUsd: 500,
+      entryProbeFraction: 1,
+      entryDipDiscountPct: 0,
+    } as CopyTraderConfig;
+    expect(leaderInitialEntryUsd(mirrorCfg, 1100)).toBe(500);
+    expect(entryTargetUsd(mirrorCfg, undefined, 1100)).toBe(500);
+    expect(entryTargetUsd(mirrorCfg, undefined, 400)).toBe(280);
+  });
+
   it('uses fixed $50 clip for mcap $30k–$150k even with leader mirror', () => {
     const cfg = {
       ...prodEntryCfg,

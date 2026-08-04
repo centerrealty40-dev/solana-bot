@@ -1,4 +1,18 @@
 # So
+## [1.11.661] — 2026-08-04
+
+**Тег:** `sa-1.11.661`
+
+### Change: copy 8zkg buy ceiling $500
+
+Both funded lanes (`copy-trader-8zkg` / mirror): `MAX_POSITION_USD=500`.
+Entry sizing (70% leader, floor $120) and pending buys clamp to that ceiling;
+adds cannot grow the position past $500. Low-mcap $50 clip unchanged.
+
+**Откат:** `MAX_POSITION_USD=0` on both apps + reload.
+
+---
+
 ## [1.11.660] — 2026-08-04
 
 **Тег:** `sa-1.11.660`
