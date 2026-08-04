@@ -124,6 +124,7 @@ import { checkCopyFundingGate } from './funding-gate.js';
 import { mirrorsLeaderSells, usesOscarExitPolicy, usesTrailingExitPolicy } from './exit-mode.js';
 import { fetchCopyEntryContext, type CopyEntryContext } from './entry-context.js';
 import { evaluateLeaderMarketGate, evaluateLeaderPriorGate } from './entry-gates.js';
+import { evaluateShadowSelect } from './shadow-select.js';
 import {
   applyLeaderSwapToHistory,
   gcLeaderHistory,
@@ -141,6 +142,15 @@ import {
 } from './copy-oscar-handoff-eligibility.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/** Rolling shadow recall counters (leader buys scored this process lifetime). */
+const shadowSelectStats = {
+  scored: 0,
+  wouldBuy: 0,
+  miss: 0,
+  ctxMissing: 0,
+  lastSummaryTs: 0,
+};
 
 function logCopyLeaderIgnored(
   cfg: CopyTraderConfig,
@@ -244,6 +254,7 @@ async function leaderGateBlocksEntry(
   cfg: CopyTraderConfig,
   state: CopyTraderState,
   mint: string,
+  ctxHint?: CopyEntryContext | null,
 ): Promise<LeaderGateBlock | null> {
   if (!cfg.leaderGatesEnabled) return null;
 
@@ -251,11 +262,41 @@ async function leaderGateBlocksEntry(
   const prior = evaluateLeaderPriorGate(cfg, stats);
   if (!prior.pass) return { reasons: prior.reasons, stats, ctx: null };
 
-  const ctx = await fetchCopyEntryContext(mint);
+  const ctx = ctxHint !== undefined ? ctxHint : await fetchCopyEntryContext(mint);
   const market = evaluateLeaderMarketGate(cfg, ctx);
   if (!market.pass) return { reasons: market.reasons, stats, ctx };
 
   return null;
+}
+
+function maybeSummarizeShadowSelect(cfg: CopyTraderConfig): void {
+  if (!cfg.shadowSelectEnabled || !(cfg.shadowSelectSummaryMs > 0)) return;
+  const now = Date.now();
+  if (shadowSelectStats.lastSummaryTs > 0 && now - shadowSelectStats.lastSummaryTs < cfg.shadowSelectSummaryMs) {
+    return;
+  }
+  if (shadowSelectStats.scored <= 0 && shadowSelectStats.lastSummaryTs > 0) return;
+  shadowSelectStats.lastSummaryTs = now;
+  const recallPct =
+    shadowSelectStats.scored > 0
+      ? Math.round((shadowSelectStats.wouldBuy / shadowSelectStats.scored) * 1000) / 10
+      : 0;
+  appendCopyEvent(cfg, {
+    kind: 'shadow_select_summary',
+    scored: shadowSelectStats.scored,
+    wouldBuy: shadowSelectStats.wouldBuy,
+    miss: shadowSelectStats.miss,
+    ctxMissing: shadowSelectStats.ctxMissing,
+    recallPct,
+    filterLive: cfg.shadowSelectFilterLive,
+    minVolume5mUsd: cfg.shadowSelectMinVolume5mUsd,
+    minBuySellRatio5m: cfg.shadowSelectMinBuySellRatio5m,
+  });
+  console.log('[copy-trader] shadow_select_summary', {
+    scored: shadowSelectStats.scored,
+    wouldBuy: shadowSelectStats.wouldBuy,
+    recallPct,
+  });
 }
 
 function scheduleTrailExitSell(
@@ -670,7 +711,51 @@ async function onLeaderBuy(
     return;
   }
 
-  const gateBlock = await leaderGateBlocksEntry(cfg, state, mint);
+  let entryCtx: CopyEntryContext | null | undefined;
+  if (cfg.shadowSelectEnabled || cfg.leaderGatesEnabled) {
+    entryCtx = await fetchCopyEntryContext(mint);
+  }
+
+  if (cfg.shadowSelectEnabled) {
+    const shadow = evaluateShadowSelect(cfg, entryCtx ?? null);
+    shadowSelectStats.scored += 1;
+    if (shadow.wouldBuy) shadowSelectStats.wouldBuy += 1;
+    else shadowSelectStats.miss += 1;
+    if (shadow.reasons.includes('ctx_missing')) shadowSelectStats.ctxMissing += 1;
+    appendCopyEvent(cfg, {
+      kind: 'shadow_select',
+      mint,
+      symbol,
+      leaderSignature: row.signature,
+      leaderBuyUsd: swap.amountUsd,
+      wouldBuy: shadow.wouldBuy,
+      reasons: shadow.reasons,
+      ruleId: shadow.ruleId,
+      volume5mUsd: shadow.metrics.volume5mUsd,
+      buySellRatio5m: shadow.metrics.buySellRatio5m,
+      marketCapUsd: shadow.metrics.marketCapUsd,
+      liquidityUsd: shadow.metrics.liquidityUsd,
+      pairAgeHours: shadow.metrics.pairAgeHours,
+      priceChange5mPct: shadow.metrics.priceChange5mPct,
+      filterLive: cfg.shadowSelectFilterLive,
+    });
+    if (cfg.shadowSelectFilterLive && !shadow.wouldBuy) {
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_ignored',
+        reason: 'shadow_select_miss',
+        gateReasons: shadow.reasons,
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        marketCapUsd: shadow.metrics.marketCapUsd,
+        liquidityUsd: shadow.metrics.liquidityUsd,
+      });
+      return;
+    }
+  }
+
+  const gateBlock = await leaderGateBlocksEntry(cfg, state, mint, entryCtx);
   if (gateBlock) {
     appendCopyEvent(cfg, {
       kind: 'leader_buy_ignored',
@@ -690,6 +775,9 @@ async function onLeaderBuy(
           ? Number(gateBlock.ctx.buySellRatio5m.toFixed(2))
           : null,
       priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
+      marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
+      liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
+      volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
     });
     return;
   }
@@ -2459,6 +2547,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           console.log('[copy-trader] leader-flat tail sweep scheduled', tailSweeps);
         }
       }
+      maybeSummarizeShadowSelect(cfg);
       writeCopyTraderState(cfg.statePath, state);
     } catch (err) {
       console.warn('[copy-trader] tick error', (err as Error).message);

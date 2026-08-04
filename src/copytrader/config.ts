@@ -206,6 +206,21 @@ const CopyTraderConfigSchema = z.object({
    * specialize on one metric. Missing feed fails closed when > 0. **0** = off.
    */
   entryMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(0),
+  /**
+   * Shadow selection model (paper). On every leader entry buy, fetch market ctx
+   * and log `shadow_select` with wouldBuy. Fitted rule: vol5m≥$2k & buys/sells≥1.
+   */
+  shadowSelectEnabled: z.boolean().default(false),
+  /** When true, leader buys that fail the shadow rule are ignored (live filter). */
+  shadowSelectFilterLive: z.boolean().default(false),
+  shadowSelectMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(2_000),
+  shadowSelectMinBuySellRatio5m: z.coerce.number().min(0).max(100).default(1),
+  shadowSelectMinMcapUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
+  shadowSelectMinLiquidityUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
+  /** Missing Dex context → wouldBuy=false when true. */
+  shadowSelectRequireCtx: z.boolean().default(true),
+  /** Journal `shadow_select_summary` cadence (default 10m). **0** = off. */
+  shadowSelectSummaryMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
   /** Forget leader mint history untouched for this long. */
   leaderHistoryTtlMs: z.coerce.number().int().min(3_600_000).max(31_536_000_000).default(2_592_000_000),
   /** trail_runner: arm the peak trail once the position is this far up, percent. */
@@ -440,6 +455,14 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryMinTurnover5m: process.env.COPY_TRADER_ENTRY_MIN_TURNOVER_5M,
     entryMinVolToMcap1h: process.env.COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H,
     entryMinVolume5mUsd: process.env.COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD,
+    shadowSelectEnabled: envBool(process.env.COPY_TRADER_SHADOW_SELECT, false),
+    shadowSelectFilterLive: envBool(process.env.COPY_TRADER_SHADOW_SELECT_FILTER_LIVE, false),
+    shadowSelectMinVolume5mUsd: process.env.COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD,
+    shadowSelectMinBuySellRatio5m: process.env.COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M,
+    shadowSelectMinMcapUsd: process.env.COPY_TRADER_SHADOW_SELECT_MIN_MCAP_USD,
+    shadowSelectMinLiquidityUsd: process.env.COPY_TRADER_SHADOW_SELECT_MIN_LIQ_USD,
+    shadowSelectRequireCtx: envBool(process.env.COPY_TRADER_SHADOW_SELECT_REQUIRE_CTX, true),
+    shadowSelectSummaryMs: process.env.COPY_TRADER_SHADOW_SELECT_SUMMARY_MS,
     leaderHistoryTtlMs: process.env.COPY_TRADER_LEADER_HISTORY_TTL_MS,
     trailArmPct: process.env.COPY_TRADER_TRAIL_ARM_PCT,
     trailGivebackPct: process.env.COPY_TRADER_TRAIL_GIVEBACK_PCT,
