@@ -1,4 +1,17 @@
 # So
+## [1.11.663] — 2026-08-04
+
+**Тег:** `sa-1.11.663`
+
+### Change: 8zkg entry floor $150 / ceiling $700 (mcap ≥ $150k)
+
+Both funded lanes: `MIN_MIRROR_ENTRY_USD=150`, `MAX_POSITION_USD=700`,
+still 70% of leader buy. Low-mcap band `$30k–$150k → $50` unchanged.
+
+**Откат:** prior floor $120 / cap $500.
+
+---
+
 ## [1.11.662] — 2026-08-04
 
 **Тег:** `sa-1.11.662`
