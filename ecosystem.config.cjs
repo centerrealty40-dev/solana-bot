@@ -2337,7 +2337,8 @@ const PM2_APPS = [
         COPY_TRADER_MIN_PROPORTIONAL_SELL_FRACTION: '0',
         COPY_TRADER_SELL_DELAY_MIN_MS: '0',
         COPY_TRADER_SELL_DELAY_MAX_MS: '2000',
-        COPY_TRADER_POLL_INTERVAL_MS: '3000',
+        /** 5s — Helius Developer 10M/mo budget; 1–3s polls burned Free/Dev alone. */
+        COPY_TRADER_POLL_INTERVAL_MS: '5000',
         COPY_TRADER_TICK_INTERVAL_MS: '1000',
         COPY_TRADER_SLIPPAGE_BPS: '100',
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader/journal.jsonl'),
@@ -2433,8 +2434,9 @@ const PM2_APPS = [
         COPY_TRADER_MIN_MCAP_USD: '150000',
         /** Both lanes mirror leader sells; this one races (delay 0). */
         COPY_TRADER_EXIT_MODE: 'mirror',
-        COPY_TRADER_POLL_INTERVAL_MS: '1000',
-        COPY_TRADER_TICK_INTERVAL_MS: '500',
+        /** 5s — fits Helius Developer (~10M credits/mo); 1Hz ×2 lanes alone ≈5M+/mo. */
+        COPY_TRADER_POLL_INTERVAL_MS: '5000',
+        COPY_TRADER_TICK_INTERVAL_MS: '1000',
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         /**
@@ -2449,8 +2451,8 @@ const PM2_APPS = [
         /** Long window; the real stop for a premium-blocked entry is "leader sold". */
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
-        /** Failed swap → re-quote fast (was 6s — CaXF rebuy sat ~1min on 0x1771/qn_rate). */
-        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '500',
+        /** 2s re-quote — 500ms burned Helius sims while premium-blocked. */
+        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '2000',
         COPY_TRADER_SELL_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_SELL_RETRY_INTERVAL_MS: '3000',
         COPY_TRADER_SELL_RETRY_DEFER_LOG_MS: '30000',
@@ -2552,8 +2554,9 @@ const PM2_APPS = [
         COPY_TRADER_MIN_MCAP_USD: '0',
         /** His sell is the only exit: no trail, no time cap, no stop. */
         COPY_TRADER_EXIT_MODE: 'mirror',
-        COPY_TRADER_POLL_INTERVAL_MS: '1000',
-        COPY_TRADER_TICK_INTERVAL_MS: '500',
+        /** 5s — Helius Developer 10M/mo; was 1s and burned the plan with twin lane. */
+        COPY_TRADER_POLL_INTERVAL_MS: '5000',
+        COPY_TRADER_TICK_INTERVAL_MS: '1000',
         /** No intentional buy lag — chase the leader fill before the tape runs. */
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT: '0',
@@ -2565,7 +2568,7 @@ const PM2_APPS = [
         COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '0',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',
         COPY_TRADER_BUY_RETRY_DEFER_LOG_MS: '30000',
-        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '500',
+        COPY_TRADER_BUY_RETRY_INTERVAL_MS: '2000',
         /**
          * An exit must not be abandoned while the position is still worth something, so the sell
          * window is long and the retries patient.

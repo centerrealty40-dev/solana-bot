@@ -117,7 +117,8 @@ async function tick() {
   console.log(`[alchemy-usage] ${new Date().toISOString()} ${msg.replace(/\n/g, ' | ')}`);
 
   if (TG_ON) {
-    await sendTagged('REPORT', 'alchemy-usage', msg);
+    const category = slotErr && /capacity|max usage|credit/i.test(slotErr) ? 'ALERT' : 'REPORT';
+    await sendTagged(category, category === 'ALERT' ? 'alchemy-capacity' : 'alchemy-usage', msg);
   }
 
   writeState({ lastReportedHour: hk, lastHourCredits: hourCredits, updatedAt: new Date().toISOString() });
