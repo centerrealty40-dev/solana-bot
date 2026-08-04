@@ -2524,7 +2524,10 @@ const PM2_APPS = [
         /** Multi-window: last 3 m5 samples, exit when ≥2 look weak. */
         COPY_TRADER_VOL_FADE_SAMPLE_WINDOW: '3',
         COPY_TRADER_VOL_FADE_MIN_WEAK_SAMPLES: '2',
-        /** Wider buy slippage — 150bps kept dying on 0x1771 while the tape ran. */
+        /**
+         * Control lane — wide Jupiter tolerance (3%).
+         * Economy A/B lives on `copy-trader-8zkg-mirror` (Oscar 10bps + bump≤100).
+         */
         COPY_TRADER_SLIPPAGE_BPS: '300',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
@@ -2534,6 +2537,7 @@ const PM2_APPS = [
       /**
        * Twin of `copy-trader-8zkg` on the same leader: **vol5m-only** entry (≥$8k).
        * Sell delay: 0 unless mark already down >5% vs entry, then wait max **30s**.
+       * 1.11.668 — Oscar-like slippage economy A/B (base 10bps, bump +10 → 100).
        */
       name: 'copy-trader-8zkg-mirror',
       cwd: root,
@@ -2687,7 +2691,20 @@ const PM2_APPS = [
         COPY_TRADER_MIRROR_EARLY_TP_GAIN_PCT: '0',
         COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
-        COPY_TRADER_SLIPPAGE_BPS: '300',
+        /**
+         * 1.11.668 — Oscar money-save A/B vs twin @ 300bps.
+         * Base 10bps; on slippage-class sim_err bump +10 up to 100 (same as live-oscar).
+         * Rollback: COPY_TRADER_SLIPPAGE_BPS=300 + drop the LIVE_* overrides below.
+         */
+        COPY_TRADER_SLIPPAGE_BPS: '10',
+        LIVE_BUY_SIM_RETRY_ATTEMPTS: '10',
+        LIVE_BUY_SIM_RETRY_DELAY_MS: '800',
+        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '8',
+        LIVE_SELL_SIM_RETRY_ATTEMPTS: '12',
+        LIVE_SELL_SIM_RETRY_DELAY_MS: '1000',
+        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '12',
+        LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '10',
+        LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '100',
         COPY_TRADER_TELEGRAM_ENABLED: '1',
         ...SOLANA_RPC_ALCHEMY_ONLY_ENV,
       },

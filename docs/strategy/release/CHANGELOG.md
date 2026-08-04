@@ -1,4 +1,24 @@
 # So
+## [1.11.668] — 2026-08-04
+
+**Тег:** `sa-1.11.668`
+
+### Change: Oscar-like slippage economy A/B on `copy-trader-8zkg-mirror`
+
+Test whether tight Jupiter slippage (as on live-oscar) fails copy fills or
+saves money vs the wide control lane.
+
+- **Economy (mirror):** `COPY_TRADER_SLIPPAGE_BPS=10` + buy/sell sim retry with
+  bump `+10` bps up to `100` (Oscar 1.11.503 envelope)
+- **Control (`copy-trader-8zkg`):** stays at `300` bps
+- Copy buy path now re-quotes with adaptive slippage bump (sell already had it);
+  bump helper never clamps a wider base downward
+
+**Откат:** mirror `COPY_TRADER_SLIPPAGE_BPS=300`, remove mirror `LIVE_*` slippage
+overrides, reload PM2.
+
+---
+
 ## [1.11.667] — 2026-08-04
 
 **Тег:** `sa-1.11.667`

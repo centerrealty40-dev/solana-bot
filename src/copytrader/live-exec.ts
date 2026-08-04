@@ -9,6 +9,7 @@ import {
 } from '../live/jupiter.js';
 import { signLiveJupiterSwapBase64 } from '../live/simulate.js';
 import { isRetryableSellSimError, isSlippageClassSimError } from '../live/phase4-execution.js';
+import { isRetryableBuySimError } from '../live/execution-retry-errors.js';
 import { liveSendSignedSwapPipeline } from '../live/phase6-send.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { rpcCall } from './rpc.js';
@@ -21,6 +22,7 @@ import {
   copyQuoteSpec,
   copySellQuotePriceUsd,
 } from './quote-mint.js';
+import { bumpSlippageBps } from './slippage-bump.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -32,12 +34,13 @@ function isRetryableSellPreSendError(reason: string): boolean {
   return isRetryableSellSimError(reason);
 }
 
-function bumpSellSlippageBps(args: {
-  currentBps: number;
-  bumpBps: number;
-  maxBps: number;
-}): number {
-  return Math.min(args.maxBps, Math.max(args.currentBps, args.currentBps + args.bumpBps));
+function isRetryableBuyPreSendError(reason: string): boolean {
+  if (!reason) return false;
+  if (reason.startsWith('confirm_timeout')) return false;
+  if (reason === 'buy_quote_premium_blocked') return false;
+  if (reason === 'jupiter_buy_quote_failed') return true;
+  if (reason.includes('swap-http-429')) return true;
+  return isRetryableBuySimError(reason);
 }
 
 let cachedSigner: Keypair | null = null;
@@ -125,81 +128,153 @@ export async function executeLiveCopyBuy(args: {
     return { ok: false, priceUsd: 0, reason: 'buy_size_unresolvable' };
   }
 
-  const quote = await liveFetchBuyQuote({
-    cfg: liveCfg,
-    outputMint: mint,
-    sizeUsd,
-    solUsd,
-    inputMintOverride: quoteSpec.mint,
-    inputAmountRawOverride: inputAmountRaw,
-  });
-  if (!quote) {
-    return { ok: false, priceUsd: 0, reason: 'jupiter_buy_quote_failed' };
-  }
+  const maxAttempts = 1 + liveCfg.liveBuySimRetryAttempts;
+  const slippageCap = 1 + liveCfg.liveBuySimSlippageRetryAttempts;
+  let slippageClassAttempts = 0;
+  let currentSlippageBps = liveCfg.liveDefaultSlippageBps;
+  let lastReason = 'jupiter_buy_quote_failed';
+  let lastPriceUsd = 0;
 
-  const outRaw = quote.quoteResponse.outAmount;
-  const priceUsd = copyBuyQuotePriceUsd({
-    spec: quoteSpec,
-    inAmountRaw: quote.quoteResponse.inAmount,
-    outAmountRaw: outRaw,
-    solUsd,
-  });
-
-  if (cfg.quotePremiumGuardPct > 0 || cfg.quotePremiumFirstShotPct > 0) {
-    const { maxPremiumPct, firstShot } = effectiveQuotePremiumCap({
-      guardPct: cfg.quotePremiumGuardPct,
-      firstShotPct: cfg.quotePremiumFirstShotPct,
-      graceMs: cfg.quotePremiumGraceMs,
-      leaderBuyTs,
-      nowMs: Date.now(),
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const quote = await liveFetchBuyQuote({
+      cfg: liveCfg,
+      outputMint: mint,
+      sizeUsd,
+      solUsd,
+      slippageBpsOverride: currentSlippageBps,
+      inputMintOverride: quoteSpec.mint,
+      inputAmountRawOverride: inputAmountRaw,
     });
-    if (maxPremiumPct > 0) {
-      const verdict = checkQuotePremium({
-        quotePriceUsd: priceUsd,
-        leaderPriceUsd,
-        maxPremiumPct,
+    if (!quote) {
+      lastReason = 'jupiter_buy_quote_failed';
+      if (attempt < maxAttempts - 1) {
+        await sleep(liveCfg.liveBuySimRetryDelayMs);
+        continue;
+      }
+      return { ok: false, priceUsd: 0, reason: lastReason };
+    }
+
+    const outRaw = quote.quoteResponse.outAmount;
+    const priceUsd = copyBuyQuotePriceUsd({
+      spec: quoteSpec,
+      inAmountRaw: quote.quoteResponse.inAmount,
+      outAmountRaw: outRaw,
+      solUsd,
+    });
+    lastPriceUsd = priceUsd;
+
+    if (cfg.quotePremiumGuardPct > 0 || cfg.quotePremiumFirstShotPct > 0) {
+      const { maxPremiumPct, firstShot } = effectiveQuotePremiumCap({
+        guardPct: cfg.quotePremiumGuardPct,
+        firstShotPct: cfg.quotePremiumFirstShotPct,
+        graceMs: cfg.quotePremiumGraceMs,
+        leaderBuyTs,
+        nowMs: Date.now(),
       });
-      if (verdict.block) {
-        appendCopyEvent(cfg, {
-          kind: 'buy_quote_premium_blocked',
-          mint,
-          symbol,
-          kindBuy: kind,
-          leaderSignature,
-          leaderPriceUsd,
+      if (maxPremiumPct > 0) {
+        const verdict = checkQuotePremium({
           quotePriceUsd: priceUsd,
-          maxAllowedPriceUsd: verdict.maxAllowedPriceUsd,
-          premiumPct: Number(verdict.premiumPct.toFixed(2)),
+          leaderPriceUsd,
           maxPremiumPct,
-          firstShot,
-          sizeUsd,
         });
-        return { ok: false, priceUsd, reason: verdict.reason };
+        if (verdict.block) {
+          appendCopyEvent(cfg, {
+            kind: 'buy_quote_premium_blocked',
+            mint,
+            symbol,
+            kindBuy: kind,
+            leaderSignature,
+            leaderPriceUsd,
+            quotePriceUsd: priceUsd,
+            maxAllowedPriceUsd: verdict.maxAllowedPriceUsd,
+            premiumPct: Number(verdict.premiumPct.toFixed(2)),
+            maxPremiumPct,
+            firstShot,
+            sizeUsd,
+            slippageBps: currentSlippageBps,
+            buySimRetryAttempt: attempt,
+          });
+          /** Premium is a pricing gate, not a slippage-class — surface immediately for outer retry. */
+          return { ok: false, priceUsd, reason: verdict.reason };
+        }
       }
     }
+
+    const build = await liveBuildUnsignedSwapTx({
+      cfg: liveCfg,
+      quoteResponse: quote.quoteResponse,
+      userPublicKey: userPk,
+    });
+    if (!build.ok) {
+      lastReason = build.reason;
+      if (attempt < maxAttempts - 1 && isRetryableBuyPreSendError(lastReason)) {
+        await sleep(liveCfg.liveBuySimRetryDelayMs);
+        continue;
+      }
+      return { ok: false, priceUsd: lastPriceUsd, reason: lastReason };
+    }
+
+    const sent = await sendSwap(cfg, build.b64, {
+      side: 'buy',
+      mint,
+      symbol,
+      sizeUsd,
+      kind,
+      leaderSignature,
+      quoteAsset: quoteSpec.asset,
+      quoteSnapshot: {
+        ...quote.quoteSnapshot,
+        buySimRetryAttempt: attempt,
+        buySimRetryMaxAttempts: maxAttempts,
+        slippageBps: currentSlippageBps,
+      },
+    });
+
+    if (sent.ok) {
+      return {
+        ok: true,
+        priceUsd,
+        signature: sent.signature,
+        tokenRaw: outRaw != null ? String(outRaw) : undefined,
+      };
+    }
+
+    lastReason = sent.reason ?? 'send_failed';
+    if (lastReason.startsWith('confirm_timeout')) {
+      return {
+        ok: false,
+        priceUsd,
+        signature: sent.signature,
+        tokenRaw: outRaw != null ? String(outRaw) : undefined,
+        reason: lastReason,
+      };
+    }
+
+    const isSlippage = isSlippageClassSimError(lastReason);
+    if (isSlippage) {
+      slippageClassAttempts += 1;
+      currentSlippageBps = bumpSlippageBps({
+        currentBps: currentSlippageBps,
+        bumpBps: liveCfg.liveSimSlippageRetryBumpBps,
+        maxBps: liveCfg.liveSimSlippageRetryMaxBps,
+      });
+    }
+    const slippageBail = isSlippage && slippageClassAttempts >= slippageCap;
+    if (!slippageBail && attempt < maxAttempts - 1 && isRetryableBuyPreSendError(lastReason)) {
+      await sleep(liveCfg.liveBuySimRetryDelayMs);
+      continue;
+    }
+
+    return {
+      ok: false,
+      priceUsd,
+      signature: sent.signature,
+      tokenRaw: outRaw != null ? String(outRaw) : undefined,
+      reason: lastReason,
+    };
   }
 
-  const build = await liveBuildUnsignedSwapTx({
-    cfg: liveCfg,
-    quoteResponse: quote.quoteResponse,
-    userPublicKey: userPk,
-  });
-  if (!build.ok) {
-    return { ok: false, priceUsd: 0, reason: build.reason };
-  }
-
-  const sent = await sendSwap(cfg, build.b64, {
-    side: 'buy',
-    mint,
-    symbol,
-    sizeUsd,
-    kind,
-    leaderSignature,
-    quoteAsset: quoteSpec.asset,
-    quoteSnapshot: quote.quoteSnapshot,
-  });
-
-  return { ok: sent.ok, priceUsd, signature: sent.signature, tokenRaw: outRaw != null ? String(outRaw) : undefined, reason: sent.reason };
+  return { ok: false, priceUsd: lastPriceUsd, reason: lastReason };
 }
 
 export async function executeLiveCopySell(args: {
@@ -318,7 +393,7 @@ export async function executeLiveCopySell(args: {
     const isSlippage = isSlippageClassSimError(lastReason);
     if (isSlippage) {
       slippageClassAttempts += 1;
-      currentSlippageBps = bumpSellSlippageBps({
+      currentSlippageBps = bumpSlippageBps({
         currentBps: currentSlippageBps,
         bumpBps: liveCfg.liveSimSlippageRetryBumpBps,
         maxBps: liveCfg.liveSimSlippageRetryMaxBps,
