@@ -1,4 +1,20 @@
 # So
+## [1.11.659] — 2026-08-04
+
+**Тег:** `sa-1.11.659`
+
+### Change: stream watchdog — do not kill WS handshake on boot
+
+658 mid-tick link check treated `connected=false` before first `ws_open` as
+disconnect and called `forceReconnect`, aborting the Helius handshake.
+
+Fix: force reconnect only after `lastOpenAtMs > 0`; recover healthy mid-tick
+once subscribed; no Telegram spam during boot.
+
+**Откат:** revert to 658.
+
+---
+
 ## [1.11.658] — 2026-08-04
 
 **Тег:** `sa-1.11.658`
