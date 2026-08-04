@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { isLeaderFollowOnlyMarket } from '../../src/copytrader/leader-follow-only.js';
 import {
   decideMirrorHoldCap,
   volumeSupportsHoldExtension,
@@ -10,9 +11,16 @@ const cfg = {
   volFadeMinVolume5mUsd: 8_000,
   volFadeDropPct: 40,
   sellRetryWindowMs: 7_200_000,
+  leaderFollowOnlyMinMcapUsd: 0,
+  leaderFollowOnlyMinVolume1hUsd: 0,
 };
 
-const stretchCfg = { ...cfg, mirrorHoldCapVolOkMs: 3_600_000 };
+const stretchCfg = {
+  ...cfg,
+  mirrorHoldCapVolOkMs: 3_600_000,
+  leaderFollowOnlyMinMcapUsd: 1_000_000,
+  leaderFollowOnlyMinVolume1hUsd: 50_000,
+};
 
 describe('decideMirrorHoldCap', () => {
   it('sells when held ≥ 30m (no stretch)', () => {
@@ -73,6 +81,31 @@ describe('decideMirrorHoldCap', () => {
     });
     expect(unknown.action).toBe('sell');
     if (unknown.action === 'sell') expect(unknown.reason).toBe('volume_weak');
+  });
+
+  it('skips timeout on large liquid names (mcap+$1M, vol1h $50k)', () => {
+    const d = decideMirrorHoldCap(stretchCfg, {
+      entryTs: 1_000_000,
+      nowMs: 1_000_000 + 3_600_000,
+      volumeHealthy: false,
+      marketCapUsd: 1_500_000,
+      volume1hUsd: 80_000,
+    });
+    expect(d).toEqual({ action: 'hold', reason: 'leader_follow_only' });
+  });
+});
+
+describe('isLeaderFollowOnlyMarket', () => {
+  const floors = {
+    leaderFollowOnlyMinMcapUsd: 1_000_000,
+    leaderFollowOnlyMinVolume1hUsd: 50_000,
+  };
+
+  it('requires both floors', () => {
+    expect(isLeaderFollowOnlyMarket(floors, { marketCapUsd: 2e6, volume1hUsd: 80_000 })).toBe(true);
+    expect(isLeaderFollowOnlyMarket(floors, { marketCapUsd: 900_000, volume1hUsd: 80_000 })).toBe(false);
+    expect(isLeaderFollowOnlyMarket(floors, { marketCapUsd: 2e6, volume1hUsd: 40_000 })).toBe(false);
+    expect(isLeaderFollowOnlyMarket(floors, { marketCapUsd: null, volume1hUsd: 80_000 })).toBe(false);
   });
 });
 

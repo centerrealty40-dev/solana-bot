@@ -12,6 +12,8 @@ const cfg: VolFadeConfig = {
   volFadeMinVolume5mUsd: 8_000,
   volFadeDropPct: 40,
   sellRetryWindowMs: 3_600_000,
+  leaderFollowOnlyMinMcapUsd: 0,
+  leaderFollowOnlyMinVolume1hUsd: 0,
 };
 
 function emptyState(): CopyTraderState {
@@ -55,6 +57,23 @@ describe('decideVolFadeExit', () => {
     expect(
       decideVolFadeExit(cfg, { entryVolume5mUsd: 20_000, volume5mUsd: null }).reason,
     ).toBe('volume_unknown');
+  });
+
+  it('holds on leader-follow-only markets even if 5m faded', () => {
+    const res = decideVolFadeExit(
+      {
+        ...cfg,
+        leaderFollowOnlyMinMcapUsd: 1_000_000,
+        leaderFollowOnlyMinVolume1hUsd: 50_000,
+      },
+      {
+        entryVolume5mUsd: 20_000,
+        volume5mUsd: 5_000,
+        marketCapUsd: 2_000_000,
+        volume1hUsd: 80_000,
+      },
+    );
+    expect(res).toEqual({ action: 'hold', reason: 'leader_follow_only' });
   });
 });
 

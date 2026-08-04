@@ -19,6 +19,8 @@ const cfg: LeaderGateConfig = {
   entryMinTurnover5m: 0,
   entryMinVolToMcap1h: 0,
   entryMinVolume5mUsd: 0,
+  leaderFollowOnlyMinMcapUsd: 0,
+  leaderFollowOnlyMinVolume1hUsd: 0,
 };
 
 /** What copy-trader-8zkg actually runs: market structure, no mint memory. */
@@ -33,6 +35,8 @@ const shipped: LeaderGateConfig = {
   entryMinTurnover5m: 0.09,
   entryMinVolToMcap1h: 0.33,
   entryMinVolume5mUsd: 0,
+  leaderFollowOnlyMinMcapUsd: 0,
+  leaderFollowOnlyMinVolume1hUsd: 0,
 };
 
 const goodStats: LeaderMintStats = {
@@ -217,6 +221,33 @@ describe('turnover gates', () => {
     const res = evaluateLeaderMarketGate(shipped, ctx({ pairAgeHours: 44 }));
     expect(res.pass).toBe(false);
     expect(res.reasons[0]).toContain('>max=30');
+  });
+
+  it('bypasses vol5m floor on large liquid names (mcap+$1M, vol1h $50k)', () => {
+    const mirrorLane: LeaderGateConfig = {
+      ...shipped,
+      entryMinTurnover5m: 0,
+      entryMinVolToMcap1h: 0,
+      entryMaxPairAgeHours: 0,
+      entryMinPairAgeHours: 0.1,
+      entryMinVolume5mUsd: 8_000,
+      leaderFollowOnlyMinMcapUsd: 1_000_000,
+      leaderFollowOnlyMinVolume1hUsd: 50_000,
+    };
+    const lowVol5m = ctx({
+      volume5mUsd: 3_590,
+      marketCapUsd: 2_000_000,
+      volume1hUsd: 120_000,
+    });
+    expect(evaluateLeaderMarketGate(mirrorLane, lowVol5m).pass).toBe(true);
+
+    const notLarge = ctx({
+      volume5mUsd: 3_590,
+      marketCapUsd: 400_000,
+      volume1hUsd: 120_000,
+    });
+    expect(evaluateLeaderMarketGate(mirrorLane, notLarge).pass).toBe(false);
+    expect(evaluateLeaderMarketGate(mirrorLane, notLarge).reasons[0]).toContain('volume_5m_usd=');
   });
 });
 

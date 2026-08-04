@@ -13,6 +13,7 @@
  */
 import type { CopyTraderConfig } from './config.js';
 import type { CopyEntryContext } from './entry-context.js';
+import { isLeaderFollowOnlyMarket } from './leader-follow-only.js';
 import type { LeaderMintStats } from './leader-history.js';
 
 export type LeaderGateConfig = Pick<
@@ -27,6 +28,8 @@ export type LeaderGateConfig = Pick<
   | 'entryMinTurnover5m'
   | 'entryMinVolToMcap1h'
   | 'entryMinVolume5mUsd'
+  | 'leaderFollowOnlyMinMcapUsd'
+  | 'leaderFollowOnlyMinVolume1hUsd'
 >;
 
 export type LeaderGateResult = {
@@ -100,6 +103,19 @@ export function evaluateLeaderMarketGate(
   }
 
   if (!ctx) return { pass: false, reasons: ['no_entry_context'] };
+
+  /**
+   * Large liquid names (mcap + 1h vol): both 8zkg lanes must take the trade.
+   * Bypass selective micro-structure gates (esp. vol5m floor on the vol lane).
+   */
+  if (
+    isLeaderFollowOnlyMarket(cfg, {
+      marketCapUsd: ctx.marketCapUsd,
+      volume1hUsd: ctx.volume1hUsd,
+    })
+  ) {
+    return PASS;
+  }
 
   const reasons: string[] = [];
 

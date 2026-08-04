@@ -106,6 +106,28 @@
 
 ---
 
+---
+
+## [1.11.650] — 2026-08-04
+
+**Тег:** `sa-1.11.650`
+
+### Change: leader-follow-only when mcap≥$1M and vol1h≥$50k
+
+Gymb RCA: оба 8zkg вышли слишком рано — mcap-lane по
+`mirror_hold_cap` (`volume_weak` @30m), vol-lane по `vol_fade:drop`.
+HBrf: mirror (`2fMz…`) пропустил вход — `volume_5m_usd=3590<min=8000`,
+пока mcap-lane купил.
+
+- `COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD=1000000`
+- `COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD=50000`
+- Exit: hold-cap + vol-fade **off** на таких именах — только за лидером
+- Entry: market gates **bypass** (оба lane обязаны брать крупняк)
+
+**Откат:** обнулить оба `LEADER_FOLLOW_ONLY_*`; redeploy `1.11.649`.
+
+---
+
 ## [1.11.649] — 2026-08-04
 
 **Тег:** `sa-1.11.649`

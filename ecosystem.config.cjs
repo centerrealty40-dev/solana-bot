@@ -2482,6 +2482,12 @@ const PM2_APPS = [
         /** Force full exit after 30m; stretch to 60m while 5m volume stays healthy. */
         COPY_TRADER_MIRROR_HOLD_CAP_MS: '1800000',
         COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '3600000',
+        /**
+         * Large liquid names: no hold-cap / vol-fade — exit only with the leader.
+         * Live mcap ≥ $1M and 1h volume ≥ $50k.
+         */
+        COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD: '1000000',
+        COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD: '50000',
         /** Volume health for hold-cap extension (same floors as vol-fade twin). */
         COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '8000',
         COPY_TRADER_VOL_FADE_DROP_PCT: '40',
@@ -2613,10 +2619,12 @@ const PM2_APPS = [
         COPY_TRADER_VOL_FADE_DROP_PCT: '40',
         /**
          * Same hold-cap as twin: 30m base, stretch to 60m while volume stays healthy.
-         * Vol-fade still exits earlier if volume collapses.
+         * Vol-fade still exits earlier if volume collapses — unless leader-follow-only.
          */
         COPY_TRADER_MIRROR_HOLD_CAP_MS: '1800000',
         COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '3600000',
+        COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD: '1000000',
+        COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD: '50000',
         /**
          * One-shot early TP while leader still holds: +20% → sell 50% of remainder.
          */

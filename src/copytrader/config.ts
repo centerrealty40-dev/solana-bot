@@ -231,6 +231,14 @@ const CopyTraderConfigSchema = z.object({
    * to this longer timeout. Must be > `mirrorHoldCapMs`. **0** = no extension.
    */
   mirrorHoldCapVolOkMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+  /**
+   * Leader-follow-only market: if live mcap ≥ this AND 1h vol ≥
+   * `leaderFollowOnlyMinVolume1hUsd`, skip hold-cap + vol-fade (exit only with
+   * the leader). **0** = off.
+   */
+  leaderFollowOnlyMinMcapUsd: z.coerce.number().min(0).max(1_000_000_000_000).default(0),
+  /** Paired with `leaderFollowOnlyMinMcapUsd`. **0** = off. */
+  leaderFollowOnlyMinVolume1hUsd: z.coerce.number().min(0).max(100_000_000).default(0),
   maxOpenPositions: z.coerce.number().int().min(0).max(100).default(0),
   /** Funding asset for swaps. `USDC` decouples sizing from the SOL price (see quote-mint.ts). */
   quoteAsset: z.enum(['SOL', 'USDC']).default('SOL'),
@@ -384,6 +392,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     mirrorEarlyTpTickIntervalMs: process.env.COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS,
     mirrorHoldCapMs: process.env.COPY_TRADER_MIRROR_HOLD_CAP_MS,
     mirrorHoldCapVolOkMs: process.env.COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS,
+    leaderFollowOnlyMinMcapUsd: process.env.COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD,
+    leaderFollowOnlyMinVolume1hUsd: process.env.COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD,
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
     quoteAsset: parseCopyQuoteAsset(process.env.COPY_TRADER_QUOTE_MINT).asset,
     minFeeSolReserve: process.env.COPY_TRADER_MIN_FEE_SOL_RESERVE,
