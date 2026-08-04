@@ -75,13 +75,8 @@ function pathIsAbsolute(p) {
 }
 
 export function defaultStrategyWatchTargets(root) {
+  /** live-oscar stopped; default = 498SW copy + funded 8zkg. */
   return [
-    {
-      pm2: 'live-oscar',
-      heartbeatPath: `${root}/data/ops-heartbeats/live-oscar.json`,
-      staleMs: 900_000,
-      fatalPath: `${root}/data/live/last-fatal-live-oscar.json`,
-    },
     {
       pm2: 'copy-trader',
       heartbeatPath: `${root}/data/ops-heartbeats/copy-trader.json`,
