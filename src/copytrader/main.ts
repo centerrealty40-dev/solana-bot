@@ -359,7 +359,7 @@ async function resolveCurrentPrice(
 export async function pollLeaderWallet(
   cfg: CopyTraderConfig,
   state: CopyTraderState,
-): Promise<{ discovered: string[] }> {
+): Promise<{ discovered: string[]; applied: number }> {
   const { rows, rpcFailed } = await fetchWalletSignatures(cfg.rpcUrl, cfg.targetWallet, cfg.signatureLimit);
   if (rpcFailed) {
     const now = Date.now();
@@ -378,17 +378,17 @@ export async function pollLeaderWallet(
         `[ALERT][copy_rpc] ${process.env.COPY_TRADER_APP_NAME || 'copy-trader'}: leader poll RPC failed ×${pollRpcFailStreak} (capacity/unreachable). Trading paused until RPC recovers.`,
       );
     }
-    return { discovered: [] };
+    return { discovered: [], applied: 0 };
   }
   pollRpcFailStreak = 0;
-  if (rows.length === 0) return { discovered: [] };
+  if (rows.length === 0) return { discovered: [], applied: 0 };
 
   const latest = rows[0]!.signature;
   const prev = state.lastSignature;
   if (!prev) {
     state.lastSignature = latest;
     for (const row of rows) state.seenSignatures[row.signature] = Date.now();
-    return { discovered: [] };
+    return { discovered: [], applied: 0 };
   }
 
   const newRows: SignatureRow[] = [];
@@ -400,8 +400,8 @@ export async function pollLeaderWallet(
   state.lastSignature = latest;
   newRows.reverse();
 
-  await ingestLeaderSignatureRows(cfg, state, newRows, 'poll');
-  return { discovered: newRows.map((r) => r.signature) };
+  const applied = await ingestLeaderSignatureRows(cfg, state, newRows, 'poll');
+  return { discovered: newRows.map((r) => r.signature), applied };
 }
 
 /** Apply one or more leader signatures (stream or poll). Dedupes via seenSignatures. */
@@ -2212,9 +2212,11 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
 
     if (now - lastPoll >= effectivePollMs) {
       let discovered: string[] = [];
+      let pollApplied = 0;
       try {
         const pollResult = await pollLeaderWallet(cfg, state);
         discovered = pollResult.discovered;
+        pollApplied = pollResult.applied;
         gcSeenSignatures(state, 48 * 3600_000);
         reconcileOscarHandoffClosedFromDisk(cfg, state);
         writeCopyTraderState(cfg.statePath, state);
@@ -2224,12 +2226,15 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
       lastPoll = now;
 
       if (cfg.leaderStreamEnabled) {
+        // Only count cycles where poll applied a swap the stream never queued.
+        // Raw discovered includes non-swaps that tokenAccounts stream ignores.
         const pollMisses = discovered.filter((sig) => !streamSeen.has(sig)).length;
+        const swapMisses = pollApplied > 0 && pollMisses > 0 ? 1 : 0;
         const decision = evaluateStreamWatchdog({
           nowMs: now,
           enabled: true,
           health: leaderStream?.getHealth() ?? null,
-          pollMissesThisCycle: pollMisses,
+          pollMissesThisCycle: swapMisses,
           missStreak: streamMissStreak,
           missThreshold: cfg.leaderStreamMissThreshold,
         });
@@ -2242,6 +2247,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           console.warn('[copy-trader] stream watchdog force reconnect', {
             reason: decision.reason,
             pollMisses,
+            swapMisses,
             health: leaderStream.getHealth(),
           });
           leaderStream.forceReconnect();
@@ -2253,6 +2259,8 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             reason: decision.reason,
             useFastPoll: decision.useFastPoll,
             pollMisses,
+            swapMisses,
+            notifyCount: leaderStream?.getHealth().notifyCount ?? 0,
             missStreak: streamMissStreak,
             effectivePollMs: streamHealthy ? streamBackupPollMs : streamFastPollMs,
           });

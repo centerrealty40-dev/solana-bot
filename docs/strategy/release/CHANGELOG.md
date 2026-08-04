@@ -1,4 +1,22 @@
 # So
+## [1.11.662] — 2026-08-04
+
+**Тег:** `sa-1.11.662`
+
+### Change: stop stream self-kill + sell delay 0 (ms path)
+
+Root cause of ~20s lag with paid Helius WS: watchdog `poll_miss_streak`
+force-reconnected every few minutes (poll sees non-swap leader txs that
+`tokenAccounts` stream correctly ignores) → FxQf stuck on poll ingress.
+
+- `poll_miss_streak` no longer `forceReconnect` (fast-poll only)
+- Miss threshold 5; count only cycles that applied swaps
+- Both 8zkg lanes: `LEADER_STREAM=1`, `SELL_DELAY=0`
+
+**Откат:** revert; or `LEADER_STREAM=0` + prior sell delays.
+
+---
+
 ## [1.11.661] — 2026-08-04
 
 **Тег:** `sa-1.11.661`
