@@ -1,4 +1,20 @@
 # So
+## [1.11.679] — 2026-08-05
+
+**Тег:** `sa-1.11.679`
+
+### Change: mild-dip close empty ATAs after sell (+ startup sweep)
+
+- After full sell / empty-bag drop: close zero-balance mint ATA (SPL + Token-2022)
+  and reclaim ~0.002 SOL rent (~3%+ of a $5 clip)
+- Startup sweep closes already-empty junk ATAs left from prior test fills
+- Never closes USDC/USDT/USDG/WSOL ATAs
+- Journal: `mild_dip_ata_closed`
+
+**Откат:** revert close-empty-ata wiring in `loop.ts` + reload `mild-dip-bot`.
+
+---
+
 ## [1.11.678] — 2026-08-05
 
 **Тег:** `sa-1.11.678`
