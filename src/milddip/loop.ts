@@ -1,4 +1,8 @@
 import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
+import {
+  checkCopyFundingGate,
+  resetCopyFundingCache,
+} from '../copytrader/funding-gate.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
@@ -15,6 +19,9 @@ import { startMildDipHotMintStream } from './stream.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Floor for a last partial clip when draining the wallet. */
+const MIN_CLIP_USD = 1;
+
 function openCount(state: MildDipState): number {
   return Object.keys(state.open).length;
 }
@@ -30,12 +37,40 @@ async function markPriceUsd(mint: string, nowMs: number): Promise<number | null>
   return px != null && px > 0 ? px : null;
 }
 
+/**
+ * Resolve clip size from wallet USDC. No slot cap when maxOpenPositions=0 —
+ * keep spending until the wallet cannot fund MIN_CLIP_USD.
+ */
+async function resolveEntrySizeUsd(
+  cfg: MildDipConfig,
+  copyCfg: ReturnType<typeof mildDipToCopyTraderConfig>,
+  nowMs: number,
+): Promise<{ sizeUsd: number; stop: boolean; reason?: string; usdc?: number }> {
+  const want = cfg.positionUsd;
+  const full = await checkCopyFundingGate(copyCfg, want, nowMs);
+  if (full.ok) return { sizeUsd: want, stop: false, usdc: full.quoteUsd };
+
+  if (full.reason === 'insufficient_usdc') {
+    const leftover = Math.floor(full.quoteUsd * 100) / 100;
+    if (leftover + 1e-9 < MIN_CLIP_USD) {
+      return { sizeUsd: 0, stop: true, reason: 'usdc_exhausted', usdc: full.quoteUsd };
+    }
+    const partial = await checkCopyFundingGate(copyCfg, leftover, nowMs);
+    if (partial.ok) return { sizeUsd: leftover, stop: false, usdc: partial.quoteUsd };
+    return { sizeUsd: 0, stop: true, reason: partial.reason, usdc: partial.quoteUsd };
+  }
+
+  // Fee SOL / RPC — do not keep hammering this scan.
+  return { sizeUsd: 0, stop: true, reason: full.reason, usdc: full.quoteUsd };
+}
+
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
-  const slots = cfg.maxOpenPositions - openCount(state);
-  if (slots <= 0) return;
+  const unlimited = cfg.maxOpenPositions <= 0;
+  const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
+  if (!unlimited && slots <= 0) return;
 
   const mints = await collectCandidateMints(cfg);
-  const candidates = await enrichAndFilterCandidates(cfg, mints, { nowMs, maxEnrich: 40 });
+  const candidates = await enrichAndFilterCandidates(cfg, mints, { nowMs, maxEnrich: 80 });
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 
   let filled = 0;
@@ -44,13 +79,25 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     if (state.open[c.mint]) continue;
     if (onCooldown(state, c.mint, nowMs)) continue;
 
+    const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs);
+    if (sized.stop || !(sized.sizeUsd > 0)) {
+      if (sized.reason && sized.reason !== 'usdc_exhausted') {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_funding_block',
+          reason: sized.reason,
+          usdc: sized.usdc ?? null,
+        });
+      }
+      break;
+    }
+
     const leaderSig = `milddip_${c.mint.slice(0, 8)}_${nowMs}`;
     const buy = await executeCopyBuy({
       cfg: copyCfg,
       mint: c.mint,
       symbol: c.symbol,
       priceUsd: c.priceUsd,
-      sizeUsd: cfg.positionUsd,
+      sizeUsd: sized.sizeUsd,
       kind: 'entry',
       evalResult: {
         pass: true,
@@ -68,17 +115,19 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       kind: 'mild_dip_buy_attempt',
       mint: c.mint,
       symbol: c.symbol,
-      sizeUsd: cfg.positionUsd,
+      sizeUsd: sized.sizeUsd,
       priceUsd: buy.priceUsd || c.priceUsd,
       pc5m: c.metrics.priceChange5mPct,
       ok: buy.ok,
       reason: buy.reason ?? null,
       signature: buy.signature ?? null,
       mode: cfg.executionMode,
+      usdcBefore: sized.usdc ?? null,
     });
 
     if (!buy.ok) {
       state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+      resetCopyFundingCache();
       continue;
     }
 
@@ -86,15 +135,16 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       mint: c.mint,
       symbol: c.symbol,
       entryPriceUsd: buy.priceUsd || c.priceUsd,
-      sizeUsd: cfg.positionUsd,
+      sizeUsd: sized.sizeUsd,
       tokenRaw: buy.tokenRaw ?? null,
       openedAtMs: nowMs,
       entryPc5mPct: c.metrics.priceChange5mPct,
       buySignature: buy.signature ?? null,
     };
     filled += 1;
+    resetCopyFundingCache();
     console.log(
-      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… pc5m=${c.metrics.priceChange5mPct?.toFixed(1)} @$${
+      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd} pc5m=${c.metrics.priceChange5mPct?.toFixed(1)} @$${
         (buy.priceUsd || c.priceUsd).toPrecision(4)
       } mode=${cfg.executionMode}`,
     );
