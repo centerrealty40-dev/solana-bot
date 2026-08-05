@@ -9,7 +9,14 @@ import type { MildDipConfig } from './config.js';
 import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
-import { evaluateMildDipPeakGiveback, evaluateMildDipPreBuy } from './gates.js';
+import {
+  applyMarkDecisionToPosition,
+  decideMarkExit,
+  mapPool,
+  orderMintsForMark,
+  type MarkExitDecision,
+} from './exit-engine.js';
+import { evaluateMildDipPreBuy } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
 import {
   appendMildDipJournal,
@@ -26,6 +33,12 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 const MIN_CLIP_USD = 1;
 /** Raw units below this are dust — ignore for rebuy/adopt. */
 const HOLDING_DUST_RAW = 1000n;
+
+/**
+ * In-flight sells — mint stays in `state.open` until sell settles so a restart
+ * or concurrent mark pass cannot orphan / double-buy the bag.
+ */
+const sellInFlight = new Set<string>();
 
 function openCount(state: MildDipState): number {
   return Object.keys(state.open).length;
@@ -303,112 +316,162 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   }
 }
 
-async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
-  const copyCfg = mildDipToCopyTraderConfig(cfg);
-  const mints = Object.keys(state.open);
-  for (const mint of mints) {
-    const pos = state.open[mint];
-    if (!pos) continue;
-    const markPx = await markPriceUsd(mint, nowMs);
-    if (markPx == null) continue;
+async function executeQueuedSell(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  decision: MarkExitDecision;
+  nowMs: number;
+}): Promise<void> {
+  const { cfg, state, decision, nowMs } = args;
+  const mint = decision.mint;
+  const pos = state.open[mint];
+  if (!pos || !decision.reason) return;
 
-    const peakPrev =
-      pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
-    const verdict = evaluateMildDipPeakGiveback({
-      entryPriceUsd: pos.entryPriceUsd,
-      markPriceUsd: markPx,
-      peakPriceUsd: peakPrev,
-      armed: pos.trailArmed === true,
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
+  // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
+  const sell = await executeCopySell({
+    cfg: copyCfg,
+    mint,
+    symbol: pos.symbol,
+    entryPriceUsd: pos.entryPriceUsd,
+    exitPriceUsd: decision.markPriceUsd,
+    sizeUsd: pos.sizeUsd,
+    fraction: 1,
+    leaderSignature: `milddip_exit_${decision.reason}_${nowMs}`,
+    sellDelayMs: 0,
+  });
+
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mild_dip_sell',
+    reason: decision.reason,
+    mint,
+    symbol: pos.symbol,
+    entryPx: pos.entryPriceUsd,
+    peakPx: decision.peakPriceUsd,
+    exitPx: sell.priceUsd || decision.markPriceUsd,
+    mfePct: +decision.mfePct.toFixed(2),
+    givebackPct: +decision.givebackPct.toFixed(2),
+    realizedPct: +(sell.pnlPct ?? decision.pnlPct).toFixed(2),
+    armed: true,
+    holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
+    ok: sell.ok,
+    sellReason: sell.reason ?? null,
+    signature: sell.signature ?? null,
+    mode: cfg.executionMode,
+  });
+
+  if (sell.ok) {
+    // Re-read — another path must not have already cleared it.
+    if (state.open[mint]) {
+      delete state.open[mint];
+      state.cooldownUntilMs[mint] = nowMs + cfg.mintCooldownMs;
+      saveMildDipState(cfg.statePath, state);
+    }
+    console.log(
+      `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} pnl=${(sell.pnlPct ?? decision.pnlPct).toFixed(1)}% ` +
+        `mfe=${decision.mfePct.toFixed(1)}% giveback=${decision.givebackPct.toFixed(1)}% mode=${cfg.executionMode}`,
+    );
+    await reclaimEmptyAta(cfg, {
+      mint,
+      symbol: pos.symbol,
+      reason: `post_sell_${decision.reason}`,
+    });
+    return;
+  }
+
+  const reason = sell.reason ?? 'unknown';
+  if (reason === 'no_token_balance') {
+    if (state.open[mint]) {
+      delete state.open[mint];
+      state.cooldownUntilMs[mint] = nowMs + cfg.mintCooldownMs;
+      saveMildDipState(cfg.statePath, state);
+    }
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_drop_empty',
+      mint,
+      symbol: pos.symbol,
+      exitReason: decision.reason,
+      pnlPct: +(sell.pnlPct ?? decision.pnlPct).toFixed(2),
+    });
+    console.warn(`[mild-dip] DROP empty bag ${pos.symbol} mint=${mint.slice(0, 8)}…`);
+    await reclaimEmptyAta(cfg, {
+      mint,
+      symbol: pos.symbol,
+      reason: 'post_drop_empty',
+    });
+    return;
+  }
+
+  // Keep `state.open[mint]` — retry next mark pass. Never orphan on soft fail.
+  console.warn(`[mild-dip] sell failed ${mint.slice(0, 8)}…: ${reason} (still tracking)`);
+}
+
+/**
+ * Phase 1: parallel Dex marks (armed first).
+ * Phase 2: persist peak/arm updates (positions stay open).
+ * Phase 3: sell queue with limited concurrency — mint leaves state only after
+ * confirmed sell / empty bag. In-flight mints skipped on subsequent marks.
+ */
+async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
+  const ordered = orderMintsForMark(state.open).filter((m) => !sellInFlight.has(m));
+  if (ordered.length === 0) return;
+
+  const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
+    const px = await markPriceUsd(mint, nowMs);
+    return { mint, px };
+  });
+
+  const toSell: MarkExitDecision[] = [];
+  for (const { mint, px } of markRows) {
+    if (px == null) continue;
+    const pos = state.open[mint];
+    if (!pos || sellInFlight.has(mint)) continue;
+    const decision = decideMarkExit({
+      mint,
+      pos,
+      markPriceUsd: px,
       gates: cfg.exit,
     });
-    pos.peakPriceUsd = verdict.peakPriceUsd;
-    pos.trailArmed = verdict.armed;
+    if (!decision) continue;
 
-    if (verdict.justArmed) {
+    applyMarkDecisionToPosition(pos, decision);
+
+    if (decision.justArmed) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'trail_armed',
         mint,
         symbol: pos.symbol,
         entryPx: pos.entryPriceUsd,
-        peakPx: verdict.peakPriceUsd,
+        peakPx: decision.peakPriceUsd,
         armPct: cfg.exit.armPct,
-        mfePct: +verdict.mfePct.toFixed(2),
+        mfePct: +decision.mfePct.toFixed(2),
       });
       console.log(
-        `[mild-dip] ARM ${pos.symbol} mint=${mint.slice(0, 8)}… mfe=${verdict.mfePct.toFixed(1)}% peak=$${verdict.peakPriceUsd.toPrecision(4)}`,
+        `[mild-dip] ARM ${pos.symbol} mint=${mint.slice(0, 8)}… mfe=${decision.mfePct.toFixed(1)}% peak=$${decision.peakPriceUsd.toPrecision(4)}`,
       );
     }
 
-    if (!verdict.shouldExit || !verdict.reason) continue;
-
-    // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
-    const sell = await executeCopySell({
-      cfg: copyCfg,
-      mint,
-      symbol: pos.symbol,
-      entryPriceUsd: pos.entryPriceUsd,
-      exitPriceUsd: markPx,
-      sizeUsd: pos.sizeUsd,
-      fraction: 1,
-      leaderSignature: `milddip_exit_${verdict.reason}_${nowMs}`,
-      sellDelayMs: 0,
-    });
-
-    appendMildDipJournal(cfg.journalPath, {
-      kind: 'mild_dip_sell',
-      reason: verdict.reason,
-      mint,
-      symbol: pos.symbol,
-      entryPx: pos.entryPriceUsd,
-      peakPx: verdict.peakPriceUsd,
-      exitPx: sell.priceUsd || markPx,
-      mfePct: +verdict.mfePct.toFixed(2),
-      givebackPct: +verdict.givebackPct.toFixed(2),
-      realizedPct: +(sell.pnlPct ?? verdict.pnlPct).toFixed(2),
-      armed: true,
-      holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
-      ok: sell.ok,
-      sellReason: sell.reason ?? null,
-      signature: sell.signature ?? null,
-      mode: cfg.executionMode,
-    });
-
-    if (sell.ok) {
-      delete state.open[mint];
-      state.cooldownUntilMs[mint] = nowMs + cfg.mintCooldownMs;
-      console.log(
-        `[mild-dip] SELL ${pos.symbol} reason=${verdict.reason} pnl=${(sell.pnlPct ?? verdict.pnlPct).toFixed(1)}% ` +
-          `mfe=${verdict.mfePct.toFixed(1)}% giveback=${verdict.givebackPct.toFixed(1)}% mode=${cfg.executionMode}`,
-      );
-      await reclaimEmptyAta(cfg, {
-        mint,
-        symbol: pos.symbol,
-        reason: `post_sell_${verdict.reason}`,
-      });
-    } else {
-      const reason = sell.reason ?? 'unknown';
-      // Bag already gone on-chain — drop stale state so we stop retrying forever.
-      if (reason === 'no_token_balance') {
-        delete state.open[mint];
-        state.cooldownUntilMs[mint] = nowMs + cfg.mintCooldownMs;
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_drop_empty',
-          mint,
-          symbol: pos.symbol,
-          exitReason: verdict.reason,
-          pnlPct: +(sell.pnlPct ?? verdict.pnlPct).toFixed(2),
-        });
-        console.warn(`[mild-dip] DROP empty bag ${pos.symbol} mint=${mint.slice(0, 8)}…`);
-        await reclaimEmptyAta(cfg, {
-          mint,
-          symbol: pos.symbol,
-          reason: 'post_drop_empty',
-        });
-      } else {
-        console.warn(`[mild-dip] sell failed ${mint.slice(0, 8)}…: ${reason}`);
-      }
+    if (decision.shouldExit && decision.reason) {
+      toSell.push(decision);
     }
   }
+
+  // Persist peak/arm for ALL opens before any sell — crash mid-sell must not
+  // lose trail state or drop mints from `open`.
+  saveMildDipState(cfg.statePath, state);
+
+  if (toSell.length === 0) return;
+
+  await mapPool(toSell, cfg.sellConcurrency, async (decision) => {
+    if (sellInFlight.has(decision.mint)) return;
+    if (!state.open[decision.mint]) return;
+    sellInFlight.add(decision.mint);
+    try {
+      await executeQueuedSell({ cfg, state, decision, nowMs });
+    } finally {
+      sellInFlight.delete(decision.mint);
+    }
+  });
 }
 
 export type MildDipLoopStats = {
@@ -446,8 +509,9 @@ export async function runMildDipLoop(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
+      `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `stream=${stats.stream} prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
-      `sources=${cfg.discoverSources} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
+      `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 
   // One-shot: reclaim rent stuck in already-empty ATAs from prior $5 tests.

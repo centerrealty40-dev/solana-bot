@@ -2841,6 +2841,10 @@ const PM2_APPS = [
         MILD_DIP_EXIT_GIVEBACK_PCT: '6',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
+        /** Parallel Dex marks — keeps ~50 opens within one mark interval. */
+        MILD_DIP_MARK_CONCURRENCY: '16',
+        /** Parallel Jupiter sells (do not starve mark loop). */
+        MILD_DIP_SELL_CONCURRENCY: '2',
         /** After close/skip — allow rebuy same mint in 5m (was 1h). */
         MILD_DIP_MINT_COOLDOWN_MS: '300000',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
