@@ -8,6 +8,10 @@ import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-
 import type { MildDipConfig } from './config.js';
 import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
+import {
+  decideMultiWindowVolume,
+  pushVolume5mSample,
+} from '../copytrader/volume-health.js';
 import { evaluateMildDipExit, evaluateMildDipPreBuy } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
 import {
@@ -35,10 +39,18 @@ function onCooldown(state: MildDipState, mint: string, nowMs: number): boolean {
   return until > nowMs;
 }
 
-async function markPriceUsd(mint: string, nowMs: number): Promise<number | null> {
+async function markDetails(
+  mint: string,
+  nowMs: number,
+): Promise<{ priceUsd: number; volume5mUsd: number | null } | null> {
   const details = await fetchDexScreenerPairDetails(mint, { bypassCache: true, nowMs });
   const px = details?.priceUsd;
-  return px != null && px > 0 ? px : null;
+  if (px == null || !(px > 0)) return null;
+  const vol = details?.volume5mUsd;
+  return {
+    priceUsd: px,
+    volume5mUsd: vol != null && Number.isFinite(vol) && vol >= 0 ? vol : null,
+  };
 }
 
 /**
@@ -90,6 +102,9 @@ function adoptOnChainHolding(args: {
     openedAtMs: nowMs,
     entryPc5mPct: pc5m,
     buySignature: null,
+    peakPriceUsd: priceUsd > 0 ? priceUsd : 0,
+    entryVolume5mUsd: null,
+    vol5mSamples: [],
   };
   state.open[mint] = pos;
   saveMildDipState(cfg.statePath, state);
@@ -234,15 +249,23 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
 
     // Prefer confirmed on-chain raw over quote outAmount.
     const filledRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
+    const fillPx = buy.priceUsd || entryPriceUsd;
+    const entryVol =
+      c.metrics.volume5mUsd != null && c.metrics.volume5mUsd > 0
+        ? c.metrics.volume5mUsd
+        : null;
     state.open[c.mint] = {
       mint: c.mint,
       symbol: c.symbol,
-      entryPriceUsd: buy.priceUsd || entryPriceUsd,
+      entryPriceUsd: fillPx,
       sizeUsd: sized.sizeUsd,
       tokenRaw: filledRaw ?? buy.tokenRaw ?? null,
       openedAtMs: nowMs,
       entryPc5mPct: entryPc5m,
       buySignature: buy.signature ?? null,
+      peakPriceUsd: fillPx,
+      entryVolume5mUsd: entryVol,
+      vol5mSamples: entryVol != null ? [entryVol] : [],
     };
     // Persist immediately — a restart before the tick-end save used to allow a rebuy.
     saveMildDipState(cfg.statePath, state);
@@ -262,15 +285,45 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
   for (const mint of mints) {
     const pos = state.open[mint];
     if (!pos) continue;
-    const mark = await markPriceUsd(mint, nowMs);
+    const mark = await markDetails(mint, nowMs);
     if (mark == null) continue;
+
+    const peakPrev = pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
+    const peak = Math.max(peakPrev, mark.priceUsd);
+    pos.peakPriceUsd = peak;
+
+    if (mark.volume5mUsd != null) {
+      if (!(pos.entryVolume5mUsd != null && pos.entryVolume5mUsd > 0)) {
+        pos.entryVolume5mUsd = mark.volume5mUsd;
+      }
+      pos.vol5mSamples = pushVolume5mSample(pos.vol5mSamples, mark.volume5mUsd, 12);
+    }
+
+    let volumeFaded = false;
+    if (cfg.exit.volFadeDropPct > 0 || cfg.exit.volFadeMinVolume5mUsd > 0) {
+      const multi = decideMultiWindowVolume(
+        {
+          minVolume5mUsd: cfg.exit.volFadeMinVolume5mUsd,
+          dropPct: cfg.exit.volFadeDropPct,
+          sampleWindow: cfg.exit.volFadeSampleWindow > 0 ? cfg.exit.volFadeSampleWindow : 1,
+          minWeakSamples: cfg.exit.volFadeMinWeakSamples > 0 ? cfg.exit.volFadeMinWeakSamples : 1,
+        },
+        {
+          entryVolume5mUsd: pos.entryVolume5mUsd,
+          samples: pos.vol5mSamples ?? [],
+        },
+      );
+      volumeFaded = multi.shouldExit;
+    }
 
     const verdict = evaluateMildDipExit({
       entryPriceUsd: pos.entryPriceUsd,
-      markPriceUsd: mark,
+      markPriceUsd: mark.priceUsd,
+      peakPriceUsd: peak,
       openedAtMs: pos.openedAtMs,
       nowMs,
       gates: cfg.exit,
+      volumeFaded,
     });
     if (!verdict.shouldExit || !verdict.reason) continue;
 
@@ -280,7 +333,7 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
       mint,
       symbol: pos.symbol,
       entryPriceUsd: pos.entryPriceUsd,
-      exitPriceUsd: mark,
+      exitPriceUsd: mark.priceUsd,
       sizeUsd: pos.sizeUsd,
       fraction: 1,
       leaderSignature: `milddip_exit_${verdict.reason}_${nowMs}`,
@@ -293,8 +346,13 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
       symbol: pos.symbol,
       reason: verdict.reason,
       entryPriceUsd: pos.entryPriceUsd,
-      exitPriceUsd: sell.priceUsd || mark,
+      peakPriceUsd: peak,
+      exitPriceUsd: sell.priceUsd || mark.priceUsd,
       pnlPct: +(sell.pnlPct ?? verdict.pnlPct).toFixed(2),
+      givebackPct:
+        verdict.givebackPct != null ? +verdict.givebackPct.toFixed(2) : null,
+      entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
+      volume5mUsd: mark.volume5mUsd,
       ok: sell.ok,
       sellReason: sell.reason ?? null,
       signature: sell.signature ?? null,
@@ -306,7 +364,8 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cfg.mintCooldownMs;
       console.log(
-        `[mild-dip] SELL ${pos.symbol} reason=${verdict.reason} pnl=${(sell.pnlPct ?? verdict.pnlPct).toFixed(1)}% mode=${cfg.executionMode}`,
+        `[mild-dip] SELL ${pos.symbol} reason=${verdict.reason} pnl=${(sell.pnlPct ?? verdict.pnlPct).toFixed(1)}% ` +
+          `giveback=${verdict.givebackPct?.toFixed(1) ?? 'n/a'}% mode=${cfg.executionMode}`,
       );
     } else {
       const reason = sell.reason ?? 'unknown';
@@ -363,7 +422,8 @@ export async function runMildDipLoop(
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] tp=${cfg.exit.tpGainPct}% ` +
-      `timeStopMs=${cfg.exit.timeStopMs} stream=${stats.stream} ` +
+      `trail=${cfg.exit.trailGivebackPct}% timeStopMs=${cfg.exit.timeStopMs} ` +
+      `volFade=${cfg.exit.volFadeDropPct}% stream=${stats.stream} ` +
       `prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
       `sources=${cfg.discoverSources} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );

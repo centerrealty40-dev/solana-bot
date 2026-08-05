@@ -132,38 +132,105 @@ describe('evaluateMildDipPreBuy', () => {
   });
 });
 
+const exitGates = {
+  tpGainPct: 10,
+  trailGivebackPct: 6,
+  timeStopMs: 1_800_000,
+  volFadeDropPct: 30,
+  volFadeMinVolume5mUsd: 0,
+  volFadeSampleWindow: 3,
+  volFadeMinWeakSamples: 2,
+  volFadeMinHoldMs: 60_000,
+};
+
 describe('evaluateMildDipExit', () => {
   it('takes profit at +10%', () => {
     const v = evaluateMildDipExit({
       entryPriceUsd: 1,
       markPriceUsd: 1.1,
+      peakPriceUsd: 1.1,
       openedAtMs: 0,
       nowMs: 60_000,
-      gates: { tpGainPct: 10, timeStopMs: 900_000 },
+      gates: exitGates,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('take_profit');
   });
 
-  it('time-stops after hold', () => {
+  it('trails −6% from peak after arming above entry', () => {
+    const v = evaluateMildDipExit({
+      entryPriceUsd: 1,
+      markPriceUsd: 1.1 * 0.94, // −6% from peak 1.1
+      peakPriceUsd: 1.1,
+      openedAtMs: 0,
+      nowMs: 120_000,
+      gates: exitGates,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('trail_giveback');
+  });
+
+  it('does not treat −6% from entry as trail before peak arms', () => {
+    const v = evaluateMildDipExit({
+      entryPriceUsd: 1,
+      markPriceUsd: 0.94,
+      peakPriceUsd: 1,
+      openedAtMs: 0,
+      nowMs: 120_000,
+      gates: exitGates,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).toBeNull();
+  });
+
+  it('exits on volume fade after min hold', () => {
     const v = evaluateMildDipExit({
       entryPriceUsd: 1,
       markPriceUsd: 1.02,
+      peakPriceUsd: 1.03,
       openedAtMs: 0,
-      nowMs: 900_000,
-      gates: { tpGainPct: 10, timeStopMs: 900_000 },
+      nowMs: 90_000,
+      gates: exitGates,
+      volumeFaded: true,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('volume_fade');
+  });
+
+  it('ignores volume fade before min hold', () => {
+    const v = evaluateMildDipExit({
+      entryPriceUsd: 1,
+      markPriceUsd: 1.02,
+      peakPriceUsd: 1.03,
+      openedAtMs: 0,
+      nowMs: 30_000,
+      gates: exitGates,
+      volumeFaded: true,
+    });
+    expect(v.shouldExit).toBe(false);
+  });
+
+  it('time-stops after 30m', () => {
+    const v = evaluateMildDipExit({
+      entryPriceUsd: 1,
+      markPriceUsd: 1.02,
+      peakPriceUsd: 1.03,
+      openedAtMs: 0,
+      nowMs: 1_800_000,
+      gates: exitGates,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('time_stop');
   });
 
-  it('holds when neither TP nor time-stop', () => {
+  it('holds when neither TP nor trail nor fade nor time-stop', () => {
     const v = evaluateMildDipExit({
       entryPriceUsd: 1,
       markPriceUsd: 1.02,
+      peakPriceUsd: 1.03,
       openedAtMs: 0,
       nowMs: 360_000,
-      gates: { tpGainPct: 10, timeStopMs: 900_000 },
+      gates: exitGates,
     });
     expect(v.shouldExit).toBe(false);
     expect(v.reason).toBeNull();

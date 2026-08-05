@@ -10,6 +10,12 @@ export type MildDipOpenPosition = {
   openedAtMs: number;
   entryPc5mPct: number | null;
   buySignature: string | null;
+  /** Running high-water mark for trail giveback. */
+  peakPriceUsd?: number;
+  /** DexScreener vol5m at / near entry (baseline for volume fade). */
+  entryVolume5mUsd?: number | null;
+  /** Recent rolling vol5m samples (newest last). */
+  vol5mSamples?: number[];
 };
 
 export type MildDipState = {
