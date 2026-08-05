@@ -56,7 +56,13 @@ const MildDipConfigSchema = z.object({
   }),
   exit: z.object({
     tpGainPct: z.number(),
+    trailGivebackPct: z.number(),
     timeStopMs: z.number(),
+    volFadeDropPct: z.number(),
+    volFadeMinVolume5mUsd: z.number(),
+    volFadeSampleWindow: z.number(),
+    volFadeMinWeakSamples: z.number(),
+    volFadeMinHoldMs: z.number(),
   }),
 });
 
@@ -105,8 +111,16 @@ export function loadMildDipConfig(): MildDipConfig {
 
   const exit: MildDipExitGates = {
     tpGainPct: envNum('MILD_DIP_TP_GAIN_PCT', 10),
-    /** Default 15m — leader mild-dip hold med ≈14m (WIN med ≈8m); 6m was short-scalp guess. */
-    timeStopMs: Math.floor(envNum('MILD_DIP_TIME_STOP_MS', 900_000)),
+    /** Leader wins exit near peak on ~3–8% giveback — default 6%. */
+    trailGivebackPct: envNum('MILD_DIP_TRAIL_GIVEBACK_PCT', 6),
+    /** Hard max hold 30m (trail / vol-fade can exit earlier). */
+    timeStopMs: Math.floor(envNum('MILD_DIP_TIME_STOP_MS', 1_800_000)),
+    /** Early exit when DexScreener vol5m drops this % vs entry baseline. */
+    volFadeDropPct: envNum('MILD_DIP_VOL_FADE_DROP_PCT', 30),
+    volFadeMinVolume5mUsd: envNum('MILD_DIP_VOL_FADE_MIN_VOLUME_5M_USD', 0),
+    volFadeSampleWindow: Math.floor(envNum('MILD_DIP_VOL_FADE_SAMPLE_WINDOW', 3)),
+    volFadeMinWeakSamples: Math.floor(envNum('MILD_DIP_VOL_FADE_MIN_WEAK_SAMPLES', 2)),
+    volFadeMinHoldMs: Math.floor(envNum('MILD_DIP_VOL_FADE_MIN_HOLD_MS', 60_000)),
   };
 
   const raw = {

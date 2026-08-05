@@ -2835,8 +2835,15 @@ const PM2_APPS = [
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
         MILD_DIP_TP_GAIN_PCT: '10',
-        /** Leader mild-dip hold med ≈14m / WIN med ≈8m — not a hard 6m timer. */
-        MILD_DIP_TIME_STOP_MS: '900000',
+        /** Trail −6% from peak (leader wins exit near high on small giveback). */
+        MILD_DIP_TRAIL_GIVEBACK_PCT: '6',
+        /** Hard max 30m; trail / vol-fade can exit earlier. */
+        MILD_DIP_TIME_STOP_MS: '1800000',
+        /** Early exit when DexScreener vol5m drops ≥30% vs entry (multi-sample). */
+        MILD_DIP_VOL_FADE_DROP_PCT: '30',
+        MILD_DIP_VOL_FADE_SAMPLE_WINDOW: '3',
+        MILD_DIP_VOL_FADE_MIN_WEAK_SAMPLES: '2',
+        MILD_DIP_VOL_FADE_MIN_HOLD_MS: '60000',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
         MILD_DIP_MINT_COOLDOWN_MS: '3600000',
