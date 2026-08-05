@@ -1,4 +1,22 @@
 # So
+## [1.11.676] — 2026-08-05
+
+**Тег:** `sa-1.11.676`
+
+### Change: mild-dip USDC test bot (live-oscar-micro)
+
+Reverse-engineered mild-dip branch (pc5m ∈ (−20, 0]) as a standalone
+PM2 lane on Oscar VPS, funding in **USDC** via existing Jupiter copy-exec.
+
+- `src/milddip/*` + `npm run mild-dip-bot`
+- PM2 app `mild-dip-bot` (autostart false, paper by default)
+- Wallet: `2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc` (live-oscar-micro)
+- Exit: TP +10% or time-stop 6m; clip $30; max 2 open
+
+**Откат:** stop/delete `mild-dip-bot`; revert this tag.
+
+---
+
 ## [1.11.675] — 2026-08-04
 
 **Тег:** `sa-1.11.675`

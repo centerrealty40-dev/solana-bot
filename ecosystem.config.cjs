@@ -2792,6 +2792,61 @@ const PM2_APPS = [
       },
     },
     /**
+     * Mild-dip test lane (USDC) — live-oscar-micro wallet.
+     * Recipe: DexScreener pc5m ∈ (−20, 0], clip $30, TP +10% / time-stop 6m.
+     * Start after funding: `pm2 start ecosystem.config.cjs --only mild-dip-bot`
+     * Flip `MILD_DIP_EXECUTION_MODE=live` once USDC + fee SOL are on the pubkey.
+     */
+    {
+      name: 'mild-dip-bot',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/mild-dip-bot.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autostart: false,
+      autorestart: true,
+      max_restarts: 30,
+      restart_delay: 8000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_PRO_TRADING_ENV,
+        ...PM2_SOLANA_RPC_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
+        NODE_ENV: 'production',
+        MILD_DIP_APP_NAME: 'mild-dip-bot',
+        MILD_DIP_EXECUTION_MODE: 'paper',
+        MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
+        MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
+        MILD_DIP_POSITION_USD: '30',
+        MILD_DIP_MAX_OPEN_POSITIONS: '2',
+        MILD_DIP_MIN_DIP_PCT: '-20',
+        MILD_DIP_MAX_DIP_PCT: '0',
+        MILD_DIP_MIN_VOLUME_5M_USD: '8000',
+        MILD_DIP_MIN_LIQUIDITY_USD: '15000',
+        MILD_DIP_MIN_MCAP_USD: '50000',
+        MILD_DIP_MAX_MCAP_USD: '5000000',
+        MILD_DIP_MIN_PAIR_AGE_HOURS: '0.25',
+        MILD_DIP_MAX_PAIR_AGE_HOURS: '72',
+        MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
+        MILD_DIP_TP_GAIN_PCT: '10',
+        MILD_DIP_TIME_STOP_MS: '360000',
+        MILD_DIP_SCAN_INTERVAL_MS: '30000',
+        MILD_DIP_MARK_INTERVAL_MS: '10000',
+        MILD_DIP_MINT_COOLDOWN_MS: '3600000',
+        MILD_DIP_SLIPPAGE_BPS: '150',
+        MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
+        MILD_DIP_DISCOVER_SOURCES: 'boosts,profiles',
+        MILD_DIP_JOURNAL_PATH: path.join(root, 'data/milddip/journal.jsonl'),
+        MILD_DIP_STATE_PATH: path.join(root, 'data/milddip/state.json'),
+        ...LIVE_OSCAR_HELIUS_RPC_ENV,
+        ...(HELIUS_RPC_URL_PM2 ? { MILD_DIP_RPC_URL: HELIUS_RPC_URL_PM2 } : {}),
+      },
+    },
+    /**
      * knife-catcher / awakening-catcher — Oscar VPS REMOVED (2026-07-16).
      * Live lanes only on LERA (`/opt/lera` PM2). Oscar shared VPS was running shadow copies via `.env`
      * drift — deleted to free Dex/RPC for live-oscar discovery.
