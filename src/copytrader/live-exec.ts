@@ -385,6 +385,15 @@ export async function executeLiveCopySell(args: {
   const userPk = signer(cfg).publicKey.toBase58();
   const quoteSpec = copyQuoteSpec(cfg);
 
+  /**
+   * Prefer attributed `tokenRawBase` (shared-wallet lanes), but never sell more
+   * than the on-chain ATA. Buy-side Jupiter `outAmount` is often a few % above
+   * the confirmed fill — using it raw → sim Custom:6024 InsufficientFunds and
+   * the position gets stuck through time-stop retries.
+   */
+  const onchainStr = await fetchMintBalanceRaw(cfg, mint);
+  const onchainRaw = onchainStr && /^\d+$/.test(onchainStr) ? BigInt(onchainStr) : 0n;
+
   let totalRaw = 0n;
   if (tokenRawBase) {
     try {
@@ -394,11 +403,14 @@ export async function executeLiveCopySell(args: {
     }
   }
   if (totalRaw <= 0n) {
-    const tokenRaw = await fetchMintBalanceRaw(cfg, mint);
-    if (!tokenRaw) {
+    if (onchainRaw <= 0n) {
       return { ok: false, priceUsd: 0, reason: 'no_token_balance' };
     }
-    totalRaw = BigInt(tokenRaw);
+    totalRaw = onchainRaw;
+  } else if (onchainRaw <= 0n) {
+    return { ok: false, priceUsd: 0, reason: 'no_token_balance' };
+  } else if (totalRaw > onchainRaw) {
+    totalRaw = onchainRaw;
   }
   const sellRaw = isFullCloseFraction(fraction) ? totalRaw : scaleTokenRaw(totalRaw, fraction);
   if (sellRaw <= 0n) {

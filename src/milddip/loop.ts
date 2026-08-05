@@ -169,6 +169,7 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
     });
     if (!verdict.shouldExit || !verdict.reason) continue;
 
+    // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
     const sell = await executeCopySell({
       cfg: copyCfg,
       mint,
@@ -179,7 +180,6 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
       fraction: 1,
       leaderSignature: `milddip_exit_${verdict.reason}_${nowMs}`,
       sellDelayMs: 0,
-      tokenRawBase: pos.tokenRaw ?? undefined,
     });
 
     appendMildDipJournal(cfg.journalPath, {
