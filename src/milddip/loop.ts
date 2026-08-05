@@ -6,7 +6,11 @@ import {
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
-import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
+import {
+  collectCandidateMints,
+  enrichAndFilterCandidates,
+  priorityMintsFromCooldown,
+} from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
@@ -17,8 +21,17 @@ import {
   orderMintsForMark,
   type MarkExitDecision,
 } from './exit-engine.js';
-import { evaluateMildDipPreBuy } from './gates.js';
-import { mildDipHotMints } from './hot-mints.js';
+import { evaluateCooldownBounce, evaluateMildDipPreBuy } from './gates.js';
+import {
+  loadMildDipHotMints,
+  mildDipHotMints,
+  saveMildDipHotMints,
+} from './hot-mints.js';
+import {
+  loadMildDipPriceRing,
+  mildDipPriceRing,
+  saveMildDipPriceRing,
+} from './price-ring.js';
 import {
   appendMildDipJournal,
   loadMildDipState,
@@ -27,6 +40,7 @@ import {
   type MildDipState,
 } from './state.js';
 import { startMildDipHotMintStream } from './stream.js';
+import { createStreamPriceSampler } from './stream-price-sampler.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -65,6 +79,20 @@ function onCooldown(state: MildDipState, mint: string, nowMs: number): boolean {
   return until > nowMs;
 }
 
+/** Sample stream prices for mints cooling down or just off cooldown. */
+function shouldSampleStreamPrice(
+  state: MildDipState,
+  mint: string,
+  nowMs: number,
+  lookbackMs: number,
+): boolean {
+  const until = state.cooldownUntilMs[mint] ?? 0;
+  if (until > nowMs) return true; // actively cooling — record the trough
+  if (until > 0 && nowMs - until <= lookbackMs) return true; // just ready — still useful
+  if (state.open[mint]) return true; // open book — denser trail marks via stream
+  return false;
+}
+
 async function markPriceUsd(
   mint: string,
   nowMs: number,
@@ -78,7 +106,11 @@ async function markPriceUsd(
       : { bypassCache: true }),
   });
   const px = details?.priceUsd;
-  return px != null && px > 0 ? px : null;
+  if (px != null && px > 0) {
+    mildDipPriceRing.note(mint, px, { tsMs: nowMs, source: 'dex' });
+    return px;
+  }
+  return null;
 }
 
 /** Reclaim rent on empty mint ATA after full exit (live only). */
@@ -193,11 +225,16 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
 
-  const mints = await collectCandidateMints(cfg);
+  const priority = priorityMintsFromCooldown(state.cooldownUntilMs, nowMs, {
+    postCooldownMs: 120_000,
+  });
+  const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
   const candidates = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
     maxEnrich: 80,
     enrichConcurrency: cfg.enrichConcurrency,
+    // Keep Dex marks flowing for cooling mints even when they won't buy yet.
+    forceEnrich: priority,
   });
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 
@@ -240,14 +277,18 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     // Re-check right before send — enrich can be tens of seconds stale.
     let entryPriceUsd = c.priceUsd;
     let entryPc5m = c.metrics.priceChange5mPct;
+    let freshPx: number | null = c.priceUsd;
     if (cfg.preBuyRevalidate) {
       const freshNow = Date.now();
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
         bypassCache: true,
         nowMs: freshNow,
       });
-      const freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
+      freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
       const freshPc = fresh?.priceChangeM5Pct ?? null;
+      if (freshPx != null) {
+        mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
+      }
       const pre = evaluateMildDipPreBuy({
         signalPriceUsd: c.priceUsd,
         freshPriceUsd: freshPx,
@@ -274,6 +315,35 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       }
       if (freshPx != null) entryPriceUsd = freshPx;
       if (freshPc != null) entryPc5m = freshPc;
+    }
+
+    // After cooldown: refuse if we already bounced too far off the observed trough.
+    const trough = mildDipPriceRing.minPrice(c.mint, cfg.cooldownBounceLookbackMs, nowMs);
+    const bounce = evaluateCooldownBounce({
+      freshPriceUsd: freshPx ?? entryPriceUsd,
+      troughPriceUsd: trough?.priceUsd ?? null,
+      maxBouncePct: cfg.maxCooldownBouncePct,
+      requireTrough: false,
+    });
+    if (!bounce.pass) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_cooldown_bounce_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        freshPriceUsd: freshPx ?? entryPriceUsd,
+        troughPriceUsd: trough?.priceUsd ?? null,
+        troughTsMs: trough?.tsMs ?? null,
+        troughSource: trough?.source ?? null,
+        sampleCount: mildDipPriceRing.sampleCount(c.mint, cfg.cooldownBounceLookbackMs, nowMs),
+        dipSource: c.dipSource,
+        reasons: bounce.reasons,
+      });
+      console.log(
+        `[mild-dip] SKIP bounce ${c.symbol} mint=${c.mint.slice(0, 8)}… ${bounce.reasons.join(',')}`,
+      );
+      // Short pause — do not re-hammer the same bounced mark every scan.
+      state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+      continue;
     }
 
     const leaderSig = `milddip_${c.mint.slice(0, 8)}_${nowMs}`;
@@ -565,10 +635,31 @@ export async function runMildDipLoop(
   };
   loopStatsRef = stats;
 
+  const hotLoaded = loadMildDipHotMints(cfg.hotMintsPath);
+  const ringLoaded = loadMildDipPriceRing(cfg.priceRingPath);
+  if (hotLoaded > 0 || ringLoaded > 0) {
+    console.log(
+      `[mild-dip] restored hotMints=${hotLoaded} priceSamples=${ringLoaded} ` +
+        `from ${cfg.hotMintsPath} / ${cfg.priceRingPath}`,
+    );
+  }
+
+  let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
+  if (cfg.streamPriceSampleEnabled) {
+    priceSampler = createStreamPriceSampler({
+      rpcUrl: cfg.rpcUrl,
+      minGapMsPerMint: cfg.streamPriceMinGapMs,
+      concurrency: cfg.streamPriceConcurrency,
+      shouldSample: (mint, t) =>
+        shouldSampleStreamPrice(state, mint, t, cfg.cooldownBounceLookbackMs),
+    });
+  }
+
   let streamHandle: { stop: () => void } | null = null;
   if (cfg.streamEnabled) {
     streamHandle = startMildDipHotMintStream({
       wsUrl: cfg.streamWsUrl || null,
+      priceSampler,
     });
     stats.stream = streamHandle != null;
   }
@@ -582,7 +673,11 @@ export async function runMildDipLoop(
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
-      `stream=${stats.stream} prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
+      `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
+      `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0} ` +
+      `prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
+      `maxCooldownBouncePct=${cfg.maxCooldownBouncePct} ` +
+      `lookback=${cfg.cooldownBounceLookbackMs}ms ` +
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 
@@ -611,6 +706,13 @@ export async function runMildDipLoop(
       lastScan = nowMs;
       stats.lastScanAtMs = nowMs;
       saveMildDipState(cfg.statePath, state);
+      // Persist universe + trough samples across restarts/deploys.
+      try {
+        saveMildDipHotMints(cfg.hotMintsPath);
+        saveMildDipPriceRing(cfg.priceRingPath);
+      } catch (err) {
+        console.warn('[mild-dip] persist hot/price ring failed', err);
+      }
     }
 
     stats.open = openCount(state);
@@ -620,21 +722,29 @@ export async function runMildDipLoop(
   // Expose stats for heartbeat via closure property (compat) + module ref.
   (runMildDipLoop as { __stats?: MildDipLoopStats }).__stats = stats;
 
+  const shutdown = (): void => {
+    streamHandle?.stop();
+    streamHandle = null;
+    priceSampler?.stop();
+    try {
+      saveMildDipHotMints(cfg.hotMintsPath);
+      saveMildDipPriceRing(cfg.priceRingPath);
+    } catch {
+      /* ignore */
+    }
+  };
+
   if (opts?.once) {
     try {
       await tick();
     } finally {
-      streamHandle?.stop();
+      shutdown();
       if (loopStatsRef === stats) loopStatsRef = null;
     }
     return;
   }
 
-  const onAbort = (): void => {
-    streamHandle?.stop();
-    streamHandle = null;
-  };
-  opts?.signal?.addEventListener('abort', onAbort, { once: true });
+  opts?.signal?.addEventListener('abort', shutdown, { once: true });
 
   try {
     for (;;) {
@@ -651,7 +761,7 @@ export async function runMildDipLoop(
       await sleep(Math.min(cfg.markIntervalMs, 5_000));
     }
   } finally {
-    streamHandle?.stop();
+    shutdown();
     if (loopStatsRef === stats) loopStatsRef = null;
   }
 }

@@ -1,4 +1,27 @@
 # So
+## [1.11.687] — 2026-08-05
+
+**Тег:** `sa-1.11.687`
+
+### Change: mild-dip stream prices + cooldown trough bounce gate
+
+See dumps during the 5m cooldown (cooldown unchanged) and refuse rebuy on a
+“good” bounce off the wick:
+
+- **Price ring** — Dex enrich/mark + stream-decoded pump/PumpSwap swaps
+- **Stream sampler** — only mints on cooldown / just off cooldown / open (RPC-safe)
+- **Priority enrich** — cooling mints always get Dex slots so the trough is recorded
+- **Bounce gate** — after cooldown, skip if mark > `MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT`
+  (default **6%**) above lookback trough
+- **Stream dip entry** — stream drawdown can satisfy dip band when Dex `pc5m` lags
+  (liq/mcap/age still Dex)
+- **Persist** `hot-mints.json` + `price-ring.json` across restarts/deploys
+
+**Откат:** `MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT=0`, `MILD_DIP_STREAM_PRICE_SAMPLE=0`,
+  `MILD_DIP_STREAM_DIP_ENTRY=0`; reload bot.
+
+---
+
 ## [1.11.686] — 2026-08-05
 
 **Тег:** `sa-1.11.686`

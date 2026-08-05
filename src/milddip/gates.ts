@@ -161,6 +161,50 @@ export function evaluateMildDipPreBuy(args: {
   return { pass: reasons.length === 0, reasons };
 }
 
+/**
+ * After mint cooldown: refuse rebuy if mark already bounced too far off the
+ * trough we observed (stream/Dex samples) during the cooldown lookback window.
+ */
+export function evaluateCooldownBounce(args: {
+  freshPriceUsd: number | null;
+  troughPriceUsd: number | null;
+  /** 0 = bounce check off. */
+  maxBouncePct: number;
+  /** Require a trough sample; if missing and requireTrough, fail closed or open? */
+  requireTrough?: boolean;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const { freshPriceUsd, troughPriceUsd, maxBouncePct } = args;
+
+  if (!(maxBouncePct > 0)) {
+    return { pass: true, reasons };
+  }
+
+  if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
+    reasons.push('cooldown_bounce_missing_price');
+    return { pass: false, reasons };
+  }
+
+  if (troughPriceUsd == null || !(troughPriceUsd > 0)) {
+    if (args.requireTrough) {
+      reasons.push('cooldown_bounce_missing_trough');
+      return { pass: false, reasons };
+    }
+    // No samples yet — allow (Dex/prebuy still apply).
+    return { pass: true, reasons };
+  }
+
+  const bouncePct = (freshPriceUsd / troughPriceUsd - 1) * 100;
+  if (bouncePct > maxBouncePct) {
+    reasons.push(
+      `cooldown_bounce=${bouncePct.toFixed(2)}%>max=${maxBouncePct}` +
+        `_from_trough=${troughPriceUsd}`,
+    );
+  }
+
+  return { pass: reasons.length === 0, reasons };
+}
+
 export type MildDipExitReason =
   | 'peak_giveback'
   | 'never_arm_giveback'

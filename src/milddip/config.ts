@@ -36,6 +36,21 @@ const MildDipConfigSchema = z.object({
   enrichConcurrency: z.coerce.number().int().min(1).max(32).default(12),
   /** Parallel Jupiter sells — sole consumer can push higher. */
   sellConcurrency: z.coerce.number().int().min(1).max(8).default(6),
+  /**
+   * Max bounce % off the price-ring trough (cooldown lookback) before rebuy.
+   * 0 = off. Default 6 — refuse buying a “good” bounce off the wick.
+   */
+  maxCooldownBouncePct: z.coerce.number().min(0).max(100).default(6),
+  /** Lookback window for trough / stream drawdown (default = 5m cooldown). */
+  cooldownBounceLookbackMs: z.coerce.number().int().min(60_000).max(3_600_000).default(300_000),
+  /** Allow entry when stream drawdown is in dip band even if Dex pc5m is flat. */
+  streamDipEntryEnabled: z.boolean().default(true),
+  /** Decode program-log signatures → stream price samples (RPC). */
+  streamPriceSampleEnabled: z.boolean().default(true),
+  streamPriceMinGapMs: z.coerce.number().int().min(500).max(60_000).default(2_000),
+  streamPriceConcurrency: z.coerce.number().int().min(1).max(8).default(3),
+  hotMintsPath: z.string().default(path.join('data', 'milddip', 'hot-mints.json')),
+  priceRingPath: z.string().default(path.join('data', 'milddip', 'price-ring.json')),
   /** Telegram ALERT when mark pass / opens / null-ratio signal Dex pressure. */
   loadAlertEnabled: z.boolean().default(true),
   loadAlertMarkPassMs: z.coerce.number().int().min(5_000).max(600_000).default(20_000),
@@ -181,6 +196,24 @@ export function loadMildDipConfig(): MildDipConfig {
       return v === '1' || v === 'true' || v === 'yes';
     })(),
     maxChasePct: process.env.MILD_DIP_MAX_CHASE_PCT ?? 4,
+    maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
+    cooldownBounceLookbackMs: process.env.MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS ?? 300_000,
+    streamDipEntryEnabled: (() => {
+      const v = process.env.MILD_DIP_STREAM_DIP_ENTRY?.trim().toLowerCase();
+      if (!v) return true;
+      return v === '1' || v === 'true' || v === 'yes';
+    })(),
+    streamPriceSampleEnabled: (() => {
+      const v = process.env.MILD_DIP_STREAM_PRICE_SAMPLE?.trim().toLowerCase();
+      if (!v) return true;
+      return v === '1' || v === 'true' || v === 'yes';
+    })(),
+    streamPriceMinGapMs: process.env.MILD_DIP_STREAM_PRICE_MIN_GAP_MS ?? 2_000,
+    streamPriceConcurrency: process.env.MILD_DIP_STREAM_PRICE_CONCURRENCY ?? 3,
+    hotMintsPath:
+      process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
+    priceRingPath:
+      process.env.MILD_DIP_PRICE_RING_PATH?.trim() || path.join('data', 'milddip', 'price-ring.json'),
     entry,
     exit,
   };
