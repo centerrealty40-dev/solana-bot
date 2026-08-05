@@ -21,7 +21,7 @@ const baseGates: MildDipEntryGates = {
 
 const exitGates: MildDipExitGates = {
   armPct: 8,
-  givebackPct: 10,
+  givebackPct: 6,
 };
 
 describe('evaluateMildDipEntry', () => {
@@ -139,7 +139,7 @@ describe('evaluateMildDipPreBuy', () => {
 });
 
 describe('evaluateMildDipPeakGiveback (W9.1)', () => {
-  it('arm then giveback win: entry 100 → peak 115 → mark 103.5', () => {
+  it('arm then giveback win: entry 100 → peak 115 → mark 108.1', () => {
     const armed = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 115,
@@ -153,7 +153,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
 
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 103.5, // −10% of 115
+      markPriceUsd: 108.1, // −6% of 115
       peakPriceUsd: 115,
       armed: true,
       gates: exitGates,
@@ -161,10 +161,10 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('peak_giveback');
     expect(v.pnlPct).toBeGreaterThan(0);
-    expect(v.givebackPct).toBeLessThanOrEqual(-10 + 1e-6);
+    expect(v.givebackPct).toBeLessThanOrEqual(-6 + 1e-6);
   });
 
-  it('arm then giveback loss: entry 100 → peak 108 → mark 97.2', () => {
+  it('arm at +8% / giveback −6%: floor ≈ +1.5% from entry', () => {
     const arm = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 108,
@@ -177,7 +177,21 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
 
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 97.2, // −10% of 108
+      markPriceUsd: 101.52, // −6% of 108
+      peakPriceUsd: 108,
+      armed: true,
+      gates: exitGates,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('peak_giveback');
+    expect(v.pnlPct).toBeGreaterThan(0);
+    expect(v.pnlPct).toBeCloseTo(1.52, 2);
+  });
+
+  it('mark overshoot past giveback can still realize a loss', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 97,
       peakPriceUsd: 108,
       armed: true,
       gates: exitGates,
@@ -220,20 +234,20 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     });
     expect(high.peakPriceUsd).toBe(120);
 
-    // −9% from peak 120 → still holds (trigger is −10%)
+    // −5% from peak 120 → still holds (trigger is −6%)
     const hold = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 109.2,
+      markPriceUsd: 114,
       peakPriceUsd: 120,
       armed: true,
       gates: exitGates,
     });
     expect(hold.shouldExit).toBe(false);
 
-    // −10% from 120 = 108
+    // −6% from 120 = 112.8
     const exit = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 108,
+      markPriceUsd: 112.8,
       peakPriceUsd: 120,
       armed: true,
       gates: exitGates,

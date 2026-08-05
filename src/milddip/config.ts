@@ -109,7 +109,7 @@ export function loadMildDipConfig(): MildDipConfig {
   /** W9.1 peak-giveback — no time-stop / SL-from-entry / hard TP. */
   const exit: MildDipExitGates = {
     armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 8),
-    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 10),
+    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
   };
 
   const raw = {

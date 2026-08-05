@@ -34,7 +34,7 @@ export type MildDipEntryGates = {
 export type MildDipExitGates = {
   /** Arm trail when MFE ≥ this % (default 8). */
   armPct: number;
-  /** Full exit when giveback from peak ≤ −this % after armed (default 10). */
+  /** Full exit when giveback from peak ≤ −this % after armed (default 6). */
   givebackPct: number;
 };
 

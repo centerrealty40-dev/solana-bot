@@ -1,4 +1,18 @@
 # So
+## [1.11.678] — 2026-08-05
+
+**Тег:** `sa-1.11.678`
+
+### Change: mild-dip W9.1 giveback −10% → −6%
+
+- Operator calibration: `MILD_DIP_EXIT_GIVEBACK_PCT=6` (arm still +8%)
+- Exact trigger after arm at +8% peak ≈ **+1.5%** from entry (user target ~+2%)
+- Loss vs entry only via mark/fill overshoot past the −6% peak line
+
+**Откат:** set `MILD_DIP_EXIT_GIVEBACK_PCT=10` + reload `mild-dip-bot`.
+
+---
+
 ## [1.11.677] — 2026-08-05
 
 **Тег:** `sa-1.11.677`

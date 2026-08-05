@@ -2794,7 +2794,7 @@ const PM2_APPS = [
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
      * Entry: DexScreener pc5m ∈ (−20, 0], clip $5.
-     * Exit W9.1: arm MFE +8% → full exit giveback −10% from peak (no time-stop / hard TP).
+     * Exit W9.1: arm MFE +8% → full exit giveback −6% from peak (no time-stop / hard TP).
      * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $5 USDC).
      */
     {
@@ -2836,9 +2836,9 @@ const PM2_APPS = [
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
-        /** W9.1 peak-giveback: arm at +8% MFE, full exit on −10% from peak. No TP/time-stop/SL. */
+        /** W9.1 peak-giveback: arm at +8% MFE, full exit on −6% from peak. No TP/time-stop/SL. */
         MILD_DIP_EXIT_ARM_PCT: '8',
-        MILD_DIP_EXIT_GIVEBACK_PCT: '10',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '6',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
         /** After close/skip — allow rebuy same mint in 5m (was 1h). */
