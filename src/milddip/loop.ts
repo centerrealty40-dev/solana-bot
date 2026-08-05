@@ -309,7 +309,22 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
         `[mild-dip] SELL ${pos.symbol} reason=${verdict.reason} pnl=${(sell.pnlPct ?? verdict.pnlPct).toFixed(1)}% mode=${cfg.executionMode}`,
       );
     } else {
-      console.warn(`[mild-dip] sell failed ${mint.slice(0, 8)}…: ${sell.reason ?? 'unknown'}`);
+      const reason = sell.reason ?? 'unknown';
+      // Bag already gone on-chain — drop stale state so we stop retrying forever.
+      if (reason === 'no_token_balance') {
+        delete state.open[mint];
+        state.cooldownUntilMs[mint] = nowMs + cfg.mintCooldownMs;
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_drop_empty',
+          mint,
+          symbol: pos.symbol,
+          exitReason: verdict.reason,
+          pnlPct: +(sell.pnlPct ?? verdict.pnlPct).toFixed(2),
+        });
+        console.warn(`[mild-dip] DROP empty bag ${pos.symbol} mint=${mint.slice(0, 8)}…`);
+      } else {
+        console.warn(`[mild-dip] sell failed ${mint.slice(0, 8)}…: ${reason}`);
+      }
     }
   }
 }
