@@ -5,6 +5,7 @@
 import fs from 'node:fs';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
+import { mapPool } from './exit-engine.js';
 import { evaluateMildDipEntry, type MildDipCandidateMetrics } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
 
@@ -97,23 +98,23 @@ export async function collectCandidateMints(cfg: MildDipConfig): Promise<string[
 export async function enrichAndFilterCandidates(
   cfg: MildDipConfig,
   mints: string[],
-  opts?: { nowMs?: number; maxEnrich?: number },
+  opts?: { nowMs?: number; maxEnrich?: number; enrichConcurrency?: number },
 ): Promise<MildDipCandidate[]> {
   const nowMs = opts?.nowMs ?? Date.now();
   const maxEnrich = opts?.maxEnrich ?? 40;
-  const out: MildDipCandidate[] = [];
+  const enrichConcurrency = opts?.enrichConcurrency ?? cfg.enrichConcurrency ?? 12;
   const slice = mints.slice(0, maxEnrich);
 
   const denied = new Set(cfg.deniedMints.map((m) => m.trim()).filter(Boolean));
 
-  for (const mint of slice) {
+  const rows = await mapPool(slice, enrichConcurrency, async (mint) => {
     try {
-      if (denied.has(mint)) continue;
+      if (denied.has(mint)) return null;
       const details = await fetchDexScreenerPairDetails(mint, {
         bypassCache: true,
         nowMs,
       });
-      if (!details || !(details.priceUsd != null && details.priceUsd > 0)) continue;
+      if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
 
       const pairAgeHours =
         details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
@@ -130,18 +131,20 @@ export async function enrichAndFilterCandidates(
       };
 
       const verdict = evaluateMildDipEntry(metrics, cfg.entry);
-      if (!verdict.pass) continue;
+      if (!verdict.pass) return null;
 
-      out.push({
+      return {
         mint,
         symbol: mint.slice(0, 6),
         priceUsd: details.priceUsd,
         metrics,
-      });
+      } satisfies MildDipCandidate;
     } catch {
-      // skip mint
+      return null;
     }
-  }
+  });
+
+  const out = rows.filter((r): r is MildDipCandidate => r != null);
 
   // Prefer deeper mild dips first (more negative pc5m).
   out.sort((a, b) => (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0));
