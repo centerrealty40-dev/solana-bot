@@ -1,4 +1,23 @@
 # So
+## [1.11.676] — 2026-08-05
+
+**Тег:** `sa-1.11.676`
+
+### Change: copy-trader residual clip after soft gate miss
+
+Env `COPY_TRADER_ENTRY_RESIDUAL_POSITION_USD` (default **0** = off).
+
+When selective market gates fail **soft** (vol5m / turnover / vol-to-mcap /
+buy-sell / chase) the lane still enters at the residual clip instead of
+skipping. Hard fails (pair age, prior sessions, no entry context) stay blocked.
+
+7bnax (LERA): residual **$30** under the existing **$150** + vol5m≥$10k tier —
+catch the names the vol floor was rejecting.
+
+**Откат:** `COPY_TRADER_ENTRY_RESIDUAL_POSITION_USD=0` + reload; or revert.
+
+---
+
 ## [1.11.675] — 2026-08-04
 
 **Тег:** `sa-1.11.675`

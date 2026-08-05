@@ -3,6 +3,7 @@ import {
   evaluateLeaderCopyGates,
   evaluateLeaderMarketGate,
   evaluateLeaderPriorGate,
+  isSoftLeaderGateFailure,
   type LeaderGateConfig,
 } from '../../src/copytrader/entry-gates.js';
 import type { CopyEntryContext } from '../../src/copytrader/entry-context.js';
@@ -263,5 +264,27 @@ describe('combined gate', () => {
 
   it('passes the configuration the audit selected', () => {
     expect(evaluateLeaderCopyGates(cfg, { stats: goodStats, ctx: ctx() }).pass).toBe(true);
+  });
+});
+
+describe('soft residual gate failures', () => {
+  it('treats vol5m / turnover / chase rejects as soft', () => {
+    expect(isSoftLeaderGateFailure(['volume_5m_usd=2500<min=10000'])).toBe(true);
+    expect(isSoftLeaderGateFailure(['volume_5m_unknown'])).toBe(true);
+    expect(isSoftLeaderGateFailure(['turnover_5m=0.022<min=0.09'])).toBe(true);
+    expect(isSoftLeaderGateFailure(['chase_5m_pct=42.0>max=15'])).toBe(true);
+  });
+
+  it('keeps pair age / prior / missing context hard', () => {
+    expect(isSoftLeaderGateFailure(['pair_age_h=0.05<min=0.1'])).toBe(false);
+    expect(isSoftLeaderGateFailure(['leader_prior_sessions=0<min=3'])).toBe(false);
+    expect(isSoftLeaderGateFailure(['no_entry_context'])).toBe(false);
+    expect(
+      isSoftLeaderGateFailure(['volume_5m_usd=100<min=10000', 'pair_age_h=0.05<min=0.1']),
+    ).toBe(false);
+  });
+
+  it('rejects empty reason lists', () => {
+    expect(isSoftLeaderGateFailure([])).toBe(false);
   });
 });

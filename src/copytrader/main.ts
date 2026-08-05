@@ -19,12 +19,14 @@ import {
   type EntryDipQuoteCache,
 } from './entry-dip-gate.js';
 import {
+  clampEntryUsd,
   entryDipSizeUsd,
   entryProbeSizeUsd,
   entryScheduleDelayMs,
   entryTargetUsd,
   isEntryProbePending,
   resolveEntryBuyDelayMs,
+  roundUsd,
   syncEntryPendingSizing,
   usesDipOnlyEntry,
   usesSplitEntryProbe,
@@ -130,7 +132,11 @@ import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
 import { checkCopyFundingGate } from './funding-gate.js';
 import { mirrorsLeaderSells, usesOscarExitPolicy, usesTrailingExitPolicy } from './exit-mode.js';
 import { fetchCopyEntryContext, type CopyEntryContext } from './entry-context.js';
-import { evaluateLeaderMarketGate, evaluateLeaderPriorGate } from './entry-gates.js';
+import {
+  evaluateLeaderMarketGate,
+  evaluateLeaderPriorGate,
+  isSoftLeaderGateFailure,
+} from './entry-gates.js';
 import { evaluateShadowSelect } from './shadow-select.js';
 import {
   applyLeaderSwapToHistory,
@@ -765,30 +771,58 @@ async function onLeaderBuy(
   }
 
   const gateBlock = await leaderGateBlocksEntry(cfg, state, mint, entryCtx);
+  /** Soft gate miss → residual clip (e.g. vol5m floor) instead of skip. */
+  let residualEntryUsd: number | null = null;
   if (gateBlock) {
+    const residualUsd =
+      cfg.entryResidualPositionUsd > 0 && isSoftLeaderGateFailure(gateBlock.reasons)
+        ? clampEntryUsd(cfg, roundUsd(cfg.entryResidualPositionUsd))
+        : 0;
+    if (!(residualUsd > 0)) {
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_ignored',
+        reason: 'copy_gate',
+        gateReasons: gateBlock.reasons,
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        leaderPriorSessions: gateBlock.stats?.sessions ?? 0,
+        leaderPriorAvgPct:
+          gateBlock.stats != null ? Number(gateBlock.stats.avgPct.toFixed(2)) : null,
+        pairAgeHours:
+          gateBlock.ctx?.pairAgeHours != null
+            ? Number(gateBlock.ctx.pairAgeHours.toFixed(2))
+            : null,
+        buySellRatio5m:
+          gateBlock.ctx?.buySellRatio5m != null
+            ? Number(gateBlock.ctx.buySellRatio5m.toFixed(2))
+            : null,
+        priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
+        marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
+        liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
+        volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
+      });
+      return;
+    }
+    residualEntryUsd = residualUsd;
     appendCopyEvent(cfg, {
-      kind: 'leader_buy_ignored',
-      reason: 'copy_gate',
+      kind: 'leader_buy_residual',
+      reason: 'copy_gate_soft',
       gateReasons: gateBlock.reasons,
+      residualEntryUsd,
       mint,
       symbol,
       leaderSignature: row.signature,
       leaderBuyUsd: swap.amountUsd,
-      leaderPriorSessions: gateBlock.stats?.sessions ?? 0,
-      leaderPriorAvgPct:
-        gateBlock.stats != null ? Number(gateBlock.stats.avgPct.toFixed(2)) : null,
-      pairAgeHours:
-        gateBlock.ctx?.pairAgeHours != null ? Number(gateBlock.ctx.pairAgeHours.toFixed(2)) : null,
-      buySellRatio5m:
-        gateBlock.ctx?.buySellRatio5m != null
-          ? Number(gateBlock.ctx.buySellRatio5m.toFixed(2))
-          : null,
-      priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
       marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
       liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
       volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
+      pairAgeHours:
+        gateBlock.ctx?.pairAgeHours != null
+          ? Number(gateBlock.ctx.pairAgeHours.toFixed(2))
+          : null,
     });
-    return;
   }
 
   /**
@@ -828,12 +862,14 @@ async function onLeaderBuy(
   }
 
   if (usesEnterOnlyOnLeaderAdd(cfg) && lateEntryOnLeaderRebuy) {
-    const bagEntryUsd = enterOnLeaderAddSizeUsd(cfg, {
-      preLeaderRaw,
-      buyRaw: swap.baseAmountRaw,
-      priceUsd: swap.priceUsd > 0 ? swap.priceUsd : priceUsd,
-    });
-    if (!(bagEntryUsd > 0) || bagEntryUsd < cfg.minLeaderBuyUsd) {
+    const bagEntryUsd = residualEntryUsd
+      ? residualEntryUsd
+      : enterOnLeaderAddSizeUsd(cfg, {
+          preLeaderRaw,
+          buyRaw: swap.baseAmountRaw,
+          priceUsd: swap.priceUsd > 0 ? swap.priceUsd : priceUsd,
+        });
+    if (!(bagEntryUsd > 0) || (residualEntryUsd == null && bagEntryUsd < cfg.minLeaderBuyUsd)) {
       appendCopyEvent(cfg, {
         kind: 'leader_buy_ignored',
         reason: 'leader_add_bag_entry_too_small',
@@ -866,12 +902,12 @@ async function onLeaderBuy(
   if (usesDipOnlyEntry(cfg)) {
     const dex = await fetchDexInfo(mint, getSolUsd());
     const mcap = dex?.marketCap && dex.marketCap > 0 ? dex.marketCap : undefined;
-    const targetUsd = entryTargetUsd(cfg, mcap, swap.amountUsd);
+    const targetUsd = residualEntryUsd ?? entryTargetUsd(cfg, mcap, swap.amountUsd);
     await schedulePendingBuy(cfg, state, {
       mint,
       symbol,
       kind: 'entry',
-      sizeUsd: entryDipSizeUsd(cfg, mcap, swap.amountUsd),
+      sizeUsd: residualEntryUsd ?? entryDipSizeUsd(cfg, mcap, swap.amountUsd),
       entryLeg: 'dip',
       entryTargetUsd: targetUsd,
       entryMcapUsd: mcap,
@@ -885,14 +921,18 @@ async function onLeaderBuy(
 
   const dex = await fetchDexInfo(mint, getSolUsd());
   const mcap = dex?.marketCap && dex.marketCap > 0 ? dex.marketCap : undefined;
-  const targetUsd = entryTargetUsd(cfg, mcap, swap.amountUsd);
-  const probeUsd = usesSplitEntryProbe(cfg) ? entryProbeSizeUsd(cfg, mcap, swap.amountUsd) : targetUsd;
+  const targetUsd = residualEntryUsd ?? entryTargetUsd(cfg, mcap, swap.amountUsd);
+  const probeUsd = residualEntryUsd
+    ? residualEntryUsd
+    : usesSplitEntryProbe(cfg)
+      ? entryProbeSizeUsd(cfg, mcap, swap.amountUsd)
+      : targetUsd;
   await schedulePendingBuy(cfg, state, {
     mint,
     symbol,
     kind: 'entry',
     sizeUsd: probeUsd,
-    entryLeg: usesSplitEntryProbe(cfg) ? 'probe' : undefined,
+    entryLeg: residualEntryUsd ? undefined : usesSplitEntryProbe(cfg) ? 'probe' : undefined,
     entryTargetUsd: targetUsd,
     entryMcapUsd: mcap,
     preLeaderRaw,
@@ -2211,6 +2251,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     target: cfg.targetWallet,
     mode: cfg.executionMode,
     entryUsd: cfg.positionUsd,
+    residualEntryUsd: cfg.entryResidualPositionUsd > 0 ? cfg.entryResidualPositionUsd : null,
     initialMirrorRatio: cfg.initialMirrorRatio > 0 ? cfg.initialMirrorRatio : null,
     minMirrorEntryUsd: cfg.minMirrorEntryUsd > 0 ? cfg.minMirrorEntryUsd : null,
     addMirror: 'proportional_to_leader',

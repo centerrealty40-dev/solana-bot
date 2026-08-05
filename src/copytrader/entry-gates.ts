@@ -190,3 +190,15 @@ export function evaluateLeaderCopyGates(
   const reasons = [...prior.reasons, ...market.reasons];
   return { pass: reasons.length === 0, reasons };
 }
+
+/**
+ * Soft selective-gate failures eligible for the residual clip tier.
+ * Hard failures (pair age, prior sessions, missing entry context) still block.
+ */
+const SOFT_GATE_REASON_RE =
+  /^(volume_5m|turnover_5m|vol_to_mcap_1h|buy_sell_5m|buy_sell_ratio|chase_5m|price_change_5m)/;
+
+export function isSoftLeaderGateFailure(reasons: string[]): boolean {
+  if (reasons.length === 0) return false;
+  return reasons.every((r) => SOFT_GATE_REASON_RE.test(r));
+}
