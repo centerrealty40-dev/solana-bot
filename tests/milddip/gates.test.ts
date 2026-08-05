@@ -139,7 +139,7 @@ describe('evaluateMildDipExit', () => {
       markPriceUsd: 1.1,
       openedAtMs: 0,
       nowMs: 60_000,
-      gates: { tpGainPct: 10, timeStopMs: 360_000 },
+      gates: { tpGainPct: 10, timeStopMs: 900_000 },
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('take_profit');
@@ -150,8 +150,8 @@ describe('evaluateMildDipExit', () => {
       entryPriceUsd: 1,
       markPriceUsd: 1.02,
       openedAtMs: 0,
-      nowMs: 360_000,
-      gates: { tpGainPct: 10, timeStopMs: 360_000 },
+      nowMs: 900_000,
+      gates: { tpGainPct: 10, timeStopMs: 900_000 },
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('time_stop');
@@ -162,8 +162,8 @@ describe('evaluateMildDipExit', () => {
       entryPriceUsd: 1,
       markPriceUsd: 1.02,
       openedAtMs: 0,
-      nowMs: 60_000,
-      gates: { tpGainPct: 10, timeStopMs: 360_000 },
+      nowMs: 360_000,
+      gates: { tpGainPct: 10, timeStopMs: 900_000 },
     });
     expect(v.shouldExit).toBe(false);
     expect(v.reason).toBeNull();

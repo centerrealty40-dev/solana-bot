@@ -2,7 +2,8 @@
  * Mild-dip branch gates (reverse-engineered from leader 7BNax sessions).
  *
  * Entry: DexScreener priceChange5m ∈ (minDipPct, maxDipPct] — default (−20, 0].
- * Exit: take-profit ≥ tpGainPct OR hold ≥ timeStopMs.
+ * Exit: take-profit ≥ tpGainPct OR hold ≥ timeStopMs
+ * (default 15m ≈ leader mild-dip hold median; not a hard 6m leader timer).
  */
 
 export type MildDipCandidateMetrics = {

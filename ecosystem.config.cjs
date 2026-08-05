@@ -2835,7 +2835,8 @@ const PM2_APPS = [
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
         MILD_DIP_TP_GAIN_PCT: '10',
-        MILD_DIP_TIME_STOP_MS: '360000',
+        /** Leader mild-dip hold med ≈14m / WIN med ≈8m — not a hard 6m timer. */
+        MILD_DIP_TIME_STOP_MS: '900000',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
         MILD_DIP_MINT_COOLDOWN_MS: '3600000',

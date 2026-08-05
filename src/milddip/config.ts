@@ -105,7 +105,8 @@ export function loadMildDipConfig(): MildDipConfig {
 
   const exit: MildDipExitGates = {
     tpGainPct: envNum('MILD_DIP_TP_GAIN_PCT', 10),
-    timeStopMs: Math.floor(envNum('MILD_DIP_TIME_STOP_MS', 360_000)),
+    /** Default 15m — leader mild-dip hold med ≈14m (WIN med ≈8m); 6m was short-scalp guess. */
+    timeStopMs: Math.floor(envNum('MILD_DIP_TIME_STOP_MS', 900_000)),
   };
 
   const raw = {
