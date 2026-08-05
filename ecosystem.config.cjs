@@ -2512,12 +2512,12 @@ const PM2_APPS = [
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         /**
-         * Hard premium cap vs the leader fill. Above 5% we do not buy — we keep
-         * retrying until the quote cools or the leader starts exiting
-         * (leaderHoldingsShrunkSinceSignal). No first-shot widen.
+         * 1.11.684 — hard premium cap +1% vs leader fill (was 5%).
+         * Applies to all tiers (big $100 + scout $30). Above → defer / re-quote
+         * until cooler or leader exits (leaderHoldingsShrunkSinceSignal).
          */
-        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
-        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '5',
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '1',
+        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '1',
         COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '0',
         COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '0',
         /** Long window; the real stop for a premium-blocked entry is "leader sold". */
@@ -2692,9 +2692,9 @@ const PM2_APPS = [
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
-        /** Shared premium policy with the twin: hard 5%, retry until leader exits. */
-        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
-        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '5',
+        /** 1.11.684 — shared with twin: hard +1%, retry until cooler / leader exits. */
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '1',
+        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '1',
         COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '0',
         COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '0',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',

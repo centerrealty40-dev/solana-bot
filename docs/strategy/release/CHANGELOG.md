@@ -1,4 +1,23 @@
 # So
+## [1.11.684] — 2026-08-05
+
+**Тег:** `sa-1.11.684`
+
+### Change: entry premium corridor +1% (all tiers)
+
+Both `copy-trader-8zkg` + mirror: do not buy more than **+1%** over the
+leader fill (DEX mark + Jupiter quote guard). Was **+5%**. Applies to big
+tier and scout. Above the corridor → defer / re-quote (2s) until cooler or
+leader exits — no chase.
+
+- `BUY_PRICE_MAX_PREMIUM_PCT=1`
+- `QUOTE_PREMIUM_GUARD_PCT=1`
+- first-shot widen still `0`
+
+**Откат:** both caps back to `5`.
+
+---
+
 ## [1.11.683] — 2026-08-05
 
 **Тег:** `sa-1.11.683`
