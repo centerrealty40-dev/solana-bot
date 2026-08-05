@@ -91,7 +91,8 @@
     "copy-trader": "tsx src/scripts/copy-trader.ts",
     "copy-trader:doctor": "tsx src/scripts/copy-trader-doctor.ts",
     "copy-trader:bootstrap-history": "tsx src/scripts/copy-leader-history-bootstrap.ts",
-    "mild-dip-bot": "tsx src/scripts/mild-dip-bot.ts"
+    "mild-dip-bot": "tsx src/scripts/mild-dip-bot.ts",
+    "mild-dip-orphan-janitor": "tsx src/scripts/mild-dip-orphan-janitor.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",

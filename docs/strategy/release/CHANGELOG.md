@@ -1,4 +1,20 @@
 # So
+## [1.11.680] — 2026-08-05
+
+**Тег:** `sa-1.11.680`
+
+### Change: mild-dip orphan janitor (burn + close junk ATAs)
+
+- Script `npm run mild-dip-orphan-janitor` (dry-run / `--execute`)
+- Burns unroutable leftover token balances then closes ATA (rent reclaim)
+- Skips stables/WSOL and mints currently open in mild-dip `state.json`
+- Shared-wallet note: live-oscar-micro is shared — janitor must not run while
+  another lane holds intentional inventory on the same pubkey
+
+**Откат:** stop using the script; no runtime loop change required.
+
+---
+
 ## [1.11.679] — 2026-08-05
 
 **Тег:** `sa-1.11.679`
