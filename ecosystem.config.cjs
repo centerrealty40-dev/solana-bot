@@ -2402,6 +2402,14 @@ const PM2_APPS = [
         COPY_TRADER_QUOTE_MINT: 'USDC',
         /** Native SOL is still needed for priority fees + ATA rent. */
         COPY_TRADER_MIN_FEE_SOL_RESERVE: '0.02',
+        /**
+         * Funding short: take 50% of planned size if USDC covers that clip;
+         * queue remainder top-up when cash returns + premium corridor still OK.
+         */
+        COPY_TRADER_FUNDING_PARTIAL_CLIP: '1',
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_FRACTION: '0.5',
+        /** Below scout clip so $30 entries are not blocked by the $50 legacy floor. */
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '15',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg/target-wallet.txt'),
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg/state.json'),
@@ -2409,37 +2417,40 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — mirror owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * ≥$300k: 80% of leader buy, floor $200, ceiling $700.
-         * Fixed clips (this lane only, 1.11.674):
-         *   $100k–$200k → $50; $200k–$300k → $100.
+         * 1.11.682 — big-tier static entry $100 (not % of leader).
+         * Mirror ratio off → entryTargetUsd = POSITION_USD.
+         * 1.11.683 — scout tier $30 when vol/mcap (selective) gates reject.
          */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.8',
-        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '200',
-        COPY_TRADER_POSITION_USD: '200',
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
+        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '0',
+        COPY_TRADER_POSITION_USD: '100',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
-        COPY_TRADER_ENTRY_MID_POSITION_USD: '200',
-        COPY_TRADER_ENTRY_MID_LEG_USD: '200',
-        /** Tier-1: mcap ∈ [$100k, $200k) → $50 fixed. */
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '100',
+        /** Fixed bands off (0 max). */
         COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '100000',
-        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '200000',
-        COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
-        /** Tier-2: mcap ∈ [$200k, $300k) → $100 fixed. */
-        COPY_TRADER_ENTRY_LOW2_MCAP_MIN_USD: '200000',
-        COPY_TRADER_ENTRY_LOW2_MCAP_MAX_USD: '300000',
-        COPY_TRADER_ENTRY_LOW2_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '0',
+        COPY_TRADER_ENTRY_LOW_POSITION_USD: '0',
+        COPY_TRADER_ENTRY_LOW2_MCAP_MIN_USD: '0',
+        COPY_TRADER_ENTRY_LOW2_MCAP_MAX_USD: '0',
+        COPY_TRADER_ENTRY_LOW2_POSITION_USD: '0',
+        /** Scout: follow leader at $30 when big-tier selective gates fail. */
+        COPY_TRADER_ENTRY_SCOUT_USD: '30',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '700',
+        COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '200',
-        COPY_TRADER_MAX_OPEN_POSITIONS: '8',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
+        /** Scout follows nearly all leader buys — need headroom vs old 8. */
+        COPY_TRADER_MAX_OPEN_POSITIONS: '40',
         /** Allow entry on leader rebuy/average-down even if we missed his first fill. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal A/B vs `copy-trader-8zkg-mirror`:
-         * this lane = **mcap-only** (≥$100k; full size ≥$300k) + **fast** mirror exit.
-         * Twin = vol5m + same mcap/sizing. Shared: pair age ≥0.1h, premium ≤5%.
+         * this lane = mcap (≥$100k) + vol5m≥$10k + **fast** mirror exit.
+         * Twin = same sizing + vol5m. Shared: pair age ≥0.1h, premium ≤5%.
+         * Scout $30 bypasses vol/mcap only (this bot).
          */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
@@ -2448,8 +2459,13 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0',
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
-        /** Off — twin owns the volume axis. */
-        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '0',
+        /**
+         * 1.11.679 — hard vol5m floor $10k (was 0). Thin books (<$8k) were the
+         * main 10h loss driver on this mcap lane. Unknown vol fails closed.
+         * Scout tier still buys rejects at $30 (1.11.683).
+         */
+        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '10000',
+        COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS: '0',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
@@ -2462,8 +2478,11 @@ const PM2_APPS = [
          */
         COPY_TRADER_SHADOW_SELECT: '1',
         COPY_TRADER_SHADOW_SELECT_FILTER_LIVE: '0',
-        COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD: '2000',
-        COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M: '1',
+        /** Dump-first: ≥5% red 5m + sell pressure. Not vol/bs momentum. */
+        COPY_TRADER_SHADOW_SELECT_MAX_PRICE_CHANGE_5M_PCT: '-5',
+        COPY_TRADER_SHADOW_SELECT_MAX_BUY_SELL_5M: '1',
+        COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD: '0',
+        COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_SHADOW_SELECT_MIN_MCAP_USD: '0',
         COPY_TRADER_SHADOW_SELECT_MIN_LIQ_USD: '0',
         COPY_TRADER_SHADOW_SELECT_REQUIRE_CTX: '1',
@@ -2479,8 +2498,11 @@ const PM2_APPS = [
         COPY_TRADER_LEADER_STREAM_POLL_BACKUP_MS: '1500',
         /** Watchdog: if stream dies / misses poll, keep 1.5s poll + reconnect. */
         COPY_TRADER_LEADER_STREAM_FAST_POLL_MS: '1500',
-        /** First poll miss while stream silent → fast path (was 5 × 5s = 25s). */
-        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '1',
+        /**
+         * 1.11.678 — was 1; single poll/stream race permanently killed
+         * transactionSubscribe via silent_stream → logsSubscribe lock-in.
+         */
+        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '3',
         COPY_TRADER_LEADER_INGRESS_CONCURRENCY: '4',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
         ...(HELIUS_RPC_URL_PM2
@@ -2490,12 +2512,12 @@ const PM2_APPS = [
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         /**
-         * Hard premium cap vs the leader fill. Above 5% we do not buy — we keep
-         * retrying until the quote cools or the leader starts exiting
-         * (leaderHoldingsShrunkSinceSignal). No first-shot widen.
+         * 1.11.684 — hard premium cap +1% vs leader fill (was 5%).
+         * Applies to all tiers (big $100 + scout $30). Above → defer / re-quote
+         * until cooler or leader exits (leaderHoldingsShrunkSinceSignal).
          */
-        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
-        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '5',
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '1',
+        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '1',
         COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '0',
         COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '0',
         /** Long window; the real stop for a premium-blocked entry is "leader sold". */
@@ -2586,6 +2608,10 @@ const PM2_APPS = [
         COPY_TRADER_TARGET_WALLET: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
         COPY_TRADER_QUOTE_MINT: 'USDC',
         COPY_TRADER_MIN_FEE_SOL_RESERVE: '0.02',
+        /** Same funding partial-clip as twin (50% now, top-up later). */
+        COPY_TRADER_FUNDING_PARTIAL_CLIP: '1',
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_FRACTION: '0.5',
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '50',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg-mirror/target-wallet.txt'),
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg-mirror/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg-mirror/state.json'),
@@ -2593,31 +2619,29 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — the leader owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * Same sizing as twin: ≥$300k → 80% leader, floor $200, cap $700;
-         * $150k–$300k → $50 stats clip; exits stay fraction-of-holdings mirror.
+         * 1.11.682 — same as mcap twin: static $100 big-tier entry.
+         * Mirror ratio off → entryTargetUsd = POSITION_USD.
          */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.8',
-        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '200',
-        COPY_TRADER_POSITION_USD: '200',
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
+        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '0',
+        COPY_TRADER_POSITION_USD: '100',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
-        COPY_TRADER_ENTRY_MID_POSITION_USD: '200',
-        COPY_TRADER_ENTRY_MID_LEG_USD: '200',
-        /** Stats tier: same as twin — mcap ∈ [$150k, $300k) → $50. */
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '100',
         COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '150000',
-        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '300000',
-        COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '0',
+        COPY_TRADER_ENTRY_LOW_POSITION_USD: '0',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        /** Same ceiling as twin. */
-        COPY_TRADER_MAX_POSITION_USD: '700',
+        COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '200',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         /** Same as twin: enter on average-down / rebuy if we missed his open. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
-         * Orthogonal B: vol5m (≥$8k) + same mcap floor/sizing as twin (1.11.665).
+         * Orthogonal B: vol5m (≥$10k) + mcap ≥$150k + same sizing as twin.
          * Missing volume feed fails closed.
          */
         COPY_TRADER_LEADER_GATES: '1',
@@ -2627,7 +2651,12 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0',
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
-        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '8000',
+        /**
+         * 1.11.679 — hard vol5m floor $10k (was $8k + adjacent×3 bypass).
+         * Unknown or below $10k → skip buy (fail closed).
+         */
+        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '10000',
+        COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS: '0',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
@@ -2636,20 +2665,23 @@ const PM2_APPS = [
         /** Same shadow select as twin (paper; FILTER_LIVE off). */
         COPY_TRADER_SHADOW_SELECT: '1',
         COPY_TRADER_SHADOW_SELECT_FILTER_LIVE: '0',
-        COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD: '2000',
-        COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M: '1',
+        /** Dump-first: ≥5% red 5m + sell pressure. Not vol/bs momentum. */
+        COPY_TRADER_SHADOW_SELECT_MAX_PRICE_CHANGE_5M_PCT: '-5',
+        COPY_TRADER_SHADOW_SELECT_MAX_BUY_SELL_5M: '1',
+        COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD: '0',
+        COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_SHADOW_SELECT_MIN_MCAP_USD: '0',
         COPY_TRADER_SHADOW_SELECT_MIN_LIQ_USD: '0',
         COPY_TRADER_SHADOW_SELECT_REQUIRE_CTX: '1',
         COPY_TRADER_SHADOW_SELECT_SUMMARY_MS: '600000',
         /** His sell is the only exit: no trail, no time cap, no stop. */
         COPY_TRADER_EXIT_MODE: 'mirror',
-        /** Same Helius stream as FxQf — 1.11.669: missThreshold 1 + silent-stream reconnect. */
+        /** Same Helius stream as FxQf — 1.11.678: missThreshold 3, no permanent logs lock-in. */
         COPY_TRADER_POLL_INTERVAL_MS: '1500',
         COPY_TRADER_LEADER_STREAM: '1',
         COPY_TRADER_LEADER_STREAM_POLL_BACKUP_MS: '1500',
         COPY_TRADER_LEADER_STREAM_FAST_POLL_MS: '1500',
-        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '1',
+        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '3',
         COPY_TRADER_LEADER_INGRESS_CONCURRENCY: '4',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
         ...(HELIUS_RPC_URL_PM2
@@ -2660,9 +2692,9 @@ const PM2_APPS = [
         COPY_TRADER_BUY_DELAY_MS: '0',
         COPY_TRADER_BUY_DELAY_SKIP_MAX_PREMIUM_PCT: '0',
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
-        /** Shared premium policy with the twin: hard 5%, retry until leader exits. */
-        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '5',
-        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '5',
+        /** 1.11.684 — shared with twin: hard +1%, retry until cooler / leader exits. */
+        COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '1',
+        COPY_TRADER_QUOTE_PREMIUM_GUARD_PCT: '1',
         COPY_TRADER_QUOTE_PREMIUM_FIRST_SHOT_PCT: '0',
         COPY_TRADER_QUOTE_PREMIUM_GRACE_MS: '0',
         COPY_TRADER_BUY_RETRY_WINDOW_MS: '7200000',

@@ -28,6 +28,7 @@ export type LeaderGateConfig = Pick<
   | 'entryMinTurnover5m'
   | 'entryMinVolToMcap1h'
   | 'entryMinVolume5mUsd'
+  | 'entryVol5mAdjacentWindows'
   | 'leaderFollowOnlyMinMcapUsd'
   | 'leaderFollowOnlyMinVolume1hUsd'
 >;
@@ -172,9 +173,26 @@ export function evaluateLeaderMarketGate(
     if (ctx.volume5mUsd == null || !(ctx.volume5mUsd > 0)) {
       reasons.push('volume_5m_unknown');
     } else if (ctx.volume5mUsd < cfg.entryMinVolume5mUsd) {
-      reasons.push(
-        `volume_5m_usd=${Math.round(ctx.volume5mUsd)}<min=${cfg.entryMinVolume5mUsd}`,
-      );
+      /**
+       * Quiet current m5 is common right as the leader fills — neighbouring
+       * windows can still be hot. Dex has no discrete 5m candles, so 1h volume
+       * covering N× the floor stands in for those adjacent windows.
+       */
+      const windows = cfg.entryVol5mAdjacentWindows;
+      const need1h = windows > 0 ? cfg.entryMinVolume5mUsd * windows : 0;
+      const vol1hOk =
+        need1h > 0 &&
+        ctx.volume1hUsd != null &&
+        Number.isFinite(ctx.volume1hUsd) &&
+        ctx.volume1hUsd + 1e-9 >= need1h;
+      if (!vol1hOk) {
+        reasons.push(
+          `volume_5m_usd=${Math.round(ctx.volume5mUsd)}<min=${cfg.entryMinVolume5mUsd}` +
+            (need1h > 0
+              ? `|volume_1h_usd=${Math.round(ctx.volume1hUsd ?? 0)}<min=${Math.round(need1h)}(${windows}x5m)`
+              : ''),
+        );
+      }
     }
   }
 

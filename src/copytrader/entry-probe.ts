@@ -200,10 +200,19 @@ export function syncEntryPendingSizing(
     entryTargetUsd?: number;
     entryMcapUsd?: number;
     leaderBuyUsd?: number;
+    /** Scout clip — keep fixed size; do not promote to big-tier target. */
+    entryScout?: boolean;
   },
   marketCapUsd?: number,
 ): void {
   if (pending.kind !== 'entry') return;
+  if (pending.entryScout) {
+    if (marketCapUsd != null && marketCapUsd > 0) pending.entryMcapUsd = marketCapUsd;
+    const scout = clampEntryUsd(cfg, roundUsd(cfg.entryScoutUsd > 0 ? cfg.entryScoutUsd : pending.sizeUsd));
+    pending.entryTargetUsd = scout;
+    pending.sizeUsd = scout;
+    return;
+  }
   const leaderBuyUsd = pending.leaderBuyUsd;
   if (marketCapUsd != null && marketCapUsd > 0) pending.entryMcapUsd = marketCapUsd;
   pending.entryTargetUsd = entryTargetUsd(cfg, marketCapUsd, leaderBuyUsd);

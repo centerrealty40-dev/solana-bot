@@ -29,6 +29,7 @@ import {
   usesDipOnlyEntry,
   usesSplitEntryProbe,
 } from './entry-probe.js';
+import { canUseScoutEntryFallback, scoutEntrySizeUsd } from './entry-scout.js';
 import { shouldIgnoreMissedEntryLeaderRebuy } from './entry-late.js';
 import {
   enterOnLeaderAddSizeUsd,
@@ -128,6 +129,10 @@ import {
 } from './oscar-position-guard.js';
 import { checkCopySpareCapitalGate } from './spare-capital-gate.js';
 import { checkCopyFundingGate } from './funding-gate.js';
+import {
+  fundingTopUpRemainderUsd,
+  resolveFundingPartialClip,
+} from './funding-partial-clip.js';
 import { mirrorsLeaderSells, usesOscarExitPolicy, usesTrailingExitPolicy } from './exit-mode.js';
 import { fetchCopyEntryContext, type CopyEntryContext } from './entry-context.js';
 import { evaluateLeaderMarketGate, evaluateLeaderPriorGate } from './entry-gates.js';
@@ -294,8 +299,11 @@ function maybeSummarizeShadowSelect(cfg: CopyTraderConfig): void {
     wouldBuy: shadowSelectStats.wouldBuy,
     miss: shadowSelectStats.miss,
     ctxMissing: shadowSelectStats.ctxMissing,
+    /** Share wouldBuy/scored (selectivity), not recall vs winners. */
     recallPct,
     filterLive: cfg.shadowSelectFilterLive,
+    maxPriceChange5mPct: cfg.shadowSelectMaxPriceChange5mPct,
+    maxBuySellRatio5m: cfg.shadowSelectMaxBuySellRatio5m,
     minVolume5mUsd: cfg.shadowSelectMinVolume5mUsd,
     minBuySellRatio5m: cfg.shadowSelectMinBuySellRatio5m,
   });
@@ -303,6 +311,8 @@ function maybeSummarizeShadowSelect(cfg: CopyTraderConfig): void {
     scored: shadowSelectStats.scored,
     wouldBuy: shadowSelectStats.wouldBuy,
     recallPct,
+    dump5mMax: cfg.shadowSelectMaxPriceChange5mPct,
+    bsMax: cfg.shadowSelectMaxBuySellRatio5m,
   });
 }
 
@@ -765,30 +775,49 @@ async function onLeaderBuy(
   }
 
   const gateBlock = await leaderGateBlocksEntry(cfg, state, mint, entryCtx);
+  let scoutFromGates: string[] | null = null;
   if (gateBlock) {
-    appendCopyEvent(cfg, {
-      kind: 'leader_buy_ignored',
-      reason: 'copy_gate',
-      gateReasons: gateBlock.reasons,
-      mint,
-      symbol,
-      leaderSignature: row.signature,
-      leaderBuyUsd: swap.amountUsd,
-      leaderPriorSessions: gateBlock.stats?.sessions ?? 0,
-      leaderPriorAvgPct:
-        gateBlock.stats != null ? Number(gateBlock.stats.avgPct.toFixed(2)) : null,
-      pairAgeHours:
-        gateBlock.ctx?.pairAgeHours != null ? Number(gateBlock.ctx.pairAgeHours.toFixed(2)) : null,
-      buySellRatio5m:
-        gateBlock.ctx?.buySellRatio5m != null
-          ? Number(gateBlock.ctx.buySellRatio5m.toFixed(2))
-          : null,
-      priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
-      marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
-      liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
-      volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
-    });
-    return;
+    if (canUseScoutEntryFallback(cfg, gateBlock.reasons)) {
+      scoutFromGates = gateBlock.reasons;
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_scout',
+        reason: 'copy_gate_scout',
+        gateReasons: gateBlock.reasons,
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        sizeUsd: scoutEntrySizeUsd(cfg),
+        marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
+        liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
+        volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
+        priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
+      });
+    } else {
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_ignored',
+        reason: 'copy_gate',
+        gateReasons: gateBlock.reasons,
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        leaderPriorSessions: gateBlock.stats?.sessions ?? 0,
+        leaderPriorAvgPct:
+          gateBlock.stats != null ? Number(gateBlock.stats.avgPct.toFixed(2)) : null,
+        pairAgeHours:
+          gateBlock.ctx?.pairAgeHours != null ? Number(gateBlock.ctx.pairAgeHours.toFixed(2)) : null,
+        buySellRatio5m:
+          gateBlock.ctx?.buySellRatio5m != null
+            ? Number(gateBlock.ctx.buySellRatio5m.toFixed(2))
+            : null,
+        priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
+        marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
+        liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
+        volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
+      });
+      return;
+    }
   }
 
   /**
@@ -812,17 +841,62 @@ async function onLeaderBuy(
       structural.push(`liq=${Math.round(liq)}<min=${cfg.minLiquidityUsd}`);
     }
   }
+  let entryScout = scoutFromGates != null;
   if (structural.length > 0) {
-    appendCopyEvent(cfg, {
-      kind: 'leader_buy_ignored',
-      reason: 'copy_gate',
-      gateReasons: structural,
+    const combined = [...(scoutFromGates ?? []), ...structural];
+    if (canUseScoutEntryFallback(cfg, combined)) {
+      entryScout = true;
+      if (!scoutFromGates) {
+        appendCopyEvent(cfg, {
+          kind: 'leader_buy_scout',
+          reason: 'copy_gate_scout',
+          gateReasons: structural,
+          mint,
+          symbol,
+          leaderSignature: row.signature,
+          leaderBuyUsd: swap.amountUsd,
+          sizeUsd: scoutEntrySizeUsd(cfg),
+          marketCapUsd: dexGate?.marketCap ?? null,
+          liquidityUsd: dexGate?.liquidityUsd ?? null,
+        });
+      }
+    } else {
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_ignored',
+        reason: 'copy_gate',
+        gateReasons: structural,
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        marketCapUsd: dexGate?.marketCap ?? null,
+        liquidityUsd: dexGate?.liquidityUsd ?? null,
+      });
+      return;
+    }
+  }
+
+  if (entryScout) {
+    const scoutUsd = scoutEntrySizeUsd(cfg);
+    if (!(scoutUsd > 0)) return;
+    const mcapScout =
+      dexGate?.marketCap && dexGate.marketCap > 0
+        ? dexGate.marketCap
+        : entryCtx?.marketCapUsd && entryCtx.marketCapUsd > 0
+          ? entryCtx.marketCapUsd
+          : undefined;
+    await schedulePendingBuy(cfg, state, {
       mint,
       symbol,
-      leaderSignature: row.signature,
-      leaderBuyUsd: swap.amountUsd,
-      marketCapUsd: dexGate?.marketCap ?? null,
-      liquidityUsd: dexGate?.liquidityUsd ?? null,
+      kind: 'entry',
+      sizeUsd: scoutUsd,
+      entryTargetUsd: scoutUsd,
+      entryMcapUsd: mcapScout,
+      entryScout: true,
+      preLeaderRaw,
+      swap,
+      row,
+      lateEntryOnLeaderRebuy,
     });
     return;
   }
@@ -928,6 +1002,95 @@ function markEntryDipAbandoned(
   });
 }
 
+function scheduleFundingTopUpBuy(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+  filled: PendingBuy,
+  pos: CopyPosition,
+): void {
+  if (!cfg.fundingPartialClipEnabled) return;
+  if (filled.kind !== 'entry') return;
+  /**
+   * Staged probe→dip: the dip leg still covers the back half of entryTarget.
+   * Only top up an under-filled probe (or a single-shot / dip-only / prior top-up).
+   */
+  if (usesSplitEntryProbe(cfg) && filled.entryLeg === 'probe' && !filled.fundingTopUp) {
+    const probeTarget = entryProbeSizeUsd(cfg, filled.entryMcapUsd ?? pos.entryMcapUsd, filled.leaderBuyUsd);
+    const deployed = pos.entryDeployedCostUsd ?? filled.sizeUsd;
+    const rem = fundingTopUpRemainderUsd({
+      entryTargetUsd: probeTarget,
+      deployedUsd: deployed,
+      minUsd: cfg.fundingPartialClipMinUsd,
+    });
+    if (!(rem > 0)) return;
+    if (state.pendingBuys.some((p) => p.mint === filled.mint && p.fundingTopUp)) return;
+    pushFundingTopUpPending(cfg, state, filled, pos, rem, probeTarget, deployed);
+    return;
+  }
+
+  const topUpTo =
+    filled.fundingTopUpToUsd ??
+    filled.entryTargetUsd ??
+    pos.entryTargetUsd ??
+    entryTargetUsd(cfg, filled.entryMcapUsd ?? pos.entryMcapUsd, filled.leaderBuyUsd);
+  const deployed = pos.entryDeployedCostUsd ?? resolveEntryDeployedCostUsd(cfg, state, pos);
+  const rem = fundingTopUpRemainderUsd({
+    entryTargetUsd: topUpTo,
+    deployedUsd: deployed,
+    minUsd: cfg.fundingPartialClipMinUsd,
+  });
+  if (!(rem > 0)) return;
+  if (state.pendingBuys.some((p) => p.mint === filled.mint && p.fundingTopUp)) return;
+  pushFundingTopUpPending(cfg, state, filled, pos, rem, topUpTo, deployed);
+}
+
+function pushFundingTopUpPending(
+  cfg: CopyTraderConfig,
+  state: CopyTraderState,
+  filled: PendingBuy,
+  pos: CopyPosition,
+  rem: number,
+  topUpToUsd: number,
+  deployed: number,
+): void {
+  const now = Date.now();
+  const entryTarget =
+    filled.entryTargetUsd ??
+    pos.entryTargetUsd ??
+    entryTargetUsd(cfg, filled.entryMcapUsd ?? pos.entryMcapUsd, filled.leaderBuyUsd);
+  const pending: PendingBuy = {
+    id: newId('pb'),
+    mint: filled.mint,
+    symbol: filled.symbol,
+    kind: 'entry',
+    entryLeg: filled.entryLeg === 'dip' ? 'dip' : filled.entryLeg,
+    sizeUsd: rem,
+    entryTargetUsd: entryTarget,
+    entryMcapUsd: filled.entryMcapUsd ?? pos.entryMcapUsd,
+    leaderSignature: filled.leaderSignature,
+    leaderPriceUsd: filled.leaderPriceUsd,
+    leaderBuyUsd: filled.leaderBuyUsd,
+    leaderBuyTs: filled.leaderBuyTs,
+    dueTs: now,
+    leaderHoldingsRawAtSignal: filled.leaderHoldingsRawAtSignal,
+    retryUntilTs: Math.max(filled.retryUntilTs, computeRetryUntilTs(now, cfg.buyRetryWindowMs)),
+    fundingTopUp: true,
+    fundingTopUpToUsd: topUpToUsd,
+  };
+  state.pendingBuys.push(pending);
+  appendCopyEvent(cfg, {
+    kind: 'funding_topup_scheduled',
+    mint: filled.mint,
+    symbol: filled.symbol,
+    leaderSignature: filled.leaderSignature,
+    sizeUsd: rem,
+    entryTargetUsd: entryTarget,
+    fundingTopUpToUsd: topUpToUsd,
+    deployedUsd: deployed,
+    retryUntilTs: pending.retryUntilTs,
+  });
+}
+
 function scheduleEntryDipBuy(
   cfg: CopyTraderConfig,
   state: CopyTraderState,
@@ -982,6 +1145,7 @@ async function schedulePendingBuy(
     entryLeg?: PendingBuy['entryLeg'];
     entryTargetUsd?: number;
     entryMcapUsd?: number;
+    entryScout?: boolean;
     leaderAddFraction?: number;
     preLeaderRaw: bigint;
     swap: SwapInsert;
@@ -997,6 +1161,7 @@ async function schedulePendingBuy(
     entryLeg,
     entryTargetUsd,
     entryMcapUsd,
+    entryScout,
     leaderAddFraction,
     preLeaderRaw,
     swap,
@@ -1023,6 +1188,7 @@ async function schedulePendingBuy(
     sizeUsd,
     entryTargetUsd,
     entryMcapUsd,
+    entryScout: entryScout === true,
     leaderAddFraction,
     leaderSignature: row.signature,
     leaderPriceUsd: swap.priceUsd,
@@ -1059,6 +1225,7 @@ async function schedulePendingBuy(
     retryUntilTs: pending.retryUntilTs,
     sizeUsd,
     entryLeg: entryLeg ?? null,
+    entryScout: entryScout === true,
     ingressSource: row.ingressSource ?? undefined,
     entryProbeFraction: entryLeg === 'probe' ? cfg.entryProbeFraction : null,
     entryDipDiscountPct: entryLeg === 'dip' ? cfg.entryDipDiscountPct : null,
@@ -1347,11 +1514,22 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
     }
 
     if (pending.kind === 'entry' && pending.entryLeg !== 'dip') {
-      if (existing) {
+      if (existing && !pending.fundingTopUp) {
         removePendingBuyById(state, pending.id);
         continue;
       }
-      if (cfg.maxOpenPositions > 0 && openPositionsCount(state) >= cfg.maxOpenPositions) {
+      if (pending.fundingTopUp && !existing) {
+        removePendingBuyById(state, pending.id);
+        appendCopyEvent(cfg, {
+          kind: 'buy_cancelled',
+          reason: 'funding_topup_no_position',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+        });
+        continue;
+      }
+      if (!existing && cfg.maxOpenPositions > 0 && openPositionsCount(state) >= cfg.maxOpenPositions) {
         if (noteBuyDefer(state, pending.id, now, cfg)) {
           appendCopyEvent(cfg, {
             kind: 'buy_deferred',
@@ -1463,6 +1641,43 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         ? dex.marketCap
         : undefined;
     syncEntryPendingSizing(cfg, pending, dexMcapForSizing);
+    if (pending.fundingTopUp) {
+      const ceiling =
+        pending.fundingTopUpToUsd ??
+        pending.entryTargetUsd ??
+        entryTargetUsd(cfg, pending.entryMcapUsd, pending.leaderBuyUsd);
+      const deployed = existing
+        ? (existing.entryDeployedCostUsd ?? resolveEntryDeployedCostUsd(cfg, state, existing))
+        : 0;
+      const rem = fundingTopUpRemainderUsd({
+        entryTargetUsd: ceiling,
+        deployedUsd: deployed,
+        minUsd: cfg.fundingPartialClipMinUsd,
+      });
+      if (pending.entryTargetUsd == null) {
+        pending.entryTargetUsd = entryTargetUsd(
+          cfg,
+          pending.entryMcapUsd,
+          pending.leaderBuyUsd,
+        );
+      }
+      pending.fundingTopUpToUsd = ceiling;
+      if (!(rem > 0)) {
+        removePendingBuyById(state, pending.id);
+        appendCopyEvent(cfg, {
+          kind: 'buy_cancelled',
+          reason: 'funding_topup_complete',
+          mint: pending.mint,
+          symbol: pending.symbol,
+          leaderSignature: pending.leaderSignature,
+          entryTargetUsd: pending.entryTargetUsd,
+          fundingTopUpToUsd: ceiling,
+          deployedUsd: deployed,
+        });
+        continue;
+      }
+      pending.sizeUsd = rem;
+    }
     const resolved = await resolveCurrentPrice(
       pending.mint,
       dex?.priceUsd ?? 0,
@@ -1523,6 +1738,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       nowMs: now,
       probeEntryPriceUsd:
         isEntryDip && existing?.entryPriceUsd > 0 ? existing.entryPriceUsd : undefined,
+      entryScout: pending.entryScout === true,
     };
     const evalResult =
       pending.kind === 'add'
@@ -1653,7 +1869,52 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       }
     }
 
-    const funding = await checkCopyFundingGate(cfg, pending.sizeUsd, now);
+    /**
+     * Always probe the full synced size first. On shortfall, shrink to the 50%
+     * clip and remember it so we only journal `*_funding_partial_clip` once
+     * per size (retries keep the clip without re-expanding every tick).
+     */
+    const fullAttemptUsd = pending.sizeUsd;
+    let funding = await checkCopyFundingGate(cfg, fullAttemptUsd, now);
+    if (funding.ok) {
+      pending.fundingClipUsd = undefined;
+    } else if (
+      funding.reason === 'insufficient_usdc' &&
+      cfg.fundingPartialClipEnabled
+    ) {
+      const decision = resolveFundingPartialClip({
+        enabled: true,
+        requiredUsd: fullAttemptUsd,
+        availableUsd: funding.quoteUsd,
+        fraction: cfg.fundingPartialClipFraction,
+        minUsd: cfg.fundingPartialClipMinUsd,
+      });
+      if (decision.action === 'clip') {
+        if (pending.entryTargetUsd == null || pending.entryTargetUsd < decision.originalUsd) {
+          pending.entryTargetUsd = Math.max(pending.entryTargetUsd ?? 0, decision.originalUsd);
+        }
+        const alreadyClipped =
+          pending.fundingClipUsd != null &&
+          Math.abs(pending.fundingClipUsd - decision.clipUsd) < 0.02;
+        pending.sizeUsd = decision.clipUsd;
+        pending.fundingClipUsd = decision.clipUsd;
+        if (!alreadyClipped) {
+          appendCopyEvent(cfg, {
+            kind: pending.kind === 'add' ? 'add_funding_partial_clip' : 'buy_funding_partial_clip',
+            mint: pending.mint,
+            symbol: pending.symbol,
+            leaderSignature: pending.leaderSignature,
+            fromUsd: fullAttemptUsd,
+            toUsd: decision.clipUsd,
+            remainderUsd: decision.remainderUsd,
+            quoteUsd: funding.quoteUsd,
+            entryTargetUsd: pending.entryTargetUsd ?? null,
+            fundingTopUp: pending.fundingTopUp === true,
+          });
+        }
+        funding = await checkCopyFundingGate(cfg, pending.sizeUsd, now);
+      }
+    }
     if (!funding.ok) {
       if (noteBuyDefer(state, pending.id, now, cfg)) {
         appendCopyEvent(cfg, {
@@ -1729,6 +1990,8 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
 
     const wasProbe = pending.kind === 'entry' && pending.entryLeg === 'probe';
     const wasEntryDip = pending.kind === 'entry' && pending.entryLeg === 'dip';
+    const wasFundingTopUp = pending.fundingTopUp === true;
+    const filledEntryKind = pending.kind === 'entry';
     removePendingBuyById(state, pending.id);
     if (wasProbe) {
       scheduleEntryDipBuy(cfg, state, pending);
@@ -1746,7 +2009,10 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       (fillPriceUsd > 0
         ? BigInt(Math.floor((pending.sizeUsd / fillPriceUsd) * 1_000_000)).toString()
         : undefined);
-    if ((pending.kind === 'entry' && pending.entryLeg !== 'dip') || !existing) {
+    if (
+      (pending.kind === 'entry' && pending.entryLeg !== 'dip' && !wasFundingTopUp) ||
+      !existing
+    ) {
       const tokenRaw = cfg.sharedOscarWallet
         ? fillRaw
         : walletBal > 0n
@@ -1793,7 +2059,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
         accumulateCopyTokenRaw(prev, fillRaw);
         prev.entryPriceUsd = newAvg;
         prev.sizeUsd = prev.sizeUsd + pending.sizeUsd;
-        if (wasEntryDip) {
+        if (wasEntryDip || wasFundingTopUp) {
           prev.entryDeployedCostUsd = (prev.entryDeployedCostUsd ?? 0) + pending.sizeUsd;
         } else if (pending.kind === 'add') {
           prev.addCount = prev.addCount + 1;
@@ -1803,7 +2069,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       } else if (walletBal > 0n) {
         syncPositionFromWallet(prev, walletBal, fillPriceUsd, cfg);
         prev.entryPriceUsd = newAvg;
-        if (wasEntryDip) {
+        if (wasEntryDip || wasFundingTopUp) {
           prev.entryDeployedCostUsd = (prev.entryDeployedCostUsd ?? 0) + pending.sizeUsd;
         } else if (pending.kind === 'add') {
           prev.addCount = prev.addCount + 1;
@@ -1825,7 +2091,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
           tokenRaw: (prevRaw + addRaw).toString(),
           ourEntrySig: exec.signature,
         };
-        if (wasEntryDip) {
+        if (wasEntryDip || wasFundingTopUp) {
           next.entryDeployedCostUsd = (prev.entryDeployedCostUsd ?? 0) + pending.sizeUsd;
         } else if (pending.kind === 'add') {
           next.addCount = prev.addCount + 1;
@@ -1836,12 +2102,18 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
 
     const filledPos = state.positions[pending.mint];
     if (filledPos) {
+      if (filledEntryKind && pending.entryTargetUsd != null && pending.entryTargetUsd > 0) {
+        filledPos.entryTargetUsd = pending.entryTargetUsd;
+      }
       handoffCopyPositionToOscarExit({
         cfg,
         state,
         pos: filledPos,
         leaderSignature: pending.leaderSignature,
       });
+      if (filledEntryKind) {
+        scheduleFundingTopUpBuy(cfg, state, pending, filledPos);
+      }
     }
 
     noteOpsOurBuy(Date.now());
@@ -2211,6 +2483,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     target: cfg.targetWallet,
     mode: cfg.executionMode,
     entryUsd: cfg.positionUsd,
+    entryScoutUsd: cfg.entryScoutUsd > 0 ? cfg.entryScoutUsd : null,
     initialMirrorRatio: cfg.initialMirrorRatio > 0 ? cfg.initialMirrorRatio : null,
     minMirrorEntryUsd: cfg.minMirrorEntryUsd > 0 ? cfg.minMirrorEntryUsd : null,
     addMirror: 'proportional_to_leader',
@@ -2254,6 +2527,9 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     leaderHistoryMints: Object.keys(state.leaderHistory).length,
     quoteAsset: cfg.quoteAsset,
     minFeeSolReserve: cfg.minFeeSolReserve,
+    fundingPartialClip: cfg.fundingPartialClipEnabled
+      ? { fraction: cfg.fundingPartialClipFraction, minUsd: cfg.fundingPartialClipMinUsd }
+      : null,
     isolated: true,
     leaderStream: cfg.leaderStreamEnabled,
     leaderIngressConcurrency: cfg.leaderIngressConcurrency,
@@ -2268,6 +2544,8 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
   const streamFastPollMs = Math.max(1_000, cfg.leaderStreamFastPollMs);
   let streamHealthy = true;
   let streamMissStreak = 0;
+  /** Consecutive silent_stream hits — only then briefly prefer logsSubscribe. */
+  let streamSilentStreak = 0;
   let lastStreamWatchdogAlertMs = 0;
   let lastStreamWatchdogReason = '';
   let lastStreamForceReconnectMs = 0;
@@ -2362,8 +2640,10 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         pollMissesThisCycle: 0,
         missStreak: streamMissStreak,
         missThreshold: cfg.leaderStreamMissThreshold,
+        silentStreak: streamSilentStreak,
         updateMissStreak: false,
       });
+      streamSilentStreak = linkDecision.nextSilentStreak;
       if (!linkDecision.healthy) {
         if (
           linkDecision.forceReconnect &&
@@ -2373,9 +2653,13 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           lastStreamForceReconnectMs = now;
           console.warn('[copy-trader] stream watchdog force reconnect', {
             reason: linkDecision.reason,
+            preferLogsSubscribe: linkDecision.preferLogsSubscribe === true,
             health: leaderStream.getHealth(),
           });
-          leaderStream.forceReconnect();
+          leaderStream.forceReconnect({
+            preferLogsSubscribe: linkDecision.preferLogsSubscribe === true,
+            logsSubscribeForMs: 90_000,
+          });
         }
         if (streamHealthy || linkDecision.reason !== lastStreamWatchdogReason) {
           // Boot: connected=false is expected for ~1s — don't spam until we opened once.
@@ -2450,8 +2734,10 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           pollMissesThisCycle: swapMisses,
           missStreak: streamMissStreak,
           missThreshold: cfg.leaderStreamMissThreshold,
+          silentStreak: streamSilentStreak,
         });
         streamMissStreak = decision.nextMissStreak;
+        streamSilentStreak = decision.nextSilentStreak;
         const wasHealthy: boolean = streamHealthy;
         streamHealthy = decision.healthy;
 
@@ -2461,11 +2747,14 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             reason: decision.reason,
             pollMisses,
             swapMisses,
+            silentStreak: streamSilentStreak,
             preferLogsSubscribe: decision.preferLogsSubscribe === true,
             health: leaderStream.getHealth(),
           });
           leaderStream.forceReconnect({
             preferLogsSubscribe: decision.preferLogsSubscribe === true,
+            /** Brief logs hold only — then retry paid transactionSubscribe. */
+            logsSubscribeForMs: 90_000,
           });
         }
 
@@ -2477,7 +2766,9 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             pollMisses,
             swapMisses,
             notifyCount: leaderStream?.getHealth().notifyCount ?? 0,
+            mode: leaderStream?.getHealth().mode ?? null,
             missStreak: streamMissStreak,
+            silentStreak: streamSilentStreak,
             effectivePollMs: streamHealthy ? streamBackupPollMs : streamFastPollMs,
           });
           lastStreamWatchdogReason = decision.reason;

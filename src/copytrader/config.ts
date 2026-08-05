@@ -159,6 +159,12 @@ const CopyTraderConfigSchema = z.object({
   entryLow2McapMinUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
   entryLow2McapMaxUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
   entryLow2PositionUsd: z.coerce.number().min(0).max(100_000).default(0),
+  /**
+   * Scout tier: when selective gates (vol/mcap/liq/flow) reject a leader buy,
+   * still schedule a fixed-size follow. Hard gates (pair age, prior, premium)
+   * still block. **0** = off.
+   */
+  entryScoutUsd: z.coerce.number().min(0).max(100_000).default(0),
   /** Fraction of positionUsd for immediate probe buy at leader+premium (default 500/1000). */
   entryProbeFraction: z.coerce.number().min(0).max(1).default(500 / 1000),
   /** Remainder fills when price ≤ leader × (1 − discount/100) (default 10%). */
@@ -214,14 +220,33 @@ const CopyTraderConfigSchema = z.object({
    */
   entryMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(0),
   /**
+   * When the live rolling m5 is below `entryMinVolume5mUsd`, still pass if
+   * 1h volume covers this many adjacent 5m windows
+   * (`volume1h >= minVolume5m * windows`). Dex only exposes rolling m5 + h1,
+   * not discrete candles — h1 is the proxy for neighbouring windows.
+   * Default **3**. **0** = single-tick m5 only (legacy).
+   */
+  entryVol5mAdjacentWindows: z.coerce.number().int().min(0).max(12).default(3),
+  /**
    * Shadow selection model (paper). On every leader entry buy, fetch market ctx
-   * and log `shadow_select` with wouldBuy. Fitted rule: vol5m≥$2k & buys/sells≥1.
+   * and log `shadow_select` with wouldBuy. Dump-first: pc5 ≤ −5% and buys/sells < 1.
    */
   shadowSelectEnabled: z.boolean().default(false),
   /** When true, leader buys that fail the shadow rule are ignored (live filter). */
   shadowSelectFilterLive: z.boolean().default(false),
-  shadowSelectMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(2_000),
-  shadowSelectMinBuySellRatio5m: z.coerce.number().min(0).max(100).default(1),
+  /**
+   * Require Dex `priceChange.m5` ≤ this % (default **−5** = ≥5% dump).
+   * Set **1000** to disable the dump gate.
+   */
+  shadowSelectMaxPriceChange5mPct: z.coerce.number().min(-1000).max(1000).default(-5),
+  /**
+   * Require buys/sells **&lt;** this (default **1** = sell pressure). **0** = off.
+   */
+  shadowSelectMaxBuySellRatio5m: z.coerce.number().min(0).max(100).default(1),
+  /** Optional vol floor. Default **0** (off) — dump is the signal, not size. */
+  shadowSelectMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(0),
+  /** Legacy min buy/sell floor. Default **0** (off); prefer maxBuySellRatio5m. */
+  shadowSelectMinBuySellRatio5m: z.coerce.number().min(0).max(100).default(0),
   shadowSelectMinMcapUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
   shadowSelectMinLiquidityUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
   /** Missing Dex context → wouldBuy=false when true. */
@@ -319,6 +344,16 @@ const CopyTraderConfigSchema = z.object({
   quoteAsset: z.enum(['SOL', 'USDC']).default('SOL'),
   /** USDC funding: keep this much SOL for fees/rent; below it, buys are skipped. */
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
+  /**
+   * When free USDC < pending size: buy this fraction of the planned size if the
+   * wallet can fund it, then queue a top-up for the remainder (corridor still applies).
+   * **0** / disabled = legacy defer-only on `insufficient_usdc`.
+   */
+  fundingPartialClipEnabled: z.boolean().default(false),
+  /** Fraction of planned size for the first funding-short clip (default 0.5). */
+  fundingPartialClipFraction: z.coerce.number().min(0.05).max(0.95).default(0.5),
+  /** Ignore partial clips / top-ups below this USD (default $50). */
+  fundingPartialClipMinUsd: z.coerce.number().min(0).max(100_000).default(50),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(100),
   /**
    * Economy guard: within one buy attempt cycle, refuse to send if outAmount is
@@ -443,6 +478,7 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryLow2McapMinUsd: process.env.COPY_TRADER_ENTRY_LOW2_MCAP_MIN_USD,
     entryLow2McapMaxUsd: process.env.COPY_TRADER_ENTRY_LOW2_MCAP_MAX_USD,
     entryLow2PositionUsd: process.env.COPY_TRADER_ENTRY_LOW2_POSITION_USD,
+    entryScoutUsd: process.env.COPY_TRADER_ENTRY_SCOUT_USD,
     entryProbeFraction: process.env.COPY_TRADER_ENTRY_PROBE_FRACTION,
     entryDipDiscountPct: process.env.COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT,
     entryDipConfirmTicks: process.env.COPY_TRADER_ENTRY_DIP_CONFIRM_TICKS,
@@ -470,8 +506,11 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryMinTurnover5m: process.env.COPY_TRADER_ENTRY_MIN_TURNOVER_5M,
     entryMinVolToMcap1h: process.env.COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H,
     entryMinVolume5mUsd: process.env.COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD,
+    entryVol5mAdjacentWindows: process.env.COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS,
     shadowSelectEnabled: envBool(process.env.COPY_TRADER_SHADOW_SELECT, false),
     shadowSelectFilterLive: envBool(process.env.COPY_TRADER_SHADOW_SELECT_FILTER_LIVE, false),
+    shadowSelectMaxPriceChange5mPct: process.env.COPY_TRADER_SHADOW_SELECT_MAX_PRICE_CHANGE_5M_PCT,
+    shadowSelectMaxBuySellRatio5m: process.env.COPY_TRADER_SHADOW_SELECT_MAX_BUY_SELL_5M,
     shadowSelectMinVolume5mUsd: process.env.COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD,
     shadowSelectMinBuySellRatio5m: process.env.COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M,
     shadowSelectMinMcapUsd: process.env.COPY_TRADER_SHADOW_SELECT_MIN_MCAP_USD,
@@ -503,6 +542,9 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     maxOpenPositions: process.env.COPY_TRADER_MAX_OPEN_POSITIONS,
     quoteAsset: parseCopyQuoteAsset(process.env.COPY_TRADER_QUOTE_MINT).asset,
     minFeeSolReserve: process.env.COPY_TRADER_MIN_FEE_SOL_RESERVE,
+    fundingPartialClipEnabled: envBool(process.env.COPY_TRADER_FUNDING_PARTIAL_CLIP, false),
+    fundingPartialClipFraction: process.env.COPY_TRADER_FUNDING_PARTIAL_CLIP_FRACTION,
+    fundingPartialClipMinUsd: process.env.COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD,
     slippageBps: process.env.COPY_TRADER_SLIPPAGE_BPS,
     maxQuoteRegressionPct: process.env.COPY_TRADER_MAX_QUOTE_REGRESSION_PCT,
     walletSecret: process.env.COPY_TRADER_WALLET_SECRET?.trim(),

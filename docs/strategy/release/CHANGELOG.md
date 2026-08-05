@@ -1,4 +1,172 @@
 # So
+## [1.11.684] — 2026-08-05
+
+**Тег:** `sa-1.11.684`
+
+### Change: entry premium corridor +1% (all tiers)
+
+Both `copy-trader-8zkg` + mirror: do not buy more than **+1%** over the
+leader fill (DEX mark + Jupiter quote guard). Was **+5%**. Applies to big
+tier and scout. Above the corridor → defer / re-quote (2s) until cooler or
+leader exits — no chase.
+
+- `BUY_PRICE_MAX_PREMIUM_PCT=1`
+- `QUOTE_PREMIUM_GUARD_PCT=1`
+- first-shot widen still `0`
+
+**Откат:** both caps back to `5`.
+
+---
+
+## [1.11.683] — 2026-08-05
+
+**Тег:** `sa-1.11.683`
+
+### Change: scout tier $30 on `copy-trader-8zkg`
+
+When selective gates (vol5m / mcap / liq / flow) reject a leader buy, still
+follow at a fixed **$30** scout clip on **one** bot (`copy-trader-8zkg`).
+Big tier stays $100 when those gates pass. Hard gates unchanged (pair age,
+premium, max-open, shadow live filter).
+
+- `COPY_TRADER_ENTRY_SCOUT_USD=30`
+- `MAX_OPEN_POSITIONS=40` (scout follows almost all leader buys)
+- `FUNDING_PARTIAL_CLIP_MIN_USD=15` (was 50 — blocked $30)
+- Mirror twin: scout **off**
+
+Journal: `leader_buy_scout` + `entryScout=true` on scheduled buys.
+
+**Откат:** `ENTRY_SCOUT_USD=0`, `MAX_OPEN_POSITIONS=8`, funding min `50`.
+
+---
+
+## [1.11.682] — 2026-08-05
+
+**Тег:** `sa-1.11.682`
+
+### Change: twin big-tier static entry $100
+
+Both `copy-trader-8zkg` + mirror: stop sizing as % of leader on the main
+(big) tier. Fixed clip:
+
+- `INITIAL_MIRROR_RATIO=0`
+- `POSITION_USD=100`
+- `MAX_POSITION_USD=100`
+- fixed mcap bands still off
+
+**Откат:** ratio `0.5`, min mirror `100`, max position `500`.
+
+---
+
+## [1.11.681] — 2026-08-05
+
+**Тег:** `sa-1.11.681`
+
+### Change: shadow_select = dump/proliv, not vol momentum
+
+Old paper rule `vol5m≥$2k & bs≥1` did **not** predict leader buys (leader
+median pc5 ≈ −5…−6%, ~73% red). Replace with dump-first:
+
+- `SHADOW_SELECT_MAX_PRICE_CHANGE_5M_PCT=-5` (≥5% dump)
+- `SHADOW_SELECT_MAX_BUY_SELL_5M=1` (buys/sells &lt; 1)
+- min vol / min bs floors → `0`
+- `FILTER_LIVE` still `0` (journal only)
+
+36h backtest vs leader session: dump+bs&lt;1 on 8zkg ~+5.2% avg vs old wouldBuy ~+1.6%.
+
+**Откат:** `MAX_PRICE_CHANGE=1000`, `MAX_BUY_SELL=0`, restore `MIN_VOLUME=2000` + `MIN_BUY_SELL=1`.
+
+---
+
+## [1.11.680] — 2026-08-05
+
+**Тег:** `sa-1.11.680`
+
+### Change: twin sizing — 50% leader, floor $100, ceiling $500
+
+Operator: both `copy-trader-8zkg` + mirror:
+
+- `INITIAL_MIRROR_RATIO=0.5`
+- `MIN_MIRROR_ENTRY_USD=100`
+- `MAX_POSITION_USD=500`
+- Fixed mcap clips off (`ENTRY_LOW*_MAX=0`)
+
+**Откат:** ratio `0.8`, floor `200`, max `700`, restore prior LOW bands.
+
+---
+
+## [1.11.679] — 2026-08-05
+
+**Тег:** `sa-1.11.679`
+
+### Change: hard vol5m floor $10k on both 8zkg twins
+
+10h RCA: vol5m under $8k was the main realized-loss bucket. Operator: require
+**$10k** 5m volume to buy; unknown or below → skip.
+
+- `COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD=10000` on mcap + mirror
+- `ENTRY_VOL5M_ADJACENT_WINDOWS=0` (no 1h bypass of the floor)
+- Gate already fail-closed on `volume_5m_unknown` / missing ctx
+
+**Откат:** mcap `MIN_VOLUME_5M=0`; mirror `8000` + `ADJACENT_WINDOWS=3`.
+
+---
+
+## [1.11.678] — 2026-08-05
+
+**Тег:** `sa-1.11.678`
+
+### Change: stop killing paid LaserStream (no permanent logsSubscribe)
+
+Bug: watchdog `silent_stream` + `preferLogsSubscribe=true` permanently abandoned
+`transactionSubscribe` after a ~5–20s poll race. Twins stayed on useless
+`logsSubscribe`; almost all ingress tagged `poll`.
+
+- silent grace **60s** (was 5s)
+- prefer logs only after **3** consecutive silent hits, and only for **90s**
+- auto-retry `transactionSubscribe` when stuck on logs
+- `MISS_THRESHOLD` **3** on both 8zkg twins
+
+**Откат:** revert stream-watchdog/leader-stream-ws/main + `MISS_THRESHOLD=1`.
+
+---
+
+## [1.11.677] — 2026-08-04
+
+**Тег:** `sa-1.11.677`
+
+### Change: copy-trader funding partial clip (50%) + later top-up
+
+Operator: when free USDC cannot cover the full pending buy, take **50% of the
+planned size** if the wallet can fund that clip; keep the remainder queued and
+**top up** when USDC returns and the premium corridor still allows. Leader exit
+/ retry window cancel paths unchanged.
+
+- `COPY_TRADER_FUNDING_PARTIAL_CLIP=1` on both 8zkg twins
+- Fraction **0.5**, min clip/top-up **$50**
+- Events: `buy_funding_partial_clip`, `funding_topup_scheduled`
+
+**Откат:** `COPY_TRADER_FUNDING_PARTIAL_CLIP=0` + reload twins.
+
+---
+
+## [1.11.676] — 2026-08-04
+
+**Тег:** `sa-1.11.676`
+
+### Change: mirror vol5m floor accepts adjacent 5m windows via 1h volume
+
+Dex only exposes rolling `volume.m5` + `h1`. A quiet current m5 was blocking
+`copy-trader-8zkg-mirror` (min $8k) on names with ~$100k+/h (e.g. F6Tbmw).
+
+- If `volume5m < ENTRY_MIN_VOLUME_5M` but
+  `volume1h >= ENTRY_MIN_VOLUME_5M * ENTRY_VOL5M_ADJACENT_WINDOWS` → pass
+- Default windows **3** (`COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS`); **0** = legacy single-tick
+
+**Откат:** `ENTRY_VOL5M_ADJACENT_WINDOWS=0` + reload mirror.
+
+---
+
 ## [1.11.675] — 2026-08-04
 
 **Тег:** `sa-1.11.675`

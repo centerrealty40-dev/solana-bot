@@ -91,6 +91,11 @@ export type PendingBuy = {
   /** Staged entry target when kind=entry (full $1000 or mid $600). */
   entryTargetUsd?: number;
   entryMcapUsd?: number;
+  /**
+   * Scout tier: selective gates failed; fixed small clip. Skips mcap/liq floors
+   * at eval and must not be resized back to the big tier by syncEntryPendingSizing.
+   */
+  entryScout?: boolean;
   /** Leader add size / pre-buy holdings when kind=add. */
   leaderAddFraction?: number;
   leaderSignature: string;
@@ -108,6 +113,18 @@ export type PendingBuy = {
   /** Cached Jupiter dip eval quote (eval-only; not used for execution sizing). */
   lastDipQuoteTs?: number;
   lastDipQuotePriceUsd?: number;
+  /**
+   * Remainder after a funding partial clip — allowed even when a position already
+   * exists for this mint (unlike a fresh entry pending).
+   */
+  fundingTopUp?: boolean;
+  /** Deployed-cost ceiling this funding top-up is trying to reach (probe or full entry). */
+  fundingTopUpToUsd?: number;
+  /**
+   * Sticky attempt size after a funding partial clip so syncEntryPendingSizing
+   * does not restore the full target every retry tick.
+   */
+  fundingClipUsd?: number;
 };
 
 export type PendingSell = {
@@ -199,6 +216,7 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof p.entryTargetUsd === 'number' && p.entryTargetUsd > 0 ? p.entryTargetUsd : undefined,
         entryMcapUsd:
           typeof p.entryMcapUsd === 'number' && p.entryMcapUsd > 0 ? p.entryMcapUsd : undefined,
+        entryScout: p.entryScout === true,
         leaderAddFraction:
           typeof p.leaderAddFraction === 'number' && p.leaderAddFraction > 0 ? p.leaderAddFraction : undefined,
         leaderSignature: p.leaderSignature,
@@ -215,6 +233,13 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
         lastDeferLogTs: typeof p.lastDeferLogTs === 'number' ? p.lastDeferLogTs : undefined,
         dipPassStreak:
           typeof p.dipPassStreak === 'number' && p.dipPassStreak >= 0 ? p.dipPassStreak : undefined,
+        fundingTopUp: p.fundingTopUp === true,
+        fundingTopUpToUsd:
+          typeof p.fundingTopUpToUsd === 'number' && p.fundingTopUpToUsd > 0
+            ? p.fundingTopUpToUsd
+            : undefined,
+        fundingClipUsd:
+          typeof p.fundingClipUsd === 'number' && p.fundingClipUsd > 0 ? p.fundingClipUsd : undefined,
       }),
     );
     const pendingSells: PendingSell[] = (Array.isArray(parsed.pendingSells) ? parsed.pendingSells : []).map(

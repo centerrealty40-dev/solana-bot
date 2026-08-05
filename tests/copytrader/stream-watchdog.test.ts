@@ -29,6 +29,7 @@ describe('evaluateStreamWatchdog', () => {
       forceReconnect: false,
       useFastPoll: false,
       nextMissStreak: 0,
+      nextSilentStreak: 0,
     });
   });
 
@@ -138,9 +139,9 @@ describe('evaluateStreamWatchdog', () => {
     expect(second.nextMissStreak).toBeGreaterThanOrEqual(2);
   });
 
-  it('silent subscribed stream + poll miss → reconnect to logsSubscribe', () => {
+  it('does not treat early poll race as silent_stream (grace 60s)', () => {
     const d = evaluateStreamWatchdog({
-      nowMs: 20_000,
+      nowMs: 20_000, // 19s after subscribe — under 60s default grace
       enabled: true,
       health: {
         ...healthySnap,
@@ -151,14 +152,85 @@ describe('evaluateStreamWatchdog', () => {
       pollMissesThisCycle: 1,
       missStreak: 0,
       missThreshold: 5,
-      silentStreamGraceMs: 5_000,
+    });
+    expect(d.reason).not.toBe('silent_stream');
+    expect(d.preferLogsSubscribe).toBeFalsy();
+  });
+
+  it('silent stream reconnects but keeps transactionSubscribe on first hits', () => {
+    const d = evaluateStreamWatchdog({
+      nowMs: 120_000,
+      enabled: true,
+      health: {
+        ...healthySnap,
+        notifyCount: 0,
+        lastNotifyAtMs: 0,
+        lastSubscribedAtMs: 1_100,
+      },
+      pollMissesThisCycle: 1,
+      missStreak: 0,
+      missThreshold: 5,
+      silentStreak: 0,
+      silentPreferLogsAfter: 3,
+      silentStreamGraceMs: 60_000,
     });
     expect(d).toMatchObject({
       healthy: false,
       reason: 'silent_stream',
       forceReconnect: true,
-      preferLogsSubscribe: true,
+      preferLogsSubscribe: false,
       useFastPoll: true,
+      nextSilentStreak: 1,
+    });
+  });
+
+  it('only briefly prefers logsSubscribe after repeated silent hits', () => {
+    const d = evaluateStreamWatchdog({
+      nowMs: 120_000,
+      enabled: true,
+      health: {
+        ...healthySnap,
+        notifyCount: 0,
+        lastNotifyAtMs: 0,
+        lastSubscribedAtMs: 1_100,
+      },
+      pollMissesThisCycle: 1,
+      missStreak: 0,
+      missThreshold: 5,
+      silentStreak: 2,
+      silentPreferLogsAfter: 3,
+      silentStreamGraceMs: 60_000,
+    });
+    expect(d).toMatchObject({
+      reason: 'silent_stream',
+      forceReconnect: true,
+      preferLogsSubscribe: true,
+      nextSilentStreak: 3,
+    });
+  });
+
+  it('retries transactionSubscribe when stuck on logsSubscribe', () => {
+    const d = evaluateStreamWatchdog({
+      nowMs: 200_000,
+      enabled: true,
+      health: {
+        ...healthySnap,
+        mode: 'logsSubscribe',
+        lastSubscribedAtMs: 1_100,
+        forcingLogsSubscribe: false,
+        notifyCount: 10,
+        lastNotifyAtMs: 50_000,
+      },
+      pollMissesThisCycle: 0,
+      missStreak: 0,
+      missThreshold: 5,
+      logsSubscribeRetryMs: 120_000,
+    });
+    expect(d).toMatchObject({
+      healthy: false,
+      reason: 'retry_transaction_subscribe',
+      forceReconnect: true,
+      preferLogsSubscribe: false,
     });
   });
 
