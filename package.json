@@ -90,7 +90,8 @@
     "pervyy-vystrel:materialize": "tsx src/scripts/pervyy-vystrel-materialize.ts",
     "copy-trader": "tsx src/scripts/copy-trader.ts",
     "copy-trader:doctor": "tsx src/scripts/copy-trader-doctor.ts",
-    "copy-trader:bootstrap-history": "tsx src/scripts/copy-leader-history-bootstrap.ts"
+    "copy-trader:bootstrap-history": "tsx src/scripts/copy-leader-history-bootstrap.ts",
+    "mild-dip-bot": "tsx src/scripts/mild-dip-bot.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.0",
