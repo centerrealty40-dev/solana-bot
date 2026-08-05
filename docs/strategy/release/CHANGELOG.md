@@ -1,4 +1,24 @@
-# So
+# Changelog
+
+## [1.11.676] — 2026-08-05
+
+**Тег:** `sa-1.11.676`
+
+### Change: stop killing paid LaserStream (no permanent logsSubscribe)
+
+Bug: watchdog `silent_stream` + `preferLogsSubscribe=true` permanently abandoned
+`transactionSubscribe` after a ~5–20s poll race. Twins stayed on useless
+`logsSubscribe`; almost all ingress tagged `poll`.
+
+- silent grace **60s** (was 5s)
+- prefer logs only after **3** consecutive silent hits, and only for **90s**
+- auto-retry `transactionSubscribe` when stuck on logs
+- `MISS_THRESHOLD` **3** on both 8zkg twins
+
+**Откат:** revert stream-watchdog/leader-stream-ws/main + `MISS_THRESHOLD=1`.
+
+---
+
 ## [1.11.675] — 2026-08-04
 
 **Тег:** `sa-1.11.675`
