@@ -2793,7 +2793,8 @@ const PM2_APPS = [
     },
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
-     * Recipe: DexScreener pc5m ∈ (−20, 0], clip $5, TP +10% / time-stop 6m.
+     * Entry: DexScreener pc5m ∈ (−20, 0], clip $5.
+     * Exit W9.1: arm MFE +8% → full exit giveback −10% from peak (no time-stop / hard TP).
      * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $5 USDC).
      */
     {
@@ -2835,16 +2836,9 @@ const PM2_APPS = [
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
-        MILD_DIP_TP_GAIN_PCT: '10',
-        /** Trail −6% from peak (leader wins exit near high on small giveback). */
-        MILD_DIP_TRAIL_GIVEBACK_PCT: '6',
-        /** Hard max 30m; trail / vol-fade can exit earlier. */
-        MILD_DIP_TIME_STOP_MS: '1800000',
-        /** Early exit when DexScreener vol5m drops ≥30% vs entry (multi-sample). */
-        MILD_DIP_VOL_FADE_DROP_PCT: '30',
-        MILD_DIP_VOL_FADE_SAMPLE_WINDOW: '3',
-        MILD_DIP_VOL_FADE_MIN_WEAK_SAMPLES: '2',
-        MILD_DIP_VOL_FADE_MIN_HOLD_MS: '60000',
+        /** W9.1 peak-giveback: arm at +8% MFE, full exit on −10% from peak. No TP/time-stop/SL. */
+        MILD_DIP_EXIT_ARM_PCT: '8',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '10',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
         MILD_DIP_MINT_COOLDOWN_MS: '3600000',

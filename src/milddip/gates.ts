@@ -1,8 +1,9 @@
 /**
- * Mild-dip branch gates (reverse-engineered from leader 7BNax sessions).
+ * Mild-dip branch gates (entry reverse-engineered from leader sessions).
  *
  * Entry: DexScreener priceChange5m ∈ (minDipPct, maxDipPct] — default (−20, 0].
- * Exit: TP ≥ tpGainPct OR trail giveback from peak OR volume fade OR time-stop.
+ * Exit: W9.1 peak-giveback — arm on MFE, full exit on giveback from running peak.
+ *        No time-stop, no SL% from entry, no hard TP-from-entry (see W9.1 spec).
  */
 
 export type MildDipCandidateMetrics = {
@@ -29,21 +30,12 @@ export type MildDipEntryGates = {
   allowedDexIds: string[];
 };
 
+/** W9.1 peak-giveback exit parameters. */
 export type MildDipExitGates = {
-  tpGainPct: number;
-  /** Giveback from peak %, e.g. 6 → exit when mark ≤ peak * (1 − 0.06). 0 = off. */
-  trailGivebackPct: number;
-  timeStopMs: number;
-  /** Drop vs entry vol5m %, e.g. 30 → exit when recent vol ≤ entry * 0.70. 0 = off. */
-  volFadeDropPct: number;
-  /** Absolute vol5m floor (0 = off). */
-  volFadeMinVolume5mUsd: number;
-  /** How many recent vol samples form the window. */
-  volFadeSampleWindow: number;
-  /** Sell when at least this many samples in the window look weak. */
-  volFadeMinWeakSamples: number;
-  /** Do not vol-fade exit before this hold age. */
-  volFadeMinHoldMs: number;
+  /** Arm trail when MFE ≥ this % (default 8). */
+  armPct: number;
+  /** Full exit when giveback from peak ≤ −this % after armed (default 10). */
+  givebackPct: number;
 };
 
 export type MildDipGateVerdict = {
@@ -157,62 +149,96 @@ export function evaluateMildDipPreBuy(args: {
   return { pass: reasons.length === 0, reasons };
 }
 
-export type MildDipExitReason =
-  | 'take_profit'
-  | 'trail_giveback'
-  | 'volume_fade'
-  | 'time_stop'
-  | null;
+export type MildDipExitReason = 'peak_giveback' | null;
 
 export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number): number | null {
   if (!(markPriceUsd > 0) || !(peakPriceUsd > 0)) return null;
   return (markPriceUsd / peakPriceUsd - 1) * 100;
 }
 
+export function mfeFromEntryPct(peakPriceUsd: number, entryPriceUsd: number): number | null {
+  if (!(peakPriceUsd > 0) || !(entryPriceUsd > 0)) return null;
+  return (peakPriceUsd / entryPriceUsd - 1) * 100;
+}
+
 /**
- * Pure exit decision. Priority: TP → trail giveback → volume fade → time-stop.
- * Trail arms only after peak has printed above entry (not a hard −6% stop from entry).
+ * W9.1 peak-giveback («flow») exit — pure decision, no network.
+ *
+ * - Update running peak from entry
+ * - Arm when MFE ≥ armPct
+ * - Full exit when armed and giveback ≤ −givebackPct
+ * - Loss-by-flow (realized < 0) is a valid outcome of the same rule
  */
+export function evaluateMildDipPeakGiveback(args: {
+  entryPriceUsd: number;
+  markPriceUsd: number;
+  peakPriceUsd: number;
+  armed: boolean;
+  gates: MildDipExitGates;
+}): {
+  peakPriceUsd: number;
+  mfePct: number;
+  givebackPct: number;
+  armed: boolean;
+  justArmed: boolean;
+  shouldExit: boolean;
+  reason: MildDipExitReason;
+  pnlPct: number;
+} {
+  const { entryPriceUsd, markPriceUsd, gates } = args;
+  const peakPriceUsd = Math.max(
+    args.peakPriceUsd > 0 ? args.peakPriceUsd : entryPriceUsd,
+    markPriceUsd > 0 ? markPriceUsd : 0,
+  );
+  const mfePct = mfeFromEntryPct(peakPriceUsd, entryPriceUsd) ?? 0;
+  const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
+  const pnlPct =
+    entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;
+
+  let armed = args.armed === true;
+  let justArmed = false;
+  if (!armed && gates.armPct > 0 && mfePct >= gates.armPct) {
+    armed = true;
+    justArmed = true;
+  }
+
+  if (
+    armed &&
+    gates.givebackPct > 0 &&
+    // epsilon: 103.5/115 is −9.999…% in IEEE float
+    givebackPct <= -gates.givebackPct + 1e-9
+  ) {
+    return {
+      peakPriceUsd,
+      mfePct,
+      givebackPct,
+      armed,
+      justArmed,
+      shouldExit: true,
+      reason: 'peak_giveback',
+      pnlPct,
+    };
+  }
+
+  return {
+    peakPriceUsd,
+    mfePct,
+    givebackPct,
+    armed,
+    justArmed,
+    shouldExit: false,
+    reason: null,
+    pnlPct,
+  };
+}
+
+/** @deprecated Use evaluateMildDipPeakGiveback — kept name alias for call sites. */
 export function evaluateMildDipExit(args: {
   entryPriceUsd: number;
   markPriceUsd: number;
   peakPriceUsd: number;
-  openedAtMs: number;
-  nowMs: number;
+  armed: boolean;
   gates: MildDipExitGates;
-  /** True when multi-window vol samples already look faded. */
-  volumeFaded?: boolean;
-}): { shouldExit: boolean; reason: MildDipExitReason; pnlPct: number; givebackPct: number | null } {
-  const { entryPriceUsd, markPriceUsd, peakPriceUsd, openedAtMs, nowMs, gates } = args;
-  const pnlPct =
-    entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;
-  const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd);
-
-  if (gates.tpGainPct > 0 && pnlPct >= gates.tpGainPct) {
-    return { shouldExit: true, reason: 'take_profit', pnlPct, givebackPct };
-  }
-
-  const trailArmed = peakPriceUsd > entryPriceUsd + 1e-12;
-  if (
-    trailArmed &&
-    gates.trailGivebackPct > 0 &&
-    givebackPct != null &&
-    givebackPct <= -gates.trailGivebackPct
-  ) {
-    return { shouldExit: true, reason: 'trail_giveback', pnlPct, givebackPct };
-  }
-
-  const holdMs = nowMs - openedAtMs;
-  if (
-    args.volumeFaded === true &&
-    gates.volFadeDropPct > 0 &&
-    holdMs >= Math.max(0, gates.volFadeMinHoldMs)
-  ) {
-    return { shouldExit: true, reason: 'volume_fade', pnlPct, givebackPct };
-  }
-
-  if (gates.timeStopMs > 0 && holdMs >= gates.timeStopMs) {
-    return { shouldExit: true, reason: 'time_stop', pnlPct, givebackPct };
-  }
-  return { shouldExit: false, reason: null, pnlPct, givebackPct };
+}): ReturnType<typeof evaluateMildDipPeakGiveback> {
+  return evaluateMildDipPeakGiveback(args);
 }

@@ -1,5 +1,6 @@
 /**
- * Mild-dip test bot — DexScreener pc5m ∈ (−20, 0], USDC clip, TP / time-stop exit.
+ * Mild-dip test bot — DexScreener pc5m ∈ (−20, 0], USDC clip,
+ * W9.1 peak-giveback exit (arm MFE / giveback from peak).
  *
  *   npm run mild-dip-bot
  *

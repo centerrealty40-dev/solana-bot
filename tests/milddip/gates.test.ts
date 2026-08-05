@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateMildDipEntry,
-  evaluateMildDipExit,
+  evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
   type MildDipEntryGates,
+  type MildDipExitGates,
 } from '../../src/milddip/gates.js';
 
 const baseGates: MildDipEntryGates = {
@@ -16,6 +17,11 @@ const baseGates: MildDipEntryGates = {
   minPairAgeHours: 0.25,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap', 'pumpfun'],
+};
+
+const exitGates: MildDipExitGates = {
+  armPct: 8,
+  givebackPct: 10,
 };
 
 describe('evaluateMildDipEntry', () => {
@@ -132,107 +138,132 @@ describe('evaluateMildDipPreBuy', () => {
   });
 });
 
-const exitGates = {
-  tpGainPct: 10,
-  trailGivebackPct: 6,
-  timeStopMs: 1_800_000,
-  volFadeDropPct: 30,
-  volFadeMinVolume5mUsd: 0,
-  volFadeSampleWindow: 3,
-  volFadeMinWeakSamples: 2,
-  volFadeMinHoldMs: 60_000,
-};
+describe('evaluateMildDipPeakGiveback (W9.1)', () => {
+  it('arm then giveback win: entry 100 → peak 115 → mark 103.5', () => {
+    const armed = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 115,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: exitGates,
+    });
+    expect(armed.justArmed).toBe(true);
+    expect(armed.armed).toBe(true);
+    expect(armed.shouldExit).toBe(false);
 
-describe('evaluateMildDipExit', () => {
-  it('takes profit at +10%', () => {
-    const v = evaluateMildDipExit({
-      entryPriceUsd: 1,
-      markPriceUsd: 1.1,
-      peakPriceUsd: 1.1,
-      openedAtMs: 0,
-      nowMs: 60_000,
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 103.5, // −10% of 115
+      peakPriceUsd: 115,
+      armed: true,
       gates: exitGates,
     });
     expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('take_profit');
+    expect(v.reason).toBe('peak_giveback');
+    expect(v.pnlPct).toBeGreaterThan(0);
+    expect(v.givebackPct).toBeLessThanOrEqual(-10 + 1e-6);
   });
 
-  it('trails −6% from peak after arming above entry', () => {
-    const v = evaluateMildDipExit({
-      entryPriceUsd: 1,
-      markPriceUsd: 1.1 * 0.94, // −6% from peak 1.1
-      peakPriceUsd: 1.1,
-      openedAtMs: 0,
-      nowMs: 120_000,
+  it('arm then giveback loss: entry 100 → peak 108 → mark 97.2', () => {
+    const arm = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: exitGates,
+    });
+    expect(arm.armed).toBe(true);
+    expect(arm.justArmed).toBe(true);
+
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 97.2, // −10% of 108
+      peakPriceUsd: 108,
+      armed: true,
       gates: exitGates,
     });
     expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('trail_giveback');
+    expect(v.reason).toBe('peak_giveback');
+    expect(v.pnlPct).toBeLessThan(0);
   });
 
-  it('does not treat −6% from entry as trail before peak arms', () => {
-    const v = evaluateMildDipExit({
-      entryPriceUsd: 1,
-      markPriceUsd: 0.94,
-      peakPriceUsd: 1,
-      openedAtMs: 0,
-      nowMs: 120_000,
+  it('no arm on deep dump: entry 100 → mark 90, peak never ≥ 108', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 90,
+      peakPriceUsd: 100,
+      armed: false,
       gates: exitGates,
     });
+    expect(v.armed).toBe(false);
     expect(v.shouldExit).toBe(false);
     expect(v.reason).toBeNull();
   });
 
-  it('exits on volume fade after min hold', () => {
-    const v = evaluateMildDipExit({
-      entryPriceUsd: 1,
-      markPriceUsd: 1.02,
-      peakPriceUsd: 1.03,
-      openedAtMs: 0,
-      nowMs: 90_000,
+  it('peak updates: giveback measured from 120 not 110', () => {
+    const mid = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 110,
+      peakPriceUsd: 100,
+      armed: false,
       gates: exitGates,
-      volumeFaded: true,
     });
-    expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('volume_fade');
+    expect(mid.peakPriceUsd).toBe(110);
+    expect(mid.armed).toBe(true);
+
+    const high = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 120,
+      peakPriceUsd: mid.peakPriceUsd,
+      armed: mid.armed,
+      gates: exitGates,
+    });
+    expect(high.peakPriceUsd).toBe(120);
+
+    // −9% from peak 120 → still holds (trigger is −10%)
+    const hold = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 109.2,
+      peakPriceUsd: 120,
+      armed: true,
+      gates: exitGates,
+    });
+    expect(hold.shouldExit).toBe(false);
+
+    // −10% from 120 = 108
+    const exit = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108,
+      peakPriceUsd: 120,
+      armed: true,
+      gates: exitGates,
+    });
+    expect(exit.shouldExit).toBe(true);
+    expect(exit.reason).toBe('peak_giveback');
   });
 
-  it('ignores volume fade before min hold', () => {
-    const v = evaluateMildDipExit({
-      entryPriceUsd: 1,
-      markPriceUsd: 1.02,
-      peakPriceUsd: 1.03,
-      openedAtMs: 0,
-      nowMs: 30_000,
+  it('no time exit: long hold without giveback stays open', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 112,
+      peakPriceUsd: 115,
+      armed: true,
       gates: exitGates,
-      volumeFaded: true,
     });
+    // giveback from 115 to 112 ≈ −2.6% — not enough
     expect(v.shouldExit).toBe(false);
   });
 
-  it('time-stops after 30m', () => {
-    const v = evaluateMildDipExit({
-      entryPriceUsd: 1,
-      markPriceUsd: 1.02,
-      peakPriceUsd: 1.03,
-      openedAtMs: 0,
-      nowMs: 1_800_000,
+  it('no SL-from-entry: mark 85 with tiny peak 102 stays unarmed / no exit', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 85,
+      peakPriceUsd: 102,
+      armed: false,
       gates: exitGates,
     });
-    expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('time_stop');
-  });
-
-  it('holds when neither TP nor trail nor fade nor time-stop', () => {
-    const v = evaluateMildDipExit({
-      entryPriceUsd: 1,
-      markPriceUsd: 1.02,
-      peakPriceUsd: 1.03,
-      openedAtMs: 0,
-      nowMs: 360_000,
-      gates: exitGates,
-    });
+    // MFE only +2% < arm 8 → not armed, deep dump does not exit
+    expect(v.armed).toBe(false);
     expect(v.shouldExit).toBe(false);
-    expect(v.reason).toBeNull();
   });
 });
