@@ -2828,10 +2828,12 @@ const PM2_APPS = [
         MILD_DIP_MIN_VOLUME_5M_USD: '2000',
         MILD_DIP_MIN_LIQUIDITY_USD: '15000',
         MILD_DIP_MIN_MCAP_USD: '15000',
-        MILD_DIP_MAX_MCAP_USD: '5000000',
+        MILD_DIP_MAX_MCAP_USD: '300000000',
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.25',
         MILD_DIP_MAX_PAIR_AGE_HOURS: '72',
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
+        /** USDG + other junk; built-in stables also denied in config defaults. */
+        MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
         MILD_DIP_TP_GAIN_PCT: '10',
         MILD_DIP_TIME_STOP_MS: '360000',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',

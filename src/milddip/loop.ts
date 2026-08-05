@@ -119,6 +119,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     if (filled >= slots) break;
     if (state.open[c.mint]) continue;
     if (onCooldown(state, c.mint, nowMs)) continue;
+    if (cfg.deniedMints.includes(c.mint)) continue;
 
     // Never rebuy a mint we already hold on-chain (state can lag after restart).
     const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);

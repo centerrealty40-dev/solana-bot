@@ -11,7 +11,7 @@ const baseGates: MildDipEntryGates = {
   minVolume5mUsd: 8_000,
   minLiquidityUsd: 15_000,
   minMarketCapUsd: 50_000,
-  maxMarketCapUsd: 5_000_000,
+  maxMarketCapUsd: 300_000_000,
   minPairAgeHours: 0.25,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap', 'pumpfun'],
