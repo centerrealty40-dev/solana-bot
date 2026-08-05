@@ -2871,6 +2871,17 @@ const PM2_APPS = [
         TELEGRAM_COOLDOWN_ALERT_MILD_DIP_DEX_MS: '1800000',
         /** After close/skip — allow rebuy same mint in 5m (was 1h). */
         MILD_DIP_MINT_COOLDOWN_MS: '300000',
+        /**
+         * 1.11.687 — during 5m cooldown keep sampling stream/Dex prices; after
+         * cooldown refuse rebuy if mark bounced >N% off the observed trough.
+         */
+        MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '6',
+        MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS: '300000',
+        /** Stream drawdown can satisfy dip band when Dex pc5m lags (liq/mcap still Dex). */
+        MILD_DIP_STREAM_DIP_ENTRY: '1',
+        MILD_DIP_STREAM_PRICE_SAMPLE: '1',
+        MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '2000',
+        MILD_DIP_STREAM_PRICE_CONCURRENCY: '3',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
         MILD_DIP_SLIPPAGE_BPS: '500',
         /** Abort if mark/quote already bounced >4% off the dip signal (LARP green-candle chase). */
@@ -2881,11 +2892,13 @@ const PM2_APPS = [
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
         MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
-        /** Helius logsSubscribe on pump.fun + PumpSwap → hot mint universe (pc5m still DexScreener). */
+        /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
         MILD_DIP_JOURNAL_PATH: path.join(root, 'data/milddip/journal.jsonl'),
         MILD_DIP_STATE_PATH: path.join(root, 'data/milddip/state.json'),
+        MILD_DIP_HOT_MINTS_PATH: path.join(root, 'data/milddip/hot-mints.json'),
+        MILD_DIP_PRICE_RING_PATH: path.join(root, 'data/milddip/price-ring.json'),
         ...LIVE_OSCAR_HELIUS_RPC_ENV,
         ...(HELIUS_RPC_URL_PM2 ? { MILD_DIP_RPC_URL: HELIUS_RPC_URL_PM2 } : {}),
       },

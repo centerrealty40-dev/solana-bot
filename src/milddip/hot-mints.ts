@@ -1,7 +1,10 @@
 /**
  * In-memory ring of mints recently seen on Helius/RPC program logs.
- * Mild-dip still needs DexScreener for pc5m — the stream only builds the universe.
+ * Price / dip gates use the price-ring; this buffer only ranks the universe.
+ * Persisted across restarts so a deploy does not wipe hot coverage.
  */
+import fs from 'node:fs';
+import path from 'node:path';
 
 export type HotMintHit = {
   mint: string;
@@ -19,14 +22,14 @@ export class MildDipHotMintBuffer {
     this.ttlMs = opts?.ttlMs ?? 15 * 60_000;
   }
 
-  note(mint: string, nowMs = Date.now()): void {
+  note(mint: string, nowMs = Date.now(), hitsInc = 1): void {
     if (!mint || mint.length < 32) return;
     const prev = this.byMint.get(mint);
     if (prev) {
-      prev.lastSeenAtMs = nowMs;
-      prev.hits += 1;
+      prev.lastSeenAtMs = Math.max(prev.lastSeenAtMs, nowMs);
+      prev.hits += hitsInc;
     } else {
-      this.byMint.set(mint, { mint, lastSeenAtMs: nowMs, hits: 1 });
+      this.byMint.set(mint, { mint, lastSeenAtMs: nowMs, hits: Math.max(1, hitsInc) });
     }
     this.prune(nowMs);
   }
@@ -43,6 +46,22 @@ export class MildDipHotMintBuffer {
     return this.byMint.size;
   }
 
+  toJSON(nowMs = Date.now()): HotMintHit[] {
+    this.prune(nowMs);
+    return [...this.byMint.values()];
+  }
+
+  loadHits(hits: HotMintHit[], nowMs = Date.now()): number {
+    let n = 0;
+    for (const h of hits) {
+      if (!h?.mint || typeof h.lastSeenAtMs !== 'number') continue;
+      this.note(h.mint, h.lastSeenAtMs, Math.max(1, Number(h.hits) || 1));
+      n += 1;
+    }
+    this.prune(nowMs);
+    return n;
+  }
+
   private prune(nowMs: number): void {
     for (const [mint, hit] of this.byMint) {
       if (nowMs - hit.lastSeenAtMs > this.ttlMs) this.byMint.delete(mint);
@@ -56,3 +75,23 @@ export class MildDipHotMintBuffer {
 
 /** Process-wide buffer shared by stream callbacks and discover. */
 export const mildDipHotMints = new MildDipHotMintBuffer();
+
+export function saveMildDipHotMints(filePath: string, buf = mildDipHotMints): void {
+  const dir = path.dirname(filePath);
+  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+  const payload = { updatedAtMs: Date.now(), hits: buf.toJSON() };
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(payload)}\n`, 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+
+export function loadMildDipHotMints(filePath: string, buf = mildDipHotMints): number {
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as {
+      hits?: HotMintHit[];
+    };
+    return buf.loadHits(Array.isArray(raw.hits) ? raw.hits : []);
+  } catch {
+    return 0;
+  }
+}

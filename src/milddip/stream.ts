@@ -1,12 +1,18 @@
 /**
- * Helius (or any Solana RPC) logsSubscribe on pump.fun / PumpSwap → hot mint universe.
- * Does not replace DexScreener for the mild-dip gate (pc5m); only feeds candidates.
+ * Helius (or any Solana RPC) logsSubscribe on pump.fun / PumpSwap → hot mint universe
+ * + optional signature enqueue for stream price sampling.
+ *
+ * DexScreener remains the liq/mcap/pc5m source; stream prices fill the trough
+ * during cooldown so we can refuse bounce re-entries.
  */
 import { resolveLeaderStreamWsUrl } from '../copytrader/leader-stream-ws.js';
 import { PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import { PUMP_SWAP_AMM_PROGRAM_ID } from '../parser/allowlisted-dex-swap.js';
-import { startAwakeningStreamWs } from '../scripts/awakening/awakening-stream-ws.js';
+import { extractMintCandidatesFromLogs } from '../scripts/awakening/awakening-mint-from-logs.js';
+import type { StreamConfig } from '../stream/config.js';
+import { LogsWsClient } from '../stream/rpc-ws.js';
 import { mildDipHotMints } from './hot-mints.js';
+import type { StreamPriceSampler } from './stream-price-sampler.js';
 
 export type MildDipStreamHandle = { stop: () => void };
 
@@ -31,6 +37,8 @@ export function startMildDipHotMintStream(opts?: {
   wsUrl?: string | null;
   programIds?: string[];
   onMint?: (mint: string, tsMs: number) => void;
+  /** When set, enqueue signature→price decode for watched mints. */
+  priceSampler?: StreamPriceSampler | null;
 }): MildDipStreamHandle | null {
   const wsUrl = (opts?.wsUrl ?? resolveMildDipStreamWsUrl())?.trim() || '';
   if (!wsUrl) {
@@ -40,19 +48,41 @@ export function startMildDipHotMintStream(opts?: {
   const programIds = opts?.programIds?.length ? opts.programIds : mildDipStreamProgramIds();
   if (programIds.length === 0) return null;
 
-  const handle = startAwakeningStreamWs({
+  const cfg: StreamConfig = {
+    rpcHttpUrl: 'https://placeholder.local',
     rpcWsUrl: wsUrl,
     programIds,
-    onMintActivity: (mint, tsMs) => {
+    commitment: 'confirmed',
+    batchSize: 50,
+    batchMs: 1000,
+    reconnectMinMs: 2000,
+    reconnectMaxMs: 60_000,
+    logEveryN: 2000,
+  };
+
+  const client = new LogsWsClient(cfg, (n) => {
+    const tsMs = Date.now();
+    if (n.err) return;
+    const mints = extractMintCandidatesFromLogs(n.logs);
+    for (const mint of mints) {
       mildDipHotMints.note(mint, tsMs);
       opts?.onMint?.(mint, tsMs);
-    },
+      if (opts?.priceSampler && n.signature) {
+        opts.priceSampler.enqueue(mint, n.signature, tsMs);
+      }
+    }
   });
 
+  client.start();
   console.log(
     `[mild-dip] Helius/RPC logsSubscribe started programs=${programIds.length} host=${safeHost(wsUrl)}`,
   );
-  return handle;
+  return {
+    stop: () => {
+      client.stop();
+      opts?.priceSampler?.stop();
+    },
+  };
 }
 
 function safeHost(url: string): string {
