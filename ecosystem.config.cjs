@@ -2408,7 +2408,7 @@ const PM2_APPS = [
          */
         COPY_TRADER_FUNDING_PARTIAL_CLIP: '1',
         COPY_TRADER_FUNDING_PARTIAL_CLIP_FRACTION: '0.5',
-        /** Below scout clip so $30 entries are not blocked by the $50 legacy floor. */
+        /** Floor below the $30 static clip. */
         COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '15',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg/target-wallet.txt'),
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg/journal.jsonl'),
@@ -2417,16 +2417,15 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — mirror owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * 1.11.682 — big-tier static entry $100 (not % of leader).
+         * 1.11.685 — all tiers static $30, ceiling $30 (operator).
          * Mirror ratio off → entryTargetUsd = POSITION_USD.
-         * 1.11.683 — scout tier $30 when vol/mcap (selective) gates reject.
          */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
         COPY_TRADER_MIN_MIRROR_ENTRY_USD: '0',
-        COPY_TRADER_POSITION_USD: '100',
+        COPY_TRADER_POSITION_USD: '30',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
-        COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
-        COPY_TRADER_ENTRY_MID_LEG_USD: '100',
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '30',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '30',
         /** Fixed bands off (0 max). */
         COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '100000',
         COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '0',
@@ -2434,14 +2433,14 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_LOW2_MCAP_MIN_USD: '0',
         COPY_TRADER_ENTRY_LOW2_MCAP_MAX_USD: '0',
         COPY_TRADER_ENTRY_LOW2_POSITION_USD: '0',
-        /** Scout: follow leader at $30 when big-tier selective gates fail. */
+        /** Same $30 when selective gates reject (no larger big-tier anymore). */
         COPY_TRADER_ENTRY_SCOUT_USD: '30',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '100',
+        COPY_TRADER_MAX_POSITION_USD: '30',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '30',
         /** Scout follows nearly all leader buys — need headroom vs old 8. */
         COPY_TRADER_MAX_OPEN_POSITIONS: '40',
         /** Allow entry on leader rebuy/average-down even if we missed his first fill. */
@@ -2513,7 +2512,7 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_PROBE_BUY_DELAY_MS: '0',
         /**
          * 1.11.684 — hard premium cap +1% vs leader fill (was 5%).
-         * Applies to all tiers (big $100 + scout $30). Above → defer / re-quote
+         * Applies to the $30 static clip. Above → defer / re-quote
          * until cooler or leader exits (leaderHoldingsShrunkSinceSignal).
          */
         COPY_TRADER_BUY_PRICE_MAX_PREMIUM_PCT: '1',
@@ -2611,7 +2610,8 @@ const PM2_APPS = [
         /** Same funding partial-clip as twin (50% now, top-up later). */
         COPY_TRADER_FUNDING_PARTIAL_CLIP: '1',
         COPY_TRADER_FUNDING_PARTIAL_CLIP_FRACTION: '0.5',
-        COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '50',
+        /** Floor below the $30 static clip. */
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '15',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg-mirror/target-wallet.txt'),
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg-mirror/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg-mirror/state.json'),
@@ -2619,24 +2619,24 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — the leader owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * 1.11.682 — same as mcap twin: static $100 big-tier entry.
+         * 1.11.685 — all tiers static $30, ceiling $30 (operator).
          * Mirror ratio off → entryTargetUsd = POSITION_USD.
          */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
         COPY_TRADER_MIN_MIRROR_ENTRY_USD: '0',
-        COPY_TRADER_POSITION_USD: '100',
+        COPY_TRADER_POSITION_USD: '30',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
-        COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
-        COPY_TRADER_ENTRY_MID_LEG_USD: '100',
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '30',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '30',
         COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '150000',
         COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '0',
         COPY_TRADER_ENTRY_LOW_POSITION_USD: '0',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '100',
+        COPY_TRADER_MAX_POSITION_USD: '30',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '30',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         /** Same as twin: enter on average-down / rebuy if we missed his open. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',

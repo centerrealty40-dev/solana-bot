@@ -1,4 +1,23 @@
 # So
+## [1.11.685] — 2026-08-05
+
+**Тег:** `sa-1.11.685`
+
+### Change: static $30 entry on both 8zkg twins (all tiers)
+
+Operator: `copy-trader-8zkg` (`FxQf…`) + `copy-trader-8zkg-mirror` (`2fMz…`):
+one static buy size **$30** on all tiers, ceiling **$30**.
+
+- `POSITION_USD` / `ENTRY_MID_POSITION_USD` / `ENTRY_MID_LEG_USD` → `30`
+- `MAX_POSITION_USD` → `30`
+- `MIN_PROPORTIONAL_ADD_USD` → `30`
+- `ENTRY_SCOUT_USD` → `30` (8zkg; same clip when selective gates reject)
+- mirror `FUNDING_PARTIAL_CLIP_MIN_USD` → `15` (was 50 — blocked $30 clips)
+
+**Откат:** both twins back to `100` position/mid/max; mirror funding min `50`.
+
+---
+
 ## [1.11.684] — 2026-08-05
 
 **Тег:** `sa-1.11.684`
