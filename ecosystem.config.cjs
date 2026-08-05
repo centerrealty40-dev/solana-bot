@@ -2825,12 +2825,13 @@ const PM2_APPS = [
         MILD_DIP_MAX_OPEN_POSITIONS: '0',
         MILD_DIP_MIN_DIP_PCT: '-20',
         MILD_DIP_MAX_DIP_PCT: '0',
-        MILD_DIP_MIN_VOLUME_5M_USD: '2000',
+        MILD_DIP_MIN_VOLUME_5M_USD: '1500',
         MILD_DIP_MIN_LIQUIDITY_USD: '15000',
         MILD_DIP_MIN_MCAP_USD: '15000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.25',
-        MILD_DIP_MAX_PAIR_AGE_HOURS: '72',
+        /** 0 = no max age — do not skip older pumps on mild dips. */
+        MILD_DIP_MAX_PAIR_AGE_HOURS: '0',
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
