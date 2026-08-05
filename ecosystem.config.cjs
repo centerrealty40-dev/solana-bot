@@ -2455,8 +2455,12 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0',
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
-        /** Off — twin owns the volume axis. */
-        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '0',
+        /**
+         * 1.11.679 — hard vol5m floor $10k (was 0). Thin books (<$8k) were the
+         * main 10h loss driver on this mcap lane. Unknown vol fails closed.
+         */
+        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '10000',
+        COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS: '0',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',
@@ -2641,12 +2645,12 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MAX_PAIR_AGE_HOURS: '0',
         COPY_TRADER_ENTRY_MIN_TURNOVER_5M: '0',
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
-        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '8000',
         /**
-         * Quiet current m5 still passes when 1h volume covers N× the floor
-         * (adjacent 5m windows proxy — Dex has no discrete m5 candles).
+         * 1.11.679 — hard vol5m floor $10k (was $8k + adjacent×3 bypass).
+         * Unknown or &lt; $10k → skip buy (fail closed).
          */
-        COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS: '3',
+        COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '10000',
+        COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS: '0',
         COPY_TRADER_ENTRY_MIN_BUY_SELL_5M: '0',
         COPY_TRADER_ENTRY_MAX_CHASE_5M_PCT: '0',
         COPY_TRADER_MIN_LEADER_BUY_USD: '0',

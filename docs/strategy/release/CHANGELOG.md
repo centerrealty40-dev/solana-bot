@@ -1,4 +1,21 @@
 # So
+## [1.11.679] — 2026-08-05
+
+**Тег:** `sa-1.11.679`
+
+### Change: hard vol5m floor $10k on both 8zkg twins
+
+10h RCA: vol5m &lt; $8k was the main realized-loss bucket. Operator: require
+**$10k** 5m volume to buy; unknown or below → skip.
+
+- `COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD=10000` on mcap + mirror
+- `ENTRY_VOL5M_ADJACENT_WINDOWS=0` (no 1h bypass of the floor)
+- Gate already fail-closed on `volume_5m_unknown` / missing ctx
+
+**Откат:** mcap `MIN_VOLUME_5M=0`; mirror `8000` + `ADJACENT_WINDOWS=3`.
+
+---
+
 ## [1.11.678] — 2026-08-05
 
 **Тег:** `sa-1.11.678`
