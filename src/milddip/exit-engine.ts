@@ -40,17 +40,21 @@ export function decideMarkExit(args: {
   pos: MildDipOpenPosition;
   markPriceUsd: number;
   gates: MildDipExitGates;
+  nowMs?: number;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
   const peakPrev =
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
+  const nowMs = args.nowMs ?? Date.now();
+  const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
     markPriceUsd,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
     gates,
+    heldMs,
   });
   return {
     mint,

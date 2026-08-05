@@ -1,4 +1,27 @@
 # So
+## [1.11.682] — 2026-08-05
+
+**Тег:** `sa-1.11.682`
+
+### Change: mild-dip never-armed exit (leaders 8zkg / 7BNax)
+
+W9.1 armed path unchanged (arm +8% / giveback −6%). Added never-arm branch so
+dumps that never reach arm do not sit forever:
+
+- After `MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS` (default **5m**) still unarmed →
+  same giveback −6% from sub-arm peak (`reason=never_arm_giveback`)
+- After `MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS` (default **20m**) still unarmed →
+  full exit (`reason=never_arm_timeout`)
+- Empirics: 8zkg mild never-arm ~42% of sessions; quick-cut giveback ≈ −6% at
+  ~5m; never-arm hold med ~18m; 7BNax never-arm hold med ~3m / ~83% out by 5m
+- Still **no** SL% from entry
+
+Spec: [`W9.1_peak_giveback_exit_flow_spec.md`](../specs/W9.1_peak_giveback_exit_flow_spec.md) §4.2.
+
+**Откат:** set both never-arm envs to `0` + reload `mild-dip-bot`, or revert gates.
+
+---
+
 ## [1.11.681] — 2026-08-05
 
 **Тег:** `sa-1.11.681`

@@ -3,7 +3,8 @@
  *
  * Entry: DexScreener priceChange5m ∈ (minDipPct, maxDipPct] — default (−20, 0].
  * Exit: W9.1 peak-giveback — arm on MFE, full exit on giveback from running peak.
- *        No time-stop, no SL% from entry, no hard TP-from-entry (see W9.1 spec).
+ *        Never-armed branch (leaders 8zkg / 7BNax): same giveback width after
+ *        patience, plus max-hold if trail never arms. No SL% from entry.
  */
 
 export type MildDipCandidateMetrics = {
@@ -30,12 +31,23 @@ export type MildDipEntryGates = {
   allowedDexIds: string[];
 };
 
-/** W9.1 peak-giveback exit parameters. */
+/** W9.1 peak-giveback exit parameters (+ never-armed dead-trade). */
 export type MildDipExitGates = {
   /** Arm trail when MFE ≥ this % (default 8). */
   armPct: number;
   /** Full exit when giveback from peak ≤ −this % after armed (default 6). */
   givebackPct: number;
+  /**
+   * After this many ms still unarmed, allow the same giveback% from the
+   * (sub-arm) peak — matches 8zkg quick-cut / 7BNax never-arm cluster (~5m).
+   * 0 = disabled.
+   */
+  neverArmPatienceMs: number;
+  /**
+   * If still unarmed after this many ms → full exit (8zkg never-arm hold
+   * median ~18m; default 20m). 0 = disabled.
+   */
+  neverArmMaxHoldMs: number;
 };
 
 export type MildDipGateVerdict = {
@@ -149,7 +161,11 @@ export function evaluateMildDipPreBuy(args: {
   return { pass: reasons.length === 0, reasons };
 }
 
-export type MildDipExitReason = 'peak_giveback' | null;
+export type MildDipExitReason =
+  | 'peak_giveback'
+  | 'never_arm_giveback'
+  | 'never_arm_timeout'
+  | null;
 
 export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number): number | null {
   if (!(markPriceUsd > 0) || !(peakPriceUsd > 0)) return null;
@@ -167,6 +183,7 @@ export function mfeFromEntryPct(peakPriceUsd: number, entryPriceUsd: number): nu
  * - Update running peak from entry
  * - Arm when MFE ≥ armPct
  * - Full exit when armed and giveback ≤ −givebackPct
+ * - Never-armed: after patienceMs, same giveback from sub-arm peak; else max-hold
  * - Loss-by-flow (realized < 0) is a valid outcome of the same rule
  */
 export function evaluateMildDipPeakGiveback(args: {
@@ -175,6 +192,8 @@ export function evaluateMildDipPeakGiveback(args: {
   peakPriceUsd: number;
   armed: boolean;
   gates: MildDipExitGates;
+  /** Elapsed ms since entry; required for never-arm exits. */
+  heldMs?: number;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -186,6 +205,7 @@ export function evaluateMildDipPeakGiveback(args: {
   pnlPct: number;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
+  const heldMs = Number.isFinite(args.heldMs) ? Math.max(0, Number(args.heldMs)) : 0;
   const peakPriceUsd = Math.max(
     args.peakPriceUsd > 0 ? args.peakPriceUsd : entryPriceUsd,
     markPriceUsd > 0 ? markPriceUsd : 0,
@@ -202,12 +222,12 @@ export function evaluateMildDipPeakGiveback(args: {
     justArmed = true;
   }
 
-  if (
-    armed &&
+  const givebackHit =
     gates.givebackPct > 0 &&
     // epsilon: 103.5/115 is −9.999…% in IEEE float
-    givebackPct <= -gates.givebackPct + 1e-9
-  ) {
+    givebackPct <= -gates.givebackPct + 1e-9;
+
+  if (armed && givebackHit) {
     return {
       peakPriceUsd,
       mfePct,
@@ -218,6 +238,36 @@ export function evaluateMildDipPeakGiveback(args: {
       reason: 'peak_giveback',
       pnlPct,
     };
+  }
+
+  // Never-armed dump branch (leaders do exit — not infinite hold).
+  if (!armed) {
+    const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
+    if (patience > 0 && heldMs >= patience && givebackHit) {
+      return {
+        peakPriceUsd,
+        mfePct,
+        givebackPct,
+        armed,
+        justArmed,
+        shouldExit: true,
+        reason: 'never_arm_giveback',
+        pnlPct,
+      };
+    }
+    const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
+    if (maxHold > 0 && heldMs >= maxHold) {
+      return {
+        peakPriceUsd,
+        mfePct,
+        givebackPct,
+        armed,
+        justArmed,
+        shouldExit: true,
+        reason: 'never_arm_timeout',
+        pnlPct,
+      };
+    }
   }
 
   return {
@@ -239,6 +289,7 @@ export function evaluateMildDipExit(args: {
   peakPriceUsd: number;
   armed: boolean;
   gates: MildDipExitGates;
+  heldMs?: number;
 }): ReturnType<typeof evaluateMildDipPeakGiveback> {
   return evaluateMildDipPeakGiveback(args);
 }

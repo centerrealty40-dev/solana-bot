@@ -431,6 +431,7 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
       pos,
       markPriceUsd: px,
       gates: cfg.exit,
+      nowMs,
     });
     if (!decision) continue;
 
@@ -509,6 +510,8 @@ export async function runMildDipLoop(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
+      `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
+      `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `stream=${stats.stream} prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
