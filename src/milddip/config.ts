@@ -34,6 +34,8 @@ const MildDipConfigSchema = z.object({
   /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
   streamEnabled: z.boolean().default(true),
   streamWsUrl: z.string().optional(),
+  /** Hard skip — stables / junk mints (comma-separated env). */
+  deniedMints: z.array(z.string()).default([]),
   entry: z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
@@ -75,11 +77,24 @@ export function loadMildDipConfig(): MildDipConfig {
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 2_000),
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 15_000),
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
-    maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 5_000_000),
+    maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.25),
     maxPairAgeHours: envNum('MILD_DIP_MAX_PAIR_AGE_HOURS', 72),
     allowedDexIds,
   };
+
+  /** Built-in junk/stables + optional env extras. */
+  const defaultDenied = [
+    '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH', // USDG
+    'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v', // USDC
+    'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB', // USDT
+    'So11111111111111111111111111111111111111112', // WSOL
+  ];
+  const deniedExtra = (process.env.MILD_DIP_DENIED_MINTS ?? '')
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length >= 32);
+  const deniedMints = [...new Set([...defaultDenied, ...deniedExtra])];
 
   const exit: MildDipExitGates = {
     tpGainPct: envNum('MILD_DIP_TP_GAIN_PCT', 10),
@@ -109,6 +124,7 @@ export function loadMildDipConfig(): MildDipConfig {
       return v === '1' || v === 'true' || v === 'yes';
     })(),
     streamWsUrl: process.env.MILD_DIP_STREAM_WS_URL?.trim() || undefined,
+    deniedMints,
     entry,
     exit,
   };

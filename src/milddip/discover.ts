@@ -104,8 +104,11 @@ export async function enrichAndFilterCandidates(
   const out: MildDipCandidate[] = [];
   const slice = mints.slice(0, maxEnrich);
 
+  const denied = new Set(cfg.deniedMints.map((m) => m.trim()).filter(Boolean));
+
   for (const mint of slice) {
     try {
+      if (denied.has(mint)) continue;
       const details = await fetchDexScreenerPairDetails(mint, {
         bypassCache: true,
         nowMs,
