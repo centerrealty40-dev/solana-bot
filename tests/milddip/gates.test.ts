@@ -23,7 +23,7 @@ const exitGates: MildDipExitGates = {
   armPct: 8,
   givebackPct: 6,
   neverArmPatienceMs: 300_000,
-  neverArmMaxHoldMs: 1_200_000,
+  neverArmMaxHoldMs: 2_400_000,
 };
 
 describe('evaluateMildDipEntry', () => {
@@ -239,11 +239,24 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       peakPriceUsd: 105,
       armed: false,
       gates: exitGates,
-      heldMs: 1_200_000,
+      heldMs: 2_400_000,
     });
     expect(v.armed).toBe(false);
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('never_arm_timeout');
+  });
+
+  it('never-arm still holds at 20m when max-hold is 40m', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 103,
+      peakPriceUsd: 105,
+      armed: false,
+      gates: exitGates,
+      heldMs: 1_200_000,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).toBeNull();
   });
 
   it('peak updates: giveback measured from 120 not 110', () => {

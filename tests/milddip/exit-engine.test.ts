@@ -39,7 +39,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     armPct: 8,
     givebackPct: 6,
     neverArmPatienceMs: 300_000,
-    neverArmMaxHoldMs: 1_200_000,
+    neverArmMaxHoldMs: 2_400_000,
   };
 
   it('updates peak and arms without exiting', () => {

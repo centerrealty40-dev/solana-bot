@@ -66,7 +66,7 @@ const MildDipConfigSchema = z.object({
     /** Never-armed: allow same giveback after this many ms (0=off). */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
     /** Never-armed: force exit after this many ms (0=off). */
-    neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(1_200_000),
+    neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(2_400_000),
   }),
 });
 
@@ -122,7 +122,7 @@ export function loadMildDipConfig(): MildDipConfig {
     armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 8),
     givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 300_000),
-    neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 1_200_000),
+    neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
   };
 
   const raw = {
