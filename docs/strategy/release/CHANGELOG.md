@@ -1,4 +1,22 @@
 # So
+## [1.11.677] — 2026-08-05
+
+**Тег:** `sa-1.11.677`
+
+### Change: mild-dip W9.1 peak-giveback exit (no time-stop / SL / hard TP)
+
+Spec: [`W9.1_peak_giveback_exit_flow_spec.md`](../specs/W9.1_peak_giveback_exit_flow_spec.md).
+
+- Exit = running peak from entry → arm at **MFE +8%** → full exit on
+  **giveback −10%** from peak (`reason=peak_giveback`)
+- Loss-by-flow (realized &lt; 0) is a valid outcome of the same rule
+- Removed: time-stop, hard TP +10%, volume-fade exit, SL% from entry
+- Env: `MILD_DIP_EXIT_ARM_PCT=8`, `MILD_DIP_EXIT_GIVEBACK_PCT=10`
+
+**Откат:** restore prior exit envs (TP/time-stop) + reload `mild-dip-bot`.
+
+---
+
 ## [1.11.676] — 2026-08-05
 
 **Тег:** `sa-1.11.676`
