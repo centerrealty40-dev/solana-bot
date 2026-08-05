@@ -2821,7 +2821,7 @@ const PM2_APPS = [
         MILD_DIP_EXECUTION_MODE: 'paper',
         MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
-        MILD_DIP_POSITION_USD: '30',
+        MILD_DIP_POSITION_USD: '5',
         MILD_DIP_MAX_OPEN_POSITIONS: '2',
         MILD_DIP_MIN_DIP_PCT: '-20',
         MILD_DIP_MAX_DIP_PCT: '0',

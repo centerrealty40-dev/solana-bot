@@ -20,7 +20,7 @@ const MildDipConfigSchema = z.object({
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
   journalPath: z.string().min(1),
   statePath: z.string().min(1),
-  positionUsd: z.coerce.number().positive().max(10_000).default(30),
+  positionUsd: z.coerce.number().positive().max(10_000).default(5),
   maxOpenPositions: z.coerce.number().int().min(1).max(20).default(2),
   scanIntervalMs: z.coerce.number().int().min(5_000).max(600_000).default(30_000),
   markIntervalMs: z.coerce.number().int().min(2_000).max(120_000).default(10_000),
@@ -90,7 +90,7 @@ export function loadMildDipConfig(): MildDipConfig {
     journalPath:
       process.env.MILD_DIP_JOURNAL_PATH?.trim() || path.join('data', 'milddip', 'journal.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
-    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 30,
+    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 5,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 2,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 30_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 10_000,
