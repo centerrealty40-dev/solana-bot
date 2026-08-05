@@ -7,6 +7,7 @@ import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
+import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
 import { evaluateMildDipPeakGiveback, evaluateMildDipPreBuy } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
@@ -39,6 +40,47 @@ async function markPriceUsd(mint: string, nowMs: number): Promise<number | null>
   const details = await fetchDexScreenerPairDetails(mint, { bypassCache: true, nowMs });
   const px = details?.priceUsd;
   return px != null && px > 0 ? px : null;
+}
+
+/** Reclaim rent on empty mint ATA after full exit (live only). */
+async function reclaimEmptyAta(
+  cfg: MildDipConfig,
+  args: { mint?: string; symbol?: string; reason: string },
+): Promise<void> {
+  if (cfg.executionMode !== 'live') return;
+  const secret = cfg.walletSecret?.trim();
+  if (!secret) return;
+  try {
+    const result = await closeEmptyAtas({
+      rpcUrl: cfg.rpcUrl,
+      walletSecret: secret,
+      mint: args.mint,
+    });
+    if (result.closed <= 0 && result.errors.length === 0) return;
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_ata_closed',
+      reason: args.reason,
+      mint: args.mint ?? null,
+      symbol: args.symbol ?? null,
+      closed: result.closed,
+      reclaimedLamports: result.reclaimedLamports,
+      reclaimedSol: +(result.reclaimedLamports / 1e9).toFixed(6),
+      signatures: result.signatures,
+      errors: result.errors.slice(0, 5),
+    });
+    if (result.closed > 0) {
+      console.log(
+        `[mild-dip] ATA close ${args.symbol ?? 'sweep'} n=${result.closed} ` +
+          `reclaimed=${(result.reclaimedLamports / 1e9).toFixed(4)} SOL`,
+      );
+    } else if (result.errors.length > 0) {
+      console.warn(`[mild-dip] ATA close failed: ${result.errors[0]}`);
+    }
+  } catch (err) {
+    console.warn(
+      `[mild-dip] ATA close error: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
 }
 
 /**
@@ -338,6 +380,11 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
         `[mild-dip] SELL ${pos.symbol} reason=${verdict.reason} pnl=${(sell.pnlPct ?? verdict.pnlPct).toFixed(1)}% ` +
           `mfe=${verdict.mfePct.toFixed(1)}% giveback=${verdict.givebackPct.toFixed(1)}% mode=${cfg.executionMode}`,
       );
+      await reclaimEmptyAta(cfg, {
+        mint,
+        symbol: pos.symbol,
+        reason: `post_sell_${verdict.reason}`,
+      });
     } else {
       const reason = sell.reason ?? 'unknown';
       // Bag already gone on-chain — drop stale state so we stop retrying forever.
@@ -352,6 +399,11 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
           pnlPct: +(sell.pnlPct ?? verdict.pnlPct).toFixed(2),
         });
         console.warn(`[mild-dip] DROP empty bag ${pos.symbol} mint=${mint.slice(0, 8)}…`);
+        await reclaimEmptyAta(cfg, {
+          mint,
+          symbol: pos.symbol,
+          reason: 'post_drop_empty',
+        });
       } else {
         console.warn(`[mild-dip] sell failed ${mint.slice(0, 8)}…: ${reason}`);
       }
@@ -397,6 +449,11 @@ export async function runMildDipLoop(
       `stream=${stats.stream} prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
       `sources=${cfg.discoverSources} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
+
+  // One-shot: reclaim rent stuck in already-empty ATAs from prior $5 tests.
+  if (!opts?.once) {
+    await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
+  }
 
   let lastScan = 0;
   let lastMark = 0;
