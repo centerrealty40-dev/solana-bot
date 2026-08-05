@@ -3,6 +3,7 @@ import {
   checkCopyFundingGate,
   resetCopyFundingCache,
 } from '../copytrader/funding-gate.js';
+import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
@@ -13,6 +14,7 @@ import {
   appendMildDipJournal,
   loadMildDipState,
   saveMildDipState,
+  type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
 import { startMildDipHotMintStream } from './stream.js';
@@ -21,6 +23,8 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Floor for a last partial clip when draining the wallet. */
 const MIN_CLIP_USD = 1;
+/** Raw units below this are dust — ignore for rebuy/adopt. */
+const HOLDING_DUST_RAW = 1000n;
 
 function openCount(state: MildDipState): number {
   return Object.keys(state.open).length;
@@ -64,6 +68,43 @@ async function resolveEntrySizeUsd(
   return { sizeUsd: 0, stop: true, reason: full.reason, usdc: full.quoteUsd };
 }
 
+function adoptOnChainHolding(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  mint: string;
+  symbol: string;
+  tokenRaw: string;
+  priceUsd: number;
+  pc5m: number | null;
+  nowMs: number;
+}): void {
+  const { cfg, state, mint, symbol, tokenRaw, priceUsd, pc5m, nowMs } = args;
+  const sizeUsd =
+    priceUsd > 0 ? Number(tokenRaw) / 1e6 * priceUsd : cfg.positionUsd;
+  const pos: MildDipOpenPosition = {
+    mint,
+    symbol,
+    entryPriceUsd: priceUsd > 0 ? priceUsd : 0,
+    sizeUsd: Number.isFinite(sizeUsd) && sizeUsd > 0 ? sizeUsd : cfg.positionUsd,
+    tokenRaw,
+    openedAtMs: nowMs,
+    entryPc5mPct: pc5m,
+    buySignature: null,
+  };
+  state.open[mint] = pos;
+  saveMildDipState(cfg.statePath, state);
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mild_dip_adopt_holding',
+    mint,
+    symbol,
+    tokenRaw,
+    priceUsd: pos.entryPriceUsd,
+    sizeUsd: pos.sizeUsd,
+    pc5m,
+  });
+  console.log(`[mild-dip] ADOPT existing bag ${symbol} mint=${mint.slice(0, 8)}… raw=${tokenRaw}`);
+}
+
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
@@ -78,6 +119,23 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     if (filled >= slots) break;
     if (state.open[c.mint]) continue;
     if (onCooldown(state, c.mint, nowMs)) continue;
+
+    // Never rebuy a mint we already hold on-chain (state can lag after restart).
+    const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);
+    const onchainRaw = onchain && /^\d+$/.test(onchain) ? BigInt(onchain) : 0n;
+    if (onchainRaw > HOLDING_DUST_RAW) {
+      adoptOnChainHolding({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        tokenRaw: onchainRaw.toString(),
+        priceUsd: c.priceUsd,
+        pc5m: c.metrics.priceChange5mPct,
+        nowMs,
+      });
+      continue;
+    }
 
     const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs);
     if (sized.stop || !(sized.sizeUsd > 0)) {
@@ -131,16 +189,20 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       continue;
     }
 
+    // Prefer confirmed on-chain raw over quote outAmount.
+    const filledRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
     state.open[c.mint] = {
       mint: c.mint,
       symbol: c.symbol,
       entryPriceUsd: buy.priceUsd || c.priceUsd,
       sizeUsd: sized.sizeUsd,
-      tokenRaw: buy.tokenRaw ?? null,
+      tokenRaw: filledRaw ?? buy.tokenRaw ?? null,
       openedAtMs: nowMs,
       entryPc5mPct: c.metrics.priceChange5mPct,
       buySignature: buy.signature ?? null,
     };
+    // Persist immediately — a restart before the tick-end save used to allow a rebuy.
+    saveMildDipState(cfg.statePath, state);
     filled += 1;
     resetCopyFundingCache();
     console.log(

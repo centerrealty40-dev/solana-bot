@@ -61,7 +61,10 @@ function signer(cfg: CopyTraderConfig): Keypair {
   return cachedSigner;
 }
 
-async function fetchMintBalanceRaw(cfg: CopyTraderConfig, mint: string): Promise<string | null> {
+export async function fetchMintBalanceRaw(
+  cfg: CopyTraderConfig,
+  mint: string,
+): Promise<string | null> {
   const owner = signer(cfg).publicKey.toBase58();
   const rows = await rpcCall<unknown>(
     cfg.rpcUrl,
