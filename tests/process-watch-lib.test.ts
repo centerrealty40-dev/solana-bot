@@ -24,12 +24,9 @@ describe('process-watch-lib', () => {
     expect(r.ok).toBe(false);
   });
 
-  it('default targets are funded 8zkg only (Oscar lane off)', () => {
+  it('default targets are mild-dip only (8zkg twins retired)', () => {
     const t = defaultStrategyWatchTargets('/opt/solana-alpha');
-    expect(t.map((x) => x.pm2)).toEqual([
-      'copy-trader-8zkg',
-      'copy-trader-8zkg-mirror',
-    ]);
+    expect(t.map((x) => x.pm2)).toEqual(['mild-dip-bot']);
   });
 
   it('assessLiveOscarProcessSingleton rejects duplicate and wrong user', () => {

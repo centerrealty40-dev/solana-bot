@@ -6,9 +6,9 @@ import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 
+/** 1.11.685 — Oscar trading = mild-dip only (8zkg twins retired). */
 export const STRATEGY_KEEPALIVE_APPS = [
-  'copy-trader-8zkg',
-  'copy-trader-8zkg-mirror',
+  'mild-dip-bot',
   'strategy-process-watch',
 ];
 
