@@ -2847,12 +2847,26 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '2400000',
-        MILD_DIP_SCAN_INTERVAL_MS: '30000',
-        MILD_DIP_MARK_INTERVAL_MS: '10000',
+        /** Faster discovery with smaller open book after never-arm max-hold. */
+        MILD_DIP_SCAN_INTERVAL_MS: '15000',
+        /** Trail mark cadence; shared Dex gate + cache TTL keep HTTP load bounded. */
+        MILD_DIP_MARK_INTERVAL_MS: '5000',
+        /** Reuse Dex quote within TTL (no bypassCache hammer on Oscar gate). */
+        MILD_DIP_MARK_CACHE_TTL_MS: '5000',
         /** Parallel Dex marks — keeps ~50 opens within one mark interval. */
         MILD_DIP_MARK_CONCURRENCY: '16',
         /** Parallel Jupiter sells (do not starve mark loop). */
         MILD_DIP_SELL_CONCURRENCY: '2',
+        /**
+         * Telegram ALERT [MILD_DIP_DEX] when mark pass is slow / opens high /
+         * null-ratio high — signal to move mild-dip to the idle VPS.
+         */
+        MILD_DIP_LOAD_ALERT: '1',
+        MILD_DIP_LOAD_ALERT_MARK_PASS_MS: '20000',
+        MILD_DIP_LOAD_ALERT_OPEN_COUNT: '35',
+        MILD_DIP_LOAD_ALERT_NULL_RATIO: '0.4',
+        MILD_DIP_LOAD_ALERT_COOLDOWN_MS: '1800000',
+        TELEGRAM_COOLDOWN_ALERT_MILD_DIP_DEX_MS: '1800000',
         /** After close/skip — allow rebuy same mint in 5m (was 1h). */
         MILD_DIP_MINT_COOLDOWN_MS: '300000',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */

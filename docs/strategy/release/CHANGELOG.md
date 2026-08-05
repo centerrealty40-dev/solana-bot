@@ -1,4 +1,23 @@
 # So
+## [1.11.684] — 2026-08-05
+
+**Тег:** `sa-1.11.684`
+
+### Change: mild-dip Dex cache + scan 15s + load Telegram alert
+
+- Mark: stop `bypassCache` hammer; `MILD_DIP_MARK_CACHE_TTL_MS=5000` reuses
+  shared Dex quote cache (Oscar gate ~42 RPM shared with copy-trader)
+- Mark interval default **5s**; scan default **15s**; mark loop respects interval
+  (removed `|| openCount>0` every-tick mark)
+- Load warn → journal `mild_dip_dex_load_warn` + Telegram `[ALERT][MILD_DIP_DEX]`
+  when mark pass slow / open≥35 / null-ratio high (cooldown 30m)
+- Heartbeat exposes `lastMarkPassMs` / mark ok-null counts
+- If alerts persist → move `mild-dip-bot` to idle VPS (own Dex IP)
+
+**Откат:** restore prior scan/mark envs; `MILD_DIP_LOAD_ALERT=0`; reload bot.
+
+---
+
 ## [1.11.683] — 2026-08-05
 
 **Тег:** `sa-1.11.683`

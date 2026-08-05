@@ -9,6 +9,7 @@ import type { MildDipConfig } from './config.js';
 import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
+import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   applyMarkDecisionToPosition,
   decideMarkExit,
@@ -34,11 +35,26 @@ const MIN_CLIP_USD = 1;
 /** Raw units below this are dust — ignore for rebuy/adopt. */
 const HOLDING_DUST_RAW = 1000n;
 
+export type MildDipLoopStats = {
+  open: number;
+  lastScanAtMs: number | null;
+  lastMarkAtMs: number | null;
+  lastMarkPassMs: number | null;
+  lastMarkedOk: number | null;
+  lastMarkedNull: number | null;
+  mode: string;
+  hotMints: number;
+  stream: boolean;
+};
+
 /**
  * In-flight sells — mint stays in `state.open` until sell settles so a restart
  * or concurrent mark pass cannot orphan / double-buy the bag.
  */
 const sellInFlight = new Set<string>();
+
+/** Live loop stats pointer for mark-pass telemetry (set in runMildDipLoop). */
+let loopStatsRef: MildDipLoopStats | null = null;
 
 function openCount(state: MildDipState): number {
   return Object.keys(state.open).length;
@@ -49,8 +65,18 @@ function onCooldown(state: MildDipState, mint: string, nowMs: number): boolean {
   return until > nowMs;
 }
 
-async function markPriceUsd(mint: string, nowMs: number): Promise<number | null> {
-  const details = await fetchDexScreenerPairDetails(mint, { bypassCache: true, nowMs });
+async function markPriceUsd(
+  mint: string,
+  nowMs: number,
+  cacheTtlMs: number,
+): Promise<number | null> {
+  const details = await fetchDexScreenerPairDetails(mint, {
+    nowMs,
+    // 0 = always HTTP (legacy bypass). >0 reuses shared Dex cache within TTL.
+    ...(cacheTtlMs > 0
+      ? { cacheTtlMs, bypassCache: false }
+      : { bypassCache: true }),
+  });
   const px = details?.priceUsd;
   return px != null && px > 0 ? px : null;
 }
@@ -416,10 +442,18 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
   const ordered = orderMintsForMark(state.open).filter((m) => !sellInFlight.has(m));
   if (ordered.length === 0) return;
 
+  const markStarted = Date.now();
   const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
-    const px = await markPriceUsd(mint, nowMs);
+    const px = await markPriceUsd(mint, nowMs, cfg.markCacheTtlMs);
     return { mint, px };
   });
+  const markPassMs = Date.now() - markStarted;
+  let markedOk = 0;
+  let markedNull = 0;
+  for (const row of markRows) {
+    if (row.px == null) markedNull += 1;
+    else markedOk += 1;
+  }
 
   const toSell: MarkExitDecision[] = [];
   for (const { mint, px } of markRows) {
@@ -461,6 +495,40 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
   // lose trail state or drop mints from `open`.
   saveMildDipState(cfg.statePath, state);
 
+  const loadStats = {
+    openCount: openCount(state),
+    markPassMs,
+    markedOk,
+    markedNull,
+    markIntervalMs: cfg.markIntervalMs,
+    markCacheTtlMs: cfg.markCacheTtlMs,
+  };
+  if (loopStatsRef) {
+    loopStatsRef.lastMarkPassMs = markPassMs;
+    loopStatsRef.lastMarkedOk = markedOk;
+    loopStatsRef.lastMarkedNull = markedNull;
+  }
+
+  const loadResult = await maybeAlertMildDipDexLoad({
+    stats: loadStats,
+    gates: {
+      markPassWarnMs: cfg.loadAlertMarkPassMs,
+      openWarnCount: cfg.loadAlertOpenCount,
+      nullRatioWarn: cfg.loadAlertNullRatio,
+    },
+    cooldownMs: cfg.loadAlertCooldownMs,
+    enabled: cfg.loadAlertEnabled,
+    nowMs,
+  });
+  if (loadResult.overloaded) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_dex_load_warn',
+      ...loadStats,
+      reasons: loadResult.reasons,
+      alerted: loadResult.alerted,
+    });
+  }
+
   if (toSell.length === 0) return;
 
   await mapPool(toSell, cfg.sellConcurrency, async (decision) => {
@@ -475,15 +543,6 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
   });
 }
 
-export type MildDipLoopStats = {
-  open: number;
-  lastScanAtMs: number | null;
-  lastMarkAtMs: number | null;
-  mode: string;
-  hotMints: number;
-  stream: boolean;
-};
-
 export async function runMildDipLoop(
   cfg: MildDipConfig,
   opts?: { once?: boolean; signal?: AbortSignal },
@@ -493,10 +552,14 @@ export async function runMildDipLoop(
     open: openCount(state),
     lastScanAtMs: null,
     lastMarkAtMs: null,
+    lastMarkPassMs: null,
+    lastMarkedOk: null,
+    lastMarkedNull: null,
     mode: cfg.executionMode,
     hotMints: 0,
     stream: false,
   };
+  loopStatsRef = stats;
 
   let streamHandle: { stop: () => void } | null = null;
   if (cfg.streamEnabled) {
@@ -512,7 +575,9 @@ export async function runMildDipLoop(
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
+      `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
+      `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
@@ -529,7 +594,8 @@ export async function runMildDipLoop(
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
 
-    if (nowMs - lastMark >= cfg.markIntervalMs || openCount(state) > 0) {
+    // Respect markInterval (previously `|| openCount>0` hammered Dex every tick).
+    if (openCount(state) > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
       await tryExits(cfg, state, nowMs);
       lastMark = nowMs;
       stats.lastMarkAtMs = nowMs;
@@ -547,14 +613,18 @@ export async function runMildDipLoop(
     stats.hotMints = mildDipHotMints.size(nowMs);
   };
 
+  // Expose stats for heartbeat via closure property (compat) + module ref.
+  (runMildDipLoop as { __stats?: MildDipLoopStats }).__stats = stats;
+
   if (opts?.once) {
-    await tick();
-    streamHandle?.stop();
+    try {
+      await tick();
+    } finally {
+      streamHandle?.stop();
+      if (loopStatsRef === stats) loopStatsRef = null;
+    }
     return;
   }
-
-  // Expose stats for heartbeat via closure property.
-  (runMildDipLoop as { __stats?: MildDipLoopStats }).__stats = stats;
 
   const onAbort = (): void => {
     streamHandle?.stop();
@@ -562,22 +632,26 @@ export async function runMildDipLoop(
   };
   opts?.signal?.addEventListener('abort', onAbort, { once: true });
 
-  for (;;) {
-    if (opts?.signal?.aborted) break;
-    try {
-      await tick();
-    } catch (err) {
-      console.error('[mild-dip] tick error', err);
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_tick_error',
-        error: err instanceof Error ? err.message : String(err),
-      });
+  try {
+    for (;;) {
+      if (opts?.signal?.aborted) break;
+      try {
+        await tick();
+      } catch (err) {
+        console.error('[mild-dip] tick error', err);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_tick_error',
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      await sleep(Math.min(cfg.markIntervalMs, 5_000));
     }
-    await sleep(Math.min(cfg.markIntervalMs, 5_000));
+  } finally {
+    streamHandle?.stop();
+    if (loopStatsRef === stats) loopStatsRef = null;
   }
-  streamHandle?.stop();
 }
 
 export function mildDipLoopStats(): MildDipLoopStats | null {
-  return (runMildDipLoop as { __stats?: MildDipLoopStats }).__stats ?? null;
+  return loopStatsRef ?? (runMildDipLoop as { __stats?: MildDipLoopStats }).__stats ?? null;
 }
