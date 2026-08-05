@@ -2841,6 +2841,10 @@ const PM2_APPS = [
         MILD_DIP_MINT_COOLDOWN_MS: '3600000',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
         MILD_DIP_SLIPPAGE_BPS: '500',
+        /** Abort if mark/quote already bounced >4% off the dip signal (LARP green-candle chase). */
+        MILD_DIP_PREBUY_REVALIDATE: '1',
+        MILD_DIP_MAX_CHASE_PCT: '4',
+        LIVE_BUY_MAX_CHASE_PCT: '4',
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',

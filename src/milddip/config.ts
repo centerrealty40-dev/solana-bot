@@ -36,6 +36,13 @@ const MildDipConfigSchema = z.object({
   streamWsUrl: z.string().optional(),
   /** Hard skip — stables / junk mints (comma-separated env). */
   deniedMints: z.array(z.string()).default([]),
+  /**
+   * Fresh DexScreener check immediately before send — skip if pc5m left the
+   * band or price bounced above the signal by more than maxChasePct.
+   */
+  preBuyRevalidate: z.boolean().default(true),
+  /** Max % mark can rise vs signal price before abort (0 = chase check off). */
+  maxChasePct: z.coerce.number().min(0).max(50).default(4),
   entry: z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
@@ -125,6 +132,12 @@ export function loadMildDipConfig(): MildDipConfig {
     })(),
     streamWsUrl: process.env.MILD_DIP_STREAM_WS_URL?.trim() || undefined,
     deniedMints,
+    preBuyRevalidate: (() => {
+      const v = process.env.MILD_DIP_PREBUY_REVALIDATE?.trim().toLowerCase();
+      if (!v) return true;
+      return v === '1' || v === 'true' || v === 'yes';
+    })(),
+    maxChasePct: process.env.MILD_DIP_MAX_CHASE_PCT ?? 4,
     entry,
     exit,
   };

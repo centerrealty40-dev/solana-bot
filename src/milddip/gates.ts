@@ -101,6 +101,50 @@ export function evaluateMildDipEntry(
   return { pass: reasons.length === 0, reasons };
 }
 
+/**
+ * Immediate pre-send check: DexScreener snapshot can go stale while we enrich
+ * dozens of mints / wait on funding RPC. Abort if the 5m dip is gone or the
+ * mark already bounced above the signal price by more than `maxChasePct`.
+ */
+export function evaluateMildDipPreBuy(args: {
+  signalPriceUsd: number;
+  freshPriceUsd: number | null;
+  freshPc5mPct: number | null;
+  entryGates: Pick<MildDipEntryGates, 'minDipPct' | 'maxDipPct'>;
+  /** 0 = chase check off (pc5m revalidate still runs). */
+  maxChasePct: number;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const { signalPriceUsd, freshPriceUsd, freshPc5mPct, entryGates, maxChasePct } = args;
+
+  if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
+    reasons.push('prebuy_missing_price');
+  }
+
+  const pc = freshPc5mPct;
+  if (pc == null || !Number.isFinite(pc)) {
+    reasons.push('prebuy_missing_pc5m');
+  } else if (!(pc > entryGates.minDipPct && pc <= entryGates.maxDipPct)) {
+    reasons.push(
+      `prebuy_pc5m=${pc.toFixed(2)}_outside_(${entryGates.minDipPct},${entryGates.maxDipPct}]`,
+    );
+  }
+
+  if (
+    maxChasePct > 0 &&
+    signalPriceUsd > 0 &&
+    freshPriceUsd != null &&
+    freshPriceUsd > 0
+  ) {
+    const chasePct = (freshPriceUsd / signalPriceUsd - 1) * 100;
+    if (chasePct > maxChasePct) {
+      reasons.push(`prebuy_chase=${chasePct.toFixed(2)}%>max=${maxChasePct}`);
+    }
+  }
+
+  return { pass: reasons.length === 0, reasons };
+}
+
 export type MildDipExitReason = 'take_profit' | 'time_stop' | null;
 
 export function evaluateMildDipExit(args: {
