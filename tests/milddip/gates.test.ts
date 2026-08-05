@@ -22,6 +22,8 @@ const baseGates: MildDipEntryGates = {
 const exitGates: MildDipExitGates = {
   armPct: 8,
   givebackPct: 6,
+  neverArmPatienceMs: 300_000,
+  neverArmMaxHoldMs: 1_200_000,
 };
 
 describe('evaluateMildDipEntry', () => {
@@ -201,17 +203,47 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.pnlPct).toBeLessThan(0);
   });
 
-  it('no arm on deep dump: entry 100 → mark 90, peak never ≥ 108', () => {
+  it('no arm on deep dump before patience: entry 100 → mark 90', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 90,
       peakPriceUsd: 100,
       armed: false,
       gates: exitGates,
+      heldMs: 60_000,
     });
     expect(v.armed).toBe(false);
     expect(v.shouldExit).toBe(false);
     expect(v.reason).toBeNull();
+  });
+
+  it('never-arm giveback after patience: same −6% from sub-arm peak', () => {
+    // peak 104 (+4% < arm 8), mark 97.76 (−6% of 104), held 5m
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 97.76,
+      peakPriceUsd: 104,
+      armed: false,
+      gates: exitGates,
+      heldMs: 300_000,
+    });
+    expect(v.armed).toBe(false);
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_giveback');
+  });
+
+  it('never-arm timeout at max hold if still unarmed', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 103,
+      peakPriceUsd: 105,
+      armed: false,
+      gates: exitGates,
+      heldMs: 1_200_000,
+    });
+    expect(v.armed).toBe(false);
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_timeout');
   });
 
   it('peak updates: giveback measured from 120 not 110', () => {
@@ -268,16 +300,35 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('no SL-from-entry: mark 85 with tiny peak 102 stays unarmed / no exit', () => {
+  it('no SL-from-entry before patience: mark 85 with tiny peak 102 holds', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 85,
       peakPriceUsd: 102,
       armed: false,
       gates: exitGates,
+      heldMs: 60_000,
     });
-    // MFE only +2% < arm 8 → not armed, deep dump does not exit
+    // MFE only +2% < arm 8 → not armed; early dump is not an entry-SL
     expect(v.armed).toBe(false);
+    expect(v.shouldExit).toBe(false);
+  });
+
+  it('never-arm exits disabled when patience/maxHold are 0', () => {
+    const gates: MildDipExitGates = {
+      armPct: 8,
+      givebackPct: 6,
+      neverArmPatienceMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 85,
+      peakPriceUsd: 102,
+      armed: false,
+      gates,
+      heldMs: 3_600_000,
+    });
     expect(v.shouldExit).toBe(false);
   });
 });

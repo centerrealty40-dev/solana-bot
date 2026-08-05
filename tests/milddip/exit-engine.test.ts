@@ -35,11 +35,28 @@ describe('orderMintsForMark', () => {
 });
 
 describe('decideMarkExit / applyMarkDecisionToPosition', () => {
-  const gates = { armPct: 8, givebackPct: 6 };
+  const gates = {
+    armPct: 8,
+    givebackPct: 6,
+    neverArmPatienceMs: 300_000,
+    neverArmMaxHoldMs: 1_200_000,
+  };
 
   it('updates peak and arms without exiting', () => {
-    const p = pos({ mint: 'm1', entryPriceUsd: 100, peakPriceUsd: 100, trailArmed: false });
-    const d = decideMarkExit({ mint: 'm1', pos: p, markPriceUsd: 110, gates });
+    const p = pos({
+      mint: 'm1',
+      entryPriceUsd: 100,
+      peakPriceUsd: 100,
+      trailArmed: false,
+      openedAtMs: 1_000_000,
+    });
+    const d = decideMarkExit({
+      mint: 'm1',
+      pos: p,
+      markPriceUsd: 110,
+      gates,
+      nowMs: 1_060_000,
+    });
     expect(d).not.toBeNull();
     expect(d!.armed).toBe(true);
     expect(d!.justArmed).toBe(true);
@@ -55,14 +72,41 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       entryPriceUsd: 100,
       peakPriceUsd: 108,
       trailArmed: true,
+      openedAtMs: 1_000_000,
     });
-    const d = decideMarkExit({ mint: 'm2', pos: p, markPriceUsd: 101.52, gates });
+    const d = decideMarkExit({
+      mint: 'm2',
+      pos: p,
+      markPriceUsd: 101.52,
+      gates,
+      nowMs: 1_060_000,
+    });
     expect(d?.shouldExit).toBe(true);
     expect(d?.reason).toBe('peak_giveback');
     applyMarkDecisionToPosition(p, d!);
     // Still "open" until sell confirms — we only mutate trail fields here.
     expect(p.peakPriceUsd).toBe(108);
     expect(p.trailArmed).toBe(true);
+  });
+
+  it('queues never-arm giveback after patience', () => {
+    const openedAtMs = 1_000_000;
+    const p = pos({
+      mint: 'm4',
+      entryPriceUsd: 100,
+      peakPriceUsd: 104,
+      trailArmed: false,
+      openedAtMs,
+    });
+    const d = decideMarkExit({
+      mint: 'm4',
+      pos: p,
+      markPriceUsd: 97.76,
+      gates,
+      nowMs: openedAtMs + 300_000,
+    });
+    expect(d?.shouldExit).toBe(true);
+    expect(d?.reason).toBe('never_arm_giveback');
   });
 
   it('returns null for non-positive mark (keep tracking)', () => {

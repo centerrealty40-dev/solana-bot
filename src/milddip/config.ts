@@ -63,6 +63,10 @@ const MildDipConfigSchema = z.object({
     armPct: z.number(),
     /** W9.1: exit when giveback from peak ≤ −givebackPct. */
     givebackPct: z.number(),
+    /** Never-armed: allow same giveback after this many ms (0=off). */
+    neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
+    /** Never-armed: force exit after this many ms (0=off). */
+    neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(1_200_000),
   }),
 });
 
@@ -110,10 +114,15 @@ export function loadMildDipConfig(): MildDipConfig {
     .filter((s) => s.length >= 32);
   const deniedMints = [...new Set([...defaultDenied, ...deniedExtra])];
 
-  /** W9.1 peak-giveback — no time-stop / SL-from-entry / hard TP. */
+  /**
+   * W9.1 peak-giveback + never-armed dead-trade (leaders 8zkg/7BNax).
+   * No SL% from entry / hard TP.
+   */
   const exit: MildDipExitGates = {
     armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 8),
     givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
+    neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 300_000),
+    neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 1_200_000),
   };
 
   const raw = {

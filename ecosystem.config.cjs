@@ -2836,9 +2836,17 @@ const PM2_APPS = [
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
-        /** W9.1 peak-giveback: arm at +8% MFE, full exit on −6% from peak. No TP/time-stop/SL. */
+        /** W9.1 peak-giveback: arm at +8% MFE, full exit on −6% from peak. */
         MILD_DIP_EXIT_ARM_PCT: '8',
         MILD_DIP_EXIT_GIVEBACK_PCT: '6',
+        /**
+         * Never-armed (leaders 8zkg/7BNax mild-dip dumps):
+         * after 5m still unarmed → same −6% giveback from sub-arm peak;
+         * after 20m still unarmed → force exit (8zkg never-arm hold median ~18m).
+         * Not SL% from entry.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '300000',
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '1200000',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
         /** Parallel Dex marks — keeps ~50 opens within one mark interval. */
