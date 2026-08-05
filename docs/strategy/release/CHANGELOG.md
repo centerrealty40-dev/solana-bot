@@ -1,4 +1,21 @@
 # So
+## [1.11.681] — 2026-08-05
+
+**Тег:** `sa-1.11.681`
+
+### Change: mild-dip parallel mark + sell queue (no orphan on fail)
+
+- Mark pass: DexScreener prices fetched with `MILD_DIP_MARK_CONCURRENCY` (default 16),
+  armed positions first
+- Peak/arm persisted for all opens **before** any sell
+- Sells run in a limited queue (`MILD_DIP_SELL_CONCURRENCY` default 2); mint stays in
+  `state.open` until confirmed sell / empty-bag drop — soft sell fails keep tracking
+- In-flight sells skipped on subsequent mark passes (no double-sell)
+
+**Откат:** revert `loop.ts` / `exit-engine.ts` + reload `mild-dip-bot`.
+
+---
+
 ## [1.11.680] — 2026-08-05
 
 **Тег:** `sa-1.11.680`

@@ -25,6 +25,10 @@ const MildDipConfigSchema = z.object({
   maxOpenPositions: z.coerce.number().int().min(0).max(500).default(0),
   scanIntervalMs: z.coerce.number().int().min(5_000).max(600_000).default(30_000),
   markIntervalMs: z.coerce.number().int().min(2_000).max(120_000).default(10_000),
+  /** Parallel DexScreener marks per exit pass (50 opens ≈ fine at 16–20). */
+  markConcurrency: z.coerce.number().int().min(1).max(64).default(16),
+  /** Parallel Jupiter sells; keep low — swaps are heavy / rate-limited. */
+  sellConcurrency: z.coerce.number().int().min(1).max(8).default(2),
   mintCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(3_600_000),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(150),
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
@@ -124,6 +128,8 @@ export function loadMildDipConfig(): MildDipConfig {
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 30_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 10_000,
+    markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 16,
+    sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 2,
     mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 300_000,
     slippageBps: process.env.MILD_DIP_SLIPPAGE_BPS ?? 150,
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
