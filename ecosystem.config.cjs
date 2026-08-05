@@ -2486,8 +2486,11 @@ const PM2_APPS = [
         COPY_TRADER_LEADER_STREAM_POLL_BACKUP_MS: '1500',
         /** Watchdog: if stream dies / misses poll, keep 1.5s poll + reconnect. */
         COPY_TRADER_LEADER_STREAM_FAST_POLL_MS: '1500',
-        /** First poll miss while stream silent → fast path (was 5 × 5s = 25s). */
-        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '1',
+        /**
+         * 1.11.678 — was 1; single poll/stream race permanently killed
+         * transactionSubscribe via silent_stream → logsSubscribe lock-in.
+         */
+        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '3',
         COPY_TRADER_LEADER_INGRESS_CONCURRENCY: '4',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
         ...(HELIUS_RPC_URL_PM2
@@ -2660,12 +2663,12 @@ const PM2_APPS = [
         COPY_TRADER_SHADOW_SELECT_SUMMARY_MS: '600000',
         /** His sell is the only exit: no trail, no time cap, no stop. */
         COPY_TRADER_EXIT_MODE: 'mirror',
-        /** Same Helius stream as FxQf — 1.11.669: missThreshold 1 + silent-stream reconnect. */
+        /** Same Helius stream as FxQf — 1.11.678: missThreshold 3, no permanent logs lock-in. */
         COPY_TRADER_POLL_INTERVAL_MS: '1500',
         COPY_TRADER_LEADER_STREAM: '1',
         COPY_TRADER_LEADER_STREAM_POLL_BACKUP_MS: '1500',
         COPY_TRADER_LEADER_STREAM_FAST_POLL_MS: '1500',
-        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '1',
+        COPY_TRADER_LEADER_STREAM_MISS_THRESHOLD: '3',
         COPY_TRADER_LEADER_INGRESS_CONCURRENCY: '4',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
         ...(HELIUS_RPC_URL_PM2
