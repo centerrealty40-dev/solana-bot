@@ -8,7 +8,7 @@ import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-
 import type { MildDipConfig } from './config.js';
 import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
-import { evaluateMildDipExit } from './gates.js';
+import { evaluateMildDipExit, evaluateMildDipPreBuy } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
 import {
   appendMildDipJournal,
@@ -150,23 +150,63 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       break;
     }
 
+    // Re-check right before send — enrich can be tens of seconds stale.
+    let entryPriceUsd = c.priceUsd;
+    let entryPc5m = c.metrics.priceChange5mPct;
+    if (cfg.preBuyRevalidate) {
+      const freshNow = Date.now();
+      const fresh = await fetchDexScreenerPairDetails(c.mint, {
+        bypassCache: true,
+        nowMs: freshNow,
+      });
+      const freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
+      const freshPc = fresh?.priceChangeM5Pct ?? null;
+      const pre = evaluateMildDipPreBuy({
+        signalPriceUsd: c.priceUsd,
+        freshPriceUsd: freshPx,
+        freshPc5mPct: freshPc,
+        entryGates: cfg.entry,
+        maxChasePct: cfg.maxChasePct,
+      });
+      if (!pre.pass) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_prebuy_skip',
+          mint: c.mint,
+          symbol: c.symbol,
+          signalPriceUsd: c.priceUsd,
+          signalPc5m: c.metrics.priceChange5mPct,
+          freshPriceUsd: freshPx,
+          freshPc5m: freshPc,
+          reasons: pre.reasons,
+        });
+        console.log(
+          `[mild-dip] SKIP prebuy ${c.symbol} mint=${c.mint.slice(0, 8)}… ${pre.reasons.join(',')}`,
+        );
+        state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+        continue;
+      }
+      if (freshPx != null) entryPriceUsd = freshPx;
+      if (freshPc != null) entryPc5m = freshPc;
+    }
+
     const leaderSig = `milddip_${c.mint.slice(0, 8)}_${nowMs}`;
     const buy = await executeCopyBuy({
       cfg: copyCfg,
       mint: c.mint,
       symbol: c.symbol,
-      priceUsd: c.priceUsd,
+      priceUsd: entryPriceUsd,
       sizeUsd: sized.sizeUsd,
       kind: 'entry',
       evalResult: {
         pass: true,
         reasons: [
-          `mild_dip_pc5m=${c.metrics.priceChange5mPct?.toFixed(2) ?? 'n/a'}`,
+          `mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
         ],
-        score: Math.abs(c.metrics.priceChange5mPct ?? 0),
+        score: Math.abs(entryPc5m ?? 0),
       },
       leaderSignature: leaderSig,
-      leaderPriceUsd: 0,
+      // Anchor for Jupiter quote premium guard — abort mid-retry green chase.
+      leaderPriceUsd: entryPriceUsd,
       leaderBuyTs: nowMs,
     });
 
@@ -175,8 +215,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       mint: c.mint,
       symbol: c.symbol,
       sizeUsd: sized.sizeUsd,
-      priceUsd: buy.priceUsd || c.priceUsd,
-      pc5m: c.metrics.priceChange5mPct,
+      priceUsd: buy.priceUsd || entryPriceUsd,
+      signalPriceUsd: c.priceUsd,
+      pc5m: entryPc5m,
+      signalPc5m: c.metrics.priceChange5mPct,
       ok: buy.ok,
       reason: buy.reason ?? null,
       signature: buy.signature ?? null,
@@ -195,11 +237,11 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     state.open[c.mint] = {
       mint: c.mint,
       symbol: c.symbol,
-      entryPriceUsd: buy.priceUsd || c.priceUsd,
+      entryPriceUsd: buy.priceUsd || entryPriceUsd,
       sizeUsd: sized.sizeUsd,
       tokenRaw: filledRaw ?? buy.tokenRaw ?? null,
       openedAtMs: nowMs,
-      entryPc5mPct: c.metrics.priceChange5mPct,
+      entryPc5mPct: entryPc5m,
       buySignature: buy.signature ?? null,
     };
     // Persist immediately — a restart before the tick-end save used to allow a rebuy.
@@ -207,8 +249,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     filled += 1;
     resetCopyFundingCache();
     console.log(
-      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd} pc5m=${c.metrics.priceChange5mPct?.toFixed(1)} @$${
-        (buy.priceUsd || c.priceUsd).toPrecision(4)
+      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd} pc5m=${entryPc5m?.toFixed(1)} @$${
+        (buy.priceUsd || entryPriceUsd).toPrecision(4)
       } mode=${cfg.executionMode}`,
     );
   }
@@ -307,6 +349,7 @@ export async function runMildDipLoop(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] tp=${cfg.exit.tpGainPct}% ` +
       `timeStopMs=${cfg.exit.timeStopMs} stream=${stats.stream} ` +
+      `prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
       `sources=${cfg.discoverSources} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 

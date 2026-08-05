@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateMildDipEntry,
   evaluateMildDipExit,
+  evaluateMildDipPreBuy,
   type MildDipEntryGates,
 } from '../../src/milddip/gates.js';
 
@@ -81,6 +82,56 @@ describe('evaluateMildDipEntry', () => {
   });
 });
 
+describe('evaluateMildDipPreBuy', () => {
+  const band = { minDipPct: -20, maxDipPct: 0 };
+
+  it('passes when still in dip and mark not chasing', () => {
+    const v = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 1.02,
+      freshPc5mPct: -8,
+      entryGates: band,
+      maxChasePct: 4,
+    });
+    expect(v.pass).toBe(true);
+  });
+
+  it('rejects green candle (pc5m > 0) after stale signal', () => {
+    const v = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 1.01,
+      freshPc5mPct: 2.5,
+      entryGates: band,
+      maxChasePct: 4,
+    });
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.includes('prebuy_pc5m'))).toBe(true);
+  });
+
+  it('rejects bounce above maxChasePct even if pc5m still red', () => {
+    const v = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 1.06,
+      freshPc5mPct: -5,
+      entryGates: band,
+      maxChasePct: 4,
+    });
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.includes('prebuy_chase'))).toBe(true);
+  });
+
+  it('allows chase check off when maxChasePct=0', () => {
+    const v = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 1.2,
+      freshPc5mPct: -3,
+      entryGates: band,
+      maxChasePct: 0,
+    });
+    expect(v.pass).toBe(true);
+  });
+});
+
 describe('evaluateMildDipExit', () => {
   it('takes profit at +10%', () => {
     const v = evaluateMildDipExit({
@@ -88,7 +139,7 @@ describe('evaluateMildDipExit', () => {
       markPriceUsd: 1.1,
       openedAtMs: 0,
       nowMs: 60_000,
-      gates: { tpGainPct: 10, timeStopMs: 360_000 },
+      gates: { tpGainPct: 10, timeStopMs: 900_000 },
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('take_profit');
@@ -99,8 +150,8 @@ describe('evaluateMildDipExit', () => {
       entryPriceUsd: 1,
       markPriceUsd: 1.02,
       openedAtMs: 0,
-      nowMs: 360_000,
-      gates: { tpGainPct: 10, timeStopMs: 360_000 },
+      nowMs: 900_000,
+      gates: { tpGainPct: 10, timeStopMs: 900_000 },
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('time_stop');
@@ -111,8 +162,8 @@ describe('evaluateMildDipExit', () => {
       entryPriceUsd: 1,
       markPriceUsd: 1.02,
       openedAtMs: 0,
-      nowMs: 60_000,
-      gates: { tpGainPct: 10, timeStopMs: 360_000 },
+      nowMs: 360_000,
+      gates: { tpGainPct: 10, timeStopMs: 900_000 },
     });
     expect(v.shouldExit).toBe(false);
     expect(v.reason).toBeNull();
