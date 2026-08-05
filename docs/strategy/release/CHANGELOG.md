@@ -1,11 +1,28 @@
 # So
+## [1.11.680] — 2026-08-05
+
+**Тег:** `sa-1.11.680`
+
+### Change: twin sizing — 50% leader, floor $100, ceiling $500
+
+Operator: both `copy-trader-8zkg` + mirror:
+
+- `INITIAL_MIRROR_RATIO=0.5`
+- `MIN_MIRROR_ENTRY_USD=100`
+- `MAX_POSITION_USD=500`
+- Fixed mcap clips off (`ENTRY_LOW*_MAX=0`)
+
+**Откат:** ratio `0.8`, floor `200`, max `700`, restore prior LOW bands.
+
+---
+
 ## [1.11.679] — 2026-08-05
 
 **Тег:** `sa-1.11.679`
 
 ### Change: hard vol5m floor $10k on both 8zkg twins
 
-10h RCA: vol5m &lt; $8k was the main realized-loss bucket. Operator: require
+10h RCA: vol5m under $8k was the main realized-loss bucket. Operator: require
 **$10k** 5m volume to buy; unknown or below → skip.
 
 - `COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD=10000` on mcap + mirror

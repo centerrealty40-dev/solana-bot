@@ -2416,37 +2416,35 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — mirror owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * ≥$300k: 80% of leader buy, floor $200, ceiling $700.
-         * Fixed clips (this lane only, 1.11.674):
-         *   $100k–$200k → $50; $200k–$300k → $100.
+         * 1.11.680 — both twins: 50% of leader buy, floor $100, ceiling $500.
+         * Fixed mcap clips off so the mirror rule applies uniformly.
          */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.8',
-        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '200',
-        COPY_TRADER_POSITION_USD: '200',
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
+        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '100',
+        COPY_TRADER_POSITION_USD: '100',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
-        COPY_TRADER_ENTRY_MID_POSITION_USD: '200',
-        COPY_TRADER_ENTRY_MID_LEG_USD: '200',
-        /** Tier-1: mcap ∈ [$100k, $200k) → $50 fixed. */
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '100',
+        /** Fixed bands off (0 max). */
         COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '100000',
-        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '200000',
-        COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
-        /** Tier-2: mcap ∈ [$200k, $300k) → $100 fixed. */
-        COPY_TRADER_ENTRY_LOW2_MCAP_MIN_USD: '200000',
-        COPY_TRADER_ENTRY_LOW2_MCAP_MAX_USD: '300000',
-        COPY_TRADER_ENTRY_LOW2_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '0',
+        COPY_TRADER_ENTRY_LOW_POSITION_USD: '0',
+        COPY_TRADER_ENTRY_LOW2_MCAP_MIN_USD: '0',
+        COPY_TRADER_ENTRY_LOW2_MCAP_MAX_USD: '0',
+        COPY_TRADER_ENTRY_LOW2_POSITION_USD: '0',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '700',
+        COPY_TRADER_MAX_POSITION_USD: '500',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '200',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         /** Allow entry on leader rebuy/average-down even if we missed his first fill. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal A/B vs `copy-trader-8zkg-mirror`:
-         * this lane = **mcap-only** (≥$100k; full size ≥$300k) + **fast** mirror exit.
-         * Twin = vol5m + same mcap/sizing. Shared: pair age ≥0.1h, premium ≤5%.
+         * this lane = mcap (≥$100k) + vol5m≥$10k + **fast** mirror exit.
+         * Twin = same sizing + vol5m. Shared: pair age ≥0.1h, premium ≤5%.
          */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
@@ -2611,31 +2609,29 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — the leader owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * Same sizing as twin: ≥$300k → 80% leader, floor $200, cap $700;
-         * $150k–$300k → $50 stats clip; exits stay fraction-of-holdings mirror.
+         * 1.11.680 — same as mcap twin: 50% leader, floor $100, ceiling $500.
+         * Fixed mcap clips off.
          */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.8',
-        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '200',
-        COPY_TRADER_POSITION_USD: '200',
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
+        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '100',
+        COPY_TRADER_POSITION_USD: '100',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
-        COPY_TRADER_ENTRY_MID_POSITION_USD: '200',
-        COPY_TRADER_ENTRY_MID_LEG_USD: '200',
-        /** Stats tier: same as twin — mcap ∈ [$150k, $300k) → $50. */
+        COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
+        COPY_TRADER_ENTRY_MID_LEG_USD: '100',
         COPY_TRADER_ENTRY_LOW_MCAP_MIN_USD: '150000',
-        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '300000',
-        COPY_TRADER_ENTRY_LOW_POSITION_USD: '50',
+        COPY_TRADER_ENTRY_LOW_MCAP_MAX_USD: '0',
+        COPY_TRADER_ENTRY_LOW_POSITION_USD: '0',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        /** Same ceiling as twin. */
-        COPY_TRADER_MAX_POSITION_USD: '700',
+        COPY_TRADER_MAX_POSITION_USD: '500',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
-        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '200',
+        COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
         /** Same as twin: enter on average-down / rebuy if we missed his open. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
-         * Orthogonal B: vol5m (≥$8k) + same mcap floor/sizing as twin (1.11.665).
+         * Orthogonal B: vol5m (≥$10k) + mcap ≥$150k + same sizing as twin.
          * Missing volume feed fails closed.
          */
         COPY_TRADER_LEADER_GATES: '1',
@@ -2647,7 +2643,7 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_MIN_VOL_TO_MCAP_1H: '0',
         /**
          * 1.11.679 — hard vol5m floor $10k (was $8k + adjacent×3 bypass).
-         * Unknown or &lt; $10k → skip buy (fail closed).
+         * Unknown or below $10k → skip buy (fail closed).
          */
         COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '10000',
         COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS: '0',
