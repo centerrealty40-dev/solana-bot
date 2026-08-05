@@ -2869,14 +2869,19 @@ const PM2_APPS = [
         MILD_DIP_LOAD_ALERT_NULL_RATIO: '0.4',
         MILD_DIP_LOAD_ALERT_COOLDOWN_MS: '1800000',
         TELEGRAM_COOLDOWN_ALERT_MILD_DIP_DEX_MS: '1800000',
-        /** After close/skip — allow rebuy same mint in 5m (was 1h). */
+        /** After winning/flat close — allow rebuy same mint in 5m. */
         MILD_DIP_MINT_COOLDOWN_MS: '300000',
         /**
-         * 1.11.687 — during 5m cooldown keep sampling stream/Dex prices; after
+         * 1.11.688 — after losing exit (pnl &lt; 0) pause 10m so grinding dumps
+         * are not re-entered every 5m cycle.
+         */
+        MILD_DIP_LOSS_COOLDOWN_MS: '600000',
+        /**
+         * 1.11.687 — during cooldown keep sampling stream/Dex prices; after
          * cooldown refuse rebuy if mark bounced >N% off the observed trough.
          */
         MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '6',
-        MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS: '300000',
+        MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS: '600000',
         /** Stream drawdown can satisfy dip band when Dex pc5m lags (liq/mcap still Dex). */
         MILD_DIP_STREAM_DIP_ENTRY: '1',
         MILD_DIP_STREAM_PRICE_SAMPLE: '1',

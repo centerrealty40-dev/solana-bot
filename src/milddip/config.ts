@@ -58,6 +58,11 @@ const MildDipConfigSchema = z.object({
   loadAlertNullRatio: z.coerce.number().min(0.1).max(1).default(0.4),
   loadAlertCooldownMs: z.coerce.number().int().min(60_000).max(86_400_000).default(1_800_000),
   mintCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(3_600_000),
+  /**
+   * After a losing exit (pnl &lt; 0), pause rebuy longer than `mintCooldownMs`
+   * so grinding dumps are not re-entered every 5m. 0 = disable (use base only).
+   */
+  lossCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(150),
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
   /** Candidate mint sources: comma list — stream,boosts,profiles,seed */
@@ -179,6 +184,7 @@ export function loadMildDipConfig(): MildDipConfig {
     loadAlertNullRatio: process.env.MILD_DIP_LOAD_ALERT_NULL_RATIO ?? 0.4,
     loadAlertCooldownMs: process.env.MILD_DIP_LOAD_ALERT_COOLDOWN_MS ?? 1_800_000,
     mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 300_000,
+    lossCooldownMs: process.env.MILD_DIP_LOSS_COOLDOWN_MS ?? 600_000,
     slippageBps: process.env.MILD_DIP_SLIPPAGE_BPS ?? 150,
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
