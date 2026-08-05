@@ -12,7 +12,8 @@ PM2 lane on Oscar VPS, funding in **USDC** via existing Jupiter copy-exec.
 - PM2 app `mild-dip-bot` (autostart false, paper by default)
 - Wallet: `2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc` (live-oscar-micro)
 - Exit: TP +10% or time-stop 6m; clip $5; max 2 open
-- Discovery: DexScreener HTTP (boosts/profiles + pair details) — no PG collectors/stream
+- Discovery: Helius logsSubscribe (pump/pumpswap hot mints) + DexScreener HTTP
+  for pc5m/vol/liq gates — no PG collectors
 
 **Откат:** stop/delete `mild-dip-bot`; revert this tag.
 

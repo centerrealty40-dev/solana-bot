@@ -27,9 +27,12 @@ const MildDipConfigSchema = z.object({
   mintCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(3_600_000),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(150),
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
-  /** Candidate mint sources: comma list — boosts,profiles,seed */
-  discoverSources: z.string().default('boosts,profiles'),
+  /** Candidate mint sources: comma list — stream,boosts,profiles,seed */
+  discoverSources: z.string().default('stream,boosts,profiles'),
   seedMintsPath: z.string().optional(),
+  /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
+  streamEnabled: z.boolean().default(true),
+  streamWsUrl: z.string().optional(),
   entry: z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
@@ -97,8 +100,14 @@ export function loadMildDipConfig(): MildDipConfig {
     mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 3_600_000,
     slippageBps: process.env.MILD_DIP_SLIPPAGE_BPS ?? 150,
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
-    discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'boosts,profiles',
+    discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
+    streamEnabled: (() => {
+      const v = process.env.MILD_DIP_STREAM?.trim().toLowerCase();
+      if (!v) return true;
+      return v === '1' || v === 'true' || v === 'yes';
+    })(),
+    streamWsUrl: process.env.MILD_DIP_STREAM_WS_URL?.trim() || undefined,
     entry,
     exit,
   };

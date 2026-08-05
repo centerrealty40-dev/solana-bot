@@ -34,6 +34,8 @@ async function main(): Promise<void> {
         open: s?.open ?? 0,
         lastScanAtMs: s?.lastScanAtMs ?? null,
         lastMarkAtMs: s?.lastMarkAtMs ?? null,
+        hotMints: s?.hotMints ?? 0,
+        stream: s?.stream ?? false,
         positionUsd: cfg.positionUsd,
         wallet: cfg.walletPubkeyExpected ?? null,
       };

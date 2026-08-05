@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import { evaluateMildDipEntry, type MildDipCandidateMetrics } from './gates.js';
+import { mildDipHotMints } from './hot-mints.js';
 
 export type MildDipCandidate = {
   mint: string;
@@ -77,6 +78,10 @@ export async function collectCandidateMints(cfg: MildDipConfig): Promise<string[
       .filter(Boolean),
   );
   const mints = new Set<string>();
+  // Stream-hot mints first (freshest activity from Helius logsSubscribe).
+  if (sources.has('stream')) {
+    for (const m of mildDipHotMints.list()) mints.add(m);
+  }
   if (sources.has('boosts')) {
     for (const m of await discoverBoostMints()) mints.add(m);
   }

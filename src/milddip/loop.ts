@@ -4,12 +4,14 @@ import type { MildDipConfig } from './config.js';
 import { collectCandidateMints, enrichAndFilterCandidates } from './discover.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
 import { evaluateMildDipExit } from './gates.js';
+import { mildDipHotMints } from './hot-mints.js';
 import {
   appendMildDipJournal,
   loadMildDipState,
   saveMildDipState,
   type MildDipState,
 } from './state.js';
+import { startMildDipHotMintStream } from './stream.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -162,6 +164,8 @@ export type MildDipLoopStats = {
   lastScanAtMs: number | null;
   lastMarkAtMs: number | null;
   mode: string;
+  hotMints: number;
+  stream: boolean;
 };
 
 export async function runMildDipLoop(
@@ -174,12 +178,23 @@ export async function runMildDipLoop(
     lastScanAtMs: null,
     lastMarkAtMs: null,
     mode: cfg.executionMode,
+    hotMints: 0,
+    stream: false,
   };
+
+  let streamHandle: { stop: () => void } | null = null;
+  if (cfg.streamEnabled) {
+    streamHandle = startMildDipHotMintStream({
+      wsUrl: cfg.streamWsUrl || null,
+    });
+    stats.stream = streamHandle != null;
+  }
 
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] tp=${cfg.exit.tpGainPct}% ` +
-      `timeStopMs=${cfg.exit.timeStopMs} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
+      `timeStopMs=${cfg.exit.timeStopMs} stream=${stats.stream} ` +
+      `sources=${cfg.discoverSources} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 
   let lastScan = 0;
@@ -204,15 +219,23 @@ export async function runMildDipLoop(
     }
 
     stats.open = openCount(state);
+    stats.hotMints = mildDipHotMints.size(nowMs);
   };
 
   if (opts?.once) {
     await tick();
+    streamHandle?.stop();
     return;
   }
 
   // Expose stats for heartbeat via closure property.
   (runMildDipLoop as { __stats?: MildDipLoopStats }).__stats = stats;
+
+  const onAbort = (): void => {
+    streamHandle?.stop();
+    streamHandle = null;
+  };
+  opts?.signal?.addEventListener('abort', onAbort, { once: true });
 
   for (;;) {
     if (opts?.signal?.aborted) break;
@@ -227,6 +250,7 @@ export async function runMildDipLoop(
     }
     await sleep(Math.min(cfg.markIntervalMs, 5_000));
   }
+  streamHandle?.stop();
 }
 
 export function mildDipLoopStats(): MildDipLoopStats | null {

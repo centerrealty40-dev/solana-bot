@@ -2793,7 +2793,7 @@ const PM2_APPS = [
     },
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
-     * Recipe: DexScreener pc5m ∈ (−20, 0], clip $30, TP +10% / time-stop 6m.
+     * Recipe: DexScreener pc5m ∈ (−20, 0], clip $5, TP +10% / time-stop 6m.
      * Start after funding: `pm2 start ecosystem.config.cjs --only mild-dip-bot`
      * Flip `MILD_DIP_EXECUTION_MODE=live` once USDC + fee SOL are on the pubkey.
      */
@@ -2839,7 +2839,10 @@ const PM2_APPS = [
         MILD_DIP_MINT_COOLDOWN_MS: '3600000',
         MILD_DIP_SLIPPAGE_BPS: '150',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
-        MILD_DIP_DISCOVER_SOURCES: 'boosts,profiles',
+        MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
+        /** Helius logsSubscribe on pump.fun + PumpSwap → hot mint universe (pc5m still DexScreener). */
+        MILD_DIP_STREAM: '1',
+        ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
         MILD_DIP_JOURNAL_PATH: path.join(root, 'data/milddip/journal.jsonl'),
         MILD_DIP_STATE_PATH: path.join(root, 'data/milddip/state.json'),
         ...LIVE_OSCAR_HELIUS_RPC_ENV,
