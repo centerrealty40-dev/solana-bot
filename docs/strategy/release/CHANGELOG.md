@@ -1,4 +1,26 @@
 # So
+## [1.11.683] — 2026-08-05
+
+**Тег:** `sa-1.11.683`
+
+### Change: scout tier $30 on `copy-trader-8zkg`
+
+When selective gates (vol5m / mcap / liq / flow) reject a leader buy, still
+follow at a fixed **$30** scout clip on **one** bot (`copy-trader-8zkg`).
+Big tier stays $100 when those gates pass. Hard gates unchanged (pair age,
+premium, max-open, shadow live filter).
+
+- `COPY_TRADER_ENTRY_SCOUT_USD=30`
+- `MAX_OPEN_POSITIONS=40` (scout follows almost all leader buys)
+- `FUNDING_PARTIAL_CLIP_MIN_USD=15` (was 50 — blocked $30)
+- Mirror twin: scout **off**
+
+Journal: `leader_buy_scout` + `entryScout=true` on scheduled buys.
+
+**Откат:** `ENTRY_SCOUT_USD=0`, `MAX_OPEN_POSITIONS=8`, funding min `50`.
+
+---
+
 ## [1.11.682] — 2026-08-05
 
 **Тег:** `sa-1.11.682`

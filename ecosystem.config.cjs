@@ -2408,7 +2408,8 @@ const PM2_APPS = [
          */
         COPY_TRADER_FUNDING_PARTIAL_CLIP: '1',
         COPY_TRADER_FUNDING_PARTIAL_CLIP_FRACTION: '0.5',
-        COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '50',
+        /** Below scout clip so $30 entries are not blocked by the $50 legacy floor. */
+        COPY_TRADER_FUNDING_PARTIAL_CLIP_MIN_USD: '15',
         COPY_TRADER_TARGET_WALLET_PATH: path.join(root, 'data/copytrader-8zkg/target-wallet.txt'),
         COPY_TRADER_JOURNAL_PATH: path.join(root, 'data/copytrader-8zkg/journal.jsonl'),
         COPY_TRADER_STATE_PATH: path.join(root, 'data/copytrader-8zkg/state.json'),
@@ -2418,6 +2419,7 @@ const PM2_APPS = [
         /**
          * 1.11.682 — big-tier static entry $100 (not % of leader).
          * Mirror ratio off → entryTargetUsd = POSITION_USD.
+         * 1.11.683 — scout tier $30 when vol/mcap (selective) gates reject.
          */
         COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
         COPY_TRADER_MIN_MIRROR_ENTRY_USD: '0',
@@ -2432,19 +2434,23 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_LOW2_MCAP_MIN_USD: '0',
         COPY_TRADER_ENTRY_LOW2_MCAP_MAX_USD: '0',
         COPY_TRADER_ENTRY_LOW2_POSITION_USD: '0',
+        /** Scout: follow leader at $30 when big-tier selective gates fail. */
+        COPY_TRADER_ENTRY_SCOUT_USD: '30',
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
         COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
-        COPY_TRADER_MAX_OPEN_POSITIONS: '8',
+        /** Scout follows nearly all leader buys — need headroom vs old 8. */
+        COPY_TRADER_MAX_OPEN_POSITIONS: '40',
         /** Allow entry on leader rebuy/average-down even if we missed his first fill. */
         COPY_TRADER_ALLOW_LATE_ENTRY_ON_LEADER_REBUY: '1',
         /**
          * Orthogonal A/B vs `copy-trader-8zkg-mirror`:
          * this lane = mcap (≥$100k) + vol5m≥$10k + **fast** mirror exit.
          * Twin = same sizing + vol5m. Shared: pair age ≥0.1h, premium ≤5%.
+         * Scout $30 bypasses vol/mcap only (this bot).
          */
         COPY_TRADER_LEADER_GATES: '1',
         COPY_TRADER_MIN_LEADER_PRIOR_SESSIONS: '0',
@@ -2456,6 +2462,7 @@ const PM2_APPS = [
         /**
          * 1.11.679 — hard vol5m floor $10k (was 0). Thin books (<$8k) were the
          * main 10h loss driver on this mcap lane. Unknown vol fails closed.
+         * Scout tier still buys rejects at $30 (1.11.683).
          */
         COPY_TRADER_ENTRY_MIN_VOLUME_5M_USD: '10000',
         COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS: '0',

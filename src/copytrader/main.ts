@@ -29,6 +29,7 @@ import {
   usesDipOnlyEntry,
   usesSplitEntryProbe,
 } from './entry-probe.js';
+import { canUseScoutEntryFallback, scoutEntrySizeUsd } from './entry-scout.js';
 import { shouldIgnoreMissedEntryLeaderRebuy } from './entry-late.js';
 import {
   enterOnLeaderAddSizeUsd,
@@ -774,30 +775,49 @@ async function onLeaderBuy(
   }
 
   const gateBlock = await leaderGateBlocksEntry(cfg, state, mint, entryCtx);
+  let scoutFromGates: string[] | null = null;
   if (gateBlock) {
-    appendCopyEvent(cfg, {
-      kind: 'leader_buy_ignored',
-      reason: 'copy_gate',
-      gateReasons: gateBlock.reasons,
-      mint,
-      symbol,
-      leaderSignature: row.signature,
-      leaderBuyUsd: swap.amountUsd,
-      leaderPriorSessions: gateBlock.stats?.sessions ?? 0,
-      leaderPriorAvgPct:
-        gateBlock.stats != null ? Number(gateBlock.stats.avgPct.toFixed(2)) : null,
-      pairAgeHours:
-        gateBlock.ctx?.pairAgeHours != null ? Number(gateBlock.ctx.pairAgeHours.toFixed(2)) : null,
-      buySellRatio5m:
-        gateBlock.ctx?.buySellRatio5m != null
-          ? Number(gateBlock.ctx.buySellRatio5m.toFixed(2))
-          : null,
-      priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
-      marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
-      liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
-      volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
-    });
-    return;
+    if (canUseScoutEntryFallback(cfg, gateBlock.reasons)) {
+      scoutFromGates = gateBlock.reasons;
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_scout',
+        reason: 'copy_gate_scout',
+        gateReasons: gateBlock.reasons,
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        sizeUsd: scoutEntrySizeUsd(cfg),
+        marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
+        liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
+        volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
+        priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
+      });
+    } else {
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_ignored',
+        reason: 'copy_gate',
+        gateReasons: gateBlock.reasons,
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        leaderPriorSessions: gateBlock.stats?.sessions ?? 0,
+        leaderPriorAvgPct:
+          gateBlock.stats != null ? Number(gateBlock.stats.avgPct.toFixed(2)) : null,
+        pairAgeHours:
+          gateBlock.ctx?.pairAgeHours != null ? Number(gateBlock.ctx.pairAgeHours.toFixed(2)) : null,
+        buySellRatio5m:
+          gateBlock.ctx?.buySellRatio5m != null
+            ? Number(gateBlock.ctx.buySellRatio5m.toFixed(2))
+            : null,
+        priceChange5mPct: gateBlock.ctx?.priceChange5mPct ?? null,
+        marketCapUsd: gateBlock.ctx?.marketCapUsd ?? null,
+        liquidityUsd: gateBlock.ctx?.liquidityUsd ?? null,
+        volume5mUsd: gateBlock.ctx?.volume5mUsd ?? null,
+      });
+      return;
+    }
   }
 
   /**
@@ -821,17 +841,62 @@ async function onLeaderBuy(
       structural.push(`liq=${Math.round(liq)}<min=${cfg.minLiquidityUsd}`);
     }
   }
+  let entryScout = scoutFromGates != null;
   if (structural.length > 0) {
-    appendCopyEvent(cfg, {
-      kind: 'leader_buy_ignored',
-      reason: 'copy_gate',
-      gateReasons: structural,
+    const combined = [...(scoutFromGates ?? []), ...structural];
+    if (canUseScoutEntryFallback(cfg, combined)) {
+      entryScout = true;
+      if (!scoutFromGates) {
+        appendCopyEvent(cfg, {
+          kind: 'leader_buy_scout',
+          reason: 'copy_gate_scout',
+          gateReasons: structural,
+          mint,
+          symbol,
+          leaderSignature: row.signature,
+          leaderBuyUsd: swap.amountUsd,
+          sizeUsd: scoutEntrySizeUsd(cfg),
+          marketCapUsd: dexGate?.marketCap ?? null,
+          liquidityUsd: dexGate?.liquidityUsd ?? null,
+        });
+      }
+    } else {
+      appendCopyEvent(cfg, {
+        kind: 'leader_buy_ignored',
+        reason: 'copy_gate',
+        gateReasons: structural,
+        mint,
+        symbol,
+        leaderSignature: row.signature,
+        leaderBuyUsd: swap.amountUsd,
+        marketCapUsd: dexGate?.marketCap ?? null,
+        liquidityUsd: dexGate?.liquidityUsd ?? null,
+      });
+      return;
+    }
+  }
+
+  if (entryScout) {
+    const scoutUsd = scoutEntrySizeUsd(cfg);
+    if (!(scoutUsd > 0)) return;
+    const mcapScout =
+      dexGate?.marketCap && dexGate.marketCap > 0
+        ? dexGate.marketCap
+        : entryCtx?.marketCapUsd && entryCtx.marketCapUsd > 0
+          ? entryCtx.marketCapUsd
+          : undefined;
+    await schedulePendingBuy(cfg, state, {
       mint,
       symbol,
-      leaderSignature: row.signature,
-      leaderBuyUsd: swap.amountUsd,
-      marketCapUsd: dexGate?.marketCap ?? null,
-      liquidityUsd: dexGate?.liquidityUsd ?? null,
+      kind: 'entry',
+      sizeUsd: scoutUsd,
+      entryTargetUsd: scoutUsd,
+      entryMcapUsd: mcapScout,
+      entryScout: true,
+      preLeaderRaw,
+      swap,
+      row,
+      lateEntryOnLeaderRebuy,
     });
     return;
   }
@@ -1080,6 +1145,7 @@ async function schedulePendingBuy(
     entryLeg?: PendingBuy['entryLeg'];
     entryTargetUsd?: number;
     entryMcapUsd?: number;
+    entryScout?: boolean;
     leaderAddFraction?: number;
     preLeaderRaw: bigint;
     swap: SwapInsert;
@@ -1095,6 +1161,7 @@ async function schedulePendingBuy(
     entryLeg,
     entryTargetUsd,
     entryMcapUsd,
+    entryScout,
     leaderAddFraction,
     preLeaderRaw,
     swap,
@@ -1121,6 +1188,7 @@ async function schedulePendingBuy(
     sizeUsd,
     entryTargetUsd,
     entryMcapUsd,
+    entryScout: entryScout === true,
     leaderAddFraction,
     leaderSignature: row.signature,
     leaderPriceUsd: swap.priceUsd,
@@ -1157,6 +1225,7 @@ async function schedulePendingBuy(
     retryUntilTs: pending.retryUntilTs,
     sizeUsd,
     entryLeg: entryLeg ?? null,
+    entryScout: entryScout === true,
     ingressSource: row.ingressSource ?? undefined,
     entryProbeFraction: entryLeg === 'probe' ? cfg.entryProbeFraction : null,
     entryDipDiscountPct: entryLeg === 'dip' ? cfg.entryDipDiscountPct : null,
@@ -1669,6 +1738,7 @@ export async function processPendingBuys(cfg: CopyTraderConfig, state: CopyTrade
       nowMs: now,
       probeEntryPriceUsd:
         isEntryDip && existing?.entryPriceUsd > 0 ? existing.entryPriceUsd : undefined,
+      entryScout: pending.entryScout === true,
     };
     const evalResult =
       pending.kind === 'add'
@@ -2413,6 +2483,7 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
     target: cfg.targetWallet,
     mode: cfg.executionMode,
     entryUsd: cfg.positionUsd,
+    entryScoutUsd: cfg.entryScoutUsd > 0 ? cfg.entryScoutUsd : null,
     initialMirrorRatio: cfg.initialMirrorRatio > 0 ? cfg.initialMirrorRatio : null,
     minMirrorEntryUsd: cfg.minMirrorEntryUsd > 0 ? cfg.minMirrorEntryUsd : null,
     addMirror: 'proportional_to_leader',

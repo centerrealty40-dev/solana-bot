@@ -91,6 +91,11 @@ export type PendingBuy = {
   /** Staged entry target when kind=entry (full $1000 or mid $600). */
   entryTargetUsd?: number;
   entryMcapUsd?: number;
+  /**
+   * Scout tier: selective gates failed; fixed small clip. Skips mcap/liq floors
+   * at eval and must not be resized back to the big tier by syncEntryPendingSizing.
+   */
+  entryScout?: boolean;
   /** Leader add size / pre-buy holdings when kind=add. */
   leaderAddFraction?: number;
   leaderSignature: string;
@@ -211,6 +216,7 @@ export function readCopyTraderState(statePath: string): CopyTraderState {
           typeof p.entryTargetUsd === 'number' && p.entryTargetUsd > 0 ? p.entryTargetUsd : undefined,
         entryMcapUsd:
           typeof p.entryMcapUsd === 'number' && p.entryMcapUsd > 0 ? p.entryMcapUsd : undefined,
+        entryScout: p.entryScout === true,
         leaderAddFraction:
           typeof p.leaderAddFraction === 'number' && p.leaderAddFraction > 0 ? p.leaderAddFraction : undefined,
         leaderSignature: p.leaderSignature,

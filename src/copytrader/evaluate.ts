@@ -11,6 +11,8 @@ export type EvalInput = {
   nowMs: number;
   /** Our probe leg avg entry — dip must also be below this (split entry). */
   probeEntryPriceUsd?: number;
+  /** Scout tier: skip mcap/liq floors (already accepted as selective-gate fallback). */
+  entryScout?: boolean;
 };
 
 export type EvalResult = {
@@ -116,15 +118,19 @@ export function evaluateCopyEntry(cfg: CopyTraderConfig, input: EvalInput): Eval
   if (!dex) {
     reasons.push('no_dex_data');
   } else {
-    if (cfg.minLiquidityUsd > 0 && dex.liquidityUsd < cfg.minLiquidityUsd) {
-      reasons.push(`liquidity=${Math.round(dex.liquidityUsd)}<min=${cfg.minLiquidityUsd}`);
+    if (!input.entryScout) {
+      if (cfg.minLiquidityUsd > 0 && dex.liquidityUsd < cfg.minLiquidityUsd) {
+        reasons.push(`liquidity=${Math.round(dex.liquidityUsd)}<min=${cfg.minLiquidityUsd}`);
+      } else if (dex.liquidityUsd > 0) {
+        score += 1;
+      }
+
+      const mcap = marketCapEval(cfg, dex);
+      if (mcap.fail) reasons.push(mcap.fail);
+      else score += mcap.scoreInc;
     } else if (dex.liquidityUsd > 0) {
       score += 1;
     }
-
-    const mcap = marketCapEval(cfg, dex);
-    if (mcap.fail) reasons.push(mcap.fail);
-    else score += mcap.scoreInc;
 
     if (cfg.maxMarketCapUsd > 0 && dex.marketCap > cfg.maxMarketCapUsd) {
       reasons.push(`mcap=${Math.round(dex.marketCap)}>max=${cfg.maxMarketCapUsd}`);

@@ -31,9 +31,10 @@ export function isTerminalCopyBuyEvalFailure(reasons: string[]): boolean {
 
 /** Drop queued rows whose stored entry mcap already cannot clear the floor. */
 export function isPendingBuyDoomedByMcap(
-  pending: Pick<PendingBuy, 'entryMcapUsd'>,
+  pending: Pick<PendingBuy, 'entryMcapUsd' | 'entryScout'>,
   minMarketCapUsd: number,
 ): boolean {
+  if (pending.entryScout) return false;
   if (!(minMarketCapUsd > 0)) return false;
   const m = pending.entryMcapUsd;
   if (m == null || !(m > 0)) return false;
