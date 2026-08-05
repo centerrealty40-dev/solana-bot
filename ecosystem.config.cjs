@@ -2804,7 +2804,7 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autostart: false,
+      autostart: true,
       autorestart: true,
       max_restarts: 30,
       restart_delay: 8000,
