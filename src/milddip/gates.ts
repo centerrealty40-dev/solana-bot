@@ -44,8 +44,8 @@ export type MildDipExitGates = {
    */
   neverArmPatienceMs: number;
   /**
-   * If still unarmed after this many ms → full exit (8zkg never-arm hold
-   * median ~18m; default 20m). 0 = disabled.
+   * If still unarmed after this many ms → full exit (8zkg never-arm grind
+   * tail ~15–45m; default 40m). 0 = disabled.
    */
   neverArmMaxHoldMs: number;
 };

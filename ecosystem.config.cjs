@@ -2842,11 +2842,11 @@ const PM2_APPS = [
         /**
          * Never-armed (leaders 8zkg/7BNax mild-dip dumps):
          * after 5m still unarmed → same −6% giveback from sub-arm peak;
-         * after 20m still unarmed → force exit (8zkg never-arm hold median ~18m).
+         * after 40m still unarmed → force exit (8zkg grind tail ~15–45m).
          * Not SL% from entry.
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '300000',
-        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '1200000',
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '2400000',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
         /** Parallel Dex marks — keeps ~50 opens within one mark interval. */

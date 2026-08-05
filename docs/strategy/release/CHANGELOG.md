@@ -1,4 +1,18 @@
 # So
+## [1.11.683] — 2026-08-05
+
+**Тег:** `sa-1.11.683`
+
+### Change: mild-dip never-arm max-hold 20m → 40m
+
+- `MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS` default **2400000** (40m)
+- Closer to 8zkg never-arm grind tail (~15–45m); patience 5m + giveback −6% unchanged
+- Armed path still has no time cap
+
+**Откат:** set `MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS=1200000` + reload `mild-dip-bot`.
+
+---
+
 ## [1.11.682] — 2026-08-05
 
 **Тег:** `sa-1.11.682`
