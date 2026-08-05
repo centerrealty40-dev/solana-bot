@@ -2416,11 +2416,11 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — mirror owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * 1.11.680 — both twins: 50% of leader buy, floor $100, ceiling $500.
-         * Fixed mcap clips off so the mirror rule applies uniformly.
+         * 1.11.682 — big-tier static entry $100 (not % of leader).
+         * Mirror ratio off → entryTargetUsd = POSITION_USD.
          */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
-        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '100',
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
+        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '0',
         COPY_TRADER_POSITION_USD: '100',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
@@ -2435,7 +2435,7 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '500',
+        COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',
@@ -2612,11 +2612,11 @@ const PM2_APPS = [
         /** Oscar never adopts this lane — the leader owns the exit end to end. */
         LIVE_COPY_LEADER_ATTRIBUTION_ENABLED: '0',
         /**
-         * 1.11.680 — same as mcap twin: 50% leader, floor $100, ceiling $500.
-         * Fixed mcap clips off.
+         * 1.11.682 — same as mcap twin: static $100 big-tier entry.
+         * Mirror ratio off → entryTargetUsd = POSITION_USD.
          */
-        COPY_TRADER_INITIAL_MIRROR_RATIO: '0.5',
-        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '100',
+        COPY_TRADER_INITIAL_MIRROR_RATIO: '0',
+        COPY_TRADER_MIN_MIRROR_ENTRY_USD: '0',
         COPY_TRADER_POSITION_USD: '100',
         COPY_TRADER_ENTRY_FULL_MCAP_USD: '0',
         COPY_TRADER_ENTRY_MID_POSITION_USD: '100',
@@ -2627,7 +2627,7 @@ const PM2_APPS = [
         COPY_TRADER_ENTRY_PROBE_FRACTION: '1',
         COPY_TRADER_ENTRY_DIP_DISCOUNT_PCT: '0',
         COPY_TRADER_ENTRY_DIP_USE_JUPITER: '0',
-        COPY_TRADER_MAX_POSITION_USD: '500',
+        COPY_TRADER_MAX_POSITION_USD: '100',
         COPY_TRADER_MAX_ADDS_PER_MINT: '0',
         COPY_TRADER_MIN_PROPORTIONAL_ADD_USD: '100',
         COPY_TRADER_MAX_OPEN_POSITIONS: '8',

@@ -1,4 +1,22 @@
 # So
+## [1.11.682] — 2026-08-05
+
+**Тег:** `sa-1.11.682`
+
+### Change: twin big-tier static entry $100
+
+Both `copy-trader-8zkg` + mirror: stop sizing as % of leader on the main
+(big) tier. Fixed clip:
+
+- `INITIAL_MIRROR_RATIO=0`
+- `POSITION_USD=100`
+- `MAX_POSITION_USD=100`
+- fixed mcap bands still off
+
+**Откат:** ratio `0.5`, min mirror `100`, max position `500`.
+
+---
+
 ## [1.11.681] — 2026-08-05
 
 **Тег:** `sa-1.11.681`
