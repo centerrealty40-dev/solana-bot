@@ -2818,7 +2818,7 @@ const PM2_APPS = [
         ...DEX_QUOTE_CACHE_ENV,
         NODE_ENV: 'production',
         MILD_DIP_APP_NAME: 'mild-dip-bot',
-        MILD_DIP_EXECUTION_MODE: 'paper',
+        MILD_DIP_EXECUTION_MODE: 'live',
         MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         MILD_DIP_POSITION_USD: '5',

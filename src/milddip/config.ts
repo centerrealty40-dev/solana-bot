@@ -86,7 +86,7 @@ export function loadMildDipConfig(): MildDipConfig {
   };
 
   const raw = {
-    executionMode: (process.env.MILD_DIP_EXECUTION_MODE?.trim() || 'paper') as string,
+    executionMode: (process.env.MILD_DIP_EXECUTION_MODE?.trim() || 'live') as string,
     rpcUrl,
     walletSecret: process.env.MILD_DIP_WALLET_SECRET?.trim() || undefined,
     walletPubkeyExpected: process.env.MILD_DIP_WALLET_PUBKEY?.trim() || undefined,
