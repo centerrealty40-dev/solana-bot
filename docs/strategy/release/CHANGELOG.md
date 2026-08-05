@@ -1,4 +1,24 @@
 # So
+## [1.11.681] — 2026-08-05
+
+**Тег:** `sa-1.11.681`
+
+### Change: shadow_select = dump/proliv, not vol momentum
+
+Old paper rule `vol5m≥$2k & bs≥1` did **not** predict leader buys (leader
+median pc5 ≈ −5…−6%, ~73% red). Replace with dump-first:
+
+- `SHADOW_SELECT_MAX_PRICE_CHANGE_5M_PCT=-5` (≥5% dump)
+- `SHADOW_SELECT_MAX_BUY_SELL_5M=1` (buys/sells &lt; 1)
+- min vol / min bs floors → `0`
+- `FILTER_LIVE` still `0` (journal only)
+
+36h backtest vs leader session: dump+bs&lt;1 on 8zkg ~+5.2% avg vs old wouldBuy ~+1.6%.
+
+**Откат:** `MAX_PRICE_CHANGE=1000`, `MAX_BUY_SELL=0`, restore `MIN_VOLUME=2000` + `MIN_BUY_SELL=1`.
+
+---
+
 ## [1.11.680] — 2026-08-05
 
 **Тег:** `sa-1.11.680`

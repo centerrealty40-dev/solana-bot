@@ -223,13 +223,24 @@ const CopyTraderConfigSchema = z.object({
   entryVol5mAdjacentWindows: z.coerce.number().int().min(0).max(12).default(3),
   /**
    * Shadow selection model (paper). On every leader entry buy, fetch market ctx
-   * and log `shadow_select` with wouldBuy. Fitted rule: vol5m≥$2k & buys/sells≥1.
+   * and log `shadow_select` with wouldBuy. Dump-first: pc5 ≤ −5% and buys/sells < 1.
    */
   shadowSelectEnabled: z.boolean().default(false),
   /** When true, leader buys that fail the shadow rule are ignored (live filter). */
   shadowSelectFilterLive: z.boolean().default(false),
-  shadowSelectMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(2_000),
-  shadowSelectMinBuySellRatio5m: z.coerce.number().min(0).max(100).default(1),
+  /**
+   * Require Dex `priceChange.m5` ≤ this % (default **−5** = ≥5% dump).
+   * Set **1000** to disable the dump gate.
+   */
+  shadowSelectMaxPriceChange5mPct: z.coerce.number().min(-1000).max(1000).default(-5),
+  /**
+   * Require buys/sells **&lt;** this (default **1** = sell pressure). **0** = off.
+   */
+  shadowSelectMaxBuySellRatio5m: z.coerce.number().min(0).max(100).default(1),
+  /** Optional vol floor. Default **0** (off) — dump is the signal, not size. */
+  shadowSelectMinVolume5mUsd: z.coerce.number().min(0).max(100_000_000).default(0),
+  /** Legacy min buy/sell floor. Default **0** (off); prefer maxBuySellRatio5m. */
+  shadowSelectMinBuySellRatio5m: z.coerce.number().min(0).max(100).default(0),
   shadowSelectMinMcapUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
   shadowSelectMinLiquidityUsd: z.coerce.number().min(0).max(1_000_000_000).default(0),
   /** Missing Dex context → wouldBuy=false when true. */
@@ -491,6 +502,8 @@ export function loadCopyTraderConfig(): CopyTraderConfig {
     entryVol5mAdjacentWindows: process.env.COPY_TRADER_ENTRY_VOL5M_ADJACENT_WINDOWS,
     shadowSelectEnabled: envBool(process.env.COPY_TRADER_SHADOW_SELECT, false),
     shadowSelectFilterLive: envBool(process.env.COPY_TRADER_SHADOW_SELECT_FILTER_LIVE, false),
+    shadowSelectMaxPriceChange5mPct: process.env.COPY_TRADER_SHADOW_SELECT_MAX_PRICE_CHANGE_5M_PCT,
+    shadowSelectMaxBuySellRatio5m: process.env.COPY_TRADER_SHADOW_SELECT_MAX_BUY_SELL_5M,
     shadowSelectMinVolume5mUsd: process.env.COPY_TRADER_SHADOW_SELECT_MIN_VOLUME_5M_USD,
     shadowSelectMinBuySellRatio5m: process.env.COPY_TRADER_SHADOW_SELECT_MIN_BUY_SELL_5M,
     shadowSelectMinMcapUsd: process.env.COPY_TRADER_SHADOW_SELECT_MIN_MCAP_USD,

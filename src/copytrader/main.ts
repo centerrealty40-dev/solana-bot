@@ -298,8 +298,11 @@ function maybeSummarizeShadowSelect(cfg: CopyTraderConfig): void {
     wouldBuy: shadowSelectStats.wouldBuy,
     miss: shadowSelectStats.miss,
     ctxMissing: shadowSelectStats.ctxMissing,
+    /** Share wouldBuy/scored (selectivity), not recall vs winners. */
     recallPct,
     filterLive: cfg.shadowSelectFilterLive,
+    maxPriceChange5mPct: cfg.shadowSelectMaxPriceChange5mPct,
+    maxBuySellRatio5m: cfg.shadowSelectMaxBuySellRatio5m,
     minVolume5mUsd: cfg.shadowSelectMinVolume5mUsd,
     minBuySellRatio5m: cfg.shadowSelectMinBuySellRatio5m,
   });
@@ -307,6 +310,8 @@ function maybeSummarizeShadowSelect(cfg: CopyTraderConfig): void {
     scored: shadowSelectStats.scored,
     wouldBuy: shadowSelectStats.wouldBuy,
     recallPct,
+    dump5mMax: cfg.shadowSelectMaxPriceChange5mPct,
+    bsMax: cfg.shadowSelectMaxBuySellRatio5m,
   });
 }
 
