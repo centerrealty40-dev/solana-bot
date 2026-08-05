@@ -71,9 +71,9 @@ export function loadMildDipConfig(): MildDipConfig {
   const entry: MildDipEntryGates = {
     minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -20),
     maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', 0),
-    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 8_000),
+    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 2_000),
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 15_000),
-    minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 50_000),
+    minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 5_000_000),
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.25),
     maxPairAgeHours: envNum('MILD_DIP_MAX_PAIR_AGE_HOURS', 72),
