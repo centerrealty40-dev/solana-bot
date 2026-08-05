@@ -9,7 +9,7 @@ Reverse-engineered mild-dip branch (pc5m ∈ (−20, 0]) as a standalone
 PM2 lane on Oscar VPS, funding in **USDC** via existing Jupiter copy-exec.
 
 - `src/milddip/*` + `npm run mild-dip-bot`
-- PM2 app `mild-dip-bot` (autostart false, paper by default)
+- PM2 app `mild-dip-bot` (autostart false, **live** $5 USDC; wallet funded)
 - Wallet: `2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc` (live-oscar-micro)
 - Exit: TP +10% or time-stop 6m; clip $5; max 2 open
 - Discovery: Helius logsSubscribe (pump/pumpswap hot mints) + DexScreener HTTP

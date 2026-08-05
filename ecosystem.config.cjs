@@ -2794,8 +2794,7 @@ const PM2_APPS = [
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
      * Recipe: DexScreener pc5m ∈ (−20, 0], clip $5, TP +10% / time-stop 6m.
-     * Start after funding: `pm2 start ecosystem.config.cjs --only mild-dip-bot`
-     * Flip `MILD_DIP_EXECUTION_MODE=live` once USDC + fee SOL are on the pubkey.
+     * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $5 USDC).
      */
     {
       name: 'mild-dip-bot',
