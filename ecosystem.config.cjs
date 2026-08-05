@@ -2841,7 +2841,8 @@ const PM2_APPS = [
         MILD_DIP_EXIT_GIVEBACK_PCT: '10',
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
-        MILD_DIP_MINT_COOLDOWN_MS: '3600000',
+        /** After close/skip — allow rebuy same mint in 5m (was 1h). */
+        MILD_DIP_MINT_COOLDOWN_MS: '300000',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
         MILD_DIP_SLIPPAGE_BPS: '500',
         /** Abort if mark/quote already bounced >4% off the dip signal (LARP green-candle chase). */

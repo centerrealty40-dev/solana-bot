@@ -124,7 +124,7 @@ export function loadMildDipConfig(): MildDipConfig {
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 30_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 10_000,
-    mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 3_600_000,
+    mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 300_000,
     slippageBps: process.env.MILD_DIP_SLIPPAGE_BPS ?? 150,
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
