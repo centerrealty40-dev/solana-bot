@@ -1,4 +1,26 @@
 # So
+## [1.11.686] — 2026-08-05
+
+**Тег:** `sa-1.11.686`
+
+### Ops: mild-dip takes full Dex / Jupiter / Helius budget on Oscar
+
+Sole trading consumer after 8zkg twins retired — open the throttles that were
+shared with copy-trader + collectors:
+
+- Inherit `DEXSCREENER_GATE_ENV` (**120 RPM**; without it code defaulted to 42)
+- Jupiter org gate **9 RPS** (Developer ~10, 1 RPS headroom)
+- Cadence: scan **5s**, mark **2s**, mark-cache TTL **2s**
+- Concurrency: mark **48**, enrich **12** (parallel Dex), sell **6**
+- Exclude Dex collectors (`sa-raydium/meteora/moonshot/pumpswap` + watchers)
+  from `OSCAR_VPS_EXCLUDED_APPS` so ecosystem reload cannot steal the gate
+- Helius RPC / logsSubscribe unchanged (`MILD_DIP_RPC_URL` + stream)
+
+**Откат:** restore prior scan/mark/concurrency envs; drop Dex gate spread;
+  remove collectors from `OSCAR_VPS_EXCLUDED_APPS`; `JUPITER_GLOBAL_MAX_RPS=8`.
+
+---
+
 ## [1.11.685] — 2026-08-05
 
 **Тег:** `sa-1.11.685`

@@ -23,21 +23,23 @@ const MildDipConfigSchema = z.object({
   positionUsd: z.coerce.number().positive().max(10_000).default(5),
   /** 0 = unlimited — keep buying while USDC remains. */
   maxOpenPositions: z.coerce.number().int().min(0).max(500).default(0),
-  scanIntervalMs: z.coerce.number().int().min(5_000).max(600_000).default(15_000),
-  markIntervalMs: z.coerce.number().int().min(2_000).max(120_000).default(5_000),
+  scanIntervalMs: z.coerce.number().int().min(5_000).max(600_000).default(5_000),
+  markIntervalMs: z.coerce.number().int().min(2_000).max(120_000).default(2_000),
   /**
-   * DexScreener mark cache TTL — avoid bypassCache hammering the shared
-   * Oscar gate. Marks fresher than this reuse cache (default 5s).
+   * DexScreener mark cache TTL — avoid bypassCache hammering the gate.
+   * Keep ≈ markIntervalMs (default 2s on sole-consumer Oscar).
    */
-  markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(5_000),
-  /** Parallel DexScreener marks per exit pass (50 opens ≈ fine at 16–20). */
-  markConcurrency: z.coerce.number().int().min(1).max(64).default(16),
-  /** Parallel Jupiter sells; keep low — swaps are heavy / rate-limited. */
-  sellConcurrency: z.coerce.number().int().min(1).max(8).default(2),
+  markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(2_000),
+  /** Parallel DexScreener marks per exit pass. */
+  markConcurrency: z.coerce.number().int().min(1).max(64).default(48),
+  /** Parallel Dex enrich during candidate scan (still behind Dex gate). */
+  enrichConcurrency: z.coerce.number().int().min(1).max(32).default(12),
+  /** Parallel Jupiter sells — sole consumer can push higher. */
+  sellConcurrency: z.coerce.number().int().min(1).max(8).default(6),
   /** Telegram ALERT when mark pass / opens / null-ratio signal Dex pressure. */
   loadAlertEnabled: z.boolean().default(true),
   loadAlertMarkPassMs: z.coerce.number().int().min(5_000).max(600_000).default(20_000),
-  loadAlertOpenCount: z.coerce.number().int().min(5).max(500).default(35),
+  loadAlertOpenCount: z.coerce.number().int().min(5).max(500).default(50),
   loadAlertNullRatio: z.coerce.number().min(0.1).max(1).default(0.4),
   loadAlertCooldownMs: z.coerce.number().int().min(60_000).max(86_400_000).default(1_800_000),
   mintCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(3_600_000),
@@ -146,18 +148,19 @@ export function loadMildDipConfig(): MildDipConfig {
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
     positionUsd: process.env.MILD_DIP_POSITION_USD ?? 5,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
-    scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 15_000,
-    markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 5_000,
-    markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 5_000,
-    markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 16,
-    sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 2,
+    scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
+    markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
+    markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 2_000,
+    markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,
+    enrichConcurrency: process.env.MILD_DIP_ENRICH_CONCURRENCY ?? 12,
+    sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 6,
     loadAlertEnabled: (() => {
       const v = process.env.MILD_DIP_LOAD_ALERT?.trim().toLowerCase();
       if (!v) return true;
       return v === '1' || v === 'true' || v === 'yes';
     })(),
     loadAlertMarkPassMs: process.env.MILD_DIP_LOAD_ALERT_MARK_PASS_MS ?? 20_000,
-    loadAlertOpenCount: process.env.MILD_DIP_LOAD_ALERT_OPEN_COUNT ?? 35,
+    loadAlertOpenCount: process.env.MILD_DIP_LOAD_ALERT_OPEN_COUNT ?? 50,
     loadAlertNullRatio: process.env.MILD_DIP_LOAD_ALERT_NULL_RATIO ?? 0.4,
     loadAlertCooldownMs: process.env.MILD_DIP_LOAD_ALERT_COOLDOWN_MS ?? 1_800_000,
     mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 300_000,

@@ -327,14 +327,16 @@ const DISCOVERY_COLLECTOR_PIN_ENV = {
   PAPER2_SNAPSHOT_DISCOVERY_PIN_MAX: '200',
 };
 
-/** Shared DexScreener quota across sa-raydium/meteora/moonshot/pumpswap (one VPS egress IP). */
+/**
+ * Shared DexScreener quota (one VPS egress IP).
+ * 1.11.686 — Oscar trading = mild-dip only; collectors excluded so the full
+ * 120 RPM budget belongs to mild-dip mark/enrich (hard cap in gate code).
+ */
 const DEXSCREENER_GATE_ENV = {
   DEXSCREENER_GLOBAL_RATE_LIMIT: '1',
   /**
-   * 120 RPM (up from 60): the gate is shared by 4 collectors + live-oscar discovery. At 60 RPM
-   * (minGap=1000ms) discovery's per-mint quotes queued behind collectors → discoveryTick timeouts.
-   * 120 RPM (minGap=500ms) halves worst-case gate wait; well under DexScreener /tokens ~300/min.
-   * History: 42 RPM caused gate-queue AbortError at 15s collector timeout.
+   * 120 RPM (minGap=500ms): DexScreener /tokens ~300/min theoretical — stay at 120.
+   * History: 42 RPM (code default without this env) starved marks behind copy-trader.
    */
   DEXSCREENER_GLOBAL_MAX_RPM: '120',
   DEXSCREENER_GLOBAL_GATE_PATH: path.join(root, 'data/dexscreener-api-gate.json'),
@@ -2807,8 +2809,15 @@ const PM2_APPS = [
       env: {
         ...PM2_JUPITER_KEY_ENV,
         ...JUPITER_PRO_TRADING_ENV,
+        /**
+         * 1.11.686 — sole Jupiter consumer on Oscar (copy twins retired).
+         * Developer ~10 RPS org limit; keep 1 RPS headroom.
+         */
+        JUPITER_GLOBAL_MAX_RPS: '9',
         ...PM2_SOLANA_RPC_ENV,
         ...DEX_QUOTE_CACHE_ENV,
+        /** Full Dex 120 RPM gate — was missing → code default 42 RPM. */
+        ...DEXSCREENER_GATE_ENV,
         NODE_ENV: 'production',
         MILD_DIP_APP_NAME: 'mild-dip-bot',
         MILD_DIP_EXECUTION_MODE: 'live',
@@ -2840,23 +2849,23 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '2400000',
-        /** Faster discovery with smaller open book after never-arm max-hold. */
-        MILD_DIP_SCAN_INTERVAL_MS: '15000',
-        /** Trail mark cadence; shared Dex gate + cache TTL keep HTTP load bounded. */
-        MILD_DIP_MARK_INTERVAL_MS: '5000',
-        /** Reuse Dex quote within TTL (no bypassCache hammer on Oscar gate). */
-        MILD_DIP_MARK_CACHE_TTL_MS: '5000',
-        /** Parallel Dex marks — keeps ~50 opens within one mark interval. */
-        MILD_DIP_MARK_CONCURRENCY: '16',
-        /** Parallel Jupiter sells (do not starve mark loop). */
-        MILD_DIP_SELL_CONCURRENCY: '2',
+        /**
+         * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
+         * Dex hard-capped at 120 RPM; mark uses cache TTL ≈ interval.
+         */
+        MILD_DIP_SCAN_INTERVAL_MS: '5000',
+        MILD_DIP_MARK_INTERVAL_MS: '2000',
+        MILD_DIP_MARK_CACHE_TTL_MS: '2000',
+        MILD_DIP_MARK_CONCURRENCY: '48',
+        MILD_DIP_ENRICH_CONCURRENCY: '12',
+        MILD_DIP_SELL_CONCURRENCY: '6',
         /**
          * Telegram ALERT [MILD_DIP_DEX] when mark pass is slow / opens high /
          * null-ratio high — signal to move mild-dip to the idle VPS.
          */
         MILD_DIP_LOAD_ALERT: '1',
         MILD_DIP_LOAD_ALERT_MARK_PASS_MS: '20000',
-        MILD_DIP_LOAD_ALERT_OPEN_COUNT: '35',
+        MILD_DIP_LOAD_ALERT_OPEN_COUNT: '50',
         MILD_DIP_LOAD_ALERT_NULL_RATIO: '0.4',
         MILD_DIP_LOAD_ALERT_COOLDOWN_MS: '1800000',
         TELEGRAM_COOLDOWN_ALERT_MILD_DIP_DEX_MS: '1800000',
@@ -2910,6 +2919,21 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'bscpulse-journal-sync',
   'rh-sniper-discovery',
   'rh-sniper-executor',
+  /**
+   * 1.11.686 — Dex/RPC budget is for mild-dip only. Collectors must not
+   * revive via `pm2 startOrReload ecosystem` and steal the 120 RPM gate.
+   */
+  'sa-raydium',
+  'sa-meteora',
+  'sa-moonshot',
+  'sa-pumpswap',
+  'sa-collector-watch',
+  'sa-collector-health-telegram',
+  'sa-rate-429-report',
+  'sa-snapshot-freshness-watch',
+  'sa-jupiter',
+  'sa-direct-lp',
+  'sa-alchemy-usage-watch',
 ]);
 
 module.exports = {

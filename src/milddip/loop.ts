@@ -194,7 +194,11 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   if (!unlimited && slots <= 0) return;
 
   const mints = await collectCandidateMints(cfg);
-  const candidates = await enrichAndFilterCandidates(cfg, mints, { nowMs, maxEnrich: 80 });
+  const candidates = await enrichAndFilterCandidates(cfg, mints, {
+    nowMs,
+    maxEnrich: 80,
+    enrichConcurrency: cfg.enrichConcurrency,
+  });
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 
   let filled = 0;
