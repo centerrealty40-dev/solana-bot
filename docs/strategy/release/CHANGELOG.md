@@ -1,4 +1,22 @@
-# So
+# Changelog
+
+## [1.11.676] — 2026-08-05
+
+**Тег:** `sa-1.11.676`
+
+### Change: 8zkg twins hold-cap A/B — 30m vs 60m
+
+Re-enable mirror hold timeout as a clean A/B (vol-fade stays off):
+
+- `copy-trader-8zkg` (mcap): hard **30m** (`MIRROR_HOLD_CAP_MS=VOL_OK=1800000`)
+- `copy-trader-8zkg-mirror` (vol5m): hard **60m** (`=3600000`)
+
+Leader-follow-only large names still skip the cap. Primary exit remains mirror.
+
+**Откат:** both `MIRROR_HOLD_CAP_*=0` + reload twins.
+
+---
+
 ## [1.11.675] — 2026-08-04
 
 **Тег:** `sa-1.11.675`

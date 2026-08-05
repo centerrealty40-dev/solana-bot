@@ -2523,14 +2523,14 @@ const PM2_APPS = [
         COPY_TRADER_MIRROR_EARLY_TP_SELL_FRACTION: '0.5',
         COPY_TRADER_MIRROR_EARLY_TP_TICK_INTERVAL_MS: '5000',
         /**
-         * 1.11.672 — OFF. 5h CF: vol-fade + hold-cap cost ~$300+ vs hold-to-leader.
-         * Exit only with the leader (and existing sell-delay / abandoned-sell paths).
+         * Vol-fade stays OFF. Hold-cap A/B vs mirror twin:
+         * mcap lane = hard **30m** (base == volOk → no extension).
          */
         COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '0',
         COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '0',
         COPY_TRADER_VOL_FADE_DROP_PCT: '0',
-        COPY_TRADER_MIRROR_HOLD_CAP_MS: '0',
-        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '0',
+        COPY_TRADER_MIRROR_HOLD_CAP_MS: '1800000',
+        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '1800000',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD: '1000000',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD: '50000',
         /** Control lane — wide 300bps. Economy A/B is on mirror (Oscar 10bps + guards). */
@@ -2682,13 +2682,14 @@ const PM2_APPS = [
         COPY_TRADER_SELL_DELAY_MAX_MS: '0',
         COPY_TRADER_SELL_DELAY_SKIP_MAX_DROP_PCT: '5',
         /**
-         * 1.11.672 — OFF (same as mcap twin). 5h CF: early vol exits hurt vs leader.
+         * Vol-fade stays OFF. Hold-cap A/B vs mcap twin:
+         * vol5m lane = hard **60m** (base == volOk → no extension).
          */
         COPY_TRADER_VOL_FADE_CHECK_INTERVAL_MS: '0',
         COPY_TRADER_VOL_FADE_MIN_VOLUME_5M_USD: '0',
         COPY_TRADER_VOL_FADE_DROP_PCT: '0',
-        COPY_TRADER_MIRROR_HOLD_CAP_MS: '0',
-        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '0',
+        COPY_TRADER_MIRROR_HOLD_CAP_MS: '3600000',
+        COPY_TRADER_MIRROR_HOLD_CAP_VOL_OK_MS: '3600000',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_MCAP_USD: '1000000',
         COPY_TRADER_LEADER_FOLLOW_ONLY_MIN_VOLUME_1H_USD: '50000',
         /**
