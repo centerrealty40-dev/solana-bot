@@ -1,4 +1,22 @@
 # So
+## [1.11.688] — 2026-08-05
+
+**Тег:** `sa-1.11.688`
+
+### Change: mild-dip 10m cooldown after losing exit
+
+Stop the grind loop (buy → dump → sell → 5m → buy again on the same falling
+mint):
+
+- Win / flat close → still **5m** (`MILD_DIP_MINT_COOLDOWN_MS`)
+- Losing exit (`pnl < 0`) → **10m** (`MILD_DIP_LOSS_COOLDOWN_MS=600000`)
+- Bounce lookback uses `max(lookback, mintCooldown, lossCooldown)` so the
+  10m trough stays visible
+
+**Откат:** `MILD_DIP_LOSS_COOLDOWN_MS=0` (or `300000`); reload bot.
+
+---
+
 ## [1.11.687] — 2026-08-05
 
 **Тег:** `sa-1.11.687`

@@ -21,6 +21,7 @@ import {
   orderMintsForMark,
   type MarkExitDecision,
 } from './exit-engine.js';
+import { cooldownMsAfterExit } from './cooldown.js';
 import { evaluateCooldownBounce, evaluateMildDipPreBuy } from './gates.js';
 import {
   loadMildDipHotMints,
@@ -318,7 +319,13 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     }
 
     // After cooldown: refuse if we already bounced too far off the observed trough.
-    const trough = mildDipPriceRing.minPrice(c.mint, cfg.cooldownBounceLookbackMs, nowMs);
+    // Lookback covers the longer loss-cooldown window so a 10m dump trough is visible.
+    const bounceLookbackMs = Math.max(
+      cfg.cooldownBounceLookbackMs,
+      cfg.mintCooldownMs,
+      cfg.lossCooldownMs,
+    );
+    const trough = mildDipPriceRing.minPrice(c.mint, bounceLookbackMs, nowMs);
     const bounce = evaluateCooldownBounce({
       freshPriceUsd: freshPx ?? entryPriceUsd,
       troughPriceUsd: trough?.priceUsd ?? null,
@@ -334,7 +341,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         troughPriceUsd: trough?.priceUsd ?? null,
         troughTsMs: trough?.tsMs ?? null,
         troughSource: trough?.source ?? null,
-        sampleCount: mildDipPriceRing.sampleCount(c.mint, cfg.cooldownBounceLookbackMs, nowMs),
+        sampleCount: mildDipPriceRing.sampleCount(c.mint, bounceLookbackMs, nowMs),
+        lookbackMs: bounceLookbackMs,
         dipSource: c.dipSource,
         reasons: bounce.reasons,
       });
@@ -460,16 +468,33 @@ async function executeQueuedSell(args: {
     mode: cfg.executionMode,
   });
 
+  const realizedPnl = sell.pnlPct ?? decision.pnlPct;
+  const cd = cooldownMsAfterExit({
+    pnlPct: realizedPnl,
+    mintCooldownMs: cfg.mintCooldownMs,
+    lossCooldownMs: cfg.lossCooldownMs,
+  });
+
   if (sell.ok) {
     // Re-read — another path must not have already cleared it.
     if (state.open[mint]) {
       delete state.open[mint];
-      state.cooldownUntilMs[mint] = nowMs + cfg.mintCooldownMs;
+      state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
       saveMildDipState(cfg.statePath, state);
     }
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_cooldown_set',
+      mint,
+      symbol: pos.symbol,
+      pnlPct: +realizedPnl.toFixed(2),
+      cooldownMs: cd.cooldownMs,
+      cooldownKind: cd.kind,
+      exitReason: decision.reason,
+    });
     console.log(
-      `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} pnl=${(sell.pnlPct ?? decision.pnlPct).toFixed(1)}% ` +
-        `mfe=${decision.mfePct.toFixed(1)}% giveback=${decision.givebackPct.toFixed(1)}% mode=${cfg.executionMode}`,
+      `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} pnl=${realizedPnl.toFixed(1)}% ` +
+        `mfe=${decision.mfePct.toFixed(1)}% giveback=${decision.givebackPct.toFixed(1)}% ` +
+        `cooldown=${Math.round(cd.cooldownMs / 1000)}s(${cd.kind}) mode=${cfg.executionMode}`,
     );
     await reclaimEmptyAta(cfg, {
       mint,
@@ -483,7 +508,7 @@ async function executeQueuedSell(args: {
   if (reason === 'no_token_balance') {
     if (state.open[mint]) {
       delete state.open[mint];
-      state.cooldownUntilMs[mint] = nowMs + cfg.mintCooldownMs;
+      state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
       saveMildDipState(cfg.statePath, state);
     }
     appendMildDipJournal(cfg.journalPath, {
@@ -491,9 +516,14 @@ async function executeQueuedSell(args: {
       mint,
       symbol: pos.symbol,
       exitReason: decision.reason,
-      pnlPct: +(sell.pnlPct ?? decision.pnlPct).toFixed(2),
+      pnlPct: +realizedPnl.toFixed(2),
+      cooldownMs: cd.cooldownMs,
+      cooldownKind: cd.kind,
     });
-    console.warn(`[mild-dip] DROP empty bag ${pos.symbol} mint=${mint.slice(0, 8)}…`);
+    console.warn(
+      `[mild-dip] DROP empty bag ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+        `cooldown=${Math.round(cd.cooldownMs / 1000)}s(${cd.kind})`,
+    );
     await reclaimEmptyAta(cfg, {
       mint,
       symbol: pos.symbol,
@@ -645,13 +675,17 @@ export async function runMildDipLoop(
   }
 
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
+  const sampleWatchMs = Math.max(
+    cfg.cooldownBounceLookbackMs,
+    cfg.mintCooldownMs,
+    cfg.lossCooldownMs,
+  );
   if (cfg.streamPriceSampleEnabled) {
     priceSampler = createStreamPriceSampler({
       rpcUrl: cfg.rpcUrl,
       minGapMsPerMint: cfg.streamPriceMinGapMs,
       concurrency: cfg.streamPriceConcurrency,
-      shouldSample: (mint, t) =>
-        shouldSampleStreamPrice(state, mint, t, cfg.cooldownBounceLookbackMs),
+      shouldSample: (mint, t) => shouldSampleStreamPrice(state, mint, t, sampleWatchMs),
     });
   }
 
@@ -678,6 +712,8 @@ export async function runMildDipLoop(
       `prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
       `maxCooldownBouncePct=${cfg.maxCooldownBouncePct} ` +
       `lookback=${cfg.cooldownBounceLookbackMs}ms ` +
+      `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +
+      `lossCooldown=${Math.round(cfg.lossCooldownMs / 1000)}s ` +
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 
