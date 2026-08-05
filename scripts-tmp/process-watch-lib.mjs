@@ -75,19 +75,13 @@ function pathIsAbsolute(p) {
 }
 
 export function defaultStrategyWatchTargets(root) {
-  /** 1.11.660 — Oscar lane off; default watch = funded 8zkg only. */
+  /** 1.11.685 — Oscar trading = mild-dip only. */
   return [
     {
-      pm2: 'copy-trader-8zkg',
-      heartbeatPath: `${root}/data/ops-heartbeats/copy-trader-8zkg.json`,
+      pm2: 'mild-dip-bot',
+      heartbeatPath: `${root}/data/ops-heartbeats/mild-dip-bot.json`,
       staleMs: 300_000,
-      fatalPath: `${root}/data/ops-heartbeats/copy-trader-8zkg-last-fatal.json`,
-    },
-    {
-      pm2: 'copy-trader-8zkg-mirror',
-      heartbeatPath: `${root}/data/ops-heartbeats/copy-trader-8zkg-mirror.json`,
-      staleMs: 300_000,
-      fatalPath: `${root}/data/ops-heartbeats/copy-trader-8zkg-mirror-last-fatal.json`,
+      fatalPath: `${root}/data/ops-heartbeats/mild-dip-bot-last-fatal.json`,
     },
   ];
 }

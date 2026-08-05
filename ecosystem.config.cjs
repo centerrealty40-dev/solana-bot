@@ -598,16 +598,11 @@ const PM2_APPS = [
         /** [HEALTH][collector_status] every 30m — Oscar VPS (live-oscar + copy lanes). */
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_HEALTH_PRODUCT_LABEL: 'Oscar',
-        /** 1.11.660 — Oscar lane off (live-oscar + 498SW copy); health = funded 8zkg only. */
+        /** 1.11.685 — Oscar trading health = mild-dip only. */
         COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
           {
-            pm2: 'copy-trader-8zkg',
-            heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
-            staleMs: 300_000,
-          },
-          {
-            pm2: 'copy-trader-8zkg-mirror',
-            heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg-mirror.json',
+            pm2: 'mild-dip-bot',
+            heartbeatPath: 'data/ops-heartbeats/mild-dip-bot.json',
             staleMs: 300_000,
           },
         ]),
@@ -2253,19 +2248,13 @@ const PM2_APPS = [
         STRATEGY_PROCESS_WATCH_TELEGRAM: '1',
         /** 1.11.675 — page every 5m on missing/stale (PM2 wipe killed watch at 20:11). */
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '5',
-        /** 1.11.660 — Oscar lane off; watch only funded 8zkg lanes. */
+        /** 1.11.685 — Oscar trading = mild-dip only (8zkg twins retired). */
         STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
           {
-            pm2: 'copy-trader-8zkg',
-            heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg.json',
+            pm2: 'mild-dip-bot',
+            heartbeatPath: 'data/ops-heartbeats/mild-dip-bot.json',
             staleMs: 300_000,
-            fatalPath: 'data/ops-heartbeats/copy-trader-8zkg-last-fatal.json',
-          },
-          {
-            pm2: 'copy-trader-8zkg-mirror',
-            heartbeatPath: 'data/ops-heartbeats/copy-trader-8zkg-mirror.json',
-            staleMs: 300_000,
-            fatalPath: 'data/ops-heartbeats/copy-trader-8zkg-mirror-last-fatal.json',
+            fatalPath: 'data/ops-heartbeats/mild-dip-bot-last-fatal.json',
           },
         ]),
       },
@@ -2379,7 +2368,9 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autorestart: true,
+      /** 1.11.685 — retired on Oscar; kept in file for history, excluded from PM2 export. */
+      autostart: false,
+      autorestart: false,
       max_restarts: 30,
       restart_delay: 8000,
       merge_logs: true,
@@ -2561,7 +2552,9 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autorestart: true,
+      /** 1.11.685 — retired on Oscar; excluded from PM2 export. */
+      autostart: false,
+      autorestart: false,
       max_restarts: 30,
       restart_delay: 8000,
       merge_logs: true,
@@ -2903,6 +2896,9 @@ const PM2_APPS = [
 const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'live-oscar',
   'copy-trader',
+  /** 1.11.685 — Oscar trading = mild-dip only; 8zkg twins retired. */
+  'copy-trader-8zkg',
+  'copy-trader-8zkg-mirror',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',

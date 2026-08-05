@@ -1,4 +1,22 @@
 # So
+## [1.11.685] — 2026-08-05
+
+**Тег:** `sa-1.11.685`
+
+### Ops: retire copy-trader-8zkg + mirror on Oscar (mild-dip only)
+
+- `copy-trader-8zkg` / `copy-trader-8zkg-mirror` → `OSCAR_VPS_EXCLUDED_APPS`,
+  `autostart/autorestart false`
+- `strategy-process-watch` + collector-health + keepalive defaults → **mild-dip-bot**
+- Cron `strategy-keepalive` must not revive 8zkg twins (lib list updated)
+- Flatten helper: `npx tsx src/scripts/copy-trader-wallet-flatten.ts --lane=8zkg|mirror`
+  (separate wallets; does not touch mild-dip `live-oscar-micro`)
+
+**Откат:** remove twins from `OSCAR_VPS_EXCLUDED_APPS`, restore watch targets,
+  re-enable keepalive cron only if intentionally bringing copy back.
+
+---
+
 ## [1.11.684] — 2026-08-05
 
 **Тег:** `sa-1.11.684`

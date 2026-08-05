@@ -1,11 +1,7 @@
 /**
- * External keepalive for funded copy lanes — MUST NOT live only inside PM2.
+ * External keepalive for Oscar trading apps — MUST NOT live only inside PM2.
  *
- * At 2026-08-04 20:11 UTC another app wiped salpha PM2 (copy twins +
- * strategy-process-watch deleted). In-PM2 watchdog died with them → no Telegram.
- *
- * Cron (every minute) checks PM2 + heartbeats, starts missing apps from
- * ecosystem, pages [ALERT][strategy_keepalive].
+ * 1.11.685 — watches mild-dip-bot (+ strategy-process-watch). 8zkg twins retired.
  *
  * Usage: node scripts-tmp/strategy-keepalive-cron.mjs
  * Install: bash scripts/ops/install-strategy-keepalive-cron.sh
@@ -26,8 +22,8 @@ const STATE_PATH =
   path.join(ROOT, 'data/ops-heartbeats/strategy-keepalive-state.json');
 
 const HEARTBEATS = {
-  'copy-trader-8zkg': path.join(ROOT, 'data/ops-heartbeats/copy-trader-8zkg.json'),
-  'copy-trader-8zkg-mirror': path.join(ROOT, 'data/ops-heartbeats/copy-trader-8zkg-mirror.json'),
+  'mild-dip-bot': path.join(ROOT, 'data/ops-heartbeats/mild-dip-bot.json'),
+  'strategy-process-watch': path.join(ROOT, 'data/ops-heartbeats/strategy-process-watch.json'),
 };
 
 function loadState() {
