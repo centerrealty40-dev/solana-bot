@@ -2268,6 +2268,8 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
   const streamFastPollMs = Math.max(1_000, cfg.leaderStreamFastPollMs);
   let streamHealthy = true;
   let streamMissStreak = 0;
+  /** Consecutive silent_stream hits — only then briefly prefer logsSubscribe. */
+  let streamSilentStreak = 0;
   let lastStreamWatchdogAlertMs = 0;
   let lastStreamWatchdogReason = '';
   let lastStreamForceReconnectMs = 0;
@@ -2362,8 +2364,10 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
         pollMissesThisCycle: 0,
         missStreak: streamMissStreak,
         missThreshold: cfg.leaderStreamMissThreshold,
+        silentStreak: streamSilentStreak,
         updateMissStreak: false,
       });
+      streamSilentStreak = linkDecision.nextSilentStreak;
       if (!linkDecision.healthy) {
         if (
           linkDecision.forceReconnect &&
@@ -2373,9 +2377,13 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           lastStreamForceReconnectMs = now;
           console.warn('[copy-trader] stream watchdog force reconnect', {
             reason: linkDecision.reason,
+            preferLogsSubscribe: linkDecision.preferLogsSubscribe === true,
             health: leaderStream.getHealth(),
           });
-          leaderStream.forceReconnect();
+          leaderStream.forceReconnect({
+            preferLogsSubscribe: linkDecision.preferLogsSubscribe === true,
+            logsSubscribeForMs: 90_000,
+          });
         }
         if (streamHealthy || linkDecision.reason !== lastStreamWatchdogReason) {
           // Boot: connected=false is expected for ~1s — don't spam until we opened once.
@@ -2450,8 +2458,10 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
           pollMissesThisCycle: swapMisses,
           missStreak: streamMissStreak,
           missThreshold: cfg.leaderStreamMissThreshold,
+          silentStreak: streamSilentStreak,
         });
         streamMissStreak = decision.nextMissStreak;
+        streamSilentStreak = decision.nextSilentStreak;
         const wasHealthy: boolean = streamHealthy;
         streamHealthy = decision.healthy;
 
@@ -2461,11 +2471,14 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             reason: decision.reason,
             pollMisses,
             swapMisses,
+            silentStreak: streamSilentStreak,
             preferLogsSubscribe: decision.preferLogsSubscribe === true,
             health: leaderStream.getHealth(),
           });
           leaderStream.forceReconnect({
             preferLogsSubscribe: decision.preferLogsSubscribe === true,
+            /** Brief logs hold only — then retry paid transactionSubscribe. */
+            logsSubscribeForMs: 90_000,
           });
         }
 
@@ -2477,7 +2490,9 @@ export async function runCopyTraderLoop(cfg: CopyTraderConfig): Promise<void> {
             pollMisses,
             swapMisses,
             notifyCount: leaderStream?.getHealth().notifyCount ?? 0,
+            mode: leaderStream?.getHealth().mode ?? null,
             missStreak: streamMissStreak,
+            silentStreak: streamSilentStreak,
             effectivePollMs: streamHealthy ? streamBackupPollMs : streamFastPollMs,
           });
           lastStreamWatchdogReason = decision.reason;

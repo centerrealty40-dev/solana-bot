@@ -79,8 +79,11 @@ export class LeaderWalletStream {
   private pendingSubId: number | null = null;
   private connected = false;
   private subscribed = false;
-  /** After silent transactionSubscribe, stick to logsSubscribe until process restart. */
-  private forceLogsSubscribe = false;
+  /**
+   * Temporary logsSubscribe preference after repeated silent transactionSubscribe.
+   * Must NOT be permanent — paid LaserStream is transactionSubscribe.
+   */
+  private forceLogsSubscribeUntilMs = 0;
   private lastOpenAtMs = 0;
   private lastSubscribedAtMs = 0;
   private lastNotifyAtMs = 0;
@@ -117,8 +120,17 @@ export class LeaderWalletStream {
   }
 
   /** Drop the live socket so `runLoop` reconnects (watchdog / operator). */
-  forceReconnect(opts?: { preferLogsSubscribe?: boolean }): void {
-    if (opts?.preferLogsSubscribe) this.forceLogsSubscribe = true;
+  forceReconnect(opts?: {
+    preferLogsSubscribe?: boolean;
+    /** How long to keep logsSubscribe before retrying transactionSubscribe (default 90s). */
+    logsSubscribeForMs?: number;
+  }): void {
+    if (opts?.preferLogsSubscribe) {
+      const holdMs = Math.max(5_000, opts.logsSubscribeForMs ?? 90_000);
+      this.forceLogsSubscribeUntilMs = Date.now() + holdMs;
+    } else {
+      this.forceLogsSubscribeUntilMs = 0;
+    }
     this.reconnectCount += 1;
     this.connected = false;
     this.subscribed = false;
@@ -126,13 +138,19 @@ export class LeaderWalletStream {
     this.pendingSubId = null;
     this.handlers.onStatus?.('force_reconnect', {
       reconnectCount: this.reconnectCount,
-      preferLogsSubscribe: this.forceLogsSubscribe,
+      preferLogsSubscribe: this.forceLogsSubscribeUntilMs > Date.now(),
+      preferLogsForMs: Math.max(0, this.forceLogsSubscribeUntilMs - Date.now()),
     });
     try {
       this.ws?.close();
     } catch {
       /* ignore */
     }
+  }
+
+  /** Clear temporary logs preference (e.g. after a good transactionSubscribe notify). */
+  clearLogsSubscribePreference(): void {
+    this.forceLogsSubscribeUntilMs = 0;
   }
 
   getHealth(): LeaderStreamHealthSnapshot {
@@ -146,6 +164,7 @@ export class LeaderWalletStream {
       lastSignatureAtMs: this.lastSignatureAtMs,
       notifyCount: this.notifyCount,
       reconnectCount: this.reconnectCount,
+      forcingLogsSubscribe: this.forceLogsSubscribeUntilMs > Date.now(),
     };
   }
 
@@ -204,9 +223,14 @@ export class LeaderWalletStream {
         this.connected = true;
         this.subscribed = false;
         this.lastOpenAtMs = Date.now();
+        // Fresh socket → reset notify counters so silent_stream grace is honest.
+        this.notifyCount = 0;
+        this.lastNotifyAtMs = 0;
+        this.lastSignatureAtMs = 0;
         this.handlers.onStatus?.('ws_open', { urlHost: safeHost(this.opts.wsUrl) });
+        const forceLogs = this.forceLogsSubscribeUntilMs > Date.now();
         const preferTx =
-          !this.forceLogsSubscribe && this.opts.preferTransactionSubscribe !== false;
+          !forceLogs && this.opts.preferTransactionSubscribe !== false;
         if (preferTx) this.subscribeTransaction(ws);
         else this.subscribeLogs(ws);
         this.pingTimer = setInterval(() => {
@@ -261,6 +285,9 @@ export class LeaderWalletStream {
           const sig = extractSignature(params?.result ?? params);
           if (sig) {
             this.lastSignatureAtMs = Date.now();
+            if (msg.method === 'transactionNotification') {
+              this.clearLogsSubscribePreference();
+            }
             this.handlers.onSignature(sig, {
               source: msg.method === 'transactionNotification' ? 'transactionSubscribe' : 'logsSubscribe',
             });
