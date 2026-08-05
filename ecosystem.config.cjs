@@ -2804,7 +2804,7 @@ const PM2_APPS = [
       interpreter: 'node',
       exec_mode: 'fork',
       instances: 1,
-      autostart: false,
+      autostart: true,
       autorestart: true,
       max_restarts: 30,
       restart_delay: 8000,
@@ -2836,7 +2836,10 @@ const PM2_APPS = [
         MILD_DIP_SCAN_INTERVAL_MS: '30000',
         MILD_DIP_MARK_INTERVAL_MS: '10000',
         MILD_DIP_MINT_COOLDOWN_MS: '3600000',
-        MILD_DIP_SLIPPAGE_BPS: '150',
+        /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
+        MILD_DIP_SLIPPAGE_BPS: '500',
+        LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
+        LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
         MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
         /** Helius logsSubscribe on pump.fun + PumpSwap → hot mint universe (pc5m still DexScreener). */
