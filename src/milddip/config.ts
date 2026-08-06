@@ -95,6 +95,8 @@ const MildDipConfigSchema = z.object({
     maxMarketCapUsd: z.number(),
     minPairAgeHours: z.number(),
     maxPairAgeHours: z.number(),
+    youngShallowMaxAgeHours: z.number(),
+    youngShallowMaxDipPct: z.number(),
     allowedDexIds: z.array(z.string()),
   }),
   exit: z.object({
@@ -120,6 +122,8 @@ const MildDipConfigSchema = z.object({
     neverArmVolFadeSampleMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
     /** Consecutive weak windows required before exit. Default 3. */
     neverArmVolFadeWeakWindows: z.coerce.number().int().min(0).max(48).default(3),
+    /** Instant rug / LP-pull cut when pnl ≤ −this % (0=off). Default 50. */
+    cliffDumpPnlPct: z.coerce.number().min(0).max(100).default(50),
   }),
 });
 
@@ -153,6 +157,12 @@ export function loadMildDipConfig(): MildDipConfig {
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.25),
     /** 0 = no max age cap (older pump names like CATE still eligible). */
     maxPairAgeHours: envNum('MILD_DIP_MAX_PAIR_AGE_HOURS', 0),
+    /**
+     * 1.11.697 — young+shallow: age&lt;6h requires pc5m ≤ −6 (deeper than global −4).
+     * Blocks 36GuKd-style rugs; 0% of leader quality dips in 10h diag.
+     */
+    youngShallowMaxAgeHours: envNum('MILD_DIP_YOUNG_SHALLOW_MAX_AGE_HOURS', 6),
+    youngShallowMaxDipPct: envNum('MILD_DIP_YOUNG_SHALLOW_MAX_DIP_PCT', -6),
     allowedDexIds,
   };
 
@@ -191,6 +201,8 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 300),
     neverArmVolFadeSampleMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS', 300_000),
     neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
+    /** 1.11.697 — LP-pull cliff: exit immediately at ≤ −50% mark pnl. */
+    cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
   };
 
   const raw = {

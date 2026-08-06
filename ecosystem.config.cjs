@@ -2844,6 +2844,14 @@ const PM2_APPS = [
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.25',
         /** 0 = no max age — do not skip older pumps on mild dips. */
         MILD_DIP_MAX_PAIR_AGE_HOURS: '0',
+        /**
+         * 1.11.697 — young+shallow (not a blind age ban):
+         * If pair age &lt; 6h, require pc5m ≤ −6 (deeper than global MAX_DIP=-4).
+         * Forensic 36h: cuts 3/5 rugs (−80%), ~8% OK buys, 0% leader quality dips.
+         * Blocks 36GuKd (age 2.9h, pc5m −4.36) that leaders never touched.
+         */
+        MILD_DIP_YOUNG_SHALLOW_MAX_AGE_HOURS: '6',
+        MILD_DIP_YOUNG_SHALLOW_MAX_DIP_PCT: '-6',
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
@@ -2882,6 +2890,11 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '300',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
+        /**
+         * 1.11.697 — LP-pull cliff: exit as soon as mark pnl ≤ −50%
+         * (36GuKd sat ~5m at −99% waiting for never_arm_dead 15m).
+         */
+        MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.

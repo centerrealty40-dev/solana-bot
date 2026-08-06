@@ -3,9 +3,26 @@ import {
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
+  evaluateYoungShallowCombo,
+  type MildDipCandidateMetrics,
   type MildDipEntryGates,
   type MildDipExitGates,
 } from '../../src/milddip/gates.js';
+
+function metrics(partial: Partial<MildDipCandidateMetrics>): MildDipCandidateMetrics {
+  return {
+    priceChange5mPct: -9.7,
+    volume5mUsd: 25_000,
+    liquidityUsd: 40_000,
+    marketCapUsd: 400_000,
+    pairAgeHours: 48,
+    dexId: 'pumpswap',
+    buys5m: 10,
+    sells5m: 10,
+    volume1hUsd: 80_000,
+    ...partial,
+  };
+}
 
 const baseGates: MildDipEntryGates = {
   minDipPct: -20,
@@ -16,6 +33,8 @@ const baseGates: MildDipEntryGates = {
   maxMarketCapUsd: 300_000_000,
   minPairAgeHours: 0.25,
   maxPairAgeHours: 72,
+  youngShallowMaxAgeHours: 6,
+  youngShallowMaxDipPct: -6,
   allowedDexIds: ['pumpswap', 'pumpfun'],
 };
 
@@ -31,6 +50,7 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeFloorUsd: 300,
   neverArmVolFadeSampleMs: 300_000,
   neverArmVolFadeWeakWindows: 3,
+  cliffDumpPnlPct: 50,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -42,62 +62,26 @@ const exitGatesPatienceOn: MildDipExitGates = {
 
 describe('evaluateMildDipEntry', () => {
   it('passes a typical mild-dip candidate', () => {
-    const v = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -9.7,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
-      baseGates,
-    );
+    const v = evaluateMildDipEntry(metrics({ pairAgeHours: 48 }), baseGates);
     expect(v.pass).toBe(true);
     expect(v.reasons).toEqual([]);
   });
 
   it('rejects chase (pc5m > 0)', () => {
-    const v = evaluateMildDipEntry(
-      {
-        priceChange5mPct: 3,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
-      baseGates,
-    );
+    const v = evaluateMildDipEntry(metrics({ priceChange5mPct: 3, pairAgeHours: 48 }), baseGates);
     expect(v.pass).toBe(false);
     expect(v.reasons.some((r) => r.includes('pc5m'))).toBe(true);
   });
 
   it('rejects deep knife (pc5m ≤ −20)', () => {
-    const v = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -20,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
-      baseGates,
-    );
+    const v = evaluateMildDipEntry(metrics({ priceChange5mPct: -20, pairAgeHours: 48 }), baseGates);
     expect(v.pass).toBe(false);
   });
 
-  it('accepts boundary maxDipPct = 0', () => {
+  it('accepts boundary maxDipPct = 0 on mature pairs', () => {
+    // age=48 ≥ young threshold → shallow pc5m=0 is allowed by young-shallow
     const v = evaluateMildDipEntry(
-      {
-        priceChange5mPct: 0,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpfun',
-      },
+      metrics({ priceChange5mPct: 0, pairAgeHours: 48, dexId: 'pumpfun' }),
       baseGates,
     );
     expect(v.pass).toBe(true);
@@ -106,52 +90,83 @@ describe('evaluateMildDipEntry', () => {
   it('prod band (−20, −4]: rejects shallow flat-chop, accepts real dump', () => {
     const prod = { ...baseGates, maxDipPct: -4 };
     const shallow = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -2.5,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
+      metrics({ priceChange5mPct: -2.5, pairAgeHours: 48 }),
       prod,
     );
     expect(shallow.pass).toBe(false);
     const dump = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -9.0,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
+      metrics({ priceChange5mPct: -9.0, pairAgeHours: 48 }),
       prod,
     );
     expect(dump.pass).toBe(true);
     const boundary = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -4,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
+      metrics({ priceChange5mPct: -4, pairAgeHours: 48 }),
       prod,
     );
     expect(boundary.pass).toBe(true);
   });
 });
 
+describe('evaluateYoungShallowCombo (rug unnaturalness)', () => {
+  it('blocks 36GuKd-style: age 2.9h + pc5m −4.36', () => {
+    const v = evaluateYoungShallowCombo(
+      { pairAgeHours: 2.87, priceChange5mPct: -4.36 },
+      { youngShallowMaxAgeHours: 6, youngShallowMaxDipPct: -6 },
+    );
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.startsWith('young_shallow'))).toBe(true);
+  });
+
+  it('allows deep dump on young pair (leader-like depth)', () => {
+    const v = evaluateYoungShallowCombo(
+      { pairAgeHours: 3.3, priceChange5mPct: -12 },
+      { youngShallowMaxAgeHours: 6, youngShallowMaxDipPct: -6 },
+    );
+    expect(v.pass).toBe(true);
+  });
+
+  it('allows shallow dip on mature pair', () => {
+    const v = evaluateYoungShallowCombo(
+      { pairAgeHours: 49, priceChange5mPct: -4.5 },
+      { youngShallowMaxAgeHours: 6, youngShallowMaxDipPct: -6 },
+    );
+    expect(v.pass).toBe(true);
+  });
+
+  it('entry gate wires young+shallow (rejects young shallow even if global maxDip=-4)', () => {
+    const prod = { ...baseGates, maxDipPct: -4 };
+    const v = evaluateMildDipEntry(
+      metrics({ priceChange5mPct: -4.36, pairAgeHours: 2.87 }),
+      prod,
+    );
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.startsWith('young_shallow'))).toBe(true);
+  });
+
+  it('off when youngShallowMaxAgeHours=0', () => {
+    const off = { ...baseGates, maxDipPct: -4, youngShallowMaxAgeHours: 0 };
+    const v = evaluateMildDipEntry(
+      metrics({ priceChange5mPct: -4.36, pairAgeHours: 2.87 }),
+      off,
+    );
+    expect(v.pass).toBe(true);
+  });
+});
+
 describe('evaluateMildDipPreBuy', () => {
-  const band = { minDipPct: -20, maxDipPct: 0 };
+  const band = {
+    minDipPct: -20,
+    maxDipPct: 0,
+    youngShallowMaxAgeHours: 6,
+    youngShallowMaxDipPct: -6,
+  };
 
   it('passes when still in dip and mark not chasing', () => {
     const v = evaluateMildDipPreBuy({
       signalPriceUsd: 1,
       freshPriceUsd: 1.02,
       freshPc5mPct: -8,
+      freshPairAgeHours: 48,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -163,6 +178,7 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.01,
       freshPc5mPct: 2.5,
+      freshPairAgeHours: 48,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -175,6 +191,7 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.06,
       freshPc5mPct: -5,
+      freshPairAgeHours: 48,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -187,10 +204,24 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.2,
       freshPc5mPct: -3,
+      freshPairAgeHours: 48,
       entryGates: band,
       maxChasePct: 0,
     });
     expect(v.pass).toBe(true);
+  });
+
+  it('rejects young+shallow at prebuy', () => {
+    const v = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 1.01,
+      freshPc5mPct: -4.36,
+      freshPairAgeHours: 2.87,
+      entryGates: { ...band, maxDipPct: -4 },
+      maxChasePct: 4,
+    });
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.includes('young_shallow'))).toBe(true);
   });
 });
 
@@ -330,6 +361,32 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
+  it('cliff_dump exits immediately at ≤ −50% without waiting dead min-hold', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 40,
+      peakPriceUsd: 103.71,
+      armed: false,
+      gates: exitGates,
+      heldMs: 30_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('cliff_dump');
+    expect(v.pnlPct).toBeLessThanOrEqual(-50);
+  });
+
+  it('cliff_dump off when cliffDumpPnlPct=0', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 40,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: { ...exitGates, cliffDumpPnlPct: 0 },
+      heldMs: 30_000,
+    });
+    expect(v.shouldExit).toBe(false);
+  });
+
   it('never-arm timeout at max hold if still unarmed', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -435,6 +492,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmDeadPnlPct: 0,
       neverArmVolFadeMinMs: 0,
       neverArmVolFadeRatio: 0,
+      cliffDumpPnlPct: 0,
       neverArmVolFadeFloorUsd: 0,
       neverArmVolFadeSampleMs: 0,
       neverArmVolFadeWeakWindows: 0,

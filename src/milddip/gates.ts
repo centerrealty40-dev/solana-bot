@@ -14,6 +14,11 @@ export type MildDipCandidateMetrics = {
   marketCapUsd: number | null;
   pairAgeHours: number | null;
   dexId: string | null;
+  /** DexScreener m5 buy count — journaled; optional entry use. */
+  buys5m: number | null;
+  /** DexScreener m5 sell count — journaled; optional entry use. */
+  sells5m: number | null;
+  volume1hUsd: number | null;
 };
 
 export type MildDipEntryGates = {
@@ -27,6 +32,18 @@ export type MildDipEntryGates = {
   maxMarketCapUsd: number;
   minPairAgeHours: number;
   maxPairAgeHours: number;
+  /**
+   * Young+shallow combo (1.11.697): when pair age &lt; this many hours, require a
+   * deeper dump than the global maxDipPct. 0 = off.
+   * Forensic 36h: age&lt;6 &amp; pc5m&gt;−6 cut 3/5 rugs (−80%), 8% of OK buys, 0% of
+   * leader quality dips — not a blind age ban.
+   */
+  youngShallowMaxAgeHours: number;
+  /**
+   * Inclusive upper bound for pc5m when the pair is young (default −6).
+   * Reject when age &lt; youngShallowMaxAgeHours AND pc5m &gt; this value.
+   */
+  youngShallowMaxDipPct: number;
   /** Empty = any dex. */
   allowedDexIds: string[];
 };
@@ -77,6 +94,11 @@ export type MildDipExitGates = {
    * (default 3 ≈ 15m of sustained fade). 1 = legacy one-shot (not recommended).
    */
   neverArmVolFadeWeakWindows: number;
+  /**
+   * Immediate cliff exit when mark pnl ≤ −this % (default 50). Catches LP-pull
+   * rugs without waiting for never_arm_dead min-hold. 0 = off.
+   */
+  cliffDumpPnlPct: number;
 };
 
 /** One spaced Dex vol5m reading used by the sustained fade exit. */
@@ -89,6 +111,33 @@ export type MildDipGateVerdict = {
   pass: boolean;
   reasons: string[];
 };
+
+/**
+ * Young pair + shallow 5m dip — the unnatural entry leaders skip.
+ * Not a blanket age ban: deep dumps on young pairs still pass.
+ */
+export function evaluateYoungShallowCombo(
+  metrics: Pick<MildDipCandidateMetrics, 'priceChange5mPct' | 'pairAgeHours'>,
+  gates: Pick<MildDipEntryGates, 'youngShallowMaxAgeHours' | 'youngShallowMaxDipPct'>,
+): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const maxAge = gates.youngShallowMaxAgeHours;
+  if (!(maxAge > 0)) return { pass: true, reasons };
+
+  const age = metrics.pairAgeHours;
+  const pc = metrics.priceChange5mPct;
+  const maxDip = gates.youngShallowMaxDipPct;
+  if (age == null || !Number.isFinite(age) || pc == null || !Number.isFinite(pc)) {
+    // Fail open on missing age/pc — structural/pc gates handle hard misses.
+    return { pass: true, reasons };
+  }
+  if (age < maxAge && pc > maxDip) {
+    reasons.push(
+      `young_shallow age_h=${age.toFixed(2)}<${maxAge}_pc5m=${pc.toFixed(2)}>${maxDip}`,
+    );
+  }
+  return { pass: reasons.length === 0, reasons };
+}
 
 export function evaluateMildDipEntry(
   metrics: MildDipCandidateMetrics,
@@ -142,6 +191,9 @@ export function evaluateMildDipEntry(
     }
   }
 
+  const ys = evaluateYoungShallowCombo(metrics, gates);
+  reasons.push(...ys.reasons);
+
   if (gates.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();
     if (!dex || !gates.allowedDexIds.includes(dex)) {
@@ -161,7 +213,12 @@ export function evaluateMildDipPreBuy(args: {
   signalPriceUsd: number;
   freshPriceUsd: number | null;
   freshPc5mPct: number | null;
-  entryGates: Pick<MildDipEntryGates, 'minDipPct' | 'maxDipPct'>;
+  entryGates: Pick<
+    MildDipEntryGates,
+    'minDipPct' | 'maxDipPct' | 'youngShallowMaxAgeHours' | 'youngShallowMaxDipPct'
+  >;
+  /** Pair age hours at prebuy (from pairCreatedAt); null skips young-shallow. */
+  freshPairAgeHours?: number | null;
   /** 0 = chase check off (pc5m revalidate still runs). */
   maxChasePct: number;
 }): MildDipGateVerdict {
@@ -180,6 +237,12 @@ export function evaluateMildDipPreBuy(args: {
       `prebuy_pc5m=${pc.toFixed(2)}_outside_(${entryGates.minDipPct},${entryGates.maxDipPct}]`,
     );
   }
+
+  const ys = evaluateYoungShallowCombo(
+    { priceChange5mPct: freshPc5mPct, pairAgeHours: args.freshPairAgeHours ?? null },
+    entryGates,
+  );
+  for (const r of ys.reasons) reasons.push(`prebuy_${r}`);
 
   if (
     maxChasePct > 0 &&
@@ -246,6 +309,7 @@ export type MildDipExitReason =
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
   | 'never_arm_timeout'
+  | 'cliff_dump'
   | null;
 
 export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number): number | null {
@@ -387,6 +451,22 @@ export function evaluateMildDipPeakGiveback(args: {
   if (!armed && gates.armPct > 0 && mfePct >= gates.armPct) {
     armed = true;
     justArmed = true;
+  }
+
+  // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
+  const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
+  if (cliff > 0 && pnlPct <= -cliff) {
+    return {
+      peakPriceUsd,
+      mfePct,
+      givebackPct,
+      armed,
+      justArmed,
+      shouldExit: true,
+      reason: 'cliff_dump',
+      pnlPct,
+      volFadeSamples,
+    };
   }
 
   const givebackHit =

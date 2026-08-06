@@ -1,4 +1,26 @@
 # So
+## [1.11.697] — 2026-08-06
+
+**Тег:** `sa-1.11.697`
+
+### Feat: mild-dip rug unnaturalness — young+shallow + cliff + journal
+
+Leaders' quality dips are deeper (med pc5m ≈ −12) and rarely young+shallow;
+our 36h rugs clustered on age&lt;6h with shallow pc5m (e.g. CATECOIN/36GuKd
+age 2.9h, pc5m −4.36, then LP cliff −99%). Blind age&lt;6h alone is **not**
+shipped (cuts leader dips).
+
+- **Entry:** `young_shallow` — if `pairAgeHours &lt; 6` require `pc5m ≤ −6`
+  (env `MILD_DIP_YOUNG_SHALLOW_MAX_AGE_HOURS` / `_MAX_DIP_PCT`). Forensic:
+  3/5 rugs (−80%), ~8% OK, **0%** leader quality dips.
+- **Exit:** `cliff_dump` at mark pnl ≤ −50% (no 15m dead wait).
+- **Journal:** `mild_dip_buy_attempt` now records vol5m/1h, liq, mcap, age,
+  buys5m/sells5m, dexId (entry-time tape for next filters).
+
+**Откат:** set `YOUNG_SHALLOW_MAX_AGE_HOURS=0` and `CLIFF_DUMP_PNL_PCT=0`.
+
+---
+
 ## [1.11.696] — 2026-08-06
 
 **Тег:** `sa-1.11.696`

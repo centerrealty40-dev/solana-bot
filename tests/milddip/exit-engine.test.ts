@@ -47,6 +47,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmVolFadeFloorUsd: 300,
     neverArmVolFadeSampleMs: 300_000,
     neverArmVolFadeWeakWindows: 3,
+    cliffDumpPnlPct: 50,
   };
 
   it('updates peak and arms without exiting', () => {

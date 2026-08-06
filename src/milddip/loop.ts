@@ -340,6 +340,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       });
       freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
       const freshPc = fresh?.priceChangeM5Pct ?? null;
+      const freshAgeH =
+        fresh?.pairCreatedAtMs != null && fresh.pairCreatedAtMs > 0
+          ? Math.max(0, (freshNow - fresh.pairCreatedAtMs) / 3_600_000)
+          : c.metrics.pairAgeHours;
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
@@ -347,6 +351,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         signalPriceUsd: c.priceUsd,
         freshPriceUsd: freshPx,
         freshPc5mPct: freshPc,
+        freshPairAgeHours: freshAgeH,
         entryGates: cfg.entry,
         maxChasePct: cfg.maxChasePct,
       });
@@ -359,6 +364,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
           signalPc5m: c.metrics.priceChange5mPct,
           freshPriceUsd: freshPx,
           freshPc5m: freshPc,
+          freshPairAgeHours: freshAgeH,
           reasons: pre.reasons,
         });
         console.log(
@@ -467,6 +473,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         sizeUsd: sized.sizeUsd,
         priceUsd: entryPriceUsd,
         signalPriceUsd: c.priceUsd,
+        pc5m: entryPc5m,
+        signalPc5m: c.metrics.priceChange5mPct,
+        volume5mUsd: c.metrics.volume5mUsd,
+        volume1hUsd: c.metrics.volume1hUsd,
+        liquidityUsd: c.metrics.liquidityUsd,
+        marketCapUsd: c.metrics.marketCapUsd,
+        pairAgeHours: c.metrics.pairAgeHours,
+        buys5m: c.metrics.buys5m,
+        sells5m: c.metrics.sells5m,
+        dexId: c.metrics.dexId,
+        dipSource: c.dipSource,
         ok: false,
         reason: err instanceof Error ? err.message : String(err),
         mode: cfg.executionMode,
@@ -484,6 +501,15 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       signalPriceUsd: c.priceUsd,
       pc5m: entryPc5m,
       signalPc5m: c.metrics.priceChange5mPct,
+      volume5mUsd: c.metrics.volume5mUsd,
+      volume1hUsd: c.metrics.volume1hUsd,
+      liquidityUsd: c.metrics.liquidityUsd,
+      marketCapUsd: c.metrics.marketCapUsd,
+      pairAgeHours: c.metrics.pairAgeHours,
+      buys5m: c.metrics.buys5m,
+      sells5m: c.metrics.sells5m,
+      dexId: c.metrics.dexId,
+      dipSource: c.dipSource,
       ok: buy.ok,
       reason: buy.reason ?? null,
       signature: buy.signature ?? null,
@@ -701,6 +727,7 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
             mfePct: 0,
             givebackPct: 0,
             pnlPct: 0,
+            volFadeSamples: pos.volFadeSamples ?? [],
           });
         }
       }
@@ -855,8 +882,10 @@ export async function runMildDipLoop(
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
+      `youngShallow=${cfg.entry.youngShallowMaxAgeHours}h/${cfg.entry.youngShallowMaxDipPct}% ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
+      `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
       `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd}` +
