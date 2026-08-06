@@ -1,4 +1,102 @@
-# So
+# Solana Alpha — журнал релизов продукта
+
+## [1.11.701] — 2026-08-06
+
+**Тег:** `sa-1.11.701`
+
+### Feature: vol-green coverage + green_tape entry + entry_skip journal
+
+После miss `3grmUL…pump` (лидер купил на зелёной, мы нет):
+
+1. **Coverage:** `maxEnrich` default **16**, hits-weighted `listForEnrich`, budget 25s  
+2. **Entry mode `green_tape`:** leader-like pc5m∈(0,15], vol5m≥$2k, buys/sells≥1, turnover≥0.09, mcap≥$50k — default for vol-green  
+3. **Journal:** `awaken_skip` / `entry_skip` на каждый enriched fail (reasons + metrics)
+
+**Откат:** `VOL_GREEN_ENTRY_MODE=awakening` + `MILD_DIP_MAX_ENRICH=4`; или revert.
+
+---
+
+## [1.11.700] — 2026-08-06
+
+**Тег:** `sa-1.11.700`
+
+### Fix: vol-green enrich hard budget 15s + no forceEnrich
+
+Awaken scans still froze heartbeats ~40–60s after RPM/cache fixes. Cap awaken
+enrich at **4** mints, drop cooldown forceEnrich, and **Promise.race 15s**
+budget so the loop always progresses (log `enrich budget exceeded`).
+
+**Откат:** revert; restart vol-green-bot.
+
+---
+
+## [1.11.699] — 2026-08-06
+
+**Тег:** `sa-1.11.699`
+
+### Fix: vol-green scan cadence — enrich 6 + no quote-cache file lock
+
+Even at 120 RPM, awaken scans still blocked ~40s (heartbeat froze): cache
+`putCachedDexQuotes` file-lock + enrich 12. Sole LERA consumer now uses
+`DEX_QUOTE_CACHE_ENABLED=0`, awaken `maxEnrich=6`, concurrency 2.
+
+**Откат:** revert; restart vol-green-bot.
+
+---
+
+## [1.11.698] — 2026-08-06
+
+**Тег:** `sa-1.11.698`
+
+### Fix: vol-green Dex gate env — use GLOBAL_MAX_RPM=120
+
+Entry script exported `DEXSCREENER_MAX_RPM` but the quote-cache gate reads
+`DEXSCREENER_GLOBAL_MAX_RPM` (default **42**). Scans took ~60s+ and starved
+heartbeats. Set `DEXSCREENER_GLOBAL_MAX_RPM=120` and shrink awaken enrich to 12.
+
+**Откат:** revert; restart vol-green-bot.
+
+---
+
+## [1.11.697] — 2026-08-06
+
+**Тег:** `sa-1.11.697`
+
+### Fix: vol-green scan stall — gated Dex enrich + smaller window
+
+Canary on LERA stopped updating `lastScanAtMs` (~1 scan then hang): awakening
+enrich called ungated Dex HTTP for up to 80 mints and blocked the loop.
+
+- Awakening enrich uses `fetchDexScreenerPairDetails` (global 120 RPM gate) with
+  h6/h24/priceChange fields on the details type
+- `maxEnrich=20`, enrich concurrency ≤4 in awakening mode
+- vol-green default discover sources: **stream only** (no boosts/profiles burn)
+- `fetchAwakeningDexMarket` keeps AbortSignal timeout for catcher path
+
+**Откат:** revert this commit; on LERA `git checkout` previous SHA + `pm2 restart vol-green-bot`.
+
+---
+
+## [1.11.696] — 2026-08-06
+
+**Тег:** `sa-1.11.696`
+
+### Feature: `vol-green-bot` — VA/green entry + mild-dip exit (LERA / FxQf / $5)
+
+Новая изолированная линия на кошельке `FxQfFTmj…` (бывший copy-8zkg):
+
+- **Entry:** `MILD_DIP_ENTRY_MODE=awakening` → `evaluateAwakeningSignal` (green-tape / vol spike)
+- **Exit/manage:** тот же W9.1 стек, что у Oscar `mild-dip-bot` (arm 8 / giveback 6 / never-arm / vol-fade)
+- **Clip:** $5 USDC; state/journal под `data/volgreen/`
+- **Host:** LERA `ecosystem.vol-green.cjs` + Helius; на Oscar app в exclude-list (не крадёт Dex у mild-dip)
+
+Файлы: `src/volgreen/*`, `src/scripts/vol-green-bot.ts`, hooks в `milddip/config|discover|loop`,
+`docs/strategy/volgreen/RUNBOOK_VOL_GREEN_LERA.md`.
+
+**Откат:** `pm2 delete vol-green-bot` на LERA; `MILD_DIP_ENTRY_MODE=mild_dip` (default) на Oscar не менялся.
+
+---
+
 ## [1.11.695] — 2026-08-06
 
 **Тег:** `sa-1.11.695`

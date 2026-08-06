@@ -23,6 +23,8 @@ import {
 } from './exit-engine.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import { evaluateCooldownBounce, evaluateMildDipPreBuy } from './gates.js';
+import { evaluateAwakeningPreBuy } from '../volgreen/entry-gates.js';
+import type { EntrySkip } from './discover.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -272,13 +274,47 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     postCooldownMs: 120_000,
   });
   const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
-  const candidates = await enrichAndFilterCandidates(cfg, mints, {
+  const tapeMode = cfg.entryMode === 'awakening' || cfg.entryMode === 'green_tape';
+  const maxEnrich = tapeMode ? cfg.maxEnrichPerScan : 80;
+  const enrichConcurrency = tapeMode
+    ? Math.min(4, cfg.enrichConcurrency)
+    : cfg.enrichConcurrency;
+  const enrichStarted = Date.now();
+  const enrichPromise = enrichAndFilterCandidates(cfg, mints, {
     nowMs,
-    maxEnrich: 80,
-    enrichConcurrency: cfg.enrichConcurrency,
-    // Keep Dex marks flowing for cooling mints even when they won't buy yet.
-    forceEnrich: priority,
+    maxEnrich,
+    enrichConcurrency,
+    // Tape modes: do not force-enrich cooldown mints (doubles Dex burn).
+    forceEnrich: tapeMode ? [] : priority,
   });
+  const enrichBudgetMs = tapeMode ? cfg.enrichBudgetMs : 120_000;
+  const enrichResult = await Promise.race([
+    enrichPromise,
+    sleep(enrichBudgetMs).then(() => {
+      console.warn(
+        `[mild-dip] enrich budget exceeded (${enrichBudgetMs}ms) entryMode=${cfg.entryMode} — continuing`,
+      );
+      return { candidates: [], skips: [] as EntrySkip[] };
+    }),
+  ]);
+  const candidates = enrichResult.candidates;
+  if (tapeMode) {
+    console.log(
+      `[mild-dip] ${cfg.entryMode} enrich done mints=${mints.length} candidates=${candidates.length} ` +
+        `skips=${enrichResult.skips.length} ms=${Date.now() - enrichStarted} maxEnrich=${maxEnrich}`,
+    );
+    if (cfg.journalEntrySkips && enrichResult.skips.length > 0) {
+      for (const skip of enrichResult.skips) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: skip.entryMode === 'awakening' ? 'awaken_skip' : 'entry_skip',
+          mint: skip.mint,
+          entryMode: skip.entryMode,
+          reasons: skip.reasons,
+          metrics: skip.metrics ?? null,
+        });
+      }
+    }
+  }
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 
   let filled = 0;
@@ -332,6 +368,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     let entryPriceUsd = c.priceUsd;
     let entryPc5m = c.metrics.priceChange5mPct;
     let freshPx: number | null = c.priceUsd;
+    const awakeningEntry = cfg.entryMode === 'awakening';
+    const greenTapeEntry = cfg.entryMode === 'green_tape';
     if (cfg.preBuyRevalidate) {
       const freshNow = Date.now();
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
@@ -343,18 +381,31 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
-      const pre = evaluateMildDipPreBuy({
-        signalPriceUsd: c.priceUsd,
-        freshPriceUsd: freshPx,
-        freshPc5mPct: freshPc,
-        entryGates: cfg.entry,
-        maxChasePct: cfg.maxChasePct,
-      });
+      const chaseCap = greenTapeEntry
+        ? Math.min(cfg.maxChasePct, cfg.greenTape.maxPc5mPct)
+        : cfg.maxChasePct;
+      const pre =
+        awakeningEntry || greenTapeEntry
+          ? evaluateAwakeningPreBuy({
+              signalPriceUsd: c.priceUsd,
+              freshPriceUsd: freshPx,
+              freshPc5mPct: freshPc,
+              maxChasePct: chaseCap,
+              minFreshPc5mPct: greenTapeEntry ? cfg.greenTape.minPc5mPct : 0,
+            })
+          : evaluateMildDipPreBuy({
+              signalPriceUsd: c.priceUsd,
+              freshPriceUsd: freshPx,
+              freshPc5mPct: freshPc,
+              entryGates: cfg.entry,
+              maxChasePct: cfg.maxChasePct,
+            });
       if (!pre.pass) {
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_prebuy_skip',
           mint: c.mint,
           symbol: c.symbol,
+          entryMode: cfg.entryMode,
           signalPriceUsd: c.priceUsd,
           signalPc5m: c.metrics.priceChange5mPct,
           freshPriceUsd: freshPx,
@@ -373,6 +424,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
 
     // After cooldown: refuse if we already bounced too far off the observed trough.
     // Lookback covers the longer loss-cooldown window so a 10m dump trough is visible.
+    // Awakening (green tape) skips trough-bounce — that gate is for dump rebuy only.
     const bounceLookbackMs = Math.max(
       cfg.cooldownBounceLookbackMs,
       cfg.mintCooldownMs,
@@ -382,7 +434,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     const bounce = evaluateCooldownBounce({
       freshPriceUsd: freshPx ?? entryPriceUsd,
       troughPriceUsd: trough?.priceUsd ?? null,
-      maxBouncePct: cfg.maxCooldownBouncePct,
+      maxBouncePct: awakeningEntry || greenTapeEntry ? 0 : cfg.maxCooldownBouncePct,
       requireTrough: false,
     });
     if (!bounce.pass) {
@@ -445,10 +497,18 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         kind: 'entry',
         evalResult: {
           pass: true,
-          reasons: [
-            `mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
-          ],
-          score: Math.abs(entryPc5m ?? 0),
+          reasons:
+            awakeningEntry || greenTapeEntry
+              ? [
+                  `${cfg.entryMode}_${c.entryPath ?? 'signal'}`,
+                  `pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
+                  `score=${(c.entryScore ?? 0).toFixed(1)}`,
+                ]
+              : [`mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`],
+          score:
+            awakeningEntry || greenTapeEntry
+              ? Math.max(0, c.entryScore ?? Math.abs(entryPc5m ?? 0))
+              : Math.abs(entryPc5m ?? 0),
         },
         leaderSignature: leaderSig,
         // Anchor for Jupiter quote premium guard — abort mid-retry green chase.

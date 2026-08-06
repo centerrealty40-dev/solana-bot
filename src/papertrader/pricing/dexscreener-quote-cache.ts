@@ -257,6 +257,9 @@ export interface DexScreenerPairDetails {
   liquidityUsd: number | null;
   volume5mUsd: number | null;
   volume1hUsd: number | null;
+  /** Present on live Dex parse; often null when rebuilt from file cache. */
+  volume6hUsd: number | null;
+  volume24hUsd: number | null;
   pairAddress: string;
   baseMint: string;
   quoteMint: string;
@@ -267,7 +270,15 @@ export interface DexScreenerPairDetails {
   pairCreatedAtMs: number | null;
   /** DexScreener `priceChange.m5`, percent. Only present on a live parse. */
   priceChangeM5Pct: number | null;
+  priceChangeH1Pct: number | null;
+  priceChangeH6Pct: number | null;
+  priceChangeH24Pct: number | null;
   fetchedAtMs: number;
+}
+
+function signedPct(v: unknown): number | null {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
 }
 
 function parsePairToDetails(
@@ -279,15 +290,25 @@ function parsePairToDetails(
   const entry = parsePairToCacheEntry(pair, mint, nowMs);
   if (entry.miss || !entry.pairAddress) return null;
   const txns = pair.txns as { m5?: { buys?: number; sells?: number } } | undefined;
-  const priceChange = pair.priceChange as { m5?: number } | undefined;
+  const volume = pair.volume as { m5?: number; h1?: number; h6?: number; h24?: number } | undefined;
+  const priceChange = pair.priceChange as {
+    m5?: number;
+    h1?: number;
+    h6?: number;
+    h24?: number;
+  } | undefined;
   const createdAt = Number((pair as { pairCreatedAt?: number }).pairCreatedAt);
   const changeM5 = Number(priceChange?.m5);
+  const vol6 = Number(volume?.h6);
+  const vol24 = Number(volume?.h24);
   return {
     priceUsd: entry.priceUsd ?? null,
     marketCapUsd: entry.marketCapUsd ?? null,
     liquidityUsd: entry.liquidityUsd ?? null,
     volume5mUsd: entry.volume5mUsd ?? null,
     volume1hUsd: entry.volume1hUsd ?? null,
+    volume6hUsd: Number.isFinite(vol6) && vol6 > 0 ? vol6 : null,
+    volume24hUsd: Number.isFinite(vol24) && vol24 > 0 ? vol24 : null,
     pairAddress: entry.pairAddress,
     baseMint: entry.baseMint ?? mint,
     quoteMint: entry.quoteMint ?? SOL_MINT,
@@ -296,6 +317,9 @@ function parsePairToDetails(
     sells5m: toInt(txns?.m5?.sells),
     pairCreatedAtMs: Number.isFinite(createdAt) && createdAt > 0 ? Math.trunc(createdAt) : null,
     priceChangeM5Pct: Number.isFinite(changeM5) ? changeM5 : null,
+    priceChangeH1Pct: signedPct(priceChange?.h1),
+    priceChangeH6Pct: signedPct(priceChange?.h6),
+    priceChangeH24Pct: signedPct(priceChange?.h24),
     fetchedAtMs: nowMs,
   };
 }

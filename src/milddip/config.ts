@@ -3,6 +3,7 @@ import path from 'node:path';
 import { z } from 'zod';
 import { liveOscarRpcHttpUrlFromEnv, resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 import type { MildDipEntryGates, MildDipExitGates } from './gates.js';
+import type { GreenTapeGates } from '../volgreen/green-tape-gates.js';
 
 const ExecutionModeSchema = z.enum(['paper', 'dry_run', 'live']);
 
@@ -13,8 +14,16 @@ function envNum(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+const EntryModeSchema = z.enum(['mild_dip', 'awakening', 'green_tape']);
+
 const MildDipConfigSchema = z.object({
   executionMode: ExecutionModeSchema,
+  /**
+   * `mild_dip` — pc5m dump band (default).
+   * `awakening` — dormant → vol5m spike ignition.
+   * `green_tape` — leader-like green candle + buy pressure + turnover.
+   */
+  entryMode: EntryModeSchema.default('mild_dip'),
   rpcUrl: z.string().min(8),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
@@ -34,8 +43,17 @@ const MildDipConfigSchema = z.object({
   markConcurrency: z.coerce.number().int().min(1).max(64).default(48),
   /** Parallel Dex enrich during candidate scan (still behind Dex gate). */
   enrichConcurrency: z.coerce.number().int().min(1).max(32).default(12),
+  /**
+   * Max mints to Dex-enrich per scan for awakening/green_tape.
+   * mild_dip still uses the hard-coded 80 in the loop unless overridden.
+   */
+  maxEnrichPerScan: z.coerce.number().int().min(1).max(80).default(16),
+  /** Hard wall-clock budget for one enrich pass (ms). */
+  enrichBudgetMs: z.coerce.number().int().min(3_000).max(180_000).default(25_000),
   /** Parallel Jupiter sells — sole consumer can push higher. */
   sellConcurrency: z.coerce.number().int().min(1).max(8).default(6),
+  /** Journal entry_skip / awaken_skip for enriched fails (default on). */
+  journalEntrySkips: z.boolean().default(true),
   /**
    * Max bounce % off the price-ring trough (cooldown lookback) before rebuy.
    * 0 = off. Default 6 — refuse buying a “good” bounce off the wick.
@@ -117,6 +135,20 @@ const MildDipConfigSchema = z.object({
     /** Exit when vol5m ≤ this USD floor (0=off). Default 500. */
     neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(500),
   }),
+  /** Leader-like green candle gates (`entryMode=green_tape`). */
+  greenTape: z.object({
+    minPc5mPct: z.number(),
+    maxPc5mPct: z.number(),
+    minVolume5mUsd: z.number(),
+    minLiquidityUsd: z.number(),
+    minMarketCapUsd: z.number(),
+    maxMarketCapUsd: z.number(),
+    minBuySellRatio5m: z.number(),
+    minTurnover5m: z.number(),
+    minPairAgeHours: z.number(),
+    maxPairAgeHours: z.number(),
+    allowedDexIds: z.array(z.string()),
+  }),
 });
 
 export type MildDipConfig = z.infer<typeof MildDipConfigSchema>;
@@ -184,8 +216,31 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 500),
   };
 
+  const entryModeRaw = (process.env.MILD_DIP_ENTRY_MODE ?? 'mild_dip').trim().toLowerCase();
+  const entryMode =
+    entryModeRaw === 'awakening'
+      ? 'awakening'
+      : entryModeRaw === 'green_tape' || entryModeRaw === 'green-tape'
+        ? 'green_tape'
+        : 'mild_dip';
+
+  const greenTape: GreenTapeGates = {
+    minPc5mPct: envNum('MILD_DIP_GREEN_MIN_PC5M_PCT', 0),
+    maxPc5mPct: envNum('MILD_DIP_GREEN_MAX_PC5M_PCT', 15),
+    minVolume5mUsd: envNum('MILD_DIP_GREEN_MIN_VOLUME_5M_USD', 2_000),
+    minLiquidityUsd: envNum('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', 15_000),
+    minMarketCapUsd: envNum('MILD_DIP_GREEN_MIN_MCAP_USD', 50_000),
+    maxMarketCapUsd: envNum('MILD_DIP_GREEN_MAX_MCAP_USD', 300_000_000),
+    minBuySellRatio5m: envNum('MILD_DIP_GREEN_MIN_BUY_SELL_5M', 1),
+    minTurnover5m: envNum('MILD_DIP_GREEN_MIN_TURNOVER_5M', 0.09),
+    minPairAgeHours: envNum('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', 0.1),
+    maxPairAgeHours: envNum('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', 72),
+    allowedDexIds,
+  };
+
   const raw = {
     executionMode: (process.env.MILD_DIP_EXECUTION_MODE?.trim() || 'live') as string,
+    entryMode,
     rpcUrl,
     walletSecret: process.env.MILD_DIP_WALLET_SECRET?.trim() || undefined,
     walletPubkeyExpected: process.env.MILD_DIP_WALLET_PUBKEY?.trim() || undefined,
@@ -200,7 +255,14 @@ export function loadMildDipConfig(): MildDipConfig {
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 30_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,
     enrichConcurrency: process.env.MILD_DIP_ENRICH_CONCURRENCY ?? 12,
+    maxEnrichPerScan: process.env.MILD_DIP_MAX_ENRICH ?? 16,
+    enrichBudgetMs: process.env.MILD_DIP_ENRICH_BUDGET_MS ?? 25_000,
     sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 6,
+    journalEntrySkips: (() => {
+      const v = process.env.MILD_DIP_JOURNAL_ENTRY_SKIPS?.trim().toLowerCase();
+      if (!v) return true;
+      return v === '1' || v === 'true' || v === 'yes';
+    })(),
     loadAlertEnabled: (() => {
       const v = process.env.MILD_DIP_LOAD_ALERT?.trim().toLowerCase();
       if (!v) return true;
@@ -249,6 +311,7 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_PRICE_RING_PATH?.trim() || path.join('data', 'milddip', 'price-ring.json'),
     entry,
     exit,
+    greenTape,
   };
 
   const parsed = MildDipConfigSchema.safeParse(raw);
@@ -263,7 +326,10 @@ export function loadMildDipConfig(): MildDipConfig {
   if (!parsed.data.rpcUrl) {
     throw new Error('mild-dip requires MILD_DIP_RPC_URL / COPY_TRADER_RPC_URL / SA_RPC_HTTP_URL');
   }
-  if (!(parsed.data.entry.minDipPct < parsed.data.entry.maxDipPct)) {
+  if (
+    parsed.data.entryMode === 'mild_dip' &&
+    !(parsed.data.entry.minDipPct < parsed.data.entry.maxDipPct)
+  ) {
     throw new Error('mild-dip requires MILD_DIP_MIN_DIP_PCT < MILD_DIP_MAX_DIP_PCT');
   }
 

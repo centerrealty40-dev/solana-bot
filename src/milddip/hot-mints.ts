@@ -41,6 +41,24 @@ export class MildDipHotMintBuffer {
       .map((h) => h.mint);
   }
 
+  /**
+   * Enrich ranking: prefer mints with more stream hits (activity), decayed by
+   * age so a stale high-hit mint does not crowd out fresh tape. Fresh (&lt;60s)
+   * names get a flat boost so ignition still surfaces quickly.
+   */
+  listForEnrich(nowMs = Date.now()): string[] {
+    this.prune(nowMs);
+    return [...this.byMint.values()]
+      .map((h) => {
+        const ageSec = Math.max(0, (nowMs - h.lastSeenAtMs) / 1000);
+        const hitScore = h.hits / (1 + ageSec / 30);
+        const freshBoost = ageSec <= 60 ? 50 : ageSec <= 180 ? 15 : 0;
+        return { mint: h.mint, score: hitScore + freshBoost };
+      })
+      .sort((a, b) => b.score - a.score)
+      .map((x) => x.mint);
+  }
+
   size(nowMs = Date.now()): number {
     this.prune(nowMs);
     return this.byMint.size;
