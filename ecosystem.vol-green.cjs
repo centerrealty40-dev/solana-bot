@@ -1,7 +1,9 @@
 /**
- * LERA-only PM2 ecosystem for vol-green-bot.
+ * LERA-only PM2 docs for vol-green-bot.
  *
- *   cd /opt/lera && pm2 start ecosystem.vol-green.cjs --only vol-green-bot
+ * PM2 6 often does NOT parse this file as an ecosystem — prefer:
+ *   chmod +x scripts/vol-green-pm2-entry.sh
+ *   pm2 start scripts/vol-green-pm2-entry.sh --name vol-green-bot --interpreter bash
  *
  * Wallet: FxQfFTmj… (copy-8zkg.keypair.json)
  * Entry: Volume Awakening / green-tape

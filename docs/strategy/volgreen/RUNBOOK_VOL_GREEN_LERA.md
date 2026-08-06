@@ -16,7 +16,10 @@ ssh root@72.62.152.201
 sudo -u lera -H bash -c 'cd /opt/lera && git fetch origin && git checkout <sha> && npm ci'
 # ensure keypair exists (secret, never commit):
 # data/live/copy-8zkg.keypair.json → pubkey FxQf…
-sudo -u lera -H bash -c 'cd /opt/lera && mkdir -p data/volgreen data/ops-heartbeats && pm2 start ecosystem.vol-green.cjs --only vol-green-bot && pm2 save'
+sudo -u lera -H bash -c 'cd /opt/lera && mkdir -p data/volgreen data/ops-heartbeats && chmod +x scripts/vol-green-pm2-entry.sh && pm2 delete vol-green-bot ecosystem.vol-green 2>/dev/null; pm2 start scripts/vol-green-pm2-entry.sh --name vol-green-bot --interpreter bash && pm2 save'
+```
+
+> PM2 6 on LERA may treat `ecosystem.vol-green.cjs` as a script — use the entry shell above.
 ```
 
 ## Verify
