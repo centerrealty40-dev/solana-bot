@@ -2842,12 +2842,13 @@ const PM2_APPS = [
         MILD_DIP_EXIT_ARM_PCT: '8',
         MILD_DIP_EXIT_GIVEBACK_PCT: '6',
         /**
-         * Never-armed (leaders 8zkg/7BNax mild-dip dumps):
-         * after 5m still unarmed → same −6% giveback from sub-arm peak;
-         * after 40m still unarmed → force exit (8zkg grind tail ~15–45m).
-         * Not SL% from entry.
+         * Never-armed exit:
+         * 1.11.689 — DISABLE early never_arm_giveback (patience=0). Live PnL:
+         *   never_arm_giveback avg −8.9% / hold~10m cut winners before +8% arm;
+         *   never_arm_timeout @40m ≈ flat (−0.4%). Keep only max-hold.
+         * Armed path unchanged: arm +8% → giveback −6%.
          */
-        MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '300000',
+        MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '2400000',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.

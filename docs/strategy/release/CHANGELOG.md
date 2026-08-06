@@ -1,4 +1,31 @@
 # So
+## [1.11.689] — 2026-08-06
+
+**Тег:** `sa-1.11.689`
+
+### Fix: disable never_arm_giveback (was the fake 6m time-stop)
+
+Live evidence (`Aq2idw…` + journal):
+
+| Exit reason | n | avg PnL | med hold |
+| --- | ---: | ---: | ---: |
+| `peak_giveback` (armed) | 153 | **+9.3%** | 21m |
+| `never_arm_timeout` (40m) | 150 | −0.4% | 41m |
+| `never_arm_giveback` (5m patience) | 327 | **−8.9%** | 10m |
+
+The “sell before the pump at ~6m” was **not** max-hold 40m — it was
+`never_arm_giveback`: after 5m unarmed, −6% off a tiny sub-arm peak (often
+MFE 0–6%) forced the exit. Leaders’ never-arm median hold is ~18m; we were
+cutting much earlier on noise.
+
+- `MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS=0` (disable soft giveback)
+- Keep `MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS=2400000` (40m hard cap)
+- Armed W9.1 path unchanged (arm +8% / giveback −6%)
+
+**Откат:** `MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS=300000` + reload.
+
+---
+
 ## [1.11.688] — 2026-08-05
 
 **Тег:** `sa-1.11.688`
