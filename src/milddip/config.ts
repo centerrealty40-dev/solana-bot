@@ -100,7 +100,11 @@ const MildDipConfigSchema = z.object({
   exit: z.object({
     /** W9.1: arm when MFE ≥ armPct. */
     armPct: z.number(),
-    /** W9.1: exit when giveback from peak ≤ −givebackPct. */
+    /** Armed: sell scaleOutFraction at this giveback % (0=off). */
+    partialGivebackPct: z.coerce.number().min(0).max(100).default(3),
+    /** Fraction sold on partial giveback (default 0.5). */
+    scaleOutFraction: z.coerce.number().min(0).max(1).default(0.5),
+    /** W9.1: full exit when giveback from peak ≤ −givebackPct. */
     givebackPct: z.number(),
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
@@ -176,8 +180,12 @@ export function loadMildDipConfig(): MildDipConfig {
    * No SL% from entry / hard TP on the armed path.
    */
   const exit: MildDipExitGates = {
-    armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 8),
-    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
+    /** 1.11.699 — arm earlier so NV2RYH-style +5.5% MFE is not invisible. */
+    armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 5),
+    /** Scale-out half at −3% from peak; full remainder at givebackPct. */
+    partialGivebackPct: envNum('MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT', 3),
+    scaleOutFraction: envNum('MILD_DIP_EXIT_SCALE_OUT_FRACTION', 0.5),
+    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 8),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),

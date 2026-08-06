@@ -13,6 +13,8 @@ export type MarkExitDecision = {
   armed: boolean;
   justArmed: boolean;
   shouldExit: boolean;
+  /** 1 = full close; (0,1) = scale-out leave runner. */
+  fraction: number;
   reason: MildDipExitReason;
   mfePct: number;
   givebackPct: number;
@@ -57,6 +59,7 @@ export function decideMarkExit(args: {
     markPriceUsd,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
+    scaleOutDone: pos.scaleOutDone === true,
     gates,
     heldMs,
     nowMs,
@@ -71,6 +74,7 @@ export function decideMarkExit(args: {
     armed: verdict.armed,
     justArmed: verdict.justArmed,
     shouldExit: verdict.shouldExit,
+    fraction: verdict.fraction,
     reason: verdict.reason,
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,

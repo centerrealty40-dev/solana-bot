@@ -38,8 +38,15 @@ export type MildDipEntryGates = {
 
 /** W9.1 peak-giveback exit parameters (+ never-armed dead-trade). */
 export type MildDipExitGates = {
-  /** Arm trail when MFE ≥ this % (default 8). */
+  /** Arm trail when MFE ≥ this % (default 5). */
   armPct: number;
+  /**
+   * After armed: sell `scaleOutFraction` when giveback from peak ≤ −this %
+   * (default 3). 0 = no partial scale-out (full exit only at givebackPct).
+   */
+  partialGivebackPct: number;
+  /** Fraction of bag to sell on partial giveback (default 0.5). */
+  scaleOutFraction: number;
   /** Full exit when giveback from peak ≤ −this % after armed (default 8). */
   givebackPct: number;
   /**
@@ -252,6 +259,7 @@ export function evaluateCooldownBounce(args: {
 
 export type MildDipExitReason =
   | 'peak_giveback'
+  | 'peak_giveback_partial'
   | 'never_arm_giveback'
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
@@ -333,13 +341,13 @@ export function sustainedVolFade(
  * W9.1 peak-giveback («flow») exit — pure decision, no network.
  *
  * - Update running peak from entry
- * - Arm when MFE ≥ armPct
- * - Full exit when armed and giveback ≤ −givebackPct
+ * - Arm when MFE ≥ armPct (live default +5%)
+ * - Armed scale-out: giveback ≤ −partialGivebackPct → sell scaleOutFraction
+ *   (once); giveback ≤ −givebackPct → sell remainder / full
  * - Never-armed: optional soft giveback after patienceMs (0 = off), deep-loss
  *   dead cut, sustained activity fade (`never_arm_vol_fade` over N×5m windows),
  *   then the max-hold ceiling
  * - Live default: patience off — early never_arm_giveback was cutting before pumps
- * - Loss-by-flow (realized < 0) is a valid outcome of the armed trail
  */
 export function evaluateMildDipPeakGiveback(args: {
   entryPriceUsd: number;
@@ -347,6 +355,8 @@ export function evaluateMildDipPeakGiveback(args: {
   peakPriceUsd: number;
   armed: boolean;
   gates: MildDipExitGates;
+  /** True after a successful partial scale-out on this position. */
+  scaleOutDone?: boolean;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
   /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
@@ -364,11 +374,14 @@ export function evaluateMildDipPeakGiveback(args: {
   armed: boolean;
   justArmed: boolean;
   shouldExit: boolean;
+  /** 1 = full / remainder; 0.5 = scale-out; 0 = no sell. */
+  fraction: number;
   reason: MildDipExitReason;
   pnlPct: number;
   volFadeSamples: MildDipVolFadeSample[];
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
+  const scaleOutDone = args.scaleOutDone === true;
   const heldMs = Number.isFinite(args.heldMs) ? Math.max(0, Number(args.heldMs)) : 0;
   const nowMs =
     Number.isFinite(args.nowMs) && Number(args.nowMs) > 0
@@ -400,73 +413,65 @@ export function evaluateMildDipPeakGiveback(args: {
     justArmed = true;
   }
 
+  const hold = {
+    peakPriceUsd,
+    mfePct,
+    givebackPct,
+    armed,
+    justArmed,
+    shouldExit: false as const,
+    fraction: 0,
+    reason: null as MildDipExitReason,
+    pnlPct,
+    volFadeSamples,
+  };
+
   // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
   const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
   if (cliff > 0 && pnlPct <= -cliff) {
-    return {
-      peakPriceUsd,
-      mfePct,
-      givebackPct,
-      armed,
-      justArmed,
-      shouldExit: true,
-      reason: 'cliff_dump',
-      pnlPct,
-      volFadeSamples,
-    };
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
   }
 
-  const givebackHit =
+  const fullGivebackHit =
     gates.givebackPct > 0 &&
     // epsilon: 103.5/115 is −9.999…% in IEEE float
     givebackPct <= -gates.givebackPct + 1e-9;
 
-  if (armed && givebackHit) {
+  const partialPct = gates.partialGivebackPct > 0 ? gates.partialGivebackPct : 0;
+  const scaleFrac =
+    gates.scaleOutFraction > 0 && gates.scaleOutFraction < 1 ? gates.scaleOutFraction : 0;
+  const partialGivebackHit =
+    partialPct > 0 &&
+    scaleFrac > 0 &&
+    !scaleOutDone &&
+    givebackPct <= -partialPct + 1e-9;
+
+  if (armed && fullGivebackHit) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
+  }
+  if (armed && partialGivebackHit) {
     return {
-      peakPriceUsd,
-      mfePct,
-      givebackPct,
-      armed,
-      justArmed,
+      ...hold,
       shouldExit: true,
-      reason: 'peak_giveback',
-      pnlPct,
-      volFadeSamples,
+      fraction: scaleFrac,
+      reason: 'peak_giveback_partial',
     };
   }
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
   // Order: optional soft giveback (usually OFF) → deep-loss dead cut →
   // sustained vol fade (N consecutive weak 5m windows) → max-hold ceiling.
+  // Full givebackPct is the soft knife width when patience is on.
+  const givebackHit = fullGivebackHit;
   if (!armed) {
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (patience > 0 && heldMs >= patience && givebackHit) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_giveback',
-        pnlPct,
-        volFadeSamples,
-      };
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };
     }
     const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
     const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
     if (deadMin > 0 && deadPnl > 0 && heldMs >= deadMin && pnlPct <= -deadPnl) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_dead',
-        pnlPct,
-        volFadeSamples,
-      };
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_dead' };
     }
     const volFadeMin = gates.neverArmVolFadeMinMs > 0 ? gates.neverArmVolFadeMinMs : 0;
     if (volFadeMin > 0 && heldMs >= volFadeMin && weakWindows > 0) {
@@ -481,46 +486,16 @@ export function evaluateMildDipPeakGiveback(args: {
           floor,
         )
       ) {
-        return {
-          peakPriceUsd,
-          mfePct,
-          givebackPct,
-          armed,
-          justArmed,
-          shouldExit: true,
-          reason: 'never_arm_vol_fade',
-          pnlPct,
-          volFadeSamples,
-        };
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_vol_fade' };
       }
     }
     const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
     if (maxHold > 0 && heldMs >= maxHold) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_timeout',
-        pnlPct,
-        volFadeSamples,
-      };
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_timeout' };
     }
   }
 
-  return {
-    peakPriceUsd,
-    mfePct,
-    givebackPct,
-    armed,
-    justArmed,
-    shouldExit: false,
-    reason: null,
-    pnlPct,
-    volFadeSamples,
-  };
+  return hold;
 }
 
 /** @deprecated Use evaluateMildDipPeakGiveback — kept name alias for call sites. */

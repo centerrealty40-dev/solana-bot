@@ -14,6 +14,8 @@ export type MildDipOpenPosition = {
   peakPriceUsd?: number;
   /** W9.1 trail armed after MFE ≥ armPct. */
   trailArmed?: boolean;
+  /** True after a successful partial scale-out (half bag sold). */
+  scaleOutDone?: boolean;
   /** 5m Dex volume at entry — baseline for the activity-fade exit. */
   entryVolume5mUsd?: number | null;
   /**

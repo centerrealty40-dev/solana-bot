@@ -1,4 +1,28 @@
 # So
+## [1.11.699] — 2026-08-06
+
+**Тег:** `sa-1.11.699`
+
+### Feat: mild-dip scale-out trail — arm +5% / half −3% / full −8%
+
+`NV2RYH…` (Punch) peaked mark MFE +5.49% under arm=8 (never armed) and
+exited `never_arm_vol_fade` at −1.62%. User policy:
+
+- Arm trail at **+5%** MFE
+- Giveback **−3%** from peak → sell **50%** (`peak_giveback_partial`)
+- Giveback **−8%** from peak → sell **rest** (`peak_giveback`)
+
+Also removed the rejected `shallow_hot_tape` entry filter from 1.11.698.
+
+**Env:** `MILD_DIP_EXIT_ARM_PCT=5`
+`MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT=3`
+`MILD_DIP_EXIT_SCALE_OUT_FRACTION=0.5`
+`MILD_DIP_EXIT_GIVEBACK_PCT=8`
+
+**Откат:** arm=8, partial=0, giveback=6 (prior live knobs).
+
+---
+
 ## [1.11.698] — 2026-08-06
 
 **Тег:** `sa-1.11.698`

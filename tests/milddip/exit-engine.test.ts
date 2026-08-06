@@ -36,7 +36,9 @@ describe('orderMintsForMark', () => {
 
 describe('decideMarkExit / applyMarkDecisionToPosition', () => {
   const gates = {
-    armPct: 8,
+    armPct: 5,
+    partialGivebackPct: 3,
+    scaleOutFraction: 0.5,
     givebackPct: 8,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
@@ -91,10 +93,32 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
     expect(d?.shouldExit).toBe(true);
     expect(d?.reason).toBe('peak_giveback');
+    expect(d?.fraction).toBe(1);
     applyMarkDecisionToPosition(p, d!);
     // Still "open" until sell confirms — we only mutate trail fields here.
     expect(p.peakPriceUsd).toBe(108);
     expect(p.trailArmed).toBe(true);
+  });
+
+  it('queues peak_giveback_partial at −3% when scale-out not yet taken', () => {
+    const p = pos({
+      mint: 'm2b',
+      entryPriceUsd: 100,
+      peakPriceUsd: 105,
+      trailArmed: true,
+      scaleOutDone: false,
+      openedAtMs: 1_000_000,
+    });
+    const d = decideMarkExit({
+      mint: 'm2b',
+      pos: p,
+      markPriceUsd: 101.85, // −3% of 105
+      gates,
+      nowMs: 1_060_000,
+    });
+    expect(d?.shouldExit).toBe(true);
+    expect(d?.reason).toBe('peak_giveback_partial');
+    expect(d?.fraction).toBe(0.5);
   });
 
   it('queues never-arm dead after 15m deep loss (patience off)', () => {
