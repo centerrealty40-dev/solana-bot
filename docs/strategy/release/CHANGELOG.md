@@ -1,4 +1,24 @@
 # So
+## [1.11.696] — 2026-08-06
+
+**Тег:** `sa-1.11.696`
+
+### Fix: mild-dip orphan bags after raced failed buy (89RAit ~5h)
+
+`89RAitwP…pump` was bought live at 08:14 UTC, then a twin `send_failed`
+(0x1789) path deleted the seat and overwrote `state.json` without the mint.
+Exit loop never saw the bag → sat on-chain ~5h until manual re-adopt
+(`never_arm_vol_fade` +2.8%). Same class: `WTLwm2…` orphan.
+
+- `saveMildDipState` merges disk-only opens unless `removeMints` (sells/empty drops)
+- Failed/thrown buy: keep reserved seat when on-chain raw > dust
+- Boot + every 5m wallet reconcile (Token + Token-2022) adopts missing bags
+
+**Откат:** revert `state.ts` merge + `loop.ts` seat-keep / reconcile; ops can
+still re-inject orphans into `state.json` + `pm2 reload`.
+
+---
+
 ## [1.11.695] — 2026-08-06
 
 **Тег:** `sa-1.11.695`

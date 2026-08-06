@@ -28,6 +28,7 @@ import {
   mildDipHotMints,
   saveMildDipHotMints,
 } from './hot-mints.js';
+import { listOrphanTokenAccounts } from './orphan-janitor.js';
 import {
   loadMildDipPriceRing,
   mildDipPriceRing,
@@ -233,21 +234,26 @@ function adoptOnChainHolding(args: {
   priceUsd: number;
   pc5m: number | null;
   nowMs: number;
+  /** When set (wallet reconcile of unknown-age bags), force max-hold eligibility. */
+  openedAtMs?: number;
+  entryVolume5mUsd?: number | null;
 }): void {
   const { cfg, state, mint, symbol, tokenRaw, priceUsd, pc5m, nowMs } = args;
   const sizeUsd =
     priceUsd > 0 ? Number(tokenRaw) / 1e6 * priceUsd : cfg.positionUsd;
+  const openedAtMs = args.openedAtMs ?? nowMs;
   const pos: MildDipOpenPosition = {
     mint,
     symbol,
     entryPriceUsd: priceUsd > 0 ? priceUsd : 0,
     sizeUsd: Number.isFinite(sizeUsd) && sizeUsd > 0 ? sizeUsd : cfg.positionUsd,
     tokenRaw,
-    openedAtMs: nowMs,
+    openedAtMs,
     entryPc5mPct: pc5m,
     buySignature: null,
     peakPriceUsd: priceUsd > 0 ? priceUsd : 0,
     trailArmed: false,
+    entryVolume5mUsd: args.entryVolume5mUsd ?? null,
   };
   state.open[mint] = pos;
   saveMildDipState(cfg.statePath, state);
@@ -259,8 +265,113 @@ function adoptOnChainHolding(args: {
     priceUsd: pos.entryPriceUsd,
     sizeUsd: pos.sizeUsd,
     pc5m,
+    openedAtMs,
   });
   console.log(`[mild-dip] ADOPT existing bag ${symbol} mint=${mint.slice(0, 8)}… raw=${tokenRaw}`);
+}
+
+/**
+ * After a failed/thrown buy: keep the reserved seat if the wallet already holds
+ * the mint (twin filled, or our send actually landed). Only drop + tombstone when
+ * on-chain is empty — otherwise a raced `send_failed` wipes a live bag from state.
+ */
+async function releaseBuySeatUnlessOnChain(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  mint: string;
+  symbol: string;
+  entryPriceUsd: number;
+  entryPc5m: number | null;
+  entryVolume5mUsd: number | null | undefined;
+  sizeUsd: number;
+  nowMs: number;
+}): Promise<'kept_onchain' | 'released'> {
+  const { cfg, state, mint, symbol, entryPriceUsd, entryPc5m, sizeUsd, nowMs } = args;
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
+  const onchain = await fetchMintBalanceRaw(copyCfg, mint);
+  const onchainRaw = onchain && /^\d+$/.test(onchain) ? BigInt(onchain) : 0n;
+  buyInFlight.delete(mint);
+  if (onchainRaw > HOLDING_DUST_RAW) {
+    const fillPx = entryPriceUsd > 0 ? entryPriceUsd : state.open[mint]?.entryPriceUsd ?? 0;
+    state.open[mint] = {
+      mint,
+      symbol,
+      entryPriceUsd: fillPx,
+      sizeUsd,
+      tokenRaw: onchainRaw.toString(),
+      openedAtMs: state.open[mint]?.openedAtMs ?? nowMs,
+      entryPc5mPct: entryPc5m,
+      buySignature: state.open[mint]?.buySignature ?? null,
+      peakPriceUsd: fillPx,
+      trailArmed: false,
+      entryVolume5mUsd: args.entryVolume5mUsd ?? null,
+    };
+    saveMildDipState(cfg.statePath, state);
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_buy_seat_kept_onchain',
+      mint,
+      symbol,
+      tokenRaw: onchainRaw.toString(),
+      priceUsd: fillPx,
+    });
+    console.warn(
+      `[mild-dip] KEEP seat after failed buy ${symbol} mint=${mint.slice(0, 8)}… ` +
+        `onchain raw=${onchainRaw.toString()}`,
+    );
+    return 'kept_onchain';
+  }
+  delete state.open[mint];
+  state.cooldownUntilMs[mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+  saveMildDipState(cfg.statePath, state, { removeMints: [mint] });
+  return 'released';
+}
+
+/** Boot / periodic: adopt Token + Token-2022 bags missing from state.open. */
+async function reconcileWalletOrphans(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<number> {
+  if (cfg.executionMode === 'paper') return 0;
+  const owner = cfg.walletPubkeyExpected?.trim();
+  if (!owner) return 0;
+  let rows: Awaited<ReturnType<typeof listOrphanTokenAccounts>>;
+  try {
+    rows = await listOrphanTokenAccounts({
+      rpcUrl: cfg.rpcUrl,
+      owner,
+      protectMints: Object.keys(state.open),
+    });
+  } catch (err) {
+    console.warn('[mild-dip] wallet orphan scan failed', err);
+    return 0;
+  }
+  let adopted = 0;
+  for (const row of rows) {
+    if (state.open[row.mint] || buyInFlight.has(row.mint) || sellInFlight.has(row.mint)) continue;
+    const raw = BigInt(row.amountRaw);
+    if (raw <= HOLDING_DUST_RAW) continue;
+    const mark = await markPriceUsd(row.mint, nowMs, cfg.markCacheTtlMs);
+    const priceUsd = mark.px ?? 0;
+    // Unknown age → backdate so never_arm_max_hold can fire on the next mark.
+    const openedAtMs = Math.max(0, nowMs - cfg.exit.neverArmMaxHoldMs);
+    adoptOnChainHolding({
+      cfg,
+      state,
+      mint: row.mint,
+      symbol: row.mint.slice(0, 6),
+      tokenRaw: row.amountRaw,
+      priceUsd,
+      pc5m: null,
+      nowMs,
+      openedAtMs,
+    });
+    adopted += 1;
+  }
+  if (adopted > 0) {
+    console.log(`[mild-dip] wallet reconcile adopted=${adopted} open=${openCount(state)}`);
+  }
+  return adopted;
 }
 
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
@@ -456,10 +567,6 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         leaderBuyTs: nowMs,
       });
     } catch (err) {
-      delete state.open[c.mint];
-      buyInFlight.delete(c.mint);
-      state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
-      saveMildDipState(cfg.statePath, state);
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_buy_attempt',
         mint: c.mint,
@@ -470,6 +577,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         ok: false,
         reason: err instanceof Error ? err.message : String(err),
         mode: cfg.executionMode,
+      });
+      await releaseBuySeatUnlessOnChain({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        entryPriceUsd,
+        entryPc5m,
+        entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+        sizeUsd: sized.sizeUsd,
+        nowMs,
       });
       resetCopyFundingCache();
       continue;
@@ -492,10 +610,18 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     });
 
     if (!buy.ok) {
-      delete state.open[c.mint];
-      buyInFlight.delete(c.mint);
-      state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
-      saveMildDipState(cfg.statePath, state);
+      const kept = await releaseBuySeatUnlessOnChain({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        entryPriceUsd: buy.priceUsd || entryPriceUsd,
+        entryPc5m,
+        entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+        sizeUsd: sized.sizeUsd,
+        nowMs,
+      });
+      if (kept === 'kept_onchain') filled += 1;
       resetCopyFundingCache();
       continue;
     }
@@ -585,7 +711,7 @@ async function executeQueuedSell(args: {
     if (state.open[mint]) {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
-      saveMildDipState(cfg.statePath, state);
+      saveMildDipState(cfg.statePath, state, { removeMints: [mint] });
     }
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_cooldown_set',
@@ -614,7 +740,7 @@ async function executeQueuedSell(args: {
     if (state.open[mint]) {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
-      saveMildDipState(cfg.statePath, state);
+      saveMildDipState(cfg.statePath, state, { removeMints: [mint] });
     }
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_drop_empty',
@@ -879,10 +1005,14 @@ export async function runMildDipLoop(
   // One-shot: reclaim rent stuck in already-empty ATAs from prior $5 tests.
   if (!opts?.once) {
     await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
+    // Pick up bags lost from state (twin clobber / crash mid-buy) — Token-2022 too.
+    await reconcileWalletOrphans(cfg, state, Date.now());
   }
 
   let lastScan = 0;
   let lastMark = 0;
+  let lastOrphanReconcile = Date.now();
+  const orphanReconcileEveryMs = 300_000;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
@@ -908,6 +1038,14 @@ export async function runMildDipLoop(
       } catch (err) {
         console.warn('[mild-dip] persist hot/price ring failed', err);
       }
+    }
+
+    if (
+      !opts?.once &&
+      nowMs - lastOrphanReconcile >= orphanReconcileEveryMs
+    ) {
+      lastOrphanReconcile = nowMs;
+      await reconcileWalletOrphans(cfg, state, nowMs);
     }
 
     stats.open = openCount(state);

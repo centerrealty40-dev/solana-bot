@@ -47,9 +47,48 @@ export function loadMildDipState(statePath: string): MildDipState {
   }
 }
 
-export function saveMildDipState(statePath: string, state: MildDipState): void {
+export type SaveMildDipStateOpts = {
+  /**
+   * Mints intentionally dropped this write (successful sell, empty drop, or
+   * aborted buy with no on-chain bag). Without this, a twin writer's confirmed
+   * opens on disk are merged back in so a failed buy cannot wipe a filled seat
+   * (89RAitwP… sat ~5h after a raced send_failed clobbered state.json).
+   */
+  removeMints?: string[];
+};
+
+/**
+ * Merge in-memory opens with disk opens for a crash/twin-safe write.
+ * Memory wins on key overlap; disk-only opens are kept unless removed.
+ */
+export function mergeMildDipOpenForSave(
+  memory: Record<string, MildDipOpenPosition>,
+  disk: Record<string, MildDipOpenPosition>,
+  removeMints?: Iterable<string>,
+): Record<string, MildDipOpenPosition> {
+  const removed = new Set(removeMints ?? []);
+  const out: Record<string, MildDipOpenPosition> = { ...memory };
+  for (const m of removed) delete out[m];
+  for (const [m, pos] of Object.entries(disk)) {
+    if (removed.has(m) || out[m]) continue;
+    out[m] = pos;
+  }
+  return out;
+}
+
+export function saveMildDipState(
+  statePath: string,
+  state: MildDipState,
+  opts?: SaveMildDipStateOpts,
+): void {
   const dir = path.dirname(statePath);
   if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+  const disk = loadMildDipState(statePath);
+  state.open = mergeMildDipOpenForSave(state.open, disk.open, opts?.removeMints);
+  for (const [m, until] of Object.entries(disk.cooldownUntilMs)) {
+    const local = state.cooldownUntilMs[m] ?? 0;
+    if (until > local) state.cooldownUntilMs[m] = until;
+  }
   state.updatedAtMs = Date.now();
   const tmp = `${statePath}.tmp`;
   fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
