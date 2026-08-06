@@ -1,4 +1,21 @@
 # So
+## [1.11.700] — 2026-08-06
+
+**Тег:** `sa-1.11.700`
+
+### Ops: mild-dip `MIN_LIQUIDITY_USD` 40k → 10k
+
+Draft #612 never merged; deploy of #610 reset VPS to `origin/v2` and
+restored the $40k canary floor. Re-ship $10k so thinner mild dips
+(e.g. TINYTANK ~$33k) are eligible; Jupiter impact cap 1% still blocks
+toxic routes.
+
+**Env:** `MILD_DIP_MIN_LIQUIDITY_USD=10000`
+
+**Откат:** `40000`.
+
+---
+
 ## [1.11.699] — 2026-08-06
 
 **Тег:** `sa-1.11.699`
