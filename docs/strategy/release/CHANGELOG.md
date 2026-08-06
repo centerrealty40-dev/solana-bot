@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.700] — 2026-08-06
+
+**Тег:** `sa-1.11.700`
+
+### Fix: vol-green enrich hard budget 15s + no forceEnrich
+
+Awaken scans still froze heartbeats ~40–60s after RPM/cache fixes. Cap awaken
+enrich at **4** mints, drop cooldown forceEnrich, and **Promise.race 15s**
+budget so the loop always progresses (log `enrich budget exceeded`).
+
+**Откат:** revert; restart vol-green-bot.
+
+---
+
 ## [1.11.699] — 2026-08-06
 
 **Тег:** `sa-1.11.699`

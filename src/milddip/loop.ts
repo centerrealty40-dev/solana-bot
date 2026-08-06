@@ -278,17 +278,35 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   // keep the enrich window small so one scan cannot stall the loop for minutes.
   // At 120 RPM gated Dex (~0.5s/req) keep awaken enrich tiny so one scan cannot
   // block the event loop / heartbeat for tens of seconds.
-  const maxEnrich = awakening ? 6 : 80;
+  const maxEnrich = awakening ? 4 : 80;
   const enrichConcurrency = awakening
     ? Math.min(2, cfg.enrichConcurrency)
     : cfg.enrichConcurrency;
-  const candidates = await enrichAndFilterCandidates(cfg, mints, {
+  const enrichStarted = Date.now();
+  const enrichPromise = enrichAndFilterCandidates(cfg, mints, {
     nowMs,
     maxEnrich,
     enrichConcurrency,
-    // Keep Dex marks flowing for cooling mints even when they won't buy yet.
-    forceEnrich: awakening ? priority.slice(0, 8) : priority,
+    // Awakening: do not force-enrich cooldown mints (doubles Dex burn).
+    forceEnrich: awakening ? [] : priority,
   });
+  // Hard ceiling so a stuck Dex gate/HTTP cannot freeze the bot loop.
+  const enrichBudgetMs = awakening ? 15_000 : 120_000;
+  const candidates = await Promise.race([
+    enrichPromise,
+    sleep(enrichBudgetMs).then(() => {
+      console.warn(
+        `[mild-dip] enrich budget exceeded (${enrichBudgetMs}ms) entryMode=${cfg.entryMode} — continuing`,
+      );
+      return [] as Awaited<ReturnType<typeof enrichAndFilterCandidates>>;
+    }),
+  ]);
+  if (awakening) {
+    console.log(
+      `[mild-dip] awaken enrich done mints=${mints.length} candidates=${candidates.length} ` +
+        `ms=${Date.now() - enrichStarted} maxEnrich=${maxEnrich}`,
+    );
+  }
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 
   let filled = 0;
