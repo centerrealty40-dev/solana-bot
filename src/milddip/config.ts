@@ -237,14 +237,14 @@ export function loadMildDipConfig(): MildDipConfig {
     minPairAgeHours: envNum('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', 0.1),
     maxPairAgeHours: envNum('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', 72),
     allowedDexIds,
-    // Fat / calm green (our prior default shape).
-    liquidMinPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', 0),
+    // Fat / calm green — require >2% (weak 0–2% greens were losers in closed set).
+    liquidMinPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', 2),
     liquidMaxPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', 15),
     liquidMinVolume5mUsd: envNum('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', 2_000),
     liquidMinBuySellRatio5m: envNum('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', 1),
     liquidMinTurnover5m: envNum('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', 0.09),
     // Early thin aggressive green (leader / Ef4E8v shape).
-    earlyMinPc5mPct: envNum('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', 0),
+    earlyMinPc5mPct: envNum('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', 2),
     earlyMaxPc5mPct: envNum('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', 25),
     earlyMinVolume5mUsd: envNum('MILD_DIP_GREEN_EARLY_MIN_VOLUME_5M_USD', 400),
     earlyMinBuySellRatio5m: envNum('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', 2),

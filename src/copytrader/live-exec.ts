@@ -203,6 +203,29 @@ export async function executeLiveCopyBuy(args: {
       return { ok: false, priceUsd, reason: lastReason };
     }
 
+    const maxHops = liveCfg.liveBuyMaxRouteHops;
+    if (maxHops > 0) {
+      const hopsRaw = quote.quoteSnapshot?.routeHops;
+      const hops = typeof hopsRaw === 'number' && Number.isFinite(hopsRaw) ? hopsRaw : 0;
+      if (hops >= maxHops) {
+        lastReason = `route_too_many_hops:buy:${hops}>=${maxHops}`;
+        appendCopyEvent(cfg, {
+          kind: 'buy_quote_hops_blocked',
+          mint,
+          symbol,
+          kindBuy: kind,
+          leaderSignature,
+          sizeUsd,
+          routeHops: hops,
+          maxRouteHops: maxHops,
+          slippageBps: currentSlippageBps,
+          buySimRetryAttempt: attempt,
+        });
+        // Hop count is structural for this mint/size — do not burn retries.
+        return { ok: false, priceUsd, reason: lastReason };
+      }
+    }
+
     const currentTpl = tokensPerInLamportFromQuote(quote.quoteResponse);
     if (anchorTokensPerLamport == null && currentTpl != null) {
       anchorTokensPerLamport = currentTpl;

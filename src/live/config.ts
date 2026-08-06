@@ -293,6 +293,12 @@ const LiveOscarConfigSchema = z
      */
     liveBuyMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
     liveSellMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
+    /**
+     * Block buys whose Jupiter route has this many hops or more. **0** = off.
+     * Empirically (vol-green closed set) hops≥3 correlated with large losses.
+     * Env: `LIVE_BUY_MAX_ROUTE_HOPS` (e.g. `3` → allow 1–2 hop routes only).
+     */
+    liveBuyMaxRouteHops: z.coerce.number().int().min(0).max(10).default(0),
 
     /**
      * 1.11.502 — Chunk large live exits (partial TP, kill stop, full close) into slices
@@ -909,6 +915,7 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSimSlippageRetryMaxBps: process.env.LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS,
     liveBuyMaxPriceImpactPct: process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT,
     liveSellMaxPriceImpactPct: process.env.LIVE_SELL_MAX_PRICE_IMPACT_PCT,
+    liveBuyMaxRouteHops: process.env.LIVE_BUY_MAX_ROUTE_HOPS,
     liveExitSliceMaxUsd: process.env.LIVE_EXIT_SLICE_MAX_USD,
     liveExitSliceDelayMs: process.env.LIVE_EXIT_SLICE_DELAY_MS,
     liveExitSliceBypassBelowUsd: process.env.LIVE_EXIT_SLICE_BYPASS_BELOW_USD,

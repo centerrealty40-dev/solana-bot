@@ -9,12 +9,12 @@ const gates: GreenTapeGates = {
   minPairAgeHours: 0.1,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
-  liquidMinPc5mPct: 0,
+  liquidMinPc5mPct: 2,
   liquidMaxPc5mPct: 15,
   liquidMinVolume5mUsd: 2_000,
   liquidMinBuySellRatio5m: 1,
   liquidMinTurnover5m: 0.09,
-  earlyMinPc5mPct: 0,
+  earlyMinPc5mPct: 2,
   earlyMaxPc5mPct: 25,
   earlyMinVolume5mUsd: 400,
   earlyMinBuySellRatio5m: 2,
@@ -44,7 +44,7 @@ describe('evaluateGreenTapeEntry', () => {
   it('passes early thin green with strong buy pressure (Ef4E8v-shaped)', () => {
     const v = evaluateGreenTapeEntry(
       {
-        priceChange5mPct: 1.55,
+        priceChange5mPct: 3.2,
         volume5mUsd: 500,
         liquidityUsd: 17_000,
         marketCapUsd: 44_000,
@@ -59,10 +59,28 @@ describe('evaluateGreenTapeEntry', () => {
     expect(v.path).toBe('early');
   });
 
-  it('rejects Ef4E8v at the exact skip snapshot (vol too thin even for early)', () => {
+  it('rejects weak green pc5m<=2 (closed-set loser bucket)', () => {
     const v = evaluateGreenTapeEntry(
       {
         priceChange5mPct: 1.55,
+        volume5mUsd: 12_000,
+        liquidityUsd: 40_000,
+        marketCapUsd: 200_000,
+        pairAgeHours: 6,
+        dexId: 'pumpswap',
+        buys5m: 40,
+        sells5m: 25,
+      },
+      gates,
+    );
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.includes('pc5m'))).toBe(true);
+  });
+
+  it('rejects Ef4E8v at the exact skip snapshot (vol too thin even for early)', () => {
+    const v = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 3.0,
         volume5mUsd: 169.62,
         liquidityUsd: 17_073,
         marketCapUsd: 44_202,

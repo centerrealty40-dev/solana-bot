@@ -1,5 +1,30 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.703] — 2026-08-06
+
+**Тег:** `sa-1.11.703`
+
+### Change: vol-green entry cuts from closed-trade RCA (96 sells)
+
+Sample: win 41%, med −4.4%. Edge is almost only `peak_giveback` (+580pp);
+`never_arm_dead/vol_fade` = −1042pp. Entry correlates that cut losers:
+
+| Cut | cutSum | keptSum lift |
+| --- | ---: | ---: |
+| pc5m≤2 | −103pp | +103pp |
+| chase>2% | −193pp | +193pp |
+| routeHops≥3 | −272pp | +272pp |
+| pc5m≤2 OR hops≥3 | −362pp | +362pp |
+
+Shipped gates:
+- green_tape min pc5m **>2%** (liquid+early)
+- `MILD_DIP_MAX_CHASE_PCT=2` / `LIVE_BUY_MAX_CHASE_PCT=2`
+- `LIVE_BUY_MAX_ROUTE_HOPS=3` (new) → `buy_quote_hops_blocked`
+
+**Откат:** restore min pc=0, chase=8/12, `LIVE_BUY_MAX_ROUTE_HOPS=0`.
+
+---
+
 ## [1.11.702] — 2026-08-06
 
 **Тег:** `sa-1.11.702`
