@@ -1,4 +1,27 @@
 # So
+## [1.11.690] — 2026-08-06
+
+**Тег:** `sa-1.11.690`
+
+### Change: mild-dip require dump depth ≥4% (`MAX_DIP_PCT=-4`)
+
+Leaders (8zkg) stop buying when a mint goes flat; mild-dip kept grinding
+`pc5m ∈ (−3, 0]` noise. 36h journal CF (714 leader entries / 681 our buys):
+
+| Gate | Leader dump recall | Cut after-flat buys | CF PnL improve |
+| --- | ---: | ---: | ---: |
+| `MAX_DIP=-4` | ~83% | ~47% | ~+754 pct-pts (cut losers) |
+| `MAX_DIP=-5` | ~75% | ~53% | ~+849 |
+
+Prod choice: **−4** (balance). Band becomes `pc5m ∈ (−20, −4]`.
+
+- `MILD_DIP_MAX_DIP_PCT=-4` (was `0`)
+- Default in `src/milddip/config.ts` aligned to `-4`
+
+**Откат:** `MILD_DIP_MAX_DIP_PCT=0` + reload.
+
+---
+
 ## [1.11.689] — 2026-08-06
 
 **Тег:** `sa-1.11.689`

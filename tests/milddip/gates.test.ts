@@ -88,6 +88,46 @@ describe('evaluateMildDipEntry', () => {
     );
     expect(v.pass).toBe(true);
   });
+
+  it('prod band (−20, −4]: rejects shallow flat-chop, accepts real dump', () => {
+    const prod = { ...baseGates, maxDipPct: -4 };
+    const shallow = evaluateMildDipEntry(
+      {
+        priceChange5mPct: -2.5,
+        volume5mUsd: 25_000,
+        liquidityUsd: 40_000,
+        marketCapUsd: 400_000,
+        pairAgeHours: 6,
+        dexId: 'pumpswap',
+      },
+      prod,
+    );
+    expect(shallow.pass).toBe(false);
+    const dump = evaluateMildDipEntry(
+      {
+        priceChange5mPct: -9.0,
+        volume5mUsd: 25_000,
+        liquidityUsd: 40_000,
+        marketCapUsd: 400_000,
+        pairAgeHours: 6,
+        dexId: 'pumpswap',
+      },
+      prod,
+    );
+    expect(dump.pass).toBe(true);
+    const boundary = evaluateMildDipEntry(
+      {
+        priceChange5mPct: -4,
+        volume5mUsd: 25_000,
+        liquidityUsd: 40_000,
+        marketCapUsd: 400_000,
+        pairAgeHours: 6,
+        dexId: 'pumpswap',
+      },
+      prod,
+    );
+    expect(boundary.pass).toBe(true);
+  });
 });
 
 describe('evaluateMildDipPreBuy', () => {
