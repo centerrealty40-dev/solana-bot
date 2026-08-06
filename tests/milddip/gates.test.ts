@@ -95,25 +95,20 @@ describe('evaluateMildDipEntry', () => {
     expect(v.pass).toBe(true);
   });
 
-  it('prod band (−25, −1]: rejects flat-chop, accepts soft recovery + dump', () => {
-    const prod = { ...baseGates, minDipPct: -25, maxDipPct: -1 };
-    const flat = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -0.5 }),
+  it('prod band (−25, −5]: rejects shallow flat-chop, accepts real dump', () => {
+    const prod = { ...baseGates, minDipPct: -25, maxDipPct: -5 };
+    const shallow = evaluateMildDipEntry(
+      metrics({ priceChange5mPct: -3.0 }),
       prod,
     );
-    expect(flat.pass).toBe(false);
-    const softEdge = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -1.9 }),
-      prod,
-    );
-    expect(softEdge.pass).toBe(true);
+    expect(shallow.pass).toBe(false);
     const dump = evaluateMildDipEntry(
       metrics({ priceChange5mPct: -9.0 }),
       prod,
     );
     expect(dump.pass).toBe(true);
     const boundary = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -1 }),
+      metrics({ priceChange5mPct: -5 }),
       prod,
     );
     expect(boundary.pass).toBe(true);

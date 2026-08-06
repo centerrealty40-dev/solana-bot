@@ -2788,7 +2788,7 @@ const PM2_APPS = [
     },
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
-     * Entry: DexScreener pc5m ∈ (−25, −1], clip $5; buy impact ≤2%.
+     * Entry: DexScreener pc5m ∈ (−25, −5], clip $5; buy impact ≤2%.
      * Exit: arm MFE +5% → half @ −3% giveback / full @ −8% (no hard TP).
      * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $5 USDC).
      */
@@ -2832,11 +2832,10 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_DIP_PCT: '-25',
         /**
-         * 1.11.702 — soften shallow edge −4 → −1 (pc5m ∈ (−25, −1]).
-         * Prebuy often saw −1.9 recoveries that still looked like dips;
-         * −4 was cutting those. Greens (+pc5m) still rejected.
+         * 1.11.703 — tighten shallow edge −1 → −5 (pc5m ∈ (−25, −5]).
+         * 10h CF: −6…−3 bucket was the worst mean PnL; require ≥5% dump depth.
          */
-        MILD_DIP_MAX_DIP_PCT: '-1',
+        MILD_DIP_MAX_DIP_PCT: '-5',
         /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
         MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**

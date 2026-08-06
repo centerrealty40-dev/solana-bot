@@ -1,4 +1,19 @@
 # So
+## [1.11.703] — 2026-08-06
+
+**Тег:** `sa-1.11.703`
+
+### Ops: mild-dip `MAX_DIP_PCT` −1 → −5
+
+10h live CF: shallow band (−6…−3) was the worst mean-PnL bucket and fed
+`never_arm_*` losers. Require dump depth ≥5% again (`pc5m ∈ (−25, −5]`).
+
+**Env:** `MILD_DIP_MAX_DIP_PCT=-5`
+
+**Откат:** `−1`.
+
+---
+
 ## [1.11.702] — 2026-08-06
 
 **Тег:** `sa-1.11.702`
