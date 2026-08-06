@@ -164,7 +164,7 @@ export function loadMildDipConfig(): MildDipConfig {
    */
   const exit: MildDipExitGates = {
     armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 8),
-    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 8),
+    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),

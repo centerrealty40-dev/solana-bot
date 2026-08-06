@@ -2843,9 +2843,15 @@ const PM2_APPS = [
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
-        /** W9.1 peak-giveback: arm at +8% MFE, full exit on −8% from peak. */
+        /**
+         * W9.1 peak-giveback: arm at +8% MFE, full exit on −6% from peak.
+         * 1.11.693 — back to 6 after the unmeasured 6→8 widen: 160 armed exits
+         * at 6 gave avg +9.2% / win 84% / 41% MFE capture; the 22 exits at 8
+         * gave +6.4% / 73% / 37% while realized giveback widened −7.6%→−9.0%.
+         * 8 may still be right, but it needs armed mark-path logging to test.
+         */
         MILD_DIP_EXIT_ARM_PCT: '8',
-        MILD_DIP_EXIT_GIVEBACK_PCT: '8',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '6',
         /**
          * Never-armed exit (finite — never sit forever), ordered soft → hard:
          * - patience=0: no early never_arm_giveback knife
@@ -2856,7 +2862,7 @@ const PM2_APPS = [
          * 1.11.692 — the clock was the loss source: `Agmu8Xgn` was thrown out by
          * the 40m ceiling at MFE 7.84% (arm needs 8%) and ran +55% within 11m.
          * Leader (1506 sessions) holds >40m in 29% of cases, 33% of those end >+10%.
-         * Armed: arm +8% → giveback −8%.
+         * Armed: arm +8% → giveback −6%.
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
