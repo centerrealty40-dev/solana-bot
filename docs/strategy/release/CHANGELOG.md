@@ -1,4 +1,19 @@
 # So
+## [1.11.701] — 2026-08-06
+
+**Тег:** `sa-1.11.701`
+
+### Ops: mild-dip `MIN_VOLUME_5M_USD` 1500 → 500
+
+Active dips with healthy tape can sit under $1500/5m (e.g. Mowgli ~$590)
+and never become candidates. Floor lowered to $500.
+
+**Env:** `MILD_DIP_MIN_VOLUME_5M_USD=500`
+
+**Откат:** `1500`.
+
+---
+
 ## [1.11.700] — 2026-08-06
 
 **Тег:** `sa-1.11.700`

@@ -2833,7 +2833,8 @@ const PM2_APPS = [
          * 36h CF vs 8zkg dumps: MAX=-4 → dump recall ~83%, cuts ~47% after-flat buys.
          */
         MILD_DIP_MAX_DIP_PCT: '-4',
-        MILD_DIP_MIN_VOLUME_5M_USD: '1500',
+        /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
+        MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
          * $5 clips; impact still capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT=1.
