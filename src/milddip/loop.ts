@@ -68,6 +68,9 @@ export type MildDipLoopStats = {
  */
 const sellInFlight = new Set<string>();
 
+/** In-flight buys — seat reserved in `state.open` before Jupiter send. */
+const buyInFlight = new Set<string>();
+
 /** Live loop stats pointer for mark-pass telemetry (set in runMildDipLoop). */
 let loopStatsRef: MildDipLoopStats | null = null;
 
@@ -281,9 +284,20 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   let filled = 0;
   for (const c of candidates) {
     if (filled >= slots) break;
-    if (state.open[c.mint]) continue;
+    if (state.open[c.mint] || buyInFlight.has(c.mint) || sellInFlight.has(c.mint)) continue;
     if (onCooldown(state, c.mint, nowMs)) continue;
     if (cfg.deniedMints.includes(c.mint)) continue;
+
+    // Merge disk state — a twin process / restart may have opened this mint.
+    const disk = loadMildDipState(cfg.statePath);
+    if (disk.open[c.mint]) {
+      state.open[c.mint] = disk.open[c.mint]!;
+      continue;
+    }
+    for (const [m, until] of Object.entries(disk.cooldownUntilMs)) {
+      const local = state.cooldownUntilMs[m] ?? 0;
+      if (until > local) state.cooldownUntilMs[m] = until;
+    }
 
     // Never rebuy a mint we already hold on-chain (state can lag after restart).
     const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);
@@ -393,26 +407,73 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       continue;
     }
 
-    const leaderSig = `milddip_${c.mint.slice(0, 8)}_${nowMs}`;
-    const buy = await executeCopyBuy({
-      cfg: copyCfg,
+    // Reserve seat BEFORE Jupiter send so a twin process / overlapping scan
+    // cannot open a second $5 clip on the same mint (seen on BorBvx…).
+    if (buyInFlight.has(c.mint) || state.open[c.mint]) continue;
+    buyInFlight.add(c.mint);
+    state.open[c.mint] = {
       mint: c.mint,
       symbol: c.symbol,
-      priceUsd: entryPriceUsd,
+      entryPriceUsd,
       sizeUsd: sized.sizeUsd,
-      kind: 'entry',
-      evalResult: {
-        pass: true,
-        reasons: [
-          `mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
-        ],
-        score: Math.abs(entryPc5m ?? 0),
-      },
-      leaderSignature: leaderSig,
-      // Anchor for Jupiter quote premium guard — abort mid-retry green chase.
-      leaderPriceUsd: entryPriceUsd,
-      leaderBuyTs: nowMs,
+      tokenRaw: null,
+      openedAtMs: nowMs,
+      entryPc5mPct: entryPc5m,
+      buySignature: null,
+      peakPriceUsd: entryPriceUsd,
+      trailArmed: false,
+      entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+    };
+    saveMildDipState(cfg.statePath, state);
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_buy_reserved',
+      mint: c.mint,
+      symbol: c.symbol,
+      sizeUsd: sized.sizeUsd,
+      priceUsd: entryPriceUsd,
     });
+
+    const leaderSig = `milddip_${c.mint.slice(0, 8)}_${nowMs}`;
+    let buy: Awaited<ReturnType<typeof executeCopyBuy>>;
+    try {
+      buy = await executeCopyBuy({
+        cfg: copyCfg,
+        mint: c.mint,
+        symbol: c.symbol,
+        priceUsd: entryPriceUsd,
+        sizeUsd: sized.sizeUsd,
+        kind: 'entry',
+        evalResult: {
+          pass: true,
+          reasons: [
+            `mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
+          ],
+          score: Math.abs(entryPc5m ?? 0),
+        },
+        leaderSignature: leaderSig,
+        // Anchor for Jupiter quote premium guard — abort mid-retry green chase.
+        leaderPriceUsd: entryPriceUsd,
+        leaderBuyTs: nowMs,
+      });
+    } catch (err) {
+      delete state.open[c.mint];
+      buyInFlight.delete(c.mint);
+      state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+      saveMildDipState(cfg.statePath, state);
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_buy_attempt',
+        mint: c.mint,
+        symbol: c.symbol,
+        sizeUsd: sized.sizeUsd,
+        priceUsd: entryPriceUsd,
+        signalPriceUsd: c.priceUsd,
+        ok: false,
+        reason: err instanceof Error ? err.message : String(err),
+        mode: cfg.executionMode,
+      });
+      resetCopyFundingCache();
+      continue;
+    }
 
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_buy_attempt',
@@ -431,7 +492,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     });
 
     if (!buy.ok) {
+      delete state.open[c.mint];
+      buyInFlight.delete(c.mint);
       state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+      saveMildDipState(cfg.statePath, state);
       resetCopyFundingCache();
       continue;
     }
@@ -452,6 +516,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       trailArmed: false,
       entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     };
+    buyInFlight.delete(c.mint);
     // Persist immediately — a restart before the tick-end save used to allow a rebuy.
     saveMildDipState(cfg.statePath, state);
     filled += 1;
@@ -784,9 +849,13 @@ export async function runMildDipLoop(
     stats.stream = streamHandle != null;
   }
 
+  const buyImpactCap = process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT?.trim() || '0';
+  const jupPriority = process.env.LIVE_JUPITER_SWAP_PRIORITY_LEVEL?.trim() || 'n/a';
+  const jupFeeCapSol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim() || 'n/a';
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
+      `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
@@ -798,6 +867,8 @@ export async function runMildDipLoop(
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0} ` +
       `prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
+      `slippageBps=${cfg.slippageBps} buyImpactCap=${buyImpactCap}% ` +
+      `jupPriority=${jupPriority} jupFeeCapSol=${jupFeeCapSol} ` +
       `maxCooldownBouncePct=${cfg.maxCooldownBouncePct} ` +
       `lookback=${cfg.cooldownBounceLookbackMs}ms ` +
       `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +

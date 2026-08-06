@@ -1,4 +1,25 @@
 # So
+## [1.11.695] — 2026-08-06
+
+**Тег:** `sa-1.11.695`
+
+### Fix: mild-dip double-buys — single-instance lock + buy seat reserve
+
+Root cause of repeated double $5 buys (e.g. `BorBvxBN…pump`): a **second**
+`mild-dip-bot` under `PM2_HOME=/root/.pm2` (root) raced the canonical
+`salpha` PM2 on the same wallet. Leader sigs
+`milddip_BorBvxBN_<scanNowMs>` differed by ~33s; USDC dropped $5+$5.
+
+- Exclusive lock file `data/milddip/mild-dip-bot.lock` (O_EXCL + stale-pid reclaim)
+- Reserve `state.open[mint]` + persist **before** Jupiter buy send
+- Re-merge disk `state.json` before each entry attempt
+- Ops: delete rogue root PM2 app (do not run mild-dip under root)
+
+**Откат:** remove lock acquire in `mild-dip-bot.ts` / buy-reserve block in
+`loop.ts`; keep only one PM2 home (`salpha`).
+
+---
+
 ## [1.11.694] — 2026-08-06
 
 **Тег:** `sa-1.11.694`
@@ -99,6 +120,28 @@ costs no extra requests.
 **Откат:** `MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO=0` +
 `MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD=0` (disables fade),
 `MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS=2400000` + reload.
+
+---
+
+## [1.11.692a] — 2026-08-06
+
+**Тег:** `sa-1.11.692a`
+
+### Change: mild-dip exec-friction canary (impact + fees)
+
+Session audit (~10h, ~700 RT × $5): SOL fees ≈ $10–15; Jupiter quoted impact
+med ~0.46%/leg (~$33–43 RT attribution). Canary on **mild-dip-bot only**:
+
+- `MILD_DIP_MIN_LIQUIDITY_USD=40000` (was 15000) — skip thinnest pools
+- `LIVE_BUY_MAX_PRICE_IMPACT_PCT=1` — block buy quotes with impact >1%
+  (existing copytrader `buy_quote_impact_blocked`; **sells not gated**)
+- `LIVE_JUPITER_SWAP_PRIORITY_LEVEL=medium` + `LIVE_JUPITER_PRIORITY_MAX_SOL=0.00005`
+  (overrides `JUPITER_PRO_TRADING_ENV` high/0.0001 for this process)
+- Boot log now prints `minLiq`, `buyImpactCap`, `jupPriority`, `jupFeeCapSol`
+
+**Откат:** `MIN_LIQUIDITY_USD=15000`, `LIVE_BUY_MAX_PRICE_IMPACT_PCT=0`,
+`LIVE_JUPITER_SWAP_PRIORITY_LEVEL=high`, `LIVE_JUPITER_PRIORITY_MAX_SOL=0.0001`
++ `pm2 reload ecosystem.config.cjs --only mild-dip-bot --update-env`.
 
 ---
 
