@@ -10,6 +10,7 @@ import {
   collectCandidateMints,
   enrichAndFilterCandidates,
   priorityMintsFromCooldown,
+  priorityMintsFromPriceRingDip,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
@@ -272,12 +273,15 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     postCooldownMs: 120_000,
   });
   const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
+  const ringDipPriority = priorityMintsFromPriceRingDip(cfg, mints, nowMs, { max: 80 });
+  const forceEnrich = [...new Set([...priority, ...ringDipPriority])];
   const candidates = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
     maxEnrich: 80,
     enrichConcurrency: cfg.enrichConcurrency,
-    // Keep Dex marks flowing for cooling mints even when they won't buy yet.
-    forceEnrich: priority,
+    // Keep Dex marks flowing for cooling mints and active ring-dips even when
+    // hot-list recency pushes them below the normal enrich window.
+    forceEnrich,
   });
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 
@@ -726,7 +730,9 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
 
   const markStarted = Date.now();
   const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
-    const { px, volume5mUsd } = await markPriceUsd(mint, nowMs, cfg.markCacheTtlMs);
+    const pos = state.open[mint];
+    const ttlMs = pos?.trailArmed === true ? Math.min(cfg.markCacheTtlMs, 500) : cfg.markCacheTtlMs;
+    const { px, volume5mUsd } = await markPriceUsd(mint, nowMs, ttlMs);
     return { mint, px, volume5mUsd };
   });
   const markPassMs = Date.now() - markStarted;
@@ -967,8 +973,10 @@ export async function runMildDipLoop(
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
 
-    // Respect markInterval (previously `|| openCount>0` hammered Dex every tick).
-    if (openCount(state) > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
+    // Respect markInterval; armed runners get a tighter cadence so spikes are not missed.
+    const hasArmedOpen = Object.values(state.open).some((p) => p.trailArmed === true);
+    const markDueMs = hasArmedOpen ? Math.min(cfg.markIntervalMs, 1_000) : cfg.markIntervalMs;
+    if (openCount(state) > 0 && nowMs - lastMark >= markDueMs) {
       await tryExits(cfg, state, nowMs);
       lastMark = nowMs;
       stats.lastMarkAtMs = nowMs;
@@ -1032,7 +1040,8 @@ export async function runMildDipLoop(
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      await sleep(Math.min(cfg.markIntervalMs, 5_000));
+      const hasArmedOpen = Object.values(state.open).some((p) => p.trailArmed === true);
+      await sleep(hasArmedOpen ? Math.min(cfg.markIntervalMs, 1_000) : Math.min(cfg.markIntervalMs, 5_000));
     }
   } finally {
     shutdown();

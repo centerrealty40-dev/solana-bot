@@ -13,7 +13,7 @@ import {
   type MildDipCandidateMetrics,
 } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
-import { mildDipPriceRing } from './price-ring.js';
+import { mildDipPriceRing, type MildDipPriceRing } from './price-ring.js';
 
 export type MildDipCandidate = {
   mint: string;
@@ -100,6 +100,36 @@ export function priorityMintsFromCooldown(
   // Soonest-to-ready first (cooling ending soon / just ended).
   out.sort((a, b) => (cooldownUntilMs[a] ?? 0) - (cooldownUntilMs[b] ?? 0));
   return out;
+}
+
+/**
+ * Mints whose local price-ring already shows an entry-band drawdown should not
+ * lose the Dex enrich budget just because newer noisy mints arrived later.
+ */
+export function priorityMintsFromPriceRingDip(
+  cfg: Pick<MildDipConfig, 'cooldownBounceLookbackMs' | 'entry'>,
+  mints: readonly string[],
+  nowMs: number,
+  opts?: { max?: number; ring?: MildDipPriceRing },
+): string[] {
+  const ring = opts?.ring ?? mildDipPriceRing;
+  const max = Math.max(0, Math.floor(opts?.max ?? 80));
+  const seen = new Set<string>();
+  const rows: Array<{ mint: string; drawdownPct: number; lastTs: number }> = [];
+  for (const mint of mints) {
+    if (!mint || seen.has(mint)) continue;
+    seen.add(mint);
+    const drawdownPct = ring.drawdownFromPeakPct(mint, cfg.cooldownBounceLookbackMs, nowMs);
+    if (drawdownPct == null || !Number.isFinite(drawdownPct)) continue;
+    if (!(drawdownPct > cfg.entry.minDipPct && drawdownPct <= cfg.entry.maxDipPct)) continue;
+    rows.push({
+      mint,
+      drawdownPct,
+      lastTs: ring.lastPrice(mint, nowMs)?.tsMs ?? 0,
+    });
+  }
+  rows.sort((a, b) => a.drawdownPct - b.drawdownPct || b.lastTs - a.lastTs);
+  return rows.slice(0, max).map((r) => r.mint);
 }
 
 export async function collectCandidateMints(
@@ -241,8 +271,12 @@ export async function enrichAndFilterCandidates(
 
   const out = rows.filter((r): r is MildDipCandidate => r != null);
 
-  // Prefer deeper mild dips first (more negative pc5m / stream drawdown).
-  out.sort((a, b) => (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0));
+  // Prefer liquid, actively traded dips first; depth is the secondary tie-breaker.
+  out.sort(
+    (a, b) =>
+      (b.metrics.volume5mUsd ?? 0) - (a.metrics.volume5mUsd ?? 0) ||
+      (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0),
+  );
   return out;
 }
 

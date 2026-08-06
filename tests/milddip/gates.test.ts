@@ -28,6 +28,7 @@ const baseGates: MildDipEntryGates = {
   maxDipPct: 0,
   minVolume5mUsd: 8_000,
   minLiquidityUsd: 15_000,
+  maxTurnover5mLiqRatio: 0.8,
   minMarketCapUsd: 50_000,
   maxMarketCapUsd: 300_000_000,
   minPairAgeHours: 0.25,
@@ -80,6 +81,19 @@ describe('evaluateMildDipEntry', () => {
     const v = evaluateMildDipEntry(metrics({ priceChange5mPct: 3, pairAgeHours: 48 }), baseGates);
     expect(v.pass).toBe(false);
     expect(v.reasons.some((r) => r.includes('pc5m'))).toBe(true);
+  });
+
+  it('rejects excessive 5m turnover vs liquidity', () => {
+    const v = evaluateMildDipEntry(
+      metrics({
+        priceChange5mPct: -12,
+        volume5mUsd: 45_000,
+        liquidityUsd: 40_000,
+      }),
+      baseGates,
+    );
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.includes('turnover5m_liq'))).toBe(true);
   });
 
   it('rejects deep knife (pc5m ≤ −20)', () => {
@@ -204,7 +218,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.givebackPct).toBeLessThanOrEqual(-8 + 1e-6);
   });
 
-  it('arm at +5%: NV2RYH-style +5.5% MFE arms the trail', () => {
+  it('arm at +5% immediately sells half instead of waiting for giveback', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 105.5,
@@ -214,7 +228,9 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     });
     expect(v.armed).toBe(true);
     expect(v.justArmed).toBe(true);
-    expect(v.shouldExit).toBe(false);
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('peak_giveback_partial');
+    expect(v.fraction).toBe(0.5);
   });
 
   it('scale-out: −3% from peak sells half; −8% sells all', () => {

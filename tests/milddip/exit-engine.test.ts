@@ -52,7 +52,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     cliffDumpPnlPct: 50,
   };
 
-  it('updates peak and arms without exiting', () => {
+  it('updates peak and queues immediate scale-out on first arm', () => {
     const p = pos({
       mint: 'm1',
       entryPriceUsd: 100,
@@ -70,7 +70,9 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(d).not.toBeNull();
     expect(d!.armed).toBe(true);
     expect(d!.justArmed).toBe(true);
-    expect(d!.shouldExit).toBe(false);
+    expect(d!.shouldExit).toBe(true);
+    expect(d!.reason).toBe('peak_giveback_partial');
+    expect(d!.fraction).toBe(0.5);
     applyMarkDecisionToPosition(p, d!);
     expect(p.trailArmed).toBe(true);
     expect(p.peakPriceUsd).toBe(110);

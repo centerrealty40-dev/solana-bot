@@ -2826,24 +2826,18 @@ const PM2_APPS = [
         MILD_DIP_POSITION_USD: '5',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
         MILD_DIP_MAX_OPEN_POSITIONS: '0',
-        /**
-         * 1.11.702 — slightly wider knife floor (was −20). Prebuy was skipping
-         * dumps that printed −25…−30 by the time the quote landed.
-         */
-        MILD_DIP_MIN_DIP_PCT: '-25',
-        /**
-         * 1.11.703 — tighten shallow edge −1 → −5 (pc5m ∈ (−25, −5]).
-         * 10h CF: −6…−3 bucket was the worst mean PnL; require ≥5% dump depth.
-         */
-        MILD_DIP_MAX_DIP_PCT: '-5',
+        /** 1.11.704 — trade only middle pullbacks: avoid deep knives and shallow noise. */
+        MILD_DIP_MIN_DIP_PCT: '-20',
+        MILD_DIP_MAX_DIP_PCT: '-10',
         /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
         MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
          * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
          */
-        MILD_DIP_MIN_LIQUIDITY_USD: '10000',
-        MILD_DIP_MIN_MCAP_USD: '15000',
+        MILD_DIP_MIN_LIQUIDITY_USD: '5000',
+        MILD_DIP_MAX_TURNOVER_5M_LIQ_RATIO: '0.8',
+        MILD_DIP_MIN_MCAP_USD: '10000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.25',
         /** 0 = no max age — do not skip older pumps on mild dips. */

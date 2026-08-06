@@ -28,6 +28,8 @@ export type MildDipEntryGates = {
   maxDipPct: number;
   minVolume5mUsd: number;
   minLiquidityUsd: number;
+  /** 0 = disabled; blocks churn when 5m volume exceeds pool liquidity by too much. */
+  maxTurnover5mLiqRatio: number;
   minMarketCapUsd: number;
   maxMarketCapUsd: number;
   minPairAgeHours: number;
@@ -129,6 +131,21 @@ export function evaluateMildDipEntry(
     const liq = metrics.liquidityUsd;
     if (liq == null || !Number.isFinite(liq)) reasons.push('missing_liquidity');
     else if (liq < gates.minLiquidityUsd) reasons.push(`liq=${liq.toFixed(0)}<${gates.minLiquidityUsd}`);
+  }
+
+  if (gates.maxTurnover5mLiqRatio > 0) {
+    const v = metrics.volume5mUsd;
+    const liq = metrics.liquidityUsd;
+    if (
+      v != null &&
+      liq != null &&
+      Number.isFinite(v) &&
+      Number.isFinite(liq) &&
+      liq > 0 &&
+      v / liq > gates.maxTurnover5mLiqRatio
+    ) {
+      reasons.push(`turnover5m_liq=${(v / liq).toFixed(2)}>${gates.maxTurnover5mLiqRatio}`);
+    }
   }
 
   if (gates.minMarketCapUsd > 0 || gates.maxMarketCapUsd > 0) {
@@ -445,11 +462,12 @@ export function evaluateMildDipPeakGiveback(args: {
     scaleFrac > 0 &&
     !scaleOutDone &&
     givebackPct <= -partialPct + 1e-9;
+  const immediateScaleOutHit = justArmed && partialPct > 0 && scaleFrac > 0 && !scaleOutDone;
 
   if (armed && fullGivebackHit) {
     return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
   }
-  if (armed && partialGivebackHit) {
+  if (armed && (immediateScaleOutHit || partialGivebackHit)) {
     return {
       ...hold,
       shouldExit: true,

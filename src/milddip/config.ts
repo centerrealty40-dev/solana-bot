@@ -91,6 +91,7 @@ const MildDipConfigSchema = z.object({
     maxDipPct: z.number(),
     minVolume5mUsd: z.number(),
     minLiquidityUsd: z.number(),
+    maxTurnover5mLiqRatio: z.number(),
     minMarketCapUsd: z.number(),
     maxMarketCapUsd: z.number(),
     minPairAgeHours: z.number(),
@@ -148,15 +149,15 @@ export function loadMildDipConfig(): MildDipConfig {
     : [];
 
   const entry: MildDipEntryGates = {
-    /** 1.11.702 — wider knife floor (default −25 ⇒ pc5m > −25%). */
-    minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -25),
-    /** Inclusive upper bound — require dump depth (default −5 ⇒ pc5m ≤ −5%). */
-    maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -5),
+    /** 1.11.704 — middle pullback band: avoid deep knives and shallow noise. */
+    minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -20),
+    maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -10),
     /** 1.11.701 — default $500 (was $1500). */
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 500),
-    /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
-    minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
-    minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
+    /** 1.11.705 — allow thinner late dips while keeping $5 clip risk bounded. */
+    minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 5_000),
+    maxTurnover5mLiqRatio: envNum('MILD_DIP_MAX_TURNOVER_5M_LIQ_RATIO', 0.8),
+    minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 10_000),
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.25),
     /** 0 = no max age cap (older pump names like CATE still eligible). */
