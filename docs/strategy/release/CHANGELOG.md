@@ -1,5 +1,33 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.699] — 2026-08-06
+
+**Тег:** `sa-1.11.699`
+
+### Fix: vol-green scan cadence — enrich 6 + no quote-cache file lock
+
+Even at 120 RPM, awaken scans still blocked ~40s (heartbeat froze): cache
+`putCachedDexQuotes` file-lock + enrich 12. Sole LERA consumer now uses
+`DEX_QUOTE_CACHE_ENABLED=0`, awaken `maxEnrich=6`, concurrency 2.
+
+**Откат:** revert; restart vol-green-bot.
+
+---
+
+## [1.11.698] — 2026-08-06
+
+**Тег:** `sa-1.11.698`
+
+### Fix: vol-green Dex gate env — use GLOBAL_MAX_RPM=120
+
+Entry script exported `DEXSCREENER_MAX_RPM` but the quote-cache gate reads
+`DEXSCREENER_GLOBAL_MAX_RPM` (default **42**). Scans took ~60s+ and starved
+heartbeats. Set `DEXSCREENER_GLOBAL_MAX_RPM=120` and shrink awaken enrich to 12.
+
+**Откат:** revert; restart vol-green-bot.
+
+---
+
 ## [1.11.697] — 2026-08-06
 
 **Тег:** `sa-1.11.697`

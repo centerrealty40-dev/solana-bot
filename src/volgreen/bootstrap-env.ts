@@ -90,7 +90,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // Stream-only universe — boosts/profiles burn Dex RPM before awakening eval.
   setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');
   setIfAbsent('MILD_DIP_STREAM', '1');
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '2');
+  setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');
   setIfAbsent('MILD_DIP_SLIPPAGE_BPS', '500');
   setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '4');
   setIfAbsent('MILD_DIP_MIN_FEE_SOL_RESERVE', '0.02');

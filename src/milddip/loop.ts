@@ -276,11 +276,11 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const awakening = cfg.entryMode === 'awakening';
   // Awakening does a full Dex live parse per mint behind the 120 RPM gate —
   // keep the enrich window small so one scan cannot stall the loop for minutes.
-  // At 120 RPM gated Dex (~0.5s/req) keep awaken enrich ≤12 so a scan finishes
-  // in ~6–10s and cannot starve the heartbeat / next tick.
-  const maxEnrich = awakening ? 12 : 80;
+  // At 120 RPM gated Dex (~0.5s/req) keep awaken enrich tiny so one scan cannot
+  // block the event loop / heartbeat for tens of seconds.
+  const maxEnrich = awakening ? 6 : 80;
   const enrichConcurrency = awakening
-    ? Math.min(3, cfg.enrichConcurrency)
+    ? Math.min(2, cfg.enrichConcurrency)
     : cfg.enrichConcurrency;
   const candidates = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
