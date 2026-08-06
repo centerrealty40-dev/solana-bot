@@ -1,4 +1,25 @@
-# So
+# Solana Alpha — журнал релизов продукта
+
+## [1.11.696] — 2026-08-06
+
+**Тег:** `sa-1.11.696`
+
+### Feature: `vol-green-bot` — VA/green entry + mild-dip exit (LERA / FxQf / $5)
+
+Новая изолированная линия на кошельке `FxQfFTmj…` (бывший copy-8zkg):
+
+- **Entry:** `MILD_DIP_ENTRY_MODE=awakening` → `evaluateAwakeningSignal` (green-tape / vol spike)
+- **Exit/manage:** тот же W9.1 стек, что у Oscar `mild-dip-bot` (arm 8 / giveback 6 / never-arm / vol-fade)
+- **Clip:** $5 USDC; state/journal под `data/volgreen/`
+- **Host:** LERA `ecosystem.vol-green.cjs` + Helius; на Oscar app в exclude-list (не крадёт Dex у mild-dip)
+
+Файлы: `src/volgreen/*`, `src/scripts/vol-green-bot.ts`, hooks в `milddip/config|discover|loop`,
+`docs/strategy/volgreen/RUNBOOK_VOL_GREEN_LERA.md`.
+
+**Откат:** `pm2 delete vol-green-bot` на LERA; `MILD_DIP_ENTRY_MODE=mild_dip` (default) на Oscar не менялся.
+
+---
+
 ## [1.11.695] — 2026-08-06
 
 **Тег:** `sa-1.11.695`

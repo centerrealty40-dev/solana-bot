@@ -2950,6 +2950,58 @@ const PM2_APPS = [
       },
     },
     /**
+     * vol-green-bot — VA/green entry + mild-dip exit on FxQf wallet.
+     * Intended host: LERA (`ecosystem.vol-green.cjs`). Listed here for code
+     * parity; excluded from Oscar PM2 filter so reload cannot steal Dex/RPC.
+     */
+    {
+      name: 'vol-green-bot',
+      cwd: root,
+      script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+      args: 'src/scripts/vol-green-bot.ts',
+      interpreter: 'node',
+      exec_mode: 'fork',
+      instances: 1,
+      autostart: false,
+      autorestart: true,
+      max_restarts: 30,
+      restart_delay: 8000,
+      merge_logs: true,
+      time: true,
+      env: {
+        ...PM2_JUPITER_KEY_ENV,
+        ...JUPITER_PRO_TRADING_ENV,
+        JUPITER_GLOBAL_MAX_RPS: '9',
+        ...DEXSCREENER_GATE_ENV,
+        ...DEX_QUOTE_CACHE_ENV,
+        NODE_ENV: 'production',
+        VOL_GREEN_APP_NAME: 'vol-green-bot',
+        VOL_GREEN_ENTRY_MODE: 'awakening',
+        VOL_GREEN_EXECUTION_MODE: 'live',
+        VOL_GREEN_WALLET_SECRET: path.join(root, 'data/live/copy-8zkg.keypair.json'),
+        VOL_GREEN_WALLET_PUBKEY: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
+        VOL_GREEN_POSITION_USD: '5',
+        VOL_GREEN_JOURNAL_PATH: path.join(root, 'data/volgreen/journal.jsonl'),
+        VOL_GREEN_STATE_PATH: path.join(root, 'data/volgreen/state.json'),
+        VOL_GREEN_HOT_MINTS_PATH: path.join(root, 'data/volgreen/hot-mints.json'),
+        VOL_GREEN_PRICE_RING_PATH: path.join(root, 'data/volgreen/price-ring.json'),
+        VOL_GREEN_EXIT_ARM_PCT: '8',
+        VOL_GREEN_EXIT_GIVEBACK_PCT: '6',
+        VOL_GREEN_EXIT_NEVER_ARM_PATIENCE_MS: '0',
+        VOL_GREEN_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
+        VOL_GREEN_EXIT_NEVER_ARM_DEAD_PNL_PCT: '15',
+        VOL_GREEN_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '600000',
+        VOL_GREEN_EXIT_NEVER_ARM_VOL_FADE_RATIO: '0.35',
+        VOL_GREEN_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '500',
+        VOL_GREEN_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
+        ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
+        ...LIVE_OSCAR_HELIUS_RPC_ENV,
+        ...(HELIUS_RPC_URL_PM2
+          ? { VOL_GREEN_RPC_URL: HELIUS_RPC_URL_PM2, MILD_DIP_RPC_URL: HELIUS_RPC_URL_PM2 }
+          : {}),
+      },
+    },
+    /**
      * knife-catcher / awakening-catcher — Oscar VPS REMOVED (2026-07-16).
      * Live lanes only on LERA (`/opt/lera` PM2). Oscar shared VPS was running shadow copies via `.env`
      * drift — deleted to free Dex/RPC for live-oscar discovery.
@@ -2967,6 +3019,8 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   /** 1.11.685 — Oscar trading = mild-dip only; 8zkg twins retired. */
   'copy-trader-8zkg',
   'copy-trader-8zkg-mirror',
+  /** 1.11.696 — vol-green lives on LERA with Helius; keep Oscar Dex for mild-dip. */
+  'vol-green-bot',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',

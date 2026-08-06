@@ -13,8 +13,15 @@ function envNum(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+const EntryModeSchema = z.enum(['mild_dip', 'awakening']);
+
 const MildDipConfigSchema = z.object({
   executionMode: ExecutionModeSchema,
+  /**
+   * `mild_dip` — pc5m dump band (default).
+   * `awakening` — Volume Awakening / green-tape ignition entry; exit stack unchanged.
+   */
+  entryMode: EntryModeSchema.default('mild_dip'),
   rpcUrl: z.string().min(8),
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
@@ -184,8 +191,12 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 500),
   };
 
+  const entryModeRaw = (process.env.MILD_DIP_ENTRY_MODE ?? 'mild_dip').trim().toLowerCase();
+  const entryMode = entryModeRaw === 'awakening' ? 'awakening' : 'mild_dip';
+
   const raw = {
     executionMode: (process.env.MILD_DIP_EXECUTION_MODE?.trim() || 'live') as string,
+    entryMode,
     rpcUrl,
     walletSecret: process.env.MILD_DIP_WALLET_SECRET?.trim() || undefined,
     walletPubkeyExpected: process.env.MILD_DIP_WALLET_PUBKEY?.trim() || undefined,
@@ -263,7 +274,10 @@ export function loadMildDipConfig(): MildDipConfig {
   if (!parsed.data.rpcUrl) {
     throw new Error('mild-dip requires MILD_DIP_RPC_URL / COPY_TRADER_RPC_URL / SA_RPC_HTTP_URL');
   }
-  if (!(parsed.data.entry.minDipPct < parsed.data.entry.maxDipPct)) {
+  if (
+    parsed.data.entryMode === 'mild_dip' &&
+    !(parsed.data.entry.minDipPct < parsed.data.entry.maxDipPct)
+  ) {
     throw new Error('mild-dip requires MILD_DIP_MIN_DIP_PCT < MILD_DIP_MAX_DIP_PCT');
   }
 

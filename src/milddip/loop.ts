@@ -23,6 +23,7 @@ import {
 } from './exit-engine.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import { evaluateCooldownBounce, evaluateMildDipPreBuy } from './gates.js';
+import { evaluateAwakeningPreBuy } from '../volgreen/entry-gates.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -332,6 +333,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     let entryPriceUsd = c.priceUsd;
     let entryPc5m = c.metrics.priceChange5mPct;
     let freshPx: number | null = c.priceUsd;
+    const awakeningEntry = cfg.entryMode === 'awakening';
     if (cfg.preBuyRevalidate) {
       const freshNow = Date.now();
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
@@ -343,18 +345,27 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
-      const pre = evaluateMildDipPreBuy({
-        signalPriceUsd: c.priceUsd,
-        freshPriceUsd: freshPx,
-        freshPc5mPct: freshPc,
-        entryGates: cfg.entry,
-        maxChasePct: cfg.maxChasePct,
-      });
+      const pre = awakeningEntry
+        ? evaluateAwakeningPreBuy({
+            signalPriceUsd: c.priceUsd,
+            freshPriceUsd: freshPx,
+            freshPc5mPct: freshPc,
+            maxChasePct: cfg.maxChasePct,
+            minFreshPc5mPct: 0,
+          })
+        : evaluateMildDipPreBuy({
+            signalPriceUsd: c.priceUsd,
+            freshPriceUsd: freshPx,
+            freshPc5mPct: freshPc,
+            entryGates: cfg.entry,
+            maxChasePct: cfg.maxChasePct,
+          });
       if (!pre.pass) {
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_prebuy_skip',
           mint: c.mint,
           symbol: c.symbol,
+          entryMode: cfg.entryMode,
           signalPriceUsd: c.priceUsd,
           signalPc5m: c.metrics.priceChange5mPct,
           freshPriceUsd: freshPx,
@@ -373,6 +384,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
 
     // After cooldown: refuse if we already bounced too far off the observed trough.
     // Lookback covers the longer loss-cooldown window so a 10m dump trough is visible.
+    // Awakening (green tape) skips trough-bounce — that gate is for dump rebuy only.
     const bounceLookbackMs = Math.max(
       cfg.cooldownBounceLookbackMs,
       cfg.mintCooldownMs,
@@ -382,7 +394,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     const bounce = evaluateCooldownBounce({
       freshPriceUsd: freshPx ?? entryPriceUsd,
       troughPriceUsd: trough?.priceUsd ?? null,
-      maxBouncePct: cfg.maxCooldownBouncePct,
+      maxBouncePct: awakeningEntry ? 0 : cfg.maxCooldownBouncePct,
       requireTrough: false,
     });
     if (!bounce.pass) {
@@ -445,10 +457,16 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         kind: 'entry',
         evalResult: {
           pass: true,
-          reasons: [
-            `mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
-          ],
-          score: Math.abs(entryPc5m ?? 0),
+          reasons: awakeningEntry
+            ? [
+                `awakening_${c.entryPath ?? 'signal'}`,
+                `pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
+                `score=${(c.entryScore ?? 0).toFixed(1)}`,
+              ]
+            : [`mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`],
+          score: awakeningEntry
+            ? Math.max(0, c.entryScore ?? Math.abs(entryPc5m ?? 0))
+            : Math.abs(entryPc5m ?? 0),
         },
         leaderSignature: leaderSig,
         // Anchor for Jupiter quote premium guard — abort mid-retry green chase.

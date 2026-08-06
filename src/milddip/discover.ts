@@ -6,6 +6,9 @@
  */
 import fs from 'node:fs';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
+import { loadAwakeningConfig } from '../scripts/awakening/awakening-config.js';
+import { fetchAwakeningDexMarket } from '../scripts/awakening/awakening-dex-pair.js';
+import { evaluateAwakeningSignal } from '../scripts/awakening/awakening-signal.js';
 import type { MildDipConfig } from './config.js';
 import { mapPool } from './exit-engine.js';
 import { evaluateMildDipEntry, type MildDipCandidateMetrics } from './gates.js';
@@ -19,6 +22,10 @@ export type MildDipCandidate = {
   metrics: MildDipCandidateMetrics;
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
   dipSource: 'dex' | 'stream' | 'dex+stream';
+  /** Awakening path when `entryMode=awakening`. */
+  entryPath?: 'early_spike' | 'ignition' | 'gradual';
+  /** Journal helpers — spike multiples when awakening. */
+  entryScore?: number;
 };
 
 const SOLANA_CHAIN = 'solana';
@@ -179,10 +186,54 @@ export async function enrichAndFilterCandidates(
   }
 
   const denied = new Set(cfg.deniedMints.map((m) => m.trim()).filter(Boolean));
+  const awakening = cfg.entryMode === 'awakening';
+  const awCfg = awakening ? loadAwakeningConfig() : null;
 
   const rows = await mapPool(slice, enrichConcurrency, async (mint) => {
     try {
       if (denied.has(mint)) return null;
+
+      if (awakening && awCfg) {
+        const market = await fetchAwakeningDexMarket(mint, { nowMs });
+        if (!market || !(market.priceUsd != null && market.priceUsd > 0)) return null;
+        mildDipPriceRing.note(mint, market.priceUsd, { tsMs: nowMs, source: 'dex' });
+
+        const pairAgeHours =
+          market.poolAgeMin != null && Number.isFinite(market.poolAgeMin)
+            ? market.poolAgeMin / 60
+            : null;
+        const metrics: MildDipCandidateMetrics = {
+          priceChange5mPct: market.priceChangeM5,
+          volume5mUsd: market.volume5mUsd,
+          liquidityUsd: market.liquidityUsd,
+          marketCapUsd: market.marketCapUsd,
+          pairAgeHours,
+          dexId: market.dexId,
+        };
+
+        // Optional DEX allow-list from mild-dip entry (structural).
+        if (cfg.entry.allowedDexIds.length > 0) {
+          const dex = (market.dexId ?? '').toLowerCase();
+          if (!dex || !cfg.entry.allowedDexIds.includes(dex)) return null;
+        }
+
+        const verdict = evaluateAwakeningSignal(awCfg, market);
+        if (!verdict.pass) return null;
+
+        const score =
+          (verdict.metrics.vol5mSpikeVs6hMult ?? 0) + (verdict.metrics.vol5mSpikeVs1hMult ?? 0);
+        const cand: MildDipCandidate = {
+          mint,
+          symbol: mint.slice(0, 6),
+          priceUsd: market.priceUsd,
+          metrics,
+          dipSource: 'dex',
+          entryPath: verdict.metrics.entryPath,
+          entryScore: score,
+        };
+        return cand;
+      }
+
       const details = await fetchDexScreenerPairDetails(mint, {
         bypassCache: true,
         nowMs,
@@ -217,7 +268,7 @@ export async function enrichAndFilterCandidates(
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) dipSource = 'stream';
       else return null;
 
-      return {
+      const cand: MildDipCandidate = {
         mint,
         symbol: mint.slice(0, 6),
         priceUsd: details.priceUsd,
@@ -226,16 +277,25 @@ export async function enrichAndFilterCandidates(
             ? { ...metrics, priceChange5mPct: stream.drawdownPct }
             : metrics,
         dipSource,
-      } satisfies MildDipCandidate;
+      };
+      return cand;
     } catch {
       return null;
     }
   });
 
-  const out = rows.filter((r): r is MildDipCandidate => r != null);
+  const out: MildDipCandidate[] = [];
+  for (const r of rows) {
+    if (r) out.push(r);
+  }
 
-  // Prefer deeper mild dips first (more negative pc5m / stream drawdown).
-  out.sort((a, b) => (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0));
+  if (awakening) {
+    // Prefer stronger volume spikes first.
+    out.sort((a, b) => (b.entryScore ?? 0) - (a.entryScore ?? 0));
+  } else {
+    // Prefer deeper mild dips first (more negative pc5m / stream drawdown).
+    out.sort((a, b) => (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0));
+  }
   return out;
 }
 
