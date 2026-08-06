@@ -134,6 +134,23 @@ export class MildDipPriceRing {
     return this.bounceFromTroughPct(mint, last.priceUsd, windowMs, nowMs);
   }
 
+  /**
+   * % change from oldest sample in window → last sample.
+   * Used to confirm Dex `pc5m` is not a bogus green on a dump bounce.
+   */
+  changeFromOldestPct(
+    mint: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): number | null {
+    const samples = this.samplesInWindow(mint, windowMs, nowMs);
+    if (samples.length < 2) return null;
+    const oldest = samples[0]!;
+    const last = samples[samples.length - 1]!;
+    if (!(oldest.priceUsd > 0) || !(last.priceUsd > 0)) return null;
+    return (last.priceUsd / oldest.priceUsd - 1) * 100;
+  }
+
   sampleCount(mint: string, windowMs: number, nowMs = Date.now()): number {
     return this.samplesInWindow(mint, windowMs, nowMs).length;
   }

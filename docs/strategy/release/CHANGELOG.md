@@ -1,5 +1,21 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.706] — 2026-08-07
+
+**Тег:** `sa-1.11.706`
+
+### Fix: green_tape require price-ring confirm (8T6rjb false green)
+
+`8T6rjb…pump` 02:09 MSK: Dex `pc5m` flipped −24%→+8.7% in ~26s on a dump
+bounce; chart had no green candle but we bought `green_tape_liquid`.
+
+After Dex green_tape pass, require local ring **oldest→last over 5m** also
+`> minPc5m` (`ring_not_green` / `ring_insufficient_samples` otherwise).
+
+**Откат:** revert discover ring confirm block.
+
+---
+
 ## [1.11.705] — 2026-08-06
 
 **Тег:** `sa-1.11.705`

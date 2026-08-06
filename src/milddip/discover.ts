@@ -422,10 +422,53 @@ export async function enrichAndFilterCandidates(
             },
           };
         }
+        // Dex pc5m is a rolling window — can read "green" on a bounce inside a dump
+        // (8T6rjb 02:09: Dex −24% then +8.7% while chart stayed red). Require our
+        // local price-ring to also show green oldest→last over ~5m.
+        const ringWindowMs = 5 * 60_000;
+        const ringPc = mildDipPriceRing.changeFromOldestPct(mint, ringWindowMs, nowMs);
+        const minRingPc = Math.max(
+          cfg.greenTape.liquidMinPc5mPct,
+          cfg.greenTape.earlyMinPc5mPct,
+        );
+        if (ringPc == null) {
+          return {
+            kind: 'skip',
+            skip: {
+              mint,
+              entryMode: 'green_tape',
+              reasons: ['ring_insufficient_samples'],
+              metrics: {
+                ...metrics,
+                buySellRatio5m: verdict.buySellRatio5m,
+                turnover5m: verdict.turnover5m,
+              },
+            },
+          };
+        }
+        if (!(ringPc > minRingPc)) {
+          return {
+            kind: 'skip',
+            skip: {
+              mint,
+              entryMode: 'green_tape',
+              reasons: [
+                `ring_not_green:ringPc=${ringPc.toFixed(2)}<=${minRingPc}`,
+                `dex_pc5m=${metrics.priceChange5mPct ?? 'n/a'}`,
+              ],
+              metrics: {
+                ...metrics,
+                buySellRatio5m: verdict.buySellRatio5m,
+                turnover5m: verdict.turnover5m,
+              },
+            },
+          };
+        }
         const score =
           (verdict.turnover5m ?? 0) * 100 +
           (verdict.buySellRatio5m ?? 0) * 10 +
-          (verdict.path === 'early' ? 5 : 0);
+          (verdict.path === 'early' ? 5 : 0) +
+          Math.min(50, ringPc);
         const priceUsd = details.priceUsd as number;
         return {
           kind: 'pass',
