@@ -7,8 +7,8 @@
 import fs from 'node:fs';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { loadAwakeningConfig } from '../scripts/awakening/awakening-config.js';
-import { fetchAwakeningDexMarket } from '../scripts/awakening/awakening-dex-pair.js';
 import { evaluateAwakeningSignal } from '../scripts/awakening/awakening-signal.js';
+import type { AwakeningDexMarket } from '../scripts/awakening/awakening-types.js';
 import type { MildDipConfig } from './config.js';
 import { mapPool } from './exit-engine.js';
 import { evaluateMildDipEntry, type MildDipCandidateMetrics } from './gates.js';
@@ -194,28 +194,56 @@ export async function enrichAndFilterCandidates(
       if (denied.has(mint)) return null;
 
       if (awakening && awCfg) {
-        const market = await fetchAwakeningDexMarket(mint, { nowMs });
-        if (!market || !(market.priceUsd != null && market.priceUsd > 0)) return null;
-        mildDipPriceRing.note(mint, market.priceUsd, { tsMs: nowMs, source: 'dex' });
+        // Gated Dex fetch (shared 120 RPM) — never stampede via raw awakening HTTP.
+        const details = await fetchDexScreenerPairDetails(mint, {
+          bypassCache: true,
+          nowMs,
+        });
+        if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
+        mildDipPriceRing.note(mint, details.priceUsd, { tsMs: nowMs, source: 'dex' });
 
         const pairAgeHours =
-          market.poolAgeMin != null && Number.isFinite(market.poolAgeMin)
-            ? market.poolAgeMin / 60
+          details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
+            ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
             : null;
+        const poolAgeMin = pairAgeHours != null ? pairAgeHours * 60 : null;
         const metrics: MildDipCandidateMetrics = {
-          priceChange5mPct: market.priceChangeM5,
-          volume5mUsd: market.volume5mUsd,
-          liquidityUsd: market.liquidityUsd,
-          marketCapUsd: market.marketCapUsd,
+          priceChange5mPct: details.priceChangeM5Pct,
+          volume5mUsd: details.volume5mUsd,
+          liquidityUsd: details.liquidityUsd,
+          marketCapUsd: details.marketCapUsd,
           pairAgeHours,
-          dexId: market.dexId,
+          dexId: details.dexId,
         };
 
-        // Optional DEX allow-list from mild-dip entry (structural).
         if (cfg.entry.allowedDexIds.length > 0) {
-          const dex = (market.dexId ?? '').toLowerCase();
+          const dex = (details.dexId ?? '').toLowerCase();
           if (!dex || !cfg.entry.allowedDexIds.includes(dex)) return null;
         }
+
+        // Awakening needs h6/h24 windows; if the live parse omitted them, skip.
+        if (details.volume6hUsd == null || details.volume24hUsd == null) return null;
+
+        const market: AwakeningDexMarket = {
+          mint,
+          priceUsd: details.priceUsd,
+          marketCapUsd: details.marketCapUsd,
+          liquidityUsd: details.liquidityUsd,
+          volume5mUsd: details.volume5mUsd,
+          volume1hUsd: details.volume1hUsd,
+          volume6hUsd: details.volume6hUsd,
+          volume24hUsd: details.volume24hUsd,
+          buys5m: details.buys5m,
+          sells5m: details.sells5m,
+          priceChangeM5: details.priceChangeM5Pct,
+          priceChangeH1: details.priceChangeH1Pct,
+          priceChangeH6: details.priceChangeH6Pct,
+          priceChangeH24: details.priceChangeH24Pct,
+          pairAddress: details.pairAddress,
+          dexId: details.dexId,
+          poolAgeMin,
+          fetchedAtMs: details.fetchedAtMs,
+        };
 
         const verdict = evaluateAwakeningSignal(awCfg, market);
         if (!verdict.pass) return null;
@@ -225,7 +253,7 @@ export async function enrichAndFilterCandidates(
         const cand: MildDipCandidate = {
           mint,
           symbol: mint.slice(0, 6),
-          priceUsd: market.priceUsd,
+          priceUsd: details.priceUsd,
           metrics,
           dipSource: 'dex',
           entryPath: verdict.metrics.entryPath,

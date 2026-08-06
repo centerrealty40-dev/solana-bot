@@ -87,8 +87,10 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '5400000');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
-  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream,boosts,profiles');
+  // Stream-only universe — boosts/profiles burn Dex RPM before awakening eval.
+  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');
   setIfAbsent('MILD_DIP_STREAM', '1');
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
   setIfAbsent('MILD_DIP_SLIPPAGE_BPS', '500');
   setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '4');
   setIfAbsent('MILD_DIP_MIN_FEE_SOL_RESERVE', '0.02');

@@ -273,12 +273,19 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     postCooldownMs: 120_000,
   });
   const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
+  const awakening = cfg.entryMode === 'awakening';
+  // Awakening does a full Dex live parse per mint behind the 120 RPM gate —
+  // keep the enrich window small so one scan cannot stall the loop for minutes.
+  const maxEnrich = awakening ? 20 : 80;
+  const enrichConcurrency = awakening
+    ? Math.min(4, cfg.enrichConcurrency)
+    : cfg.enrichConcurrency;
   const candidates = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
-    maxEnrich: 80,
-    enrichConcurrency: cfg.enrichConcurrency,
+    maxEnrich,
+    enrichConcurrency,
     // Keep Dex marks flowing for cooling mints even when they won't buy yet.
-    forceEnrich: priority,
+    forceEnrich: awakening ? priority.slice(0, 8) : priority,
   });
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 

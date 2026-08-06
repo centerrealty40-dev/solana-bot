@@ -1,5 +1,24 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.697] — 2026-08-06
+
+**Тег:** `sa-1.11.697`
+
+### Fix: vol-green scan stall — gated Dex enrich + smaller window
+
+Canary on LERA stopped updating `lastScanAtMs` (~1 scan then hang): awakening
+enrich called ungated Dex HTTP for up to 80 mints and blocked the loop.
+
+- Awakening enrich uses `fetchDexScreenerPairDetails` (global 120 RPM gate) with
+  h6/h24/priceChange fields on the details type
+- `maxEnrich=20`, enrich concurrency ≤4 in awakening mode
+- vol-green default discover sources: **stream only** (no boosts/profiles burn)
+- `fetchAwakeningDexMarket` keeps AbortSignal timeout for catcher path
+
+**Откат:** revert this commit; on LERA `git checkout` previous SHA + `pm2 restart vol-green-bot`.
+
+---
+
 ## [1.11.696] — 2026-08-06
 
 **Тег:** `sa-1.11.696`

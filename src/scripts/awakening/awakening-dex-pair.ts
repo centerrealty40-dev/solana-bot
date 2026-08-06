@@ -66,15 +66,19 @@ function pairToMarket(mint: string, pair: Record<string, unknown> | null, fetche
 /** Full DexScreener pair (h6, txns, priceChange) for awakening gates. */
 export async function fetchAwakeningDexMarket(
   mint: string,
-  opts?: { fetchImpl?: typeof fetch; nowMs?: number },
+  opts?: { fetchImpl?: typeof fetch; nowMs?: number; timeoutMs?: number },
 ): Promise<AwakeningDexMarket | null> {
   if (!mint || mint === SOL_MINT) return null;
   const nowMs = opts?.nowMs ?? Date.now();
   const doFetch = opts?.fetchImpl ?? fetch;
+  const timeoutMs = Math.max(1_000, Math.min(30_000, opts?.timeoutMs ?? 8_000));
 
   try {
     const url = `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`;
-    const res = await doFetch(url, { headers: { accept: 'application/json' } });
+    const res = await doFetch(url, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(timeoutMs),
+    });
     if (!res.ok) return null;
     const json = (await res.json()) as { pairs?: unknown[] };
     const pair = pickBestSolanaPair(json.pairs ?? [], mint);
