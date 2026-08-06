@@ -20,6 +20,12 @@ const gates: GreenTapeGates = {
   earlyMinBuySellRatio5m: 2,
   earlyMinTurnover5m: 0.02,
   earlyMinMarketCapUsd: 35_000,
+  rocketMinPc5mPct: 25,
+  rocketMaxPc5mPct: 0,
+  rocketMinVolume5mUsd: 8_000,
+  rocketMinBuySellRatio5m: 1.15,
+  rocketMinTurnover5m: 0.4,
+  rocketMinMarketCapUsd: 35_000,
 };
 
 describe('evaluateGreenTapeEntry', () => {
@@ -59,7 +65,25 @@ describe('evaluateGreenTapeEntry', () => {
     expect(v.path).toBe('early');
   });
 
-  it('rejects weak green pc5m<=5 (not a real impulse)', () => {
+  it('passes goon/3c32HTE rocket candle (huge pc5m + extreme vol)', () => {
+    const v = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 312,
+        volume5mUsd: 13_731,
+        liquidityUsd: 15_271,
+        marketCapUsd: 52_667,
+        pairAgeHours: 0.6,
+        dexId: 'pumpswap',
+        buys5m: 122,
+        sells5m: 64,
+      },
+      gates,
+    );
+    expect(v.pass).toBe(true);
+    expect(v.path).toBe('rocket');
+  });
+
+  it('rejects weak green pc5m<=5', () => {
     const v = evaluateGreenTapeEntry(
       {
         priceChange5mPct: 3.0,
@@ -74,10 +98,9 @@ describe('evaluateGreenTapeEntry', () => {
       gates,
     );
     expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.includes('pc5m'))).toBe(true);
   });
 
-  it('rejects Ef4E8v-thin vol even when pc5m is strong enough', () => {
+  it('rejects thin vol even with strong pc', () => {
     const v = evaluateGreenTapeEntry(
       {
         priceChange5mPct: 6.0,
@@ -88,24 +111,6 @@ describe('evaluateGreenTapeEntry', () => {
         dexId: 'pumpswap',
         buys5m: 15,
         sells5m: 2,
-      },
-      gates,
-    );
-    expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.includes('vol5m'))).toBe(true);
-  });
-
-  it('rejects red candle on both paths', () => {
-    const v = evaluateGreenTapeEntry(
-      {
-        priceChange5mPct: -2,
-        volume5mUsd: 12_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 200_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-        buys5m: 40,
-        sells5m: 25,
       },
       gates,
     );

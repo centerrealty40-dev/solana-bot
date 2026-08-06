@@ -24,7 +24,14 @@ export type MildDipCandidate = {
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
   dipSource: 'dex' | 'stream' | 'dex+stream';
   /** Awakening / green_tape path label. */
-  entryPath?: 'early_spike' | 'ignition' | 'gradual' | 'green_tape' | 'green_tape_liquid' | 'green_tape_early';
+  entryPath?:
+    | 'early_spike'
+    | 'ignition'
+    | 'gradual'
+    | 'green_tape'
+    | 'green_tape_liquid'
+    | 'green_tape_early'
+    | 'green_tape_rocket';
   /** Journal helpers — spike multiples when awakening / turnover score. */
   entryScore?: number;
 };
@@ -143,7 +150,8 @@ export function priorityMintsFromPriceRingGreen(
   const maxRally = Math.max(
     cfg.greenTape.liquidMaxPc5mPct,
     cfg.greenTape.earlyMaxPc5mPct,
-  ) * 3;
+    cfg.greenTape.rocketMaxPc5mPct > 0 ? cfg.greenTape.rocketMaxPc5mPct : 500,
+  );
   const max = Math.max(0, Math.floor(opts?.max ?? 60));
   const seen = new Set<string>();
   const rows: Array<{ mint: string; rallyPct: number; lastTs: number }> = [];
@@ -431,7 +439,9 @@ export async function enrichAndFilterCandidates(
           cfg.greenTape.liquidMinPc5mPct,
           cfg.greenTape.earlyMinPc5mPct,
         );
-        if (ringPc == null) {
+        // Rockets are often first-seen with a single Dex probe sample — don't
+        // demand ring history when tape already shows extreme vol/turnover.
+        if (ringPc == null && verdict.path !== 'rocket') {
           return {
             kind: 'skip',
             skip: {
@@ -446,7 +456,7 @@ export async function enrichAndFilterCandidates(
             },
           };
         }
-        if (!(ringPc > minRingPc)) {
+        if (ringPc != null && !(ringPc > minRingPc)) {
           return {
             kind: 'skip',
             skip: {
@@ -464,12 +474,20 @@ export async function enrichAndFilterCandidates(
             },
           };
         }
+        const pathBonus =
+          verdict.path === 'rocket' ? 15 : verdict.path === 'early' ? 5 : 0;
         const score =
           (verdict.turnover5m ?? 0) * 100 +
           (verdict.buySellRatio5m ?? 0) * 10 +
-          (verdict.path === 'early' ? 5 : 0) +
-          Math.min(50, ringPc);
+          pathBonus +
+          Math.min(50, ringPc ?? 0);
         const priceUsd = details.priceUsd as number;
+        const entryPath =
+          verdict.path === 'rocket'
+            ? 'green_tape_rocket'
+            : verdict.path === 'early'
+              ? 'green_tape_early'
+              : 'green_tape_liquid';
         return {
           kind: 'pass',
           cand: {
@@ -478,7 +496,7 @@ export async function enrichAndFilterCandidates(
             priceUsd,
             metrics,
             dipSource: 'dex',
-            entryPath: verdict.path === 'early' ? 'green_tape_early' : 'green_tape_liquid',
+            entryPath,
             entryScore: score,
           },
         };

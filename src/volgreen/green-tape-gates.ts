@@ -1,9 +1,10 @@
 /**
  * Leader-like green-tape entry (8zkg-style).
  *
- * Two paths (OR):
- * - **liquid** — calmer green with fat absolute vol + turnover (our earlier default)
- * - **early** — thinner/faster green with strong buy/sell pressure (leader ignition)
+ * Three paths (OR):
+ * - **liquid** — calmer green with fat absolute vol + turnover
+ * - **early** — thinner/faster green with strong buy/sell
+ * - **rocket** — already-huge 5m candle with extreme vol/turnover (goon / 3c32HTE)
  */
 export type GreenTapeGates = {
   /** Shared structural floors. */
@@ -29,6 +30,15 @@ export type GreenTapeGates = {
   earlyMinBuySellRatio5m: number;
   earlyMinTurnover5m: number;
   earlyMinMarketCapUsd: number;
+
+  /** Rocket path — catch leader entries into already-vertical candles. */
+  rocketMinPc5mPct: number;
+  /** 0 = no upper cap on pc5m for rockets. */
+  rocketMaxPc5mPct: number;
+  rocketMinVolume5mUsd: number;
+  rocketMinBuySellRatio5m: number;
+  rocketMinTurnover5m: number;
+  rocketMinMarketCapUsd: number;
 };
 
 export type GreenTapeMetrics = {
@@ -42,7 +52,7 @@ export type GreenTapeMetrics = {
   sells5m: number | null;
 };
 
-export type GreenTapePath = 'liquid' | 'early';
+export type GreenTapePath = 'liquid' | 'early' | 'rocket';
 
 export type GreenTapeVerdict = {
   pass: boolean;
@@ -70,8 +80,12 @@ function pathReasons(
   const reasons: string[] = [];
   const pc = metrics.priceChange5mPct;
   if (pc == null || !Number.isFinite(pc)) reasons.push('missing_price_change_5m');
-  else if (!(pc > g.minPc && pc <= g.maxPc)) {
-    reasons.push(`pc5m=${pc.toFixed(2)}_outside_(${g.minPc},${g.maxPc}]`);
+  else if (g.maxPc > 0) {
+    if (!(pc > g.minPc && pc <= g.maxPc)) {
+      reasons.push(`pc5m=${pc.toFixed(2)}_outside_(${g.minPc},${g.maxPc}]`);
+    }
+  } else if (!(pc > g.minPc)) {
+    reasons.push(`pc5m=${pc.toFixed(2)}<=${g.minPc}`);
   }
 
   const v = metrics.volume5mUsd;
@@ -156,46 +170,61 @@ export function evaluateGreenTapeEntry(
     return { pass: false, reasons: structural, buySellRatio5m, turnover5m };
   }
 
-  const liquidGates: PathGates = {
-    minPc: gates.liquidMinPc5mPct,
-    maxPc: gates.liquidMaxPc5mPct,
-    minVol: gates.liquidMinVolume5mUsd,
-    minBs: gates.liquidMinBuySellRatio5m,
-    minTurnover: gates.liquidMinTurnover5m,
-    minMcap: gates.minMarketCapUsd,
-  };
-  const earlyGates: PathGates = {
-    minPc: gates.earlyMinPc5mPct,
-    maxPc: gates.earlyMaxPc5mPct,
-    minVol: gates.earlyMinVolume5mUsd,
-    minBs: gates.earlyMinBuySellRatio5m,
-    minTurnover: gates.earlyMinTurnover5m,
-    minMcap: gates.earlyMinMarketCapUsd,
-  };
+  const paths: Array<{ name: GreenTapePath; g: PathGates }> = [
+    {
+      name: 'liquid',
+      g: {
+        minPc: gates.liquidMinPc5mPct,
+        maxPc: gates.liquidMaxPc5mPct,
+        minVol: gates.liquidMinVolume5mUsd,
+        minBs: gates.liquidMinBuySellRatio5m,
+        minTurnover: gates.liquidMinTurnover5m,
+        minMcap: gates.minMarketCapUsd,
+      },
+    },
+    {
+      name: 'early',
+      g: {
+        minPc: gates.earlyMinPc5mPct,
+        maxPc: gates.earlyMaxPc5mPct,
+        minVol: gates.earlyMinVolume5mUsd,
+        minBs: gates.earlyMinBuySellRatio5m,
+        minTurnover: gates.earlyMinTurnover5m,
+        minMcap: gates.earlyMinMarketCapUsd,
+      },
+    },
+    {
+      name: 'rocket',
+      g: {
+        minPc: gates.rocketMinPc5mPct,
+        maxPc: gates.rocketMaxPc5mPct,
+        minVol: gates.rocketMinVolume5mUsd,
+        minBs: gates.rocketMinBuySellRatio5m,
+        minTurnover: gates.rocketMinTurnover5m,
+        minMcap: gates.rocketMinMarketCapUsd,
+      },
+    },
+  ];
 
-  const liquidFail = pathReasons(metrics, liquidGates, buySellRatio5m, turnover5m);
-  if (liquidFail.length === 0) {
-    return {
-      pass: true,
-      reasons: [],
-      path: 'liquid',
-      buySellRatio5m,
-      turnover5m,
-    };
+  const failParts: string[] = [];
+  for (const { name, g } of paths) {
+    const fail = pathReasons(metrics, g, buySellRatio5m, turnover5m);
+    if (fail.length === 0) {
+      return {
+        pass: true,
+        reasons: [],
+        path: name,
+        buySellRatio5m,
+        turnover5m,
+      };
+    }
+    for (const r of fail) failParts.push(`${name}:${r}`);
   }
 
-  const earlyFail = pathReasons(metrics, earlyGates, buySellRatio5m, turnover5m);
-  if (earlyFail.length === 0) {
-    return {
-      pass: true,
-      reasons: [],
-      path: 'early',
-      buySellRatio5m,
-      turnover5m,
-    };
-  }
-
-  // Surface both path failures for journal RCA (dedupe, keep short).
-  const reasons = [...new Set([...liquidFail.map((r) => `liquid:${r}`), ...earlyFail.map((r) => `early:${r}`)])];
-  return { pass: false, reasons, buySellRatio5m, turnover5m };
+  return {
+    pass: false,
+    reasons: [...new Set(failParts)],
+    buySellRatio5m,
+    turnover5m,
+  };
 }

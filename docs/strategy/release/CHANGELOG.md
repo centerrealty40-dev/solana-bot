@@ -1,5 +1,22 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.707] — 2026-08-07
+
+**Тег:** `sa-1.11.707`
+
+### Feature: green_tape **rocket** path for goon/3c32HTE vertical candles
+
+Leader bought `3c32HTE…pump` into pc5m +300% / vol5m $13k+; we skipped on
+liquid/early max pc caps (20/25). New OR path **rocket**:
+
+- pc5m > 25% (no upper cap by default)
+- vol5m ≥ $8k, turnover ≥ 0.4, buy/sell ≥ 1.15, mcap ≥ $35k
+- ring confirm waived on first sighting (single Dex probe)
+
+**Откат:** set `ROCKET_MIN_VOLUME_5M_USD=999999` or revert.
+
+---
+
 ## [1.11.706] — 2026-08-07
 
 **Тег:** `sa-1.11.706`

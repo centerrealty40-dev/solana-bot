@@ -140,7 +140,7 @@ const MildDipConfigSchema = z.object({
     /** Exit when vol5m ≤ this USD floor (0=off). Default 500. */
     neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(500),
   }),
-  /** Leader-like green candle gates (`entryMode=green_tape`) — liquid OR early path. */
+  /** Leader-like green candle gates — liquid OR early OR rocket. */
   greenTape: z.object({
     minLiquidityUsd: z.number(),
     minMarketCapUsd: z.number(),
@@ -159,6 +159,12 @@ const MildDipConfigSchema = z.object({
     earlyMinBuySellRatio5m: z.number(),
     earlyMinTurnover5m: z.number(),
     earlyMinMarketCapUsd: z.number(),
+    rocketMinPc5mPct: z.number(),
+    rocketMaxPc5mPct: z.number(),
+    rocketMinVolume5mUsd: z.number(),
+    rocketMinBuySellRatio5m: z.number(),
+    rocketMinTurnover5m: z.number(),
+    rocketMinMarketCapUsd: z.number(),
   }),
 });
 
@@ -255,6 +261,13 @@ export function loadMildDipConfig(): MildDipConfig {
     earlyMinBuySellRatio5m: envNum('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', 2),
     earlyMinTurnover5m: envNum('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', 0.02),
     earlyMinMarketCapUsd: envNum('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', 35_000),
+    // Rocket — already-vertical 5m candle with extreme tape (goon / 3c32HTE).
+    rocketMinPc5mPct: envNum('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', 25),
+    rocketMaxPc5mPct: envNum('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', 0), // 0 = no upper cap
+    rocketMinVolume5mUsd: envNum('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', 8_000),
+    rocketMinBuySellRatio5m: envNum('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', 1.15),
+    rocketMinTurnover5m: envNum('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', 0.4),
+    rocketMinMarketCapUsd: envNum('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', 35_000),
   };
 
   const raw = {

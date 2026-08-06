@@ -131,6 +131,13 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', '2');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', '25');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', '35000');
+  // Rocket — catch goon/3c32HTE vertical candles leaders buy into.
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '25');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', '0');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '8000');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.4');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.15');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '35000');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;
