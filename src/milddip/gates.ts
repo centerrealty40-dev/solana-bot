@@ -56,6 +56,17 @@ export type MildDipExitGates = {
   neverArmDeadMinMs: number;
   /** See neverArmDeadMinMs. Positive percent (e.g. 15 = exit at ≤ −15%). */
   neverArmDeadPnlPct: number;
+  /**
+   * Activity-based never-armed exit (`never_arm_vol_fade`): once held this long,
+   * exit when the 5m volume has faded relative to entry. Leaders leave a mint
+   * when the tape dies, not on a clock — a flat mint that still trades can still
+   * run (see `diag-leader-exit-policy.json`). 0 = disabled.
+   */
+  neverArmVolFadeMinMs: number;
+  /** Exit when vol5m ≤ this fraction of entry vol5m (e.g. 0.35). 0 = disabled. */
+  neverArmVolFadeRatio: number;
+  /** Exit when vol5m ≤ this absolute USD floor regardless of ratio. 0 = disabled. */
+  neverArmVolFadeFloorUsd: number;
 };
 
 export type MildDipGateVerdict = {
@@ -217,12 +228,17 @@ export type MildDipExitReason =
   | 'peak_giveback'
   | 'never_arm_giveback'
   | 'never_arm_dead'
+  | 'never_arm_vol_fade'
   | 'never_arm_timeout'
   | null;
 
 export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number): number | null {
   if (!(markPriceUsd > 0) || !(peakPriceUsd > 0)) return null;
   return (markPriceUsd / peakPriceUsd - 1) * 100;
+}
+
+function numOrNull(x: number | null | undefined): number | null {
+  return typeof x === 'number' && Number.isFinite(x) ? x : null;
 }
 
 export function mfeFromEntryPct(peakPriceUsd: number, entryPriceUsd: number): number | null {
@@ -236,7 +252,8 @@ export function mfeFromEntryPct(peakPriceUsd: number, entryPriceUsd: number): nu
  * - Update running peak from entry
  * - Arm when MFE ≥ armPct
  * - Full exit when armed and giveback ≤ −givebackPct
- * - Never-armed: optional soft giveback after patienceMs (0 = off); else max-hold
+ * - Never-armed: optional soft giveback after patienceMs (0 = off), deep-loss
+ *   dead cut, activity fade (`never_arm_vol_fade`), then the max-hold ceiling
  * - Live default: patience off — early never_arm_giveback was cutting before pumps
  * - Loss-by-flow (realized < 0) is a valid outcome of the armed trail
  */
@@ -248,6 +265,10 @@ export function evaluateMildDipPeakGiveback(args: {
   gates: MildDipExitGates;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
+  /** Current 5m volume (Dex) — enables the activity-fade exit. */
+  volume5mUsd?: number | null;
+  /** 5m volume captured at entry — the fade baseline. */
+  entryVolume5mUsd?: number | null;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -323,6 +344,29 @@ export function evaluateMildDipPeakGiveback(args: {
         reason: 'never_arm_dead',
         pnlPct,
       };
+    }
+    const volFadeMin = gates.neverArmVolFadeMinMs > 0 ? gates.neverArmVolFadeMinMs : 0;
+    if (volFadeMin > 0 && heldMs >= volFadeMin) {
+      const vol = numOrNull(args.volume5mUsd);
+      if (vol != null) {
+        const floor = gates.neverArmVolFadeFloorUsd > 0 ? gates.neverArmVolFadeFloorUsd : 0;
+        const entryVol = numOrNull(args.entryVolume5mUsd);
+        const ratio = gates.neverArmVolFadeRatio > 0 ? gates.neverArmVolFadeRatio : 0;
+        const fadedVsEntry = ratio > 0 && entryVol != null && entryVol > 0 && vol <= entryVol * ratio;
+        const belowFloor = floor > 0 && vol <= floor;
+        if (fadedVsEntry || belowFloor) {
+          return {
+            peakPriceUsd,
+            mfePct,
+            givebackPct,
+            armed,
+            justArmed,
+            shouldExit: true,
+            reason: 'never_arm_vol_fade',
+            pnlPct,
+          };
+        }
+      }
     }
     const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
     if (maxHold > 0 && heldMs >= maxHold) {
