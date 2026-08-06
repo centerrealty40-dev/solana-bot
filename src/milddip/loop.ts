@@ -10,6 +10,7 @@ import {
   collectCandidateMints,
   enrichAndFilterCandidates,
   priorityMintsFromCooldown,
+  priorityMintsFromPriceRingDip,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
@@ -272,12 +273,15 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     postCooldownMs: 120_000,
   });
   const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
+  const ringDipPriority = priorityMintsFromPriceRingDip(cfg, mints, nowMs, { max: 80 });
+  const forceEnrich = [...new Set([...priority, ...ringDipPriority])];
   const candidates = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
     maxEnrich: 80,
     enrichConcurrency: cfg.enrichConcurrency,
-    // Keep Dex marks flowing for cooling mints even when they won't buy yet.
-    forceEnrich: priority,
+    // Keep Dex marks flowing for cooling mints and active ring-dips even when
+    // hot-list recency pushes them below the normal enrich window.
+    forceEnrich,
   });
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 
