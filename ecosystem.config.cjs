@@ -2835,10 +2835,10 @@ const PM2_APPS = [
         MILD_DIP_MAX_DIP_PCT: '-4',
         MILD_DIP_MIN_VOLUME_5M_USD: '1500',
         /**
-         * 1.11.693 — exec-friction canary: deeper pools → lower Jupiter impact.
-         * Was $15k; session impact med ~0.46%/leg on thin memes.
+         * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
+         * $5 clips; impact still capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT=1.
          */
-        MILD_DIP_MIN_LIQUIDITY_USD: '40000',
+        MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         MILD_DIP_MIN_MCAP_USD: '15000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.25',
