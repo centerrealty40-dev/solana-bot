@@ -8,7 +8,10 @@ import fs from 'node:fs';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import { mapPool } from './exit-engine.js';
-import { evaluateMildDipEntry, type MildDipCandidateMetrics } from './gates.js';
+import {
+  evaluateMildDipEntry,
+  type MildDipCandidateMetrics,
+} from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
 import { mildDipPriceRing } from './price-ring.js';
 
@@ -204,6 +207,9 @@ export async function enrichAndFilterCandidates(
         marketCapUsd: details.marketCapUsd,
         pairAgeHours,
         dexId: details.dexId,
+        buys5m: details.buys5m,
+        sells5m: details.sells5m,
+        volume1hUsd: details.volume1hUsd,
       };
 
       const dexVerdict = evaluateMildDipEntry(metrics, cfg.entry);
@@ -214,8 +220,9 @@ export async function enrichAndFilterCandidates(
       let dipSource: MildDipCandidate['dipSource'] | null = null;
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
-      else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) dipSource = 'stream';
-      else return null;
+      else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) {
+        dipSource = 'stream';
+      } else return null;
 
       return {
         mint,

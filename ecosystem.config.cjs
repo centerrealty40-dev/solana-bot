@@ -2848,32 +2848,40 @@ const PM2_APPS = [
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
         /**
-         * W9.1 peak-giveback: arm at +8% MFE, full exit on −6% from peak.
-         * 1.11.693 — back to 6 after the unmeasured 6→8 widen: 160 armed exits
-         * at 6 gave avg +9.2% / win 84% / 41% MFE capture; the 22 exits at 8
-         * gave +6.4% / 73% / 37% while realized giveback widened −7.6%→−9.0%.
-         * 8 may still be right, but it needs armed mark-path logging to test.
+         * 1.11.699 — scale-out trail:
+         * Arm at +5% MFE; sell 50% on −3% giveback from peak; sell rest on −8%.
+         * (NV2RYH peaked +5.5% unarmed under old arm=8 and died on vol-fade.)
          */
-        MILD_DIP_EXIT_ARM_PCT: '8',
-        MILD_DIP_EXIT_GIVEBACK_PCT: '6',
+        MILD_DIP_EXIT_ARM_PCT: '5',
+        MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '3',
+        MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0.5',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '8',
         /**
          * Never-armed exit (finite — never sit forever), ordered soft → hard:
          * - patience=0: no early never_arm_giveback knife
          * - dead: after 15m unarmed + pnl ≤ −15% → never_arm_dead (rugs)
-         * - vol fade: after 10m unarmed, leave when the tape dies
-         *   (vol5m ≤ 35% of entry vol5m, or ≤ $500)
-         * - max-hold 90m ceiling
-         * 1.11.692 — the clock was the loss source: `Agmu8Xgn` was thrown out by
-         * the 40m ceiling at MFE 7.84% (arm needs 8%) and ran +55% within 11m.
-         * Leader (1506 sessions) holds >40m in 29% of cases, 33% of those end >+10%.
-         * Armed: arm +8% → giveback −6%.
+         * - vol fade: sustained weak 5m windows
+         * - max-hold ceiling
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '15',
-        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '600000',
-        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO: '0.35',
-        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '500',
+        /**
+         * 1.11.696 — sustained vol fade (not one-shot):
+         * Sample Dex vol5m every 5m; exit only after 3 consecutive weak windows
+         * (≤25% of entry vol OR ≤$300), and not before 15m hold. Gymbmn-style
+         * single dip must not sell.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO: '0.25',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '300',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
+        /**
+         * 1.11.697 — LP-pull cliff: exit as soon as mark pnl ≤ −50%
+         * (36GuKd sat ~5m at −99% waiting for never_arm_dead 15m).
+         */
+        MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.

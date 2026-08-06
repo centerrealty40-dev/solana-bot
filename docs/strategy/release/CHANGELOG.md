@@ -1,4 +1,86 @@
 # So
+## [1.11.699] — 2026-08-06
+
+**Тег:** `sa-1.11.699`
+
+### Feat: mild-dip scale-out trail — arm +5% / half −3% / full −8%
+
+`NV2RYH…` (Punch) peaked mark MFE +5.49% under arm=8 (never armed) and
+exited `never_arm_vol_fade` at −1.62%. User policy:
+
+- Arm trail at **+5%** MFE
+- Giveback **−3%** from peak → sell **50%** (`peak_giveback_partial`)
+- Giveback **−8%** from peak → sell **rest** (`peak_giveback`)
+
+Also removed the rejected `shallow_hot_tape` entry filter from 1.11.698.
+
+**Env:** `MILD_DIP_EXIT_ARM_PCT=5`
+`MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT=3`
+`MILD_DIP_EXIT_SCALE_OUT_FRACTION=0.5`
+`MILD_DIP_EXIT_GIVEBACK_PCT=8`
+
+**Откат:** arm=8, partial=0, giveback=6 (prior live knobs).
+
+---
+
+## [1.11.698] — 2026-08-06
+
+**Тег:** `sa-1.11.698`
+
+### Fix: replace young+shallow with shallow-hot-tape
+
+Age+pc5m alone is **not** a scam signal (thousands of normal coins match).
+Real unnaturalness on 36GuKd: **tiny pullback while 5m volume is still
+pump-grade** (−4.36% with vol5m $71k; OK med ~$3.5k, p90 ~$15k).
+
+- **Removed** `young_shallow` / `MILD_DIP_YOUNG_SHALLOW_*`
+- **Entry:** `shallow_hot_tape` — reject `pc5m > −5` AND `vol5m ≥ $20k`
+  (`MILD_DIP_SHALLOW_HOT_MAX_DIP_PCT` / `_MIN_VOL_5M_USD`)
+- Forensic: 1/5 rugs (the live-liq-regime case), ~0% OK, 0% leader quality
+- Keep `cliff_dump` (−50%) + enriched buy journal
+
+**Откат:** `SHALLOW_HOT_MIN_VOL_5M_USD=0`, `CLIFF_DUMP_PNL_PCT=0`.
+
+---
+
+## [1.11.697] — 2026-08-06
+
+**Тег:** `sa-1.11.697`
+
+### Feat: mild-dip rug unnaturalness — young+shallow + cliff + journal
+
+*(superseded by 1.11.698 — young+shallow removed as non-signal)*
+
+- Entry young+shallow + exit cliff_dump + buy journal enrichment.
+
+**Откат:** n/a — see 1.11.698.
+
+---
+
+## [1.11.696] — 2026-08-06
+
+**Тег:** `sa-1.11.696`
+
+### Fix: mild-dip `never_arm_vol_fade` — sustained multi-window only
+
+`Gymbmn…pump` was sold at ~+2% by a **one-shot** Dex `vol5m` dip
+(`1199` vs entry `8672`, ratio 0.35) after ~11m unarmed. That is not a dead
+tape — rolling m5 flickers.
+
+- Sample vol5m at most once per **5m** (`SAMPLE_MS=300000`)
+- Exit only after **3 consecutive weak windows** (`WEAK_WINDOWS=3`)
+- Tighten: earliest check **15m**, ratio **0.25**, floor **$300**
+- A single weak tick (or a strong window in the middle) does **not** sell
+
+**Env (ecosystem):**
+`MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS=900000`
+`…_RATIO=0.25` `…_FLOOR_USD=300`
+`…_SAMPLE_MS=300000` `…_WEAK_WINDOWS=3`
+
+**Откат:** prior one-shot knobs `600000 / 0.35 / 500` (no sample/weak windows).
+
+---
+
 ## [1.11.695] — 2026-08-06
 
 **Тег:** `sa-1.11.695`

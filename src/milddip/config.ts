@@ -100,7 +100,11 @@ const MildDipConfigSchema = z.object({
   exit: z.object({
     /** W9.1: arm when MFE ≥ armPct. */
     armPct: z.number(),
-    /** W9.1: exit when giveback from peak ≤ −givebackPct. */
+    /** Armed: sell scaleOutFraction at this giveback % (0=off). */
+    partialGivebackPct: z.coerce.number().min(0).max(100).default(3),
+    /** Fraction sold on partial giveback (default 0.5). */
+    scaleOutFraction: z.coerce.number().min(0).max(1).default(0.5),
+    /** W9.1: full exit when giveback from peak ≤ −givebackPct. */
     givebackPct: z.number(),
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
@@ -110,12 +114,18 @@ const MildDipConfigSchema = z.object({
     neverArmDeadMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
     /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 15. */
     neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(15),
-    /** Never-armed activity fade: min hold before the vol check (0=off). Default 10m. */
-    neverArmVolFadeMinMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
-    /** Exit when vol5m ≤ ratio × entry vol5m (0=off). Default 0.35. */
-    neverArmVolFadeRatio: z.coerce.number().min(0).max(10).default(0.35),
-    /** Exit when vol5m ≤ this USD floor (0=off). Default 500. */
-    neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(500),
+    /** Never-armed sustained fade: min hold before checks (0=off). Default 15m. */
+    neverArmVolFadeMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
+    /** A 5m window is weak if vol ≤ ratio × entry (0=off). Default 0.25. */
+    neverArmVolFadeRatio: z.coerce.number().min(0).max(10).default(0.25),
+    /** A 5m window is weak if vol ≤ this USD floor (0=off). Default 300. */
+    neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(300),
+    /** Min spacing between vol samples (distinct Dex m5 windows). Default 5m. */
+    neverArmVolFadeSampleMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
+    /** Consecutive weak windows required before exit. Default 3. */
+    neverArmVolFadeWeakWindows: z.coerce.number().int().min(0).max(48).default(3),
+    /** Instant rug / LP-pull cut when pnl ≤ −this % (0=off). Default 50. */
+    cliffDumpPnlPct: z.coerce.number().min(0).max(100).default(50),
   }),
 });
 
@@ -170,18 +180,29 @@ export function loadMildDipConfig(): MildDipConfig {
    * No SL% from entry / hard TP on the armed path.
    */
   const exit: MildDipExitGates = {
-    armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 8),
-    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
+    /** 1.11.699 — arm earlier so NV2RYH-style +5.5% MFE is not invisible. */
+    armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 5),
+    /** Scale-out half at −3% from peak; full remainder at givebackPct. */
+    partialGivebackPct: envNum('MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT', 3),
+    scaleOutFraction: envNum('MILD_DIP_EXIT_SCALE_OUT_FRACTION', 0.5),
+    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 8),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
     /** Deep-loss cut before max-hold (rugs); not the early 5m knife. */
     neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 900_000),
     neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 15),
-    /** Activity fade — leave when the tape dies, not on a clock. */
-    neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 600_000),
-    neverArmVolFadeRatio: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', 0.35),
-    neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 500),
+    /**
+     * Sustained activity fade — leave only after N consecutive weak 5m windows.
+     * One-shot Dex dips (Gymbmn) must not sell.
+     */
+    neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 900_000),
+    neverArmVolFadeRatio: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', 0.25),
+    neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 300),
+    neverArmVolFadeSampleMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS', 300_000),
+    neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
+    /** 1.11.697 — LP-pull cliff: exit immediately at ≤ −50% mark pnl. */
+    cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
   };
 
   const raw = {

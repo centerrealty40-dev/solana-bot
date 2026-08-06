@@ -340,6 +340,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       });
       freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
       const freshPc = fresh?.priceChangeM5Pct ?? null;
+      const freshVol5m = fresh?.volume5mUsd ?? c.metrics.volume5mUsd;
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
@@ -359,6 +360,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
           signalPc5m: c.metrics.priceChange5mPct,
           freshPriceUsd: freshPx,
           freshPc5m: freshPc,
+          freshVolume5mUsd: freshVol5m,
           reasons: pre.reasons,
         });
         console.log(
@@ -467,6 +469,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         sizeUsd: sized.sizeUsd,
         priceUsd: entryPriceUsd,
         signalPriceUsd: c.priceUsd,
+        pc5m: entryPc5m,
+        signalPc5m: c.metrics.priceChange5mPct,
+        volume5mUsd: c.metrics.volume5mUsd,
+        volume1hUsd: c.metrics.volume1hUsd,
+        liquidityUsd: c.metrics.liquidityUsd,
+        marketCapUsd: c.metrics.marketCapUsd,
+        pairAgeHours: c.metrics.pairAgeHours,
+        buys5m: c.metrics.buys5m,
+        sells5m: c.metrics.sells5m,
+        dexId: c.metrics.dexId,
+        dipSource: c.dipSource,
         ok: false,
         reason: err instanceof Error ? err.message : String(err),
         mode: cfg.executionMode,
@@ -484,6 +497,15 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       signalPriceUsd: c.priceUsd,
       pc5m: entryPc5m,
       signalPc5m: c.metrics.priceChange5mPct,
+      volume5mUsd: c.metrics.volume5mUsd,
+      volume1hUsd: c.metrics.volume1hUsd,
+      liquidityUsd: c.metrics.liquidityUsd,
+      marketCapUsd: c.metrics.marketCapUsd,
+      pairAgeHours: c.metrics.pairAgeHours,
+      buys5m: c.metrics.buys5m,
+      sells5m: c.metrics.sells5m,
+      dexId: c.metrics.dexId,
+      dipSource: c.dipSource,
       ok: buy.ok,
       reason: buy.reason ?? null,
       signature: buy.signature ?? null,
@@ -540,6 +562,10 @@ async function executeQueuedSell(args: {
   const pos = state.open[mint];
   if (!pos || !decision.reason) return;
 
+  const fraction =
+    decision.fraction > 0 && decision.fraction < 1 ? decision.fraction : 1;
+  const isPartial = fraction < 1 && decision.reason === 'peak_giveback_partial';
+
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
   const sell = await executeCopySell({
@@ -549,7 +575,7 @@ async function executeQueuedSell(args: {
     entryPriceUsd: pos.entryPriceUsd,
     exitPriceUsd: decision.markPriceUsd,
     sizeUsd: pos.sizeUsd,
-    fraction: 1,
+    fraction,
     leaderSignature: `milddip_exit_${decision.reason}_${nowMs}`,
     sellDelayMs: 0,
   });
@@ -565,7 +591,9 @@ async function executeQueuedSell(args: {
     mfePct: +decision.mfePct.toFixed(2),
     givebackPct: +decision.givebackPct.toFixed(2),
     realizedPct: +(sell.pnlPct ?? decision.pnlPct).toFixed(2),
-    armed: true,
+    fraction,
+    scaleOut: isPartial,
+    armed: decision.armed,
     holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
     ok: sell.ok,
     sellReason: sell.reason ?? null,
@@ -581,6 +609,51 @@ async function executeQueuedSell(args: {
   });
 
   if (sell.ok) {
+    if (isPartial && state.open[mint]) {
+      // Leave the runner: mark scale-out done, shrink notional, refresh raw.
+      const live = state.open[mint]!;
+      live.scaleOutDone = true;
+      live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
+      live.peakPriceUsd = decision.peakPriceUsd;
+      live.trailArmed = decision.armed;
+      const rem = await fetchMintBalanceRaw(copyCfg, mint);
+      if (rem && /^\d+$/.test(rem) && BigInt(rem) > HOLDING_DUST_RAW) {
+        live.tokenRaw = rem;
+      } else {
+        // Dust / empty after "partial" — treat as full close.
+        delete state.open[mint];
+        state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
+        saveMildDipState(cfg.statePath, state);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_cooldown_set',
+          mint,
+          symbol: pos.symbol,
+          pnlPct: +realizedPnl.toFixed(2),
+          cooldownMs: cd.cooldownMs,
+          cooldownKind: cd.kind,
+          exitReason: decision.reason,
+          note: 'partial_left_dust',
+        });
+        console.log(
+          `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} (partial→flat) ` +
+            `pnl=${realizedPnl.toFixed(1)}% mode=${cfg.executionMode}`,
+        );
+        await reclaimEmptyAta(cfg, {
+          mint,
+          symbol: pos.symbol,
+          reason: `post_sell_${decision.reason}`,
+        });
+        return;
+      }
+      saveMildDipState(cfg.statePath, state);
+      console.log(
+        `[mild-dip] SCALE-OUT ${pos.symbol} frac=${fraction} pnl=${realizedPnl.toFixed(1)}% ` +
+          `mfe=${decision.mfePct.toFixed(1)}% giveback=${decision.givebackPct.toFixed(1)}% ` +
+          `runner≈$${live.sizeUsd.toFixed(2)} mode=${cfg.executionMode}`,
+      );
+      return;
+    }
+
     // Re-read — another path must not have already cleared it.
     if (state.open[mint]) {
       delete state.open[mint];
@@ -697,10 +770,12 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
             armed: false,
             justArmed: false,
             shouldExit: true,
+            fraction: 1,
             reason: forceReason,
             mfePct: 0,
             givebackPct: 0,
             pnlPct: 0,
+            volFadeSamples: pos.volFadeSamples ?? [],
           });
         }
       }
@@ -856,10 +931,14 @@ export async function runMildDipLoop(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
-      `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
+      `exit=W9.1 arm=${cfg.exit.armPct}% ` +
+      `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
+      `fullGiveback=-${cfg.exit.givebackPct}% ` +
+      `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
-      `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd} ` +
+      `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd}` +
+      `/sample${Math.round(cfg.exit.neverArmVolFadeSampleMs / 1000)}s×${cfg.exit.neverArmVolFadeWeakWindows} ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +

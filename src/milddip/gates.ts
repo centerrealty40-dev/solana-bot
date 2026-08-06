@@ -14,6 +14,11 @@ export type MildDipCandidateMetrics = {
   marketCapUsd: number | null;
   pairAgeHours: number | null;
   dexId: string | null;
+  /** DexScreener m5 buy count — journaled; optional entry use. */
+  buys5m: number | null;
+  /** DexScreener m5 sell count — journaled; optional entry use. */
+  sells5m: number | null;
+  volume1hUsd: number | null;
 };
 
 export type MildDipEntryGates = {
@@ -33,8 +38,15 @@ export type MildDipEntryGates = {
 
 /** W9.1 peak-giveback exit parameters (+ never-armed dead-trade). */
 export type MildDipExitGates = {
-  /** Arm trail when MFE ≥ this % (default 8). */
+  /** Arm trail when MFE ≥ this % (default 5). */
   armPct: number;
+  /**
+   * After armed: sell `scaleOutFraction` when giveback from peak ≤ −this %
+   * (default 3). 0 = no partial scale-out (full exit only at givebackPct).
+   */
+  partialGivebackPct: number;
+  /** Fraction of bag to sell on partial giveback (default 0.5). */
+  scaleOutFraction: number;
   /** Full exit when giveback from peak ≤ −this % after armed (default 8). */
   givebackPct: number;
   /**
@@ -58,15 +70,36 @@ export type MildDipExitGates = {
   neverArmDeadPnlPct: number;
   /**
    * Activity-based never-armed exit (`never_arm_vol_fade`): once held this long,
-   * exit when the 5m volume has faded relative to entry. Leaders leave a mint
-   * when the tape dies, not on a clock — a flat mint that still trades can still
-   * run (see `diag-leader-exit-policy.json`). 0 = disabled.
+   * start evaluating sustained volume fade across spaced 5m windows. A single
+   * weak Dex reading must NOT sell — need `neverArmVolFadeWeakWindows` consecutive
+   * weak samples spaced ≥ `neverArmVolFadeSampleMs` apart. 0 = disabled.
    */
   neverArmVolFadeMinMs: number;
-  /** Exit when vol5m ≤ this fraction of entry vol5m (e.g. 0.35). 0 = disabled. */
+  /** A window is weak when vol5m ≤ this fraction of entry vol5m (e.g. 0.25). 0 = off. */
   neverArmVolFadeRatio: number;
-  /** Exit when vol5m ≤ this absolute USD floor regardless of ratio. 0 = disabled. */
+  /** A window is weak when vol5m ≤ this absolute USD floor. 0 = off. */
   neverArmVolFadeFloorUsd: number;
+  /**
+   * Min spacing between vol5m samples that count as distinct 5m windows
+   * (default 300_000 = 5m). Dex rolling m5 is autocorrelated on every mark tick.
+   */
+  neverArmVolFadeSampleMs: number;
+  /**
+   * Require this many consecutive weak 5m windows before `never_arm_vol_fade`
+   * (default 3 ≈ 15m of sustained fade). 1 = legacy one-shot (not recommended).
+   */
+  neverArmVolFadeWeakWindows: number;
+  /**
+   * Immediate cliff exit when mark pnl ≤ −this % (default 50). Catches LP-pull
+   * rugs without waiting for never_arm_dead min-hold. 0 = off.
+   */
+  cliffDumpPnlPct: number;
+};
+
+/** One spaced Dex vol5m reading used by the sustained fade exit. */
+export type MildDipVolFadeSample = {
+  ts: number;
+  vol: number;
 };
 
 export type MildDipGateVerdict = {
@@ -226,10 +259,12 @@ export function evaluateCooldownBounce(args: {
 
 export type MildDipExitReason =
   | 'peak_giveback'
+  | 'peak_giveback_partial'
   | 'never_arm_giveback'
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
   | 'never_arm_timeout'
+  | 'cliff_dump'
   | null;
 
 export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number): number | null {
@@ -246,16 +281,73 @@ export function mfeFromEntryPct(peakPriceUsd: number, entryPriceUsd: number): nu
   return (peakPriceUsd / entryPriceUsd - 1) * 100;
 }
 
+/** True when a single 5m vol reading is weak vs entry baseline / floor. */
+export function isVolFadeWeak(
+  vol5mUsd: number,
+  entryVolume5mUsd: number | null | undefined,
+  ratio: number,
+  floorUsd: number,
+): boolean {
+  if (!(vol5mUsd >= 0) || !Number.isFinite(vol5mUsd)) return false;
+  const entryVol = numOrNull(entryVolume5mUsd);
+  const fadedVsEntry =
+    ratio > 0 && entryVol != null && entryVol > 0 && vol5mUsd <= entryVol * ratio;
+  const belowFloor = floorUsd > 0 && vol5mUsd <= floorUsd;
+  return fadedVsEntry || belowFloor;
+}
+
+/**
+ * Append a Dex vol5m reading at most once per `sampleMs` (distinct 5m windows).
+ * Null/non-finite volumes are ignored so data gaps do not count as fade.
+ */
+export function recordVolFadeSample(
+  prev: readonly MildDipVolFadeSample[] | null | undefined,
+  nowMs: number,
+  volume5mUsd: number | null | undefined,
+  sampleMs: number,
+  keep: number,
+): MildDipVolFadeSample[] {
+  const out = Array.isArray(prev)
+    ? prev.filter((s) => s && Number.isFinite(s.ts) && Number.isFinite(s.vol) && s.vol >= 0)
+    : [];
+  const vol = numOrNull(volume5mUsd);
+  const spacing = sampleMs > 0 ? sampleMs : 300_000;
+  if (vol != null) {
+    const last = out.length > 0 ? out[out.length - 1]! : null;
+    if (!last || nowMs - last.ts >= spacing) {
+      out.push({ ts: nowMs, vol });
+    }
+  }
+  const maxKeep = Math.max(2, keep > 0 ? keep + 2 : 8);
+  return out.length > maxKeep ? out.slice(-maxKeep) : out;
+}
+
+/** Last `weakWindows` spaced samples are all weak → sustained fade. */
+export function sustainedVolFade(
+  samples: readonly MildDipVolFadeSample[] | null | undefined,
+  weakWindows: number,
+  entryVolume5mUsd: number | null | undefined,
+  ratio: number,
+  floorUsd: number,
+): boolean {
+  const need = weakWindows > 0 ? Math.floor(weakWindows) : 0;
+  if (need <= 0) return false;
+  if (!Array.isArray(samples) || samples.length < need) return false;
+  const recent = samples.slice(-need);
+  return recent.every((s) => isVolFadeWeak(s.vol, entryVolume5mUsd, ratio, floorUsd));
+}
+
 /**
  * W9.1 peak-giveback («flow») exit — pure decision, no network.
  *
  * - Update running peak from entry
- * - Arm when MFE ≥ armPct
- * - Full exit when armed and giveback ≤ −givebackPct
+ * - Arm when MFE ≥ armPct (live default +5%)
+ * - Armed scale-out: giveback ≤ −partialGivebackPct → sell scaleOutFraction
+ *   (once); giveback ≤ −givebackPct → sell remainder / full
  * - Never-armed: optional soft giveback after patienceMs (0 = off), deep-loss
- *   dead cut, activity fade (`never_arm_vol_fade`), then the max-hold ceiling
+ *   dead cut, sustained activity fade (`never_arm_vol_fade` over N×5m windows),
+ *   then the max-hold ceiling
  * - Live default: patience off — early never_arm_giveback was cutting before pumps
- * - Loss-by-flow (realized < 0) is a valid outcome of the armed trail
  */
 export function evaluateMildDipPeakGiveback(args: {
   entryPriceUsd: number;
@@ -263,12 +355,18 @@ export function evaluateMildDipPeakGiveback(args: {
   peakPriceUsd: number;
   armed: boolean;
   gates: MildDipExitGates;
+  /** True after a successful partial scale-out on this position. */
+  scaleOutDone?: boolean;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
-  /** Current 5m volume (Dex) — enables the activity-fade exit. */
+  /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
   volume5mUsd?: number | null;
   /** 5m volume captured at entry — the fade baseline. */
   entryVolume5mUsd?: number | null;
+  /** Prior spaced vol5m samples on this position (mutated via return value). */
+  volFadeSamples?: readonly MildDipVolFadeSample[] | null;
+  /** Wall clock for spacing samples; defaults to held-relative when omitted. */
+  nowMs?: number;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -276,11 +374,29 @@ export function evaluateMildDipPeakGiveback(args: {
   armed: boolean;
   justArmed: boolean;
   shouldExit: boolean;
+  /** 1 = full / remainder; 0.5 = scale-out; 0 = no sell. */
+  fraction: number;
   reason: MildDipExitReason;
   pnlPct: number;
+  volFadeSamples: MildDipVolFadeSample[];
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
+  const scaleOutDone = args.scaleOutDone === true;
   const heldMs = Number.isFinite(args.heldMs) ? Math.max(0, Number(args.heldMs)) : 0;
+  const nowMs =
+    Number.isFinite(args.nowMs) && Number(args.nowMs) > 0
+      ? Number(args.nowMs)
+      : heldMs;
+  const sampleMs = gates.neverArmVolFadeSampleMs > 0 ? gates.neverArmVolFadeSampleMs : 300_000;
+  const weakWindows =
+    gates.neverArmVolFadeWeakWindows > 0 ? Math.floor(gates.neverArmVolFadeWeakWindows) : 0;
+  const volFadeSamples = recordVolFadeSample(
+    args.volFadeSamples,
+    nowMs,
+    args.volume5mUsd,
+    sampleMs,
+    weakWindows > 0 ? weakWindows : 3,
+  );
   const peakPriceUsd = Math.max(
     args.peakPriceUsd > 0 ? args.peakPriceUsd : entryPriceUsd,
     markPriceUsd > 0 ? markPriceUsd : 0,
@@ -297,102 +413,89 @@ export function evaluateMildDipPeakGiveback(args: {
     justArmed = true;
   }
 
-  const givebackHit =
-    gates.givebackPct > 0 &&
-    // epsilon: 103.5/115 is −9.999…% in IEEE float
-    givebackPct <= -gates.givebackPct + 1e-9;
-
-  if (armed && givebackHit) {
-    return {
-      peakPriceUsd,
-      mfePct,
-      givebackPct,
-      armed,
-      justArmed,
-      shouldExit: true,
-      reason: 'peak_giveback',
-      pnlPct,
-    };
-  }
-
-  // Never-armed branch — must always have a finite exit (no infinite hold).
-  // Order: optional soft giveback (usually OFF) → deep-loss dead cut → max-hold ceiling.
-  if (!armed) {
-    const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
-    if (patience > 0 && heldMs >= patience && givebackHit) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_giveback',
-        pnlPct,
-      };
-    }
-    const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
-    const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
-    if (deadMin > 0 && deadPnl > 0 && heldMs >= deadMin && pnlPct <= -deadPnl) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_dead',
-        pnlPct,
-      };
-    }
-    const volFadeMin = gates.neverArmVolFadeMinMs > 0 ? gates.neverArmVolFadeMinMs : 0;
-    if (volFadeMin > 0 && heldMs >= volFadeMin) {
-      const vol = numOrNull(args.volume5mUsd);
-      if (vol != null) {
-        const floor = gates.neverArmVolFadeFloorUsd > 0 ? gates.neverArmVolFadeFloorUsd : 0;
-        const entryVol = numOrNull(args.entryVolume5mUsd);
-        const ratio = gates.neverArmVolFadeRatio > 0 ? gates.neverArmVolFadeRatio : 0;
-        const fadedVsEntry = ratio > 0 && entryVol != null && entryVol > 0 && vol <= entryVol * ratio;
-        const belowFloor = floor > 0 && vol <= floor;
-        if (fadedVsEntry || belowFloor) {
-          return {
-            peakPriceUsd,
-            mfePct,
-            givebackPct,
-            armed,
-            justArmed,
-            shouldExit: true,
-            reason: 'never_arm_vol_fade',
-            pnlPct,
-          };
-        }
-      }
-    }
-    const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
-    if (maxHold > 0 && heldMs >= maxHold) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_timeout',
-        pnlPct,
-      };
-    }
-  }
-
-  return {
+  const hold = {
     peakPriceUsd,
     mfePct,
     givebackPct,
     armed,
     justArmed,
-    shouldExit: false,
-    reason: null,
+    shouldExit: false as const,
+    fraction: 0,
+    reason: null as MildDipExitReason,
     pnlPct,
+    volFadeSamples,
   };
+
+  // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
+  const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
+  if (cliff > 0 && pnlPct <= -cliff) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+  }
+
+  const fullGivebackHit =
+    gates.givebackPct > 0 &&
+    // epsilon: 103.5/115 is −9.999…% in IEEE float
+    givebackPct <= -gates.givebackPct + 1e-9;
+
+  const partialPct = gates.partialGivebackPct > 0 ? gates.partialGivebackPct : 0;
+  const scaleFrac =
+    gates.scaleOutFraction > 0 && gates.scaleOutFraction < 1 ? gates.scaleOutFraction : 0;
+  const partialGivebackHit =
+    partialPct > 0 &&
+    scaleFrac > 0 &&
+    !scaleOutDone &&
+    givebackPct <= -partialPct + 1e-9;
+
+  if (armed && fullGivebackHit) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
+  }
+  if (armed && partialGivebackHit) {
+    return {
+      ...hold,
+      shouldExit: true,
+      fraction: scaleFrac,
+      reason: 'peak_giveback_partial',
+    };
+  }
+
+  // Never-armed branch — must always have a finite exit (no infinite hold).
+  // Order: optional soft giveback (usually OFF) → deep-loss dead cut →
+  // sustained vol fade (N consecutive weak 5m windows) → max-hold ceiling.
+  // Full givebackPct is the soft knife width when patience is on.
+  const givebackHit = fullGivebackHit;
+  if (!armed) {
+    const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
+    if (patience > 0 && heldMs >= patience && givebackHit) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };
+    }
+    const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
+    const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
+    if (deadMin > 0 && deadPnl > 0 && heldMs >= deadMin && pnlPct <= -deadPnl) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_dead' };
+    }
+    const volFadeMin = gates.neverArmVolFadeMinMs > 0 ? gates.neverArmVolFadeMinMs : 0;
+    if (volFadeMin > 0 && heldMs >= volFadeMin && weakWindows > 0) {
+      const floor = gates.neverArmVolFadeFloorUsd > 0 ? gates.neverArmVolFadeFloorUsd : 0;
+      const ratio = gates.neverArmVolFadeRatio > 0 ? gates.neverArmVolFadeRatio : 0;
+      if (
+        sustainedVolFade(
+          volFadeSamples,
+          weakWindows,
+          args.entryVolume5mUsd,
+          ratio,
+          floor,
+        )
+      ) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_vol_fade' };
+      }
+    }
+    const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
+    if (maxHold > 0 && heldMs >= maxHold) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_timeout' };
+    }
+  }
+
+  return hold;
 }
 
 /** @deprecated Use evaluateMildDipPeakGiveback — kept name alias for call sites. */

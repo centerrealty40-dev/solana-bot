@@ -3,9 +3,25 @@ import {
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
+  type MildDipCandidateMetrics,
   type MildDipEntryGates,
   type MildDipExitGates,
 } from '../../src/milddip/gates.js';
+
+function metrics(partial: Partial<MildDipCandidateMetrics>): MildDipCandidateMetrics {
+  return {
+    priceChange5mPct: -9.7,
+    volume5mUsd: 12_000,
+    liquidityUsd: 40_000,
+    marketCapUsd: 400_000,
+    pairAgeHours: 48,
+    dexId: 'pumpswap',
+    buys5m: 10,
+    sells5m: 10,
+    volume1hUsd: 80_000,
+    ...partial,
+  };
+}
 
 const baseGates: MildDipEntryGates = {
   minDipPct: -20,
@@ -20,82 +36,60 @@ const baseGates: MildDipEntryGates = {
 };
 
 const exitGates: MildDipExitGates = {
-  armPct: 8,
+  armPct: 5,
+  partialGivebackPct: 3,
+  scaleOutFraction: 0.5,
   givebackPct: 8,
   neverArmPatienceMs: 0,
   neverArmMaxHoldMs: 5_400_000,
   neverArmDeadMinMs: 900_000,
   neverArmDeadPnlPct: 15,
-  neverArmVolFadeMinMs: 600_000,
-  neverArmVolFadeRatio: 0.35,
-  neverArmVolFadeFloorUsd: 500,
+  neverArmVolFadeMinMs: 900_000,
+  neverArmVolFadeRatio: 0.25,
+  neverArmVolFadeFloorUsd: 300,
+  neverArmVolFadeSampleMs: 300_000,
+  neverArmVolFadeWeakWindows: 3,
+  cliffDumpPnlPct: 50,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
 const exitGatesPatienceOn: MildDipExitGates = {
   ...exitGates,
+  armPct: 8, // keep unarmed at +4% MFE for this legacy case
+  partialGivebackPct: 0,
   givebackPct: 6,
   neverArmPatienceMs: 300_000,
 };
 
+/** Full-only trail (no scale-out) — preserves older peak_giveback unit cases. */
+const exitGatesFullOnly: MildDipExitGates = {
+  ...exitGates,
+  armPct: 8,
+  partialGivebackPct: 0,
+  givebackPct: 8,
+};
+
 describe('evaluateMildDipEntry', () => {
   it('passes a typical mild-dip candidate', () => {
-    const v = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -9.7,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
-      baseGates,
-    );
+    const v = evaluateMildDipEntry(metrics({ pairAgeHours: 48 }), baseGates);
     expect(v.pass).toBe(true);
     expect(v.reasons).toEqual([]);
   });
 
   it('rejects chase (pc5m > 0)', () => {
-    const v = evaluateMildDipEntry(
-      {
-        priceChange5mPct: 3,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
-      baseGates,
-    );
+    const v = evaluateMildDipEntry(metrics({ priceChange5mPct: 3, pairAgeHours: 48 }), baseGates);
     expect(v.pass).toBe(false);
     expect(v.reasons.some((r) => r.includes('pc5m'))).toBe(true);
   });
 
   it('rejects deep knife (pc5m ≤ −20)', () => {
-    const v = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -20,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
-      baseGates,
-    );
+    const v = evaluateMildDipEntry(metrics({ priceChange5mPct: -20, pairAgeHours: 48 }), baseGates);
     expect(v.pass).toBe(false);
   });
 
-  it('accepts boundary maxDipPct = 0', () => {
+  it('accepts boundary maxDipPct = 0 on normal tape', () => {
     const v = evaluateMildDipEntry(
-      {
-        priceChange5mPct: 0,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpfun',
-      },
+      metrics({ priceChange5mPct: 0, dexId: 'pumpfun' }),
       baseGates,
     );
     expect(v.pass).toBe(true);
@@ -104,38 +98,17 @@ describe('evaluateMildDipEntry', () => {
   it('prod band (−20, −4]: rejects shallow flat-chop, accepts real dump', () => {
     const prod = { ...baseGates, maxDipPct: -4 };
     const shallow = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -2.5,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
+      metrics({ priceChange5mPct: -2.5 }),
       prod,
     );
     expect(shallow.pass).toBe(false);
     const dump = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -9.0,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
+      metrics({ priceChange5mPct: -9.0 }),
       prod,
     );
     expect(dump.pass).toBe(true);
     const boundary = evaluateMildDipEntry(
-      {
-        priceChange5mPct: -4,
-        volume5mUsd: 25_000,
-        liquidityUsd: 40_000,
-        marketCapUsd: 400_000,
-        pairAgeHours: 6,
-        dexId: 'pumpswap',
-      },
+      metrics({ priceChange5mPct: -4 }),
       prod,
     );
     expect(boundary.pass).toBe(true);
@@ -143,7 +116,10 @@ describe('evaluateMildDipEntry', () => {
 });
 
 describe('evaluateMildDipPreBuy', () => {
-  const band = { minDipPct: -20, maxDipPct: 0 };
+  const band = {
+    minDipPct: -20,
+    maxDipPct: 0,
+  };
 
   it('passes when still in dip and mark not chasing', () => {
     const v = evaluateMildDipPreBuy({
@@ -199,7 +175,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 115,
       peakPriceUsd: 100,
       armed: false,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(armed.justArmed).toBe(true);
     expect(armed.armed).toBe(true);
@@ -210,7 +186,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 108.1, // −6% of 115 — not enough at giveback=8
       peakPriceUsd: 115,
       armed: true,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(hold.shouldExit).toBe(false);
 
@@ -219,12 +195,77 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 105.8, // −8% of 115
       peakPriceUsd: 115,
       armed: true,
+      gates: exitGatesFullOnly,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('peak_giveback');
+    expect(v.fraction).toBe(1);
+    expect(v.pnlPct).toBeGreaterThan(0);
+    expect(v.givebackPct).toBeLessThanOrEqual(-8 + 1e-6);
+  });
+
+  it('arm at +5%: NV2RYH-style +5.5% MFE arms the trail', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.5,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: exitGates,
+    });
+    expect(v.armed).toBe(true);
+    expect(v.justArmed).toBe(true);
+    expect(v.shouldExit).toBe(false);
+  });
+
+  it('scale-out: −3% from peak sells half; −8% sells all', () => {
+    // 105 * 0.97 = 101.85 → −3%
+    const at3 = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 101.85,
+      peakPriceUsd: 105,
+      armed: true,
+      scaleOutDone: false,
+      gates: exitGates,
+    });
+    expect(at3.shouldExit).toBe(true);
+    expect(at3.reason).toBe('peak_giveback_partial');
+    expect(at3.fraction).toBe(0.5);
+
+    const afterPartial = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 101.85,
+      peakPriceUsd: 105,
+      armed: true,
+      scaleOutDone: true,
+      gates: exitGates,
+    });
+    expect(afterPartial.shouldExit).toBe(false);
+
+    const full = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 96.6, // 105 * 0.92
+      peakPriceUsd: 105,
+      armed: true,
+      scaleOutDone: true,
+      gates: exitGates,
+    });
+    expect(full.shouldExit).toBe(true);
+    expect(full.reason).toBe('peak_giveback');
+    expect(full.fraction).toBe(1);
+  });
+
+  it('full giveback at −8% skips partial even if scale-out not taken', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 96.6,
+      peakPriceUsd: 105,
+      armed: true,
+      scaleOutDone: false,
       gates: exitGates,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('peak_giveback');
-    expect(v.pnlPct).toBeGreaterThan(0);
-    expect(v.givebackPct).toBeLessThanOrEqual(-8 + 1e-6);
+    expect(v.fraction).toBe(1);
   });
 
   it('arm at +8% / giveback −8%: floor ≈ −0.64% from entry at exact trigger', () => {
@@ -233,7 +274,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 108,
       peakPriceUsd: 100,
       armed: false,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(arm.armed).toBe(true);
     expect(arm.justArmed).toBe(true);
@@ -243,7 +284,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 99.36, // −8% of 108
       peakPriceUsd: 108,
       armed: true,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('peak_giveback');
@@ -256,7 +297,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 97,
       peakPriceUsd: 108,
       armed: true,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('peak_giveback');
@@ -328,11 +369,37 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
+  it('cliff_dump exits immediately at ≤ −50% without waiting dead min-hold', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 40,
+      peakPriceUsd: 103.71,
+      armed: false,
+      gates: exitGates,
+      heldMs: 30_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('cliff_dump');
+    expect(v.pnlPct).toBeLessThanOrEqual(-50);
+  });
+
+  it('cliff_dump off when cliffDumpPnlPct=0', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 40,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: { ...exitGates, cliffDumpPnlPct: 0 },
+      heldMs: 30_000,
+    });
+    expect(v.shouldExit).toBe(false);
+  });
+
   it('never-arm timeout at max hold if still unarmed', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 103,
-      peakPriceUsd: 105,
+      peakPriceUsd: 104, // MFE +4% < arm 5 — stay unarmed
       armed: false,
       gates: exitGates,
       heldMs: 5_400_000,
@@ -346,11 +413,12 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 103,
-      peakPriceUsd: 105,
+      peakPriceUsd: 104,
       armed: false,
       gates: exitGates,
       heldMs: 1_200_000,
     });
+    expect(v.armed).toBe(false);
     expect(v.shouldExit).toBe(false);
     expect(v.reason).toBeNull();
   });
@@ -361,7 +429,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 110,
       peakPriceUsd: 100,
       armed: false,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(mid.peakPriceUsd).toBe(110);
     expect(mid.armed).toBe(true);
@@ -371,17 +439,17 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 120,
       peakPriceUsd: mid.peakPriceUsd,
       armed: mid.armed,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(high.peakPriceUsd).toBe(120);
 
-    // −6% from peak 120 → still holds (trigger is −8%)
+    // −6% from peak 120 → still holds (full-only trigger is −8%)
     const hold = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 112.8,
       peakPriceUsd: 120,
       armed: true,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(hold.shouldExit).toBe(false);
 
@@ -391,7 +459,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 110.4,
       peakPriceUsd: 120,
       armed: true,
-      gates: exitGates,
+      gates: exitGatesFullOnly,
     });
     expect(exit.shouldExit).toBe(true);
     expect(exit.reason).toBe('peak_giveback');
@@ -426,6 +494,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
   it('never-arm exits disabled when patience/maxHold/dead are 0 (unsafe — for unit only)', () => {
     const gates: MildDipExitGates = {
       armPct: 8,
+      partialGivebackPct: 0,
+      scaleOutFraction: 0.5,
       givebackPct: 8,
       neverArmPatienceMs: 0,
       neverArmMaxHoldMs: 0,
@@ -433,7 +503,10 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmDeadPnlPct: 0,
       neverArmVolFadeMinMs: 0,
       neverArmVolFadeRatio: 0,
+      cliffDumpPnlPct: 0,
       neverArmVolFadeFloorUsd: 0,
+      neverArmVolFadeSampleMs: 0,
+      neverArmVolFadeWeakWindows: 0,
     };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,

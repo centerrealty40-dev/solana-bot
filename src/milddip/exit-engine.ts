@@ -2,7 +2,7 @@
  * Pure helpers for mild-dip mark/exit scheduling.
  * Keep I/O (Dex / Jupiter / ATA) out of this module so unit tests stay offline.
  */
-import type { MildDipExitGates } from './gates.js';
+import type { MildDipExitGates, MildDipVolFadeSample } from './gates.js';
 import { evaluateMildDipPeakGiveback, type MildDipExitReason } from './gates.js';
 import type { MildDipOpenPosition } from './state.js';
 
@@ -13,10 +13,14 @@ export type MarkExitDecision = {
   armed: boolean;
   justArmed: boolean;
   shouldExit: boolean;
+  /** 1 = full close; (0,1) = scale-out leave runner. */
+  fraction: number;
   reason: MildDipExitReason;
   mfePct: number;
   givebackPct: number;
   pnlPct: number;
+  /** Updated spaced vol5m ring — caller persists onto the open position. */
+  volFadeSamples: MildDipVolFadeSample[];
 };
 
 /** Armed positions first (trail can fire), then older opens. */
@@ -55,10 +59,13 @@ export function decideMarkExit(args: {
     markPriceUsd,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
+    scaleOutDone: pos.scaleOutDone === true,
     gates,
     heldMs,
+    nowMs,
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
+    volFadeSamples: pos.volFadeSamples ?? null,
   });
   return {
     mint,
@@ -67,20 +74,23 @@ export function decideMarkExit(args: {
     armed: verdict.armed,
     justArmed: verdict.justArmed,
     shouldExit: verdict.shouldExit,
+    fraction: verdict.fraction,
     reason: verdict.reason,
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
+    volFadeSamples: verdict.volFadeSamples,
   };
 }
 
-/** Merge mark decision into live position (peak / arm only). */
+/** Merge mark decision into live position (peak / arm / vol-fade samples). */
 export function applyMarkDecisionToPosition(
   pos: MildDipOpenPosition,
   decision: MarkExitDecision,
 ): void {
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
+  pos.volFadeSamples = decision.volFadeSamples;
 }
 
 /**

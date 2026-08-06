@@ -36,15 +36,20 @@ describe('orderMintsForMark', () => {
 
 describe('decideMarkExit / applyMarkDecisionToPosition', () => {
   const gates = {
-    armPct: 8,
+    armPct: 5,
+    partialGivebackPct: 3,
+    scaleOutFraction: 0.5,
     givebackPct: 8,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
     neverArmDeadMinMs: 900_000,
     neverArmDeadPnlPct: 15,
-    neverArmVolFadeMinMs: 600_000,
-    neverArmVolFadeRatio: 0.35,
-    neverArmVolFadeFloorUsd: 500,
+    neverArmVolFadeMinMs: 900_000,
+    neverArmVolFadeRatio: 0.25,
+    neverArmVolFadeFloorUsd: 300,
+    neverArmVolFadeSampleMs: 300_000,
+    neverArmVolFadeWeakWindows: 3,
+    cliffDumpPnlPct: 50,
   };
 
   it('updates peak and arms without exiting', () => {
@@ -88,10 +93,32 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
     expect(d?.shouldExit).toBe(true);
     expect(d?.reason).toBe('peak_giveback');
+    expect(d?.fraction).toBe(1);
     applyMarkDecisionToPosition(p, d!);
     // Still "open" until sell confirms — we only mutate trail fields here.
     expect(p.peakPriceUsd).toBe(108);
     expect(p.trailArmed).toBe(true);
+  });
+
+  it('queues peak_giveback_partial at −3% when scale-out not yet taken', () => {
+    const p = pos({
+      mint: 'm2b',
+      entryPriceUsd: 100,
+      peakPriceUsd: 105,
+      trailArmed: true,
+      scaleOutDone: false,
+      openedAtMs: 1_000_000,
+    });
+    const d = decideMarkExit({
+      mint: 'm2b',
+      pos: p,
+      markPriceUsd: 101.85, // −3% of 105
+      gates,
+      nowMs: 1_060_000,
+    });
+    expect(d?.shouldExit).toBe(true);
+    expect(d?.reason).toBe('peak_giveback_partial');
+    expect(d?.fraction).toBe(0.5);
   });
 
   it('queues never-arm dead after 15m deep loss (patience off)', () => {
@@ -149,57 +176,132 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(d?.shouldExit).toBe(false);
   });
 
-  it('exits unarmed on volume fade vs entry baseline', () => {
+  it('does not sell on a one-shot volume dip (Gymbmn case)', () => {
     const openedAtMs = 1_000_000;
     const p = pos({
       mint: 'm6',
+      entryPriceUsd: 100,
+      peakPriceUsd: 100,
+      trailArmed: false,
+      openedAtMs,
+    });
+    p.entryVolume5mUsd = 8_672;
+    // Alive windows, then a single weak dip — must NOT exit.
+    for (const [held, vol] of [
+      [300_000, 4_000],
+      [600_000, 3_500],
+      [900_000, 1_199], // one weak tick vs entry×0.25 / floor
+    ] as const) {
+      const d = decideMarkExit({
+        mint: 'm6',
+        pos: p,
+        markPriceUsd: 98,
+        gates,
+        nowMs: openedAtMs + held,
+        volume5mUsd: vol,
+      });
+      expect(d?.shouldExit).toBe(false);
+      applyMarkDecisionToPosition(p, d!);
+    }
+    expect(p.volFadeSamples?.length).toBe(3);
+  });
+
+  it('exits only after 3 consecutive weak 5m windows', () => {
+    const openedAtMs = 1_000_000;
+    const p = pos({
+      mint: 'm7',
       entryPriceUsd: 100,
       peakPriceUsd: 100,
       trailArmed: false,
       openedAtMs,
     });
     p.entryVolume5mUsd = 4_000;
-    const early = decideMarkExit({
-      mint: 'm6',
-      pos: p,
-      markPriceUsd: 98,
-      gates,
-      nowMs: openedAtMs + 300_000,
-      volume5mUsd: 900,
-    });
-    expect(early?.shouldExit).toBe(false);
-
-    const d = decideMarkExit({
-      mint: 'm6',
-      pos: p,
-      markPriceUsd: 98,
-      gates,
-      nowMs: openedAtMs + 600_000,
-      volume5mUsd: 900,
-    });
-    expect(d?.shouldExit).toBe(true);
-    expect(d?.reason).toBe('never_arm_vol_fade');
+    const marks: Array<[number, number, boolean]> = [
+      [300_000, 900, false], // before minMs
+      [600_000, 900, false], // still < 3 windows + minMs
+      [900_000, 900, true], // 3rd consecutive weak + ≥15m
+    ];
+    for (const [held, vol, expectExit] of marks) {
+      const d = decideMarkExit({
+        mint: 'm7',
+        pos: p,
+        markPriceUsd: 98,
+        gates,
+        nowMs: openedAtMs + held,
+        volume5mUsd: vol,
+      });
+      expect(d?.shouldExit).toBe(expectExit);
+      if (expectExit) expect(d?.reason).toBe('never_arm_vol_fade');
+      applyMarkDecisionToPosition(p, d!);
+    }
   });
 
-  it('exits unarmed on absolute volume floor with no entry baseline', () => {
+  it('resets the weak streak when a strong window appears', () => {
     const openedAtMs = 1_000_000;
     const p = pos({
-      mint: 'm7',
+      mint: 'm7b',
       entryPriceUsd: 100,
       peakPriceUsd: 100,
       trailArmed: false,
       openedAtMs,
     });
+    p.entryVolume5mUsd = 4_000;
+    for (const [held, vol] of [
+      [300_000, 500],
+      [600_000, 500],
+      [900_000, 3_000], // strong — breaks streak
+      [1_200_000, 500],
+      [1_500_000, 500],
+    ] as const) {
+      const d = decideMarkExit({
+        mint: 'm7b',
+        pos: p,
+        markPriceUsd: 98,
+        gates,
+        nowMs: openedAtMs + held,
+        volume5mUsd: vol,
+      });
+      expect(d?.shouldExit).toBe(false);
+      applyMarkDecisionToPosition(p, d!);
+    }
+    // Need one more weak window to reach 3 consecutive after the break.
     const d = decideMarkExit({
-      mint: 'm7',
+      mint: 'm7b',
       pos: p,
-      markPriceUsd: 99,
+      markPriceUsd: 98,
       gates,
-      nowMs: openedAtMs + 900_000,
-      volume5mUsd: 120,
+      nowMs: openedAtMs + 1_800_000,
+      volume5mUsd: 500,
     });
     expect(d?.shouldExit).toBe(true);
     expect(d?.reason).toBe('never_arm_vol_fade');
+  });
+
+  it('exits on sustained absolute floor with no entry baseline', () => {
+    const openedAtMs = 1_000_000;
+    const p = pos({
+      mint: 'm7c',
+      entryPriceUsd: 100,
+      peakPriceUsd: 100,
+      trailArmed: false,
+      openedAtMs,
+    });
+    for (const held of [300_000, 600_000, 900_000] as const) {
+      const d = decideMarkExit({
+        mint: 'm7c',
+        pos: p,
+        markPriceUsd: 99,
+        gates,
+        nowMs: openedAtMs + held,
+        volume5mUsd: 120,
+      });
+      applyMarkDecisionToPosition(p, d!);
+      if (held < 900_000) expect(d?.shouldExit).toBe(false);
+      else {
+        expect(d?.shouldExit).toBe(true);
+        expect(d?.reason).toBe('never_arm_vol_fade');
+      }
+    }
   });
 
   it('does not vol-fade an armed position', () => {
@@ -212,15 +314,18 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       openedAtMs,
     });
     p.entryVolume5mUsd = 4_000;
-    const d = decideMarkExit({
-      mint: 'm8',
-      pos: p,
-      markPriceUsd: 118,
-      gates,
-      nowMs: openedAtMs + 1_800_000,
-      volume5mUsd: 50,
-    });
-    expect(d?.shouldExit).toBe(false);
+    for (const held of [300_000, 600_000, 900_000, 1_200_000, 1_500_000, 1_800_000] as const) {
+      const d = decideMarkExit({
+        mint: 'm8',
+        pos: p,
+        markPriceUsd: 118,
+        gates,
+        nowMs: openedAtMs + held,
+        volume5mUsd: 50,
+      });
+      expect(d?.shouldExit).toBe(false);
+      applyMarkDecisionToPosition(p, d!);
+    }
   });
 });
 
