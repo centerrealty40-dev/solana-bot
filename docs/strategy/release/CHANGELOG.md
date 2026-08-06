@@ -1,4 +1,71 @@
 # So
+## [1.11.693] — 2026-08-06
+
+**Тег:** `sa-1.11.693`
+
+### Revert: armed trail giveback 8% → 6%
+
+`1.11.691` widened `MILD_DIP_EXIT_GIVEBACK_PCT` 6 → 8 with no counterfactual.
+This is the **armed** trail — the only profitable exit branch — not the
+`never_arm_giveback` knife that was removed (that one stays off, `PATIENCE_MS=0`).
+
+Live `peak_giveback` exits:
+
+| setting | n | avg | win | med MFE | realized giveback | MFE capture |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| 6 (until 07:29Z) | 160 | **+9.20%** | 84% | 18.1% | −7.59% | 41% |
+| 8 (after 07:29Z) | 22 | +6.44% | 73% | 12.5% | −9.04% | 37% |
+
+The 8-sample is small and ran in a lower-MFE tape, so it does not disprove 8 —
+but capture did not improve while the per-exit cost widened exactly as the
+mechanics predict. Returning to the value that has 160 measured exits behind it.
+
+Testing 8 properly needs armed mark-path logging (does price make a new peak
+after giving back 6% from the old one?), which we do not journal yet.
+
+**Откат:** `MILD_DIP_EXIT_GIVEBACK_PCT=8` + reload.
+
+---
+
+## [1.11.692] — 2026-08-06
+
+**Тег:** `sa-1.11.692`
+
+### Change: never-armed exit leaves on activity fade, not on a clock
+
+`Agmu8Xgn` was sold at 07:40:32Z by `never_arm_timeout` (the 40m ceiling) at
+`0.00034523`, MFE **7.84%** — 0.16pp short of the +8% arm. Price after our exit:
+
+| after exit | vs our exit |
+| --- | ---: |
+| +1m | +9.6% |
+| +4m | +34% |
+| +11m | **+54.7%** |
+
+Volume in the exit minute was $256 and the pump minutes traded $1.3k–$3.0k: the
+mint was alive, the clock was not. Leader evidence (`diag-leader-exit-policy.json`,
+1506 8zkg sessions / 80h): he holds **>40m in 29%** of sessions and **33% of those
+finish above +10%**; his never-worked sessions close 64% by 40m but 89% by 90m.
+
+New never-armed order (soft → hard):
+
+1. `never_arm_giveback` — still off (`PATIENCE_MS=0`)
+2. `never_arm_dead` — 15m unarmed and pnl ≤ −15% (rugs)
+3. **`never_arm_vol_fade`** — after 10m unarmed, exit when `vol5m ≤ 35%` of entry
+   `vol5m`, or `vol5m ≤ $500`
+4. `never_arm_timeout` — ceiling **40m → 90m**
+
+`entryVolume5mUsd` is stored on the position at buy; adopted bags take the first
+usable mark reading as the baseline. Armed positions are never vol-faded — the
+trail owns them. `vol5m` rides along in the existing Dex mark response, so this
+costs no extra requests.
+
+**Откат:** `MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO=0` +
+`MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD=0` (disables fade),
+`MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS=2400000` + reload.
+
+---
+
 ## [1.11.691] — 2026-08-06
 
 **Тег:** `sa-1.11.691`
