@@ -1,4 +1,25 @@
 # So
+## [1.11.694] — 2026-08-06
+
+**Тег:** `sa-1.11.694`
+
+### Fix: mild-dip double-buys — single-instance lock + buy seat reserve
+
+Root cause of repeated double $5 buys (e.g. `BorBvxBN…pump`): a **second**
+`mild-dip-bot` under `PM2_HOME=/root/.pm2` (root) raced the canonical
+`salpha` PM2 on the same wallet. Leader sigs
+`milddip_BorBvxBN_<scanNowMs>` differed by ~33s; USDC dropped $5+$5.
+
+- Exclusive lock file `data/milddip/mild-dip-bot.lock` (O_EXCL + stale-pid reclaim)
+- Reserve `state.open[mint]` + persist **before** Jupiter buy send
+- Re-merge disk `state.json` before each entry attempt
+- Ops: delete rogue root PM2 app (do not run mild-dip under root)
+
+**Откат:** remove lock acquire in `mild-dip-bot.ts` / buy-reserve block in
+`loop.ts`; keep only one PM2 home (`salpha`).
+
+---
+
 ## [1.11.693] — 2026-08-06
 
 **Тег:** `sa-1.11.693`
