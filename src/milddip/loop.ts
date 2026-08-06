@@ -115,6 +115,44 @@ async function markPriceUsd(
   return { px: null, volume5mUsd };
 }
 
+/** mint → last `mild_dip_mark` journal ts (throttle, process-local). */
+const lastMarkJournalMs = new Map<string, number>();
+
+/**
+ * Sample the mark path of an open position into the journal so trail widths can
+ * be re-fitted offline on our own trades. Throttled per mint; peak moves and
+ * exits are always recorded so the upper envelope is never lost.
+ */
+function maybeJournalMark(
+  cfg: MildDipConfig,
+  pos: MildDipOpenPosition,
+  decision: MarkExitDecision,
+  volume5mUsd: number | null,
+  nowMs: number,
+): void {
+  if (cfg.markJournalMs <= 0) return;
+  const newPeak = decision.peakPriceUsd > (pos.peakPriceUsd ?? 0);
+  const last = lastMarkJournalMs.get(pos.mint) ?? 0;
+  if (!newPeak && !decision.shouldExit && nowMs - last < cfg.markJournalMs) return;
+  lastMarkJournalMs.set(pos.mint, nowMs);
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mild_dip_mark',
+    mint: pos.mint,
+    symbol: pos.symbol,
+    entryPx: pos.entryPriceUsd,
+    px: decision.markPriceUsd,
+    peakPx: decision.peakPriceUsd,
+    armed: decision.armed,
+    mfePct: +decision.mfePct.toFixed(2),
+    givebackPct: +decision.givebackPct.toFixed(2),
+    pnlPct: +decision.pnlPct.toFixed(2),
+    heldSec: Math.round(Math.max(0, nowMs - pos.openedAtMs) / 1000),
+    vol5m: volume5mUsd,
+    entryVol5m: pos.entryVolume5mUsd ?? null,
+    newPeak,
+  });
+}
+
 /** Reclaim rent on empty mint ATA after full exit (live only). */
 async function reclaimEmptyAta(
   cfg: MildDipConfig,
@@ -618,6 +656,8 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
     if (pos.entryVolume5mUsd == null && volume5mUsd != null && volume5mUsd > 0) {
       pos.entryVolume5mUsd = volume5mUsd;
     }
+
+    maybeJournalMark(cfg, pos, decision, volume5mUsd, nowMs);
 
     applyMarkDecisionToPosition(pos, decision);
 
