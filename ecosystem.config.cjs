@@ -2836,6 +2836,7 @@ const PM2_APPS = [
          * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '5000',
+        MILD_DIP_MAX_TURNOVER_5M_LIQ_RATIO: '0.8',
         MILD_DIP_MIN_MCAP_USD: '10000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.25',

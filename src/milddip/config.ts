@@ -91,6 +91,7 @@ const MildDipConfigSchema = z.object({
     maxDipPct: z.number(),
     minVolume5mUsd: z.number(),
     minLiquidityUsd: z.number(),
+    maxTurnover5mLiqRatio: z.number(),
     minMarketCapUsd: z.number(),
     maxMarketCapUsd: z.number(),
     minPairAgeHours: z.number(),
@@ -155,6 +156,7 @@ export function loadMildDipConfig(): MildDipConfig {
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 500),
     /** 1.11.705 — allow thinner late dips while keeping $5 clip risk bounded. */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 5_000),
+    maxTurnover5mLiqRatio: envNum('MILD_DIP_MAX_TURNOVER_5M_LIQ_RATIO', 0.8),
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 10_000),
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.25),
