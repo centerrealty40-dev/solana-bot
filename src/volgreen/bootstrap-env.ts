@@ -110,16 +110,20 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_MINT_COOLDOWN_MS', '300000');
   setIfAbsent('MILD_DIP_LOSS_COOLDOWN_MS', '600000');
 
-  // Green-tape defaults (8zkg-style).
-  setIfAbsent('MILD_DIP_GREEN_MIN_PC5M_PCT', '0');
-  setIfAbsent('MILD_DIP_GREEN_MAX_PC5M_PCT', '15');
-  setIfAbsent('MILD_DIP_GREEN_MIN_VOLUME_5M_USD', '2000');
-  setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '15000');
-  setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '50000');
-  setIfAbsent('MILD_DIP_GREEN_MIN_BUY_SELL_5M', '1');
-  setIfAbsent('MILD_DIP_GREEN_MIN_TURNOVER_5M', '0.09');
+  // Green-tape: liquid OR early (leader thin aggressive green).
+  setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '12000');
+  setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '40000');
   setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.1');
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '72');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2000');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', '0.09');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', '1');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', '15');
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_VOLUME_5M_USD', '400');
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', '0.02');
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', '2');
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', '25');
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', '35000');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;

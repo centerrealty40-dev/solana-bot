@@ -1,26 +1,34 @@
 /**
- * Leader-like green-tape / turnover entry (8zkg-style), not dormant awakening.
+ * Leader-like green-tape entry (8zkg-style).
  *
- * Pass when the 5m candle is green with real buy pressure and pool turnover —
- * without requiring a quiet prior baseline.
+ * Two paths (OR):
+ * - **liquid** — calmer green with fat absolute vol + turnover (our earlier default)
+ * - **early** — thinner/faster green with strong buy/sell pressure (leader ignition)
  */
 export type GreenTapeGates = {
-  /** Exclusive lower bound for Dex priceChange.m5 (default 0 → must be green). */
-  minPc5mPct: number;
-  /** Inclusive upper bound — reject chase (default 15). */
-  maxPc5mPct: number;
-  minVolume5mUsd: number;
+  /** Shared structural floors. */
   minLiquidityUsd: number;
   minMarketCapUsd: number;
   maxMarketCapUsd: number;
-  /** buys5m / sells5m (default 1.0). */
-  minBuySellRatio5m: number;
-  /** volume5m / liquidity (default 0.09). 0 = off. */
-  minTurnover5m: number;
   minPairAgeHours: number;
   /** 0 = no max. */
   maxPairAgeHours: number;
   allowedDexIds: string[];
+
+  /** Liquid path (fat tape). */
+  liquidMinPc5mPct: number;
+  liquidMaxPc5mPct: number;
+  liquidMinVolume5mUsd: number;
+  liquidMinBuySellRatio5m: number;
+  liquidMinTurnover5m: number;
+
+  /** Early path (thin aggressive green). */
+  earlyMinPc5mPct: number;
+  earlyMaxPc5mPct: number;
+  earlyMinVolume5mUsd: number;
+  earlyMinBuySellRatio5m: number;
+  earlyMinTurnover5m: number;
+  earlyMinMarketCapUsd: number;
 };
 
 export type GreenTapeMetrics = {
@@ -34,89 +42,93 @@ export type GreenTapeMetrics = {
   sells5m: number | null;
 };
 
+export type GreenTapePath = 'liquid' | 'early';
+
 export type GreenTapeVerdict = {
   pass: boolean;
   reasons: string[];
+  path?: GreenTapePath;
   buySellRatio5m: number | null;
   turnover5m: number | null;
 };
+
+type PathGates = {
+  minPc: number;
+  maxPc: number;
+  minVol: number;
+  minBs: number;
+  minTurnover: number;
+  minMcap: number;
+};
+
+function pathReasons(
+  metrics: GreenTapeMetrics,
+  g: PathGates,
+  buySellRatio5m: number | null,
+  turnover5m: number | null,
+): string[] {
+  const reasons: string[] = [];
+  const pc = metrics.priceChange5mPct;
+  if (pc == null || !Number.isFinite(pc)) reasons.push('missing_price_change_5m');
+  else if (!(pc > g.minPc && pc <= g.maxPc)) {
+    reasons.push(`pc5m=${pc.toFixed(2)}_outside_(${g.minPc},${g.maxPc}]`);
+  }
+
+  const v = metrics.volume5mUsd;
+  if (v == null || !Number.isFinite(v)) reasons.push('missing_volume_5m');
+  else if (v < g.minVol) reasons.push(`vol5m=${v.toFixed(0)}<${g.minVol}`);
+
+  if (g.minBs > 0) {
+    if (buySellRatio5m == null) reasons.push('buy_sell_unknown');
+    else if (buySellRatio5m < g.minBs) {
+      reasons.push(`buy_sell_5m=${buySellRatio5m.toFixed(2)}<${g.minBs}`);
+    }
+  }
+
+  if (g.minTurnover > 0) {
+    if (turnover5m == null) reasons.push('turnover_unknown');
+    else if (turnover5m < g.minTurnover) {
+      reasons.push(`turnover_5m=${turnover5m.toFixed(3)}<${g.minTurnover}`);
+    }
+  }
+
+  const mcap = metrics.marketCapUsd;
+  if (mcap == null || !Number.isFinite(mcap) || mcap <= 0) reasons.push('missing_mcap');
+  else if (mcap < g.minMcap) reasons.push(`mcap=${mcap.toFixed(0)}<${g.minMcap}`);
+
+  return reasons;
+}
 
 export function evaluateGreenTapeEntry(
   metrics: GreenTapeMetrics,
   gates: GreenTapeGates,
 ): GreenTapeVerdict {
-  const reasons: string[] = [];
-  const pc = metrics.priceChange5mPct;
-  if (pc == null || !Number.isFinite(pc)) {
-    reasons.push('missing_price_change_5m');
-  } else if (!(pc > gates.minPc5mPct && pc <= gates.maxPc5mPct)) {
-    reasons.push(`pc5m=${pc.toFixed(2)}_outside_(${gates.minPc5mPct},${gates.maxPc5mPct}]`);
-  }
-
-  if (gates.minVolume5mUsd > 0) {
-    const v = metrics.volume5mUsd;
-    if (v == null || !Number.isFinite(v)) reasons.push('missing_volume_5m');
-    else if (v < gates.minVolume5mUsd) reasons.push(`vol5m=${v.toFixed(0)}<${gates.minVolume5mUsd}`);
-  }
+  const structural: string[] = [];
 
   if (gates.minLiquidityUsd > 0) {
     const liq = metrics.liquidityUsd;
-    if (liq == null || !Number.isFinite(liq)) reasons.push('missing_liquidity');
-    else if (liq < gates.minLiquidityUsd) reasons.push(`liq=${liq.toFixed(0)}<${gates.minLiquidityUsd}`);
+    if (liq == null || !Number.isFinite(liq)) structural.push('missing_liquidity');
+    else if (liq < gates.minLiquidityUsd) {
+      structural.push(`liq=${liq.toFixed(0)}<${gates.minLiquidityUsd}`);
+    }
   }
 
-  if (gates.minMarketCapUsd > 0 || gates.maxMarketCapUsd > 0) {
+  if (gates.maxMarketCapUsd > 0) {
     const mcap = metrics.marketCapUsd;
-    if (mcap == null || !Number.isFinite(mcap) || mcap <= 0) {
-      reasons.push('missing_mcap');
-    } else {
-      if (gates.minMarketCapUsd > 0 && mcap < gates.minMarketCapUsd) {
-        reasons.push(`mcap=${mcap.toFixed(0)}<${gates.minMarketCapUsd}`);
-      }
-      if (gates.maxMarketCapUsd > 0 && mcap > gates.maxMarketCapUsd) {
-        reasons.push(`mcap=${mcap.toFixed(0)}>${gates.maxMarketCapUsd}`);
-      }
-    }
-  }
-
-  let buySellRatio5m: number | null = null;
-  if (gates.minBuySellRatio5m > 0) {
-    const buys = metrics.buys5m;
-    const sells = metrics.sells5m;
-    if (buys == null || sells == null || !Number.isFinite(buys) || !Number.isFinite(sells)) {
-      reasons.push('buy_sell_unknown');
-    } else {
-      buySellRatio5m = buys / Math.max(1, sells);
-      if (buySellRatio5m < gates.minBuySellRatio5m) {
-        reasons.push(`buy_sell_5m=${buySellRatio5m.toFixed(2)}<${gates.minBuySellRatio5m}`);
-      }
-    }
-  }
-
-  let turnover5m: number | null = null;
-  if (gates.minTurnover5m > 0) {
-    const vol = metrics.volume5mUsd;
-    const liq = metrics.liquidityUsd;
-    if (vol == null || liq == null || !(liq > 0)) {
-      reasons.push('turnover_unknown');
-    } else {
-      turnover5m = vol / liq;
-      if (turnover5m < gates.minTurnover5m) {
-        reasons.push(`turnover_5m=${turnover5m.toFixed(3)}<${gates.minTurnover5m}`);
-      }
+    if (mcap != null && Number.isFinite(mcap) && mcap > gates.maxMarketCapUsd) {
+      structural.push(`mcap=${mcap.toFixed(0)}>${gates.maxMarketCapUsd}`);
     }
   }
 
   if (gates.minPairAgeHours > 0 || gates.maxPairAgeHours > 0) {
     const age = metrics.pairAgeHours;
-    if (age == null || !Number.isFinite(age)) {
-      reasons.push('missing_pair_age');
-    } else {
+    if (age == null || !Number.isFinite(age)) structural.push('missing_pair_age');
+    else {
       if (gates.minPairAgeHours > 0 && age < gates.minPairAgeHours) {
-        reasons.push(`age_h=${age.toFixed(2)}<${gates.minPairAgeHours}`);
+        structural.push(`age_h=${age.toFixed(2)}<${gates.minPairAgeHours}`);
       }
       if (gates.maxPairAgeHours > 0 && age > gates.maxPairAgeHours) {
-        reasons.push(`age_h=${age.toFixed(2)}>${gates.maxPairAgeHours}`);
+        structural.push(`age_h=${age.toFixed(2)}>${gates.maxPairAgeHours}`);
       }
     }
   }
@@ -124,9 +136,66 @@ export function evaluateGreenTapeEntry(
   if (gates.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();
     if (!dex || !gates.allowedDexIds.includes(dex)) {
-      reasons.push(`dex=${metrics.dexId ?? 'null'}_not_allowed`);
+      structural.push(`dex=${metrics.dexId ?? 'null'}_not_allowed`);
     }
   }
 
-  return { pass: reasons.length === 0, reasons, buySellRatio5m, turnover5m };
+  let buySellRatio5m: number | null = null;
+  const buys = metrics.buys5m;
+  const sells = metrics.sells5m;
+  if (buys != null && sells != null && Number.isFinite(buys) && Number.isFinite(sells)) {
+    buySellRatio5m = buys / Math.max(1, sells);
+  }
+
+  let turnover5m: number | null = null;
+  const vol = metrics.volume5mUsd;
+  const liq = metrics.liquidityUsd;
+  if (vol != null && liq != null && liq > 0) turnover5m = vol / liq;
+
+  if (structural.length > 0) {
+    return { pass: false, reasons: structural, buySellRatio5m, turnover5m };
+  }
+
+  const liquidGates: PathGates = {
+    minPc: gates.liquidMinPc5mPct,
+    maxPc: gates.liquidMaxPc5mPct,
+    minVol: gates.liquidMinVolume5mUsd,
+    minBs: gates.liquidMinBuySellRatio5m,
+    minTurnover: gates.liquidMinTurnover5m,
+    minMcap: gates.minMarketCapUsd,
+  };
+  const earlyGates: PathGates = {
+    minPc: gates.earlyMinPc5mPct,
+    maxPc: gates.earlyMaxPc5mPct,
+    minVol: gates.earlyMinVolume5mUsd,
+    minBs: gates.earlyMinBuySellRatio5m,
+    minTurnover: gates.earlyMinTurnover5m,
+    minMcap: gates.earlyMinMarketCapUsd,
+  };
+
+  const liquidFail = pathReasons(metrics, liquidGates, buySellRatio5m, turnover5m);
+  if (liquidFail.length === 0) {
+    return {
+      pass: true,
+      reasons: [],
+      path: 'liquid',
+      buySellRatio5m,
+      turnover5m,
+    };
+  }
+
+  const earlyFail = pathReasons(metrics, earlyGates, buySellRatio5m, turnover5m);
+  if (earlyFail.length === 0) {
+    return {
+      pass: true,
+      reasons: [],
+      path: 'early',
+      buySellRatio5m,
+      turnover5m,
+    };
+  }
+
+  // Surface both path failures for journal RCA (dedupe, keep short).
+  const reasons = [...new Set([...liquidFail.map((r) => `liquid:${r}`), ...earlyFail.map((r) => `early:${r}`)])];
+  return { pass: false, reasons, buySellRatio5m, turnover5m };
 }

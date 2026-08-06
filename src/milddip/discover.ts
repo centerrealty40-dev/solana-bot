@@ -23,8 +23,8 @@ export type MildDipCandidate = {
   metrics: MildDipCandidateMetrics;
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
   dipSource: 'dex' | 'stream' | 'dex+stream';
-  /** Awakening path when `entryMode=awakening`. */
-  entryPath?: 'early_spike' | 'ignition' | 'gradual' | 'green_tape';
+  /** Awakening / green_tape path label. */
+  entryPath?: 'early_spike' | 'ignition' | 'gradual' | 'green_tape' | 'green_tape_liquid' | 'green_tape_early';
   /** Journal helpers — spike multiples when awakening / turnover score. */
   entryScore?: number;
 };
@@ -349,7 +349,9 @@ export async function enrichAndFilterCandidates(
           };
         }
         const score =
-          (verdict.turnover5m ?? 0) * 100 + (verdict.buySellRatio5m ?? 0) * 10;
+          (verdict.turnover5m ?? 0) * 100 +
+          (verdict.buySellRatio5m ?? 0) * 10 +
+          (verdict.path === 'early' ? 5 : 0);
         return {
           kind: 'pass',
           cand: {
@@ -358,7 +360,7 @@ export async function enrichAndFilterCandidates(
             priceUsd: details.priceUsd,
             metrics,
             dipSource: 'dex',
-            entryPath: 'green_tape',
+            entryPath: verdict.path === 'early' ? 'green_tape_early' : 'green_tape_liquid',
             entryScore: score,
           },
         };

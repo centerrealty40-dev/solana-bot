@@ -1,23 +1,29 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateGreenTapeEntry } from '../../src/volgreen/green-tape-gates.js';
+import { evaluateGreenTapeEntry, type GreenTapeGates } from '../../src/volgreen/green-tape-gates.js';
 import { MildDipHotMintBuffer } from '../../src/milddip/hot-mints.js';
 
-const gates = {
-  minPc5mPct: 0,
-  maxPc5mPct: 15,
-  minVolume5mUsd: 2_000,
-  minLiquidityUsd: 15_000,
-  minMarketCapUsd: 50_000,
+const gates: GreenTapeGates = {
+  minLiquidityUsd: 12_000,
+  minMarketCapUsd: 40_000,
   maxMarketCapUsd: 300_000_000,
-  minBuySellRatio5m: 1,
-  minTurnover5m: 0.09,
   minPairAgeHours: 0.1,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
+  liquidMinPc5mPct: 0,
+  liquidMaxPc5mPct: 15,
+  liquidMinVolume5mUsd: 2_000,
+  liquidMinBuySellRatio5m: 1,
+  liquidMinTurnover5m: 0.09,
+  earlyMinPc5mPct: 0,
+  earlyMaxPc5mPct: 25,
+  earlyMinVolume5mUsd: 400,
+  earlyMinBuySellRatio5m: 2,
+  earlyMinTurnover5m: 0.02,
+  earlyMinMarketCapUsd: 35_000,
 };
 
 describe('evaluateGreenTapeEntry', () => {
-  it('passes a leader-like green tape mint', () => {
+  it('passes liquid fat green tape', () => {
     const v = evaluateGreenTapeEntry(
       {
         priceChange5mPct: 8,
@@ -32,11 +38,47 @@ describe('evaluateGreenTapeEntry', () => {
       gates,
     );
     expect(v.pass).toBe(true);
-    expect(v.buySellRatio5m).toBeGreaterThan(1);
-    expect(v.turnover5m).toBeGreaterThan(0.09);
+    expect(v.path).toBe('liquid');
   });
 
-  it('rejects red candle', () => {
+  it('passes early thin green with strong buy pressure (Ef4E8v-shaped)', () => {
+    const v = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 1.55,
+        volume5mUsd: 500,
+        liquidityUsd: 17_000,
+        marketCapUsd: 44_000,
+        pairAgeHours: 48,
+        dexId: 'pumpswap',
+        buys5m: 30,
+        sells5m: 4,
+      },
+      gates,
+    );
+    expect(v.pass).toBe(true);
+    expect(v.path).toBe('early');
+  });
+
+  it('rejects Ef4E8v at the exact skip snapshot (vol too thin even for early)', () => {
+    const v = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 1.55,
+        volume5mUsd: 169.62,
+        liquidityUsd: 17_073,
+        marketCapUsd: 44_202,
+        pairAgeHours: 48.6,
+        dexId: 'pumpswap',
+        buys5m: 15,
+        sells5m: 2,
+      },
+      gates,
+    );
+    // buy/sell ok but vol5m 170 < early 400
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.includes('vol5m'))).toBe(true);
+  });
+
+  it('rejects red candle on both paths', () => {
     const v = evaluateGreenTapeEntry(
       {
         priceChange5mPct: -2,
@@ -51,27 +93,6 @@ describe('evaluateGreenTapeEntry', () => {
       gates,
     );
     expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.includes('pc5m'))).toBe(true);
-  });
-
-  it('rejects low turnover (CASHCAT-shaped)', () => {
-    const v = evaluateGreenTapeEntry(
-      {
-        priceChange5mPct: 16,
-        volume5mUsd: 1_970,
-        liquidityUsd: 29_775,
-        marketCapUsd: 112_390,
-        pairAgeHours: 670,
-        dexId: 'pumpswap',
-        buys5m: 14,
-        sells5m: 14,
-      },
-      gates,
-    );
-    expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.includes('turnover') || r.includes('vol5m') || r.includes('pc5m'))).toBe(
-      true,
-    );
   });
 });
 

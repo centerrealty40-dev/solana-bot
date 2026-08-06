@@ -135,19 +135,25 @@ const MildDipConfigSchema = z.object({
     /** Exit when vol5m ≤ this USD floor (0=off). Default 500. */
     neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(500),
   }),
-  /** Leader-like green candle gates (`entryMode=green_tape`). */
+  /** Leader-like green candle gates (`entryMode=green_tape`) — liquid OR early path. */
   greenTape: z.object({
-    minPc5mPct: z.number(),
-    maxPc5mPct: z.number(),
-    minVolume5mUsd: z.number(),
     minLiquidityUsd: z.number(),
     minMarketCapUsd: z.number(),
     maxMarketCapUsd: z.number(),
-    minBuySellRatio5m: z.number(),
-    minTurnover5m: z.number(),
     minPairAgeHours: z.number(),
     maxPairAgeHours: z.number(),
     allowedDexIds: z.array(z.string()),
+    liquidMinPc5mPct: z.number(),
+    liquidMaxPc5mPct: z.number(),
+    liquidMinVolume5mUsd: z.number(),
+    liquidMinBuySellRatio5m: z.number(),
+    liquidMinTurnover5m: z.number(),
+    earlyMinPc5mPct: z.number(),
+    earlyMaxPc5mPct: z.number(),
+    earlyMinVolume5mUsd: z.number(),
+    earlyMinBuySellRatio5m: z.number(),
+    earlyMinTurnover5m: z.number(),
+    earlyMinMarketCapUsd: z.number(),
   }),
 });
 
@@ -225,17 +231,25 @@ export function loadMildDipConfig(): MildDipConfig {
         : 'mild_dip';
 
   const greenTape: GreenTapeGates = {
-    minPc5mPct: envNum('MILD_DIP_GREEN_MIN_PC5M_PCT', 0),
-    maxPc5mPct: envNum('MILD_DIP_GREEN_MAX_PC5M_PCT', 15),
-    minVolume5mUsd: envNum('MILD_DIP_GREEN_MIN_VOLUME_5M_USD', 2_000),
-    minLiquidityUsd: envNum('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', 15_000),
-    minMarketCapUsd: envNum('MILD_DIP_GREEN_MIN_MCAP_USD', 50_000),
+    minLiquidityUsd: envNum('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', 12_000),
+    minMarketCapUsd: envNum('MILD_DIP_GREEN_MIN_MCAP_USD', 40_000),
     maxMarketCapUsd: envNum('MILD_DIP_GREEN_MAX_MCAP_USD', 300_000_000),
-    minBuySellRatio5m: envNum('MILD_DIP_GREEN_MIN_BUY_SELL_5M', 1),
-    minTurnover5m: envNum('MILD_DIP_GREEN_MIN_TURNOVER_5M', 0.09),
     minPairAgeHours: envNum('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', 0.1),
     maxPairAgeHours: envNum('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', 72),
     allowedDexIds,
+    // Fat / calm green (our prior default shape).
+    liquidMinPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', 0),
+    liquidMaxPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', 15),
+    liquidMinVolume5mUsd: envNum('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', 2_000),
+    liquidMinBuySellRatio5m: envNum('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', 1),
+    liquidMinTurnover5m: envNum('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', 0.09),
+    // Early thin aggressive green (leader / Ef4E8v shape).
+    earlyMinPc5mPct: envNum('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', 0),
+    earlyMaxPc5mPct: envNum('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', 25),
+    earlyMinVolume5mUsd: envNum('MILD_DIP_GREEN_EARLY_MIN_VOLUME_5M_USD', 400),
+    earlyMinBuySellRatio5m: envNum('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', 2),
+    earlyMinTurnover5m: envNum('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', 0.02),
+    earlyMinMarketCapUsd: envNum('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', 35_000),
   };
 
   const raw = {

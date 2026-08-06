@@ -1,5 +1,23 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.702] — 2026-08-06
+
+**Тег:** `sa-1.11.702`
+
+### Change: green_tape dual path — liquid OR early (leader thin green)
+
+Лидер на `Ef4E8v…pump` купил тонкую зелёную (vol5m~$170–730, turnover~0.01–0.04,
+buy/sell≫1), а наш liquid-gate (vol≥$2k / turnover≥0.09 / pc≤15) брал другие свечи
+(med pc5m~8%, толстый оборот).
+
+- **liquid** — прежний fat tape  
+- **early** — vol5m≥$400, turnover≥0.02, buy/sell≥2, pc5m≤25, mcap≥$35k  
+- Pass = liquid **OR** early; skips journal both path reasons
+
+**Откат:** env early mins back to liquid-only (set early vol huge) or revert.
+
+---
+
 ## [1.11.701] — 2026-08-06
 
 **Тег:** `sa-1.11.701`

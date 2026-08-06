@@ -382,7 +382,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
       const chaseCap = greenTapeEntry
-        ? Math.min(cfg.maxChasePct, cfg.greenTape.maxPc5mPct)
+        ? Math.min(
+            cfg.maxChasePct,
+            Math.max(cfg.greenTape.liquidMaxPc5mPct, cfg.greenTape.earlyMaxPc5mPct),
+          )
         : cfg.maxChasePct;
       const pre =
         awakeningEntry || greenTapeEntry
@@ -391,7 +394,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
               freshPriceUsd: freshPx,
               freshPc5mPct: freshPc,
               maxChasePct: chaseCap,
-              minFreshPc5mPct: greenTapeEntry ? cfg.greenTape.minPc5mPct : 0,
+              minFreshPc5mPct: 0,
             })
           : evaluateMildDipPreBuy({
               signalPriceUsd: c.priceUsd,
