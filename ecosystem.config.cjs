@@ -2838,17 +2838,19 @@ const PM2_APPS = [
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
-        /** W9.1 peak-giveback: arm at +8% MFE, full exit on −6% from peak. */
+        /** W9.1 peak-giveback: arm at +8% MFE, full exit on −8% from peak. */
         MILD_DIP_EXIT_ARM_PCT: '8',
-        MILD_DIP_EXIT_GIVEBACK_PCT: '6',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '8',
         /**
-         * Never-armed exit:
-         * 1.11.689 — DISABLE early never_arm_giveback (patience=0). Live PnL:
-         *   never_arm_giveback avg −8.9% / hold~10m cut winners before +8% arm;
-         *   never_arm_timeout @40m ≈ flat (−0.4%). Keep only max-hold.
-         * Armed path unchanged: arm +8% → giveback −6%.
+         * Never-armed exit (finite — never sit forever):
+         * - patience=0: no early never_arm_giveback knife
+         * - dead: after 15m unarmed + pnl ≤ −15% → never_arm_dead (rugs)
+         * - max-hold 40m hard ceiling
+         * Armed: arm +8% → giveback −8%.
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
+        MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '15',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '2400000',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.

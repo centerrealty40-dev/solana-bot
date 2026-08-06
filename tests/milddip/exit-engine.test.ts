@@ -37,9 +37,11 @@ describe('orderMintsForMark', () => {
 describe('decideMarkExit / applyMarkDecisionToPosition', () => {
   const gates = {
     armPct: 8,
-    givebackPct: 6,
-    neverArmPatienceMs: 300_000,
+    givebackPct: 8,
+    neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 2_400_000,
+    neverArmDeadMinMs: 900_000,
+    neverArmDeadPnlPct: 15,
   };
 
   it('updates peak and arms without exiting', () => {
@@ -77,7 +79,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     const d = decideMarkExit({
       mint: 'm2',
       pos: p,
-      markPriceUsd: 101.52,
+      markPriceUsd: 99.36, // −8% of 108
       gates,
       nowMs: 1_060_000,
     });
@@ -89,24 +91,33 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(p.trailArmed).toBe(true);
   });
 
-  it('queues never-arm giveback after patience', () => {
+  it('queues never-arm dead after 15m deep loss (patience off)', () => {
     const openedAtMs = 1_000_000;
     const p = pos({
       mint: 'm4',
       entryPriceUsd: 100,
-      peakPriceUsd: 104,
+      peakPriceUsd: 100,
       trailArmed: false,
       openedAtMs,
     });
-    const d = decideMarkExit({
+    const early = decideMarkExit({
       mint: 'm4',
       pos: p,
-      markPriceUsd: 97.76,
+      markPriceUsd: 80,
       gates,
       nowMs: openedAtMs + 300_000,
     });
+    expect(early?.shouldExit).toBe(false);
+
+    const d = decideMarkExit({
+      mint: 'm4',
+      pos: p,
+      markPriceUsd: 80,
+      gates,
+      nowMs: openedAtMs + 900_000,
+    });
     expect(d?.shouldExit).toBe(true);
-    expect(d?.reason).toBe('never_arm_giveback');
+    expect(d?.reason).toBe('never_arm_dead');
   });
 
   it('returns null for non-positive mark (keep tracking)', () => {

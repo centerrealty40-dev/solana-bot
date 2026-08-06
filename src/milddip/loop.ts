@@ -561,9 +561,47 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
 
   const toSell: MarkExitDecision[] = [];
   for (const { mint, px } of markRows) {
-    if (px == null) continue;
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
+
+    const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
+    const maxHold = cfg.exit.neverArmMaxHoldMs > 0 ? cfg.exit.neverArmMaxHoldMs : 0;
+    const deadMin = cfg.exit.neverArmDeadMinMs > 0 ? cfg.exit.neverArmDeadMinMs : 0;
+
+    /**
+     * Null Dex mark must NOT skip never-arm ceilings — a delisted mint can
+     * otherwise sit forever. Force-exit without needing a real mark.
+     */
+    if (px == null) {
+      if (pos.trailArmed !== true) {
+        let forceReason: 'never_arm_timeout' | 'never_arm_dead' | null = null;
+        if (maxHold > 0 && heldMs >= maxHold) forceReason = 'never_arm_timeout';
+        else if (deadMin > 0 && heldMs >= deadMin) forceReason = 'never_arm_dead';
+        if (forceReason) {
+          const syn =
+            pos.peakPriceUsd != null && pos.peakPriceUsd > 0
+              ? pos.peakPriceUsd
+              : pos.entryPriceUsd;
+          console.warn(
+            `[mild-dip] force-exit ${pos.symbol} mint=${mint.slice(0, 8)}… reason=${forceReason} (null mark, held=${Math.round(heldMs / 1000)}s)`,
+          );
+          toSell.push({
+            mint,
+            markPriceUsd: syn,
+            peakPriceUsd: syn,
+            armed: false,
+            justArmed: false,
+            shouldExit: true,
+            reason: forceReason,
+            mfePct: 0,
+            givebackPct: 0,
+            pnlPct: 0,
+          });
+        }
+      }
+      continue;
+    }
+
     const decision = decideMarkExit({
       mint,
       pos,
@@ -703,6 +741,7 @@ export async function runMildDipLoop(
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
+      `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
