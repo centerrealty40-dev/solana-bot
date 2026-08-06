@@ -103,9 +103,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
   setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');
   setIfAbsent('MILD_DIP_SLIPPAGE_BPS', '500');
-  // Closed-set: chase>2% and hops≥3 were major loss buckets.
-  setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '2');
-  setIfAbsent('LIVE_BUY_MAX_CHASE_PCT', '2');
+  // Chase: allow up to 5% fill drift; hops≥3 still blocked (closed-set loss bucket).
+  setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '5');
+  setIfAbsent('LIVE_BUY_MAX_CHASE_PCT', '5');
   setIfAbsent('LIVE_BUY_MAX_ROUTE_HOPS', '3');
   setIfAbsent('MILD_DIP_MIN_FEE_SOL_RESERVE', '0.02');
   setIfAbsent('MILD_DIP_MIN_LIQUIDITY_USD', '15000');
@@ -118,12 +118,12 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '40000');
   setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.1');
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '72');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '2');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '5');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2000');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', '0.09');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', '1');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', '15');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '2');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', '20');
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '5');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_VOLUME_5M_USD', '400');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', '0.02');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', '2');

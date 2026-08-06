@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.704] — 2026-08-06
+
+**Тег:** `sa-1.11.704`
+
+### Change: green_tape min pc5m 2%→5%, chase max 2%→5%
+
+`pc5m>2` was only a floor against dead 0–2% greens — **not** “2% is enough
+impulse”. Closed-set 0–5% was the loss zone; require **pc5m>5%**. Chase allow
+raised to **5%** per operator (fill drift vs signal).
+
+**Откат:** min pc=2, chase=2.
+
+---
+
 ## [1.11.703] — 2026-08-06
 
 **Тег:** `sa-1.11.703`

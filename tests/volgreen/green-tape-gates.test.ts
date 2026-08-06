@@ -9,12 +9,12 @@ const gates: GreenTapeGates = {
   minPairAgeHours: 0.1,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
-  liquidMinPc5mPct: 2,
-  liquidMaxPc5mPct: 15,
+  liquidMinPc5mPct: 5,
+  liquidMaxPc5mPct: 20,
   liquidMinVolume5mUsd: 2_000,
   liquidMinBuySellRatio5m: 1,
   liquidMinTurnover5m: 0.09,
-  earlyMinPc5mPct: 2,
+  earlyMinPc5mPct: 5,
   earlyMaxPc5mPct: 25,
   earlyMinVolume5mUsd: 400,
   earlyMinBuySellRatio5m: 2,
@@ -41,10 +41,10 @@ describe('evaluateGreenTapeEntry', () => {
     expect(v.path).toBe('liquid');
   });
 
-  it('passes early thin green with strong buy pressure (Ef4E8v-shaped)', () => {
+  it('passes early thin green with strong buy pressure', () => {
     const v = evaluateGreenTapeEntry(
       {
-        priceChange5mPct: 3.2,
+        priceChange5mPct: 6.5,
         volume5mUsd: 500,
         liquidityUsd: 17_000,
         marketCapUsd: 44_000,
@@ -59,10 +59,10 @@ describe('evaluateGreenTapeEntry', () => {
     expect(v.path).toBe('early');
   });
 
-  it('rejects weak green pc5m<=2 (closed-set loser bucket)', () => {
+  it('rejects weak green pc5m<=5 (not a real impulse)', () => {
     const v = evaluateGreenTapeEntry(
       {
-        priceChange5mPct: 1.55,
+        priceChange5mPct: 3.0,
         volume5mUsd: 12_000,
         liquidityUsd: 40_000,
         marketCapUsd: 200_000,
@@ -77,10 +77,10 @@ describe('evaluateGreenTapeEntry', () => {
     expect(v.reasons.some((r) => r.includes('pc5m'))).toBe(true);
   });
 
-  it('rejects Ef4E8v at the exact skip snapshot (vol too thin even for early)', () => {
+  it('rejects Ef4E8v-thin vol even when pc5m is strong enough', () => {
     const v = evaluateGreenTapeEntry(
       {
-        priceChange5mPct: 3.0,
+        priceChange5mPct: 6.0,
         volume5mUsd: 169.62,
         liquidityUsd: 17_073,
         marketCapUsd: 44_202,
@@ -91,7 +91,6 @@ describe('evaluateGreenTapeEntry', () => {
       },
       gates,
     );
-    // buy/sell ok but vol5m 170 < early 400
     expect(v.pass).toBe(false);
     expect(v.reasons.some((r) => r.includes('vol5m'))).toBe(true);
   });
