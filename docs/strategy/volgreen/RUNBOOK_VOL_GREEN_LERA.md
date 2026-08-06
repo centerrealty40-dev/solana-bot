@@ -3,8 +3,11 @@
 **Host:** `72.62.152.201` (`/opt/lera`, user `lera`)  
 **Wallet:** `FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX`  
 **Clip:** $5 USDC  
-**Entry (default):** `green_tape` — leader-like green candle + buy/sell + turnover  
+**Entry (default):** `green_tape` — liquid / early / rocket paths  
 (`MILD_DIP_ENTRY_MODE=awakening` still available)  
+**Floors (1.11.708):** liq ≥ $8k (or null if vol5m rocket-tier), mcap ≥ $18k,
+pair age ≥ 0.05h, rocket pc5m ≥ 15% / vol5m ≥ $8k  
+
 **Exit:** same W9.1 stack as Oscar `mild-dip-bot` (arm +8% / giveback −6% / never-arm / vol-fade)  
 **RPC:** Helius from `/opt/lera/.env`  
 **Coverage (mild-dip active scheme):** force ring-green → Dex-probe 48 → rank by

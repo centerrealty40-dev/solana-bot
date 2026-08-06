@@ -121,8 +121,13 @@ export function evaluateGreenTapeEntry(
 
   if (gates.minLiquidityUsd > 0) {
     const liq = metrics.liquidityUsd;
-    if (liq == null || !Number.isFinite(liq)) structural.push('missing_liquidity');
-    else if (liq < gates.minLiquidityUsd) {
+    const vol5m = metrics.volume5mUsd ?? 0;
+    // Dex often omits liq on brand-new pumpswap pairs during the vertical
+    // candle (CHiHkQx 02:18). Allow missing/low liq when vol already rocket-tier.
+    const rocketVolOk = vol5m >= gates.rocketMinVolume5mUsd;
+    if (liq == null || !Number.isFinite(liq)) {
+      if (!rocketVolOk) structural.push('missing_liquidity');
+    } else if (liq < gates.minLiquidityUsd && !rocketVolOk) {
       structural.push(`liq=${liq.toFixed(0)}<${gates.minLiquidityUsd}`);
     }
   }

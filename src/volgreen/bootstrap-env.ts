@@ -115,10 +115,10 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_MINT_COOLDOWN_MS', '300000');
   setIfAbsent('MILD_DIP_LOSS_COOLDOWN_MS', '600000');
 
-  // Green-tape: liquid OR early (leader thin aggressive green).
-  setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '12000');
-  setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '40000');
-  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.1');
+  // Green-tape floors loosened for micro-cap verticals (CHiHkQx: mcap~$20k, liq null/$9k).
+  setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '8000');
+  setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '18000');
+  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.05');
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '72');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '5');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2000');
@@ -130,14 +130,13 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', '0.02');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', '2');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', '25');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', '35000');
-  // Rocket — catch goon/3c32HTE vertical candles leaders buy into.
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '25');
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', '18000');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '15');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '8000');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.4');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.15');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '35000');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '18000');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;

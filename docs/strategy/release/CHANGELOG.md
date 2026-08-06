@@ -1,5 +1,20 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.708] — 2026-08-07
+
+**Тег:** `sa-1.11.708`
+
+### Fix: catch CHiHkQx micro-cap rockets (null/low Dex liq)
+
+`CHiHkQx…pump` 02:18 MSK: saw mint, skipped `missing_liquidity` / mcap~$22k /
+age 0.09h while pc5m +934% vol5m $20k. Loosen floors + rocket allows null liq
+when vol5m already ≥ rocket min; rocket mcap ≥ $18k; age ≥ 0.05h; rocket
+turnover floor off (0) when liq missing.
+
+**Откат:** restore liq 12k / mcap 35–40k / age 0.1 / rocket turnover 0.4.
+
+---
+
 ## [1.11.707] — 2026-08-07
 
 **Тег:** `sa-1.11.707`

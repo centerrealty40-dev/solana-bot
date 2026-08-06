@@ -3,10 +3,10 @@ import { evaluateGreenTapeEntry, type GreenTapeGates } from '../../src/volgreen/
 import { MildDipHotMintBuffer } from '../../src/milddip/hot-mints.js';
 
 const gates: GreenTapeGates = {
-  minLiquidityUsd: 12_000,
-  minMarketCapUsd: 40_000,
+  minLiquidityUsd: 8_000,
+  minMarketCapUsd: 18_000,
   maxMarketCapUsd: 300_000_000,
-  minPairAgeHours: 0.1,
+  minPairAgeHours: 0.05,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
   liquidMinPc5mPct: 5,
@@ -19,13 +19,13 @@ const gates: GreenTapeGates = {
   earlyMinVolume5mUsd: 400,
   earlyMinBuySellRatio5m: 2,
   earlyMinTurnover5m: 0.02,
-  earlyMinMarketCapUsd: 35_000,
-  rocketMinPc5mPct: 25,
+  earlyMinMarketCapUsd: 18_000,
+  rocketMinPc5mPct: 15,
   rocketMaxPc5mPct: 0,
   rocketMinVolume5mUsd: 8_000,
   rocketMinBuySellRatio5m: 1.15,
-  rocketMinTurnover5m: 0.4,
-  rocketMinMarketCapUsd: 35_000,
+  rocketMinTurnover5m: 0,
+  rocketMinMarketCapUsd: 18_000,
 };
 
 describe('evaluateGreenTapeEntry', () => {
@@ -76,6 +76,24 @@ describe('evaluateGreenTapeEntry', () => {
         dexId: 'pumpswap',
         buys5m: 122,
         sells5m: 64,
+      },
+      gates,
+    );
+    expect(v.pass).toBe(true);
+    expect(v.path).toBe('rocket');
+  });
+
+  it('passes CHiHkQx-shaped rocket with null Dex liquidity', () => {
+    const v = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 934,
+        volume5mUsd: 20_812,
+        liquidityUsd: null,
+        marketCapUsd: 22_243,
+        pairAgeHours: 0.09,
+        dexId: 'pumpswap',
+        buys5m: 98,
+        sells5m: 66,
       },
       gates,
     );

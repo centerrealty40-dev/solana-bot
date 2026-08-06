@@ -242,10 +242,11 @@ export function loadMildDipConfig(): MildDipConfig {
         : 'mild_dip';
 
   const greenTape: GreenTapeGates = {
-    minLiquidityUsd: envNum('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', 12_000),
-    minMarketCapUsd: envNum('MILD_DIP_GREEN_MIN_MCAP_USD', 40_000),
+    // CHiHkQx: Dex liq null / ~$9–11k during the vertical; age ~0.09h.
+    minLiquidityUsd: envNum('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', 8_000),
+    minMarketCapUsd: envNum('MILD_DIP_GREEN_MIN_MCAP_USD', 18_000),
     maxMarketCapUsd: envNum('MILD_DIP_GREEN_MAX_MCAP_USD', 300_000_000),
-    minPairAgeHours: envNum('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', 0.1),
+    minPairAgeHours: envNum('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', 0.05),
     maxPairAgeHours: envNum('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', 72),
     allowedDexIds,
     // Fat / calm green — require >5% (0–5% was the loss zone in closed set; 2% is not a real impulse).
@@ -260,14 +261,15 @@ export function loadMildDipConfig(): MildDipConfig {
     earlyMinVolume5mUsd: envNum('MILD_DIP_GREEN_EARLY_MIN_VOLUME_5M_USD', 400),
     earlyMinBuySellRatio5m: envNum('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', 2),
     earlyMinTurnover5m: envNum('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', 0.02),
-    earlyMinMarketCapUsd: envNum('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', 35_000),
-    // Rocket — already-vertical 5m candle with extreme tape (goon / 3c32HTE).
-    rocketMinPc5mPct: envNum('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', 25),
+    earlyMinMarketCapUsd: envNum('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', 18_000),
+    // Rocket — already-vertical 5m candle with extreme tape (goon / CHiHkQx).
+    rocketMinPc5mPct: envNum('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', 15),
     rocketMaxPc5mPct: envNum('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', 0), // 0 = no upper cap
     rocketMinVolume5mUsd: envNum('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', 8_000),
     rocketMinBuySellRatio5m: envNum('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', 1.15),
-    rocketMinTurnover5m: envNum('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', 0.4),
-    rocketMinMarketCapUsd: envNum('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', 35_000),
+    // 0 = off when Dex omits liq (turnover unknown) but vol5m already rocket-tier.
+    rocketMinTurnover5m: envNum('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', 0),
+    rocketMinMarketCapUsd: envNum('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', 18_000),
   };
 
   const raw = {

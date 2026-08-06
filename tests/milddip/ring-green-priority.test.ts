@@ -4,10 +4,10 @@ import { mildDipPriceRing } from '../../src/milddip/price-ring.js';
 import type { GreenTapeGates } from '../../src/volgreen/green-tape-gates.js';
 
 const greenTape: GreenTapeGates = {
-  minLiquidityUsd: 12_000,
-  minMarketCapUsd: 40_000,
+  minLiquidityUsd: 8_000,
+  minMarketCapUsd: 18_000,
   maxMarketCapUsd: 300_000_000,
-  minPairAgeHours: 0.1,
+  minPairAgeHours: 0.05,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap'],
   liquidMinPc5mPct: 5,
@@ -20,7 +20,13 @@ const greenTape: GreenTapeGates = {
   earlyMinVolume5mUsd: 400,
   earlyMinBuySellRatio5m: 2,
   earlyMinTurnover5m: 0.02,
-  earlyMinMarketCapUsd: 35_000,
+  earlyMinMarketCapUsd: 18_000,
+  rocketMinPc5mPct: 15,
+  rocketMaxPc5mPct: 0,
+  rocketMinVolume5mUsd: 8_000,
+  rocketMinBuySellRatio5m: 1.15,
+  rocketMinTurnover5m: 0,
+  rocketMinMarketCapUsd: 18_000,
 };
 
 describe('priorityMintsFromPriceRingGreen', () => {
