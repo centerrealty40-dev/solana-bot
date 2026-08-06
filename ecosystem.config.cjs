@@ -2788,8 +2788,8 @@ const PM2_APPS = [
     },
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
-     * Entry: DexScreener pc5m ∈ (−20, 0], clip $5.
-     * Exit W9.1: arm MFE +8% → full exit giveback −6% from peak (no time-stop / hard TP).
+     * Entry: DexScreener pc5m ∈ (−25, −1], clip $5; buy impact ≤2%.
+     * Exit: arm MFE +5% → half @ −3% giveback / full @ −8% (no hard TP).
      * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $5 USDC).
      */
     {
@@ -2826,18 +2826,22 @@ const PM2_APPS = [
         MILD_DIP_POSITION_USD: '5',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
         MILD_DIP_MAX_OPEN_POSITIONS: '0',
-        MILD_DIP_MIN_DIP_PCT: '-20',
         /**
-         * 1.11.690 — require dump depth ≥4% (pc5m ∈ (−20, −4]).
-         * Was 0: flat-chop noise (−0…−3%) kept buying after leaders left.
-         * 36h CF vs 8zkg dumps: MAX=-4 → dump recall ~83%, cuts ~47% after-flat buys.
+         * 1.11.702 — slightly wider knife floor (was −20). Prebuy was skipping
+         * dumps that printed −25…−30 by the time the quote landed.
          */
-        MILD_DIP_MAX_DIP_PCT: '-4',
+        MILD_DIP_MIN_DIP_PCT: '-25',
+        /**
+         * 1.11.702 — soften shallow edge −4 → −1 (pc5m ∈ (−25, −1]).
+         * Prebuy often saw −1.9 recoveries that still looked like dips;
+         * −4 was cutting those. Greens (+pc5m) still rejected.
+         */
+        MILD_DIP_MAX_DIP_PCT: '-1',
         /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
         MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
-         * $5 clips; impact still capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT=1.
+         * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         MILD_DIP_MIN_MCAP_USD: '15000',
@@ -2938,11 +2942,11 @@ const PM2_APPS = [
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
         /**
-         * 1.11.693 — exec-friction canary (overrides JUPITER_PRO_TRADING_ENV above):
-         * - buy impact gate 1% (skip thin routes; sell NOT gated — never strand bags)
-         * - priority medium + 0.00005 SOL cap (was high / 0.0001; sampled fees hit the cap)
+         * 1.11.702 — buy impact gate 2% (was 1% canary). After liq floor $10k
+         * most attempts died at 1–2% Jupiter impact; sell still NOT gated.
+         * Priority medium + 0.00005 SOL cap.
          */
-        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '1',
+        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '2',
         LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'medium',
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.00005',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',

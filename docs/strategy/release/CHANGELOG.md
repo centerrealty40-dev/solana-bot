@@ -1,4 +1,23 @@
 # So
+## [1.11.702] — 2026-08-06
+
+**Тег:** `sa-1.11.702`
+
+### Ops: mild-dip impact 2% + softer dip band
+
+After liq $10k / vol5m $500, entries were still scarce: Jupiter buy-impact
+cap **1%** blocked most thin-route quotes (1–2%), and prebuy `pc5m` band
+`(−20, −4]` skipped soft recoveries (~−1.9) and mid knives (~−25).
+
+- `LIVE_BUY_MAX_PRICE_IMPACT_PCT` **1 → 2**
+- `MILD_DIP_MAX_DIP_PCT` **−4 → −1** (band `(−25, −1]`)
+- `MILD_DIP_MIN_DIP_PCT` **−20 → −25**
+- Slot cap unchanged: `MILD_DIP_MAX_OPEN_POSITIONS=0` (unlimited; spend USDC)
+
+**Откат:** impact `1`, maxDip `−4`, minDip `−20`.
+
+---
+
 ## [1.11.701] — 2026-08-06
 
 **Тег:** `sa-1.11.701`
