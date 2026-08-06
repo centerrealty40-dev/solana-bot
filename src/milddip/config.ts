@@ -136,7 +136,8 @@ export function loadMildDipConfig(): MildDipConfig {
     /** Inclusive upper bound — require dump depth (default −4 ⇒ pc5m ≤ −4%). */
     maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -4),
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 1_500),
-    minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 15_000),
+    /** 1.11.693 — default aligned with exec-friction canary (deeper pools). */
+    minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 40_000),
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.25),

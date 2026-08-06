@@ -744,9 +744,13 @@ export async function runMildDipLoop(
     stats.stream = streamHandle != null;
   }
 
+  const buyImpactCap = process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT?.trim() || '0';
+  const jupPriority = process.env.LIVE_JUPITER_SWAP_PRIORITY_LEVEL?.trim() || 'n/a';
+  const jupFeeCapSol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim() || 'n/a';
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
+      `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
@@ -758,6 +762,8 @@ export async function runMildDipLoop(
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0} ` +
       `prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
+      `slippageBps=${cfg.slippageBps} buyImpactCap=${buyImpactCap}% ` +
+      `jupPriority=${jupPriority} jupFeeCapSol=${jupFeeCapSol} ` +
       `maxCooldownBouncePct=${cfg.maxCooldownBouncePct} ` +
       `lookback=${cfg.cooldownBounceLookbackMs}ms ` +
       `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +

@@ -1,4 +1,26 @@
 # So
+## [1.11.693] — 2026-08-06
+
+**Тег:** `sa-1.11.693`
+
+### Change: mild-dip exec-friction canary (impact + fees)
+
+Session audit (~10h, ~700 RT × $5): SOL fees ≈ $10–15; Jupiter quoted impact
+med ~0.46%/leg (~$33–43 RT attribution). Canary on **mild-dip-bot only**:
+
+- `MILD_DIP_MIN_LIQUIDITY_USD=40000` (was 15000) — skip thinnest pools
+- `LIVE_BUY_MAX_PRICE_IMPACT_PCT=1` — block buy quotes with impact >1%
+  (existing copytrader `buy_quote_impact_blocked`; **sells not gated**)
+- `LIVE_JUPITER_SWAP_PRIORITY_LEVEL=medium` + `LIVE_JUPITER_PRIORITY_MAX_SOL=0.00005`
+  (overrides `JUPITER_PRO_TRADING_ENV` high/0.0001 for this process)
+- Boot log now prints `minLiq`, `buyImpactCap`, `jupPriority`, `jupFeeCapSol`
+
+**Откат:** `MIN_LIQUIDITY_USD=15000`, `LIVE_BUY_MAX_PRICE_IMPACT_PCT=0`,
+`LIVE_JUPITER_SWAP_PRIORITY_LEVEL=high`, `LIVE_JUPITER_PRIORITY_MAX_SOL=0.0001`
++ `pm2 reload ecosystem.config.cjs --only mild-dip-bot --update-env`.
+
+---
+
 ## [1.11.691] — 2026-08-06
 
 **Тег:** `sa-1.11.691`

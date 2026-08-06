@@ -2834,7 +2834,11 @@ const PM2_APPS = [
          */
         MILD_DIP_MAX_DIP_PCT: '-4',
         MILD_DIP_MIN_VOLUME_5M_USD: '1500',
-        MILD_DIP_MIN_LIQUIDITY_USD: '15000',
+        /**
+         * 1.11.693 — exec-friction canary: deeper pools → lower Jupiter impact.
+         * Was $15k; session impact med ~0.46%/leg on thin memes.
+         */
+        MILD_DIP_MIN_LIQUIDITY_USD: '40000',
         MILD_DIP_MIN_MCAP_USD: '15000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.25',
@@ -2911,6 +2915,14 @@ const PM2_APPS = [
         LIVE_BUY_MAX_CHASE_PCT: '4',
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
+        /**
+         * 1.11.693 — exec-friction canary (overrides JUPITER_PRO_TRADING_ENV above):
+         * - buy impact gate 1% (skip thin routes; sell NOT gated — never strand bags)
+         * - priority medium + 0.00005 SOL cap (was high / 0.0001; sampled fees hit the cap)
+         */
+        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '1',
+        LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'medium',
+        LIVE_JUPITER_PRIORITY_MAX_SOL: '0.00005',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
         MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
