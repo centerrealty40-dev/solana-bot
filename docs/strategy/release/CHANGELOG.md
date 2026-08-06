@@ -1,4 +1,27 @@
 # So
+## [1.11.691] — 2026-08-06
+
+**Тег:** `sa-1.11.691`
+
+### Change: mild-dip exit — patience off, giveback 8%, never-arm dead cut
+
+- `MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS=0` — no early `never_arm_giveback` knife
+- `MILD_DIP_EXIT_GIVEBACK_PCT=8` (was 6) — armed trail wider
+- New: `never_arm_dead` after **15m** unarmed if pnl ≤ **−15%** (rugs before 40m cap)
+- Hard ceiling unchanged: `never_arm_timeout` @ **40m**
+- Null Dex mark no longer skips never-arm ceilings (force-exit path in `loop.ts`)
+
+Leader evidence backing `patience=0` (`diag-leader-exit-policy.json`, 1506 8zkg
+sessions / 80h): of his never-worked sessions only **5%** close within 5m and
+19% within 10m — our 5m/−6% knife was far tighter than the behaviour it copied.
+
+`GIVEBACK_PCT=8` is **not** backed by a counterfactual yet (open A/B).
+
+**Откат:** `GIVEBACK_PCT=6`, keep `PATIENCE_MS=0`, set `NEVER_ARM_DEAD_MIN_MS=0` /
+`NEVER_ARM_DEAD_PNL_PCT=0` to disable dead cut.
+
+---
+
 ## [1.11.690] — 2026-08-06
 
 **Тег:** `sa-1.11.690`

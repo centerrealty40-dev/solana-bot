@@ -35,19 +35,27 @@ export type MildDipEntryGates = {
 export type MildDipExitGates = {
   /** Arm trail when MFE ≥ this % (default 8). */
   armPct: number;
-  /** Full exit when giveback from peak ≤ −this % after armed (default 6). */
+  /** Full exit when giveback from peak ≤ −this % after armed (default 8). */
   givebackPct: number;
   /**
    * After this many ms still unarmed, allow the same giveback% from the
-   * (sub-arm) peak — matches 8zkg quick-cut / 7BNax never-arm cluster (~5m).
+   * (sub-arm) peak. Live default **0** — early never_arm_giveback was the grind loss.
    * 0 = disabled.
    */
   neverArmPatienceMs: number;
   /**
-   * If still unarmed after this many ms → full exit (8zkg never-arm grind
-   * tail ~15–45m; default 40m). 0 = disabled.
+   * If still unarmed after this many ms → full exit (hard ceiling; default 40m).
+   * 0 = disabled (not recommended — can hold forever if trail never arms).
    */
   neverArmMaxHoldMs: number;
+  /**
+   * Never-armed deep-loss cut: after this many ms, if pnl ≤ −neverArmDeadPnlPct,
+   * full exit (`never_arm_dead`). Catches rugs before max-hold without the
+   * early 5m −6% knife. 0 = disabled.
+   */
+  neverArmDeadMinMs: number;
+  /** See neverArmDeadMinMs. Positive percent (e.g. 15 = exit at ≤ −15%). */
+  neverArmDeadPnlPct: number;
 };
 
 export type MildDipGateVerdict = {
@@ -208,6 +216,7 @@ export function evaluateCooldownBounce(args: {
 export type MildDipExitReason =
   | 'peak_giveback'
   | 'never_arm_giveback'
+  | 'never_arm_dead'
   | 'never_arm_timeout'
   | null;
 
@@ -285,7 +294,8 @@ export function evaluateMildDipPeakGiveback(args: {
     };
   }
 
-  // Never-armed dump branch (leaders do exit — not infinite hold).
+  // Never-armed branch — must always have a finite exit (no infinite hold).
+  // Order: optional soft giveback (usually OFF) → deep-loss dead cut → max-hold ceiling.
   if (!armed) {
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (patience > 0 && heldMs >= patience && givebackHit) {
@@ -297,6 +307,20 @@ export function evaluateMildDipPeakGiveback(args: {
         justArmed,
         shouldExit: true,
         reason: 'never_arm_giveback',
+        pnlPct,
+      };
+    }
+    const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
+    const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
+    if (deadMin > 0 && deadPnl > 0 && heldMs >= deadMin && pnlPct <= -deadPnl) {
+      return {
+        peakPriceUsd,
+        mfePct,
+        givebackPct,
+        armed,
+        justArmed,
+        shouldExit: true,
+        reason: 'never_arm_dead',
         pnlPct,
       };
     }

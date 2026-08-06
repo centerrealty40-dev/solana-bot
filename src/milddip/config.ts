@@ -96,11 +96,14 @@ const MildDipConfigSchema = z.object({
     armPct: z.number(),
     /** W9.1: exit when giveback from peak ≤ −givebackPct. */
     givebackPct: z.number(),
-    /** Never-armed: allow same giveback after this many ms (0=off). */
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
-    /** Never-armed: force exit after this many ms (0=off). */
+    /** Never-armed: force exit after this many ms (0=off). Hard ceiling. */
     neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(2_400_000),
+    /** Never-armed deep-loss cut min hold (0=off). Default 15m. */
+    neverArmDeadMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
+    /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 15. */
+    neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(15),
   }),
 });
 
@@ -150,15 +153,18 @@ export function loadMildDipConfig(): MildDipConfig {
   const deniedMints = [...new Set([...defaultDenied, ...deniedExtra])];
 
   /**
-   * W9.1 peak-giveback + never-armed dead-trade (leaders 8zkg/7BNax).
-   * No SL% from entry / hard TP.
+   * W9.1 peak-giveback + never-armed finite exits (no infinite hold).
+   * No SL% from entry / hard TP on the armed path.
    */
   const exit: MildDipExitGates = {
     armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 8),
-    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
-    /** 0 = disable never_arm_giveback (live: early −6% cuts were the grind loss). */
+    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 8),
+    /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
+    /** Deep-loss cut before max-hold (rugs); not the early 5m knife. */
+    neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 900_000),
+    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 15),
   };
 
   const raw = {

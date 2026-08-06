@@ -21,9 +21,18 @@ const baseGates: MildDipEntryGates = {
 
 const exitGates: MildDipExitGates = {
   armPct: 8,
+  givebackPct: 8,
+  neverArmPatienceMs: 0,
+  neverArmMaxHoldMs: 2_400_000,
+  neverArmDeadMinMs: 900_000,
+  neverArmDeadPnlPct: 15,
+};
+
+/** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
+const exitGatesPatienceOn: MildDipExitGates = {
+  ...exitGates,
   givebackPct: 6,
   neverArmPatienceMs: 300_000,
-  neverArmMaxHoldMs: 2_400_000,
 };
 
 describe('evaluateMildDipEntry', () => {
@@ -181,7 +190,7 @@ describe('evaluateMildDipPreBuy', () => {
 });
 
 describe('evaluateMildDipPeakGiveback (W9.1)', () => {
-  it('arm then giveback win: entry 100 → peak 115 → mark 108.1', () => {
+  it('arm then giveback win: entry 100 → peak 115 → mark 105.8 (−8%)', () => {
     const armed = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 115,
@@ -193,9 +202,18 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(armed.armed).toBe(true);
     expect(armed.shouldExit).toBe(false);
 
+    const hold = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108.1, // −6% of 115 — not enough at giveback=8
+      peakPriceUsd: 115,
+      armed: true,
+      gates: exitGates,
+    });
+    expect(hold.shouldExit).toBe(false);
+
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 108.1, // −6% of 115
+      markPriceUsd: 105.8, // −8% of 115
       peakPriceUsd: 115,
       armed: true,
       gates: exitGates,
@@ -203,10 +221,10 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('peak_giveback');
     expect(v.pnlPct).toBeGreaterThan(0);
-    expect(v.givebackPct).toBeLessThanOrEqual(-6 + 1e-6);
+    expect(v.givebackPct).toBeLessThanOrEqual(-8 + 1e-6);
   });
 
-  it('arm at +8% / giveback −6%: floor ≈ +1.5% from entry', () => {
+  it('arm at +8% / giveback −8%: floor ≈ −0.64% from entry at exact trigger', () => {
     const arm = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 108,
@@ -219,15 +237,14 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
 
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 101.52, // −6% of 108
+      markPriceUsd: 99.36, // −8% of 108
       peakPriceUsd: 108,
       armed: true,
       gates: exitGates,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('peak_giveback');
-    expect(v.pnlPct).toBeGreaterThan(0);
-    expect(v.pnlPct).toBeCloseTo(1.52, 2);
+    expect(v.pnlPct).toBeCloseTo(-0.64, 2);
   });
 
   it('mark overshoot past giveback can still realize a loss', () => {
@@ -243,33 +260,69 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.pnlPct).toBeLessThan(0);
   });
 
-  it('no arm on deep dump before patience: entry 100 → mark 90', () => {
+  it('patience=0: deep dump at 5m does NOT early-cut (no never_arm_giveback)', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 90,
       peakPriceUsd: 100,
       armed: false,
       gates: exitGates,
-      heldMs: 60_000,
+      heldMs: 300_000,
     });
     expect(v.armed).toBe(false);
     expect(v.shouldExit).toBe(false);
     expect(v.reason).toBeNull();
   });
 
-  it('never-arm giveback after patience: same −6% from sub-arm peak', () => {
+  it('never-arm giveback still works when patience explicitly enabled', () => {
     // peak 104 (+4% < arm 8), mark 97.76 (−6% of 104), held 5m
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 97.76,
       peakPriceUsd: 104,
       armed: false,
-      gates: exitGates,
+      gates: exitGatesPatienceOn,
       heldMs: 300_000,
     });
     expect(v.armed).toBe(false);
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('never_arm_giveback');
+  });
+
+  it('never-arm dead cut: unarmed + pnl ≤ −15% after 15m', () => {
+    const hold = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: exitGates,
+      heldMs: 600_000, // 10m — before dead min
+    });
+    expect(hold.shouldExit).toBe(false);
+
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: exitGates,
+      heldMs: 900_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_dead');
+    expect(v.pnlPct).toBeLessThanOrEqual(-15);
+  });
+
+  it('never-arm dead does not fire on mild red before min hold', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 90, // −10% < 15% threshold
+      peakPriceUsd: 100,
+      armed: false,
+      gates: exitGates,
+      heldMs: 900_000,
+    });
+    expect(v.shouldExit).toBe(false);
   });
 
   it('never-arm timeout at max hold if still unarmed', () => {
@@ -319,20 +372,20 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     });
     expect(high.peakPriceUsd).toBe(120);
 
-    // −5% from peak 120 → still holds (trigger is −6%)
+    // −6% from peak 120 → still holds (trigger is −8%)
     const hold = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 114,
+      markPriceUsd: 112.8,
       peakPriceUsd: 120,
       armed: true,
       gates: exitGates,
     });
     expect(hold.shouldExit).toBe(false);
 
-    // −6% from 120 = 112.8
+    // −8% from 120 = 110.4
     const exit = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 112.8,
+      markPriceUsd: 110.4,
       peakPriceUsd: 120,
       armed: true,
       gates: exitGates,
@@ -367,12 +420,14 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('never-arm exits disabled when patience/maxHold are 0', () => {
+  it('never-arm exits disabled when patience/maxHold/dead are 0 (unsafe — for unit only)', () => {
     const gates: MildDipExitGates = {
       armPct: 8,
-      givebackPct: 6,
+      givebackPct: 8,
       neverArmPatienceMs: 0,
       neverArmMaxHoldMs: 0,
+      neverArmDeadMinMs: 0,
+      neverArmDeadPnlPct: 0,
     };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
