@@ -23,9 +23,12 @@ const exitGates: MildDipExitGates = {
   armPct: 8,
   givebackPct: 8,
   neverArmPatienceMs: 0,
-  neverArmMaxHoldMs: 2_400_000,
+  neverArmMaxHoldMs: 5_400_000,
   neverArmDeadMinMs: 900_000,
   neverArmDeadPnlPct: 15,
+  neverArmVolFadeMinMs: 600_000,
+  neverArmVolFadeRatio: 0.35,
+  neverArmVolFadeFloorUsd: 500,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -332,7 +335,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       peakPriceUsd: 105,
       armed: false,
       gates: exitGates,
-      heldMs: 2_400_000,
+      heldMs: 5_400_000,
     });
     expect(v.armed).toBe(false);
     expect(v.shouldExit).toBe(true);
@@ -428,6 +431,9 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmMaxHoldMs: 0,
       neverArmDeadMinMs: 0,
       neverArmDeadPnlPct: 0,
+      neverArmVolFadeMinMs: 0,
+      neverArmVolFadeRatio: 0,
+      neverArmVolFadeFloorUsd: 0,
     };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,

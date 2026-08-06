@@ -41,6 +41,8 @@ export function decideMarkExit(args: {
   markPriceUsd: number;
   gates: MildDipExitGates;
   nowMs?: number;
+  /** Current 5m Dex volume — enables the activity-fade never-arm exit. */
+  volume5mUsd?: number | null;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
@@ -55,6 +57,8 @@ export function decideMarkExit(args: {
     armed: pos.trailArmed === true,
     gates,
     heldMs,
+    volume5mUsd: args.volume5mUsd ?? null,
+    entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
   });
   return {
     mint,

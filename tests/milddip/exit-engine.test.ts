@@ -39,9 +39,12 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     armPct: 8,
     givebackPct: 8,
     neverArmPatienceMs: 0,
-    neverArmMaxHoldMs: 2_400_000,
+    neverArmMaxHoldMs: 5_400_000,
     neverArmDeadMinMs: 900_000,
     neverArmDeadPnlPct: 15,
+    neverArmVolFadeMinMs: 600_000,
+    neverArmVolFadeRatio: 0.35,
+    neverArmVolFadeFloorUsd: 500,
   };
 
   it('updates peak and arms without exiting', () => {
@@ -123,6 +126,101 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
   it('returns null for non-positive mark (keep tracking)', () => {
     const p = pos({ mint: 'm3', entryPriceUsd: 100 });
     expect(decideMarkExit({ mint: 'm3', pos: p, markPriceUsd: 0, gates })).toBeNull();
+  });
+
+  it('holds a flat unarmed bag while 5m volume stays alive', () => {
+    const openedAtMs = 1_000_000;
+    const p = pos({
+      mint: 'm5',
+      entryPriceUsd: 100,
+      peakPriceUsd: 100,
+      trailArmed: false,
+      openedAtMs,
+    });
+    p.entryVolume5mUsd = 4_000;
+    const d = decideMarkExit({
+      mint: 'm5',
+      pos: p,
+      markPriceUsd: 98,
+      gates,
+      nowMs: openedAtMs + 1_800_000,
+      volume5mUsd: 3_000,
+    });
+    expect(d?.shouldExit).toBe(false);
+  });
+
+  it('exits unarmed on volume fade vs entry baseline', () => {
+    const openedAtMs = 1_000_000;
+    const p = pos({
+      mint: 'm6',
+      entryPriceUsd: 100,
+      peakPriceUsd: 100,
+      trailArmed: false,
+      openedAtMs,
+    });
+    p.entryVolume5mUsd = 4_000;
+    const early = decideMarkExit({
+      mint: 'm6',
+      pos: p,
+      markPriceUsd: 98,
+      gates,
+      nowMs: openedAtMs + 300_000,
+      volume5mUsd: 900,
+    });
+    expect(early?.shouldExit).toBe(false);
+
+    const d = decideMarkExit({
+      mint: 'm6',
+      pos: p,
+      markPriceUsd: 98,
+      gates,
+      nowMs: openedAtMs + 600_000,
+      volume5mUsd: 900,
+    });
+    expect(d?.shouldExit).toBe(true);
+    expect(d?.reason).toBe('never_arm_vol_fade');
+  });
+
+  it('exits unarmed on absolute volume floor with no entry baseline', () => {
+    const openedAtMs = 1_000_000;
+    const p = pos({
+      mint: 'm7',
+      entryPriceUsd: 100,
+      peakPriceUsd: 100,
+      trailArmed: false,
+      openedAtMs,
+    });
+    const d = decideMarkExit({
+      mint: 'm7',
+      pos: p,
+      markPriceUsd: 99,
+      gates,
+      nowMs: openedAtMs + 900_000,
+      volume5mUsd: 120,
+    });
+    expect(d?.shouldExit).toBe(true);
+    expect(d?.reason).toBe('never_arm_vol_fade');
+  });
+
+  it('does not vol-fade an armed position', () => {
+    const openedAtMs = 1_000_000;
+    const p = pos({
+      mint: 'm8',
+      entryPriceUsd: 100,
+      peakPriceUsd: 120,
+      trailArmed: true,
+      openedAtMs,
+    });
+    p.entryVolume5mUsd = 4_000;
+    const d = decideMarkExit({
+      mint: 'm8',
+      pos: p,
+      markPriceUsd: 118,
+      gates,
+      nowMs: openedAtMs + 1_800_000,
+      volume5mUsd: 50,
+    });
+    expect(d?.shouldExit).toBe(false);
   });
 });
 

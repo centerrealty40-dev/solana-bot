@@ -98,7 +98,7 @@ async function markPriceUsd(
   mint: string,
   nowMs: number,
   cacheTtlMs: number,
-): Promise<number | null> {
+): Promise<{ px: number | null; volume5mUsd: number | null }> {
   const details = await fetchDexScreenerPairDetails(mint, {
     nowMs,
     // 0 = always HTTP (legacy bypass). >0 reuses shared Dex cache within TTL.
@@ -106,12 +106,13 @@ async function markPriceUsd(
       ? { cacheTtlMs, bypassCache: false }
       : { bypassCache: true }),
   });
+  const volume5mUsd = details?.volume5mUsd ?? null;
   const px = details?.priceUsd;
   if (px != null && px > 0) {
     mildDipPriceRing.note(mint, px, { tsMs: nowMs, source: 'dex' });
-    return px;
+    return { px, volume5mUsd };
   }
-  return null;
+  return { px: null, volume5mUsd };
 }
 
 /** Reclaim rent on empty mint ATA after full exit (live only). */
@@ -411,6 +412,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       buySignature: buy.signature ?? null,
       peakPriceUsd: fillPx,
       trailArmed: false,
+      entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     };
     // Persist immediately — a restart before the tick-end save used to allow a rebuy.
     saveMildDipState(cfg.statePath, state);
@@ -548,8 +550,8 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
 
   const markStarted = Date.now();
   const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
-    const px = await markPriceUsd(mint, nowMs, cfg.markCacheTtlMs);
-    return { mint, px };
+    const { px, volume5mUsd } = await markPriceUsd(mint, nowMs, cfg.markCacheTtlMs);
+    return { mint, px, volume5mUsd };
   });
   const markPassMs = Date.now() - markStarted;
   let markedOk = 0;
@@ -560,7 +562,7 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
   }
 
   const toSell: MarkExitDecision[] = [];
-  for (const { mint, px } of markRows) {
+  for (const { mint, px, volume5mUsd } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
 
@@ -608,8 +610,14 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
       markPriceUsd: px,
       gates: cfg.exit,
       nowMs,
+      volume5mUsd,
     });
     if (!decision) continue;
+
+    // First usable volume reading becomes the fade baseline for adopted bags.
+    if (pos.entryVolume5mUsd == null && volume5mUsd != null && volume5mUsd > 0) {
+      pos.entryVolume5mUsd = volume5mUsd;
+    }
 
     applyMarkDecisionToPosition(pos, decision);
 
@@ -742,6 +750,7 @@ export async function runMildDipLoop(
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
+      `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd} ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
