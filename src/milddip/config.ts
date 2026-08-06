@@ -110,12 +110,16 @@ const MildDipConfigSchema = z.object({
     neverArmDeadMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
     /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 15. */
     neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(15),
-    /** Never-armed activity fade: min hold before the vol check (0=off). Default 10m. */
-    neverArmVolFadeMinMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
-    /** Exit when vol5m ≤ ratio × entry vol5m (0=off). Default 0.35. */
-    neverArmVolFadeRatio: z.coerce.number().min(0).max(10).default(0.35),
-    /** Exit when vol5m ≤ this USD floor (0=off). Default 500. */
-    neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(500),
+    /** Never-armed sustained fade: min hold before checks (0=off). Default 15m. */
+    neverArmVolFadeMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
+    /** A 5m window is weak if vol ≤ ratio × entry (0=off). Default 0.25. */
+    neverArmVolFadeRatio: z.coerce.number().min(0).max(10).default(0.25),
+    /** A 5m window is weak if vol ≤ this USD floor (0=off). Default 300. */
+    neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(300),
+    /** Min spacing between vol samples (distinct Dex m5 windows). Default 5m. */
+    neverArmVolFadeSampleMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
+    /** Consecutive weak windows required before exit. Default 3. */
+    neverArmVolFadeWeakWindows: z.coerce.number().int().min(0).max(48).default(3),
   }),
 });
 
@@ -178,10 +182,15 @@ export function loadMildDipConfig(): MildDipConfig {
     /** Deep-loss cut before max-hold (rugs); not the early 5m knife. */
     neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 900_000),
     neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 15),
-    /** Activity fade — leave when the tape dies, not on a clock. */
-    neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 600_000),
-    neverArmVolFadeRatio: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', 0.35),
-    neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 500),
+    /**
+     * Sustained activity fade — leave only after N consecutive weak 5m windows.
+     * One-shot Dex dips (Gymbmn) must not sell.
+     */
+    neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 900_000),
+    neverArmVolFadeRatio: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', 0.25),
+    neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 300),
+    neverArmVolFadeSampleMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS', 300_000),
+    neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
   };
 
   const raw = {

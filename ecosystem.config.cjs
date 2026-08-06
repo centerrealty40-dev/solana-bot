@@ -2871,9 +2871,17 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '15',
-        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '600000',
-        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO: '0.35',
-        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '500',
+        /**
+         * 1.11.696 — sustained vol fade (not one-shot):
+         * Sample Dex vol5m every 5m; exit only after 3 consecutive weak windows
+         * (≤25% of entry vol OR ≤$300), and not before 15m hold. Gymbmn-style
+         * single dip must not sell.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO: '0.25',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '300',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.

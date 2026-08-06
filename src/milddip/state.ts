@@ -16,6 +16,11 @@ export type MildDipOpenPosition = {
   trailArmed?: boolean;
   /** 5m Dex volume at entry — baseline for the activity-fade exit. */
   entryVolume5mUsd?: number | null;
+  /**
+   * Spaced Dex vol5m samples (≥5m apart) for sustained `never_arm_vol_fade`.
+   * A single weak tick must not sell — need N consecutive weak windows.
+   */
+  volFadeSamples?: Array<{ ts: number; vol: number }>;
 };
 
 export type MildDipState = {

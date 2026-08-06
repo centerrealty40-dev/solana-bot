@@ -1,4 +1,28 @@
 # So
+## [1.11.696] — 2026-08-06
+
+**Тег:** `sa-1.11.696`
+
+### Fix: mild-dip `never_arm_vol_fade` — sustained multi-window only
+
+`Gymbmn…pump` was sold at ~+2% by a **one-shot** Dex `vol5m` dip
+(`1199` vs entry `8672`, ratio 0.35) after ~11m unarmed. That is not a dead
+tape — rolling m5 flickers.
+
+- Sample vol5m at most once per **5m** (`SAMPLE_MS=300000`)
+- Exit only after **3 consecutive weak windows** (`WEAK_WINDOWS=3`)
+- Tighten: earliest check **15m**, ratio **0.25**, floor **$300**
+- A single weak tick (or a strong window in the middle) does **not** sell
+
+**Env (ecosystem):**
+`MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS=900000`
+`…_RATIO=0.25` `…_FLOOR_USD=300`
+`…_SAMPLE_MS=300000` `…_WEAK_WINDOWS=3`
+
+**Откат:** prior one-shot knobs `600000 / 0.35 / 500` (no sample/weak windows).
+
+---
+
 ## [1.11.695] — 2026-08-06
 
 **Тег:** `sa-1.11.695`
