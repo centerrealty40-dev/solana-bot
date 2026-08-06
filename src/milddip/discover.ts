@@ -123,6 +123,50 @@ export function priorityMintsFromCooldown(
   return out;
 }
 
+/**
+ * Green-tape analogue of mild-dip's ring-dip priority: mints whose local
+ * price-ring already shows a rally from trough should not lose Dex slots to
+ * random newer stream noise.
+ */
+export function priorityMintsFromPriceRingGreen(
+  cfg: Pick<MildDipConfig, 'cooldownBounceLookbackMs' | 'greenTape'>,
+  mints: readonly string[],
+  nowMs: number,
+  opts?: { max?: number },
+): string[] {
+  const minRally = Math.max(
+    0,
+    cfg.greenTape.liquidMinPc5mPct,
+    cfg.greenTape.earlyMinPc5mPct,
+  );
+  // Allow overshoot vs entry caps — priority only, full gates still apply later.
+  const maxRally = Math.max(
+    cfg.greenTape.liquidMaxPc5mPct,
+    cfg.greenTape.earlyMaxPc5mPct,
+  ) * 3;
+  const max = Math.max(0, Math.floor(opts?.max ?? 60));
+  const seen = new Set<string>();
+  const rows: Array<{ mint: string; rallyPct: number; lastTs: number }> = [];
+  for (const mint of mints) {
+    if (!mint || seen.has(mint)) continue;
+    seen.add(mint);
+    const rallyPct = mildDipPriceRing.rallyFromTroughPct(
+      mint,
+      cfg.cooldownBounceLookbackMs,
+      nowMs,
+    );
+    if (rallyPct == null || !Number.isFinite(rallyPct)) continue;
+    if (!(rallyPct > minRally && rallyPct <= maxRally)) continue;
+    rows.push({
+      mint,
+      rallyPct,
+      lastTs: mildDipPriceRing.lastPrice(mint, nowMs)?.tsMs ?? 0,
+    });
+  }
+  rows.sort((a, b) => b.rallyPct - a.rallyPct || b.lastTs - a.lastTs);
+  return rows.slice(0, max).map((r) => r.mint);
+}
+
 export async function collectCandidateMints(
   cfg: MildDipConfig,
   opts?: { priorityMints?: string[]; nowMs?: number },
@@ -185,69 +229,97 @@ type EnrichRow =
   | { kind: 'skip'; skip: EntrySkip }
   | null;
 
+type DexProbe = {
+  mint: string;
+  details: NonNullable<Awaited<ReturnType<typeof fetchDexScreenerPairDetails>>>;
+  metrics: MildDipCandidateMetrics;
+  volume5mUsd: number;
+};
+
 export async function enrichAndFilterCandidates(
   cfg: MildDipConfig,
   mints: string[],
   opts?: {
     nowMs?: number;
+    /** How many mints get full entry gates after vol5m rank (tape modes). */
     maxEnrich?: number;
+    /** How many mints to Dex-probe before ranking by vol5m. */
+    probeMax?: number;
     enrichConcurrency?: number;
-    /** Always enrich these even past maxEnrich (cooldown watch). */
+    /** Always enrich these even past probe window (cooldown / ring-priority). */
     forceEnrich?: string[];
   },
 ): Promise<EnrichFilterResult> {
   const nowMs = opts?.nowMs ?? Date.now();
-  const maxEnrich = opts?.maxEnrich ?? 40;
+  const awakening = cfg.entryMode === 'awakening';
+  const greenTape = cfg.entryMode === 'green_tape';
+  const tapeMode = awakening || greenTape;
+  const evalTopN = opts?.maxEnrich ?? (tapeMode ? cfg.maxEnrichPerScan : 40);
+  const probeMax = Math.max(
+    evalTopN,
+    opts?.probeMax ?? (tapeMode ? cfg.probeEnrichMax : evalTopN),
+  );
   const enrichConcurrency = opts?.enrichConcurrency ?? cfg.enrichConcurrency ?? 12;
 
-  const force = new Set((opts?.forceEnrich ?? []).filter(Boolean));
+  const forceList = (opts?.forceEnrich ?? []).filter(Boolean);
   const slice: string[] = [];
   const seen = new Set<string>();
-  for (const m of [...force, ...mints]) {
-    if (!m || seen.has(m)) continue;
+  const push = (m: string) => {
+    if (!m || seen.has(m)) return;
     seen.add(m);
     slice.push(m);
-    if (slice.length >= maxEnrich + force.size) break;
+  };
+  // Force-interesting first (ring-green / cooldown), then fill probe budget.
+  for (const m of forceList) push(m);
+  for (const m of mints) {
+    if (slice.length >= probeMax) break;
+    push(m);
   }
 
   const denied = new Set(cfg.deniedMints.map((m) => m.trim()).filter(Boolean));
-  const awakening = cfg.entryMode === 'awakening';
-  const greenTape = cfg.entryMode === 'green_tape';
   const awCfg = awakening ? loadAwakeningConfig() : null;
 
-  const rows = await mapPool(slice, enrichConcurrency, async (mint): Promise<EnrichRow> => {
+  // Phase 1 — Dex probe (metrics only). Rank by vol5m so we gate the active tape first.
+  const probeRows = await mapPool(slice, enrichConcurrency, async (mint): Promise<DexProbe | null> => {
     try {
-      if (denied.has(mint)) {
-        return {
-          kind: 'skip',
-          skip: { mint, entryMode: cfg.entryMode, reasons: ['denied_mint'] },
-        };
-      }
-
+      if (denied.has(mint)) return null;
       const details = await fetchDexScreenerPairDetails(mint, {
         bypassCache: true,
         nowMs,
       });
-      if (!details || !(details.priceUsd != null && details.priceUsd > 0)) {
-        return {
-          kind: 'skip',
-          skip: { mint, entryMode: cfg.entryMode, reasons: ['dex_miss'] },
-        };
-      }
+      if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
       mildDipPriceRing.note(mint, details.priceUsd, { tsMs: nowMs, source: 'dex' });
-
       const pairAgeHours =
         details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
           ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
           : null;
-      const metrics: MildDipCandidateMetrics = {
-        priceChange5mPct: details.priceChangeM5Pct,
-        volume5mUsd: details.volume5mUsd,
-        liquidityUsd: details.liquidityUsd,
-        marketCapUsd: details.marketCapUsd,
-        pairAgeHours,
-        dexId: details.dexId,
+      const volume5mUsd = details.volume5mUsd ?? 0;
+      return {
+        mint,
+        details,
+        volume5mUsd: Number.isFinite(volume5mUsd) ? volume5mUsd : 0,
+        metrics: {
+          priceChange5mPct: details.priceChangeM5Pct,
+          volume5mUsd: details.volume5mUsd,
+          liquidityUsd: details.liquidityUsd,
+          marketCapUsd: details.marketCapUsd,
+          pairAgeHours,
+          dexId: details.dexId,
+        },
       };
+    } catch {
+      return null;
+    }
+  });
+
+  const probed = probeRows.filter((p): p is DexProbe => p != null);
+  probed.sort((a, b) => b.volume5mUsd - a.volume5mUsd);
+  const toEvaluate = tapeMode ? probed.slice(0, evalTopN) : probed;
+
+  // Phase 2 — full entry gates only on the volume-leading probe set.
+  const rows = await mapPool(toEvaluate, Math.min(8, enrichConcurrency), async (probe): Promise<EnrichRow> => {
+    try {
+      const { mint, details, metrics } = probe;
 
       if (awakening && awCfg) {
         if (cfg.entry.allowedDexIds.length > 0) {
@@ -275,7 +347,8 @@ export async function enrichAndFilterCandidates(
             },
           };
         }
-        const poolAgeMin = pairAgeHours != null ? pairAgeHours * 60 : null;
+        const poolAgeMin =
+          metrics.pairAgeHours != null ? metrics.pairAgeHours * 60 : null;
         const market: AwakeningDexMarket = {
           mint,
           priceUsd: details.priceUsd,
@@ -310,12 +383,13 @@ export async function enrichAndFilterCandidates(
         }
         const score =
           (verdict.metrics.vol5mSpikeVs6hMult ?? 0) + (verdict.metrics.vol5mSpikeVs1hMult ?? 0);
+        const priceUsd = details.priceUsd as number;
         return {
           kind: 'pass',
           cand: {
             mint,
             symbol: mint.slice(0, 6),
-            priceUsd: details.priceUsd,
+            priceUsd,
             metrics,
             dipSource: 'dex',
             entryPath: verdict.metrics.entryPath,
@@ -352,12 +426,13 @@ export async function enrichAndFilterCandidates(
           (verdict.turnover5m ?? 0) * 100 +
           (verdict.buySellRatio5m ?? 0) * 10 +
           (verdict.path === 'early' ? 5 : 0);
+        const priceUsd = details.priceUsd as number;
         return {
           kind: 'pass',
           cand: {
             mint,
             symbol: mint.slice(0, 6),
-            priceUsd: details.priceUsd,
+            priceUsd,
             metrics,
             dipSource: 'dex',
             entryPath: verdict.path === 'early' ? 'green_tape_early' : 'green_tape_liquid',
@@ -386,12 +461,13 @@ export async function enrichAndFilterCandidates(
         };
       }
 
+      const priceUsd = details.priceUsd as number;
       return {
         kind: 'pass',
         cand: {
           mint,
           symbol: mint.slice(0, 6),
-          priceUsd: details.priceUsd,
+          priceUsd,
           metrics:
             dipSource === 'stream' && stream.drawdownPct != null
               ? { ...metrics, priceChange5mPct: stream.drawdownPct }
@@ -403,7 +479,7 @@ export async function enrichAndFilterCandidates(
       return {
         kind: 'skip',
         skip: {
-          mint,
+          mint: probe.mint,
           entryMode: cfg.entryMode,
           reasons: [`enrich_error:${err instanceof Error ? err.message : String(err)}`],
         },
@@ -419,11 +495,13 @@ export async function enrichAndFilterCandidates(
     else skips.push(r.skip);
   }
 
-  if (awakening || greenTape) {
-    out.sort((a, b) => (b.entryScore ?? 0) - (a.entryScore ?? 0));
-  } else {
-    out.sort((a, b) => (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0));
-  }
+  // Prefer highest 5m volume among passes (mild-dip parallel-agent scheme).
+  out.sort(
+    (a, b) =>
+      (b.metrics.volume5mUsd ?? 0) - (a.metrics.volume5mUsd ?? 0) ||
+      (b.entryScore ?? 0) - (a.entryScore ?? 0) ||
+      (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0),
+  );
   return { candidates: out, skips };
 }
 

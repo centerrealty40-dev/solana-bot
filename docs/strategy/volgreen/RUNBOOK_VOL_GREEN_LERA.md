@@ -7,7 +7,8 @@
 (`MILD_DIP_ENTRY_MODE=awakening` still available)  
 **Exit:** same W9.1 stack as Oscar `mild-dip-bot` (arm +8% / giveback −6% / never-arm / vol-fade)  
 **RPC:** Helius from `/opt/lera/.env`  
-**Coverage:** `MILD_DIP_MAX_ENRICH=16`, hits-weighted hot-list; skips → `entry_skip` / `awaken_skip` in journal
+**Coverage (mild-dip active scheme):** force ring-green → Dex-probe 48 → rank by
+**vol5m** → full-gate top 20; skips → `entry_skip` / `awaken_skip` in journal
 
 Oscar `mild-dip-bot` on `2sSu…` is **not** touched by this lane.
 

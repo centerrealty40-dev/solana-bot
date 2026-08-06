@@ -98,8 +98,10 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');
   setIfAbsent('MILD_DIP_STREAM', '1');
   setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '16');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '25000');
+  // Probe wider universe, then full-gate only top vol5m (mild-dip active scheme).
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '48');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '20');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '40000');
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
   setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');
   setIfAbsent('MILD_DIP_SLIPPAGE_BPS', '500');

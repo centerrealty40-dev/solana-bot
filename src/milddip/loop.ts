@@ -10,6 +10,8 @@ import {
   collectCandidateMints,
   enrichAndFilterCandidates,
   priorityMintsFromCooldown,
+  priorityMintsFromPriceRingGreen,
+  type EntrySkip,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
@@ -24,7 +26,6 @@ import {
 import { cooldownMsAfterExit } from './cooldown.js';
 import { evaluateCooldownBounce, evaluateMildDipPreBuy } from './gates.js';
 import { evaluateAwakeningPreBuy } from '../volgreen/entry-gates.js';
-import type { EntrySkip } from './discover.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -275,17 +276,28 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   });
   const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
   const tapeMode = cfg.entryMode === 'awakening' || cfg.entryMode === 'green_tape';
-  const maxEnrich = tapeMode ? cfg.maxEnrichPerScan : 80;
+  // Mild-dip parallel-agent scheme adapted for tape:
+  // 1) force-enrich ring-green (already looks interesting locally)
+  // 2) Dex-probe a wider set, rank by vol5m, full-gate only the top N
+  const ringGreen =
+    cfg.entryMode === 'green_tape'
+      ? priorityMintsFromPriceRingGreen(cfg, mints, nowMs, { max: 60 })
+      : [];
+  const forceEnrich = tapeMode
+    ? [...new Set([...ringGreen, ...priority.slice(0, 10)])]
+    : priority;
+  const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
+  const probeMax = tapeMode ? cfg.probeEnrichMax : 80;
   const enrichConcurrency = tapeMode
     ? Math.min(4, cfg.enrichConcurrency)
     : cfg.enrichConcurrency;
   const enrichStarted = Date.now();
   const enrichPromise = enrichAndFilterCandidates(cfg, mints, {
     nowMs,
-    maxEnrich,
+    maxEnrich: evalTopN,
+    probeMax,
     enrichConcurrency,
-    // Tape modes: do not force-enrich cooldown mints (doubles Dex burn).
-    forceEnrich: tapeMode ? [] : priority,
+    forceEnrich,
   });
   const enrichBudgetMs = tapeMode ? cfg.enrichBudgetMs : 120_000;
   const enrichResult = await Promise.race([
@@ -300,8 +312,9 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const candidates = enrichResult.candidates;
   if (tapeMode) {
     console.log(
-      `[mild-dip] ${cfg.entryMode} enrich done mints=${mints.length} candidates=${candidates.length} ` +
-        `skips=${enrichResult.skips.length} ms=${Date.now() - enrichStarted} maxEnrich=${maxEnrich}`,
+      `[mild-dip] ${cfg.entryMode} enrich done universe=${mints.length} ringGreen=${ringGreen.length} ` +
+        `force=${forceEnrich.length} candidates=${candidates.length} skips=${enrichResult.skips.length} ` +
+        `ms=${Date.now() - enrichStarted} probeMax=${probeMax} evalTopN=${evalTopN}`,
     );
     if (cfg.journalEntrySkips && enrichResult.skips.length > 0) {
       for (const skip of enrichResult.skips) {

@@ -1,5 +1,25 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.705] — 2026-08-06
+
+**Тег:** `sa-1.11.705`
+
+### Feature: vol-green universe rank — ring-green force + vol5m top-N (mild-dip scheme)
+
+По схеме Oscar mild-dip (`Prioritize active candidates`), под green_tape:
+
+1. **forceEnrich** mint’ов с rally trough→last в price-ring (≥ min pc5m)  
+2. Dex-**probe** до **48** кандидатов  
+3. Сорт по **vol5m**, полные гейты только **топ‑20**  
+4. Покупки среди pass — снова предпочитаем больший vol5m  
+
+Идея: не гонять гейты по случайному хвосту hot-list, а смотреть сначала
+то, что уже выглядит как живой green tape.
+
+**Откат:** `PROBE_ENRICH_MAX=20` / `MAX_ENRICH=20` + revert discover/loop.
+
+---
+
 ## [1.11.704] — 2026-08-06
 
 **Тег:** `sa-1.11.704`

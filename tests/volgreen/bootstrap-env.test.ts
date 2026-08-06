@@ -12,6 +12,7 @@ const KEYS = [
   'MILD_DIP_MAX_DIP_PCT',
   'MILD_DIP_EXIT_GIVEBACK_PCT',
   'MILD_DIP_MAX_ENRICH',
+  'MILD_DIP_PROBE_ENRICH_MAX',
   'VOL_GREEN_POSITION_USD',
   'MILD_DIP_POSITION_USD',
   'VOL_GREEN_ENTRY_MODE',
@@ -40,7 +41,8 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_WALLET_PUBKEY).toBe(VOL_GREEN_DEFAULT_WALLET_PUBKEY);
     expect(process.env.MILD_DIP_JOURNAL_PATH).toContain('volgreen');
     expect(process.env.MILD_DIP_EXIT_GIVEBACK_PCT).toBe('6');
-    expect(process.env.MILD_DIP_MAX_ENRICH).toBe('16');
+    expect(process.env.MILD_DIP_MAX_ENRICH).toBe('20');
+    expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('48');
   });
 
   it('maps VOL_GREEN_POSITION_USD into MILD_DIP_POSITION_USD', () => {

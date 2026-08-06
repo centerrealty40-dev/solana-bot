@@ -120,6 +120,20 @@ export class MildDipPriceRing {
     return (freshPriceUsd / trough.priceUsd - 1) * 100;
   }
 
+  /**
+   * Rally from local trough → last sample, as % (≥0 when above trough).
+   * Green-tape priority: mint already looks like it's lifting off in our ring.
+   */
+  rallyFromTroughPct(
+    mint: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): number | null {
+    const last = this.lastPrice(mint, nowMs);
+    if (!last || last.tsMs < nowMs - windowMs) return null;
+    return this.bounceFromTroughPct(mint, last.priceUsd, windowMs, nowMs);
+  }
+
   sampleCount(mint: string, windowMs: number, nowMs = Date.now()): number {
     return this.samplesInWindow(mint, windowMs, nowMs).length;
   }

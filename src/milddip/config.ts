@@ -44,12 +44,17 @@ const MildDipConfigSchema = z.object({
   /** Parallel Dex enrich during candidate scan (still behind Dex gate). */
   enrichConcurrency: z.coerce.number().int().min(1).max(32).default(12),
   /**
-   * Max mints to Dex-enrich per scan for awakening/green_tape.
-   * mild_dip still uses the hard-coded 80 in the loop unless overridden.
+   * After Dex probe + vol5m rank, how many top-volume mints get full entry gates
+   * (green_tape / awakening). mild_dip uses 80 in the loop.
    */
-  maxEnrichPerScan: z.coerce.number().int().min(1).max(80).default(16),
+  maxEnrichPerScan: z.coerce.number().int().min(1).max(80).default(20),
+  /**
+   * How many stream/priority mints to Dex-probe before ranking by vol5m.
+   * Should be ≥ maxEnrichPerScan. Cheap prefilter so we don't gate random noise.
+   */
+  probeEnrichMax: z.coerce.number().int().min(1).max(120).default(48),
   /** Hard wall-clock budget for one enrich pass (ms). */
-  enrichBudgetMs: z.coerce.number().int().min(3_000).max(180_000).default(25_000),
+  enrichBudgetMs: z.coerce.number().int().min(3_000).max(180_000).default(40_000),
   /** Parallel Jupiter sells — sole consumer can push higher. */
   sellConcurrency: z.coerce.number().int().min(1).max(8).default(6),
   /** Journal entry_skip / awaken_skip for enriched fails (default on). */
@@ -269,8 +274,9 @@ export function loadMildDipConfig(): MildDipConfig {
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 30_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,
     enrichConcurrency: process.env.MILD_DIP_ENRICH_CONCURRENCY ?? 12,
-    maxEnrichPerScan: process.env.MILD_DIP_MAX_ENRICH ?? 16,
-    enrichBudgetMs: process.env.MILD_DIP_ENRICH_BUDGET_MS ?? 25_000,
+    maxEnrichPerScan: process.env.MILD_DIP_MAX_ENRICH ?? 20,
+    probeEnrichMax: process.env.MILD_DIP_PROBE_ENRICH_MAX ?? 48,
+    enrichBudgetMs: process.env.MILD_DIP_ENRICH_BUDGET_MS ?? 40_000,
     sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 6,
     journalEntrySkips: (() => {
       const v = process.env.MILD_DIP_JOURNAL_ENTRY_SKIPS?.trim().toLowerCase();
