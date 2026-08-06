@@ -3,7 +3,6 @@ import {
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
-  evaluateShallowHotTape,
   type MildDipCandidateMetrics,
   type MildDipEntryGates,
   type MildDipExitGates,
@@ -12,7 +11,7 @@ import {
 function metrics(partial: Partial<MildDipCandidateMetrics>): MildDipCandidateMetrics {
   return {
     priceChange5mPct: -9.7,
-    volume5mUsd: 12_000, // normal tape — below shallow-hot floor
+    volume5mUsd: 12_000,
     liquidityUsd: 40_000,
     marketCapUsd: 400_000,
     pairAgeHours: 48,
@@ -33,8 +32,6 @@ const baseGates: MildDipEntryGates = {
   maxMarketCapUsd: 300_000_000,
   minPairAgeHours: 0.25,
   maxPairAgeHours: 72,
-  shallowHotMaxDipPct: -5,
-  shallowHotMinVol5mUsd: 20_000,
   allowedDexIds: ['pumpswap', 'pumpfun'],
 };
 
@@ -106,58 +103,10 @@ describe('evaluateMildDipEntry', () => {
   });
 });
 
-describe('evaluateShallowHotTape (pump-fade unnaturalness)', () => {
-  it('blocks 36GuKd-style: pc5m −4.36 + vol5m $71k', () => {
-    const v = evaluateShallowHotTape(
-      { priceChange5mPct: -4.36, volume5mUsd: 70_809 },
-      { shallowHotMaxDipPct: -5, shallowHotMinVol5mUsd: 20_000 },
-    );
-    expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.startsWith('shallow_hot_tape'))).toBe(true);
-  });
-
-  it('allows deep dump even on hot tape', () => {
-    const v = evaluateShallowHotTape(
-      { priceChange5mPct: -12, volume5mUsd: 70_809 },
-      { shallowHotMaxDipPct: -5, shallowHotMinVol5mUsd: 20_000 },
-    );
-    expect(v.pass).toBe(true);
-  });
-
-  it('allows shallow dip on normal volume (not a scam label)', () => {
-    const v = evaluateShallowHotTape(
-      { priceChange5mPct: -4.5, volume5mUsd: 3_500 },
-      { shallowHotMaxDipPct: -5, shallowHotMinVol5mUsd: 20_000 },
-    );
-    expect(v.pass).toBe(true);
-  });
-
-  it('entry gate wires shallow-hot (age irrelevant)', () => {
-    const prod = { ...baseGates, maxDipPct: -4 };
-    const v = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -4.36, volume5mUsd: 70_809, pairAgeHours: 100 }),
-      prod,
-    );
-    expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.startsWith('shallow_hot_tape'))).toBe(true);
-  });
-
-  it('off when shallowHotMinVol5mUsd=0', () => {
-    const off = { ...baseGates, maxDipPct: -4, shallowHotMinVol5mUsd: 0 };
-    const v = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -4.36, volume5mUsd: 70_809 }),
-      off,
-    );
-    expect(v.pass).toBe(true);
-  });
-});
-
 describe('evaluateMildDipPreBuy', () => {
   const band = {
     minDipPct: -20,
     maxDipPct: 0,
-    shallowHotMaxDipPct: -5,
-    shallowHotMinVol5mUsd: 20_000,
   };
 
   it('passes when still in dip and mark not chasing', () => {
@@ -165,7 +114,6 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.02,
       freshPc5mPct: -8,
-      freshVolume5mUsd: 12_000,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -177,7 +125,6 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.01,
       freshPc5mPct: 2.5,
-      freshVolume5mUsd: 12_000,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -190,7 +137,6 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.06,
       freshPc5mPct: -5,
-      freshVolume5mUsd: 12_000,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -203,24 +149,10 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.2,
       freshPc5mPct: -3,
-      freshVolume5mUsd: 12_000,
       entryGates: band,
       maxChasePct: 0,
     });
     expect(v.pass).toBe(true);
-  });
-
-  it('rejects shallow-hot at prebuy', () => {
-    const v = evaluateMildDipPreBuy({
-      signalPriceUsd: 1,
-      freshPriceUsd: 1.01,
-      freshPc5mPct: -4.36,
-      freshVolume5mUsd: 70_809,
-      entryGates: { ...band, maxDipPct: -4 },
-      maxChasePct: 4,
-    });
-    expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.includes('shallow_hot_tape'))).toBe(true);
   });
 });
 

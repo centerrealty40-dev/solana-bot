@@ -32,16 +32,6 @@ export type MildDipEntryGates = {
   maxMarketCapUsd: number;
   minPairAgeHours: number;
   maxPairAgeHours: number;
-  /**
-   * Shallow pullback on a screaming 5m tape (1.11.698). Reject when
-   * pc5m &gt; shallowHotMaxDipPct AND vol5m ≥ shallowHotMinVol5mUsd.
-   * Unnaturalness = tiny dip while volume is still pump-grade (36GuKd:
-   * pc5m −4.36 + vol5m $71k vs OK med ~$3.5k). Age alone is NOT a signal.
-   * 0 minVol = off.
-   */
-  shallowHotMaxDipPct: number;
-  /** See shallowHotMaxDipPct. Default $20k. */
-  shallowHotMinVol5mUsd: number;
   /** Empty = any dex. */
   allowedDexIds: string[];
 };
@@ -110,33 +100,6 @@ export type MildDipGateVerdict = {
   reasons: string[];
 };
 
-/**
- * Shallow 5m dip on an abnormally hot tape — pump-fade entry trap.
- * Does NOT use pair age. Deep dumps on hot volume still pass.
- */
-export function evaluateShallowHotTape(
-  metrics: Pick<MildDipCandidateMetrics, 'priceChange5mPct' | 'volume5mUsd'>,
-  gates: Pick<MildDipEntryGates, 'shallowHotMaxDipPct' | 'shallowHotMinVol5mUsd'>,
-): MildDipGateVerdict {
-  const reasons: string[] = [];
-  const minHot = gates.shallowHotMinVol5mUsd;
-  if (!(minHot > 0)) return { pass: true, reasons };
-
-  const pc = metrics.priceChange5mPct;
-  const vol = metrics.volume5mUsd;
-  const maxDip = gates.shallowHotMaxDipPct;
-  if (pc == null || !Number.isFinite(pc) || vol == null || !Number.isFinite(vol)) {
-    return { pass: true, reasons };
-  }
-  // pc > maxDip ⇒ shallower than the hot-tape depth floor (e.g. −4.3 > −5).
-  if (pc > maxDip && vol >= minHot) {
-    reasons.push(
-      `shallow_hot_tape pc5m=${pc.toFixed(2)}>${maxDip}_vol5m=${vol.toFixed(0)}>=${minHot}`,
-    );
-  }
-  return { pass: reasons.length === 0, reasons };
-}
-
 export function evaluateMildDipEntry(
   metrics: MildDipCandidateMetrics,
   gates: MildDipEntryGates,
@@ -189,9 +152,6 @@ export function evaluateMildDipEntry(
     }
   }
 
-  const hot = evaluateShallowHotTape(metrics, gates);
-  reasons.push(...hot.reasons);
-
   if (gates.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();
     if (!dex || !gates.allowedDexIds.includes(dex)) {
@@ -211,12 +171,7 @@ export function evaluateMildDipPreBuy(args: {
   signalPriceUsd: number;
   freshPriceUsd: number | null;
   freshPc5mPct: number | null;
-  entryGates: Pick<
-    MildDipEntryGates,
-    'minDipPct' | 'maxDipPct' | 'shallowHotMaxDipPct' | 'shallowHotMinVol5mUsd'
-  >;
-  /** Fresh Dex vol5m at prebuy; null skips shallow-hot check. */
-  freshVolume5mUsd?: number | null;
+  entryGates: Pick<MildDipEntryGates, 'minDipPct' | 'maxDipPct'>;
   /** 0 = chase check off (pc5m revalidate still runs). */
   maxChasePct: number;
 }): MildDipGateVerdict {
@@ -235,12 +190,6 @@ export function evaluateMildDipPreBuy(args: {
       `prebuy_pc5m=${pc.toFixed(2)}_outside_(${entryGates.minDipPct},${entryGates.maxDipPct}]`,
     );
   }
-
-  const hot = evaluateShallowHotTape(
-    { priceChange5mPct: freshPc5mPct, volume5mUsd: args.freshVolume5mUsd ?? null },
-    entryGates,
-  );
-  for (const r of hot.reasons) reasons.push(`prebuy_${r}`);
 
   if (
     maxChasePct > 0 &&

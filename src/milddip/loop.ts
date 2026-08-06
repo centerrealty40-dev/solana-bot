@@ -348,7 +348,6 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         signalPriceUsd: c.priceUsd,
         freshPriceUsd: freshPx,
         freshPc5mPct: freshPc,
-        freshVolume5mUsd: freshVol5m,
         entryGates: cfg.entry,
         maxChasePct: cfg.maxChasePct,
       });
@@ -879,7 +878,6 @@ export async function runMildDipLoop(
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
-      `shallowHot=${cfg.entry.shallowHotMaxDipPct}%/$${cfg.entry.shallowHotMinVol5mUsd} ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
