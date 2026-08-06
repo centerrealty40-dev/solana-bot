@@ -2827,7 +2827,12 @@ const PM2_APPS = [
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
         MILD_DIP_MAX_OPEN_POSITIONS: '0',
         MILD_DIP_MIN_DIP_PCT: '-20',
-        MILD_DIP_MAX_DIP_PCT: '0',
+        /**
+         * 1.11.690 — require dump depth ≥4% (pc5m ∈ (−20, −4]).
+         * Was 0: flat-chop noise (−0…−3%) kept buying after leaders left.
+         * 36h CF vs 8zkg dumps: MAX=-4 → dump recall ~83%, cuts ~47% after-flat buys.
+         */
+        MILD_DIP_MAX_DIP_PCT: '-4',
         MILD_DIP_MIN_VOLUME_5M_USD: '1500',
         MILD_DIP_MIN_LIQUIDITY_USD: '15000',
         MILD_DIP_MIN_MCAP_USD: '15000',

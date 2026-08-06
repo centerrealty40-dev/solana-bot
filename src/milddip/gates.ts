@@ -1,7 +1,7 @@
 /**
  * Mild-dip branch gates (entry reverse-engineered from leader sessions).
  *
- * Entry: DexScreener priceChange5m ∈ (minDipPct, maxDipPct] — default (−20, 0].
+ * Entry: DexScreener priceChange5m ∈ (minDipPct, maxDipPct] — default (−20, −4].
  * Exit: W9.1 peak-giveback — arm on MFE, full exit on giveback from running peak.
  *        Never-armed branch (leaders 8zkg / 7BNax): same giveback width after
  *        patience, plus max-hold if trail never arms. No SL% from entry.

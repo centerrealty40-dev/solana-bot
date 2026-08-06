@@ -124,7 +124,8 @@ export function loadMildDipConfig(): MildDipConfig {
 
   const entry: MildDipEntryGates = {
     minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -20),
-    maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', 0),
+    /** Inclusive upper bound — require dump depth (default −4 ⇒ pc5m ≤ −4%). */
+    maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -4),
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 1_500),
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 15_000),
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
