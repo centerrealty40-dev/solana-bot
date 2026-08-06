@@ -445,11 +445,12 @@ export function evaluateMildDipPeakGiveback(args: {
     scaleFrac > 0 &&
     !scaleOutDone &&
     givebackPct <= -partialPct + 1e-9;
+  const immediateScaleOutHit = justArmed && partialPct > 0 && scaleFrac > 0 && !scaleOutDone;
 
   if (armed && fullGivebackHit) {
     return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
   }
-  if (armed && partialGivebackHit) {
+  if (armed && (immediateScaleOutHit || partialGivebackHit)) {
     return {
       ...hold,
       shouldExit: true,

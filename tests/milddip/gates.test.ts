@@ -204,7 +204,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.givebackPct).toBeLessThanOrEqual(-8 + 1e-6);
   });
 
-  it('arm at +5%: NV2RYH-style +5.5% MFE arms the trail', () => {
+  it('arm at +5% immediately sells half instead of waiting for giveback', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 105.5,
@@ -214,7 +214,9 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     });
     expect(v.armed).toBe(true);
     expect(v.justArmed).toBe(true);
-    expect(v.shouldExit).toBe(false);
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('peak_giveback_partial');
+    expect(v.fraction).toBe(0.5);
   });
 
   it('scale-out: −3% from peak sells half; −8% sells all', () => {

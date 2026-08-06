@@ -730,7 +730,9 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
 
   const markStarted = Date.now();
   const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
-    const { px, volume5mUsd } = await markPriceUsd(mint, nowMs, cfg.markCacheTtlMs);
+    const pos = state.open[mint];
+    const ttlMs = pos?.trailArmed === true ? Math.min(cfg.markCacheTtlMs, 500) : cfg.markCacheTtlMs;
+    const { px, volume5mUsd } = await markPriceUsd(mint, nowMs, ttlMs);
     return { mint, px, volume5mUsd };
   });
   const markPassMs = Date.now() - markStarted;
@@ -971,8 +973,10 @@ export async function runMildDipLoop(
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
 
-    // Respect markInterval (previously `|| openCount>0` hammered Dex every tick).
-    if (openCount(state) > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
+    // Respect markInterval; armed runners get a tighter cadence so spikes are not missed.
+    const hasArmedOpen = Object.values(state.open).some((p) => p.trailArmed === true);
+    const markDueMs = hasArmedOpen ? Math.min(cfg.markIntervalMs, 1_000) : cfg.markIntervalMs;
+    if (openCount(state) > 0 && nowMs - lastMark >= markDueMs) {
       await tryExits(cfg, state, nowMs);
       lastMark = nowMs;
       stats.lastMarkAtMs = nowMs;
@@ -1036,7 +1040,8 @@ export async function runMildDipLoop(
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      await sleep(Math.min(cfg.markIntervalMs, 5_000));
+      const hasArmedOpen = Object.values(state.open).some((p) => p.trailArmed === true);
+      await sleep(hasArmedOpen ? Math.min(cfg.markIntervalMs, 1_000) : Math.min(cfg.markIntervalMs, 5_000));
     }
   } finally {
     shutdown();
