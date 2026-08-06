@@ -151,7 +151,8 @@ export function loadMildDipConfig(): MildDipConfig {
     minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -20),
     /** Inclusive upper bound — require dump depth (default −4 ⇒ pc5m ≤ −4%). */
     maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -4),
-    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 1_500),
+    /** 1.11.701 — default $500 (was $1500). */
+    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 500),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
