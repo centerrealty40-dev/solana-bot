@@ -36,9 +36,9 @@ process.on('unhandledRejection', (err) => fatalExit(err, 'unhandledRejection'));
 
 async function main(): Promise<void> {
   const cfg = loadMildDipConfig();
-  if (cfg.entryMode !== 'awakening') {
+  if (cfg.entryMode !== 'green_tape' && cfg.entryMode !== 'awakening') {
     console.warn(
-      `[${appName()}] entryMode=${cfg.entryMode} (expected awakening) — continuing with configured mode`,
+      `[${appName()}] entryMode=${cfg.entryMode} (expected green_tape|awakening) — continuing`,
     );
   }
 

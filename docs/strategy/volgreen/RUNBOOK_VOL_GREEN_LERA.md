@@ -3,9 +3,11 @@
 **Host:** `72.62.152.201` (`/opt/lera`, user `lera`)  
 **Wallet:** `FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX`  
 **Clip:** $5 USDC  
-**Entry:** Volume Awakening / green-tape (`MILD_DIP_ENTRY_MODE=awakening`)  
+**Entry (default):** `green_tape` — leader-like green candle + buy/sell + turnover  
+(`MILD_DIP_ENTRY_MODE=awakening` still available)  
 **Exit:** same W9.1 stack as Oscar `mild-dip-bot` (arm +8% / giveback −6% / never-arm / vol-fade)  
-**RPC:** Helius from `/opt/lera/.env`
+**RPC:** Helius from `/opt/lera/.env`  
+**Coverage:** `MILD_DIP_MAX_ENRICH=16`, hits-weighted hot-list; skips → `entry_skip` / `awaken_skip` in journal
 
 Oscar `mild-dip-bot` on `2sSu…` is **not** touched by this lane.
 

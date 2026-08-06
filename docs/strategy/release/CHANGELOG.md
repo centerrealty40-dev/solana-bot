@@ -1,5 +1,21 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.701] — 2026-08-06
+
+**Тег:** `sa-1.11.701`
+
+### Feature: vol-green coverage + green_tape entry + entry_skip journal
+
+После miss `3grmUL…pump` (лидер купил на зелёной, мы нет):
+
+1. **Coverage:** `maxEnrich` default **16**, hits-weighted `listForEnrich`, budget 25s  
+2. **Entry mode `green_tape`:** leader-like pc5m∈(0,15], vol5m≥$2k, buys/sells≥1, turnover≥0.09, mcap≥$50k — default for vol-green  
+3. **Journal:** `awaken_skip` / `entry_skip` на каждый enriched fail (reasons + metrics)
+
+**Откат:** `VOL_GREEN_ENTRY_MODE=awakening` + `MILD_DIP_MAX_ENRICH=4`; или revert.
+
+---
+
 ## [1.11.700] — 2026-08-06
 
 **Тег:** `sa-1.11.700`

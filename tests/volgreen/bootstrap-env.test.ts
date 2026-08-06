@@ -11,8 +11,10 @@ const KEYS = [
   'MILD_DIP_MIN_DIP_PCT',
   'MILD_DIP_MAX_DIP_PCT',
   'MILD_DIP_EXIT_GIVEBACK_PCT',
+  'MILD_DIP_MAX_ENRICH',
   'VOL_GREEN_POSITION_USD',
   'MILD_DIP_POSITION_USD',
+  'VOL_GREEN_ENTRY_MODE',
 ];
 
 describe('bootstrapVolGreenEnv', () => {
@@ -31,13 +33,14 @@ describe('bootstrapVolGreenEnv', () => {
     delete process.env[k];
   }
 
-  it('defaults to awakening entry + FxQf wallet + mild-dip exit widths', () => {
+  it('defaults to green_tape entry + FxQf wallet + mild-dip exit widths', () => {
     for (const k of KEYS) stash(k);
     bootstrapVolGreenEnv(process.env);
-    expect(process.env.MILD_DIP_ENTRY_MODE).toBe('awakening');
+    expect(process.env.MILD_DIP_ENTRY_MODE).toBe('green_tape');
     expect(process.env.MILD_DIP_WALLET_PUBKEY).toBe(VOL_GREEN_DEFAULT_WALLET_PUBKEY);
     expect(process.env.MILD_DIP_JOURNAL_PATH).toContain('volgreen');
     expect(process.env.MILD_DIP_EXIT_GIVEBACK_PCT).toBe('6');
+    expect(process.env.MILD_DIP_MAX_ENRICH).toBe('16');
   });
 
   it('maps VOL_GREEN_POSITION_USD into MILD_DIP_POSITION_USD', () => {

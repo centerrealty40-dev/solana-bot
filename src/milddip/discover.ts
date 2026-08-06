@@ -9,6 +9,7 @@ import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-
 import { loadAwakeningConfig } from '../scripts/awakening/awakening-config.js';
 import { evaluateAwakeningSignal } from '../scripts/awakening/awakening-signal.js';
 import type { AwakeningDexMarket } from '../scripts/awakening/awakening-types.js';
+import { evaluateGreenTapeEntry } from '../volgreen/green-tape-gates.js';
 import type { MildDipConfig } from './config.js';
 import { mapPool } from './exit-engine.js';
 import { evaluateMildDipEntry, type MildDipCandidateMetrics } from './gates.js';
@@ -23,9 +24,25 @@ export type MildDipCandidate = {
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
   dipSource: 'dex' | 'stream' | 'dex+stream';
   /** Awakening path when `entryMode=awakening`. */
-  entryPath?: 'early_spike' | 'ignition' | 'gradual';
-  /** Journal helpers — spike multiples when awakening. */
+  entryPath?: 'early_spike' | 'ignition' | 'gradual' | 'green_tape';
+  /** Journal helpers — spike multiples when awakening / turnover score. */
   entryScore?: number;
+};
+
+/** Enriched mint that failed entry gates (for journal near-miss). */
+export type EntrySkip = {
+  mint: string;
+  entryMode: MildDipConfig['entryMode'];
+  reasons: string[];
+  metrics?: Partial<MildDipCandidateMetrics> & {
+    buySellRatio5m?: number | null;
+    turnover5m?: number | null;
+  };
+};
+
+export type EnrichFilterResult = {
+  candidates: MildDipCandidate[];
+  skips: EntrySkip[];
 };
 
 const SOLANA_CHAIN = 'solana';
@@ -127,9 +144,14 @@ export async function collectCandidateMints(
   // 1) Cooldown-watched / just-ready — must win enrich slots.
   for (const m of opts?.priorityMints ?? []) push(m);
 
-  // 2) Stream-hot (freshest activity).
+  // 2) Stream-hot — hits-weighted for awakening/green_tape, freshest for mild_dip.
   if (sources.has('stream')) {
-    for (const m of mildDipHotMints.list(opts?.nowMs)) push(m);
+    const nowMs = opts?.nowMs ?? Date.now();
+    const streamMints =
+      cfg.entryMode === 'awakening' || cfg.entryMode === 'green_tape'
+        ? mildDipHotMints.listForEnrich(nowMs)
+        : mildDipHotMints.list(nowMs);
+    for (const m of streamMints) push(m);
   }
   if (sources.has('boosts')) {
     for (const m of await discoverBoostMints()) push(m);
@@ -158,6 +180,11 @@ function streamDipInBand(
   return { ok, drawdownPct: dd };
 }
 
+type EnrichRow =
+  | { kind: 'pass'; cand: MildDipCandidate }
+  | { kind: 'skip'; skip: EntrySkip }
+  | null;
+
 export async function enrichAndFilterCandidates(
   cfg: MildDipConfig,
   mints: string[],
@@ -168,7 +195,7 @@ export async function enrichAndFilterCandidates(
     /** Always enrich these even past maxEnrich (cooldown watch). */
     forceEnrich?: string[];
   },
-): Promise<MildDipCandidate[]> {
+): Promise<EnrichFilterResult> {
   const nowMs = opts?.nowMs ?? Date.now();
   const maxEnrich = opts?.maxEnrich ?? 40;
   const enrichConcurrency = opts?.enrichConcurrency ?? cfg.enrichConcurrency ?? 12;
@@ -180,50 +207,75 @@ export async function enrichAndFilterCandidates(
     if (!m || seen.has(m)) continue;
     seen.add(m);
     slice.push(m);
-    // force mints do not count against maxEnrich budget the same way —
-    // allow force + maxEnrich headroom capped at maxEnrich + force.size
     if (slice.length >= maxEnrich + force.size) break;
   }
 
   const denied = new Set(cfg.deniedMints.map((m) => m.trim()).filter(Boolean));
   const awakening = cfg.entryMode === 'awakening';
+  const greenTape = cfg.entryMode === 'green_tape';
   const awCfg = awakening ? loadAwakeningConfig() : null;
 
-  const rows = await mapPool(slice, enrichConcurrency, async (mint) => {
+  const rows = await mapPool(slice, enrichConcurrency, async (mint): Promise<EnrichRow> => {
     try {
-      if (denied.has(mint)) return null;
+      if (denied.has(mint)) {
+        return {
+          kind: 'skip',
+          skip: { mint, entryMode: cfg.entryMode, reasons: ['denied_mint'] },
+        };
+      }
+
+      const details = await fetchDexScreenerPairDetails(mint, {
+        bypassCache: true,
+        nowMs,
+      });
+      if (!details || !(details.priceUsd != null && details.priceUsd > 0)) {
+        return {
+          kind: 'skip',
+          skip: { mint, entryMode: cfg.entryMode, reasons: ['dex_miss'] },
+        };
+      }
+      mildDipPriceRing.note(mint, details.priceUsd, { tsMs: nowMs, source: 'dex' });
+
+      const pairAgeHours =
+        details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
+          ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
+          : null;
+      const metrics: MildDipCandidateMetrics = {
+        priceChange5mPct: details.priceChangeM5Pct,
+        volume5mUsd: details.volume5mUsd,
+        liquidityUsd: details.liquidityUsd,
+        marketCapUsd: details.marketCapUsd,
+        pairAgeHours,
+        dexId: details.dexId,
+      };
 
       if (awakening && awCfg) {
-        // Gated Dex fetch (shared 120 RPM) — never stampede via raw awakening HTTP.
-        const details = await fetchDexScreenerPairDetails(mint, {
-          bypassCache: true,
-          nowMs,
-        });
-        if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
-        mildDipPriceRing.note(mint, details.priceUsd, { tsMs: nowMs, source: 'dex' });
-
-        const pairAgeHours =
-          details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
-            ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
-            : null;
-        const poolAgeMin = pairAgeHours != null ? pairAgeHours * 60 : null;
-        const metrics: MildDipCandidateMetrics = {
-          priceChange5mPct: details.priceChangeM5Pct,
-          volume5mUsd: details.volume5mUsd,
-          liquidityUsd: details.liquidityUsd,
-          marketCapUsd: details.marketCapUsd,
-          pairAgeHours,
-          dexId: details.dexId,
-        };
-
         if (cfg.entry.allowedDexIds.length > 0) {
           const dex = (details.dexId ?? '').toLowerCase();
-          if (!dex || !cfg.entry.allowedDexIds.includes(dex)) return null;
+          if (!dex || !cfg.entry.allowedDexIds.includes(dex)) {
+            return {
+              kind: 'skip',
+              skip: {
+                mint,
+                entryMode: 'awakening',
+                reasons: [`dex=${details.dexId ?? 'null'}_not_allowed`],
+                metrics,
+              },
+            };
+          }
         }
-
-        // Awakening needs h6/h24 windows; if the live parse omitted them, skip.
-        if (details.volume6hUsd == null || details.volume24hUsd == null) return null;
-
+        if (details.volume6hUsd == null || details.volume24hUsd == null) {
+          return {
+            kind: 'skip',
+            skip: {
+              mint,
+              entryMode: 'awakening',
+              reasons: ['missing_vol6h_or_vol24h'],
+              metrics,
+            },
+          };
+        }
+        const poolAgeMin = pairAgeHours != null ? pairAgeHours * 60 : null;
         const market: AwakeningDexMarket = {
           mint,
           priceUsd: details.priceUsd,
@@ -244,87 +296,133 @@ export async function enrichAndFilterCandidates(
           poolAgeMin,
           fetchedAtMs: details.fetchedAtMs,
         };
-
         const verdict = evaluateAwakeningSignal(awCfg, market);
-        if (!verdict.pass) return null;
-
+        if (!verdict.pass) {
+          return {
+            kind: 'skip',
+            skip: {
+              mint,
+              entryMode: 'awakening',
+              reasons: verdict.reasons,
+              metrics,
+            },
+          };
+        }
         const score =
           (verdict.metrics.vol5mSpikeVs6hMult ?? 0) + (verdict.metrics.vol5mSpikeVs1hMult ?? 0);
-        const cand: MildDipCandidate = {
-          mint,
-          symbol: mint.slice(0, 6),
-          priceUsd: details.priceUsd,
-          metrics,
-          dipSource: 'dex',
-          entryPath: verdict.metrics.entryPath,
-          entryScore: score,
+        return {
+          kind: 'pass',
+          cand: {
+            mint,
+            symbol: mint.slice(0, 6),
+            priceUsd: details.priceUsd,
+            metrics,
+            dipSource: 'dex',
+            entryPath: verdict.metrics.entryPath,
+            entryScore: score,
+          },
         };
-        return cand;
       }
 
-      const details = await fetchDexScreenerPairDetails(mint, {
-        bypassCache: true,
-        nowMs,
-      });
-      if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
-
-      // Always record Dex mark — including during cooldown / failed gates.
-      mildDipPriceRing.note(mint, details.priceUsd, { tsMs: nowMs, source: 'dex' });
-
-      const pairAgeHours =
-        details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
-          ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
-          : null;
-
-      const metrics: MildDipCandidateMetrics = {
-        priceChange5mPct: details.priceChangeM5Pct,
-        volume5mUsd: details.volume5mUsd,
-        liquidityUsd: details.liquidityUsd,
-        marketCapUsd: details.marketCapUsd,
-        pairAgeHours,
-        dexId: details.dexId,
-      };
+      if (greenTape) {
+        const verdict = evaluateGreenTapeEntry(
+          {
+            ...metrics,
+            buys5m: details.buys5m,
+            sells5m: details.sells5m,
+          },
+          cfg.greenTape,
+        );
+        if (!verdict.pass) {
+          return {
+            kind: 'skip',
+            skip: {
+              mint,
+              entryMode: 'green_tape',
+              reasons: verdict.reasons,
+              metrics: {
+                ...metrics,
+                buySellRatio5m: verdict.buySellRatio5m,
+                turnover5m: verdict.turnover5m,
+              },
+            },
+          };
+        }
+        const score =
+          (verdict.turnover5m ?? 0) * 100 + (verdict.buySellRatio5m ?? 0) * 10;
+        return {
+          kind: 'pass',
+          cand: {
+            mint,
+            symbol: mint.slice(0, 6),
+            priceUsd: details.priceUsd,
+            metrics,
+            dipSource: 'dex',
+            entryPath: 'green_tape',
+            entryScore: score,
+          },
+        };
+      }
 
       const dexVerdict = evaluateMildDipEntry(metrics, cfg.entry);
       const stream = streamDipInBand(cfg, mint, nowMs);
-      // Structural Dex gates (liq/mcap/age/dex) must pass; dip may come from stream.
       const structuralOk = structuralGatesPass(metrics, cfg);
 
       let dipSource: MildDipCandidate['dipSource'] | null = null;
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) dipSource = 'stream';
-      else return null;
+      else {
+        return {
+          kind: 'skip',
+          skip: {
+            mint,
+            entryMode: 'mild_dip',
+            reasons: [...dexVerdict.reasons, ...(stream.ok ? [] : ['stream_dip_fail'])],
+            metrics,
+          },
+        };
+      }
 
-      const cand: MildDipCandidate = {
-        mint,
-        symbol: mint.slice(0, 6),
-        priceUsd: details.priceUsd,
-        metrics:
-          dipSource === 'stream' && stream.drawdownPct != null
-            ? { ...metrics, priceChange5mPct: stream.drawdownPct }
-            : metrics,
-        dipSource,
+      return {
+        kind: 'pass',
+        cand: {
+          mint,
+          symbol: mint.slice(0, 6),
+          priceUsd: details.priceUsd,
+          metrics:
+            dipSource === 'stream' && stream.drawdownPct != null
+              ? { ...metrics, priceChange5mPct: stream.drawdownPct }
+              : metrics,
+          dipSource,
+        },
       };
-      return cand;
-    } catch {
-      return null;
+    } catch (err) {
+      return {
+        kind: 'skip',
+        skip: {
+          mint,
+          entryMode: cfg.entryMode,
+          reasons: [`enrich_error:${err instanceof Error ? err.message : String(err)}`],
+        },
+      };
     }
   });
 
   const out: MildDipCandidate[] = [];
+  const skips: EntrySkip[] = [];
   for (const r of rows) {
-    if (r) out.push(r);
+    if (!r) continue;
+    if (r.kind === 'pass') out.push(r.cand);
+    else skips.push(r.skip);
   }
 
-  if (awakening) {
-    // Prefer stronger volume spikes first.
+  if (awakening || greenTape) {
     out.sort((a, b) => (b.entryScore ?? 0) - (a.entryScore ?? 0));
   } else {
-    // Prefer deeper mild dips first (more negative pc5m / stream drawdown).
     out.sort((a, b) => (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0));
   }
-  return out;
+  return { candidates: out, skips };
 }
 
 /** Liq / mcap / age / dex without requiring Dex pc5m. */

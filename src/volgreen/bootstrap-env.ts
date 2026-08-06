@@ -47,6 +47,13 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
     ['VOL_GREEN_DISCOVER_SOURCES', 'MILD_DIP_DISCOVER_SOURCES'],
     ['VOL_GREEN_STREAM', 'MILD_DIP_STREAM'],
     ['VOL_GREEN_MIN_FEE_SOL_RESERVE', 'MILD_DIP_MIN_FEE_SOL_RESERVE'],
+    ['VOL_GREEN_MAX_ENRICH', 'MILD_DIP_MAX_ENRICH'],
+    ['VOL_GREEN_ENRICH_BUDGET_MS', 'MILD_DIP_ENRICH_BUDGET_MS'],
+    ['VOL_GREEN_GREEN_MIN_VOLUME_5M_USD', 'MILD_DIP_GREEN_MIN_VOLUME_5M_USD'],
+    ['VOL_GREEN_GREEN_MIN_TURNOVER_5M', 'MILD_DIP_GREEN_MIN_TURNOVER_5M'],
+    ['VOL_GREEN_GREEN_MIN_BUY_SELL_5M', 'MILD_DIP_GREEN_MIN_BUY_SELL_5M'],
+    ['VOL_GREEN_GREEN_MAX_PC5M_PCT', 'MILD_DIP_GREEN_MAX_PC5M_PCT'],
+    ['VOL_GREEN_GREEN_MIN_MCAP_USD', 'MILD_DIP_GREEN_MIN_MCAP_USD'],
   ];
   for (const [from, to] of aliases) copyAlias(from, to);
 
@@ -55,7 +62,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
     env.MILD_DIP_RPC_URL = env.HELIUS_RPC_URL.trim();
   }
 
-  setIfAbsent('MILD_DIP_ENTRY_MODE', env.VOL_GREEN_ENTRY_MODE?.trim() || 'awakening');
+  // Default green_tape — leader-like green candle (awakening still available via env).
+  setIfAbsent('MILD_DIP_ENTRY_MODE', env.VOL_GREEN_ENTRY_MODE?.trim() || 'green_tape');
   setIfAbsent('MILD_DIP_APP_NAME', env.VOL_GREEN_APP_NAME?.trim() || 'vol-green-bot');
   setIfAbsent('MILD_DIP_EXECUTION_MODE', 'live');
   setIfAbsent('MILD_DIP_POSITION_USD', '5');
@@ -69,7 +77,7 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_HOT_MINTS_PATH', path.join('data', 'volgreen', 'hot-mints.json'));
   setIfAbsent('MILD_DIP_PRICE_RING_PATH', path.join('data', 'volgreen', 'price-ring.json'));
 
-  // Awakening entry ignores dip band — widen so mild-dip schema validation passes.
+  // Tape entry ignores dump dip band — widen so mild-dip schema validation passes.
   setIfAbsent('MILD_DIP_MIN_DIP_PCT', '-100');
   setIfAbsent('MILD_DIP_MAX_DIP_PCT', '100');
   setIfAbsent('MILD_DIP_STREAM_DIP_ENTRY', '0');
@@ -87,18 +95,31 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '5400000');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
-  // Stream-only universe — boosts/profiles burn Dex RPM before awakening eval.
   setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');
   setIfAbsent('MILD_DIP_STREAM', '1');
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '2');
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '16');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '25000');
+  setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
   setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');
   setIfAbsent('MILD_DIP_SLIPPAGE_BPS', '500');
-  setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '4');
+  setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '8');
   setIfAbsent('MILD_DIP_MIN_FEE_SOL_RESERVE', '0.02');
   setIfAbsent('MILD_DIP_MIN_LIQUIDITY_USD', '15000');
   setIfAbsent('MILD_DIP_MIN_VOLUME_5M_USD', '1500');
   setIfAbsent('MILD_DIP_MINT_COOLDOWN_MS', '300000');
   setIfAbsent('MILD_DIP_LOSS_COOLDOWN_MS', '600000');
+
+  // Green-tape defaults (8zkg-style).
+  setIfAbsent('MILD_DIP_GREEN_MIN_PC5M_PCT', '0');
+  setIfAbsent('MILD_DIP_GREEN_MAX_PC5M_PCT', '15');
+  setIfAbsent('MILD_DIP_GREEN_MIN_VOLUME_5M_USD', '2000');
+  setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '15000');
+  setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '50000');
+  setIfAbsent('MILD_DIP_GREEN_MIN_BUY_SELL_5M', '1');
+  setIfAbsent('MILD_DIP_GREEN_MIN_TURNOVER_5M', '0.09');
+  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.1');
+  setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '72');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;
