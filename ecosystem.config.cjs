@@ -2878,6 +2878,13 @@ const PM2_APPS = [
         MILD_DIP_SCAN_INTERVAL_MS: '5000',
         MILD_DIP_MARK_INTERVAL_MS: '2000',
         MILD_DIP_MARK_CACHE_TTL_MS: '2000',
+        /**
+         * 1.11.694 — sample each open position's mark path into the journal
+         * (peak moves + exits always, otherwise ≤1 row / 30s / mint) so trail
+         * widths can be re-fitted on our own trades. Leader-path fit says
+         * tighter is better (4% > 5% > 6% > 8%); this measures it on our tape.
+         */
+        MILD_DIP_MARK_JOURNAL_MS: '30000',
         MILD_DIP_MARK_CONCURRENCY: '48',
         MILD_DIP_ENRICH_CONCURRENCY: '12',
         MILD_DIP_SELL_CONCURRENCY: '6',

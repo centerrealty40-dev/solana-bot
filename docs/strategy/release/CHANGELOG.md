@@ -1,4 +1,40 @@
 # So
+## [1.11.694] — 2026-08-06
+
+**Тег:** `sa-1.11.694`
+
+### Add: journal the mark path of open positions (`mild_dip_mark`)
+
+Trail width could only be argued from the leader's paths, never from ours,
+because we never recorded what price did *between* entry and exit. Now each open
+position writes a `mild_dip_mark` row: every new peak, every exit, otherwise at
+most one row per 30s per mint (`MILD_DIP_MARK_JOURNAL_MS=30000`, 0 = off).
+
+Why it matters — leader giveback fit (`diag-leader-giveback-fit.json`, 114
+8zkg sessions with reconstructed 1m paths):
+
+| | all sessions | would-arm on our rule (MFE ≥ 8%), n=68 |
+| --- | ---: | ---: |
+| MFE | med 10.5% / mean 31.9% | med 20.2% / mean **51.5%** |
+| realized | med +2.2% / mean +11.2% | med +7.1% / mean +24.3% |
+| giveback from peak | med **−8.3%** | med **−9.4%** |
+| MFE capture | 35% | **47%** |
+
+His capture (47%) is barely above ours (41%) — his edge is entry selection
+(mean MFE 51.5% vs our 18.1%), not a smarter trail.
+
+Replaying W9.1 on his paths (arm 8%): giveback **4% → +6.69%/session**, 5% →
++6.05%, 6% → +5.46%, 8% → +4.44%, 15% → +3.05%. Monotone: tighter wins, and the
+6→8 widen was the wrong direction. No width reproduces him — the best captures
+60% of his PnL — so copying his −9.4% outcome giveback as a *parameter* is wrong.
+
+Not shipping a 6→4 change on that basis: it is fitted on his mints. This commit
+buys the data to fit it on ours.
+
+**Откат:** `MILD_DIP_MARK_JOURNAL_MS=0` + reload.
+
+---
+
 ## [1.11.693] — 2026-08-06
 
 **Тег:** `sa-1.11.693`

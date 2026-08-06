@@ -49,6 +49,12 @@ const MildDipConfigSchema = z.object({
   streamPriceSampleEnabled: z.boolean().default(true),
   streamPriceMinGapMs: z.coerce.number().int().min(500).max(60_000).default(2_000),
   streamPriceConcurrency: z.coerce.number().int().min(1).max(8).default(3),
+  /**
+   * Journal one `mild_dip_mark` row per open position at most this often.
+   * Gives an offline price path per trade so trail widths can be re-fitted on
+   * our own tape instead of the leader's. 0 = off.
+   */
+  markJournalMs: z.coerce.number().int().min(0).max(3_600_000).default(30_000),
   hotMintsPath: z.string().default(path.join('data', 'milddip', 'hot-mints.json')),
   priceRingPath: z.string().default(path.join('data', 'milddip', 'price-ring.json')),
   /** Telegram ALERT when mark pass / opens / null-ratio signal Dex pressure. */
@@ -190,6 +196,7 @@ export function loadMildDipConfig(): MildDipConfig {
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 2_000,
+    markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 30_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,
     enrichConcurrency: process.env.MILD_DIP_ENRICH_CONCURRENCY ?? 12,
     sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 6,
