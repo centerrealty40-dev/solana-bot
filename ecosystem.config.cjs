@@ -2845,13 +2845,12 @@ const PM2_APPS = [
         /** 0 = no max age — do not skip older pumps on mild dips. */
         MILD_DIP_MAX_PAIR_AGE_HOURS: '0',
         /**
-         * 1.11.697 — young+shallow (not a blind age ban):
-         * If pair age &lt; 6h, require pc5m ≤ −6 (deeper than global MAX_DIP=-4).
-         * Forensic 36h: cuts 3/5 rugs (−80%), ~8% OK buys, 0% leader quality dips.
-         * Blocks 36GuKd (age 2.9h, pc5m −4.36) that leaders never touched.
+         * 1.11.698 — shallow pullback on hot tape (NOT age):
+         * Reject when pc5m &gt; −5 AND vol5m ≥ $20k. 36GuKd was −4.36 / $71k;
+         * OK entry vol med ~$3.5k / p90 ~$15k. Age alone is not a scam signal.
          */
-        MILD_DIP_YOUNG_SHALLOW_MAX_AGE_HOURS: '6',
-        MILD_DIP_YOUNG_SHALLOW_MAX_DIP_PCT: '-6',
+        MILD_DIP_SHALLOW_HOT_MAX_DIP_PCT: '-5',
+        MILD_DIP_SHALLOW_HOT_MIN_VOL_5M_USD: '20000',
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',

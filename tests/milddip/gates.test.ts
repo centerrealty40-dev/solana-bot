@@ -3,7 +3,7 @@ import {
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
-  evaluateYoungShallowCombo,
+  evaluateShallowHotTape,
   type MildDipCandidateMetrics,
   type MildDipEntryGates,
   type MildDipExitGates,
@@ -12,7 +12,7 @@ import {
 function metrics(partial: Partial<MildDipCandidateMetrics>): MildDipCandidateMetrics {
   return {
     priceChange5mPct: -9.7,
-    volume5mUsd: 25_000,
+    volume5mUsd: 12_000, // normal tape — below shallow-hot floor
     liquidityUsd: 40_000,
     marketCapUsd: 400_000,
     pairAgeHours: 48,
@@ -33,8 +33,8 @@ const baseGates: MildDipEntryGates = {
   maxMarketCapUsd: 300_000_000,
   minPairAgeHours: 0.25,
   maxPairAgeHours: 72,
-  youngShallowMaxAgeHours: 6,
-  youngShallowMaxDipPct: -6,
+  shallowHotMaxDipPct: -5,
+  shallowHotMinVol5mUsd: 20_000,
   allowedDexIds: ['pumpswap', 'pumpfun'],
 };
 
@@ -78,10 +78,9 @@ describe('evaluateMildDipEntry', () => {
     expect(v.pass).toBe(false);
   });
 
-  it('accepts boundary maxDipPct = 0 on mature pairs', () => {
-    // age=48 ≥ young threshold → shallow pc5m=0 is allowed by young-shallow
+  it('accepts boundary maxDipPct = 0 on normal tape', () => {
     const v = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: 0, pairAgeHours: 48, dexId: 'pumpfun' }),
+      metrics({ priceChange5mPct: 0, dexId: 'pumpfun' }),
       baseGates,
     );
     expect(v.pass).toBe(true);
@@ -90,63 +89,63 @@ describe('evaluateMildDipEntry', () => {
   it('prod band (−20, −4]: rejects shallow flat-chop, accepts real dump', () => {
     const prod = { ...baseGates, maxDipPct: -4 };
     const shallow = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -2.5, pairAgeHours: 48 }),
+      metrics({ priceChange5mPct: -2.5 }),
       prod,
     );
     expect(shallow.pass).toBe(false);
     const dump = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -9.0, pairAgeHours: 48 }),
+      metrics({ priceChange5mPct: -9.0 }),
       prod,
     );
     expect(dump.pass).toBe(true);
     const boundary = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -4, pairAgeHours: 48 }),
+      metrics({ priceChange5mPct: -4 }),
       prod,
     );
     expect(boundary.pass).toBe(true);
   });
 });
 
-describe('evaluateYoungShallowCombo (rug unnaturalness)', () => {
-  it('blocks 36GuKd-style: age 2.9h + pc5m −4.36', () => {
-    const v = evaluateYoungShallowCombo(
-      { pairAgeHours: 2.87, priceChange5mPct: -4.36 },
-      { youngShallowMaxAgeHours: 6, youngShallowMaxDipPct: -6 },
+describe('evaluateShallowHotTape (pump-fade unnaturalness)', () => {
+  it('blocks 36GuKd-style: pc5m −4.36 + vol5m $71k', () => {
+    const v = evaluateShallowHotTape(
+      { priceChange5mPct: -4.36, volume5mUsd: 70_809 },
+      { shallowHotMaxDipPct: -5, shallowHotMinVol5mUsd: 20_000 },
     );
     expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.startsWith('young_shallow'))).toBe(true);
+    expect(v.reasons.some((r) => r.startsWith('shallow_hot_tape'))).toBe(true);
   });
 
-  it('allows deep dump on young pair (leader-like depth)', () => {
-    const v = evaluateYoungShallowCombo(
-      { pairAgeHours: 3.3, priceChange5mPct: -12 },
-      { youngShallowMaxAgeHours: 6, youngShallowMaxDipPct: -6 },
+  it('allows deep dump even on hot tape', () => {
+    const v = evaluateShallowHotTape(
+      { priceChange5mPct: -12, volume5mUsd: 70_809 },
+      { shallowHotMaxDipPct: -5, shallowHotMinVol5mUsd: 20_000 },
     );
     expect(v.pass).toBe(true);
   });
 
-  it('allows shallow dip on mature pair', () => {
-    const v = evaluateYoungShallowCombo(
-      { pairAgeHours: 49, priceChange5mPct: -4.5 },
-      { youngShallowMaxAgeHours: 6, youngShallowMaxDipPct: -6 },
+  it('allows shallow dip on normal volume (not a scam label)', () => {
+    const v = evaluateShallowHotTape(
+      { priceChange5mPct: -4.5, volume5mUsd: 3_500 },
+      { shallowHotMaxDipPct: -5, shallowHotMinVol5mUsd: 20_000 },
     );
     expect(v.pass).toBe(true);
   });
 
-  it('entry gate wires young+shallow (rejects young shallow even if global maxDip=-4)', () => {
+  it('entry gate wires shallow-hot (age irrelevant)', () => {
     const prod = { ...baseGates, maxDipPct: -4 };
     const v = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -4.36, pairAgeHours: 2.87 }),
+      metrics({ priceChange5mPct: -4.36, volume5mUsd: 70_809, pairAgeHours: 100 }),
       prod,
     );
     expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.startsWith('young_shallow'))).toBe(true);
+    expect(v.reasons.some((r) => r.startsWith('shallow_hot_tape'))).toBe(true);
   });
 
-  it('off when youngShallowMaxAgeHours=0', () => {
-    const off = { ...baseGates, maxDipPct: -4, youngShallowMaxAgeHours: 0 };
+  it('off when shallowHotMinVol5mUsd=0', () => {
+    const off = { ...baseGates, maxDipPct: -4, shallowHotMinVol5mUsd: 0 };
     const v = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -4.36, pairAgeHours: 2.87 }),
+      metrics({ priceChange5mPct: -4.36, volume5mUsd: 70_809 }),
       off,
     );
     expect(v.pass).toBe(true);
@@ -157,8 +156,8 @@ describe('evaluateMildDipPreBuy', () => {
   const band = {
     minDipPct: -20,
     maxDipPct: 0,
-    youngShallowMaxAgeHours: 6,
-    youngShallowMaxDipPct: -6,
+    shallowHotMaxDipPct: -5,
+    shallowHotMinVol5mUsd: 20_000,
   };
 
   it('passes when still in dip and mark not chasing', () => {
@@ -166,7 +165,7 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.02,
       freshPc5mPct: -8,
-      freshPairAgeHours: 48,
+      freshVolume5mUsd: 12_000,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -178,7 +177,7 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.01,
       freshPc5mPct: 2.5,
-      freshPairAgeHours: 48,
+      freshVolume5mUsd: 12_000,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -191,7 +190,7 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.06,
       freshPc5mPct: -5,
-      freshPairAgeHours: 48,
+      freshVolume5mUsd: 12_000,
       entryGates: band,
       maxChasePct: 4,
     });
@@ -204,24 +203,24 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.2,
       freshPc5mPct: -3,
-      freshPairAgeHours: 48,
+      freshVolume5mUsd: 12_000,
       entryGates: band,
       maxChasePct: 0,
     });
     expect(v.pass).toBe(true);
   });
 
-  it('rejects young+shallow at prebuy', () => {
+  it('rejects shallow-hot at prebuy', () => {
     const v = evaluateMildDipPreBuy({
       signalPriceUsd: 1,
       freshPriceUsd: 1.01,
       freshPc5mPct: -4.36,
-      freshPairAgeHours: 2.87,
+      freshVolume5mUsd: 70_809,
       entryGates: { ...band, maxDipPct: -4 },
       maxChasePct: 4,
     });
     expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.includes('young_shallow'))).toBe(true);
+    expect(v.reasons.some((r) => r.includes('shallow_hot_tape'))).toBe(true);
   });
 });
 

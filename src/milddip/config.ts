@@ -95,8 +95,8 @@ const MildDipConfigSchema = z.object({
     maxMarketCapUsd: z.number(),
     minPairAgeHours: z.number(),
     maxPairAgeHours: z.number(),
-    youngShallowMaxAgeHours: z.number(),
-    youngShallowMaxDipPct: z.number(),
+    shallowHotMaxDipPct: z.number(),
+    shallowHotMinVol5mUsd: z.number(),
     allowedDexIds: z.array(z.string()),
   }),
   exit: z.object({
@@ -158,11 +158,11 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 0 = no max age cap (older pump names like CATE still eligible). */
     maxPairAgeHours: envNum('MILD_DIP_MAX_PAIR_AGE_HOURS', 0),
     /**
-     * 1.11.697 — young+shallow: age&lt;6h requires pc5m ≤ −6 (deeper than global −4).
-     * Blocks 36GuKd-style rugs; 0% of leader quality dips in 10h diag.
+     * 1.11.698 — shallow pullback on hot tape (not age):
+     * reject pc5m &gt; −5 with vol5m ≥ $20k (36GuKd: −4.36 / $71k).
      */
-    youngShallowMaxAgeHours: envNum('MILD_DIP_YOUNG_SHALLOW_MAX_AGE_HOURS', 6),
-    youngShallowMaxDipPct: envNum('MILD_DIP_YOUNG_SHALLOW_MAX_DIP_PCT', -6),
+    shallowHotMaxDipPct: envNum('MILD_DIP_SHALLOW_HOT_MAX_DIP_PCT', -5),
+    shallowHotMinVol5mUsd: envNum('MILD_DIP_SHALLOW_HOT_MIN_VOL_5M_USD', 20_000),
     allowedDexIds,
   };
 

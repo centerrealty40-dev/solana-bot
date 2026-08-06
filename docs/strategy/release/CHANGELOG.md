@@ -1,23 +1,35 @@
 # So
+## [1.11.698] — 2026-08-06
+
+**Тег:** `sa-1.11.698`
+
+### Fix: replace young+shallow with shallow-hot-tape
+
+Age+pc5m alone is **not** a scam signal (thousands of normal coins match).
+Real unnaturalness on 36GuKd: **tiny pullback while 5m volume is still
+pump-grade** (−4.36% with vol5m $71k; OK med ~$3.5k, p90 ~$15k).
+
+- **Removed** `young_shallow` / `MILD_DIP_YOUNG_SHALLOW_*`
+- **Entry:** `shallow_hot_tape` — reject `pc5m > −5` AND `vol5m ≥ $20k`
+  (`MILD_DIP_SHALLOW_HOT_MAX_DIP_PCT` / `_MIN_VOL_5M_USD`)
+- Forensic: 1/5 rugs (the live-liq-regime case), ~0% OK, 0% leader quality
+- Keep `cliff_dump` (−50%) + enriched buy journal
+
+**Откат:** `SHALLOW_HOT_MIN_VOL_5M_USD=0`, `CLIFF_DUMP_PNL_PCT=0`.
+
+---
+
 ## [1.11.697] — 2026-08-06
 
 **Тег:** `sa-1.11.697`
 
 ### Feat: mild-dip rug unnaturalness — young+shallow + cliff + journal
 
-Leaders' quality dips are deeper (med pc5m ≈ −12) and rarely young+shallow;
-our 36h rugs clustered on age&lt;6h with shallow pc5m (e.g. CATECOIN/36GuKd
-age 2.9h, pc5m −4.36, then LP cliff −99%). Blind age&lt;6h alone is **not**
-shipped (cuts leader dips).
+*(superseded by 1.11.698 — young+shallow removed as non-signal)*
 
-- **Entry:** `young_shallow` — if `pairAgeHours &lt; 6` require `pc5m ≤ −6`
-  (env `MILD_DIP_YOUNG_SHALLOW_MAX_AGE_HOURS` / `_MAX_DIP_PCT`). Forensic:
-  3/5 rugs (−80%), ~8% OK, **0%** leader quality dips.
-- **Exit:** `cliff_dump` at mark pnl ≤ −50% (no 15m dead wait).
-- **Journal:** `mild_dip_buy_attempt` now records vol5m/1h, liq, mcap, age,
-  buys5m/sells5m, dexId (entry-time tape for next filters).
+- Entry young+shallow + exit cliff_dump + buy journal enrichment.
 
-**Откат:** set `YOUNG_SHALLOW_MAX_AGE_HOURS=0` and `CLIFF_DUMP_PNL_PCT=0`.
+**Откат:** n/a — see 1.11.698.
 
 ---
 

@@ -10,7 +10,7 @@ import type { MildDipConfig } from './config.js';
 import { mapPool } from './exit-engine.js';
 import {
   evaluateMildDipEntry,
-  evaluateYoungShallowCombo,
+  evaluateShallowHotTape,
   type MildDipCandidateMetrics,
 } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
@@ -222,12 +222,12 @@ export async function enrichAndFilterCandidates(
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) {
-        // Stream dip replaces Dex pc5m — still enforce young+shallow on that depth.
+        // Stream dip replaces Dex pc5m — still enforce shallow-hot on that depth.
         const streamMetrics: MildDipCandidateMetrics = {
           ...metrics,
           priceChange5mPct: stream.drawdownPct,
         };
-        if (!evaluateYoungShallowCombo(streamMetrics, cfg.entry).pass) return null;
+        if (!evaluateShallowHotTape(streamMetrics, cfg.entry).pass) return null;
         dipSource = 'stream';
       } else return null;
 

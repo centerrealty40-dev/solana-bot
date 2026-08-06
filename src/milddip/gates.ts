@@ -33,17 +33,15 @@ export type MildDipEntryGates = {
   minPairAgeHours: number;
   maxPairAgeHours: number;
   /**
-   * Young+shallow combo (1.11.697): when pair age &lt; this many hours, require a
-   * deeper dump than the global maxDipPct. 0 = off.
-   * Forensic 36h: age&lt;6 &amp; pc5m&gt;−6 cut 3/5 rugs (−80%), 8% of OK buys, 0% of
-   * leader quality dips — not a blind age ban.
+   * Shallow pullback on a screaming 5m tape (1.11.698). Reject when
+   * pc5m &gt; shallowHotMaxDipPct AND vol5m ≥ shallowHotMinVol5mUsd.
+   * Unnaturalness = tiny dip while volume is still pump-grade (36GuKd:
+   * pc5m −4.36 + vol5m $71k vs OK med ~$3.5k). Age alone is NOT a signal.
+   * 0 minVol = off.
    */
-  youngShallowMaxAgeHours: number;
-  /**
-   * Inclusive upper bound for pc5m when the pair is young (default −6).
-   * Reject when age &lt; youngShallowMaxAgeHours AND pc5m &gt; this value.
-   */
-  youngShallowMaxDipPct: number;
+  shallowHotMaxDipPct: number;
+  /** See shallowHotMaxDipPct. Default $20k. */
+  shallowHotMinVol5mUsd: number;
   /** Empty = any dex. */
   allowedDexIds: string[];
 };
@@ -113,27 +111,27 @@ export type MildDipGateVerdict = {
 };
 
 /**
- * Young pair + shallow 5m dip — the unnatural entry leaders skip.
- * Not a blanket age ban: deep dumps on young pairs still pass.
+ * Shallow 5m dip on an abnormally hot tape — pump-fade entry trap.
+ * Does NOT use pair age. Deep dumps on hot volume still pass.
  */
-export function evaluateYoungShallowCombo(
-  metrics: Pick<MildDipCandidateMetrics, 'priceChange5mPct' | 'pairAgeHours'>,
-  gates: Pick<MildDipEntryGates, 'youngShallowMaxAgeHours' | 'youngShallowMaxDipPct'>,
+export function evaluateShallowHotTape(
+  metrics: Pick<MildDipCandidateMetrics, 'priceChange5mPct' | 'volume5mUsd'>,
+  gates: Pick<MildDipEntryGates, 'shallowHotMaxDipPct' | 'shallowHotMinVol5mUsd'>,
 ): MildDipGateVerdict {
   const reasons: string[] = [];
-  const maxAge = gates.youngShallowMaxAgeHours;
-  if (!(maxAge > 0)) return { pass: true, reasons };
+  const minHot = gates.shallowHotMinVol5mUsd;
+  if (!(minHot > 0)) return { pass: true, reasons };
 
-  const age = metrics.pairAgeHours;
   const pc = metrics.priceChange5mPct;
-  const maxDip = gates.youngShallowMaxDipPct;
-  if (age == null || !Number.isFinite(age) || pc == null || !Number.isFinite(pc)) {
-    // Fail open on missing age/pc — structural/pc gates handle hard misses.
+  const vol = metrics.volume5mUsd;
+  const maxDip = gates.shallowHotMaxDipPct;
+  if (pc == null || !Number.isFinite(pc) || vol == null || !Number.isFinite(vol)) {
     return { pass: true, reasons };
   }
-  if (age < maxAge && pc > maxDip) {
+  // pc > maxDip ⇒ shallower than the hot-tape depth floor (e.g. −4.3 > −5).
+  if (pc > maxDip && vol >= minHot) {
     reasons.push(
-      `young_shallow age_h=${age.toFixed(2)}<${maxAge}_pc5m=${pc.toFixed(2)}>${maxDip}`,
+      `shallow_hot_tape pc5m=${pc.toFixed(2)}>${maxDip}_vol5m=${vol.toFixed(0)}>=${minHot}`,
     );
   }
   return { pass: reasons.length === 0, reasons };
@@ -191,8 +189,8 @@ export function evaluateMildDipEntry(
     }
   }
 
-  const ys = evaluateYoungShallowCombo(metrics, gates);
-  reasons.push(...ys.reasons);
+  const hot = evaluateShallowHotTape(metrics, gates);
+  reasons.push(...hot.reasons);
 
   if (gates.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();
@@ -215,10 +213,10 @@ export function evaluateMildDipPreBuy(args: {
   freshPc5mPct: number | null;
   entryGates: Pick<
     MildDipEntryGates,
-    'minDipPct' | 'maxDipPct' | 'youngShallowMaxAgeHours' | 'youngShallowMaxDipPct'
+    'minDipPct' | 'maxDipPct' | 'shallowHotMaxDipPct' | 'shallowHotMinVol5mUsd'
   >;
-  /** Pair age hours at prebuy (from pairCreatedAt); null skips young-shallow. */
-  freshPairAgeHours?: number | null;
+  /** Fresh Dex vol5m at prebuy; null skips shallow-hot check. */
+  freshVolume5mUsd?: number | null;
   /** 0 = chase check off (pc5m revalidate still runs). */
   maxChasePct: number;
 }): MildDipGateVerdict {
@@ -238,11 +236,11 @@ export function evaluateMildDipPreBuy(args: {
     );
   }
 
-  const ys = evaluateYoungShallowCombo(
-    { priceChange5mPct: freshPc5mPct, pairAgeHours: args.freshPairAgeHours ?? null },
+  const hot = evaluateShallowHotTape(
+    { priceChange5mPct: freshPc5mPct, volume5mUsd: args.freshVolume5mUsd ?? null },
     entryGates,
   );
-  for (const r of ys.reasons) reasons.push(`prebuy_${r}`);
+  for (const r of hot.reasons) reasons.push(`prebuy_${r}`);
 
   if (
     maxChasePct > 0 &&

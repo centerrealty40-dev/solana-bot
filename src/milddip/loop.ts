@@ -340,10 +340,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       });
       freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
       const freshPc = fresh?.priceChangeM5Pct ?? null;
-      const freshAgeH =
-        fresh?.pairCreatedAtMs != null && fresh.pairCreatedAtMs > 0
-          ? Math.max(0, (freshNow - fresh.pairCreatedAtMs) / 3_600_000)
-          : c.metrics.pairAgeHours;
+      const freshVol5m = fresh?.volume5mUsd ?? c.metrics.volume5mUsd;
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
@@ -351,7 +348,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         signalPriceUsd: c.priceUsd,
         freshPriceUsd: freshPx,
         freshPc5mPct: freshPc,
-        freshPairAgeHours: freshAgeH,
+        freshVolume5mUsd: freshVol5m,
         entryGates: cfg.entry,
         maxChasePct: cfg.maxChasePct,
       });
@@ -364,7 +361,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
           signalPc5m: c.metrics.priceChange5mPct,
           freshPriceUsd: freshPx,
           freshPc5m: freshPc,
-          freshPairAgeHours: freshAgeH,
+          freshVolume5mUsd: freshVol5m,
           reasons: pre.reasons,
         });
         console.log(
@@ -882,7 +879,7 @@ export async function runMildDipLoop(
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
-      `youngShallow=${cfg.entry.youngShallowMaxAgeHours}h/${cfg.entry.youngShallowMaxDipPct}% ` +
+      `shallowHot=${cfg.entry.shallowHotMaxDipPct}%/$${cfg.entry.shallowHotMinVol5mUsd} ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
