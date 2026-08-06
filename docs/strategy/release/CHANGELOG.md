@@ -1,9 +1,32 @@
 # So
+## [1.11.690] — 2026-08-06
+
+**Тег:** `sa-1.11.690`
+
+### Revert: restore never_arm_giveback patience 5m
+
+`1.11.689` disabled `MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS` (→ `0`) from journal
+averages alone, without a hold-path counterfactual. That was incorrect process:
+early giveback may cut dumps as well as cut winners.
+
+- Restore `MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS=300000` (matches Oscar hot-revert)
+- Keep max-hold 40m; armed W9.1 unchanged
+- Next knob change only after completed CF / backtest on `never_arm_giveback`
+  sells (actual vs patience=0 path)
+
+**Откат:** `MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS=0` + reload (not recommended
+until CF says so).
+
+---
+
 ## [1.11.689] — 2026-08-06
 
 **Тег:** `sa-1.11.689`
 
 ### Fix: disable never_arm_giveback (was the fake 6m time-stop)
+
+**Superseded by 1.11.690** — shipped without counterfactual; do not re-apply
+from journal averages alone.
 
 Live evidence (`Aq2idw…` + journal):
 

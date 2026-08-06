@@ -2842,13 +2842,14 @@ const PM2_APPS = [
         MILD_DIP_EXIT_ARM_PCT: '8',
         MILD_DIP_EXIT_GIVEBACK_PCT: '6',
         /**
-         * Never-armed exit:
-         * 1.11.689 — DISABLE early never_arm_giveback (patience=0). Live PnL:
-         *   never_arm_giveback avg −8.9% / hold~10m cut winners before +8% arm;
-         *   never_arm_timeout @40m ≈ flat (−0.4%). Keep only max-hold.
+         * Never-armed exit (W9.1 / leaders dump branch):
+         * patience 5m + giveback −6% from sub-arm peak (`never_arm_giveback`);
+         * else max-hold 40m (`never_arm_timeout`).
+         * 1.11.690 — restore patience after 1.11.689 disable-without-CF was
+         * hot-reverted on Oscar; keep until counterfactual decides otherwise.
          * Armed path unchanged: arm +8% → giveback −6%.
          */
-        MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
+        MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '2400000',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.

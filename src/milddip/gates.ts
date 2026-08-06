@@ -227,8 +227,8 @@ export function mfeFromEntryPct(peakPriceUsd: number, entryPriceUsd: number): nu
  * - Update running peak from entry
  * - Arm when MFE ≥ armPct
  * - Full exit when armed and giveback ≤ −givebackPct
- * - Never-armed: optional soft giveback after patienceMs (0 = off); else max-hold
- * - Live default: patience off — early never_arm_giveback was cutting before pumps
+ * - Never-armed: soft giveback after patienceMs (0 = off); else max-hold
+ * - Live default: patience 5m (spec); disable only after counterfactual evidence
  * - Loss-by-flow (realized < 0) is a valid outcome of the armed trail
  */
 export function evaluateMildDipPeakGiveback(args: {
