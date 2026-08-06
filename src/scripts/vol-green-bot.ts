@@ -95,10 +95,16 @@ async function main(): Promise<void> {
     },
   });
 
+  let rpcHost = 'rpc';
+  try {
+    rpcHost = new URL(cfg.rpcUrl).host;
+  } catch {
+    /* ignore */
+  }
   console.log(
     `[${appName()}] start mode=${cfg.executionMode} entry=${cfg.entryMode} ` +
       `positionUsd=${cfg.positionUsd} wallet=${cfg.walletPubkeyExpected ?? '?'} ` +
-      `rpc=${cfg.rpcUrl.slice(0, 48)}…`,
+      `rpcHost=${rpcHost}`,
   );
 
   await runMildDipLoop(cfg);
