@@ -701,6 +701,7 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
             mfePct: 0,
             givebackPct: 0,
             pnlPct: 0,
+            volFadeSamples: pos.volFadeSamples ?? [],
           });
         }
       }
