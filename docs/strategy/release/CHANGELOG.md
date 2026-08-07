@@ -1,5 +1,20 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.716] — 2026-08-07
+
+**Тег:** `sa-1.11.716`
+
+### Feature: force-enrich first-seen (cap 4/min) + block short-red tape
+
+- **whitedog:** never in hot at leader buy — force-enrich first stream hit,
+  capped **4/min** (probe budget +4) so Dex 120 RPM is not flooded.
+- **goon:** bought Dex pc5m=+5 on 1m reds — skip when local ring ~60s ≤0
+  (`tape_short_red` / `prebuy_short_red`).
+
+**Откат:** `FORCE_ENRICH_FIRST_SEEN_PER_MIN=0`, `GREEN_SHORT_RED_WINDOW_MS=0`.
+
+---
+
 ## [1.11.715] — 2026-08-07
 
 **Тег:** `sa-1.11.715`

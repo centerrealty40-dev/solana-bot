@@ -53,6 +53,16 @@ const MildDipConfigSchema = z.object({
    * Should be ≥ maxEnrichPerScan. Cheap prefilter so we don't gate random noise.
    */
   probeEnrichMax: z.coerce.number().int().min(1).max(120).default(48),
+  /**
+   * Cap first-seen stream mints force-enriched per rolling minute (0=off).
+   * Vol-green: 4 — catch ignition without flooding Dex 120 RPM.
+   */
+  forceEnrichFirstSeenPerMin: z.coerce.number().int().min(0).max(30).default(0),
+  /**
+   * Green-tape: block entry when local ring over this window is ≤0 (1m-red proxy).
+   * 0 = off. Default 60s.
+   */
+  greenTapeShortRedWindowMs: z.coerce.number().int().min(0).max(600_000).default(60_000),
   /** Hard wall-clock budget for one enrich pass (ms). */
   enrichBudgetMs: z.coerce.number().int().min(3_000).max(180_000).default(40_000),
   /** Parallel Jupiter sells — sole consumer can push higher. */
@@ -322,6 +332,8 @@ export function loadMildDipConfig(): MildDipConfig {
     enrichConcurrency: process.env.MILD_DIP_ENRICH_CONCURRENCY ?? 12,
     maxEnrichPerScan: process.env.MILD_DIP_MAX_ENRICH ?? 20,
     probeEnrichMax: process.env.MILD_DIP_PROBE_ENRICH_MAX ?? 48,
+    forceEnrichFirstSeenPerMin: process.env.MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN ?? 0,
+    greenTapeShortRedWindowMs: process.env.MILD_DIP_GREEN_SHORT_RED_WINDOW_MS ?? 60_000,
     enrichBudgetMs: process.env.MILD_DIP_ENRICH_BUDGET_MS ?? 40_000,
     sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 6,
     journalEntrySkips: (() => {

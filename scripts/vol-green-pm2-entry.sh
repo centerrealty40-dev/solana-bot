@@ -57,6 +57,10 @@ export MILD_DIP_ENRICH_CONCURRENCY="${MILD_DIP_ENRICH_CONCURRENCY:-4}"
 export MILD_DIP_PROBE_ENRICH_MAX="${MILD_DIP_PROBE_ENRICH_MAX:-48}"
 export MILD_DIP_MAX_ENRICH="${MILD_DIP_MAX_ENRICH:-20}"
 export MILD_DIP_ENRICH_BUDGET_MS="${MILD_DIP_ENRICH_BUDGET_MS:-40000}"
+# Force-enrich brand-new stream hits (cap/min) — race leaders without Dex flood.
+export MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN="${MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN:-4}"
+# Reject entries when local ~60s ring is red (Dex pc5m lag / dip-bot trap).
+export MILD_DIP_GREEN_SHORT_RED_WINDOW_MS="${MILD_DIP_GREEN_SHORT_RED_WINDOW_MS:-60000}"
 export MILD_DIP_JOURNAL_ENTRY_SKIPS="${MILD_DIP_JOURNAL_ENTRY_SKIPS:-1}"
 # Green-tape: liquid (fat) OR early (thin + strong buy/sell, leader-like)
 export MILD_DIP_GREEN_MIN_LIQUIDITY_USD="${MILD_DIP_GREEN_MIN_LIQUIDITY_USD:-8000}"

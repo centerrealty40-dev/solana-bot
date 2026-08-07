@@ -37,6 +37,19 @@ describe('evaluateAwakeningPreBuy', () => {
     expect(v.pass).toBe(false);
     expect(v.reasons.some((r) => r.includes('prebuy_chase'))).toBe(true);
   });
+
+  it('rejects short-ring red even when Dex pc5m still green (goon trap)', () => {
+    const v = evaluateAwakeningPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 0.99,
+      freshPc5mPct: 5.28,
+      maxChasePct: 5,
+      minFreshPc5mPct: 0,
+      shortRingPc: -3.5,
+    });
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.includes('prebuy_short_red'))).toBe(true);
+  });
 });
 
 describe('vol-green exit parity with mild-dip W9.1', () => {

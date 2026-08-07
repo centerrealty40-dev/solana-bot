@@ -16,9 +16,21 @@ export function evaluateAwakeningPreBuy(args: {
   maxChasePct: number;
   /** Fresh 5m change must be ≥ this (default 0 = not red). */
   minFreshPc5mPct: number;
+  /**
+   * Local ring % over ~60s (1m-red proxy). When set and ≤0, block — Dex pc5m
+   * can still read green on a dump (goon 16:29).
+   */
+  shortRingPc?: number | null;
 }): AwakeningPreBuyVerdict {
   const reasons: string[] = [];
-  const { signalPriceUsd, freshPriceUsd, freshPc5mPct, maxChasePct, minFreshPc5mPct } = args;
+  const {
+    signalPriceUsd,
+    freshPriceUsd,
+    freshPc5mPct,
+    maxChasePct,
+    minFreshPc5mPct,
+    shortRingPc,
+  } = args;
 
   if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
     reasons.push('prebuy_missing_price');
@@ -29,6 +41,10 @@ export function evaluateAwakeningPreBuy(args: {
     reasons.push('prebuy_missing_pc5m');
   } else if (pc < minFreshPc5mPct) {
     reasons.push(`prebuy_pc5m=${pc.toFixed(2)}<min=${minFreshPc5mPct}`);
+  }
+
+  if (shortRingPc != null && Number.isFinite(shortRingPc) && shortRingPc <= 0) {
+    reasons.push(`prebuy_short_red:ring60=${shortRingPc.toFixed(2)}<=0`);
   }
 
   if (

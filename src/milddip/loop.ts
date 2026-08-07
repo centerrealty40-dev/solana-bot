@@ -284,11 +284,18 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     cfg.entryMode === 'green_tape'
       ? priorityMintsFromPriceRingGreen(cfg, mints, nowMs, { max: 60 })
       : [];
+  const firstSeenForce =
+    tapeMode && cfg.forceEnrichFirstSeenPerMin > 0
+      ? mildDipHotMints.takeForceEnrichFirstSeen(nowMs, cfg.forceEnrichFirstSeenPerMin)
+      : [];
   const forceEnrich = tapeMode
-    ? [...new Set([...ringGreen, ...priority.slice(0, 10)])]
+    ? [...new Set([...firstSeenForce, ...ringGreen, ...priority.slice(0, 10)])]
     : priority;
   const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
-  const probeMax = tapeMode ? cfg.probeEnrichMax : 80;
+  // Probe budget grows slightly with force-first-seen so they are not crowded out.
+  const probeMax = tapeMode
+    ? Math.min(120, cfg.probeEnrichMax + firstSeenForce.length)
+    : 80;
   const enrichConcurrency = tapeMode
     ? Math.min(4, cfg.enrichConcurrency)
     : cfg.enrichConcurrency;
@@ -314,7 +321,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   if (tapeMode) {
     console.log(
       `[mild-dip] ${cfg.entryMode} enrich done universe=${mints.length} ringGreen=${ringGreen.length} ` +
-        `force=${forceEnrich.length} candidates=${candidates.length} skips=${enrichResult.skips.length} ` +
+        `firstSeen=${firstSeenForce.length} force=${forceEnrich.length} ` +
+        `candidates=${candidates.length} skips=${enrichResult.skips.length} ` +
         `ms=${Date.now() - enrichStarted} probeMax=${probeMax} evalTopN=${evalTopN}`,
     );
     if (cfg.journalEntrySkips && enrichResult.skips.length > 0) {
@@ -401,6 +409,11 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
             Math.max(cfg.greenTape.liquidMaxPc5mPct, cfg.greenTape.earlyMaxPc5mPct),
           )
         : cfg.maxChasePct;
+      const shortRedMs = cfg.greenTapeShortRedWindowMs;
+      const shortRingPc =
+        greenTapeEntry && shortRedMs > 0
+          ? mildDipPriceRing.changeFromOldestPct(c.mint, shortRedMs, freshNow)
+          : null;
       const pre =
         awakeningEntry || greenTapeEntry
           ? evaluateAwakeningPreBuy({
@@ -409,6 +422,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
               freshPc5mPct: freshPc,
               maxChasePct: chaseCap,
               minFreshPc5mPct: 0,
+              shortRingPc,
             })
           : evaluateMildDipPreBuy({
               signalPriceUsd: c.priceUsd,

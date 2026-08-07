@@ -113,6 +113,10 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '48');
   setIfAbsent('MILD_DIP_MAX_ENRICH', '20');
   setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '40000');
+  // First stream sighting → force enrich, capped (Dex ~120 RPM safe).
+  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '4');
+  // Block Dex-green / local-red (goon dip-buy).
+  setIfAbsent('MILD_DIP_GREEN_SHORT_RED_WINDOW_MS', '60000');
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
   setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');
   setIfAbsent('MILD_DIP_SLIPPAGE_BPS', '500');

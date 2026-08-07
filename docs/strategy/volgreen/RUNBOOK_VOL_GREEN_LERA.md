@@ -16,6 +16,8 @@ second giveback **−5%** sells the rest (full bag).
 **Leader catch (1.11.714):** rocket vol bypasses age; no ring on rocket; enrich
 ultra-fresh ≤20s first; age floor 0.01h; rocket pc≥12 / vol≥$10k / bs≥1.15.  
 **Trail (1.11.715):** giveback only after **MFE≥12%** (keeps arm5/gb3/50%/gb2=5).  
+**Discovery (1.11.716):** force-enrich first-seen ≤**4/min**; block if ring60s ≤0.  
+
 
 
 
