@@ -1,4 +1,35 @@
 # So
+## [1.11.725] — 2026-08-07
+
+**Тег:** `sa-1.11.725`
+
+### Ops: min mcap $15k → $50k
+
+24h closed-book floor sweep (age≥0.5h): `mcap ≥ $50k` was the only useful
+lower threshold — cut set mean ≈ −5.9% / cliff&lt;−20% ≈ 21%; keep mean lift
+≈ +0.9pp. Raising vol/liq floors alone did not help.
+
+**Live / default:** `MILD_DIP_MIN_MCAP_USD=50000` (was `15000`).
+
+**Откат:** `MILD_DIP_MIN_MCAP_USD=15000` + reload.
+
+---
+
+## [1.11.724] — 2026-08-07
+
+**Тег:** `sa-1.11.724`
+
+### Ops: min pair age 15m → 30m
+
+Closed-book age buckets: pairs younger than 0.5h had the worst med PnL and
+highest cliff (&lt;−20%) rate. Skip them at entry (discover + fast-path + gates).
+
+**Live / default:** `MILD_DIP_MIN_PAIR_AGE_HOURS=0.5` (was `0.25`).
+
+**Откат:** `MILD_DIP_MIN_PAIR_AGE_HOURS=0.25` + reload.
+
+---
+
 ## [1.11.723] — 2026-08-07
 
 **Тег:** `sa-1.11.723`
