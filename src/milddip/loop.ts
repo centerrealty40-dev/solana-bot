@@ -319,15 +319,19 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     forceEnrich,
   });
   const enrichBudgetMs = tapeMode ? cfg.enrichBudgetMs : 120_000;
-  const enrichResult = await Promise.race([
-    enrichPromise,
-    sleep(enrichBudgetMs).then(() => {
-      console.warn(
-        `[mild-dip] enrich budget exceeded (${enrichBudgetMs}ms) entryMode=${cfg.entryMode} — continuing`,
-      );
-      return { candidates: [], skips: [] as EntrySkip[] };
-    }),
-  ]);
+  // Do not discard in-flight enrich on timeout (empty race was wiping all candidates).
+  let enrichResult: Awaited<typeof enrichPromise> | null = null;
+  const enrichDone = enrichPromise.then((r) => {
+    enrichResult = r;
+    return r;
+  });
+  await Promise.race([enrichDone, sleep(enrichBudgetMs)]);
+  if (!enrichResult) {
+    console.warn(
+      `[mild-dip] enrich still running after ${enrichBudgetMs}ms entryMode=${cfg.entryMode} — awaiting finish`,
+    );
+    enrichResult = await enrichDone;
+  }
   const candidates = enrichResult.candidates;
   if (tapeMode) {
     console.log(

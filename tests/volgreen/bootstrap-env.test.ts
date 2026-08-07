@@ -72,10 +72,10 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M).toBe('1.1');
     expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.01');
     expect(process.env.MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS).toBe('0');
-    expect(process.env.MILD_DIP_MAX_ENRICH).toBe('16');
-    expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('28');
+    expect(process.env.MILD_DIP_MAX_ENRICH).toBe('14');
+    expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('20');
     expect(process.env.MILD_DIP_ENRICH_CONCURRENCY).toBe('10');
-    expect(process.env.MILD_DIP_ENRICH_BUDGET_MS).toBe('12000');
+    expect(process.env.MILD_DIP_ENRICH_BUDGET_MS).toBe('15000');
     expect(process.env.MILD_DIP_SCAN_INTERVAL_MS).toBe('2000');
   });
 

@@ -110,12 +110,13 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM', '1');
   // Fast tape loop: was conc=4 / probe=48 / scan=5s → enrich 25–40s lag vs leaders.
   setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '10');
-  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '28');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '16');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '12000');
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '20');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '14');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '15000');
   setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '2000');
-  // First stream sighting → force enrich, capped (Dex ~120 RPM safe).
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '6');
+  setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '180');
+  setIfAbsent('DEXSCREENER_MAX_RPM', '180');
   // Block Dex-green / local-red (goon dip-buy).
   setIfAbsent('MILD_DIP_GREEN_SHORT_RED_WINDOW_MS', '60000');
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
