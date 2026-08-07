@@ -21,10 +21,19 @@ export type MildDipCandidate = {
   priceUsd: number;
   metrics: MildDipCandidateMetrics;
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
-  dipSource: 'dex' | 'stream' | 'dex+stream';
+  dipSource: 'dex' | 'stream' | 'dex+stream' | 'leader_h1_red_shallow';
 };
 
 const SOLANA_CHAIN = 'solana';
+const QUOTE_MINTS = new Set([
+  'So11111111111111111111111111111111111111112',
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+]);
+
+let leaderCacheFetchedAtMs = 0;
+let leaderCacheMints: string[] = [];
+const recentLeaderBuyMints = new Set<string>();
 
 async function fetchJson(url: string): Promise<unknown> {
   const { fetch } = await import('undici');
@@ -34,6 +43,79 @@ async function fetchJson(url: string): Promise<unknown> {
   });
   if (!res.ok) return null;
   return res.json();
+}
+
+async function rpcJson(url: string, method: string, params: unknown[]): Promise<unknown> {
+  const { fetch } = await import('undici');
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+    signal: AbortSignal.timeout(10_000),
+  });
+  if (!res.ok) return null;
+  const j = (await res.json()) as { result?: unknown; error?: unknown };
+  if (j.error) return null;
+  return j.result ?? null;
+}
+
+function uiTokenAmount(raw: unknown): number {
+  if (!raw || typeof raw !== 'object') return 0;
+  const v = ((raw as { uiTokenAmount?: { uiAmount?: unknown } }).uiTokenAmount ?? {}).uiAmount;
+  const n = Number(v ?? 0);
+  return Number.isFinite(n) ? n : 0;
+}
+
+async function discoverLeaderBuyMints(cfg: MildDipConfig, nowMs: number): Promise<string[]> {
+  if (cfg.leaderSourceWallets.length === 0 || !cfg.rpcUrl) return [];
+  if (nowMs - leaderCacheFetchedAtMs < cfg.leaderSourceCacheMs) return leaderCacheMints;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const cutoffSec = Math.floor((nowMs - cfg.leaderSourceLookbackMs) / 1000);
+  for (const leader of cfg.leaderSourceWallets) {
+    const sigs = (await rpcJson(cfg.rpcUrl, 'getSignaturesForAddress', [leader, { limit: 30 }])) as
+      | Array<{ signature?: string; blockTime?: number }>
+      | null;
+    if (!Array.isArray(sigs)) continue;
+    for (const s of sigs) {
+      if (!s?.signature || !s.blockTime || s.blockTime < cutoffSec) continue;
+      const tx = (await rpcJson(cfg.rpcUrl, 'getTransaction', [
+        s.signature,
+        { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0, commitment: 'confirmed' },
+      ])) as Record<string, unknown> | null;
+      const meta = tx?.meta as
+        | { err?: unknown; preTokenBalances?: unknown[]; postTokenBalances?: unknown[] }
+        | undefined;
+      if (!meta || meta.err) continue;
+      const byKey = new Map<string, { pre?: unknown; post?: unknown }>();
+      for (const b of meta.preTokenBalances ?? []) {
+        if ((b as { owner?: string }).owner !== leader) continue;
+        const key = `${(b as { accountIndex?: unknown }).accountIndex}:${(b as { mint?: unknown }).mint}`;
+        byKey.set(key, { pre: b });
+      }
+      for (const b of meta.postTokenBalances ?? []) {
+        if ((b as { owner?: string }).owner !== leader) continue;
+        const key = `${(b as { accountIndex?: unknown }).accountIndex}:${(b as { mint?: unknown }).mint}`;
+        const v = byKey.get(key) ?? {};
+        v.post = b;
+        byKey.set(key, v);
+      }
+      for (const v of byKey.values()) {
+        const b = (v.post ?? v.pre) as { mint?: string } | undefined;
+        const mint = b?.mint;
+        if (!mint || QUOTE_MINTS.has(mint)) continue;
+        const delta = uiTokenAmount(v.post) - uiTokenAmount(v.pre);
+        if (delta <= 0 || seen.has(mint)) continue;
+        seen.add(mint);
+        out.push(mint);
+      }
+    }
+  }
+  leaderCacheFetchedAtMs = nowMs;
+  leaderCacheMints = out;
+  recentLeaderBuyMints.clear();
+  for (const mint of out) recentLeaderBuyMints.add(mint);
+  return out;
 }
 
 function mintFromBoostOrProfile(row: unknown): string | null {
@@ -157,6 +239,9 @@ export async function collectCandidateMints(
   if (sources.has('stream')) {
     for (const m of mildDipHotMints.list(opts?.nowMs)) push(m);
   }
+  if (sources.has('leaders')) {
+    for (const m of await discoverLeaderBuyMints(cfg, opts?.nowMs ?? Date.now())) push(m);
+  }
   if (sources.has('boosts')) {
     for (const m of await discoverBoostMints()) push(m);
   }
@@ -240,18 +325,32 @@ export async function enrichAndFilterCandidates(
         buys5m: details.buys5m,
         sells5m: details.sells5m,
         volume1hUsd: details.volume1hUsd,
+        priceChange1hPct: details.priceChangeH1Pct,
       };
 
       const dexVerdict = evaluateMildDipEntry(metrics, cfg.entry);
       const stream = streamDipInBand(cfg, mint, nowMs);
       // Structural Dex gates (liq/mcap/age/dex) must pass; dip may come from stream.
       const structuralOk = structuralGatesPass(metrics, cfg);
+      const leaderH1RedShallowOk =
+        cfg.leaderShallowH1RedEnabled &&
+        recentLeaderBuyMints.has(mint) &&
+        structuralOk &&
+        metrics.priceChange1hPct != null &&
+        Number.isFinite(metrics.priceChange1hPct) &&
+        metrics.priceChange1hPct <= cfg.leaderShallowH1MaxPct &&
+        metrics.priceChange5mPct != null &&
+        Number.isFinite(metrics.priceChange5mPct) &&
+        metrics.priceChange5mPct > cfg.leaderShallowMinDipPct &&
+        metrics.priceChange5mPct <= cfg.leaderShallowMaxDipPct;
 
       let dipSource: MildDipCandidate['dipSource'] | null = null;
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) {
         dipSource = 'stream';
+      } else if (leaderH1RedShallowOk) {
+        dipSource = 'leader_h1_red_shallow';
       } else return null;
 
       return {

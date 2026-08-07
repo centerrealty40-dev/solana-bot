@@ -2943,7 +2943,15 @@ const PM2_APPS = [
         LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'medium',
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.00005',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
-        MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
+        MILD_DIP_DISCOVER_SOURCES: 'stream,leaders,boosts,profiles',
+        MILD_DIP_LEADER_SOURCE_WALLETS:
+          '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+        MILD_DIP_LEADER_SOURCE_LOOKBACK_MS: '900000',
+        MILD_DIP_LEADER_SOURCE_CACHE_MS: '15000',
+        MILD_DIP_LEADER_SHALLOW_H1_RED_ENABLED: '1',
+        MILD_DIP_LEADER_SHALLOW_H1_MAX_PCT: '-15',
+        MILD_DIP_LEADER_SHALLOW_MIN_DIP_PCT: '-10',
+        MILD_DIP_LEADER_SHALLOW_MAX_DIP_PCT: '-3',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
