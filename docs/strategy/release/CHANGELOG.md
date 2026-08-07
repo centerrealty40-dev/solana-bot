@@ -1,4 +1,28 @@
 # So
+## [1.11.711] — 2026-08-07
+
+**Тег:** `sa-1.11.711`
+
+### Fix: kill fast-path 15s soft-skip + stop stream-only −5% noise
+
+`softSkipCooldownMs: 15_000` after failed Jupiter buy (e.g. impact 2.26%>2%)
+did **not** protect Helius WS — only delayed the next Jupiter quote while the
+dump ran +10%. HYMQdB: first quote ~+3% → ban 15s → fill +12%.
+
+Gs2Liw (`5ohFi7…`): `lane=fast` `dipSource=stream` pc5m=−5.2% — edge of
+main band, not a dump (stale leader seed ~58m).
+
+**Changes:**
+1. `MILD_DIP_FAST_PATH_SOFT_SKIP_MS=0` (was hardcoded 15s).
+2. Buy impact gate **3%** (was 2%) so 2.26% quotes fill.
+3. Stream-only main band must be ≤ **−10%** (`STREAM_ONLY_MAX_DIP_PCT`);
+   Dex / dex+stream still allow −5.
+
+**Откат:** `MILD_DIP_FAST_PATH_SOFT_SKIP_MS=15000` +
+`LIVE_BUY_MAX_PRICE_IMPACT_PCT=2` + `MILD_DIP_STREAM_ONLY_MAX_DIP_PCT=-5` + reload.
+
+---
+
 ## [1.11.710] — 2026-08-07
 
 **Тег:** `sa-1.11.710`
