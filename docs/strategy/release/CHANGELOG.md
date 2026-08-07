@@ -1,4 +1,24 @@
 # So
+## [1.11.720] — 2026-08-07
+
+**Тег:** `sa-1.11.720`
+
+### Fix: second clip (mild_stabilize scale-in) on open book every scan
+
+`9nXkTP` / `5vuKy3b`: after first $5, another knife + stabilize qualified for
+the second clip, but scale-in never ran — open mints were only probed when they
+reappeared on leader seeds / hot stream.
+
+**Changes:**
+1. `tryEntries` always scans `state.open` for mild_stabilize scale-in (before
+   slot-cap early return).
+2. Open-book `mildStabilizeOnly` no longer consumes hot Dex-probe budget.
+3. Open marks warm fast-path structural cache for scale-in.
+
+**Откат:** revert loop/fast-path scale-in scan + reload.
+
+---
+
 ## [1.11.719] — 2026-08-07
 
 **Тег:** `sa-1.11.719`

@@ -16,6 +16,7 @@ import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   evaluateFastPathCandidate,
   fastPathChasePct,
+  noteStructuralCache,
 } from './fast-path.js';
 import {
   applyMarkDecisionToPosition,
@@ -115,10 +116,34 @@ async function markPriceUsd(
       ? { cacheTtlMs, bypassCache: false }
       : { bypassCache: true }),
   });
-  const volume5mUsd = details?.volume5mUsd ?? null;
-  const px = details?.priceUsd;
+  if (!details) return { px: null, volume5mUsd: null };
+  const volume5mUsd = details.volume5mUsd ?? null;
+  const px = details.priceUsd;
   if (px != null && px > 0) {
     mildDipPriceRing.note(mint, px, { tsMs: nowMs, source: 'dex' });
+    // Keep fast-path structural cache warm for open-book scale-in
+    // (mild_stabilize) so tryEntries does not wait on hot-probe budget.
+    const pairAgeHours =
+      details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
+        ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
+        : null;
+    noteStructuralCache(
+      mint,
+      px,
+      {
+        priceChange5mPct: details.priceChangeM5Pct,
+        volume5mUsd: details.volume5mUsd,
+        liquidityUsd: details.liquidityUsd,
+        marketCapUsd: details.marketCapUsd,
+        pairAgeHours,
+        dexId: details.dexId,
+        buys5m: details.buys5m,
+        sells5m: details.sells5m,
+        volume1hUsd: details.volume1hUsd,
+        priceChange1hPct: details.priceChangeH1Pct,
+      },
+      nowMs,
+    );
     return { px, volume5mUsd };
   }
   return { px: null, volume5mUsd };
@@ -327,6 +352,16 @@ async function tryFastPathForMint(
 }
 
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
+  // Open-book scale-in (second $5 mild_stabilize clip) must run even when the
+  // mint is quiet (not in leader seeds / hot stream) and when free slots are 0.
+  // 9nXkTP / 5vuKy3b: dump→bounce after entry never evaluated — open mint was
+  // only probed if it reappeared on leader/hot.
+  if (cfg.fastPathEnabled && cfg.mildStabilizeEnabled) {
+    for (const mint of Object.keys(state.open)) {
+      await tryFastPathForMint(cfg, state, mint, 'scan', nowMs);
+    }
+  }
+
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
@@ -339,12 +374,15 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     });
     for (const mint of leaders) {
       if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+      // Open mints already handled above for scale-in.
+      if (state.open[mint]) continue;
       await tryFastPathForMint(cfg, state, mint, 'leader', nowMs);
     }
     // Hot stream mints — prefer in-band stream drawdown, but still Dex-probe
     // when the ring has no dd yet (do not wait for a leader seed).
     for (const mint of mildDipHotMints.list(nowMs).slice(0, 40)) {
       if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+      if (state.open[mint]) continue;
       await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
     }
   }
