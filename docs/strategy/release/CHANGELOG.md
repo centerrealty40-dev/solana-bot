@@ -1,4 +1,23 @@
 # So
+## [1.11.721] — 2026-08-07
+
+**Тег:** `sa-1.11.721`
+
+### Fix: scale-in must avg-down (reject same-price second clip)
+
+`HuZ2yj` / `5HaLZz` → `4CCSBX`: open-book scan fired scale-in ~29s later on the
+**same** dump that bought the first clip — fill ≈ first entry.
+
+**Guards:**
+1. Scale-in trough must form **after** `openedAtMs`.
+2. Mark/fill must stay ≥ `SCALE_IN_MIN_DUMP_BELOW_ENTRY` % below first entry
+   (avg-down), not reclaim to the first print.
+3. Recheck after prebuy fresh mark.
+
+**Откат:** revert mild-stabilize scale-in guards + reload.
+
+---
+
 ## [1.11.720] — 2026-08-07
 
 **Тег:** `sa-1.11.720`

@@ -274,6 +274,7 @@ export async function evaluateFastPathCandidate(
   let mildDumpPct: number | null = null;
   let mildBouncePct: number | null = null;
   let mildTrough: number | null = null;
+  let mildTroughAtMs: number | null = null;
   if ((!dipSource || mildStabilizeOnly) && cfg.mildStabilizeEnabled) {
     const mild = evaluateMildStabilizeFromRing(mildDipPriceRing, mint, nowMs, {
       enabled: true,
@@ -290,6 +291,7 @@ export async function evaluateFastPathCandidate(
       mildDumpPct = mild.dumpPct;
       mildBouncePct = mild.bouncePct;
       mildTrough = mild.troughPriceUsd;
+      mildTroughAtMs = mild.troughAtMs;
       if (mild.lastPriceUsd != null && mild.lastPriceUsd > 0) priceUsd = mild.lastPriceUsd;
       if (mild.dumpPct != null) {
         metrics = { ...metrics, priceChange5mPct: mild.dumpPct };
@@ -325,6 +327,7 @@ export async function evaluateFastPathCandidate(
           mildStabilizeDumpPct: mildDumpPct,
           mildStabilizeBouncePct: mildBouncePct,
           mildStabilizeTroughPriceUsd: mildTrough,
+          mildStabilizeTroughAtMs: mildTroughAtMs,
         }
       : {}),
   };
