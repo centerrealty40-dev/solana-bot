@@ -13,6 +13,9 @@ Env:
   LEADER_OBSERVER_POLL_SEC  — default 15
   LEADER_OBSERVER_LOOKBACK_SEC — ignore older sigs (default 900)
   LEADER_OBSERVER_MAX_HOURS — 0 = run forever (default 72)
+  LEADER_OBSERVER_SEED_PATH — sidecar for mild-dip discover (default <out>/leader-seed.json)
+  LEADER_OBSERVER_SEED_MAX  — max mints in sidecar (default 40)
+  LEADER_OBSERVER_SEED_MAX_AGE_SEC — drop older seed hits (default 7200)
 """
 
 from __future__ import annotations
@@ -216,6 +219,10 @@ class Observer:
         self.poll_sec = max(5, int(env_num("LEADER_OBSERVER_POLL_SEC", 15)))
         self.lookback_sec = max(60, int(env_num("LEADER_OBSERVER_LOOKBACK_SEC", 900)))
         self.max_hours = env_num("LEADER_OBSERVER_MAX_HOURS", 72)
+        seed_env = os.environ.get("LEADER_OBSERVER_SEED_PATH", "").strip()
+        self.seed_path = Path(seed_env) if seed_env else self.out_dir / "leader-seed.json"
+        self.seed_max = max(1, int(env_num("LEADER_OBSERVER_SEED_MAX", 40)))
+        self.seed_max_age_sec = max(60, int(env_num("LEADER_OBSERVER_SEED_MAX_AGE_SEC", 7200)))
         self.state_path = self.out_dir / "leader-observer-state.json"
         self.seen: set[str] = set()
         self._load_state()
@@ -250,6 +257,52 @@ class Observer:
         payload.setdefault("iso", utc_iso())
         with self.out_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    def upsert_seed(self, mint: str, leader: str, signature: str, ts_ms: int) -> None:
+        """Atomic sidecar for mild-dip `leaders` discover source — no Dex fan-out."""
+        hits: list[dict[str, Any]] = []
+        try:
+            raw = json.loads(self.seed_path.read_text(encoding="utf-8"))
+            if isinstance(raw.get("hits"), list):
+                hits = list(raw["hits"])
+        except Exception:
+            hits = []
+        cutoff = ts_ms - self.seed_max_age_sec * 1000
+        by_mint: dict[str, dict[str, Any]] = {}
+        for h in hits:
+            if not isinstance(h, dict):
+                continue
+            m = str(h.get("mint") or "")
+            last = h.get("lastSeenAtMs")
+            if len(m) < 32 or not isinstance(last, (int, float)):
+                continue
+            if int(last) < cutoff:
+                continue
+            by_mint[m] = {
+                "mint": m,
+                "lastSeenAtMs": int(last),
+                "leader": h.get("leader"),
+                "signature": h.get("signature"),
+            }
+        prev = by_mint.get(mint) or {}
+        by_mint[mint] = {
+            "mint": mint,
+            "lastSeenAtMs": max(int(prev.get("lastSeenAtMs") or 0), ts_ms),
+            "leader": leader,
+            "signature": signature,
+        }
+        merged = sorted(
+            by_mint.values(),
+            key=lambda x: int(x.get("lastSeenAtMs") or 0),
+            reverse=True,
+        )[: self.seed_max]
+        self.seed_path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = self.seed_path.with_suffix(f".tmp.{os.getpid()}.{ts_ms}")
+        tmp.write_text(
+            json.dumps({"updatedAtMs": ts_ms, "hits": merged}, ensure_ascii=False) + "\n",
+            encoding="utf-8",
+        )
+        tmp.replace(self.seed_path)
 
     def observe_leader(self, leader: str) -> None:
         sigs = rpc_call(self.rpc, "getSignaturesForAddress", [leader, {"limit": 40}]) or []
@@ -295,6 +348,7 @@ class Observer:
                 dex = fetch_dex(mint)
                 pc = (dex or {}).get("pc5m") if isinstance(dex, dict) else None
                 gates = gate_fit(dex if isinstance(dex, dict) else None)
+                ts_ms = int(time.time() * 1000)
                 self.emit(
                     {
                         "kind": "leader_buy_observed",
@@ -309,6 +363,16 @@ class Observer:
                         "gates": gates,
                     }
                 )
+                try:
+                    self.upsert_seed(mint, leader, sig, ts_ms)
+                except Exception as e:
+                    self.emit(
+                        {
+                            "kind": "leader_observer_seed_error",
+                            "mint": mint,
+                            "error": str(e)[:200],
+                        }
+                    )
 
     def run(self) -> None:
         end = None if self.max_hours <= 0 else time.time() + self.max_hours * 3600
@@ -317,6 +381,7 @@ class Observer:
                 "kind": "leader_observer_start",
                 "leaders": self.leaders,
                 "outPath": str(self.out_path),
+                "seedPath": str(self.seed_path),
                 "pollSec": self.poll_sec,
                 "lookbackSec": self.lookback_sec,
                 "maxHours": self.max_hours,
@@ -324,7 +389,7 @@ class Observer:
         )
         print(
             f"[leader-observer] start leaders={len(self.leaders)} out={self.out_path} "
-            f"poll={self.poll_sec}s maxHours={self.max_hours}",
+            f"seed={self.seed_path} poll={self.poll_sec}s maxHours={self.max_hours}",
             flush=True,
         )
         while end is None or time.time() < end:

@@ -77,9 +77,24 @@ const MildDipConfigSchema = z.object({
   lossCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(150),
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
-  /** Candidate mint sources: comma list — stream,boosts,profiles,seed */
+  /**
+   * Candidate mint sources: comma list —
+   * stream,boosts,profiles,leaders,pg_volume,gecko,seed
+   */
   discoverSources: z.string().default('stream,boosts,profiles'),
   seedMintsPath: z.string().optional(),
+  /** Sidecar written by leader-observer (`leader_buy_observed` → seed). */
+  leaderSeedPath: z.string().default(path.join('data', 'milddip', 'leader-seed.json')),
+  leaderSeedMaxAgeMs: z.coerce.number().int().min(60_000).max(86_400_000).default(7_200_000),
+  leaderSeedMax: z.coerce.number().int().min(0).max(80).default(40),
+  /** PumpSwap PG top-vol seed (freshness-gated; soft-fail). */
+  pgVolumeMax: z.coerce.number().int().min(0).max(80).default(30),
+  pgVolumeCacheMs: z.coerce.number().int().min(15_000).max(600_000).default(60_000),
+  pgVolumeLookbackMin: z.coerce.number().int().min(2).max(60).default(10),
+  /** GeckoTerminal trending pools seed. */
+  geckoMax: z.coerce.number().int().min(0).max(80).default(25),
+  geckoCacheMs: z.coerce.number().int().min(30_000).max(600_000).default(120_000),
+  geckoPages: z.coerce.number().int().min(1).max(2).default(1),
   /** Autonomous branch: red 1h context permits shallower red 5m pullbacks. */
   h1RedShallowEnabled: z.boolean().default(false),
   h1RedShallowH1MaxPct: z.coerce.number().max(0).default(-15),
@@ -266,6 +281,17 @@ export function loadMildDipConfig(): MildDipConfig {
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
+    leaderSeedPath:
+      process.env.MILD_DIP_LEADER_SEED_PATH?.trim() ||
+      path.join('data', 'milddip', 'leader-seed.json'),
+    leaderSeedMaxAgeMs: process.env.MILD_DIP_LEADER_SEED_MAX_AGE_MS ?? 7_200_000,
+    leaderSeedMax: process.env.MILD_DIP_LEADER_SEED_MAX ?? 40,
+    pgVolumeMax: process.env.MILD_DIP_PG_VOLUME_MAX ?? 30,
+    pgVolumeCacheMs: process.env.MILD_DIP_PG_VOLUME_CACHE_MS ?? 60_000,
+    pgVolumeLookbackMin: process.env.MILD_DIP_PG_VOLUME_LOOKBACK_MIN ?? 10,
+    geckoMax: process.env.MILD_DIP_GECKO_MAX ?? 25,
+    geckoCacheMs: process.env.MILD_DIP_GECKO_CACHE_MS ?? 120_000,
+    geckoPages: process.env.MILD_DIP_GECKO_PAGES ?? 1,
     h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
     h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
