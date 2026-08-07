@@ -2969,6 +2969,14 @@ const PM2_APPS = [
         /** Stream-only main band must be ≤ −10% (Dex confirm still allows −5). */
         MILD_DIP_STREAM_ONLY_MAX_DIP_PCT: '-10',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
+        /**
+         * 1.11.713 — Dex-probe stream-hot mints even when local ring dd is
+         * outside main band (throttled). Without this, Dex dumps only wake
+         * via leader-seed (Agmu8X: 8zkg −31s, our fill on leader path).
+         */
+        MILD_DIP_FAST_PATH_HOT_DEX_PROBE_ENABLED: '1',
+        MILD_DIP_FAST_PATH_HOT_DEX_PROBE_GAP_MS: '10000',
+        MILD_DIP_FAST_PATH_HOT_DEX_PROBE_MAX_PER_MIN: '40',
         MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '500',
         MILD_DIP_STREAM_PRICE_CONCURRENCY: '6',
         /**
