@@ -71,6 +71,14 @@ const MildDipConfigSchema = z.object({
   lossCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(150),
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
+  /**
+   * Periodic USDC→native SOL top-up when fee SOL wallet value is below floor.
+   * Default on: check every 6h; if SOL &lt; $5, buy $20 SOL.
+   */
+  feeSolTopupEnabled: z.boolean().default(true),
+  feeSolTopupIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(21_600_000),
+  feeSolTopupMinUsd: z.coerce.number().min(0).max(1_000).default(5),
+  feeSolTopupBuyUsd: z.coerce.number().positive().max(500).default(20),
   /** Candidate mint sources: comma list — stream,boosts,profiles,seed */
   discoverSources: z.string().default('stream,boosts,profiles'),
   seedMintsPath: z.string().optional(),
@@ -237,6 +245,14 @@ export function loadMildDipConfig(): MildDipConfig {
     lossCooldownMs: process.env.MILD_DIP_LOSS_COOLDOWN_MS ?? 600_000,
     slippageBps: process.env.MILD_DIP_SLIPPAGE_BPS ?? 150,
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
+    feeSolTopupEnabled: (() => {
+      const v = process.env.MILD_DIP_FEE_SOL_TOPUP?.trim().toLowerCase();
+      if (!v) return true;
+      return v === '1' || v === 'true' || v === 'yes';
+    })(),
+    feeSolTopupIntervalMs: process.env.MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS ?? 21_600_000,
+    feeSolTopupMinUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_MIN_USD ?? 5,
+    feeSolTopupBuyUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_BUY_USD ?? 20,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
     streamEnabled: (() => {

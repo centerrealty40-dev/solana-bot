@@ -2949,6 +2949,14 @@ const PM2_APPS = [
         LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'medium',
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.00005',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
+        /**
+         * 1.11.704 — if native SOL value < $5, Jupiter-swap $20 USDC→SOL.
+         * Checked at most once per 6h (also runs soon after process start).
+         */
+        MILD_DIP_FEE_SOL_TOPUP: '1',
+        MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS: '21600000',
+        MILD_DIP_FEE_SOL_TOPUP_MIN_USD: '5',
+        MILD_DIP_FEE_SOL_TOPUP_BUY_USD: '20',
         MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',

@@ -40,6 +40,7 @@ import {
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
+import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 
@@ -952,6 +953,9 @@ export async function runMildDipLoop(
       `lookback=${cfg.cooldownBounceLookbackMs}ms ` +
       `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +
       `lossCooldown=${Math.round(cfg.lossCooldownMs / 1000)}s ` +
+      `feeSolTopup=${cfg.feeSolTopupEnabled ? 1 : 0}` +
+      `/every${Math.round(cfg.feeSolTopupIntervalMs / 3_600_000)}h` +
+      `/min$${cfg.feeSolTopupMinUsd}/buy$${cfg.feeSolTopupBuyUsd} ` +
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 
@@ -966,6 +970,13 @@ export async function runMildDipLoop(
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+
+    // Fee SOL top-up (interval-gated inside helper; first check ASAP after start).
+    try {
+      await maybeTopUpFeeSol(cfg, nowMs);
+    } catch (err) {
+      console.warn('[mild-dip] fee-sol topup tick failed', err);
+    }
 
     // Respect markInterval (previously `|| openCount>0` hammered Dex every tick).
     if (openCount(state) > 0 && nowMs - lastMark >= cfg.markIntervalMs) {

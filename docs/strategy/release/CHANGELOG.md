@@ -1,4 +1,27 @@
 # So
+## [1.11.704] — 2026-08-07
+
+**Тег:** `sa-1.11.704`
+
+### Ops: mild-dip fee SOL auto top-up (6h / &lt;$5 → $20)
+
+Live wallet hit `insufficient_fee_sol` (~0.018 SOL &lt; 0.02 reserve) with
+plenty of USDC — entries blocked for hours. Add a periodic check:
+
+- every **6h** (also soon after process start)
+- if native SOL value **&lt; $5**, Jupiter-swap **$20 USDC → native SOL**
+  (`wrapAndUnwrapSol`)
+
+**Env:**
+`MILD_DIP_FEE_SOL_TOPUP=1`
+`MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS=21600000`
+`MILD_DIP_FEE_SOL_TOPUP_MIN_USD=5`
+`MILD_DIP_FEE_SOL_TOPUP_BUY_USD=20`
+
+**Откат:** `MILD_DIP_FEE_SOL_TOPUP=0` + reload.
+
+---
+
 ## [1.11.703] — 2026-08-06
 
 **Тег:** `sa-1.11.703`
