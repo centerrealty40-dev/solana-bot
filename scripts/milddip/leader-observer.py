@@ -193,7 +193,7 @@ def gate_fit(d: dict[str, Any] | None) -> dict[str, Any]:
         and h1_f is not None
         and pc_f is not None
         and h1_f <= -15
-        and -10 < pc_f <= -3
+        and -10 < pc_f <= -2
     )
     knife = bool(structural and pc_f is not None and -50 < pc_f <= -20)
     return {

@@ -12,6 +12,7 @@ import {
   priorityMintsFromCooldown,
   priorityMintsFromKnifeWatch,
   priorityMintsFromPriceRingDip,
+  priorityMintsFromRecentTrades,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
@@ -274,13 +275,19 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const priority = priorityMintsFromCooldown(state.cooldownUntilMs, nowMs, {
     postCooldownMs: 120_000,
   });
+  const recentTraded = priorityMintsFromRecentTrades(state.cooldownUntilMs, nowMs, {
+    watchMs: 6 * 3_600_000,
+    max: 40,
+  });
   const knifePriority = priorityMintsFromKnifeWatch(state.knifeWatch);
   const mints = await collectCandidateMints(cfg, {
-    priorityMints: [...priority, ...knifePriority],
+    priorityMints: [...priority, ...knifePriority, ...recentTraded],
     nowMs,
   });
   const ringDipPriority = priorityMintsFromPriceRingDip(cfg, mints, nowMs, { max: 80 });
-  const forceEnrich = [...new Set([...priority, ...knifePriority, ...ringDipPriority])];
+  const forceEnrich = [
+    ...new Set([...priority, ...knifePriority, ...recentTraded, ...ringDipPriority]),
+  ];
   const enrichPass = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
     maxEnrich: 80,
@@ -360,6 +367,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     let entryPc5m = c.metrics.priceChange5mPct;
     let freshPx: number | null = c.priceUsd;
     const isKnife = c.dipSource === 'knife_stabilize';
+    const isH1Shallow = c.dipSource === 'h1_red_shallow';
     if (cfg.preBuyRevalidate) {
       const freshNow = Date.now();
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
@@ -368,25 +376,55 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       });
       freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
       const freshPc = fresh?.priceChangeM5Pct ?? null;
+      const freshH1 = fresh?.priceChangeH1Pct ?? null;
       const freshVol5m = fresh?.volume5mUsd ?? c.metrics.volume5mUsd;
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
-      const pre = isKnife
-        ? evaluateKnifeStabilizePreBuy({
-            signalPriceUsd: c.priceUsd,
-            freshPriceUsd: freshPx,
-            troughPriceUsd: c.knifeWatch?.troughPriceUsd ?? null,
-            maxChasePct: cfg.maxChasePct,
-            maxBouncePct: cfg.knifeStabilizeMaxBouncePct,
-          })
-        : evaluateMildDipPreBuy({
-            signalPriceUsd: c.priceUsd,
-            freshPriceUsd: freshPx,
-            freshPc5mPct: freshPc,
-            entryGates: cfg.entry,
-            maxChasePct: cfg.maxChasePct,
-          });
+      let pre: { pass: boolean; reasons: string[] };
+      if (isKnife) {
+        pre = evaluateKnifeStabilizePreBuy({
+          signalPriceUsd: c.priceUsd,
+          freshPriceUsd: freshPx,
+          troughPriceUsd: c.knifeWatch?.troughPriceUsd ?? null,
+          maxChasePct: cfg.maxChasePct,
+          maxBouncePct: cfg.knifeStabilizeMaxBouncePct,
+        });
+      } else if (isH1Shallow) {
+        // Prebuy must use the shallow band — main (-20,-10] would kill every hit.
+        pre = evaluateMildDipPreBuy({
+          signalPriceUsd: c.priceUsd,
+          freshPriceUsd: freshPx,
+          freshPc5mPct: freshPc,
+          entryGates: {
+            minDipPct: cfg.h1RedShallowMinDipPct,
+            maxDipPct: cfg.h1RedShallowMaxDipPct,
+          },
+          maxChasePct: cfg.maxChasePct,
+        });
+        if (
+          pre.pass &&
+          (freshH1 == null ||
+            !Number.isFinite(freshH1) ||
+            freshH1 > cfg.h1RedShallowH1MaxPct)
+        ) {
+          pre = {
+            pass: false,
+            reasons: [
+              ...(pre.reasons ?? []),
+              `prebuy_pc1h=${freshH1 ?? 'null'}_above_${cfg.h1RedShallowH1MaxPct}`,
+            ],
+          };
+        }
+      } else {
+        pre = evaluateMildDipPreBuy({
+          signalPriceUsd: c.priceUsd,
+          freshPriceUsd: freshPx,
+          freshPc5mPct: freshPc,
+          entryGates: cfg.entry,
+          maxChasePct: cfg.maxChasePct,
+        });
+      }
       if (!pre.pass) {
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_prebuy_skip',

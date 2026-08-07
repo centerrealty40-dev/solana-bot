@@ -84,7 +84,7 @@ const MildDipConfigSchema = z.object({
   h1RedShallowEnabled: z.boolean().default(false),
   h1RedShallowH1MaxPct: z.coerce.number().max(0).default(-15),
   h1RedShallowMinDipPct: z.coerce.number().default(-10),
-  h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-3),
+  h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-2),
   /**
    * Deep knife (−50, −20]: wait, then buy only on stabilize / controlled bounce.
    * Ecosystem enables for live mild-dip-bot.
@@ -269,7 +269,7 @@ export function loadMildDipConfig(): MildDipConfig {
     h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
     h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
-    h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -3),
+    h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -2),
     knifeStabilizeEnabled: envBool('MILD_DIP_KNIFE_STABILIZE_ENABLED', false),
     knifeStabilizeMinDipPct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT', -50),
     knifeStabilizeMaxDipPct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT', -20),

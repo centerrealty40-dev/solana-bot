@@ -114,6 +114,28 @@ export function priorityMintsFromCooldown(
 }
 
 /**
+ * Keep recently traded mints in the enrich universe even after stream hot-list
+ * TTL (15m) forgets them. Dex volume alone never seeds discovery — only stream
+ * hits / boosts / profiles do — so liquid names we already know must be pinned.
+ */
+export function priorityMintsFromRecentTrades(
+  cooldownUntilMs: Record<string, number>,
+  nowMs: number,
+  opts?: { watchMs?: number; max?: number },
+): string[] {
+  const watchMs = Math.max(0, opts?.watchMs ?? 6 * 3_600_000);
+  const max = Math.max(0, Math.floor(opts?.max ?? 40));
+  const rows: Array<{ mint: string; until: number }> = [];
+  for (const [mint, until] of Object.entries(cooldownUntilMs)) {
+    if (!mint || mint.length < 32 || typeof until !== 'number') continue;
+    // `until` is cooldown-end; treat it as last-touch proxy for ~watchMs after.
+    if (until >= nowMs - watchMs) rows.push({ mint, until });
+  }
+  rows.sort((a, b) => b.until - a.until);
+  return rows.slice(0, max).map((r) => r.mint);
+}
+
+/**
  * Mints whose local price-ring already shows an entry-band drawdown should not
  * lose the Dex enrich budget just because newer noisy mints arrived later.
  */

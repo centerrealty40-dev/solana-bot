@@ -2961,7 +2961,7 @@ const PM2_APPS = [
         MILD_DIP_H1_RED_SHALLOW_ENABLED: '1',
         MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT: '-15',
         MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT: '-10',
-        MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-3',
+        MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-2',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
