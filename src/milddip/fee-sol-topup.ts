@@ -1,7 +1,7 @@
 /**
  * Periodic native-SOL fee top-up for mild-dip.
  *
- * Every `feeSolTopupIntervalMs` (default 6h): if native SOL wallet value is
+ * Every `feeSolTopupIntervalMs` (default 30m): if native SOL wallet value is
  * below `feeSolTopupMinUsd` (default $5), swap `feeSolTopupBuyUsd` (default $20)
  * USDC → native SOL via Jupiter (`wrapAndUnwrapSol: true`).
  *
@@ -82,10 +82,10 @@ export function decideFeeSolTopup(args: {
 
 /**
  * Non-blocking fee-SOL top-up.
- * Healthy path: at most one check per `feeSolTopupIntervalMs` (default 6h).
+ * Healthy path: at most one check per `feeSolTopupIntervalMs` (default 30m).
  * Urgent path: if native SOL < minFeeSolReserve or value < minUsd, bypass the
- * 6h gate (60s gap) — otherwise a start-time "ok" bricks buys for hours while
- * failed sells drain fee SOL (Cg1h 2026-08-07 miss).
+ * interval (60s gap) — otherwise a start-time "ok" can still brick buys while
+ * fee SOL drains between checks.
  */
 export async function maybeTopUpFeeSol(
   cfg: MildDipConfig,
