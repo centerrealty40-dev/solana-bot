@@ -128,7 +128,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // Green-tape floors loosened for micro-cap verticals (CHiHkQx: mcap~$20k, liq null/$9k).
   setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '8000');
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '18000');
-  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.05');
+  // 7BNaxx peanut: leader bought ~1–2 min age; 0.05h (3m) blocked us.
+  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.02');
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '72');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '5');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2000');
@@ -147,11 +148,12 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', '25');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', '18000');
   // Rocket: keep path, raise tape floors (vol/bs/turnover) — don't trust score.
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '15');
+  // Rocket: leader-like verticals (peanut bs~1.16, age~1–2m).
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '12');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', '0');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '12000');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.25');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.35');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '10000');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.2');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.15');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '18000');
 }
 

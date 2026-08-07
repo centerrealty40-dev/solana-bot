@@ -1,5 +1,20 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.713] — 2026-08-07
+
+**Тег:** `sa-1.11.713`
+
+### Tune: catch 7BNaxx-style early rockets (peanut)
+
+`7A8tFf…peanut` 16:12: saw mint, skipped `age_h<0.05` then `rocket:bs<1.35`
+while leader bought (5m ~+77%). Lower green min age **0.05→0.02h**; rocket
+bs **1.35→1.15**, vol **12k→10k**, turnover **0.25→0.2**, min pc **15→12**.
+Keep liquid mid-band + never_arm_stale.
+
+**Откат:** age 0.05, rocket bs 1.35 / vol 12k / to 0.25 / pc 15.
+
+---
+
 ## [1.11.712] — 2026-08-07
 
 **Тег:** `sa-1.11.712`

@@ -99,7 +99,32 @@ describe('evaluateGreenTapeEntry', () => {
         buys5m: 98,
         sells5m: 66,
       },
-      { ...gates, rocketMinVolume5mUsd: 12_000, rocketMinBuySellRatio5m: 1.35, rocketMinTurnover5m: 0.25 },
+      { ...gates, rocketMinVolume5mUsd: 10_000, rocketMinBuySellRatio5m: 1.15, rocketMinTurnover5m: 0.2 },
+    );
+    expect(v.pass).toBe(true);
+    expect(v.path).toBe('rocket');
+  });
+
+  it('passes 7BNaxx peanut-shaped early rocket (age~0.02h, bs~1.16, huge vol)', () => {
+    const v = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 28.9,
+        volume5mUsd: 24_374,
+        liquidityUsd: 13_094,
+        marketCapUsd: 39_660,
+        pairAgeHours: 0.022,
+        dexId: 'pumpswap',
+        buys5m: 123,
+        sells5m: 106, // bs≈1.16
+      },
+      {
+        ...gates,
+        minPairAgeHours: 0.02,
+        rocketMinPc5mPct: 12,
+        rocketMinVolume5mUsd: 10_000,
+        rocketMinBuySellRatio5m: 1.15,
+        rocketMinTurnover5m: 0.2,
+      },
     );
     expect(v.pass).toBe(true);
     expect(v.path).toBe('rocket');
