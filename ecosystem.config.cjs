@@ -2833,6 +2833,19 @@ const PM2_APPS = [
          * 36h CF vs 8zkg dumps: MAX=-4 → dump recall ~83%, cuts ~47% after-flat buys.
          */
         MILD_DIP_MAX_DIP_PCT: '-4',
+        /**
+         * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
+         * trough or starts a controlled bounce (not the falling blade).
+         */
+        MILD_DIP_KNIFE_STABILIZE_ENABLED: '1',
+        MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT: '-50',
+        MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT: '-20',
+        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '120000',
+        MILD_DIP_KNIFE_STABILIZE_MAX_WATCH_MS: '600000',
+        MILD_DIP_KNIFE_STABILIZE_QUIET_MS: '45000',
+        MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
+        MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
+        MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         MILD_DIP_MIN_VOLUME_5M_USD: '1500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
