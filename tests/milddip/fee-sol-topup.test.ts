@@ -40,6 +40,16 @@ describe('decideFeeSolTopup', () => {
     expect(d).toEqual({ action: 'skip', reason: 'interval' });
   });
 
+  it('urgent bypasses 6h interval when fee SOL is already low', () => {
+    const d = decideFeeSolTopup({
+      ...base,
+      lastCheckAtMs: 50_000_000,
+      nowMs: 50_000_000 + 3_600_000,
+      urgent: true,
+    });
+    expect(d.action).toBe('topup');
+  });
+
   it('allows check when interval elapsed', () => {
     const d = decideFeeSolTopup({
       ...base,
