@@ -22,6 +22,14 @@ export type GreenTapeGates = {
   liquidMinVolume5mUsd: number;
   liquidMinBuySellRatio5m: number;
   liquidMinTurnover5m: number;
+  /**
+   * Mid-band liquid (pc5m in (lo, hi]) — 8h RCA: 10–25% was false-green noise.
+   * When `liquidMidMinBuySellRatio5m` > 0, require stronger bs/turnover in-band.
+   */
+  liquidMidPc5mLo: number;
+  liquidMidPc5mHi: number;
+  liquidMidMinBuySellRatio5m: number;
+  liquidMidMinTurnover5m: number;
 
   /** Early path (thin aggressive green). */
   earlyMinPc5mPct: number;
@@ -100,8 +108,13 @@ function pathReasons(
   }
 
   if (g.minTurnover > 0) {
-    if (turnover5m == null) reasons.push('turnover_unknown');
-    else if (turnover5m < g.minTurnover) {
+    if (turnover5m == null) {
+      // Dex often omits liq on vertical pumpswap → turnover unknown; allow when
+      // absolute vol already clears this path's minVol (rocket / mid still gated by bs).
+      const liqMissing = metrics.liquidityUsd == null || !Number.isFinite(metrics.liquidityUsd);
+      const volOk = v != null && Number.isFinite(v) && v >= g.minVol;
+      if (!(liqMissing && volOk)) reasons.push('turnover_unknown');
+    } else if (turnover5m < g.minTurnover) {
       reasons.push(`turnover_5m=${turnover5m.toFixed(3)}<${g.minTurnover}`);
     }
   }
@@ -215,6 +228,34 @@ export function evaluateGreenTapeEntry(
   for (const { name, g } of paths) {
     const fail = pathReasons(metrics, g, buySellRatio5m, turnover5m);
     if (fail.length === 0) {
+      // Liquid mid-band (false-green zone): demand hotter tape, not just pc5m.
+      if (name === 'liquid' && gates.liquidMidMinBuySellRatio5m > 0) {
+        const pc = metrics.priceChange5mPct;
+        const lo = gates.liquidMidPc5mLo;
+        const hi =
+          gates.liquidMidPc5mHi > 0 ? gates.liquidMidPc5mHi : gates.liquidMaxPc5mPct;
+        if (pc != null && pc > lo && (hi <= 0 || pc <= hi)) {
+          const midFail: string[] = [];
+          if (buySellRatio5m == null) midFail.push('mid_buy_sell_unknown');
+          else if (buySellRatio5m < gates.liquidMidMinBuySellRatio5m) {
+            midFail.push(
+              `mid_buy_sell_5m=${buySellRatio5m.toFixed(2)}<${gates.liquidMidMinBuySellRatio5m}`,
+            );
+          }
+          if (gates.liquidMidMinTurnover5m > 0) {
+            if (turnover5m == null) midFail.push('mid_turnover_unknown');
+            else if (turnover5m < gates.liquidMidMinTurnover5m) {
+              midFail.push(
+                `mid_turnover_5m=${turnover5m.toFixed(3)}<${gates.liquidMidMinTurnover5m}`,
+              );
+            }
+          }
+          if (midFail.length > 0) {
+            for (const r of midFail) failParts.push(`liquid:${r}`);
+            continue;
+          }
+        }
+      }
       return {
         pass: true,
         reasons: [],

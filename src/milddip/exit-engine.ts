@@ -27,6 +27,7 @@ const STICKY_REASONS: ReadonlySet<string> = new Set([
   'never_arm_giveback',
   'never_arm_dead',
   'never_arm_vol_fade',
+  'never_arm_stale',
   'never_arm_timeout',
 ]);
 

@@ -1,5 +1,21 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.712] — 2026-08-07
+
+**Тег:** `sa-1.11.712`
+
+### Fix: cut false-green noise (liquid mid / never_arm_stale / rocket floors)
+
+8h RCA: never_arm exits mean −26%; liquid pc5m 10–25 worst; MFE&lt;5% = 100% losses.
+
+1. Liquid mid-band (10–25): require bs≥1.4 + turnover≥0.18 + ring≥8%.
+2. `never_arm_stale`: unarmed + MFE&lt;4% after 75s → full exit (before vol_fade).
+3. Rocket kept; floors vol≥$12k / bs≥1.35 / turnover≥0.25; no rocket score boost.
+
+**Откат:** mid bs=0, stale ms=0, rocket vol 8k / bs 1.15 / to 0.
+
+---
+
 ## [1.11.711] — 2026-08-07
 
 **Тег:** `sa-1.11.711`

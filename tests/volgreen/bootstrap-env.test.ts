@@ -16,6 +16,9 @@ const KEYS = [
   'MILD_DIP_EXIT_SECOND_GIVEBACK_PCT',
   'MILD_DIP_QUOTE_PREMIUM_GUARD_PCT',
   'LIVE_BUY_MAX_PRICE_IMPACT_PCT',
+  'MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS',
+  'MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M',
+  'MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD',
   'MILD_DIP_MAX_ENRICH',
   'MILD_DIP_PROBE_ENRICH_MAX',
   'VOL_GREEN_POSITION_USD',
@@ -51,6 +54,9 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_EXIT_SECOND_GIVEBACK_PCT).toBe('5');
     expect(process.env.MILD_DIP_QUOTE_PREMIUM_GUARD_PCT).toBe('12');
     expect(process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT).toBe('2');
+    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS).toBe('75000');
+    expect(process.env.MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M).toBe('1.4');
+    expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD).toBe('12000');
     expect(process.env.MILD_DIP_MAX_ENRICH).toBe('20');
     expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('48');
   });

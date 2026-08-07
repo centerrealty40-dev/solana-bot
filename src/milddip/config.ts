@@ -149,6 +149,9 @@ const MildDipConfigSchema = z.object({
     neverArmVolFadeRatio: z.coerce.number().min(0).max(10).default(0.35),
     /** Exit when vol5m ≤ this USD floor (0=off). Default 500. */
     neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(500),
+    /** False-green cut: unarmed + low MFE after this ms (0=off). */
+    neverArmStaleMinMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+    neverArmStaleMaxMfePct: z.coerce.number().min(0).max(100).default(0),
   }),
   /** Leader-like green candle gates — liquid OR early OR rocket. */
   greenTape: z.object({
@@ -163,6 +166,10 @@ const MildDipConfigSchema = z.object({
     liquidMinVolume5mUsd: z.number(),
     liquidMinBuySellRatio5m: z.number(),
     liquidMinTurnover5m: z.number(),
+    liquidMidPc5mLo: z.number(),
+    liquidMidPc5mHi: z.number(),
+    liquidMidMinBuySellRatio5m: z.number(),
+    liquidMidMinTurnover5m: z.number(),
     earlyMinPc5mPct: z.number(),
     earlyMaxPc5mPct: z.number(),
     earlyMinVolume5mUsd: z.number(),
@@ -244,6 +251,9 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 600_000),
     neverArmVolFadeRatio: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', 0.35),
     neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 500),
+    /** 0 = off (Oscar). Vol-green enables ~75s / MFE&lt;4%. */
+    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 0),
+    neverArmStaleMaxMfePct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', 0),
   };
 
   const entryModeRaw = (process.env.MILD_DIP_ENTRY_MODE ?? 'mild_dip').trim().toLowerCase();
@@ -268,6 +278,11 @@ export function loadMildDipConfig(): MildDipConfig {
     liquidMinVolume5mUsd: envNum('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', 2_000),
     liquidMinBuySellRatio5m: envNum('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', 1),
     liquidMinTurnover5m: envNum('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', 0.09),
+    // Mid-band extras (0 bs = disabled). Vol-green sets lo/hi + stricter bs/turnover.
+    liquidMidPc5mLo: envNum('MILD_DIP_GREEN_LIQUID_MID_PC5M_LO', 10),
+    liquidMidPc5mHi: envNum('MILD_DIP_GREEN_LIQUID_MID_PC5M_HI', 25),
+    liquidMidMinBuySellRatio5m: envNum('MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M', 0),
+    liquidMidMinTurnover5m: envNum('MILD_DIP_GREEN_LIQUID_MID_MIN_TURNOVER_5M', 0),
     // Early thin aggressive green (leader / Ef4E8v shape).
     earlyMinPc5mPct: envNum('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', 5),
     earlyMaxPc5mPct: envNum('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', 25),

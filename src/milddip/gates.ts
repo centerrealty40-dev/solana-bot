@@ -80,6 +80,13 @@ export type MildDipExitGates = {
   neverArmVolFadeRatio: number;
   /** Exit when vol5m ≤ this absolute USD floor regardless of ratio. 0 = disabled. */
   neverArmVolFadeFloorUsd: number;
+  /**
+   * Fast cut for false greens: still unarmed after this many ms and MFE below
+   * `neverArmStaleMaxMfePct` → `never_arm_stale`. 0 = off (Oscar default).
+   */
+  neverArmStaleMinMs: number;
+  /** See neverArmStaleMinMs (e.g. 4 = exit if MFE still &lt; 4% after stale window). */
+  neverArmStaleMaxMfePct: number;
 };
 
 export type MildDipGateVerdict = {
@@ -243,6 +250,7 @@ export type MildDipExitReason =
   | 'never_arm_giveback'
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
+  | 'never_arm_stale'
   | 'never_arm_timeout'
   | null;
 
@@ -371,8 +379,23 @@ export function evaluateMildDipPeakGiveback(args: {
   }
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
-  // Order: optional soft giveback (usually OFF) → deep-loss dead cut → max-hold ceiling.
+  // Order: stale false-green cut → soft giveback → dead → vol-fade → max-hold.
   if (!armed) {
+    const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
+    const staleMfe = gates.neverArmStaleMaxMfePct > 0 ? gates.neverArmStaleMaxMfePct : 0;
+    if (staleMin > 0 && staleMfe > 0 && heldMs >= staleMin && mfePct < staleMfe - 1e-9) {
+      return {
+        peakPriceUsd,
+        mfePct,
+        givebackPct,
+        armed,
+        justArmed,
+        shouldExit: true,
+        reason: 'never_arm_stale',
+        pnlPct,
+        sellFraction: 1,
+      };
+    }
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (patience > 0 && heldMs >= patience && givebackHit) {
       return {

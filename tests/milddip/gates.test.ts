@@ -31,6 +31,8 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeMinMs: 600_000,
   neverArmVolFadeRatio: 0.35,
   neverArmVolFadeFloorUsd: 500,
+  neverArmStaleMinMs: 0,
+  neverArmStaleMaxMfePct: 0,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -440,6 +442,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmVolFadeMinMs: 0,
       neverArmVolFadeRatio: 0,
       neverArmVolFadeFloorUsd: 0,
+  neverArmStaleMinMs: 0,
+  neverArmStaleMaxMfePct: 0,
     };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -450,6 +454,36 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 3_600_000,
     });
     expect(v.shouldExit).toBe(false);
+  });
+
+  it('never_arm_stale cuts false green before vol_fade window', () => {
+    const staleGates: MildDipExitGates = {
+      ...exitGates,
+      armPct: 5,
+      neverArmStaleMinMs: 75_000,
+      neverArmStaleMaxMfePct: 4,
+      neverArmVolFadeMinMs: 600_000,
+    };
+    const early = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 102,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: staleGates,
+      heldMs: 30_000,
+    });
+    expect(early.shouldExit).toBe(false);
+
+    const cut = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 102,
+      peakPriceUsd: 102, // MFE=2% < 4%
+      armed: false,
+      gates: staleGates,
+      heldMs: 75_000,
+    });
+    expect(cut.shouldExit).toBe(true);
+    expect(cut.reason).toBe('never_arm_stale');
   });
 
   it('vol-green ladder: arm 5 / giveback 3 peels 50%, then −5% dumps the rest', () => {

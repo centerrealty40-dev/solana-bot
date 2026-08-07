@@ -439,6 +439,20 @@ export async function enrichAndFilterCandidates(
           cfg.greenTape.liquidMinPc5mPct,
           cfg.greenTape.earlyMinPc5mPct,
         );
+        // Liquid mid-band (pc5m 10–25 noise): demand stronger local ring green.
+        const pc5m = metrics.priceChange5mPct;
+        const midLo = cfg.greenTape.liquidMidPc5mLo;
+        const midHi =
+          cfg.greenTape.liquidMidPc5mHi > 0
+            ? cfg.greenTape.liquidMidPc5mHi
+            : cfg.greenTape.liquidMaxPc5mPct;
+        const liquidMid =
+          verdict.path === 'liquid' &&
+          cfg.greenTape.liquidMidMinBuySellRatio5m > 0 &&
+          pc5m != null &&
+          pc5m > midLo &&
+          (midHi <= 0 || pc5m <= midHi);
+        const ringFloor = liquidMid ? Math.max(minRingPc, 8) : minRingPc;
         // Rockets are often first-seen with a single Dex probe sample — don't
         // demand ring history when tape already shows extreme vol/turnover.
         if (ringPc == null && verdict.path !== 'rocket') {
@@ -456,14 +470,14 @@ export async function enrichAndFilterCandidates(
             },
           };
         }
-        if (ringPc != null && !(ringPc > minRingPc)) {
+        if (ringPc != null && !(ringPc > ringFloor)) {
           return {
             kind: 'skip',
             skip: {
               mint,
               entryMode: 'green_tape',
               reasons: [
-                `ring_not_green:ringPc=${ringPc.toFixed(2)}<=${minRingPc}`,
+                `ring_not_green:ringPc=${ringPc.toFixed(2)}<=${ringFloor}`,
                 `dex_pc5m=${metrics.priceChange5mPct ?? 'n/a'}`,
               ],
               metrics: {
@@ -474,8 +488,8 @@ export async function enrichAndFilterCandidates(
             },
           };
         }
-        const pathBonus =
-          verdict.path === 'rocket' ? 15 : verdict.path === 'early' ? 5 : 0;
+        // Prefer tape quality over path label (8h RCA: high score ≠ edge).
+        const pathBonus = verdict.path === 'early' ? 5 : 0;
         const score =
           (verdict.turnover5m ?? 0) * 100 +
           (verdict.buySellRatio5m ?? 0) * 10 +

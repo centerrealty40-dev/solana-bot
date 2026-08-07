@@ -14,6 +14,10 @@ const gates: GreenTapeGates = {
   liquidMinVolume5mUsd: 2_000,
   liquidMinBuySellRatio5m: 1,
   liquidMinTurnover5m: 0.09,
+  liquidMidPc5mLo: 10,
+  liquidMidPc5mHi: 25,
+  liquidMidMinBuySellRatio5m: 0,
+  liquidMidMinTurnover5m: 0,
   earlyMinPc5mPct: 5,
   earlyMaxPc5mPct: 25,
   earlyMinVolume5mUsd: 400,
@@ -95,10 +99,49 @@ describe('evaluateGreenTapeEntry', () => {
         buys5m: 98,
         sells5m: 66,
       },
-      gates,
+      { ...gates, rocketMinVolume5mUsd: 12_000, rocketMinBuySellRatio5m: 1.35, rocketMinTurnover5m: 0.25 },
     );
     expect(v.pass).toBe(true);
     expect(v.path).toBe('rocket');
+  });
+
+  it('rejects liquid mid-band (pc5m 10–25) without hotter bs/turnover', () => {
+    const midOn: GreenTapeGates = {
+      ...gates,
+      liquidMidMinBuySellRatio5m: 1.4,
+      liquidMidMinTurnover5m: 0.18,
+    };
+    const weak = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 14,
+        volume5mUsd: 8_000,
+        liquidityUsd: 40_000,
+        marketCapUsd: 200_000,
+        pairAgeHours: 6,
+        dexId: 'pumpswap',
+        buys5m: 40,
+        sells5m: 35, // bs≈1.14 < 1.4
+      },
+      midOn,
+    );
+    expect(weak.pass).toBe(false);
+    expect(weak.reasons.some((r) => r.includes('mid_buy_sell'))).toBe(true);
+
+    const strong = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 14,
+        volume5mUsd: 12_000,
+        liquidityUsd: 40_000,
+        marketCapUsd: 200_000,
+        pairAgeHours: 6,
+        dexId: 'pumpswap',
+        buys5m: 70,
+        sells5m: 40, // bs=1.75, turnover=0.3
+      },
+      midOn,
+    );
+    expect(strong.pass).toBe(true);
+    expect(strong.path).toBe('liquid');
   });
 
   it('rejects weak green pc5m<=5', () => {

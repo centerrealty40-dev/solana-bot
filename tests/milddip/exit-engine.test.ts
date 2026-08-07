@@ -49,6 +49,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmVolFadeMinMs: 600_000,
     neverArmVolFadeRatio: 0.35,
     neverArmVolFadeFloorUsd: 500,
+  neverArmStaleMinMs: 0,
+  neverArmStaleMaxMfePct: 0,
   };
 
   it('updates peak and arms without exiting', () => {

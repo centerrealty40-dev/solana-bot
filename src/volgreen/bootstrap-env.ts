@@ -98,6 +98,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', '0.35');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', '500');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '5400000');
+  // False-green cut: unarmed + MFE<4% after 75s → never_arm_stale.
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '75000');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '4');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
   setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');
@@ -132,17 +135,23 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', '0.09');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', '1');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', '20');
+  // Mid-band liquid 10–25: demand hotter bs/turnover (8h false-green RCA).
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_PC5M_LO', '10');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_PC5M_HI', '25');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M', '1.4');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_MIN_TURNOVER_5M', '0.18');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '5');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_VOLUME_5M_USD', '400');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', '0.02');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', '2');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', '25');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', '18000');
+  // Rocket: keep path, raise tape floors (vol/bs/turnover) — don't trust score.
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '15');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', '0');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '8000');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.15');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '12000');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.25');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.35');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '18000');
 }
 
