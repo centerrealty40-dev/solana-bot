@@ -24,6 +24,9 @@ floors (liq/mcap/h1 band) unchanged from 1.11.707.
 **Откат:** `MILD_DIP_DISCOVER_SOURCES=stream,boosts,profiles` + reload
 `mild-dip-bot` (observer can stay).
 
+Boosts/profiles/list fetches soft-fail on timeout so one Dex/Gecko blip cannot
+abort the whole scan tick.
+
 ---
 
 ## [1.11.707] — 2026-08-07
