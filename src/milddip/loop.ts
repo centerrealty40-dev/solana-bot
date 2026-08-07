@@ -848,39 +848,42 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
 
     const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
     const maxHold = cfg.exit.neverArmMaxHoldMs > 0 ? cfg.exit.neverArmMaxHoldMs : 0;
+    const absMaxHold = cfg.exit.maxHoldMs > 0 ? cfg.exit.maxHoldMs : 0;
     const deadMin = cfg.exit.neverArmDeadMinMs > 0 ? cfg.exit.neverArmDeadMinMs : 0;
 
     /**
-     * Null Dex mark must NOT skip never-arm ceilings — a delisted mint can
+     * Null Dex mark must NOT skip hold ceilings — a delisted mint can
      * otherwise sit forever. Force-exit without needing a real mark.
+     * Absolute maxHold applies even when trail is armed (vol-green spikes).
      */
     if (px == null) {
-      if (pos.trailArmed !== true) {
-        let forceReason: 'never_arm_timeout' | 'never_arm_dead' | null = null;
+      let forceReason: 'never_arm_timeout' | 'never_arm_dead' | 'max_hold_timeout' | null = null;
+      if (absMaxHold > 0 && heldMs >= absMaxHold) forceReason = 'max_hold_timeout';
+      else if (pos.trailArmed !== true) {
         if (maxHold > 0 && heldMs >= maxHold) forceReason = 'never_arm_timeout';
         else if (deadMin > 0 && heldMs >= deadMin) forceReason = 'never_arm_dead';
-        if (forceReason) {
-          const syn =
-            pos.peakPriceUsd != null && pos.peakPriceUsd > 0
-              ? pos.peakPriceUsd
-              : pos.entryPriceUsd;
-          console.warn(
-            `[mild-dip] force-exit ${pos.symbol} mint=${mint.slice(0, 8)}… reason=${forceReason} (null mark, held=${Math.round(heldMs / 1000)}s)`,
-          );
-          toSell.push({
-            mint,
-            markPriceUsd: syn,
-            peakPriceUsd: syn,
-            armed: false,
-            justArmed: false,
-            shouldExit: true,
-            reason: forceReason,
-            mfePct: 0,
-            givebackPct: 0,
-            pnlPct: 0,
-            sellFraction: 1,
-          });
-        }
+      }
+      if (forceReason) {
+        const syn =
+          pos.peakPriceUsd != null && pos.peakPriceUsd > 0
+            ? pos.peakPriceUsd
+            : pos.entryPriceUsd;
+        console.warn(
+          `[mild-dip] force-exit ${pos.symbol} mint=${mint.slice(0, 8)}… reason=${forceReason} (null mark, held=${Math.round(heldMs / 1000)}s)`,
+        );
+        toSell.push({
+          mint,
+          markPriceUsd: syn,
+          peakPriceUsd: syn,
+          armed: pos.trailArmed === true,
+          justArmed: false,
+          shouldExit: true,
+          reason: forceReason,
+          mfePct: 0,
+          givebackPct: 0,
+          pnlPct: 0,
+          sellFraction: 1,
+        });
       }
       continue;
     }
@@ -1045,6 +1048,7 @@ export async function runMildDipLoop(
       `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd} ` +
       `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s/mfe<${cfg.exit.neverArmStaleMaxMfePct}% ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
+      `maxHold=${Math.round(cfg.exit.maxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +

@@ -27,6 +27,7 @@ const exitGates: MildDipExitGates = {
   minMfeBeforeTrailPct: 0,
   neverArmPatienceMs: 0,
   neverArmMaxHoldMs: 5_400_000,
+  maxHoldMs: 0,
   neverArmDeadMinMs: 900_000,
   neverArmDeadPnlPct: 15,
   neverArmVolFadeMinMs: 600_000,
@@ -437,16 +438,17 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       givebackPct: 8,
       partialSellFraction: 0,
       secondGivebackPct: 0,
-  minMfeBeforeTrailPct: 0,
+      minMfeBeforeTrailPct: 0,
       neverArmPatienceMs: 0,
       neverArmMaxHoldMs: 0,
+      maxHoldMs: 0,
       neverArmDeadMinMs: 0,
       neverArmDeadPnlPct: 0,
       neverArmVolFadeMinMs: 0,
       neverArmVolFadeRatio: 0,
       neverArmVolFadeFloorUsd: 0,
-  neverArmStaleMinMs: 0,
-  neverArmStaleMaxMfePct: 0,
+      neverArmStaleMinMs: 0,
+      neverArmStaleMaxMfePct: 0,
     };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -569,6 +571,37 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(dump.shouldExit).toBe(true);
     expect(dump.reason).toBe('never_arm_stale');
     expect(dump.sellFraction).toBe(1);
+  });
+
+  it('maxHoldMs forces full exit even when trail is armed (spike 10m ceiling)', () => {
+    const g: MildDipExitGates = {
+      ...exitGates,
+      armPct: 5,
+      givebackPct: 5,
+      maxHoldMs: 600_000,
+      neverArmMaxHoldMs: 600_000,
+    };
+    const held = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 120,
+      peakPriceUsd: 125,
+      armed: true,
+      gates: g,
+      heldMs: 600_000,
+    });
+    expect(held.shouldExit).toBe(true);
+    expect(held.reason).toBe('max_hold_timeout');
+    expect(held.sellFraction).toBe(1);
+
+    const early = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 120,
+      peakPriceUsd: 125,
+      armed: true,
+      gates: g,
+      heldMs: 120_000,
+    });
+    expect(early.shouldExit).toBe(false);
   });
 
   it('vol-green ladder: arm 5 / giveback 3 peels 50%, then −5% dumps the rest', () => {

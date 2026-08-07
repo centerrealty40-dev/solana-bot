@@ -68,6 +68,11 @@ export type MildDipExitGates = {
    */
   neverArmMaxHoldMs: number;
   /**
+   * Absolute hold ceiling for ANY open (armed or not). Spike/green bots: 10m.
+   * 0 = off (Oscar mild-dip default). Fires `max_hold_timeout`, full bag.
+   */
+  maxHoldMs: number;
+  /**
    * Never-armed deep-loss cut: after this many ms, if pnl ≤ −neverArmDeadPnlPct,
    * full exit (`never_arm_dead`). Catches rugs before max-hold without the
    * early 5m −6% knife. 0 = disabled.
@@ -259,6 +264,7 @@ export type MildDipExitReason =
   | 'never_arm_stale'
   | 'never_arm_stale_partial'
   | 'never_arm_timeout'
+  | 'max_hold_timeout'
   | null;
 
 export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number): number | null {
@@ -507,6 +513,22 @@ export function evaluateMildDipPeakGiveback(args: {
         sellFraction: 1,
       };
     }
+  }
+
+  // Absolute ceiling — applies even when trail is armed (vol-green spikes).
+  const absMax = typeof gates.maxHoldMs === 'number' && gates.maxHoldMs > 0 ? gates.maxHoldMs : 0;
+  if (absMax > 0 && heldMs >= absMax) {
+    return {
+      peakPriceUsd,
+      mfePct,
+      givebackPct,
+      armed,
+      justArmed,
+      shouldExit: true,
+      reason: 'max_hold_timeout',
+      pnlPct,
+      sellFraction: 1,
+    };
   }
 
   return {

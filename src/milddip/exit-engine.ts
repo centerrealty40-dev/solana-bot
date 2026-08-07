@@ -30,6 +30,7 @@ const STICKY_REASONS: ReadonlySet<string> = new Set([
   'never_arm_stale',
   'never_arm_stale_partial',
   'never_arm_timeout',
+  'max_hold_timeout',
 ]);
 
 /** Sticky exits first, then armed (trail can fire), then older opens. */

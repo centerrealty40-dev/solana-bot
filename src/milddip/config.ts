@@ -157,6 +157,8 @@ const MildDipConfigSchema = z.object({
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /** Never-armed: force exit after this many ms (0=off). Hard ceiling. */
     neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(2_400_000),
+    /** Absolute hold ceiling armed or not (0=off). Vol-green: 10m. */
+    maxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /** Never-armed deep-loss cut min hold (0=off). Default 15m. */
     neverArmDeadMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
     /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 15. */
@@ -277,6 +279,7 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
+    maxHoldMs: envNum('MILD_DIP_EXIT_MAX_HOLD_MS', 0),
     /** Deep-loss cut before max-hold (rugs); not the early 5m knife. */
     neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 900_000),
     neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 15),

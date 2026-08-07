@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.728] — 2026-08-07
+
+**Тег:** `sa-1.11.728`
+
+### Fix: hard 10m max hold for vol-green (armed or not)
+
+Spike book was hanging hours — `neverArmMaxHold` only applied unarmed and
+was 90m. New `maxHoldMs=600000` forces `max_hold_timeout` full exit at 10m
+even when trail armed. Oscar default remains 0 (off).
+
+**Откат:** `MILD_DIP_EXIT_MAX_HOLD_MS=0`, never-arm max 5400000.
+
+---
+
 ## [1.11.727] — 2026-08-07
 
 **Тег:** `sa-1.11.727`

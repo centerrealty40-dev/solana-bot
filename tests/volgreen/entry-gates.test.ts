@@ -61,6 +61,7 @@ describe('vol-green exit parity with mild-dip W9.1', () => {
   minMfeBeforeTrailPct: 0,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
+    maxHoldMs: 0,
     neverArmDeadMinMs: 900_000,
     neverArmDeadPnlPct: 15,
     neverArmVolFadeMinMs: 600_000,

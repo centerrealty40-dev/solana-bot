@@ -18,6 +18,8 @@ const KEYS = [
   'LIVE_BUY_MAX_PRICE_IMPACT_PCT',
   'MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS',
   'MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT',
+  'MILD_DIP_EXIT_MAX_HOLD_MS',
+  'MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS',
   'MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT',
   'MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN',
   'MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN',
@@ -79,6 +81,8 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT).toBe('2');
     expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS).toBe('150000');
     expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT).toBe('5');
+    expect(process.env.MILD_DIP_EXIT_MAX_HOLD_MS).toBe('600000');
+    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS).toBe('600000');
     expect(process.env.MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT).toBe('8');
     expect(process.env.MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN).toBe('6');
     expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN).toBe('40');

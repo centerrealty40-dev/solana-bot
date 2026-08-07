@@ -42,6 +42,7 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
     ['VOL_GREEN_EXIT_MIN_MFE_BEFORE_TRAIL_PCT', 'MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT'],
     ['VOL_GREEN_EXIT_NEVER_ARM_PATIENCE_MS', 'MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS'],
     ['VOL_GREEN_EXIT_NEVER_ARM_MAX_HOLD_MS', 'MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS'],
+    ['VOL_GREEN_EXIT_MAX_HOLD_MS', 'MILD_DIP_EXIT_MAX_HOLD_MS'],
     ['VOL_GREEN_EXIT_NEVER_ARM_DEAD_MIN_MS', 'MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS'],
     ['VOL_GREEN_EXIT_NEVER_ARM_DEAD_PNL_PCT', 'MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT'],
     ['VOL_GREEN_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 'MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS'],
@@ -100,7 +101,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', '600000');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', '0.35');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', '500');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '5400000');
+  // Spike book: hard 10m ceiling (armed or not) — was 90m never-arm-only.
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '600000');
+  setIfAbsent('MILD_DIP_EXIT_MAX_HOLD_MS', '600000');
   // False-green: wait longer (75→150s); first hit peels 50%, second at 2× dumps rest.
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '150000');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '5');
