@@ -1,4 +1,19 @@
 # So
+## [1.11.724] — 2026-08-07
+
+**Тег:** `sa-1.11.724`
+
+### Ops: min pair age 15m → 30m
+
+Closed-book age buckets: pairs younger than 0.5h had the worst med PnL and
+highest cliff (&lt;−20%) rate. Skip them at entry (discover + fast-path + gates).
+
+**Live / default:** `MILD_DIP_MIN_PAIR_AGE_HOURS=0.5` (was `0.25`).
+
+**Откат:** `MILD_DIP_MIN_PAIR_AGE_HOURS=0.25` + reload.
+
+---
+
 ## [1.11.723] — 2026-08-07
 
 **Тег:** `sa-1.11.723`

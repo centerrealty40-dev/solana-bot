@@ -33,7 +33,7 @@ const baseGates: MildDipEntryGates = {
   minLiquidityUsd: 15_000,
   minMarketCapUsd: 50_000,
   maxMarketCapUsd: 300_000_000,
-  minPairAgeHours: 0.25,
+  minPairAgeHours: 0.5,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap', 'pumpfun'],
 };
@@ -118,6 +118,14 @@ describe('evaluateMildDipEntry', () => {
       prod,
     );
     expect(boundary.pass).toBe(true);
+  });
+
+  it('1.11.724 — rejects pairs younger than 30m, accepts at floor', () => {
+    const young = evaluateMildDipEntry(metrics({ pairAgeHours: 0.4 }), baseGates);
+    expect(young.pass).toBe(false);
+    expect(young.reasons.some((r) => r.includes('age_h='))).toBe(true);
+    const atFloor = evaluateMildDipEntry(metrics({ pairAgeHours: 0.5 }), baseGates);
+    expect(atFloor.pass).toBe(true);
   });
 });
 

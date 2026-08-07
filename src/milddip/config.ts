@@ -298,7 +298,8 @@ export function loadMildDipConfig(): MildDipConfig {
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
-    minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.25),
+    /** 1.11.724 — floor 30m (was 15m). Youngest bucket had worst cliffs. */
+    minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.5),
     /** 0 = no max age cap (older pump names like CATE still eligible). */
     maxPairAgeHours: envNum('MILD_DIP_MAX_PAIR_AGE_HOURS', 0),
     allowedDexIds,
