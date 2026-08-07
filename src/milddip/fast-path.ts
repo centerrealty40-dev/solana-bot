@@ -176,11 +176,13 @@ export async function evaluateFastPathCandidate(
   // Stream trigger without local drawdown: still Dex-probe (throttled).
   // Previously we returned null without cache → only leader seeds discovered
   // Dex-printed dumps (Agmu8X −18% bought 31s after 8zkg).
-  // mildStabilizeOnly always probes (needs structural floors).
-  if ((trigger === 'stream' && !streamInMain) || mildStabilizeOnly) {
+  // Open-book scale-in (mildStabilizeOnly): never compete with hot-universe
+  // probe budget — marks already warm structural cache; loadStructural may
+  // fetch if stale (few open mints).
+  if (trigger === 'stream' && !streamInMain && !mildStabilizeOnly) {
     const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs);
     if (!cached) {
-      if (!cfg.fastPathHotDexProbeEnabled && !mildStabilizeOnly) return null;
+      if (!cfg.fastPathHotDexProbeEnabled) return null;
       if (
         !allowHotDexProbe(
           mint,
