@@ -1,4 +1,35 @@
 # So
+## [1.11.717] — 2026-08-07
+
+**Тег:** `sa-1.11.717`
+
+### Feat: mild_stabilize bounce clip + 1m post-close cooldown
+
+Leader pattern (8zkg BBhTbM / 5mPVUc): buy reclaim after dump, not a fixed
+pc5m threshold. Additive path — main `(−25,−8]` and deep knife unchanged.
+
+1. **`mild_stabilize`** — ring dump `(−25,−5]` + bounce `[1.5%,8%]` off trough
+   (trough age ≥15s) → entry `dipSource=mild_stabilize`.
+2. **Second $5 clip** while position open: same signal, trough ≥3% below
+   first entry → scale-in (avg entry, `bounceClipDone`).
+3. **Cooldown after close 5m/10m → 1m** (win and loss) so reclaim is not
+   blocked.
+
+**Env:**
+`MILD_DIP_MILD_STABILIZE_ENABLED=1`
+`MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT=-25`
+`MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT=-5`
+`MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT=1.5`
+`MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT=8`
+`MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS=15000`
+`MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_BELOW_ENTRY_PCT=3`
+`MILD_DIP_MINT_COOLDOWN_MS=60000`
+`MILD_DIP_LOSS_COOLDOWN_MS=60000`
+
+**Откат:** `MILD_STABILIZE_ENABLED=0` + cooldowns `300000`/`600000` + reload.
+
+---
+
 ## [1.11.716] — 2026-08-07
 
 **Тег:** `sa-1.11.716`

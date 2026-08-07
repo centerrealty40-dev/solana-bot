@@ -279,19 +279,30 @@ async function tryFastPathForMint(
   nowMs: number,
 ): Promise<boolean> {
   if (!cfg.fastPathEnabled) return false;
-  if (state.open[mint] || buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
-  if (onCooldown(state, mint, nowMs)) return false;
+  if (buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
+
+  const openPos = state.open[mint];
+  // Open book: only mild_stabilize scale-in (second $5 clip) is allowed.
+  if (openPos) {
+    if (!cfg.mildStabilizeEnabled || openPos.bounceClipDone) return false;
+  } else if (onCooldown(state, mint, nowMs)) {
+    return false;
+  }
 
   const unlimited = cfg.maxOpenPositions <= 0;
-  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
+  if (!openPos && !unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
 
-  const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger);
+  const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger, {
+    mildStabilizeOnly: Boolean(openPos),
+  });
   if (!candidate) return false;
+  if (openPos && candidate.dipSource !== 'mild_stabilize') return false;
 
   // Build copyCfg with chase aligned to fast-path (Jupiter premium uses maxChasePct).
   const chase = fastPathChasePct(cfg);
   const cfgFast = { ...cfg, maxChasePct: chase };
   const copyCfg = mildDipToCopyTraderConfig(cfgFast);
+  const isMild = candidate.dipSource === 'mild_stabilize';
   const result = await attemptMildDipEntry({
     cfg: cfgFast,
     state,
@@ -303,7 +314,8 @@ async function tryFastPathForMint(
     adoptOnChainHolding,
     opts: {
       chasePct: chase,
-      skipBounce: cfg.fastPathSkipBounce,
+      // Bounce path already confirmed reclaim; don't use dump-skip bounce.
+      skipBounce: isMild ? true : cfg.fastPathSkipBounce,
       skipOnchainAdopt: true,
       // One structural Dex already done in evaluateFastPath — avoid second round-trip.
       freshDexPrebuy: false,
@@ -830,6 +842,10 @@ export async function runMildDipLoop(
       `(${cfg.knifeStabilizeMinDipPct},${cfg.knifeStabilizeMaxDipPct}]` +
       `/wait${Math.round(cfg.knifeStabilizeWaitMs / 1000)}s` +
       `/bounce[${cfg.knifeStabilizeMinBouncePct},${cfg.knifeStabilizeMaxBouncePct}] ` +
+      `mildStabilize=${cfg.mildStabilizeEnabled ? 1 : 0}` +
+      `(dump(${cfg.mildStabilizeMinDumpPct},${cfg.mildStabilizeMaxDumpPct}]` +
+      `/bounce[${cfg.mildStabilizeMinBouncePct},${cfg.mildStabilizeMaxBouncePct}]` +
+      `/troughAge${Math.round(cfg.mildStabilizeTroughMinAgeMs / 1000)}s) ` +
       `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +
       `lossCooldown=${Math.round(cfg.lossCooldownMs / 1000)}s ` +
       `feeSolTopup=${cfg.feeSolTopupEnabled ? 1 : 0}` +

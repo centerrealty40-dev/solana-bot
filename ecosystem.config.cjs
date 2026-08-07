@@ -2860,6 +2860,19 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
+         * 1.11.717 — leader-style bounce clip (additive):
+         * ring dump (−25,−5] + bounce [1.5%,8%] off trough (trough age≥15s).
+         * Also second $5 scale-in while a main/knife position is still open
+         * (trough ≥3% below first entry).
+         */
+        MILD_DIP_MILD_STABILIZE_ENABLED: '1',
+        MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
+        MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-5',
+        MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
+        MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '8',
+        MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '15000',
+        MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_BELOW_ENTRY_PCT: '3',
+        /**
          * Red-hour shallow (own logic, not leader copy): when 1h ≤ −15% and
          * pc5m ∈ (−10, −3], enter without waiting for the main mild band.
          * Prebuy must use this same band (1.11.707).
@@ -2990,13 +3003,12 @@ const PM2_APPS = [
         MILD_DIP_LOAD_ALERT_NULL_RATIO: '0.4',
         MILD_DIP_LOAD_ALERT_COOLDOWN_MS: '1800000',
         TELEGRAM_COOLDOWN_ALERT_MILD_DIP_DEX_MS: '1800000',
-        /** After winning/flat close — allow rebuy same mint in 5m. */
-        MILD_DIP_MINT_COOLDOWN_MS: '300000',
         /**
-         * 1.11.688 — after losing exit (pnl &lt; 0) pause 10m so grinding dumps
-         * are not re-entered every 5m cycle.
+         * 1.11.717 — after close only 1m so bounce clip can re-enter
+         * (was 5m win / 10m loss — blocked leader-style reclaim).
          */
-        MILD_DIP_LOSS_COOLDOWN_MS: '600000',
+        MILD_DIP_MINT_COOLDOWN_MS: '60000',
+        MILD_DIP_LOSS_COOLDOWN_MS: '60000',
         /**
          * 1.11.687 — during cooldown keep sampling stream/Dex prices; after
          * cooldown refuse rebuy if mark bounced >N% off the observed trough.
