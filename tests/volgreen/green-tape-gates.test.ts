@@ -35,6 +35,8 @@ const gates: GreenTapeGates = {
   rocketMinBuySellRatio5m: 1.15,
   rocketMinTurnover5m: 0,
   rocketMinMarketCapUsd: 18_000,
+  extremePc5mPct: 0,
+  extremeMinBuySellRatio5m: 1.5,
 };
 
 describe('evaluateGreenTapeEntry', () => {
@@ -250,6 +252,76 @@ describe('evaluateGreenTapeEntry', () => {
         sells5m: 2,
       },
       gates,
+    );
+    expect(v.pass).toBe(false);
+  });
+
+  it('blocks extreme pc5m>100 without strong buy/sell (chase guard)', () => {
+    const g: GreenTapeGates = {
+      ...gates,
+      earlyMinPc5mPct: 0,
+      impulseMinPc5mPct: 18,
+      liquidMinPc5mPct: 12,
+      rocketMinPc5mPct: 25,
+      rocketMinVolume5mUsd: 15_000,
+      rocketMinBuySellRatio5m: 1.35,
+      extremePc5mPct: 100,
+      extremeMinBuySellRatio5m: 1.5,
+    };
+    const weakBs = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 320,
+        volume5mUsd: 50_000,
+        liquidityUsd: 80_000,
+        marketCapUsd: 200_000,
+        pairAgeHours: 2,
+        dexId: 'pumpswap',
+        buys5m: 40,
+        sells5m: 35, // bs≈1.14 < 1.5
+      },
+      g,
+    );
+    expect(weakBs.pass).toBe(false);
+    expect(weakBs.reasons.some((r) => r.startsWith('chase_extreme_pc5m'))).toBe(true);
+
+    const strongBs = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 320,
+        volume5mUsd: 50_000,
+        liquidityUsd: 80_000,
+        marketCapUsd: 200_000,
+        pairAgeHours: 2,
+        dexId: 'pumpswap',
+        buys5m: 90,
+        sells5m: 40, // bs=2.25
+      },
+      g,
+    );
+    expect(strongBs.pass).toBe(true);
+  });
+
+  it('earlyMinPc5mPct=0 disables early path', () => {
+    const g: GreenTapeGates = {
+      ...gates,
+      earlyMinPc5mPct: 0,
+      liquidMinPc5mPct: 12,
+      impulseMinPc5mPct: 18,
+      rocketMinPc5mPct: 25,
+      rocketMinVolume5mUsd: 15_000,
+    };
+    // Would have been early (pc=7, high bs) — now fail.
+    const v = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 7,
+        volume5mUsd: 800,
+        liquidityUsd: 12_000,
+        marketCapUsd: 40_000,
+        pairAgeHours: 1,
+        dexId: 'pumpswap',
+        buys5m: 40,
+        sells5m: 10,
+      },
+      g,
     );
     expect(v.pass).toBe(false);
   });

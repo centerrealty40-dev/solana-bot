@@ -205,6 +205,8 @@ const MildDipConfigSchema = z.object({
     rocketMinBuySellRatio5m: z.number(),
     rocketMinTurnover5m: z.number(),
     rocketMinMarketCapUsd: z.number(),
+    extremePc5mPct: z.number(),
+    extremeMinBuySellRatio5m: z.number(),
   }),
 });
 
@@ -328,6 +330,9 @@ export function loadMildDipConfig(): MildDipConfig {
     // 0 = off when Dex omits liq (turnover unknown) but vol5m already rocket-tier.
     rocketMinTurnover5m: envNum('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', 0),
     rocketMinMarketCapUsd: envNum('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', 18_000),
+    // Extreme chase: pc5m > N without buy pressure → reject (0 pc = off).
+    extremePc5mPct: envNum('MILD_DIP_GREEN_EXTREME_PC5M_PCT', 0),
+    extremeMinBuySellRatio5m: envNum('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', 1.5),
   };
 
   const raw = {

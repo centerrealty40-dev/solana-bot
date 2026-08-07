@@ -145,37 +145,41 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.01');
   // 0 = no max age — 8zkg often hits aged runners (HORSE ~450h, MIM ~500h).
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '0');
-  // Simple leader model: ignore small greens; fire on large 5m impulse (uncapped).
-  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '12');
+  // 4h RCA: soft greens + exhausted rockets without bs = never_arm_stale dumps.
+  // Impulse: clearer green + buy pressure (was 12/bs1.0).
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '18');
   setIfAbsent('MILD_DIP_GREEN_IMPULSE_MAX_PC5M_PCT', '0');
-  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_VOLUME_5M_USD', '2500');
-  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_BUY_SELL_5M', '1.0');
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_VOLUME_5M_USD', '3000');
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_BUY_SELL_5M', '1.2');
   setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_TURNOVER_5M', '0.05');
-  // Liquid: stop nibbling 5% noise — need clearer green.
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '8');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2000');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', '0.09');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', '1');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', '20');
-  // Mid-band liquid 10–25: demand hotter bs/turnover (8h false-green RCA).
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_PC5M_LO', '10');
+  // Liquid: no soft 8–12% noise.
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '12');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2500');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', '0.1');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', '1.15');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', '25');
+  // Mid-band liquid: hotter tape.
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_PC5M_LO', '12');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_PC5M_HI', '25');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M', '1.4');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_MIN_TURNOVER_5M', '0.18');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '5');
+  // Early OFF (0 = path disabled) — soft thin tape was noise.
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_VOLUME_5M_USD', '400');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', '0.02');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', '2');
+  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', '2.5');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', '25');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', '18000');
-  // Rocket: keep path, raise tape floors (vol/bs/turnover) — don't trust score.
-  // Rocket: leader-like verticals (peanut bs~1.16, age~1–2m).
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '12');
+  // Rocket: only real verticals with pressure (was pc12/bs1.1/vol10k).
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '25');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', '0');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '10000');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.2');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.1');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '15000');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.25');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.35');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '18000');
+  // Don't chase pc5m>100% without strong buy/sell (4h −60…−97 bucket).
+  setIfAbsent('MILD_DIP_GREEN_EXTREME_PC5M_PCT', '100');
+  setIfAbsent('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', '1.5');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;

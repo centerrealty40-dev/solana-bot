@@ -58,6 +58,14 @@ export type GreenTapeGates = {
   rocketMinBuySellRatio5m: number;
   rocketMinTurnover5m: number;
   rocketMinMarketCapUsd: number;
+
+  /**
+   * Extreme chase guard (4h RCA: pc5m 100%+ dumps −60…−97 without buy pressure).
+   * When pc5m &gt; extremePc5mPct, require buy/sell ≥ extremeMinBuySellRatio5m.
+   * 0 extremePc = off.
+   */
+  extremePc5mPct: number;
+  extremeMinBuySellRatio5m: number;
 };
 
 export type GreenTapeMetrics = {
@@ -199,6 +207,26 @@ export function evaluateGreenTapeEntry(
   const liq = metrics.liquidityUsd;
   if (vol != null && liq != null && liq > 0) turnover5m = vol / liq;
 
+  // Don't chase exhausted verticals without buy pressure (BGKnxC/DLvKkk class).
+  const extremePc = gates.extremePc5mPct > 0 ? gates.extremePc5mPct : 0;
+  const extremeBs = gates.extremeMinBuySellRatio5m > 0 ? gates.extremeMinBuySellRatio5m : 0;
+  const pc5m = metrics.priceChange5mPct;
+  if (
+    extremePc > 0 &&
+    extremeBs > 0 &&
+    pc5m != null &&
+    Number.isFinite(pc5m) &&
+    pc5m > extremePc
+  ) {
+    if (buySellRatio5m == null) {
+      structural.push(`chase_extreme_pc5m=${pc5m.toFixed(0)}>_bs_unknown`);
+    } else if (buySellRatio5m < extremeBs) {
+      structural.push(
+        `chase_extreme_pc5m=${pc5m.toFixed(0)}>_bs=${buySellRatio5m.toFixed(2)}<${extremeBs}`,
+      );
+    }
+  }
+
   if (structural.length > 0) {
     return { pass: false, reasons: structural, buySellRatio5m, turnover5m };
   }
@@ -218,8 +246,8 @@ export function evaluateGreenTapeEntry(
       },
     });
   }
-  paths.push(
-    {
+  if (gates.liquidMinPc5mPct > 0) {
+    paths.push({
       name: 'liquid',
       g: {
         minPc: gates.liquidMinPc5mPct,
@@ -229,8 +257,11 @@ export function evaluateGreenTapeEntry(
         minTurnover: gates.liquidMinTurnover5m,
         minMcap: gates.minMarketCapUsd,
       },
-    },
-    {
+    });
+  }
+  // 0 minPc = early path disabled (vol-green: cut soft thin-tape noise).
+  if (gates.earlyMinPc5mPct > 0) {
+    paths.push({
       name: 'early',
       g: {
         minPc: gates.earlyMinPc5mPct,
@@ -240,8 +271,10 @@ export function evaluateGreenTapeEntry(
         minTurnover: gates.earlyMinTurnover5m,
         minMcap: gates.earlyMinMarketCapUsd,
       },
-    },
-    {
+    });
+  }
+  if (gates.rocketMinPc5mPct > 0) {
+    paths.push({
       name: 'rocket',
       g: {
         minPc: gates.rocketMinPc5mPct,
@@ -251,8 +284,8 @@ export function evaluateGreenTapeEntry(
         minTurnover: gates.rocketMinTurnover5m,
         minMcap: gates.rocketMinMarketCapUsd,
       },
-    },
-  );
+    });
+  }
 
   const failParts: string[] = [];
   for (const { name, g } of paths) {

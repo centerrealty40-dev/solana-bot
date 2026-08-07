@@ -1,5 +1,21 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.724] — 2026-08-07
+
+**Тег:** `sa-1.11.724`
+
+### Tune: bolder greens + no extreme chase without bs
+
+4h RCA: soft/early noise + pc5m 100%+ weak-bs → never_arm_stale dumps.
+
+- liquid min pc **12**, impulse **18**/bs≥1.2, early **OFF**
+- rocket pc≥**25** / vol≥$15k / bs≥**1.35**
+- structural: pc5m&gt;100 requires bs≥**1.5** (`chase_extreme_pc5m`)
+
+**Откат:** impulse 12, liquid 8, early 5, rocket 12/bs1.1, extremePc=0.
+
+---
+
 ## [1.11.723] — 2026-08-07
 
 **Тег:** `sa-1.11.723`
