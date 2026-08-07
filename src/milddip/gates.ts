@@ -182,6 +182,39 @@ export function evaluateMildDipEntry(
 }
 
 /**
+ * Flat / chop micro-dip: small pullback (−5, −1.5] while the 1h tape is not a
+ * fresh knife and not ripping green. Fills the gap below main mild (≤−5) and
+ * past h1_red_shallow (≤−3) — e.g. fartdog prebuy_pc5m=−2.21 before leader buy.
+ */
+export function evaluateFlatMicroDip(args: {
+  priceChange5mPct: number | null | undefined;
+  priceChange1hPct: number | null | undefined;
+  minDipPct: number;
+  maxDipPct: number;
+  h1MinPct: number;
+  h1MaxPct: number;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const pc = args.priceChange5mPct;
+  if (pc == null || !Number.isFinite(pc)) {
+    reasons.push('flat_micro_missing_pc5m');
+  } else if (!(pc > args.minDipPct && pc <= args.maxDipPct)) {
+    reasons.push(
+      `flat_micro_pc5m=${pc.toFixed(2)}_outside_(${args.minDipPct},${args.maxDipPct}]`,
+    );
+  }
+  const h1 = args.priceChange1hPct;
+  if (h1 == null || !Number.isFinite(h1)) {
+    reasons.push('flat_micro_missing_pc1h');
+  } else if (!(h1 >= args.h1MinPct && h1 <= args.h1MaxPct)) {
+    reasons.push(
+      `flat_micro_pc1h=${h1.toFixed(2)}_outside_[${args.h1MinPct},${args.h1MaxPct}]`,
+    );
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
+/**
  * Immediate pre-send check: DexScreener snapshot can go stale while we enrich
  * dozens of mints / wait on funding RPC. Abort if the 5m dip is gone or the
  * mark already bounced above the signal price by more than `maxChasePct`.

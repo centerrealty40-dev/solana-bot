@@ -2867,6 +2867,15 @@ const PM2_APPS = [
         MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT: '-15',
         MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT: '-10',
         MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-3',
+        /**
+         * 1.11.710 — flat/chop micro-dip (leaders scalp −2…−5% on range names).
+         * Band (−5,−1.5]; 1h regime [−35,+10]. Structural liq/mcap unchanged.
+         */
+        MILD_DIP_FLAT_MICRO_ENABLED: '1',
+        MILD_DIP_FLAT_MICRO_MIN_DIP_PCT: '-5',
+        MILD_DIP_FLAT_MICRO_MAX_DIP_PCT: '-1.5',
+        MILD_DIP_FLAT_MICRO_H1_MIN_PCT: '-35',
+        MILD_DIP_FLAT_MICRO_H1_MAX_PCT: '10',
         /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
         MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**

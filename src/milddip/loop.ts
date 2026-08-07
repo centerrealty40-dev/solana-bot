@@ -802,6 +802,8 @@ export async function runMildDipLoop(
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `h1RedShallow=${cfg.h1RedShallowEnabled ? 1 : 0}` +
       `(h1≤${cfg.h1RedShallowH1MaxPct}/pc5m∈(${cfg.h1RedShallowMinDipPct},${cfg.h1RedShallowMaxDipPct}]) ` +
+      `flatMicro=${cfg.flatMicroDipEnabled ? 1 : 0}` +
+      `(h1∈[${cfg.flatMicroH1MinPct},${cfg.flatMicroH1MaxPct}]/pc5m∈(${cfg.flatMicroMinDipPct},${cfg.flatMicroMaxDipPct}]) ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +
       `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +

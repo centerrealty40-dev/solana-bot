@@ -92,12 +92,24 @@ export async function attemptMildDipEntry(args: {
   let freshPx: number | null = c.priceUsd;
   const isKnife = c.dipSource === 'knife_stabilize';
   const isH1RedShallow = c.dipSource === 'h1_red_shallow';
+  const isFlatMicro = c.dipSource === 'flat_micro_dip';
   let sizeMetrics = {
     liquidityUsd: c.metrics.liquidityUsd,
     marketCapUsd: c.metrics.marketCapUsd,
     pairAgeHours: c.metrics.pairAgeHours,
   };
   const softCd = opts.softSkipCooldownMs ?? Math.min(cfg.mintCooldownMs, 120_000);
+  const branchEntryGates = isH1RedShallow
+    ? {
+        minDipPct: cfg.h1RedShallowMinDipPct,
+        maxDipPct: cfg.h1RedShallowMaxDipPct,
+      }
+    : isFlatMicro
+      ? {
+          minDipPct: cfg.flatMicroMinDipPct,
+          maxDipPct: cfg.flatMicroMaxDipPct,
+        }
+      : cfg.entry;
 
   if (cfg.preBuyRevalidate) {
     const freshNow = Date.now();
@@ -153,12 +165,7 @@ export async function attemptMildDipEntry(args: {
             signalPriceUsd: c.priceUsd,
             freshPriceUsd: freshPx,
             freshPc5mPct: freshPc,
-            entryGates: isH1RedShallow
-              ? {
-                  minDipPct: cfg.h1RedShallowMinDipPct,
-                  maxDipPct: cfg.h1RedShallowMaxDipPct,
-                }
-              : cfg.entry,
+            entryGates: branchEntryGates,
             maxChasePct: opts.chasePct,
           });
       if (!pre.pass) {
