@@ -17,6 +17,7 @@ import {
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
 import { mildStabilizeScaleInOk } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
+import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
   appendMildDipJournal,
   saveMildDipState,
@@ -311,11 +312,22 @@ export async function attemptMildDipEntry(args: {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_funding_block',
+        mint: c.mint,
+        symbol: c.symbol,
         reason: sized.reason,
         usdc: sized.usdc ?? null,
         wantUsd: wanted.sizeUsd,
         sizeTier: wanted.tier,
+        lane: opts.lane,
       });
+    }
+    // Fee SOL drained — do not wait for the next healthy-path topup tick.
+    if (sized.reason?.startsWith('insufficient_fee_sol')) {
+      void maybeTopUpFeeSol(cfg, Date.now(), { forceUrgent: true }).catch((err) => {
+        console.warn('[mild-dip] urgent fee-sol topup failed', err);
+      });
+      // Skip this mint; keep scanning others (stop would abort the whole slow lane).
+      return 'skip';
     }
     return 'stop';
   }

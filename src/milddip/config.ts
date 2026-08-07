@@ -92,7 +92,8 @@ const MildDipConfigSchema = z.object({
    * Default on: check every 6h; if SOL &lt; $5, buy $20 SOL.
    */
   feeSolTopupEnabled: z.boolean().default(true),
-  feeSolTopupIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(21_600_000),
+  /** How often to re-check fee SOL when healthy (urgent path still bypasses). */
+  feeSolTopupIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(1_800_000),
   feeSolTopupMinUsd: z.coerce.number().min(0).max(1_000).default(5),
   feeSolTopupBuyUsd: z.coerce.number().positive().max(500).default(20),
   /**
@@ -378,7 +379,7 @@ export function loadMildDipConfig(): MildDipConfig {
       if (!v) return true;
       return v === '1' || v === 'true' || v === 'yes';
     })(),
-    feeSolTopupIntervalMs: process.env.MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS ?? 21_600_000,
+    feeSolTopupIntervalMs: process.env.MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS ?? 1_800_000,
     feeSolTopupMinUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_MIN_USD ?? 5,
     feeSolTopupBuyUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_BUY_USD ?? 20,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',

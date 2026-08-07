@@ -2860,7 +2860,7 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
-         * 1.11.715 — leader-style bounce clip (additive):
+         * 1.11.717 — leader-style bounce clip (additive):
          * ring dump (−25,−5] + bounce [1.5%,8%] off trough (trough age≥15s).
          * Also second $5 scale-in while a main/knife position is still open
          * (trough ≥3% below first entry).
@@ -3004,7 +3004,7 @@ const PM2_APPS = [
         MILD_DIP_LOAD_ALERT_COOLDOWN_MS: '1800000',
         TELEGRAM_COOLDOWN_ALERT_MILD_DIP_DEX_MS: '1800000',
         /**
-         * 1.11.715 — after close only 1m so bounce clip can re-enter
+         * 1.11.717 — after close only 1m so bounce clip can re-enter
          * (was 5m win / 10m loss — blocked leader-style reclaim).
          */
         MILD_DIP_MINT_COOLDOWN_MS: '60000',
@@ -3039,7 +3039,8 @@ const PM2_APPS = [
          * Checked at most once per 6h (also runs soon after process start).
          */
         MILD_DIP_FEE_SOL_TOPUP: '1',
-        MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS: '21600000',
+        /** 1.11.716 — check every 30m (was 6h; drained fee SOL bricked buys). */
+        MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS: '1800000',
         MILD_DIP_FEE_SOL_TOPUP_MIN_USD: '5',
         MILD_DIP_FEE_SOL_TOPUP_BUY_USD: '20',
         /**

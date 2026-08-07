@@ -6,7 +6,7 @@ const base = {
   inFlight: false,
   nowMs: 1_000_000,
   lastCheckAtMs: 0,
-  intervalMs: 21_600_000,
+  intervalMs: 1_800_000,
   executionMode: 'live',
   solUsd: 150,
   solBal: 0.02,
@@ -31,20 +31,30 @@ describe('decideFeeSolTopup', () => {
     expect(d).toEqual({ action: 'skip', reason: 'ok' });
   });
 
-  it('respects 6h interval after a prior check', () => {
+  it('respects 30m interval after a prior check', () => {
     const d = decideFeeSolTopup({
       ...base,
       lastCheckAtMs: 50_000_000,
-      nowMs: 50_000_000 + 3_600_000,
+      nowMs: 50_000_000 + 900_000,
     });
     expect(d).toEqual({ action: 'skip', reason: 'interval' });
+  });
+
+  it('urgent bypasses interval when fee SOL is already low', () => {
+    const d = decideFeeSolTopup({
+      ...base,
+      lastCheckAtMs: 50_000_000,
+      nowMs: 50_000_000 + 900_000,
+      urgent: true,
+    });
+    expect(d.action).toBe('topup');
   });
 
   it('allows check when interval elapsed', () => {
     const d = decideFeeSolTopup({
       ...base,
       lastCheckAtMs: 50_000_000,
-      nowMs: 50_000_000 + 21_600_000,
+      nowMs: 50_000_000 + 1_800_000,
     });
     expect(d.action).toBe('topup');
   });

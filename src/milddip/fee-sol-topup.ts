@@ -1,7 +1,7 @@
 /**
  * Periodic native-SOL fee top-up for mild-dip.
  *
- * Every `feeSolTopupIntervalMs` (default 6h): if native SOL wallet value is
+ * Every `feeSolTopupIntervalMs` (default 30m): if native SOL wallet value is
  * below `feeSolTopupMinUsd` (default $5), swap `feeSolTopupBuyUsd` (default $20)
  * USDC → native SOL via Jupiter (`wrapAndUnwrapSol: true`).
  *
@@ -29,6 +29,8 @@ export type FeeSolTopupDecision =
 
 let lastCheckAtMs = 0;
 let inFlight = false;
+/** Min gap between urgent (below-reserve) top-up attempts — avoid Jupiter hammer. */
+const URGENT_TOPUP_GAP_MS = 60_000;
 
 export function resetFeeSolTopupForTests(): void {
   lastCheckAtMs = 0;
@@ -48,10 +50,16 @@ export function decideFeeSolTopup(args: {
   usdcBal: number;
   minUsd: number;
   buyUsd: number;
+  /** When true, skip the healthy-path interval (SOL already below floor/reserve). */
+  urgent?: boolean;
 }): FeeSolTopupDecision {
   if (!args.enabled) return { action: 'skip', reason: 'disabled' };
   if (args.inFlight) return { action: 'skip', reason: 'in_flight' };
-  if (args.lastCheckAtMs > 0 && args.nowMs - args.lastCheckAtMs < args.intervalMs) {
+  if (
+    !args.urgent &&
+    args.lastCheckAtMs > 0 &&
+    args.nowMs - args.lastCheckAtMs < args.intervalMs
+  ) {
     return { action: 'skip', reason: 'interval' };
   }
   if (!(args.solUsd > 0)) return { action: 'skip', reason: 'no_price' };
@@ -73,19 +81,21 @@ export function decideFeeSolTopup(args: {
 }
 
 /**
- * Non-blocking: at most one check per interval. Returns true if a top-up
- * swap was confirmed (or paper/dry_run simulated).
+ * Non-blocking fee-SOL top-up.
+ * Healthy path: at most one check per `feeSolTopupIntervalMs` (default 30m).
+ * Urgent path: if native SOL < minFeeSolReserve or value < minUsd, bypass the
+ * interval (60s gap) — otherwise a start-time "ok" can still brick buys while
+ * fee SOL drains between checks.
  */
 export async function maybeTopUpFeeSol(
   cfg: MildDipConfig,
   nowMs = Date.now(),
+  opts?: { forceUrgent?: boolean },
 ): Promise<boolean> {
   if (!cfg.feeSolTopupEnabled) return false;
   if (inFlight) return false;
-  if (lastCheckAtMs > 0 && nowMs - lastCheckAtMs < cfg.feeSolTopupIntervalMs) return false;
 
   inFlight = true;
-  lastCheckAtMs = nowMs;
   try {
     await refreshSolPrice().catch(() => false);
     const solUsd = getSolUsd();
@@ -106,12 +116,27 @@ export async function maybeTopUpFeeSol(
     }
     const solBal = bal.feeSol;
     const usdcBal = bal.quoteUsd;
+    const solValueUsd = solBal * (solUsd || 0);
+    const urgent =
+      Boolean(opts?.forceUrgent) ||
+      solBal + 1e-12 < cfg.minFeeSolReserve ||
+      solValueUsd + 1e-9 < cfg.feeSolTopupMinUsd;
+
+    if (urgent) {
+      if (lastCheckAtMs > 0 && nowMs - lastCheckAtMs < URGENT_TOPUP_GAP_MS) {
+        return false;
+      }
+    } else if (lastCheckAtMs > 0 && nowMs - lastCheckAtMs < cfg.feeSolTopupIntervalMs) {
+      return false;
+    }
+
+    lastCheckAtMs = nowMs;
 
     const decision = decideFeeSolTopup({
       enabled: cfg.feeSolTopupEnabled,
       inFlight: false,
       nowMs,
-      lastCheckAtMs: 0, // already gated above
+      lastCheckAtMs: 0, // interval already gated above
       intervalMs: cfg.feeSolTopupIntervalMs,
       executionMode: cfg.executionMode,
       solUsd,
@@ -119,6 +144,7 @@ export async function maybeTopUpFeeSol(
       usdcBal,
       minUsd: cfg.feeSolTopupMinUsd,
       buyUsd: cfg.feeSolTopupBuyUsd,
+      urgent,
     });
 
     if (decision.action === 'skip') {

@@ -1,7 +1,7 @@
 # So
-## [1.11.715] — 2026-08-07
+## [1.11.717] — 2026-08-07
 
-**Тег:** `sa-1.11.715`
+**Тег:** `sa-1.11.717`
 
 ### Feat: mild_stabilize bounce clip + 1m post-close cooldown
 
@@ -27,6 +27,42 @@ pc5m threshold. Additive path — main `(−25,−8]` and deep knife unchanged.
 `MILD_DIP_LOSS_COOLDOWN_MS=60000`
 
 **Откат:** `MILD_STABILIZE_ENABLED=0` + cooldowns `300000`/`600000` + reload.
+
+---
+
+## [1.11.716] — 2026-08-07
+
+**Тег:** `sa-1.11.716`
+
+### Ops: fee-SOL topup check every 30m (was 6h)
+
+Healthy-path interval `MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS` **6h → 30m**.
+Urgent path from 1.11.715 unchanged (bypass when below reserve).
+
+Note: U5cWTi `jupiter_sell_quote_failed` spam is quote-API noise (no per-attempt
+on-chain fee); fee SOL still drops from real buy/sell priority tips.
+
+**Откат:** `MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS=21600000` + reload.
+
+---
+
+## [1.11.715] — 2026-08-07
+
+**Тег:** `sa-1.11.715`
+
+### Fix: fee-SOL topup urgent path (Cg1h miss)
+
+Leader `2FkASi…` on **Cg1h** seeded OK (~+25s), but buys were dead ~30m:
+210× `mild_dip_funding_block` `insufficient_fee_sol sol≈0.016<0.02` while
+USDC ~$112. Topup only checks every **6h** and had already logged `ok` at
+start — so drained fee SOL (U5cWTi sell-spam) bricked entries until restart.
+
+**Changes:**
+1. Urgent topup when `sol < minFeeSolReserve` or value `< minUsd` (60s gap).
+2. `insufficient_fee_sol` → kick urgent topup; return `skip` not `stop`.
+3. Funding-block journal includes mint/lane.
+
+**Откат:** revert `fee-sol-topup.ts` / `entry-attempt.ts` + reload.
 
 ---
 

@@ -849,7 +849,11 @@ export async function runMildDipLoop(
       `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +
       `lossCooldown=${Math.round(cfg.lossCooldownMs / 1000)}s ` +
       `feeSolTopup=${cfg.feeSolTopupEnabled ? 1 : 0}` +
-      `/every${Math.round(cfg.feeSolTopupIntervalMs / 3_600_000)}h` +
+      `/every${
+        cfg.feeSolTopupIntervalMs >= 3_600_000
+          ? `${Math.round(cfg.feeSolTopupIntervalMs / 3_600_000)}h`
+          : `${Math.round(cfg.feeSolTopupIntervalMs / 60_000)}m`
+      }` +
       `/min$${cfg.feeSolTopupMinUsd}/buy$${cfg.feeSolTopupBuyUsd} ` +
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
