@@ -66,9 +66,8 @@ export MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN=6
 export MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN=40
 export MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY=3
 export MILD_DIP_GREEN_SHORT_RED_WINDOW_MS=60000
-export MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M=1.1
 export MILD_DIP_JOURNAL_ENTRY_SKIPS="${MILD_DIP_JOURNAL_ENTRY_SKIPS:-1}"
-# Green-tape: liquid (fat) OR early (thin + strong buy/sell, leader-like)
+# Green-tape floors (entry hard-sets below)
 export MILD_DIP_GREEN_MIN_LIQUIDITY_USD="${MILD_DIP_GREEN_MIN_LIQUIDITY_USD:-8000}"
 export MILD_DIP_GREEN_MIN_MCAP_USD="${MILD_DIP_GREEN_MIN_MCAP_USD:-18000}"
 # 0.01h≈36s structural floor; rocket vol bypasses age entirely in gates.
