@@ -63,6 +63,41 @@ describe('pickBestSolanaPairForMint', () => {
     expect(Number(best!.priceUsd)).toBeCloseTo(0.021, 5);
     expect((best!.liquidity as { usd: number }).usd).toBe(500_000);
   });
+
+  it('NEEGY: allowedDexIds prefers pumpswap over higher-liq meteora', () => {
+    // Live miss: meteora liq > pumpswap → mint rejected on ALLOWED_DEX; dump was on pumpswap.
+    const neegy = '6oGuFDbEeaSzTcvrmmd2MqfNYwHKXFoN7regcR22pump';
+    const pairs = [
+      {
+        chainId: 'solana',
+        dexId: 'meteora',
+        baseToken: { address: neegy, symbol: 'NEEGY' },
+        quoteToken: { address: SOL, symbol: 'SOL' },
+        priceUsd: '0.002052',
+        liquidity: { usd: 203_064 },
+        priceChange: { m5: -5.78 },
+      },
+      {
+        chainId: 'solana',
+        dexId: 'pumpswap',
+        baseToken: { address: neegy, symbol: 'NEEGY' },
+        quoteToken: { address: SOL, symbol: 'SOL' },
+        priceUsd: '0.002033',
+        liquidity: { usd: 162_923 },
+        priceChange: { m5: -17.39 },
+      },
+    ];
+    const unrestricted = pickBestSolanaPairForMint(pairs, neegy);
+    expect(unrestricted?.dexId).toBe('meteora');
+    const allowed = pickBestSolanaPairForMint(pairs, neegy, {
+      allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
+    });
+    expect(allowed?.dexId).toBe('pumpswap');
+    expect(Number((allowed as { priceChange?: { m5?: number } }).priceChange?.m5)).toBeCloseTo(
+      -17.39,
+      2,
+    );
+  });
 });
 
 describe('isUsdPriceOutlierVsAnchor', () => {

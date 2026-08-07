@@ -163,6 +163,7 @@ export async function attemptMildDipEntry(args: {
         bypassCache: false,
         cacheTtlMs: 2_000,
         nowMs: freshNow,
+        allowedDexIds: cfg.entry.allowedDexIds,
       });
       freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
       const freshPc = fresh?.priceChangeM5Pct ?? null;

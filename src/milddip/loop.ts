@@ -108,9 +108,11 @@ async function markPriceUsd(
   mint: string,
   nowMs: number,
   cacheTtlMs: number,
+  allowedDexIds?: string[],
 ): Promise<{ px: number | null; volume5mUsd: number | null }> {
   const details = await fetchDexScreenerPairDetails(mint, {
     nowMs,
+    allowedDexIds,
     // 0 = always HTTP (legacy bypass). >0 reuses shared Dex cache within TTL.
     ...(cacheTtlMs > 0
       ? { cacheTtlMs, bypassCache: false }
@@ -644,7 +646,12 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
 
   const markStarted = Date.now();
   const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
-    const { px, volume5mUsd } = await markPriceUsd(mint, nowMs, cfg.markCacheTtlMs);
+    const { px, volume5mUsd } = await markPriceUsd(
+      mint,
+      nowMs,
+      cfg.markCacheTtlMs,
+      cfg.entry.allowedDexIds,
+    );
     return { mint, px, volume5mUsd };
   });
   const markPassMs = Date.now() - markStarted;
