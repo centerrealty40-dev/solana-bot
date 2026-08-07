@@ -1,4 +1,30 @@
 # So
+## [1.11.713] — 2026-08-07
+
+**Тег:** `sa-1.11.713`
+
+### Fix: stream-hot Dex probe without waiting for leader
+
+**Agmu8X** (`4GpkDSw4…`): Dex already −18% / vol~$7.5k, but price-ring had
+**no stream samples** at fill → `evaluateFastPathCandidate(stream)` returned
+null; hot-list loop also `continue`d unless local dd in band. Buy woke only
+via **8zkg leader-seed** (~31s late).
+
+**Changes:**
+1. Stream trigger without local dd → throttled Dex structural probe
+   (`HOT_DEX_PROBE_*`), then enter on Dex pc5m in main band.
+2. Hot-mint loop always calls fast-path (no dd prefilter).
+3. Start line logs `hotDexProbe=1@10s≤40/min`.
+
+**Env:**
+`MILD_DIP_FAST_PATH_HOT_DEX_PROBE_ENABLED=1`
+`MILD_DIP_FAST_PATH_HOT_DEX_PROBE_GAP_MS=10000`
+`MILD_DIP_FAST_PATH_HOT_DEX_PROBE_MAX_PER_MIN=40`
+
+**Откат:** `HOT_DEX_PROBE_ENABLED=0` + reload (restores leader-wake-only).
+
+---
+
 ## [1.11.712] — 2026-08-07
 
 **Тег:** `sa-1.11.712`

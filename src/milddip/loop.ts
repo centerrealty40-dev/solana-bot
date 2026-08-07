@@ -329,15 +329,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
       await tryFastPathForMint(cfg, state, mint, 'leader', nowMs);
     }
-    // Hot stream mints with live ring drawdown.
+    // Hot stream mints — prefer in-band stream drawdown, but still Dex-probe
+    // when the ring has no dd yet (do not wait for a leader seed).
     for (const mint of mildDipHotMints.list(nowMs).slice(0, 40)) {
       if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
-      const dd = mildDipPriceRing.drawdownFromPeakPct(
-        mint,
-        cfg.cooldownBounceLookbackMs,
-        nowMs,
-      );
-      if (dd == null || !(dd > cfg.entry.minDipPct && dd <= cfg.entry.maxDipPct)) continue;
       await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
     }
   }
@@ -822,7 +817,10 @@ export async function runMildDipLoop(
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0} ` +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
-      `/skipBounce=${cfg.fastPathSkipBounce ? 1 : 0}/enrichMax=${cfg.enrichMax} ` +
+      `/skipBounce=${cfg.fastPathSkipBounce ? 1 : 0}` +
+      `/hotDexProbe=${cfg.fastPathHotDexProbeEnabled ? 1 : 0}` +
+      `@${cfg.fastPathHotDexProbeGapMs}ms≤${cfg.fastPathHotDexProbeMaxPerMin}/min ` +
+      `/enrichMax=${cfg.enrichMax} ` +
       `prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
       `slippageBps=${cfg.slippageBps} buyImpactCap=${buyImpactCap}% ` +
       `jupPriority=${jupPriority} jupFeeCapSol=${jupFeeCapSol} ` +

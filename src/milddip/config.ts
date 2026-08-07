@@ -168,6 +168,13 @@ const MildDipConfigSchema = z.object({
   /** Min gap between fast-path attempts per mint. */
   fastPathMinGapMs: z.coerce.number().int().min(0).max(120_000).default(2_000),
   /**
+   * When stream trigger has no local drawdown yet, still Dex-probe hot mints
+   * (restores autonomous discovery vs leader-only wake). 0 gap / 0 max = off.
+   */
+  fastPathHotDexProbeEnabled: z.boolean().default(true),
+  fastPathHotDexProbeGapMs: z.coerce.number().int().min(0).max(120_000).default(10_000),
+  fastPathHotDexProbeMaxPerMin: z.coerce.number().int().min(0).max(120).default(40),
+  /**
    * Soft cooldown after a failed fast-path buy (impact/sim/etc).
    * Default 0 — 15s was burning the dump while price ran +10%.
    * Does NOT touch Helius WS; only gates Jupiter/Dex retries.
@@ -409,6 +416,10 @@ export function loadMildDipConfig(): MildDipConfig {
     fastPathChasePct: process.env.MILD_DIP_FAST_PATH_CHASE_PCT ?? 12,
     fastPathSkipBounce: envBool('MILD_DIP_FAST_PATH_SKIP_BOUNCE', true),
     fastPathMinGapMs: process.env.MILD_DIP_FAST_PATH_MIN_GAP_MS ?? 2_000,
+    /** Stream-hot Dex probe when ring has no dd yet (Agmu8X-class). */
+    fastPathHotDexProbeEnabled: envBool('MILD_DIP_FAST_PATH_HOT_DEX_PROBE_ENABLED', true),
+    fastPathHotDexProbeGapMs: process.env.MILD_DIP_FAST_PATH_HOT_DEX_PROBE_GAP_MS ?? 10_000,
+    fastPathHotDexProbeMaxPerMin: process.env.MILD_DIP_FAST_PATH_HOT_DEX_PROBE_MAX_PER_MIN ?? 40,
     fastPathSoftSkipCooldownMs: process.env.MILD_DIP_FAST_PATH_SOFT_SKIP_MS ?? 0,
     streamOnlyMaxDipPct: process.env.MILD_DIP_STREAM_ONLY_MAX_DIP_PCT ?? -10,
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,

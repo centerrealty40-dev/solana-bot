@@ -18,11 +18,42 @@ export type StructuralCacheEntry = {
 
 const structuralCache = new Map<string, StructuralCacheEntry>();
 const lastFastAttemptMs = new Map<string, number>();
+/** Per-mint throttle for Dex probes when stream drawdown is not yet in band. */
+const lastHotDexProbeMs = new Map<string, number>();
+let hotDexProbeWindowStartMs = 0;
+let hotDexProbeCount = 0;
 
 /** Test helper. */
 export function resetFastPathStateForTests(): void {
   structuralCache.clear();
   lastFastAttemptMs.clear();
+  lastHotDexProbeMs.clear();
+  hotDexProbeWindowStartMs = 0;
+  hotDexProbeCount = 0;
+}
+
+/**
+ * Rate-limit Dex structural fetches for hot stream mints that lack a local
+ * stream drawdown yet (Agmu8X-class: Dex already −18%, ring empty → only
+ * leader seed used to wake us).
+ */
+export function allowHotDexProbe(
+  mint: string,
+  nowMs: number,
+  gapMs: number,
+  maxPerMin: number,
+): boolean {
+  if (!mint || gapMs < 0 || maxPerMin <= 0) return false;
+  if (nowMs - hotDexProbeWindowStartMs >= 60_000) {
+    hotDexProbeWindowStartMs = nowMs;
+    hotDexProbeCount = 0;
+  }
+  if (hotDexProbeCount >= maxPerMin) return false;
+  const last = lastHotDexProbeMs.get(mint) ?? 0;
+  if (nowMs - last < gapMs) return false;
+  lastHotDexProbeMs.set(mint, nowMs);
+  hotDexProbeCount += 1;
+  return true;
 }
 
 export function noteStructuralCache(
@@ -138,10 +169,24 @@ export async function evaluateFastPathCandidate(
   const streamDd = streamDrawdownPct(mint, cfg.cooldownBounceLookbackMs, nowMs);
   const streamInMain = inDipBand(streamDd, cfg.entry.minDipPct, cfg.entry.maxDipPct);
 
-  // Stream trigger without a local drawdown → do not spend a Dex slot.
+  // Stream trigger without local drawdown: still Dex-probe (throttled).
+  // Previously we returned null without cache → only leader seeds discovered
+  // Dex-printed dumps (Agmu8X −18% bought 31s after 8zkg).
   if (trigger === 'stream' && !streamInMain) {
     const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs);
-    if (!cached) return null;
+    if (!cached) {
+      if (!cfg.fastPathHotDexProbeEnabled) return null;
+      if (
+        !allowHotDexProbe(
+          mint,
+          nowMs,
+          cfg.fastPathHotDexProbeGapMs,
+          cfg.fastPathHotDexProbeMaxPerMin,
+        )
+      ) {
+        return null;
+      }
+    }
   }
 
   // Need Dex for structural (and for Dex/h1 timing when stream not yet in band).
