@@ -127,6 +127,15 @@ describe('evaluateMildDipEntry', () => {
     const atFloor = evaluateMildDipEntry(metrics({ pairAgeHours: 0.5 }), baseGates);
     expect(atFloor.pass).toBe(true);
   });
+
+  it('1.11.725 — rejects mcap below $50k, accepts at floor', () => {
+    const gates = { ...baseGates, minMarketCapUsd: 50_000 };
+    const thin = evaluateMildDipEntry(metrics({ marketCapUsd: 49_999 }), gates);
+    expect(thin.pass).toBe(false);
+    expect(thin.reasons.some((r) => r.includes('mcap='))).toBe(true);
+    const atFloor = evaluateMildDipEntry(metrics({ marketCapUsd: 50_000 }), gates);
+    expect(atFloor.pass).toBe(true);
+  });
 });
 
 describe('evaluateMildDipPreBuy', () => {

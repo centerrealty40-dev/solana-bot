@@ -2903,7 +2903,11 @@ const PM2_APPS = [
          * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
-        MILD_DIP_MIN_MCAP_USD: '15000',
+        /**
+         * 1.11.725 — mcap floor $15k → $50k. 24h closed book: sub-$50k cut set
+         * mean ≈ −5.9% / cliff20 ≈ 21%; keep set mean lift ≈ +0.9pp.
+         */
+        MILD_DIP_MIN_MCAP_USD: '50000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         /**
          * 1.11.724 — skip pairs younger than 30m (was 0.25h / 15m).
