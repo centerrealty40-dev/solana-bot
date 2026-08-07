@@ -15,6 +15,7 @@ import {
 import { noteStructuralCache } from './fast-path.js';
 import { mapPool } from './exit-engine.js';
 import {
+  evaluateFlatMicroDip,
   evaluateMildDipEntry,
   type MildDipCandidateMetrics,
 } from './gates.js';
@@ -34,7 +35,13 @@ export type MildDipCandidate = {
   priceUsd: number;
   metrics: MildDipCandidateMetrics;
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
-  dipSource: 'dex' | 'stream' | 'dex+stream' | 'h1_red_shallow' | 'knife_stabilize';
+  dipSource:
+    | 'dex'
+    | 'stream'
+    | 'dex+stream'
+    | 'h1_red_shallow'
+    | 'flat_micro_dip'
+    | 'knife_stabilize';
   /** Present when dipSource=knife_stabilize. */
   knifeMode?: 'bounce' | 'stabilize';
   knifeBouncePct?: number | null;
@@ -401,6 +408,36 @@ export async function enrichAndFilterCandidates(
         metrics.priceChange5mPct > cfg.h1RedShallowMinDipPct &&
         metrics.priceChange5mPct <= cfg.h1RedShallowMaxDipPct;
 
+      const flatMicroPc5m =
+        metrics.priceChange5mPct != null && Number.isFinite(metrics.priceChange5mPct)
+          ? metrics.priceChange5mPct
+          : null;
+      const flatMicroStreamDd =
+        stream.drawdownPct != null && Number.isFinite(stream.drawdownPct)
+          ? stream.drawdownPct
+          : null;
+      const flatMicroDipPct =
+        flatMicroPc5m != null &&
+        flatMicroPc5m > cfg.flatMicroMinDipPct &&
+        flatMicroPc5m <= cfg.flatMicroMaxDipPct
+          ? flatMicroPc5m
+          : flatMicroStreamDd != null &&
+              flatMicroStreamDd > cfg.flatMicroMinDipPct &&
+              flatMicroStreamDd <= cfg.flatMicroMaxDipPct
+            ? flatMicroStreamDd
+            : flatMicroPc5m;
+      const flatMicroOk =
+        cfg.flatMicroDipEnabled &&
+        structuralOk &&
+        evaluateFlatMicroDip({
+          priceChange5mPct: flatMicroDipPct,
+          priceChange1hPct: metrics.priceChange1hPct,
+          minDipPct: cfg.flatMicroMinDipPct,
+          maxDipPct: cfg.flatMicroMaxDipPct,
+          h1MinPct: cfg.flatMicroH1MinPct,
+          h1MaxPct: cfg.flatMicroH1MaxPct,
+        }).pass;
+
       let dipSource: MildDipCandidate['dipSource'] | null = null;
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
@@ -408,6 +445,8 @@ export async function enrichAndFilterCandidates(
         dipSource = 'stream';
       } else if (h1RedShallowOk) {
         dipSource = 'h1_red_shallow';
+      } else if (flatMicroOk) {
+        dipSource = 'flat_micro_dip';
       }
 
       if (dipSource) {
@@ -419,7 +458,11 @@ export async function enrichAndFilterCandidates(
           metrics:
             dipSource === 'stream' && stream.drawdownPct != null
               ? { ...metrics, priceChange5mPct: stream.drawdownPct }
-              : metrics,
+              : dipSource === 'flat_micro_dip' &&
+                  flatMicroDipPct != null &&
+                  flatMicroDipPct !== metrics.priceChange5mPct
+                ? { ...metrics, priceChange5mPct: flatMicroDipPct }
+                : metrics,
           dipSource,
         };
         return {

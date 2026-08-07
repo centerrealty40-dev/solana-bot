@@ -1,4 +1,34 @@
 # So
+## [1.11.710] — 2026-08-07
+
+**Тег:** `sa-1.11.710`
+
+### Feat: mild-dip `flat_micro_dip` (small scrapes on range)
+
+fartdog (`9zhm31…pump`) forensic: 7BNax scalped −2…−5% chops
+(+9…+27%); we skipped `prebuy_pc5m=-2.21_outside_(-25,-5]` 90s before
+their buy. Gap between main mild `(−25,−5]`, h1-shallow `(−10,−3]`, and
+knife `(−50,−20]`.
+
+New autonomous branch `flat_micro_dip` (slow enrich + fast-path):
+- pc5m (or stream dd) ∈ **(−5, −1.5]**
+- pc1h ∈ **[−35, +10]**
+- own prebuy band; structural liq/mcap/vol unchanged
+
+**Note:** thin names under `MIN_LIQ=$10k` / `MIN_MCAP=$15k` still gated.
+Chase/premium already **10% / fast 12%** from 1.11.709 (covers prior 8% ask).
+
+**Env:**
+`MILD_DIP_FLAT_MICRO_ENABLED=1`
+`MILD_DIP_FLAT_MICRO_MIN_DIP_PCT=-5`
+`MILD_DIP_FLAT_MICRO_MAX_DIP_PCT=-1.5`
+`MILD_DIP_FLAT_MICRO_H1_MIN_PCT=-35`
+`MILD_DIP_FLAT_MICRO_H1_MAX_PCT=10`
+
+**Откат:** `MILD_DIP_FLAT_MICRO_ENABLED=0` + reload.
+
+---
+
 ## [1.11.709] — 2026-08-07
 
 **Тег:** `sa-1.11.709`

@@ -7,7 +7,7 @@
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
-import type { MildDipCandidateMetrics } from './gates.js';
+import { evaluateFlatMicroDip, type MildDipCandidateMetrics } from './gates.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 export type StructuralCacheEntry = {
@@ -188,14 +188,34 @@ export async function evaluateFastPathCandidate(
     inDipBand(dexPc, cfg.h1RedShallowMinDipPct, cfg.h1RedShallowMaxDipPct)
   ) {
     dipSource = 'h1_red_shallow';
+  } else if (cfg.flatMicroDipEnabled) {
+    const streamInFlat = inDipBand(streamDd, cfg.flatMicroMinDipPct, cfg.flatMicroMaxDipPct);
+    const dexInFlat = inDipBand(dexPc, cfg.flatMicroMinDipPct, cfg.flatMicroMaxDipPct);
+    const flatDip = dexInFlat ? dexPc : streamInFlat ? streamDd : dexPc;
+    const flatOk = evaluateFlatMicroDip({
+      priceChange5mPct: flatDip,
+      priceChange1hPct: metrics.priceChange1hPct,
+      minDipPct: cfg.flatMicroMinDipPct,
+      maxDipPct: cfg.flatMicroMaxDipPct,
+      h1MinPct: cfg.flatMicroH1MinPct,
+      h1MaxPct: cfg.flatMicroH1MaxPct,
+    }).pass;
+    if (flatOk) {
+      dipSource = 'flat_micro_dip';
+      if (streamInFlat && !dexInFlat && streamDd != null) {
+        metrics = { ...metrics, priceChange5mPct: streamDd };
+        const last = mildDipPriceRing.lastPrice(mint, nowMs);
+        if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
+      }
+    }
   }
 
   if (!dipSource) return null;
 
   // Leader/stream triggers: require a real dip print (not green chase).
   if (trigger === 'leader' || trigger === 'stream') {
-    if (dipSource === 'h1_red_shallow') {
-      /* ok — shallow grind */
+    if (dipSource === 'h1_red_shallow' || dipSource === 'flat_micro_dip') {
+      /* ok — shallow / flat-micro scrape */
     } else if (!streamInMain && !dexInMain) {
       return null;
     }

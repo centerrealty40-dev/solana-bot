@@ -133,6 +133,17 @@ const MildDipConfigSchema = z.object({
   h1RedShallowH1MaxPct: z.coerce.number().max(0).default(-15),
   h1RedShallowMinDipPct: z.coerce.number().default(-10),
   h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-3),
+  /**
+   * Flat/chop micro-dip: pc5m ∈ (min,max] while pc1h ∈ [h1Min,h1Max].
+   * Own logic (not leader copy) — small scrapes leaders take on range names.
+   */
+  flatMicroDipEnabled: z.boolean().default(false),
+  flatMicroMinDipPct: z.coerce.number().default(-5),
+  flatMicroMaxDipPct: z.coerce.number().max(0).default(-1.5),
+  /** 1h floor — reject fresh nukes (pc1h worse than this). */
+  flatMicroH1MinPct: z.coerce.number().default(-35),
+  /** 1h ceiling — reject strong green hours. */
+  flatMicroH1MaxPct: z.coerce.number().default(10),
   /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
   streamEnabled: z.boolean().default(true),
   streamWsUrl: z.string().optional(),
@@ -364,6 +375,11 @@ export function loadMildDipConfig(): MildDipConfig {
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
     h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
     h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -3),
+    flatMicroDipEnabled: envBool('MILD_DIP_FLAT_MICRO_ENABLED', false),
+    flatMicroMinDipPct: envNum('MILD_DIP_FLAT_MICRO_MIN_DIP_PCT', -5),
+    flatMicroMaxDipPct: envNum('MILD_DIP_FLAT_MICRO_MAX_DIP_PCT', -1.5),
+    flatMicroH1MinPct: envNum('MILD_DIP_FLAT_MICRO_H1_MIN_PCT', -35),
+    flatMicroH1MaxPct: envNum('MILD_DIP_FLAT_MICRO_H1_MAX_PCT', 10),
     streamEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM?.trim().toLowerCase();
       if (!v) return true;
@@ -426,6 +442,14 @@ export function loadMildDipConfig(): MildDipConfig {
   ) {
     throw new Error(
       'mild-dip requires MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT < MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT',
+    );
+  }
+  if (
+    parsed.data.flatMicroDipEnabled &&
+    !(parsed.data.flatMicroMinDipPct < parsed.data.flatMicroMaxDipPct)
+  ) {
+    throw new Error(
+      'mild-dip requires MILD_DIP_FLAT_MICRO_MIN_DIP_PCT < MILD_DIP_FLAT_MICRO_MAX_DIP_PCT',
     );
   }
 

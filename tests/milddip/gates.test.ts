@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  evaluateFlatMicroDip,
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
@@ -201,6 +202,51 @@ describe('evaluateMildDipPreBuy', () => {
       freshPc5mPct: 4,
       entryGates: { minDipPct: -10, maxDipPct: -3 },
       maxChasePct: 4,
+    });
+    expect(v.pass).toBe(false);
+  });
+});
+
+describe('evaluateFlatMicroDip', () => {
+  const flat = {
+    minDipPct: -5,
+    maxDipPct: -1.5,
+    h1MinPct: -35,
+    h1MaxPct: 10,
+  };
+
+  it('accepts fartdog-style −2.21% scrape in chop hour', () => {
+    const v = evaluateFlatMicroDip({
+      priceChange5mPct: -2.21,
+      priceChange1hPct: -18,
+      ...flat,
+    });
+    expect(v.pass).toBe(true);
+  });
+
+  it('rejects main-mild depth (−6) — leave to mild/knife branches', () => {
+    const v = evaluateFlatMicroDip({
+      priceChange5mPct: -6,
+      priceChange1hPct: -10,
+      ...flat,
+    });
+    expect(v.pass).toBe(false);
+  });
+
+  it('rejects fresh 1h nuke below h1Min', () => {
+    const v = evaluateFlatMicroDip({
+      priceChange5mPct: -2.5,
+      priceChange1hPct: -40,
+      ...flat,
+    });
+    expect(v.pass).toBe(false);
+  });
+
+  it('rejects strong green 1h', () => {
+    const v = evaluateFlatMicroDip({
+      priceChange5mPct: -2.5,
+      priceChange1hPct: 15,
+      ...flat,
     });
     expect(v.pass).toBe(false);
   });
