@@ -156,7 +156,11 @@ export function evaluateGreenTapeEntry(
     const age = metrics.pairAgeHours;
     if (age == null || !Number.isFinite(age)) structural.push('missing_pair_age');
     else {
-      if (gates.minPairAgeHours > 0 && age < gates.minPairAgeHours) {
+      // Rocket-tier vol on brand-new pumpswap: enter with leaders (~1–2 min age),
+      // do not wait for structural minPairAgeHours (peanut 7BNaxx @ ~0.015h).
+      const vol5m = metrics.volume5mUsd ?? 0;
+      const rocketVolOk = vol5m >= gates.rocketMinVolume5mUsd;
+      if (gates.minPairAgeHours > 0 && age < gates.minPairAgeHours && !rocketVolOk) {
         structural.push(`age_h=${age.toFixed(2)}<${gates.minPairAgeHours}`);
       }
       if (gates.maxPairAgeHours > 0 && age > gates.maxPairAgeHours) {

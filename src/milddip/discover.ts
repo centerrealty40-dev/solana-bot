@@ -453,40 +453,42 @@ export async function enrichAndFilterCandidates(
           pc5m > midLo &&
           (midHi <= 0 || pc5m <= midHi);
         const ringFloor = liquidMid ? Math.max(minRingPc, 8) : minRingPc;
-        // Rockets are often first-seen with a single Dex probe sample — don't
-        // demand ring history when tape already shows extreme vol/turnover.
-        if (ringPc == null && verdict.path !== 'rocket') {
-          return {
-            kind: 'skip',
-            skip: {
-              mint,
-              entryMode: 'green_tape',
-              reasons: ['ring_insufficient_samples'],
-              metrics: {
-                ...metrics,
-                buySellRatio5m: verdict.buySellRatio5m,
-                turnover5m: verdict.turnover5m,
+        // Rockets: skip ring entirely — leaders enter on first vertical seconds;
+        // waiting for ring samples/green costs the peanut-style race.
+        if (verdict.path !== 'rocket') {
+          if (ringPc == null) {
+            return {
+              kind: 'skip',
+              skip: {
+                mint,
+                entryMode: 'green_tape',
+                reasons: ['ring_insufficient_samples'],
+                metrics: {
+                  ...metrics,
+                  buySellRatio5m: verdict.buySellRatio5m,
+                  turnover5m: verdict.turnover5m,
+                },
               },
-            },
-          };
-        }
-        if (ringPc != null && !(ringPc > ringFloor)) {
-          return {
-            kind: 'skip',
-            skip: {
-              mint,
-              entryMode: 'green_tape',
-              reasons: [
-                `ring_not_green:ringPc=${ringPc.toFixed(2)}<=${ringFloor}`,
-                `dex_pc5m=${metrics.priceChange5mPct ?? 'n/a'}`,
-              ],
-              metrics: {
-                ...metrics,
-                buySellRatio5m: verdict.buySellRatio5m,
-                turnover5m: verdict.turnover5m,
+            };
+          }
+          if (!(ringPc > ringFloor)) {
+            return {
+              kind: 'skip',
+              skip: {
+                mint,
+                entryMode: 'green_tape',
+                reasons: [
+                  `ring_not_green:ringPc=${ringPc.toFixed(2)}<=${ringFloor}`,
+                  `dex_pc5m=${metrics.priceChange5mPct ?? 'n/a'}`,
+                ],
+                metrics: {
+                  ...metrics,
+                  buySellRatio5m: verdict.buySellRatio5m,
+                  turnover5m: verdict.turnover5m,
+                },
               },
-            },
-          };
+            };
+          }
         }
         // Prefer tape quality over path label (8h RCA: high score ≠ edge).
         const pathBonus = verdict.path === 'early' ? 5 : 0;

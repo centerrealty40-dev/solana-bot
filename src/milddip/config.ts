@@ -269,7 +269,7 @@ export function loadMildDipConfig(): MildDipConfig {
     minLiquidityUsd: envNum('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', 8_000),
     minMarketCapUsd: envNum('MILD_DIP_GREEN_MIN_MCAP_USD', 18_000),
     maxMarketCapUsd: envNum('MILD_DIP_GREEN_MAX_MCAP_USD', 300_000_000),
-    minPairAgeHours: envNum('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', 0.05),
+    minPairAgeHours: envNum('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', 0.01),
     maxPairAgeHours: envNum('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', 72),
     allowedDexIds,
     // Fat / calm green — require >5% (0–5% was the loss zone in closed set; 2% is not a real impulse).

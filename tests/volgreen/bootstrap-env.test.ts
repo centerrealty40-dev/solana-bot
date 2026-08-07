@@ -60,7 +60,7 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M).toBe('1.4');
     expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD).toBe('10000');
     expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M).toBe('1.15');
-    expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.02');
+    expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.01');
     expect(process.env.MILD_DIP_MAX_ENRICH).toBe('20');
     expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('48');
   });

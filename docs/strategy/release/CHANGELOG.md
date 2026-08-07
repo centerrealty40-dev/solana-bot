@@ -1,5 +1,20 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.714] — 2026-08-07
+
+**Тег:** `sa-1.11.714`
+
+### Tune: race leaders on ignition (peanut timing)
+
+Bought peanut +6m after `7BNaxx` — first enrich was −23s but age/ring/bs
+blocked. Rocket-tier vol **bypasses min pair age**; rocket path **skips ring
+confirm**; enrich ranks ultra-fresh (≤20s) stream hits first; structural age
+default **0.01h**.
+
+**Откат:** age always enforced; ring required for rocket; freshBoost≤60s only.
+
+---
+
 ## [1.11.713] — 2026-08-07
 
 **Тег:** `sa-1.11.713`

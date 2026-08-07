@@ -58,8 +58,8 @@ export MILD_DIP_JOURNAL_ENTRY_SKIPS="${MILD_DIP_JOURNAL_ENTRY_SKIPS:-1}"
 # Green-tape: liquid (fat) OR early (thin + strong buy/sell, leader-like)
 export MILD_DIP_GREEN_MIN_LIQUIDITY_USD="${MILD_DIP_GREEN_MIN_LIQUIDITY_USD:-8000}"
 export MILD_DIP_GREEN_MIN_MCAP_USD="${MILD_DIP_GREEN_MIN_MCAP_USD:-18000}"
-# ~1.2 min — catch 7BNaxx-style entries on brand-new pumpswap (was 0.05h=3m).
-export MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS="${MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS:-0.02}"
+# 0.01h≈36s structural floor; rocket vol bypasses age entirely in gates.
+export MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS="${MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS:-0.01}"
 # Real green impulse: pc5m > 5% (0–5% was the closed-set loss zone, not "enough green").
 export MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT="${MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT:-5}"
 export MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD="${MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD:-2000}"

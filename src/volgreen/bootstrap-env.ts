@@ -128,8 +128,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // Green-tape floors loosened for micro-cap verticals (CHiHkQx: mcap~$20k, liq null/$9k).
   setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '8000');
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '18000');
-  // 7BNaxx peanut: leader bought ~1–2 min age; 0.05h (3m) blocked us.
-  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.02');
+  // Structural floor; rocket-tier vol bypasses age (enter ~with leaders).
+  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.01');
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '72');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '5');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2000');

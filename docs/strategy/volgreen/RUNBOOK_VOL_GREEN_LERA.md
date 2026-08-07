@@ -13,7 +13,9 @@ sell pipeline retries `BlockhashNotFound` / rpc sim errors with fresh quote.
 second giveback **−5%** sells the rest (full bag).  
 **Jupiter buy (1.11.711):** impact ≤ **2%**, quote premium ≤ **12%** (chase/prebuy still 5%).  
 **Noise cut (1.11.712):** liquid mid 10–25 needs bs≥1.4/to≥0.18; `never_arm_stale` 75s/MFE&lt;4%.  
-**Leader catch (1.11.713):** min pair age **0.02h**; rocket pc≥12 / vol≥$10k / bs≥1.15 / to≥0.2.  
+**Leader catch (1.11.714):** rocket vol bypasses age; no ring on rocket; enrich
+ultra-fresh ≤20s first; age floor 0.01h; rocket pc≥12 / vol≥$10k / bs≥1.15.  
+
 
 
 

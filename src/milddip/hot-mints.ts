@@ -52,7 +52,9 @@ export class MildDipHotMintBuffer {
       .map((h) => {
         const ageSec = Math.max(0, (nowMs - h.lastSeenAtMs) / 1000);
         const hitScore = h.hits / (1 + ageSec / 30);
-        const freshBoost = ageSec <= 60 ? 50 : ageSec <= 180 ? 15 : 0;
+        // Ultra-fresh tape (≤20s) jumps the enrich queue — race leaders on ignition.
+        const freshBoost =
+          ageSec <= 20 ? 120 : ageSec <= 60 ? 50 : ageSec <= 180 ? 15 : 0;
         return { mint: h.mint, score: hitScore + freshBoost };
       })
       .sort((a, b) => b.score - a.score)
