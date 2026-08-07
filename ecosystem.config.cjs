@@ -2841,10 +2841,11 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_DIP_PCT: '-25',
         /**
-         * 1.11.703 — tighten shallow edge −1 → −5 (pc5m ∈ (−25, −5]).
-         * 10h CF: −6…−3 bucket was the worst mean PnL; require ≥5% dump depth.
+         * 1.11.711 — deepen shallow edge −5 → −8 (pc5m ∈ (−25, −8]).
+         * Journal: (−10,−5] dead-rate worse than (−20,−10]; leaders' quality
+         * dips med ≈ −12. Cut mild scrapes that never bounce.
          */
-        MILD_DIP_MAX_DIP_PCT: '-5',
+        MILD_DIP_MAX_DIP_PCT: '-8',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).
@@ -2876,8 +2877,12 @@ const PM2_APPS = [
         MILD_DIP_FLAT_MICRO_MAX_DIP_PCT: '-1.5',
         MILD_DIP_FLAT_MICRO_H1_MIN_PCT: '-35',
         MILD_DIP_FLAT_MICRO_H1_MAX_PCT: '10',
-        /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
-        MILD_DIP_MIN_VOLUME_5M_USD: '500',
+        /**
+         * 1.11.711 — restore $1500 vol5m floor (was $500).
+         * Thin-vol cliff pre-filter: 4kLGts cliff −63% entered at vol≈$502;
+         * dead MFE<2 names cluster on thinner tape than bounce names.
+         */
+        MILD_DIP_MIN_VOLUME_5M_USD: '1500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
          * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).

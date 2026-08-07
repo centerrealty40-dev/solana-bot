@@ -242,10 +242,10 @@ export function loadMildDipConfig(): MildDipConfig {
   const entry: MildDipEntryGates = {
     /** 1.11.702 — wider knife floor (default −25 ⇒ pc5m > −25%). */
     minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -25),
-    /** Inclusive upper bound — require dump depth (default −5 ⇒ pc5m ≤ −5%). */
-    maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -5),
-    /** 1.11.701 — default $500 (was $1500). */
-    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 500),
+    /** Inclusive upper bound — require dump depth (default −8 ⇒ pc5m ≤ −8%). */
+    maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -8),
+    /** 1.11.711 — default $1500 (was $500). Thin-vol cliff pre-filter. */
+    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 1500),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),

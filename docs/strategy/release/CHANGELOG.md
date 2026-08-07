@@ -1,4 +1,29 @@
 # So
+## [1.11.711] — 2026-08-07
+
+**Тег:** `sa-1.11.711`
+
+### Ops: mild-dip deepen main band + restore vol floor (thin-cliff)
+
+Journal autopsy (Aug 5–7): stream/main blood was shallow scrapes + thin tape
+(`4kLGts` cliff −63% at vol≈$502). Deeper band `(−20,−10]` had higher bounce
+rate than `(−10,−5]`; dead names cluster thinner than bounce names.
+
+1. **`MAX_DIP_PCT` −5 → −8** — main band `pc5m ∈ (−25, −8]`
+2. **`MIN_VOLUME_5M_USD` $500 → $1500** — thin-vol cliff pre-filter (structural
+   gate on all lanes, including fast-path / flat_micro / h1_red)
+
+`h1_red_shallow` `(−10,−3]` and `flat_micro` `(−5,−1.5]` unchanged as own
+branches; they still need vol≥$1500.
+
+**Env:**
+`MILD_DIP_MAX_DIP_PCT=-8`
+`MILD_DIP_MIN_VOLUME_5M_USD=1500`
+
+**Откат:** `MAX_DIP=-5` + `MIN_VOLUME_5M=500` + reload.
+
+---
+
 ## [1.11.710] — 2026-08-07
 
 **Тег:** `sa-1.11.710`
