@@ -2877,8 +2877,16 @@ const PM2_APPS = [
          * - max-hold ceiling
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
+        /**
+         * 1.11.706 — never-arm exits (keep guardrails, cut losers earlier):
+         * - stale @10m: MFE≤2% and pnl≤−5% (dead-path stagnation)
+         * - dead @15m: pnl≤−10% (was −15%; leader loser med ≈ −10%)
+         */
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '600000',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '2',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
-        MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '15',
+        MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '10',
         /**
          * 1.11.696 — sustained vol fade (not one-shot):
          * Sample Dex vol5m every 5m; exit only after 3 consecutive weak windows

@@ -979,6 +979,8 @@ export async function runMildDipLoop(
       `fullGiveback=-${cfg.exit.givebackPct}% ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
+      `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s` +
+      `/mfe≤${cfg.exit.neverArmStaleMaxMfePct}%/pnl≤-${cfg.exit.neverArmStalePnlPct}% ` +
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
       `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd}` +
       `/sample${Math.round(cfg.exit.neverArmVolFadeSampleMs / 1000)}s×${cfg.exit.neverArmVolFadeWeakWindows} ` +

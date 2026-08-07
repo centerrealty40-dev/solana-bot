@@ -43,7 +43,10 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
     neverArmDeadMinMs: 900_000,
-    neverArmDeadPnlPct: 15,
+    neverArmDeadPnlPct: 10,
+    neverArmStaleMinMs: 600_000,
+    neverArmStaleMaxMfePct: 2,
+    neverArmStalePnlPct: 5,
     neverArmVolFadeMinMs: 900_000,
     neverArmVolFadeRatio: 0.25,
     neverArmVolFadeFloorUsd: 300,
@@ -121,7 +124,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(d?.fraction).toBe(0.5);
   });
 
-  it('queues never-arm dead after 15m deep loss (patience off)', () => {
+  it('queues never-arm stale after 10m flat + red (before dead)', () => {
     const openedAtMs = 1_000_000;
     const p = pos({
       mint: 'm4',
@@ -144,6 +147,27 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       pos: p,
       markPriceUsd: 80,
       gates,
+      nowMs: openedAtMs + 600_000,
+    });
+    expect(d?.shouldExit).toBe(true);
+    expect(d?.reason).toBe('never_arm_stale');
+  });
+
+  it('queues never-arm dead after 15m when stale is off and MFE moved', () => {
+    const openedAtMs = 1_000_000;
+    const gatesNoStale = { ...gates, neverArmStaleMinMs: 0, neverArmStalePnlPct: 0 };
+    const p = pos({
+      mint: 'm4d',
+      entryPriceUsd: 100,
+      peakPriceUsd: 104, // MFE 4% — would skip stale even if on
+      trailArmed: false,
+      openedAtMs,
+    });
+    const d = decideMarkExit({
+      mint: 'm4d',
+      pos: p,
+      markPriceUsd: 88, // −12%
+      gates: gatesNoStale,
       nowMs: openedAtMs + 900_000,
     });
     expect(d?.shouldExit).toBe(true);

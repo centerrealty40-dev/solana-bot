@@ -128,8 +128,15 @@ const MildDipConfigSchema = z.object({
     neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(2_400_000),
     /** Never-armed deep-loss cut min hold (0=off). Default 15m. */
     neverArmDeadMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
-    /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 15. */
-    neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(15),
+    /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 10. */
+    neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(10),
+    /**
+     * Never-armed stale: min hold before stagnation cut (0=off). Default 10m.
+     * If MFE ≤ maxMfe and pnl ≤ −stalePnl → exit (`never_arm_stale`).
+     */
+    neverArmStaleMinMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
+    neverArmStaleMaxMfePct: z.coerce.number().min(0).max(100).default(2),
+    neverArmStalePnlPct: z.coerce.number().min(0).max(100).default(5),
     /** Never-armed sustained fade: min hold before checks (0=off). Default 15m. */
     neverArmVolFadeMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
     /** A 5m window is weak if vol ≤ ratio × entry (0=off). Default 0.25. */
@@ -209,7 +216,15 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
     /** Deep-loss cut before max-hold (rugs); not the early 5m knife. */
     neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 900_000),
-    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 15),
+    /** 1.11.706 — align with leader loser med (~−10%), was 15. */
+    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 10),
+    /**
+     * 1.11.706 — stagnation: 10m unarmed + MFE≤2% + pnl≤−5% → never_arm_stale.
+     * Dead-path names flatten early; don't wait for −10/−15.
+     */
+    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 600_000),
+    neverArmStaleMaxMfePct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', 2),
+    neverArmStalePnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT', 5),
     /**
      * Sustained activity fade — leave only after N consecutive weak 5m windows.
      * One-shot Dex dips (Gymbmn) must not sell.

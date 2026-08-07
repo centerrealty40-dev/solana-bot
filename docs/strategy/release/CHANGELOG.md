@@ -1,4 +1,31 @@
 # So
+## [1.11.706] — 2026-08-07
+
+**Тег:** `sa-1.11.706`
+
+### Feat: mild-dip never-arm stale + dead −15% → −10%
+
+24h forensic: `peak_giveback` +$113 vs `never_arm_dead` −$113. Entry
+features for dead vs winners look alike; the split is **mid-trade path** —
+dead names stay flat (med MFE@10m ≈ 0%) and grind red. Leaders’ loser med
+exit ≈ **−10%**, not −15%.
+
+Changes (guardrails stay on — do not disable dead):
+
+1. **`never_arm_stale`** (new): after **10m** unarmed, if MFE ≤ **2%** and
+   pnl ≤ **−5%** → full exit. CF 24h ≈ **+$24** vs base, ~8 false PG.
+2. **`never_arm_dead`**: threshold **−15% → −10%** at same 15m min-hold.
+
+**Env:**
+`MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS=600000`
+`MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT=2`
+`MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT=5`
+`MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT=10`
+
+**Откат:** `STALE_MIN_MS=0` + `DEAD_PNL_PCT=15` + reload.
+
+---
+
 ## [1.11.705] — 2026-08-07
 
 **Тег:** `sa-1.11.705`
