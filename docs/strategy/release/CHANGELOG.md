@@ -1,4 +1,19 @@
 # So
+## [1.11.727] — 2026-08-07
+
+**Тег:** `sa-1.11.727`
+
+### Fix: scale-in ignores min mcap floor
+
+Second clip must still fire after a knife even when mcap has fallen below
+the fresh-entry floor (`MILD_DIP_MIN_MCAP_USD=50000`). Fast-path
+`structuralOk` skips min-mcap when `mildStabilizeOnly` (open-book scale-in).
+Max mcap / vol / liq / age floors unchanged. Fresh entries still require ≥$50k.
+
+**Откат:** remove `ignoreMinMarketCap` on scale-in path + reload.
+
+---
+
 ## [1.11.726] — 2026-08-07
 
 **Тег:** `sa-1.11.726`
