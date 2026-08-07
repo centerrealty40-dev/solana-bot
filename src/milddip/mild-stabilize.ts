@@ -13,7 +13,7 @@ export type MildStabilizeGates = {
   enabled: boolean;
   /** Dump from peak must be > this (e.g. −25). */
   minDumpPct: number;
-  /** Dump from peak must be ≤ this (e.g. −5). */
+  /** Dump from peak must be ≤ this (e.g. −8). */
   maxDumpPct: number;
   /** Min bounce % off trough. */
   minBouncePct: number;
@@ -23,6 +23,12 @@ export type MildStabilizeGates = {
   troughMinAgeMs: number;
   /** Lookback for peak/trough. */
   lookbackMs: number;
+  /**
+   * Last mark must stay ≥ this % below the local peak (anti green-candle-to-top).
+   * Gymbmn / 25rbPvD: −5% wiggle then full reclaim (~0% below peak) — reject.
+   * 0 = off.
+   */
+  minBelowPeakPct: number;
   /**
    * Scale-in only: trough must be at least this % below the open entry
    * (further dump after first clip). 0 = off.
@@ -93,6 +99,14 @@ export function evaluateMildStabilizeFromRing(
   }
   if (troughAgeMs < gates.troughMinAgeMs) {
     reasons.push(`mild_stabilize_trough_age=${troughAgeMs}ms<${gates.troughMinAgeMs}`);
+  }
+  if (gates.minBelowPeakPct > 0) {
+    const belowPeakPct = (1 - last.priceUsd / peak.priceUsd) * 100;
+    if (belowPeakPct < gates.minBelowPeakPct) {
+      reasons.push(
+        `mild_stabilize_below_peak=${belowPeakPct.toFixed(2)}%<min=${gates.minBelowPeakPct}`,
+      );
+    }
   }
 
   return {

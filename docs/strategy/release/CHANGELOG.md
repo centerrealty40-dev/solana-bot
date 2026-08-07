@@ -1,4 +1,25 @@
 # So
+## [1.11.722] — 2026-08-07
+
+**Тег:** `sa-1.11.722`
+
+### Fix: mild_stabilize — no micro-dip green reclaim
+
+`Gymbmn` / `25rbPvD`: fresh `mild_stabilize` bought a −5.2% ring wiggle then
++5.3% bounce back to the local peak (chart = a few green candles, no knife).
+
+**Changes:**
+1. Dump band `(−25,−5]` → `(−25,−8]` (require ≥8% dump).
+2. Last must stay ≥ **2%** below local peak (`MIN_BELOW_PEAK_PCT`).
+
+**Env:**
+`MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT=-8`
+`MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT=2`
+
+**Откат:** `MAX_DUMP_PCT=-5` + `MIN_BELOW_PEAK_PCT=0` + reload.
+
+---
+
 ## [1.11.721] — 2026-08-07
 
 **Тег:** `sa-1.11.721`

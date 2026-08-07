@@ -11,11 +11,12 @@ describe('evaluateMildStabilizeFromRing', () => {
   const gates = {
     enabled: true,
     minDumpPct: -25,
-    maxDumpPct: -5,
+    maxDumpPct: -8,
     minBouncePct: 1.5,
     maxBouncePct: 8,
     troughMinAgeMs: 15_000,
     lookbackMs: 600_000,
+    minBelowPeakPct: 2,
     scaleInMinDumpBelowEntryPct: 3,
   };
 
@@ -48,6 +49,22 @@ describe('evaluateMildStabilizeFromRing', () => {
     r.note(mint, 1.0, { tsMs: t0 + 120_000, source: 'stream' }); // +11% off trough
     const v = evaluateMildStabilizeFromRing(r, mint, t0 + 120_000, gates);
     expect(v.pass).toBe(false);
+  });
+
+  it('rejects Gymbmn micro-dip green reclaim to peak (25rbPvD)', () => {
+    // Live: dump −5.17% then bounce +5.29% → last ~0.15% below peak.
+    const live = 'Gymbmn9wwMKe4NnmVceyyfpncp9arbwPfSdBsyY9pump';
+    const r = new MildDipPriceRing({ maxSamplesPerMint: 60, ttlMs: 3_600_000 });
+    r.note(live, 0.0007212, { tsMs: t0, source: 'stream' });
+    r.note(live, 0.0006839, { tsMs: t0 + 60_000, source: 'stream' });
+    r.note(live, 0.0007201, { tsMs: t0 + 90_000, source: 'stream' });
+    const v = evaluateMildStabilizeFromRing(r, live, t0 + 90_000, gates);
+    expect(v.pass).toBe(false);
+    expect(
+      v.reasons.some(
+        (x) => x.startsWith('mild_stabilize_dump=') || x.startsWith('mild_stabilize_below_peak='),
+      ),
+    ).toBe(true);
   });
 
   it('9nXkTP / 5vuKy3b mark path qualifies for second clip', () => {

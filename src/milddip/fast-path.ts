@@ -284,6 +284,7 @@ export async function evaluateFastPathCandidate(
       maxBouncePct: cfg.mildStabilizeMaxBouncePct,
       troughMinAgeMs: cfg.mildStabilizeTroughMinAgeMs,
       lookbackMs: cfg.cooldownBounceLookbackMs,
+      minBelowPeakPct: cfg.mildStabilizeMinBelowPeakPct,
       scaleInMinDumpBelowEntryPct: cfg.mildStabilizeScaleInMinDumpBelowEntryPct,
     });
     if (mild.pass) {
