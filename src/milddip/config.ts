@@ -27,6 +27,14 @@ const MildDipConfigSchema = z.object({
   journalPath: z.string().min(1),
   statePath: z.string().min(1),
   positionUsd: z.coerce.number().positive().max(10_000).default(5),
+  /**
+   * Size-up clip for thick names (mcap/liq/age). 0 or ≤ positionUsd = off.
+   * Default $10 = 2× the $5 base clip.
+   */
+  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
+  thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
+  thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
+  thickMinPairAgeHours: z.coerce.number().min(0).default(6),
   /** 0 = unlimited — keep buying while USDC remains. */
   maxOpenPositions: z.coerce.number().int().min(0).max(500).default(0),
   scanIntervalMs: z.coerce.number().int().min(5_000).max(600_000).default(5_000),
@@ -77,6 +85,14 @@ const MildDipConfigSchema = z.object({
   lossCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(150),
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
+  /**
+   * Periodic USDC→native SOL top-up when fee SOL wallet value is below floor.
+   * Default on: check every 6h; if SOL &lt; $5, buy $20 SOL.
+   */
+  feeSolTopupEnabled: z.boolean().default(true),
+  feeSolTopupIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(21_600_000),
+  feeSolTopupMinUsd: z.coerce.number().min(0).max(1_000).default(5),
+  feeSolTopupBuyUsd: z.coerce.number().positive().max(500).default(20),
   /** Candidate mint sources: comma list — stream,boosts,profiles,seed */
   discoverSources: z.string().default('stream,boosts,profiles'),
   seedMintsPath: z.string().optional(),
@@ -93,6 +109,14 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeBandPct: z.coerce.number().min(0).max(50).default(2.5),
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
+  /**
+   * Autonomous red-hour shallow: when 1h ≤ h1Max and pc5m ∈ (min,max],
+   * enter without the main mild band (own logic — not leader copy).
+   */
+  h1RedShallowEnabled: z.boolean().default(false),
+  h1RedShallowH1MaxPct: z.coerce.number().max(0).default(-15),
+  h1RedShallowMinDipPct: z.coerce.number().default(-10),
+  h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-3),
   /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
   streamEnabled: z.boolean().default(true),
   streamWsUrl: z.string().optional(),
@@ -131,8 +155,15 @@ const MildDipConfigSchema = z.object({
     neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(2_400_000),
     /** Never-armed deep-loss cut min hold (0=off). Default 15m. */
     neverArmDeadMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
-    /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 15. */
-    neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(15),
+    /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 10. */
+    neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(10),
+    /**
+     * Never-armed stale: min hold before stagnation cut (0=off). Default 10m.
+     * If MFE ≤ maxMfe and pnl ≤ −stalePnl → exit (`never_arm_stale`).
+     */
+    neverArmStaleMinMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
+    neverArmStaleMaxMfePct: z.coerce.number().min(0).max(100).default(2),
+    neverArmStalePnlPct: z.coerce.number().min(0).max(100).default(5),
     /** Never-armed sustained fade: min hold before checks (0=off). Default 15m. */
     neverArmVolFadeMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
     /** A 5m window is weak if vol ≤ ratio × entry (0=off). Default 0.25. */
@@ -167,10 +198,12 @@ export function loadMildDipConfig(): MildDipConfig {
     : [];
 
   const entry: MildDipEntryGates = {
-    minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -20),
-    /** Inclusive upper bound — require dump depth (default −4 ⇒ pc5m ≤ −4%). */
-    maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -4),
-    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 1_500),
+    /** 1.11.702 — wider knife floor (default −25 ⇒ pc5m > −25%). */
+    minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -25),
+    /** Inclusive upper bound — require dump depth (default −5 ⇒ pc5m ≤ −5%). */
+    maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -5),
+    /** 1.11.701 — default $500 (was $1500). */
+    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 500),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
@@ -210,7 +243,15 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
     /** Deep-loss cut before max-hold (rugs); not the early 5m knife. */
     neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 900_000),
-    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 15),
+    /** 1.11.706 — align with leader loser med (~−10%), was 15. */
+    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 10),
+    /**
+     * 1.11.706 — stagnation: 10m unarmed + MFE≤2% + pnl≤−5% → never_arm_stale.
+     * Dead-path names flatten early; don't wait for −10/−15.
+     */
+    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 600_000),
+    neverArmStaleMaxMfePct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', 2),
+    neverArmStalePnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT', 5),
     /**
      * Sustained activity fade — leave only after N consecutive weak 5m windows.
      * One-shot Dex dips (Gymbmn) must not sell.
@@ -233,6 +274,10 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_JOURNAL_PATH?.trim() || path.join('data', 'milddip', 'journal.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
     positionUsd: process.env.MILD_DIP_POSITION_USD ?? 5,
+    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 10,
+    thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
+    thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
+    thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
@@ -254,6 +299,14 @@ export function loadMildDipConfig(): MildDipConfig {
     lossCooldownMs: process.env.MILD_DIP_LOSS_COOLDOWN_MS ?? 600_000,
     slippageBps: process.env.MILD_DIP_SLIPPAGE_BPS ?? 150,
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
+    feeSolTopupEnabled: (() => {
+      const v = process.env.MILD_DIP_FEE_SOL_TOPUP?.trim().toLowerCase();
+      if (!v) return true;
+      return v === '1' || v === 'true' || v === 'yes';
+    })(),
+    feeSolTopupIntervalMs: process.env.MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS ?? 21_600_000,
+    feeSolTopupMinUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_MIN_USD ?? 5,
+    feeSolTopupBuyUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_BUY_USD ?? 20,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
     knifeStabilizeEnabled: envBool('MILD_DIP_KNIFE_STABILIZE_ENABLED', false),
@@ -265,6 +318,10 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeBandPct: envNum('MILD_DIP_KNIFE_STABILIZE_BAND_PCT', 2.5),
     knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
+    h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
+    h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
+    h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
+    h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -3),
     streamEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM?.trim().toLowerCase();
       if (!v) return true;

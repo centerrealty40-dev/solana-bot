@@ -2788,8 +2788,9 @@ const PM2_APPS = [
     },
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
-     * Entry: DexScreener pc5m ∈ (−20, 0], clip $5.
-     * Exit W9.1: arm MFE +8% → full exit giveback −6% from peak (no time-stop / hard TP).
+     * Entry: DexScreener pc5m ∈ (−25, −5], clip $5; thick $10 when
+     * mcap≥$100k / liq≥$50k / age≥6h; buy impact ≤2%.
+     * Exit: arm MFE +5% → half @ −3% giveback / full @ −8% (no hard TP).
      * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $5 USDC).
      */
     {
@@ -2824,15 +2825,26 @@ const PM2_APPS = [
         MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         MILD_DIP_POSITION_USD: '5',
+        /**
+         * 1.11.705 — thick size-up: 2× clip ($10) when structural name
+         * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
+         */
+        MILD_DIP_THICK_POSITION_USD: '10',
+        MILD_DIP_THICK_MIN_MCAP_USD: '100000',
+        MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
+        MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
         MILD_DIP_MAX_OPEN_POSITIONS: '0',
-        MILD_DIP_MIN_DIP_PCT: '-20',
         /**
-         * 1.11.690 — require dump depth ≥4% (pc5m ∈ (−20, −4]).
-         * Was 0: flat-chop noise (−0…−3%) kept buying after leaders left.
-         * 36h CF vs 8zkg dumps: MAX=-4 → dump recall ~83%, cuts ~47% after-flat buys.
+         * 1.11.702 — slightly wider knife floor (was −20). Prebuy was skipping
+         * dumps that printed −25…−30 by the time the quote landed.
          */
-        MILD_DIP_MAX_DIP_PCT: '-4',
+        MILD_DIP_MIN_DIP_PCT: '-25',
+        /**
+         * 1.11.703 — tighten shallow edge −1 → −5 (pc5m ∈ (−25, −5]).
+         * 10h CF: −6…−3 bucket was the worst mean PnL; require ≥5% dump depth.
+         */
+        MILD_DIP_MAX_DIP_PCT: '-5',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).
@@ -2846,10 +2858,20 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
-        MILD_DIP_MIN_VOLUME_5M_USD: '1500',
+        /**
+         * Red-hour shallow (own logic, not leader copy): when 1h ≤ −15% and
+         * pc5m ∈ (−10, −3], enter without waiting for the main mild band.
+         * Prebuy must use this same band (1.11.707).
+         */
+        MILD_DIP_H1_RED_SHALLOW_ENABLED: '1',
+        MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT: '-15',
+        MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT: '-10',
+        MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-3',
+        /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
+        MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
-         * $5 clips; impact still capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT=1.
+         * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         MILD_DIP_MIN_MCAP_USD: '15000',
@@ -2877,8 +2899,16 @@ const PM2_APPS = [
          * - max-hold ceiling
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
+        /**
+         * 1.11.706 — never-arm exits (keep guardrails, cut losers earlier):
+         * - stale @10m: MFE≤2% and pnl≤−5% (dead-path stagnation)
+         * - dead @15m: pnl≤−10% (was −15%; leader loser med ≈ −10%)
+         */
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '600000',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '2',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
-        MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '15',
+        MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '10',
         /**
          * 1.11.696 — sustained vol fade (not one-shot):
          * Sample Dex vol5m every 5m; exit only after 3 consecutive weak windows
@@ -2950,14 +2980,22 @@ const PM2_APPS = [
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
         /**
-         * 1.11.693 — exec-friction canary (overrides JUPITER_PRO_TRADING_ENV above):
-         * - buy impact gate 1% (skip thin routes; sell NOT gated — never strand bags)
-         * - priority medium + 0.00005 SOL cap (was high / 0.0001; sampled fees hit the cap)
+         * 1.11.702 — buy impact gate 2% (was 1% canary). After liq floor $10k
+         * most attempts died at 1–2% Jupiter impact; sell still NOT gated.
+         * Priority medium + 0.00005 SOL cap.
          */
-        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '1',
+        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '2',
         LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'medium',
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.00005',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
+        /**
+         * 1.11.704 — if native SOL value < $5, Jupiter-swap $20 USDC→SOL.
+         * Checked at most once per 6h (also runs soon after process start).
+         */
+        MILD_DIP_FEE_SOL_TOPUP: '1',
+        MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS: '21600000',
+        MILD_DIP_FEE_SOL_TOPUP_MIN_USD: '5',
+        MILD_DIP_FEE_SOL_TOPUP_BUY_USD: '20',
         MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',

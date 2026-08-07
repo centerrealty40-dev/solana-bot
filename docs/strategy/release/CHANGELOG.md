@@ -1,4 +1,153 @@
 # So
+## [1.11.707] — 2026-08-07
+
+**Тег:** `sa-1.11.707`
+
+### Fix: mild-dip `h1_red_shallow` prebuy used the wrong band
+
+Autonomous red-hour branch selects when **h1 ≤ −15%** and
+**pc5m ∈ (−10, −3]** (leader-style shallow grind — own logic, not copy).
+Prebuy still revalidated against the **main mild** band, so real shallow
+signals were killed (`prebuy_pc5m=-8… outside (−20,−10]` / `(−25,−5]`).
+
+**Fix:** for `dipSource=h1_red_shallow`, prebuy uses the h1-shallow band.
+Green bounce / chase guards unchanged.
+
+**Env (unchanged defaults, now actually executable):**
+`MILD_DIP_H1_RED_SHALLOW_ENABLED=1`
+`MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT=-15`
+`MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT=-10`
+`MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT=-3`
+
+**Откат:** `MILD_DIP_H1_RED_SHALLOW_ENABLED=0` + reload.
+
+---
+
+## [1.11.706] — 2026-08-07
+
+**Тег:** `sa-1.11.706`
+
+### Feat: mild-dip never-arm stale + dead −15% → −10%
+
+24h forensic: `peak_giveback` +$113 vs `never_arm_dead` −$113. Entry
+features for dead vs winners look alike; the split is **mid-trade path** —
+dead names stay flat (med MFE@10m ≈ 0%) and grind red. Leaders’ loser med
+exit ≈ **−10%**, not −15%.
+
+Changes (guardrails stay on — do not disable dead):
+
+1. **`never_arm_stale`** (new): after **10m** unarmed, if MFE ≤ **2%** and
+   pnl ≤ **−5%** → full exit. CF 24h ≈ **+$24** vs base, ~8 false PG.
+2. **`never_arm_dead`**: threshold **−15% → −10%** at same 15m min-hold.
+
+**Env:**
+`MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS=600000`
+`MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT=2`
+`MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT=5`
+`MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT=10`
+
+**Откат:** `STALE_MIN_MS=0` + `DEAD_PNL_PCT=15` + reload.
+
+---
+
+## [1.11.705] — 2026-08-07
+
+**Тег:** `sa-1.11.705`
+
+### Feat: mild-dip thick size-up $5 → $10
+
+Leaders print edge on thick structural names. Keep base clip **$5**; size up
+to **$10** when all three clear at entry (fresh Dex when prebuy on):
+
+- market cap **≥ $100k**
+- liquidity **≥ $50k**
+- pair age **≥ 6h**
+
+Missing metrics stay on the base clip (fail closed). Journal:
+`sizeTier` / `wantUsd` on reserve + buy_attempt.
+
+**Env:**
+`MILD_DIP_THICK_POSITION_USD=10`
+`MILD_DIP_THICK_MIN_MCAP_USD=100000`
+`MILD_DIP_THICK_MIN_LIQUIDITY_USD=50000`
+`MILD_DIP_THICK_MIN_PAIR_AGE_HOURS=6`
+
+**Откат:** `MILD_DIP_THICK_POSITION_USD=0` (or `=5`) + reload.
+
+---
+
+## [1.11.704] — 2026-08-07
+
+**Тег:** `sa-1.11.704`
+
+### Ops: mild-dip fee SOL auto top-up (6h / &lt;$5 → $20)
+
+Live wallet hit `insufficient_fee_sol` (~0.018 SOL &lt; 0.02 reserve) with
+plenty of USDC — entries blocked for hours. Add a periodic check:
+
+- every **6h** (also soon after process start)
+- if native SOL value **&lt; $5**, Jupiter-swap **$20 USDC → native SOL**
+  (`wrapAndUnwrapSol`)
+
+**Env:**
+`MILD_DIP_FEE_SOL_TOPUP=1`
+`MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS=21600000`
+`MILD_DIP_FEE_SOL_TOPUP_MIN_USD=5`
+`MILD_DIP_FEE_SOL_TOPUP_BUY_USD=20`
+
+**Откат:** `MILD_DIP_FEE_SOL_TOPUP=0` + reload.
+
+---
+
+## [1.11.703] — 2026-08-06
+
+**Тег:** `sa-1.11.703`
+
+### Ops: mild-dip `MAX_DIP_PCT` −1 → −5
+
+10h live CF: shallow band (−6…−3) was the worst mean-PnL bucket and fed
+`never_arm_*` losers. Require dump depth ≥5% again (`pc5m ∈ (−25, −5]`).
+
+**Env:** `MILD_DIP_MAX_DIP_PCT=-5`
+
+**Откат:** `−1`.
+
+---
+
+## [1.11.702] — 2026-08-06
+
+**Тег:** `sa-1.11.702`
+
+### Ops: mild-dip impact 2% + softer dip band
+
+After liq $10k / vol5m $500, entries were still scarce: Jupiter buy-impact
+cap **1%** blocked most thin-route quotes (1–2%), and prebuy `pc5m` band
+`(−20, −4]` skipped soft recoveries (~−1.9) and mid knives (~−25).
+
+- `LIVE_BUY_MAX_PRICE_IMPACT_PCT` **1 → 2**
+- `MILD_DIP_MAX_DIP_PCT` **−4 → −1** (band `(−25, −1]`)
+- `MILD_DIP_MIN_DIP_PCT` **−20 → −25**
+- Slot cap unchanged: `MILD_DIP_MAX_OPEN_POSITIONS=0` (unlimited; spend USDC)
+
+**Откат:** impact `1`, maxDip `−4`, minDip `−20`.
+
+---
+
+## [1.11.701] — 2026-08-06
+
+**Тег:** `sa-1.11.701`
+
+### Ops: mild-dip `MIN_VOLUME_5M_USD` 1500 → 500
+
+Active dips with healthy tape can sit under $1500/5m (e.g. Mowgli ~$590)
+and never become candidates. Floor lowered to $500.
+
+**Env:** `MILD_DIP_MIN_VOLUME_5M_USD=500`
+
+**Откат:** `1500`.
+
+---
+
 ## [1.11.700] — 2026-08-06
 
 **Тег:** `sa-1.11.700`

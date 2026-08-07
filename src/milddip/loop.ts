@@ -23,7 +23,11 @@ import {
   type MarkExitDecision,
 } from './exit-engine.js';
 import { cooldownMsAfterExit } from './cooldown.js';
-import { evaluateCooldownBounce, evaluateMildDipPreBuy } from './gates.js';
+import {
+  evaluateCooldownBounce,
+  evaluateMildDipPreBuy,
+  resolveMildDipWantedSizeUsd,
+} from './gates.js';
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
 import {
   loadMildDipHotMints,
@@ -42,6 +46,7 @@ import {
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
+import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 
@@ -207,8 +212,9 @@ async function resolveEntrySizeUsd(
   cfg: MildDipConfig,
   copyCfg: ReturnType<typeof mildDipToCopyTraderConfig>,
   nowMs: number,
+  wantUsd: number,
 ): Promise<{ sizeUsd: number; stop: boolean; reason?: string; usdc?: number }> {
-  const want = cfg.positionUsd;
+  const want = wantUsd > 0 ? wantUsd : cfg.positionUsd;
   const full = await checkCopyFundingGate(copyCfg, want, nowMs);
   if (full.ok) return { sizeUsd: want, stop: false, usdc: full.quoteUsd };
 
@@ -338,23 +344,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       continue;
     }
 
-    const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs);
-    if (sized.stop || !(sized.sizeUsd > 0)) {
-      if (sized.reason && sized.reason !== 'usdc_exhausted') {
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_funding_block',
-          reason: sized.reason,
-          usdc: sized.usdc ?? null,
-        });
-      }
-      break;
-    }
-
     // Re-check right before send — enrich can be tens of seconds stale.
     let entryPriceUsd = c.priceUsd;
     let entryPc5m = c.metrics.priceChange5mPct;
     let freshPx: number | null = c.priceUsd;
     const isKnife = c.dipSource === 'knife_stabilize';
+    const isH1RedShallow = c.dipSource === 'h1_red_shallow';
+    let sizeMetrics = {
+      liquidityUsd: c.metrics.liquidityUsd,
+      marketCapUsd: c.metrics.marketCapUsd,
+      pairAgeHours: c.metrics.pairAgeHours,
+    };
     if (cfg.preBuyRevalidate) {
       const freshNow = Date.now();
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
@@ -379,7 +379,14 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
             signalPriceUsd: c.priceUsd,
             freshPriceUsd: freshPx,
             freshPc5mPct: freshPc,
-            entryGates: cfg.entry,
+            // h1_red_shallow selects (−10,−3]; must revalidate on that band,
+            // not the main mild (−25,−5] — otherwise every real shallow is killed.
+            entryGates: isH1RedShallow
+              ? {
+                  minDipPct: cfg.h1RedShallowMinDipPct,
+                  maxDipPct: cfg.h1RedShallowMaxDipPct,
+                }
+              : cfg.entry,
             maxChasePct: cfg.maxChasePct,
           });
       if (!pre.pass) {
@@ -403,6 +410,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       }
       if (freshPx != null) entryPriceUsd = freshPx;
       if (!isKnife && freshPc != null) entryPc5m = freshPc;
+      if (fresh) {
+        const freshAge =
+          fresh.pairCreatedAtMs != null && fresh.pairCreatedAtMs > 0
+            ? Math.max(0, (freshNow - fresh.pairCreatedAtMs) / 3_600_000)
+            : null;
+        sizeMetrics = {
+          liquidityUsd: fresh.liquidityUsd ?? sizeMetrics.liquidityUsd,
+          marketCapUsd: fresh.marketCapUsd ?? sizeMetrics.marketCapUsd,
+          pairAgeHours: freshAge ?? sizeMetrics.pairAgeHours,
+        };
+      }
     }
 
     // After cooldown: refuse if we already bounced too far off the observed trough.
@@ -450,6 +468,30 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       continue;
     }
 
+    const wanted = resolveMildDipWantedSizeUsd({
+      basePositionUsd: cfg.positionUsd,
+      thick: {
+        positionUsd: cfg.thickPositionUsd,
+        minMarketCapUsd: cfg.thickMinMarketCapUsd,
+        minLiquidityUsd: cfg.thickMinLiquidityUsd,
+        minPairAgeHours: cfg.thickMinPairAgeHours,
+      },
+      metrics: sizeMetrics,
+    });
+    const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, wanted.sizeUsd);
+    if (sized.stop || !(sized.sizeUsd > 0)) {
+      if (sized.reason && sized.reason !== 'usdc_exhausted') {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_funding_block',
+          reason: sized.reason,
+          usdc: sized.usdc ?? null,
+          wantUsd: wanted.sizeUsd,
+          sizeTier: wanted.tier,
+        });
+      }
+      break;
+    }
+
     // Reserve seat BEFORE Jupiter send so a twin process / overlapping scan
     // cannot open a second $5 clip on the same mint (seen on BorBvx…).
     if (buyInFlight.has(c.mint) || state.open[c.mint]) continue;
@@ -476,6 +518,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       mint: c.mint,
       symbol: c.symbol,
       sizeUsd: sized.sizeUsd,
+      wantUsd: wanted.sizeUsd,
+      sizeTier: wanted.tier,
       priceUsd: entryPriceUsd,
       dipSource: c.dipSource,
       knifeMode: c.knifeMode ?? null,
@@ -513,15 +557,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         mint: c.mint,
         symbol: c.symbol,
         sizeUsd: sized.sizeUsd,
+        wantUsd: wanted.sizeUsd,
+        sizeTier: wanted.tier,
         priceUsd: entryPriceUsd,
         signalPriceUsd: c.priceUsd,
         pc5m: entryPc5m,
         signalPc5m: c.metrics.priceChange5mPct,
         volume5mUsd: c.metrics.volume5mUsd,
         volume1hUsd: c.metrics.volume1hUsd,
-        liquidityUsd: c.metrics.liquidityUsd,
-        marketCapUsd: c.metrics.marketCapUsd,
-        pairAgeHours: c.metrics.pairAgeHours,
+        liquidityUsd: sizeMetrics.liquidityUsd,
+        marketCapUsd: sizeMetrics.marketCapUsd,
+        pairAgeHours: sizeMetrics.pairAgeHours,
         buys5m: c.metrics.buys5m,
         sells5m: c.metrics.sells5m,
         dexId: c.metrics.dexId,
@@ -539,15 +585,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       mint: c.mint,
       symbol: c.symbol,
       sizeUsd: sized.sizeUsd,
+      wantUsd: wanted.sizeUsd,
+      sizeTier: wanted.tier,
       priceUsd: buy.priceUsd || entryPriceUsd,
       signalPriceUsd: c.priceUsd,
       pc5m: entryPc5m,
       signalPc5m: c.metrics.priceChange5mPct,
       volume5mUsd: c.metrics.volume5mUsd,
       volume1hUsd: c.metrics.volume1hUsd,
-      liquidityUsd: c.metrics.liquidityUsd,
-      marketCapUsd: c.metrics.marketCapUsd,
-      pairAgeHours: c.metrics.pairAgeHours,
+      liquidityUsd: sizeMetrics.liquidityUsd,
+      marketCapUsd: sizeMetrics.marketCapUsd,
+      pairAgeHours: sizeMetrics.pairAgeHours,
       buys5m: c.metrics.buys5m,
       sells5m: c.metrics.sells5m,
       dexId: c.metrics.dexId,
@@ -590,9 +638,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     filled += 1;
     resetCopyFundingCache();
     console.log(
-      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd} pc5m=${entryPc5m?.toFixed(1)} @$${
-        (buy.priceUsd || entryPriceUsd).toPrecision(4)
-      } mode=${cfg.executionMode}`,
+      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd}` +
+        `${wanted.tier === 'thick' ? ' thick' : ''} pc5m=${entryPc5m?.toFixed(1)} @$${
+          (buy.priceUsd || entryPriceUsd).toPrecision(4)
+        } mode=${cfg.executionMode}`,
     );
   }
 }
@@ -975,13 +1024,19 @@ export async function runMildDipLoop(
   const jupFeeCapSol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim() || 'n/a';
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
+      `thickUsd=${cfg.thickPositionUsd}` +
+      `(mcap≥$${cfg.thickMinMarketCapUsd}/liq≥$${cfg.thickMinLiquidityUsd}/age≥${cfg.thickMinPairAgeHours}h) ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
+      `h1RedShallow=${cfg.h1RedShallowEnabled ? 1 : 0}` +
+      `(h1≤${cfg.h1RedShallowH1MaxPct}/pc5m∈(${cfg.h1RedShallowMinDipPct},${cfg.h1RedShallowMaxDipPct}]) ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +
       `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
       `fullGiveback=-${cfg.exit.givebackPct}% ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
+      `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s` +
+      `/mfe≤${cfg.exit.neverArmStaleMaxMfePct}%/pnl≤-${cfg.exit.neverArmStalePnlPct}% ` +
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
       `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd}` +
       `/sample${Math.round(cfg.exit.neverArmVolFadeSampleMs / 1000)}s×${cfg.exit.neverArmVolFadeWeakWindows} ` +
@@ -1002,6 +1057,9 @@ export async function runMildDipLoop(
       `/bounce[${cfg.knifeStabilizeMinBouncePct},${cfg.knifeStabilizeMaxBouncePct}] ` +
       `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +
       `lossCooldown=${Math.round(cfg.lossCooldownMs / 1000)}s ` +
+      `feeSolTopup=${cfg.feeSolTopupEnabled ? 1 : 0}` +
+      `/every${Math.round(cfg.feeSolTopupIntervalMs / 3_600_000)}h` +
+      `/min$${cfg.feeSolTopupMinUsd}/buy$${cfg.feeSolTopupBuyUsd} ` +
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 
@@ -1016,6 +1074,13 @@ export async function runMildDipLoop(
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+
+    // Fee SOL top-up (interval-gated inside helper; first check ASAP after start).
+    try {
+      await maybeTopUpFeeSol(cfg, nowMs);
+    } catch (err) {
+      console.warn('[mild-dip] fee-sol topup tick failed', err);
+    }
 
     // Respect markInterval (previously `|| openCount>0` hammered Dex every tick).
     if (openCount(state) > 0 && nowMs - lastMark >= cfg.markIntervalMs) {

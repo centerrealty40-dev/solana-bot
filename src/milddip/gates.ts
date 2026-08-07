@@ -19,6 +19,7 @@ export type MildDipCandidateMetrics = {
   /** DexScreener m5 sell count — journaled; optional entry use. */
   sells5m: number | null;
   volume1hUsd: number | null;
+  priceChange1hPct: number | null;
 };
 
 export type MildDipEntryGates = {
@@ -66,8 +67,19 @@ export type MildDipExitGates = {
    * early 5m −6% knife. 0 = disabled.
    */
   neverArmDeadMinMs: number;
-  /** See neverArmDeadMinMs. Positive percent (e.g. 15 = exit at ≤ −15%). */
+  /** See neverArmDeadMinMs. Positive percent (e.g. 10 = exit at ≤ −10%). */
   neverArmDeadPnlPct: number;
+  /**
+   * Never-armed stagnation cut: after this many ms, if MFE never exceeded
+   * `neverArmStaleMaxMfePct` AND pnl ≤ −neverArmStalePnlPct → `never_arm_stale`.
+   * Catches dead-path names before they grind to the deep dead threshold.
+   * 0 min = off.
+   */
+  neverArmStaleMinMs: number;
+  /** Max MFE % still considered “never moved” for stale (default 2). */
+  neverArmStaleMaxMfePct: number;
+  /** Stale cut when pnl ≤ −this % (default 5). 0 = off. */
+  neverArmStalePnlPct: number;
   /**
    * Activity-based never-armed exit (`never_arm_vol_fade`): once held this long,
    * start evaluating sustained volume fade across spaced 5m windows. A single
@@ -261,6 +273,7 @@ export type MildDipExitReason =
   | 'peak_giveback'
   | 'peak_giveback_partial'
   | 'never_arm_giveback'
+  | 'never_arm_stale'
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
   | 'never_arm_timeout'
@@ -459,14 +472,27 @@ export function evaluateMildDipPeakGiveback(args: {
   }
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
-  // Order: optional soft giveback (usually OFF) → deep-loss dead cut →
-  // sustained vol fade (N consecutive weak 5m windows) → max-hold ceiling.
+  // Order: optional soft giveback (usually OFF) → stagnation stale cut →
+  // deep-loss dead cut → sustained vol fade → max-hold ceiling.
   // Full givebackPct is the soft knife width when patience is on.
   const givebackHit = fullGivebackHit;
   if (!armed) {
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (patience > 0 && heldMs >= patience && givebackHit) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };
+    }
+    const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
+    const stalePnl = gates.neverArmStalePnlPct > 0 ? gates.neverArmStalePnlPct : 0;
+    const staleMaxMfe =
+      gates.neverArmStaleMaxMfePct >= 0 ? gates.neverArmStaleMaxMfePct : 0;
+    if (
+      staleMin > 0 &&
+      stalePnl > 0 &&
+      heldMs >= staleMin &&
+      mfePct <= staleMaxMfe + 1e-9 &&
+      pnlPct <= -stalePnl
+    ) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_stale' };
     }
     const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
     const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
@@ -508,4 +534,46 @@ export function evaluateMildDipExit(args: {
   heldMs?: number;
 }): ReturnType<typeof evaluateMildDipPeakGiveback> {
   return evaluateMildDipPeakGiveback(args);
+}
+
+/** Thick-name size-up gates (liq / mcap / age) — larger clip on structural names. */
+export type MildDipThickSizeGates = {
+  /** Target clip when thick; ≤0 or ≤ base → size-up off. */
+  positionUsd: number;
+  minMarketCapUsd: number;
+  minLiquidityUsd: number;
+  minPairAgeHours: number;
+};
+
+/**
+ * Wanted entry notional: base clip, or thick clip when mcap/liq/age all clear.
+ * Missing metrics never size up (fail closed).
+ */
+export function resolveMildDipWantedSizeUsd(args: {
+  basePositionUsd: number;
+  thick: MildDipThickSizeGates;
+  metrics: Pick<MildDipCandidateMetrics, 'liquidityUsd' | 'marketCapUsd' | 'pairAgeHours'>;
+}): { sizeUsd: number; tier: 'base' | 'thick' } {
+  const base = args.basePositionUsd;
+  const thickUsd = args.thick.positionUsd;
+  if (!(thickUsd > base + 1e-9)) {
+    return { sizeUsd: base, tier: 'base' };
+  }
+  const liq = args.metrics.liquidityUsd;
+  const mcap = args.metrics.marketCapUsd;
+  const age = args.metrics.pairAgeHours;
+  if (
+    liq != null &&
+    Number.isFinite(liq) &&
+    liq >= args.thick.minLiquidityUsd &&
+    mcap != null &&
+    Number.isFinite(mcap) &&
+    mcap >= args.thick.minMarketCapUsd &&
+    age != null &&
+    Number.isFinite(age) &&
+    age >= args.thick.minPairAgeHours
+  ) {
+    return { sizeUsd: thickUsd, tier: 'thick' };
+  }
+  return { sizeUsd: base, tier: 'base' };
 }

@@ -3,6 +3,7 @@ import {
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
+  resolveMildDipWantedSizeUsd,
   type MildDipCandidateMetrics,
   type MildDipEntryGates,
   type MildDipExitGates,
@@ -19,6 +20,7 @@ function metrics(partial: Partial<MildDipCandidateMetrics>): MildDipCandidateMet
     buys5m: 10,
     sells5m: 10,
     volume1hUsd: 80_000,
+    priceChange1hPct: -20,
     ...partial,
   };
 }
@@ -43,7 +45,10 @@ const exitGates: MildDipExitGates = {
   neverArmPatienceMs: 0,
   neverArmMaxHoldMs: 5_400_000,
   neverArmDeadMinMs: 900_000,
-  neverArmDeadPnlPct: 15,
+  neverArmDeadPnlPct: 10,
+  neverArmStaleMinMs: 600_000,
+  neverArmStaleMaxMfePct: 2,
+  neverArmStalePnlPct: 5,
   neverArmVolFadeMinMs: 900_000,
   neverArmVolFadeRatio: 0.25,
   neverArmVolFadeFloorUsd: 300,
@@ -95,10 +100,10 @@ describe('evaluateMildDipEntry', () => {
     expect(v.pass).toBe(true);
   });
 
-  it('prod band (−20, −4]: rejects shallow flat-chop, accepts real dump', () => {
-    const prod = { ...baseGates, maxDipPct: -4 };
+  it('prod band (−25, −5]: rejects shallow flat-chop, accepts real dump', () => {
+    const prod = { ...baseGates, minDipPct: -25, maxDipPct: -5 };
     const shallow = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -2.5 }),
+      metrics({ priceChange5mPct: -3.0 }),
       prod,
     );
     expect(shallow.pass).toBe(false);
@@ -108,7 +113,7 @@ describe('evaluateMildDipEntry', () => {
     );
     expect(dump.pass).toBe(true);
     const boundary = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -4 }),
+      metrics({ priceChange5mPct: -5 }),
       prod,
     );
     expect(boundary.pass).toBe(true);
@@ -165,6 +170,39 @@ describe('evaluateMildDipPreBuy', () => {
       maxChasePct: 0,
     });
     expect(v.pass).toBe(true);
+  });
+
+  it('h1_red_shallow band (−10,−3]: accepts −4% that main mild (−25,−5] rejects', () => {
+    const h1Band = { minDipPct: -10, maxDipPct: -3 };
+    const shallow = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 0.99,
+      freshPc5mPct: -4,
+      entryGates: h1Band,
+      maxChasePct: 4,
+    });
+    expect(shallow.pass).toBe(true);
+
+    // Main mild requires pc5m ≤ −5; −4% is the h1-only pocket.
+    const onMainBand = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 0.99,
+      freshPc5mPct: -4,
+      entryGates: { minDipPct: -25, maxDipPct: -5 },
+      maxChasePct: 4,
+    });
+    expect(onMainBand.pass).toBe(false);
+  });
+
+  it('h1_red_shallow still rejects bounce to green', () => {
+    const v = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 1.02,
+      freshPc5mPct: 4,
+      entryGates: { minDipPct: -10, maxDipPct: -3 },
+      maxChasePct: 4,
+    });
+    expect(v.pass).toBe(false);
   });
 });
 
@@ -333,37 +371,74 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('never_arm_giveback');
   });
 
-  it('never-arm dead cut: unarmed + pnl ≤ −15% after 15m', () => {
-    const hold = evaluateMildDipPeakGiveback({
+  it('never-arm stale: unarmed + flat MFE + pnl ≤ −5% after 10m', () => {
+    const early = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 80,
-      peakPriceUsd: 100,
+      markPriceUsd: 94, // −6%
+      peakPriceUsd: 101, // MFE 1%
       armed: false,
       gates: exitGates,
-      heldMs: 600_000, // 10m — before dead min
+      heldMs: 300_000,
+    });
+    expect(early.shouldExit).toBe(false);
+
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 94,
+      peakPriceUsd: 101,
+      armed: false,
+      gates: exitGates,
+      heldMs: 600_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_stale');
+  });
+
+  it('never-arm stale does not fire when MFE already moved', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 94,
+      peakPriceUsd: 104, // MFE 4% > 2%
+      armed: false,
+      gates: exitGates,
+      heldMs: 600_000,
+    });
+    expect(v.reason).not.toBe('never_arm_stale');
+  });
+
+  it('never-arm dead cut: unarmed + pnl ≤ −10% after 15m (stale off)', () => {
+    const gatesNoStale = { ...exitGates, neverArmStaleMinMs: 0, neverArmStalePnlPct: 0 };
+    const hold = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 88, // −12%
+      peakPriceUsd: 103, // MFE 3% — above stale max if stale were on
+      armed: false,
+      gates: gatesNoStale,
+      heldMs: 600_000,
     });
     expect(hold.shouldExit).toBe(false);
 
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 80,
-      peakPriceUsd: 100,
+      markPriceUsd: 88,
+      peakPriceUsd: 103,
       armed: false,
-      gates: exitGates,
+      gates: gatesNoStale,
       heldMs: 900_000,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('never_arm_dead');
-    expect(v.pnlPct).toBeLessThanOrEqual(-15);
+    expect(v.pnlPct).toBeLessThanOrEqual(-10);
   });
 
   it('never-arm dead does not fire on mild red before min hold', () => {
+    const gatesNoStale = { ...exitGates, neverArmStaleMinMs: 0, neverArmStalePnlPct: 0 };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 90, // −10% < 15% threshold
+      markPriceUsd: 92, // −8% > −10% dead threshold
       peakPriceUsd: 100,
       armed: false,
-      gates: exitGates,
+      gates: gatesNoStale,
       heldMs: 900_000,
     });
     expect(v.shouldExit).toBe(false);
@@ -491,7 +566,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('never-arm exits disabled when patience/maxHold/dead are 0 (unsafe — for unit only)', () => {
+  it('never-arm exits disabled when patience/maxHold/dead/stale are 0 (unsafe — for unit only)', () => {
     const gates: MildDipExitGates = {
       armPct: 8,
       partialGivebackPct: 0,
@@ -501,6 +576,9 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmMaxHoldMs: 0,
       neverArmDeadMinMs: 0,
       neverArmDeadPnlPct: 0,
+      neverArmStaleMinMs: 0,
+      neverArmStaleMaxMfePct: 0,
+      neverArmStalePnlPct: 0,
       neverArmVolFadeMinMs: 0,
       neverArmVolFadeRatio: 0,
       cliffDumpPnlPct: 0,
@@ -517,5 +595,68 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 3_600_000,
     });
     expect(v.shouldExit).toBe(false);
+  });
+});
+
+describe('resolveMildDipWantedSizeUsd', () => {
+  const thick = {
+    positionUsd: 10,
+    minMarketCapUsd: 100_000,
+    minLiquidityUsd: 50_000,
+    minPairAgeHours: 6,
+  };
+
+  it('sizes thick at $10 when mcap/liq/age clear', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 50_000, marketCapUsd: 100_000, pairAgeHours: 6 },
+    });
+    expect(v).toEqual({ sizeUsd: 10, tier: 'thick' });
+  });
+
+  it('stays base when liq is thin', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 49_999, marketCapUsd: 500_000, pairAgeHours: 12 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+  });
+
+  it('stays base when mcap below $100k', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 80_000, marketCapUsd: 99_999, pairAgeHours: 12 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+  });
+
+  it('stays base when younger than 6h', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 5.9 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+  });
+
+  it('fail-closed on missing metrics', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 80_000, marketCapUsd: null, pairAgeHours: 12 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+  });
+
+  it('disables size-up when thick ≤ base', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick: { ...thick, positionUsd: 5 },
+      metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 12 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
   });
 });
