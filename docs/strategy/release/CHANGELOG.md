@@ -16,12 +16,15 @@ enrich batch of ~80 mints behind the 120 RPM gate (10–20s), then died on
    enrich, drop `pg_volume`/`gecko` from live sources.
 3. **Chase** — slow `10%`, fast `12%` (was 4%). Bounce skip on fast-path.
 4. Stream price sampling for recently-hot mints (not only cooldown).
+5. `scanIntervalMs` floor lowered to **3s** so background lane
+   `MILD_DIP_SCAN_INTERVAL_MS=3000` validates (was hard min 5s → crash loop).
 
 **Env:**
 `MILD_DIP_FAST_PATH=1`
 `MILD_DIP_FAST_PATH_CHASE_PCT=12`
 `MILD_DIP_MAX_CHASE_PCT=10`
 `MILD_DIP_ENRICH_MAX=12`
+`MILD_DIP_SCAN_INTERVAL_MS=3000`
 `MILD_DIP_DISCOVER_SOURCES=stream,leaders,boosts,profiles`
 
 **Откат:** `MILD_DIP_FAST_PATH=0` + `MILD_DIP_MAX_CHASE_PCT=4` + reload.
