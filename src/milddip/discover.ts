@@ -329,6 +329,14 @@ export async function enrichAndFilterCandidates(
 
   const probed = probeRows.filter((p): p is DexProbe => p != null);
   probed.sort((a, b) => b.volume5mUsd - a.volume5mUsd);
+  // Buy-force mints that got no Dex row — re-queue (8s cd) so a transient miss
+  // does not drop the candle forever (Dealer 6f8ZQ: resolve→force→null probe).
+  if (tapeMode && forceList.length > 0) {
+    const probedSet = new Set(probed.map((p) => p.mint));
+    for (const m of forceList) {
+      if (!probedSet.has(m)) mildDipHotMints.requeueBuyForceMiss(m, nowMs);
+    }
+  }
   // Force-enrich must reach gates (and journal skips) — vol5m top-N used to
   // silently drop buyForce mints after probe (no entry_skip, "не видим").
   const forceSet = new Set(forceList);

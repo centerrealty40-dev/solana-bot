@@ -1,5 +1,20 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.729] — 2026-08-08
+
+**Тег:** `sa-1.11.729`
+
+### Fix: persist buyForce + re-queue on null Dex probe
+
+Dealer/`6f8ZQ` (ck2BYp): resolve hit hot at −263s but force enrich was lost
+(null probe / restart) and leader Buy never re-forced. Persist
+`buyForcePending` in hot-mints.json; requeue miss with 8s cooldown.
+Enrich caps unchanged.
+
+**Откат:** drop `buyForcePending` from save; remove requeueBuyForceMiss.
+
+---
+
 ## [1.11.728] — 2026-08-07
 
 **Тег:** `sa-1.11.728`

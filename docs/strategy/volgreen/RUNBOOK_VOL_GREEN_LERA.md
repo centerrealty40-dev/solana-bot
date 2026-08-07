@@ -25,8 +25,8 @@ buyForce take **8**; rocket bs **1.1**.
 rocket ≥**25**/vol$15k/bs1.35; pc5m&gt;100 needs bs≥**1.35** (E6cBb6-class).  
 **liquid_tape (1.11.726):** liq≥$25k / age≥1h / soft Dex + **ring≥5%**
 (Dex-lag on fat runners like WW). No enrich inflate.  
-**Buy mint-resolve (1.11.725):** Buy-only getTx ≤40/min, **newest-first**,
-queue~1min (no 5min backlog). Force-enrich via `buyForce`. Entry gates unchanged.  
+**Buy mint-resolve (1.11.725/729):** Buy-only getTx ≤40/min, newest-first;
+`buyForce` **persisted** + re-queued on null Dex probe (8s cd).  
 **Dex pick (1.11.721):** prefer **allowed** dex (pumpswap) over higher-liq meteora;
 forceEnrich always reaches gates (NEEGY `2y8Ntg` miss).  
 **Reconnect RCA (1.11.722):** most `websocket open` = **PM2 restarts**, not Helius.

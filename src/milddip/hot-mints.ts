@@ -148,10 +148,28 @@ export class MildDipHotMintBuffer {
     return out;
   }
 
+  /** Per-mint cooldown before re-queue after a missed Dex probe. */
+  private buyForceRetryAfter = new Map<string, number>();
+
   /** Mark mint for next-scan force enrich (Buy activity / getTx resolve). */
   markBuyForce(mint: string, nowMs = Date.now()): void {
     if (!mint || mint.length < 32) return;
     this.buyForcePending.set(mint, nowMs);
+  }
+
+  /**
+   * Re-queue a force mint whose Dex probe returned null (Dealer / 6f8ZQ miss).
+   * Keeps original freshness window; 8s per-mint cooldown avoids Dex stampede.
+   */
+  requeueBuyForceMiss(mint: string, nowMs = Date.now()): void {
+    if (!mint || mint.length < 32) return;
+    const cd = this.buyForceRetryAfter.get(mint) ?? 0;
+    if (nowMs < cd) return;
+    this.buyForceRetryAfter.set(mint, nowMs + 8_000);
+    // Do not refresh ts if already pending newer — only restore if missing.
+    if (!this.buyForcePending.has(mint)) {
+      this.buyForcePending.set(mint, nowMs);
+    }
   }
 
   /**
@@ -173,6 +191,28 @@ export class MildDipHotMintBuffer {
       out.push(mint);
     }
     return out;
+  }
+
+  buyForcePendingToJSON(nowMs = Date.now()): Array<{ mint: string; tsMs: number }> {
+    this.prune(nowMs);
+    for (const [mint, ts] of this.buyForcePending) {
+      if (nowMs - ts > 120_000) this.buyForcePending.delete(mint);
+    }
+    return [...this.buyForcePending.entries()].map(([mint, tsMs]) => ({ mint, tsMs }));
+  }
+
+  loadBuyForcePending(
+    rows: Array<{ mint?: string; tsMs?: number }>,
+    nowMs = Date.now(),
+  ): number {
+    let n = 0;
+    for (const r of rows) {
+      if (!r?.mint || typeof r.tsMs !== 'number') continue;
+      if (nowMs - r.tsMs > 120_000) continue;
+      this.buyForcePending.set(r.mint, r.tsMs);
+      n += 1;
+    }
+    return n;
   }
 
   size(nowMs = Date.now()): number {
@@ -208,7 +248,11 @@ export class MildDipHotMintBuffer {
         this.byMint.delete(mint);
         this.forceEnriched.delete(mint);
         this.buyForcePending.delete(mint);
+        this.buyForceRetryAfter.delete(mint);
       }
+    }
+    for (const [mint, until] of this.buyForceRetryAfter) {
+      if (until < nowMs - 60_000) this.buyForceRetryAfter.delete(mint);
     }
     if (this.byMint.size <= this.maxMints) return;
     const ordered = [...this.byMint.values()].sort((a, b) => a.lastSeenAtMs - b.lastSeenAtMs);
@@ -218,6 +262,7 @@ export class MildDipHotMintBuffer {
       this.byMint.delete(m);
       this.forceEnriched.delete(m);
       this.buyForcePending.delete(m);
+      this.buyForceRetryAfter.delete(m);
     }
   }
 }
@@ -228,7 +273,13 @@ export const mildDipHotMints = new MildDipHotMintBuffer();
 export function saveMildDipHotMints(filePath: string, buf = mildDipHotMints): void {
   const dir = path.dirname(filePath);
   if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
-  const payload = { updatedAtMs: Date.now(), hits: buf.toJSON() };
+  const nowMs = Date.now();
+  const payload = {
+    updatedAtMs: nowMs,
+    hits: buf.toJSON(nowMs),
+    // Survive PM2 restart — buyForce was in-memory only (Dealer miss after deploy).
+    buyForcePending: buf.buyForcePendingToJSON(nowMs),
+  };
   const tmp = `${filePath}.tmp`;
   fs.writeFileSync(tmp, `${JSON.stringify(payload)}\n`, 'utf8');
   fs.renameSync(tmp, filePath);
@@ -238,8 +289,16 @@ export function loadMildDipHotMints(filePath: string, buf = mildDipHotMints): nu
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as {
       hits?: HotMintHit[];
+      buyForcePending?: Array<{ mint?: string; tsMs?: number }>;
     };
-    return buf.loadHits(Array.isArray(raw.hits) ? raw.hits : []);
+    const n = buf.loadHits(Array.isArray(raw.hits) ? raw.hits : []);
+    const bf = buf.loadBuyForcePending(
+      Array.isArray(raw.buyForcePending) ? raw.buyForcePending : [],
+    );
+    if (bf > 0) {
+      console.log(`[mild-dip] restored buyForcePending=${bf} from ${filePath}`);
+    }
+    return n;
   } catch {
     return 0;
   }

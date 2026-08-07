@@ -110,4 +110,31 @@ describe('buy-mint-resolve', () => {
     expect(buf.takeForceEnrichBuyResolved(now, 16)).toEqual([MINT]);
     expect(buf.takeForceEnrichBuyResolved(now, 16)).toEqual([]);
   });
+
+  it('requeueBuyForceMiss restores pending after null Dex probe (with cooldown)', () => {
+    const buf = new MildDipHotMintBuffer({ maxMints: 50, ttlMs: 60_000 });
+    const now = Date.now();
+    buf.note(MINT, now, 8);
+    buf.markBuyForce(MINT, now);
+    expect(buf.takeForceEnrichBuyResolved(now, 16)).toEqual([MINT]);
+    buf.requeueBuyForceMiss(MINT, now);
+    expect(buf.takeForceEnrichBuyResolved(now, 16)).toEqual([MINT]);
+    // cooldown — second miss within 8s does not re-add after drain
+    buf.requeueBuyForceMiss(MINT, now + 100);
+    expect(buf.takeForceEnrichBuyResolved(now + 100, 16)).toEqual([]);
+    buf.requeueBuyForceMiss(MINT, now + 9_000);
+    expect(buf.takeForceEnrichBuyResolved(now + 9_000, 16)).toEqual([MINT]);
+  });
+
+  it('persists buyForcePending across save/load JSON', () => {
+    const buf = new MildDipHotMintBuffer({ maxMints: 50, ttlMs: 60_000 });
+    const now = Date.now();
+    buf.note(MINT, now, 8);
+    buf.markBuyForce(MINT, now);
+    const rows = buf.buyForcePendingToJSON(now);
+    expect(rows).toEqual([{ mint: MINT, tsMs: now }]);
+    const buf2 = new MildDipHotMintBuffer({ maxMints: 50, ttlMs: 60_000 });
+    expect(buf2.loadBuyForcePending(rows, now)).toBe(1);
+    expect(buf2.takeForceEnrichBuyResolved(now, 16)).toEqual([MINT]);
+  });
 });
