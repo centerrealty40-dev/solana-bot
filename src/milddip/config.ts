@@ -37,7 +37,8 @@ const MildDipConfigSchema = z.object({
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
   /** 0 = unlimited — keep buying while USDC remains. */
   maxOpenPositions: z.coerce.number().int().min(0).max(500).default(0),
-  scanIntervalMs: z.coerce.number().int().min(5_000).max(600_000).default(5_000),
+  /** Background lane may run at 3s when stream/leader fast-path owns entries. */
+  scanIntervalMs: z.coerce.number().int().min(3_000).max(600_000).default(5_000),
   markIntervalMs: z.coerce.number().int().min(2_000).max(120_000).default(2_000),
   /**
    * DexScreener mark cache TTL — avoid bypassCache hammering the gate.
