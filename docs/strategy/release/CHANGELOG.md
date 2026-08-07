@@ -1,5 +1,25 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.722] — 2026-08-07
+
+**Тег:** `sa-1.11.722`
+
+### Fix: reconnect RCA — undici/enrich/PM2 churn (not Helius storm)
+
+SPEC handoff: ~79% of `websocket open` = process restart; ~21% = `1006`
+in-process (~4/day). P0: undici tick death, enrich >15s, deploy restarts.
+
+- Dex fetch falls back to `globalThis.fetch` if undici missing
+- Entry script fails boot without `node_modules/undici/index.js`
+- Tape probeMax ≤24, buyForce take 8, enrich budget 22s
+- Heartbeat: `ws_close_1006_count`, `process_start_count`, `enrich_over_budget_count`, …
+
+RCA: `docs/strategy/volgreen/RCA_RECONNECT_2026-08-07.md`.
+
+**Откат:** budget 15s / buyForce 16 / no fetch fallback / no heartbeat counters.
+
+---
+
 ## [1.11.721] — 2026-08-07
 
 **Тег:** `sa-1.11.721`

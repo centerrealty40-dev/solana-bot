@@ -112,7 +112,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '10');
   setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '20');
   setIfAbsent('MILD_DIP_MAX_ENRICH', '14');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '15000');
+  // 22s: hard probe cap 24 @180 RPM ≈8–12s + HTTP; was 15s → constant over-budget.
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '22000');
   setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '2000');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '6');
   // PumpSwap Buy logs often omit mint — getTx resolve so we see candles ourselves.

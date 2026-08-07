@@ -325,10 +325,29 @@ function parsePairToDetails(
   };
 }
 
+/** Loose fetch type — undici vs Node global disagree on RequestInfo brands. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FetchLike = (input: any, init?: any) => Promise<any>;
+
+/** Prefer undici; fall back to Node global fetch so a broken node_modules never hard-kills ticks. */
+async function resolveDexFetch(fetchImpl?: FetchLike): Promise<FetchLike> {
+  if (fetchImpl) return fetchImpl;
+  try {
+    const u = await import('undici');
+    if (typeof u.fetch === 'function') return u.fetch as FetchLike;
+  } catch {
+    /* incomplete npm ci / missing undici — use global */
+  }
+  if (typeof globalThis.fetch === 'function') {
+    return globalThis.fetch.bind(globalThis) as FetchLike;
+  }
+  throw new Error('No fetch available (undici missing and no globalThis.fetch)');
+}
+
 export async function fetchDexScreenerPairDetails(
   mint: string,
   opts?: {
-    fetchImpl?: typeof import('undici').fetch;
+    fetchImpl?: FetchLike;
     cacheTtlMs?: number;
     nowMs?: number;
     preferredDex?: string;
@@ -342,7 +361,7 @@ export async function fetchDexScreenerPairDetails(
   const nowMs = opts?.nowMs ?? Date.now();
   const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
   const bypass = opts?.bypassCache === true;
-  const doFetch = opts?.fetchImpl ?? (await import('undici')).fetch;
+  const doFetch = await resolveDexFetch(opts?.fetchImpl);
 
   if (!bypass) {
     const mem = inProcess.get(mint);
@@ -426,7 +445,7 @@ export function __resetDexQuoteCacheForTests(): void {
 export async function fetchDexScreenerQuoteViaCache(
   mint: string,
   opts?: {
-    fetchImpl?: typeof import('undici').fetch;
+    fetchImpl?: FetchLike;
     cacheTtlMs?: number;
     nowMs?: number;
   },
@@ -434,7 +453,7 @@ export async function fetchDexScreenerQuoteViaCache(
   if (!mint) return null;
   const nowMs = opts?.nowMs ?? Date.now();
   const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
-  const doFetch = opts?.fetchImpl ?? (await import('undici')).fetch;
+  const doFetch = await resolveDexFetch(opts?.fetchImpl);
 
   const mem = inProcess.get(mint);
   if (mem && nowMs - mem.at < ttlMs) return mem.val;

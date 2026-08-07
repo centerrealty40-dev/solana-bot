@@ -43,6 +43,10 @@ import {
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
+import {
+  bumpEnrichOverBudget,
+  bumpTickError,
+} from './runtime-metrics.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 
@@ -291,25 +295,30 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const spikeForce = tapeMode
     ? mildDipHotMints.takeForceEnrichHotSpike(nowMs, 8, 12_000, 12_000)
     : [];
-  // Buy/Sell getTx-resolved (or Buy logs with mint) — must probe same scan.
-  const buyForce = tapeMode ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, 16) : [];
+  // Buy/Sell getTx-resolved — cap take so Dex gate (180 RPM) finishes in budget.
+  // Was 16 + probe inflate → avg enrich ~20s / "still running after 15000ms".
+  const buyForce = tapeMode ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, 8) : [];
   const forceEnrich = tapeMode
     ? [
         ...new Set([
           ...buyForce,
           ...spikeForce,
           ...firstSeenForce,
-          ...ringGreen,
-          ...priority.slice(0, 10),
+          ...ringGreen.slice(0, 12),
+          ...priority.slice(0, 8),
         ]),
       ]
     : priority;
   const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
-  // Smaller probe + higher concurrency → multi-second cycles, not 25–40s.
+  // Hard-cap probe wall: at 180 RPM serialized gap≈333ms, 24 probes ≈ 8s + HTTP.
   const probeMax = tapeMode
     ? Math.min(
-        120,
-        cfg.probeEnrichMax + firstSeenForce.length + spikeForce.length + buyForce.length,
+        24,
+        Math.max(
+          cfg.probeEnrichMax,
+          cfg.probeEnrichMax +
+            Math.min(8, firstSeenForce.length + spikeForce.length + buyForce.length),
+        ),
       )
     : 80;
   const enrichConcurrency = tapeMode
@@ -332,6 +341,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   });
   await Promise.race([enrichDone, sleep(enrichBudgetMs)]);
   if (!enrichResult) {
+    bumpEnrichOverBudget();
     console.warn(
       `[mild-dip] enrich still running after ${enrichBudgetMs}ms entryMode=${cfg.entryMode} — awaiting finish`,
     );
@@ -1118,6 +1128,7 @@ export async function runMildDipLoop(
       try {
         await tick();
       } catch (err) {
+        bumpTickError(err);
         console.error('[mild-dip] tick error', err);
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_tick_error',

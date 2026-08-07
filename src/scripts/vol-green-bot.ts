@@ -12,6 +12,10 @@ import path from 'node:path';
 import { loadMildDipConfig } from '../milddip/config.js';
 import { tryAcquireMildDipInstanceLock } from '../milddip/instance-lock.js';
 import { mildDipLoopStats, runMildDipLoop } from '../milddip/loop.js';
+import {
+  bumpProcessStart,
+  mildDipRuntimeMetrics,
+} from '../milddip/runtime-metrics.js';
 import { startOpsHeartbeat, writeOpsFatal } from '../core/ops-heartbeat.js';
 import {
   bootstrapVolGreenEnv,
@@ -19,6 +23,7 @@ import {
 } from '../volgreen/bootstrap-env.js';
 
 bootstrapVolGreenEnv();
+bumpProcessStart();
 
 function appName(): string {
   const raw = process.env.MILD_DIP_APP_NAME?.trim() || process.env.VOL_GREEN_APP_NAME?.trim();
@@ -74,6 +79,7 @@ async function main(): Promise<void> {
     appName: appName(),
     stats: () => {
       const s = mildDipLoopStats();
+      const m = mildDipRuntimeMetrics();
       return {
         mode: cfg.executionMode,
         entryMode: cfg.entryMode,
@@ -91,6 +97,17 @@ async function main(): Promise<void> {
         positionUsd: cfg.positionUsd,
         wallet: cfg.walletPubkeyExpected ?? VOL_GREEN_DEFAULT_WALLET_PUBKEY,
         instanceLock: lock.lockPath,
+        // SPEC reconnect RCA — do not treat every ws open as Helius reconnect.
+        ws_close_1006_count: m.wsClose1006Count,
+        ws_close_other_count: m.wsCloseOtherCount,
+        ws_reconnect_backoff_count: m.wsReconnectBackoffCount,
+        ws_open_count: m.wsOpenCount,
+        process_start_count: m.processStartCount,
+        enrich_over_budget_count: m.enrichOverBudgetCount,
+        tick_error_count: m.tickErrorCount,
+        tick_errors_by_code: m.tickErrorsByCode,
+        last_ws_close_code: m.lastWsCloseCode,
+        last_tick_error_code: m.lastTickErrorCode,
       };
     },
   });

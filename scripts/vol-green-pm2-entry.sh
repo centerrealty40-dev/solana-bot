@@ -57,7 +57,8 @@ export MILD_DIP_DISCOVER_SOURCES="${MILD_DIP_DISCOVER_SOURCES:-$VOL_GREEN_DISCOV
 export MILD_DIP_ENRICH_CONCURRENCY=10
 export MILD_DIP_PROBE_ENRICH_MAX=20
 export MILD_DIP_MAX_ENRICH=14
-export MILD_DIP_ENRICH_BUDGET_MS=15000
+# HARD-SET 22s — 15s was always overrun once buyForce inflated probe (SPEC RCA).
+export MILD_DIP_ENRICH_BUDGET_MS=22000
 export MILD_DIP_SCAN_INTERVAL_MS=2000
 export MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN=6
 # HARD-SET: resolve mint via getTransaction when Buy/Sell logs omit it (AGbfomct miss).
@@ -137,5 +138,12 @@ if [[ -n "${HELIUS_RPC_URL:-}" ]]; then
 fi
 
 mkdir -p "$(dirname "$VOL_GREEN_JOURNAL_PATH")" "$(dirname "$VOL_GREEN_STATE_PATH")" data/ops-heartbeats
+
+# Reproducible undici check — do NOT --no-save band-aid. Prefer full npm ci.
+# Code also falls back to globalThis.fetch if undici is broken mid-tick.
+if [[ ! -f "$ROOT/node_modules/undici/index.js" ]]; then
+  echo "[vol-green-pm2-entry] FATAL: node_modules/undici/index.js missing — run: npm ci" >&2
+  exit 1
+fi
 
 exec npm run --silent vol-green-bot

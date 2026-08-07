@@ -13,6 +13,13 @@ export type LogNotification = {
   payload: Record<string, unknown>;
 };
 
+/** Optional hooks — distinguish process-new-socket vs in-process reconnect. */
+export type LogsWsLifecycleHooks = {
+  onOpen?: () => void;
+  onClosed?: (code: number, reason: string) => void;
+  onReconnectBackoff?: (waitMs: number) => void;
+};
+
 type RpcResponse = {
   jsonrpc?: string;
   id?: number;
@@ -48,6 +55,7 @@ export class LogsWsClient {
   constructor(
     private readonly cfg: StreamConfig,
     private readonly onLog: (n: LogNotification) => void,
+    private readonly lifecycle?: LogsWsLifecycleHooks,
   ) {
     this.reconnectMs = cfg.reconnectMinMs;
   }
@@ -81,6 +89,11 @@ export class LogsWsClient {
       if (this.stopped) break;
       const wait = jitter(Math.min(this.cfg.reconnectMaxMs, Math.max(this.cfg.reconnectMinMs, this.reconnectMs)));
       log.info({ wait_ms: wait }, 'sa-stream reconnecting after backoff');
+      try {
+        this.lifecycle?.onReconnectBackoff?.(wait);
+      } catch {
+        /* ignore */
+      }
       await new Promise((r) => setTimeout(r, wait));
       this.reconnectMs = Math.min(this.cfg.reconnectMaxMs, this.reconnectMs * 2);
     }
@@ -95,6 +108,11 @@ export class LogsWsClient {
 
       ws.on('open', () => {
         log.info({ url: hostOnly(url) }, 'sa-stream websocket open');
+        try {
+          this.lifecycle?.onOpen?.();
+        } catch {
+          /* ignore */
+        }
         this.subToProgram.clear();
         this.pendingReq.clear();
         for (const programId of this.cfg.programIds) {
@@ -169,7 +187,13 @@ export class LogsWsClient {
       });
 
       ws.on('close', (code, reason) => {
-        log.warn({ code, reason: reason.toString() }, 'sa-stream websocket closed');
+        const reasonStr = reason.toString();
+        log.warn({ code, reason: reasonStr }, 'sa-stream websocket closed');
+        try {
+          this.lifecycle?.onClosed?.(code, reasonStr);
+        } catch {
+          /* ignore */
+        }
         if (this.pingTimer) {
           clearInterval(this.pingTimer);
           this.pingTimer = null;

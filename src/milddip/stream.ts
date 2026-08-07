@@ -21,6 +21,11 @@ import {
   type BuyMintResolver,
 } from './buy-mint-resolve.js';
 import { mildDipHotMints } from './hot-mints.js';
+import {
+  bumpWsClosed,
+  bumpWsOpen,
+  bumpWsReconnectBackoff,
+} from './runtime-metrics.js';
 import type { StreamPriceSampler } from './stream-price-sampler.js';
 
 export type MildDipStreamHandle = { stop: () => void };
@@ -93,23 +98,31 @@ export function startMildDipHotMintStream(opts?: {
     );
   }
 
-  const client = new LogsWsClient(cfg, (n) => {
-    const tsMs = Date.now();
-    if (n.err) return;
-    const mints = extractMintCandidatesFromLogs(n.logs);
-    for (const mint of mints) {
-      const buySell = logsIndicateBuyOrSell(n.logs);
-      mildDipHotMints.note(mint, tsMs, buySell ? 8 : 1);
-      if (buySell) mildDipHotMints.markBuyForce(mint, tsMs);
-      opts?.onMint?.(mint, tsMs);
-      if (opts?.priceSampler && n.signature) {
-        opts.priceSampler.enqueue(mint, n.signature, tsMs);
+  const client = new LogsWsClient(
+    cfg,
+    (n) => {
+      const tsMs = Date.now();
+      if (n.err) return;
+      const mints = extractMintCandidatesFromLogs(n.logs);
+      for (const mint of mints) {
+        const buySell = logsIndicateBuyOrSell(n.logs);
+        mildDipHotMints.note(mint, tsMs, buySell ? 8 : 1);
+        if (buySell) mildDipHotMints.markBuyForce(mint, tsMs);
+        opts?.onMint?.(mint, tsMs);
+        if (opts?.priceSampler && n.signature) {
+          opts.priceSampler.enqueue(mint, n.signature, tsMs);
+        }
       }
-    }
-    if (resolver && n.signature && needsBuyMintResolve(n.logs, mints)) {
-      resolver.enqueue(n.signature, tsMs);
-    }
-  });
+      if (resolver && n.signature && needsBuyMintResolve(n.logs, mints)) {
+        resolver.enqueue(n.signature, tsMs);
+      }
+    },
+    {
+      onOpen: () => bumpWsOpen(),
+      onClosed: (code) => bumpWsClosed(code),
+      onReconnectBackoff: () => bumpWsReconnectBackoff(),
+    },
+  );
 
   client.start();
   console.log(
