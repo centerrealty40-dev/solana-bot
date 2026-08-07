@@ -45,6 +45,7 @@ describe('vol-green exit parity with mild-dip W9.1', () => {
     givebackPct: 6,
     partialSellFraction: 0,
     secondGivebackPct: 0,
+  minMfeBeforeTrailPct: 0,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
     neverArmDeadMinMs: 900_000,

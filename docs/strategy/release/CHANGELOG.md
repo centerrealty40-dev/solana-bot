@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.715] — 2026-08-07
+
+**Тег:** `sa-1.11.715`
+
+### Tune: minMfeBeforeTrail=12% (exit backtest winner)
+
+C5YYvSo: armed at +5.6% then partial on −5% noise. Journal mark backtest:
+widening giveback alone hurt; **minMfeBeforeTrail=12** best Δmean. Giveback /
+partial stay 3%/50%/5% but inert until MFE≥12%. Oscar default 0 (unchanged).
+
+**Откат:** `MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT=0`.
+
+---
+
 ## [1.11.714] — 2026-08-07
 
 **Тег:** `sa-1.11.714`

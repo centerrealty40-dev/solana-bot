@@ -15,6 +15,8 @@ second giveback **−5%** sells the rest (full bag).
 **Noise cut (1.11.712):** liquid mid 10–25 needs bs≥1.4/to≥0.18; `never_arm_stale` 75s/MFE&lt;4%.  
 **Leader catch (1.11.714):** rocket vol bypasses age; no ring on rocket; enrich
 ultra-fresh ≤20s first; age floor 0.01h; rocket pc≥12 / vol≥$10k / bs≥1.15.  
+**Trail (1.11.715):** giveback only after **MFE≥12%** (keeps arm5/gb3/50%/gb2=5).  
+
 
 
 

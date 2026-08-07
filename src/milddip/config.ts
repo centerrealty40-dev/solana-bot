@@ -135,6 +135,8 @@ const MildDipConfigSchema = z.object({
     partialSellFraction: z.coerce.number().min(0).max(1).default(0),
     /** After partial, full-exit rest at this giveback (0 = reuse givebackPct). */
     secondGivebackPct: z.coerce.number().min(0).max(100).default(0),
+    /** Giveback disabled until MFE ≥ this % (0=off). Vol-green: 12. */
+    minMfeBeforeTrailPct: z.coerce.number().min(0).max(100).default(0),
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /** Never-armed: force exit after this many ms (0=off). Hard ceiling. */
@@ -241,6 +243,7 @@ export function loadMildDipConfig(): MildDipConfig {
     /** Oscar default 0 = full exit on first giveback (no ladder). */
     partialSellFraction: envNum('MILD_DIP_EXIT_PARTIAL_SELL_FRACTION', 0),
     secondGivebackPct: envNum('MILD_DIP_EXIT_SECOND_GIVEBACK_PCT', 0),
+    minMfeBeforeTrailPct: envNum('MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT', 0),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),

@@ -24,6 +24,7 @@ const exitGates: MildDipExitGates = {
   givebackPct: 8,
   partialSellFraction: 0,
   secondGivebackPct: 0,
+  minMfeBeforeTrailPct: 0,
   neverArmPatienceMs: 0,
   neverArmMaxHoldMs: 5_400_000,
   neverArmDeadMinMs: 900_000,
@@ -41,6 +42,7 @@ const exitGatesPatienceOn: MildDipExitGates = {
   givebackPct: 6,
   partialSellFraction: 0,
   secondGivebackPct: 0,
+  minMfeBeforeTrailPct: 0,
   neverArmPatienceMs: 300_000,
 };
 
@@ -435,6 +437,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       givebackPct: 8,
       partialSellFraction: 0,
       secondGivebackPct: 0,
+  minMfeBeforeTrailPct: 0,
       neverArmPatienceMs: 0,
       neverArmMaxHoldMs: 0,
       neverArmDeadMinMs: 0,
@@ -454,6 +457,39 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 3_600_000,
     });
     expect(v.shouldExit).toBe(false);
+  });
+
+  it('minMfeBeforeTrail blocks giveback on micro-peak (C5YYvSo shape)', () => {
+    const g: MildDipExitGates = {
+      ...exitGates,
+      armPct: 5,
+      givebackPct: 3,
+      partialSellFraction: 0.5,
+      secondGivebackPct: 5,
+      minMfeBeforeTrailPct: 12,
+    };
+    // Armed at +5.6% peak, mark −5.4% from peak — must NOT partial yet.
+    const early = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.6 * 0.946, // ≈ −5.4% giveback
+      peakPriceUsd: 105.6,
+      armed: true,
+      gates: g,
+      heldMs: 30_000,
+    });
+    expect(early.shouldExit).toBe(false);
+
+    // After real run to +15% MFE, same giveback width may exit.
+    const later = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 115 * 0.97,
+      peakPriceUsd: 115,
+      armed: true,
+      gates: g,
+      heldMs: 90_000,
+    });
+    expect(later.shouldExit).toBe(true);
+    expect(later.reason).toBe('peak_giveback_partial');
   });
 
   it('never_arm_stale cuts false green before vol_fade window', () => {
@@ -493,6 +529,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       givebackPct: 3,
       partialSellFraction: 0.5,
       secondGivebackPct: 5,
+  minMfeBeforeTrailPct: 0,
     };
     // +5.67% MFE arms (vKMkWJ «120» shape)
     const arm = evaluateMildDipPeakGiveback({

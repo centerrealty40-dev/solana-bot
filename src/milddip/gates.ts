@@ -51,6 +51,12 @@ export type MildDipExitGates = {
    */
   secondGivebackPct: number;
   /**
+   * Do not fire peak_giveback / partial until MFE has reached this % (even if
+   * already armed). Stops micro-peak shakeouts (C5YYvSo: armed at +5.6% then
+   * −3% giveback). 0 = trail as soon as armed (Oscar default).
+   */
+  minMfeBeforeTrailPct: number;
+  /**
    * After this many ms still unarmed, allow the same giveback% from the
    * (sub-arm) peak. Live default **0** — early never_arm_giveback was the grind loss.
    * 0 = disabled.
@@ -328,14 +334,20 @@ export function evaluateMildDipPeakGiveback(args: {
     justArmed = true;
   }
 
+  const minTrail =
+    typeof gates.minMfeBeforeTrailPct === 'number' && gates.minMfeBeforeTrailPct > 0
+      ? gates.minMfeBeforeTrailPct
+      : 0;
+  const trailUnlocked = minTrail <= 0 || mfePct >= minTrail - 1e-9;
   const givebackHit =
+    trailUnlocked &&
     gates.givebackPct > 0 &&
     // epsilon: 103.5/115 is −9.999…% in IEEE float
     givebackPct <= -gates.givebackPct + 1e-9;
   const secondThr =
     gates.secondGivebackPct > 0 ? gates.secondGivebackPct : gates.givebackPct;
   const secondHit =
-    secondThr > 0 && givebackPct <= -secondThr + 1e-9;
+    trailUnlocked && secondThr > 0 && givebackPct <= -secondThr + 1e-9;
 
   if (armed && !partialTaken && givebackHit) {
     if (partialFrac > 0) {
