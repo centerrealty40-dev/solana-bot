@@ -62,6 +62,7 @@ export type GreenTapeGates = {
   /**
    * Extreme chase guard (4h RCA: pc5m 100%+ dumps −60…−97 without buy pressure).
    * When pc5m &gt; extremePc5mPct, require buy/sell ≥ extremeMinBuySellRatio5m.
+   * Vol-green: 1.35 — lets leader-like E6cBb6 (bs≈1.39) through; still blocks ~1.0 noise.
    * 0 extremePc = off.
    */
   extremePc5mPct: number;

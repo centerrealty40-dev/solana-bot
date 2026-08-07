@@ -21,8 +21,8 @@ ultra-fresh ≤20s first; age floor 0.01h; rocket pc≥12 / vol≥$10k / bs≥1.
 **Age (1.11.717):** **no max pair age** (`MAX_PAIR_AGE_HOURS=0`).  
 **Speed (1.11.718→722):** scan 2s / probe ≤**24** / conc 10 / budget **22s**;
 buyForce take **8**; rocket bs **1.1**.  
-**Impulse (1.11.724):** pc5m≥**18** + bs≥1.2; liquid ≥**12**; early **OFF**;
-rocket ≥**25**/vol$15k/bs1.35; pc5m&gt;100 needs bs≥1.5.  
+**Impulse (1.11.724/727):** pc5m≥**18** + bs≥1.2; liquid ≥**12**; early **OFF**;
+rocket ≥**25**/vol$15k/bs1.35; pc5m&gt;100 needs bs≥**1.35** (E6cBb6-class).  
 **liquid_tape (1.11.726):** liq≥$25k / age≥1h / soft Dex + **ring≥5%**
 (Dex-lag on fat runners like WW). No enrich inflate.  
 **Buy mint-resolve (1.11.725):** Buy-only getTx ≤40/min, **newest-first**,

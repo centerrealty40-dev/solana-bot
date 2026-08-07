@@ -1,5 +1,18 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.727] — 2026-08-07
+
+**Тег:** `sa-1.11.727`
+
+### Tune: allow leader-like extreme greens (bs≥1.35)
+
+E6cBb6: leader +163% blocked by `chase_extreme_pc5m` at bs≈1.39 &lt; 1.5.
+Extreme min buy/sell **1.5→1.35** (still blocks ~1.0 noise dumps).
+
+**Откат:** `EXTREME_MIN_BUY_SELL_5M=1.5`.
+
+---
+
 ## [1.11.726] — 2026-08-07
 
 **Тег:** `sa-1.11.726`

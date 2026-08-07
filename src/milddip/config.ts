@@ -339,7 +339,7 @@ export function loadMildDipConfig(): MildDipConfig {
     rocketMinMarketCapUsd: envNum('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', 18_000),
     // Extreme chase: pc5m > N without buy pressure → reject (0 pc = off).
     extremePc5mPct: envNum('MILD_DIP_GREEN_EXTREME_PC5M_PCT', 0),
-    extremeMinBuySellRatio5m: envNum('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', 1.5),
+    extremeMinBuySellRatio5m: envNum('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', 1.35),
     // liquid_tape: high-liq aged + ring-green (0 liq = off).
     liquidTapeMinLiquidityUsd: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD', 0),
     liquidTapeMinPairAgeHours: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_PAIR_AGE_HOURS', 1),

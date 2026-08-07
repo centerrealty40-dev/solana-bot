@@ -273,7 +273,7 @@ describe('evaluateGreenTapeEntry', () => {
       rocketMinVolume5mUsd: 15_000,
       rocketMinBuySellRatio5m: 1.35,
       extremePc5mPct: 100,
-      extremeMinBuySellRatio5m: 1.5,
+      extremeMinBuySellRatio5m: 1.35,
     };
     const weakBs = evaluateGreenTapeEntry(
       {
@@ -284,12 +284,28 @@ describe('evaluateGreenTapeEntry', () => {
         pairAgeHours: 2,
         dexId: 'pumpswap',
         buys5m: 40,
-        sells5m: 35, // bs≈1.14 < 1.5
+        sells5m: 35, // bs≈1.14 < 1.35
       },
       g,
     );
     expect(weakBs.pass).toBe(false);
     expect(weakBs.reasons.some((r) => r.startsWith('chase_extreme_pc5m'))).toBe(true);
+
+    // E6cBb6 leader-like: pc5m 138%, bs≈1.39 — must pass.
+    const leaderLike = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 138,
+        volume5mUsd: 31_657,
+        liquidityUsd: 22_330,
+        marketCapUsd: 92_622,
+        pairAgeHours: 0.5,
+        dexId: 'pumpswap',
+        buys5m: 86,
+        sells5m: 62, // ≈1.39
+      },
+      g,
+    );
+    expect(leaderLike.pass).toBe(true);
 
     const strongBs = evaluateGreenTapeEntry(
       {

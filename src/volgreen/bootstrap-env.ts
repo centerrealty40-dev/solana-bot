@@ -177,9 +177,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.25');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.35');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '18000');
-  // Don't chase pc5m>100% without strong buy/sell (4h −60…−97 bucket).
+  // Extreme chase: block weak-bs verticals; allow leader-like (E6cBb6 bs≈1.39 / +163%).
   setIfAbsent('MILD_DIP_GREEN_EXTREME_PC5M_PCT', '100');
-  setIfAbsent('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', '1.5');
+  setIfAbsent('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', '1.35');
   // liquid_tape: fat/aged books when Dex pc5m lags (WW) — ring-green in discover.
   // Does not raise enrich caps; only re-labels already-probed mints.
   setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD', '25000');
