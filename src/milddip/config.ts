@@ -78,12 +78,13 @@ const MildDipConfigSchema = z.object({
   loadAlertOpenCount: z.coerce.number().int().min(5).max(500).default(50),
   loadAlertNullRatio: z.coerce.number().min(0.1).max(1).default(0.4),
   loadAlertCooldownMs: z.coerce.number().int().min(60_000).max(86_400_000).default(1_800_000),
-  mintCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(3_600_000),
+  /** After any close — short so bounce clip can re-enter (1.11.715 → 60s). */
+  mintCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
   /**
-   * After a losing exit (pnl &lt; 0), pause rebuy longer than `mintCooldownMs`
-   * so grinding dumps are not re-entered every 5m. 0 = disable (use base only).
+   * After a losing exit (pnl &lt; 0). 1.11.715: same 60s as base so bounce
+   * after close is not blocked for 10m.
    */
-  lossCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
+  lossCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(150),
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
   /**
@@ -125,6 +126,18 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeBandPct: z.coerce.number().min(0).max(50).default(2.5),
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
+  /**
+   * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
+   * Additive to main-band / deep-knife. Also powers second $5 scale-in.
+   */
+  mildStabilizeEnabled: z.boolean().default(false),
+  mildStabilizeMinDumpPct: z.coerce.number().max(0).default(-25),
+  mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-5),
+  mildStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
+  mildStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(8),
+  mildStabilizeTroughMinAgeMs: z.coerce.number().int().min(0).max(600_000).default(15_000),
+  /** Scale-in: trough must be ≥ this % below first-clip entry. */
+  mildStabilizeScaleInMinDumpBelowEntryPct: z.coerce.number().min(0).max(50).default(3),
   /**
    * Autonomous red-hour shallow: when 1h ≤ h1Max and pc5m ∈ (min,max],
    * enter without the main mild band (own logic — not leader copy).
@@ -356,8 +369,8 @@ export function loadMildDipConfig(): MildDipConfig {
     loadAlertOpenCount: process.env.MILD_DIP_LOAD_ALERT_OPEN_COUNT ?? 50,
     loadAlertNullRatio: process.env.MILD_DIP_LOAD_ALERT_NULL_RATIO ?? 0.4,
     loadAlertCooldownMs: process.env.MILD_DIP_LOAD_ALERT_COOLDOWN_MS ?? 1_800_000,
-    mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 300_000,
-    lossCooldownMs: process.env.MILD_DIP_LOSS_COOLDOWN_MS ?? 600_000,
+    mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 60_000,
+    lossCooldownMs: process.env.MILD_DIP_LOSS_COOLDOWN_MS ?? 60_000,
     slippageBps: process.env.MILD_DIP_SLIPPAGE_BPS ?? 150,
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
     feeSolTopupEnabled: (() => {
@@ -390,6 +403,16 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeBandPct: envNum('MILD_DIP_KNIFE_STABILIZE_BAND_PCT', 2.5),
     knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
+    mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
+    mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
+    mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -5),
+    mildStabilizeMinBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT', 1.5),
+    mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 8),
+    mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 15_000),
+    mildStabilizeScaleInMinDumpBelowEntryPct: envNum(
+      'MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_BELOW_ENTRY_PCT',
+      3,
+    ),
     h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
     h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
@@ -475,6 +498,14 @@ export function loadMildDipConfig(): MildDipConfig {
   ) {
     throw new Error(
       'mild-dip requires MILD_DIP_FLAT_MICRO_MIN_DIP_PCT < MILD_DIP_FLAT_MICRO_MAX_DIP_PCT',
+    );
+  }
+  if (
+    parsed.data.mildStabilizeEnabled &&
+    !(parsed.data.mildStabilizeMinDumpPct < parsed.data.mildStabilizeMaxDumpPct)
+  ) {
+    throw new Error(
+      'mild-dip requires MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT < MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT',
     );
   }
 

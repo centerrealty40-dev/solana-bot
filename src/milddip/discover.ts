@@ -41,11 +41,16 @@ export type MildDipCandidate = {
     | 'dex+stream'
     | 'h1_red_shallow'
     | 'flat_micro_dip'
-    | 'knife_stabilize';
+    | 'knife_stabilize'
+    | 'mild_stabilize';
   /** Present when dipSource=knife_stabilize. */
   knifeMode?: 'bounce' | 'stabilize';
   knifeBouncePct?: number | null;
   knifeWatch?: KnifeWatchEntry;
+  /** Present when dipSource=mild_stabilize. */
+  mildStabilizeDumpPct?: number | null;
+  mildStabilizeBouncePct?: number | null;
+  mildStabilizeTroughPriceUsd?: number | null;
 };
 
 const SOLANA_CHAIN = 'solana';

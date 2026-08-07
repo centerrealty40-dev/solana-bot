@@ -8,6 +8,7 @@ import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
 import { evaluateFlatMicroDip, type MildDipCandidateMetrics } from './gates.js';
+import { evaluateMildStabilizeFromRing } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 export type StructuralCacheEntry = {
@@ -158,6 +159,7 @@ export async function evaluateFastPathCandidate(
   mint: string,
   nowMs: number,
   trigger: 'stream' | 'leader' | 'scan',
+  opts?: { mildStabilizeOnly?: boolean },
 ): Promise<MildDipCandidate | null> {
   if (!cfg.fastPathEnabled) return null;
   if (!mint || mint.length < 32) return null;
@@ -166,16 +168,19 @@ export async function evaluateFastPathCandidate(
   const prevAttempt = lastFastAttemptMs.get(mint) ?? 0;
   if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return null;
 
+  const mildStabilizeOnly = opts?.mildStabilizeOnly === true;
+
   const streamDd = streamDrawdownPct(mint, cfg.cooldownBounceLookbackMs, nowMs);
   const streamInMain = inDipBand(streamDd, cfg.entry.minDipPct, cfg.entry.maxDipPct);
 
   // Stream trigger without local drawdown: still Dex-probe (throttled).
   // Previously we returned null without cache → only leader seeds discovered
   // Dex-printed dumps (Agmu8X −18% bought 31s after 8zkg).
-  if (trigger === 'stream' && !streamInMain) {
+  // mildStabilizeOnly always probes (needs structural floors).
+  if ((trigger === 'stream' && !streamInMain) || mildStabilizeOnly) {
     const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs);
     if (!cached) {
-      if (!cfg.fastPathHotDexProbeEnabled) return null;
+      if (!cfg.fastPathHotDexProbeEnabled && !mildStabilizeOnly) return null;
       if (
         !allowHotDexProbe(
           mint,
@@ -264,12 +269,43 @@ export async function evaluateFastPathCandidate(
     }
   }
 
+  let mildDumpPct: number | null = null;
+  let mildBouncePct: number | null = null;
+  let mildTrough: number | null = null;
+  if ((!dipSource || mildStabilizeOnly) && cfg.mildStabilizeEnabled) {
+    const mild = evaluateMildStabilizeFromRing(mildDipPriceRing, mint, nowMs, {
+      enabled: true,
+      minDumpPct: cfg.mildStabilizeMinDumpPct,
+      maxDumpPct: cfg.mildStabilizeMaxDumpPct,
+      minBouncePct: cfg.mildStabilizeMinBouncePct,
+      maxBouncePct: cfg.mildStabilizeMaxBouncePct,
+      troughMinAgeMs: cfg.mildStabilizeTroughMinAgeMs,
+      lookbackMs: cfg.cooldownBounceLookbackMs,
+      scaleInMinDumpBelowEntryPct: cfg.mildStabilizeScaleInMinDumpBelowEntryPct,
+    });
+    if (mild.pass) {
+      dipSource = 'mild_stabilize';
+      mildDumpPct = mild.dumpPct;
+      mildBouncePct = mild.bouncePct;
+      mildTrough = mild.troughPriceUsd;
+      if (mild.lastPriceUsd != null && mild.lastPriceUsd > 0) priceUsd = mild.lastPriceUsd;
+      if (mild.dumpPct != null) {
+        metrics = { ...metrics, priceChange5mPct: mild.dumpPct };
+      }
+    }
+  }
+
+  if (mildStabilizeOnly && dipSource !== 'mild_stabilize') return null;
   if (!dipSource) return null;
 
   // Leader/stream triggers: require a real dip print (not green chase).
   if (trigger === 'leader' || trigger === 'stream') {
-    if (dipSource === 'h1_red_shallow' || dipSource === 'flat_micro_dip') {
-      /* ok — shallow / flat-micro scrape */
+    if (
+      dipSource === 'h1_red_shallow' ||
+      dipSource === 'flat_micro_dip' ||
+      dipSource === 'mild_stabilize'
+    ) {
+      /* ok — shallow / bounce-confirm */
     } else if (!streamInMain && !dexInMain) {
       return null;
     }
@@ -282,6 +318,13 @@ export async function evaluateFastPathCandidate(
     priceUsd,
     metrics,
     dipSource,
+    ...(dipSource === 'mild_stabilize'
+      ? {
+          mildStabilizeDumpPct: mildDumpPct,
+          mildStabilizeBouncePct: mildBouncePct,
+          mildStabilizeTroughPriceUsd: mildTrough,
+        }
+      : {}),
   };
 }
 
