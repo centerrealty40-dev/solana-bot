@@ -1,5 +1,5 @@
 /**
- * Map MildDipConfig → CopyTraderConfig so we reuse the copy execution envelope.
+ * Map MildDipConfig → CopyTraderConfig so we reuse Jupiter USDC buy/sell.
  */
 import type { CopyTraderConfig } from '../copytrader/config.js';
 import type { MildDipConfig } from './config.js';
@@ -123,7 +123,7 @@ export function mildDipToCopyTraderConfig(cfg: MildDipConfig): CopyTraderConfig 
     leaderFollowOnlyMinMcapUsd: 0,
     leaderFollowOnlyMinVolume1hUsd: 0,
     maxOpenPositions: cfg.maxOpenPositions,
-    quoteAsset: 'SOL',
+    quoteAsset: 'USDC',
     minFeeSolReserve: cfg.minFeeSolReserve,
     slippageBps: cfg.slippageBps,
     maxQuoteRegressionPct: 0,
