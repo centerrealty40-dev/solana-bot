@@ -1,4 +1,26 @@
 # So
+## [1.11.712] — 2026-08-07
+
+**Тег:** `sa-1.11.712`
+
+### Ops/fix: deepen main band, vol floor, correct 7BNax observer
+
+1. **`MAX_DIP_PCT` −5 → −8** — main band `pc5m ∈ (−25, −8]` (cut shallow scrapes).
+2. **`MIN_VOLUME_5M_USD` $500 → $1500** — thin-vol cliff pre-filter.
+3. **7BNax pubkey typo** — observer had `…UYrAC…` (0 sigs); real is `…UYrjAC…`.
+   Solscan `2YchtT65…` never seeded mild-dip.
+
+Stream-only depth gate from 1.11.711 (`STREAM_ONLY_MAX_DIP_PCT=-10`) unchanged.
+
+**Env:**
+`MILD_DIP_MAX_DIP_PCT=-8`
+`MILD_DIP_MIN_VOLUME_5M_USD=1500`
+`LEADER_OBSERVER_LEADERS` (ecosystem + python DEFAULT_LEADERS)
+
+**Откат:** `MAX_DIP=-5` + `MIN_VOLUME_5M=500`; 7BNax keep corrected pubkey.
+
+---
+
 ## [1.11.711] — 2026-08-07
 
 **Тег:** `sa-1.11.711`

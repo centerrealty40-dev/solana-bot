@@ -101,20 +101,20 @@ describe('evaluateMildDipEntry', () => {
     expect(v.pass).toBe(true);
   });
 
-  it('prod band (−25, −5]: rejects shallow flat-chop, accepts real dump', () => {
-    const prod = { ...baseGates, minDipPct: -25, maxDipPct: -5 };
+  it('prod band (−25, −8]: rejects mild scrapes, accepts real dump', () => {
+    const prod = { ...baseGates, minDipPct: -25, maxDipPct: -8 };
     const shallow = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -3.0 }),
+      metrics({ priceChange5mPct: -5.0 }),
       prod,
     );
     expect(shallow.pass).toBe(false);
     const dump = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -9.0 }),
+      metrics({ priceChange5mPct: -12.0 }),
       prod,
     );
     expect(dump.pass).toBe(true);
     const boundary = evaluateMildDipEntry(
-      metrics({ priceChange5mPct: -5 }),
+      metrics({ priceChange5mPct: -8 }),
       prod,
     );
     expect(boundary.pass).toBe(true);
@@ -189,7 +189,7 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 0.99,
       freshPc5mPct: -4,
-      entryGates: { minDipPct: -25, maxDipPct: -5 },
+      entryGates: { minDipPct: -25, maxDipPct: -8 },
       maxChasePct: 4,
     });
     expect(onMainBand.pass).toBe(false);
