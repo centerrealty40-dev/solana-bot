@@ -8,7 +8,10 @@ import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
 import { evaluateFlatMicroDip, type MildDipCandidateMetrics } from './gates.js';
-import { evaluateMildStabilizeFromRing } from './mild-stabilize.js';
+import {
+  evaluateMildStabilizeFromRing,
+  mildStabilizeLaneAllowed,
+} from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 export type StructuralCacheEntry = {
@@ -275,7 +278,14 @@ export async function evaluateFastPathCandidate(
   let mildBouncePct: number | null = null;
   let mildTrough: number | null = null;
   let mildTroughAtMs: number | null = null;
-  if ((!dipSource || mildStabilizeOnly) && cfg.mildStabilizeEnabled) {
+  if (
+    mildStabilizeLaneAllowed({
+      enabled: cfg.mildStabilizeEnabled,
+      freshEntryEnabled: cfg.mildStabilizeFreshEntryEnabled,
+      mildStabilizeOnly,
+      hasOtherDipSource: Boolean(dipSource),
+    })
+  ) {
     const mild = evaluateMildStabilizeFromRing(mildDipPriceRing, mint, nowMs, {
       enabled: true,
       minDumpPct: cfg.mildStabilizeMinDumpPct,

@@ -139,6 +139,11 @@ const MildDipConfigSchema = z.object({
    * Additive to main-band / deep-knife. Also powers second $5 scale-in.
    */
   mildStabilizeEnabled: z.boolean().default(false),
+  /**
+   * When false (default live): mild_stabilize only powers open-book scale-in.
+   * Fresh flat entries via ring bounce are off — Gymbmn/7rMnp9 green-candle noise.
+   */
+  mildStabilizeFreshEntryEnabled: z.boolean().default(false),
   mildStabilizeMinDumpPct: z.coerce.number().max(0).default(-25),
   /** Shallowest dump allowed (more negative = require deeper). Was −5. */
   mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-8),
@@ -415,6 +420,7 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
+    mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
     mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -8),
     mildStabilizeMinBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT', 1.5),
