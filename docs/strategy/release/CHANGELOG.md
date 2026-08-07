@@ -1,4 +1,20 @@
 # So
+## [1.11.723] — 2026-08-07
+
+**Тег:** `sa-1.11.723`
+
+### Ops: mild_stabilize fresh entry OFF (scale-in only)
+
+`7rMnp9` / `XfUH3hL`: same class as Gymbmn — fresh `mild_stabilize` on a
+shallow ring wiggle + green reclaim (bought ~40s before 1.11.722 reload).
+
+**Live:** `MILD_DIP_MILD_STABILIZE_FRESH_ENTRY=0` — ring bounce no longer opens
+new seats. Open-book second clip (scale-in) unchanged.
+
+**Откат:** `MILD_STABILIZE_FRESH_ENTRY=1` + reload.
+
+---
+
 ## [1.11.722] — 2026-08-07
 
 **Тег:** `sa-1.11.722`

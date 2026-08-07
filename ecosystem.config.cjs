@@ -2860,13 +2860,12 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
-         * 1.11.722 — leader-style bounce clip (additive):
-         * ring dump (−25,−8] + bounce [1.5%,8%] off trough (trough age≥15s),
-         * last still ≥2% below peak (reject micro-dip green reclaim).
-         * Also second $5 scale-in while a main/knife position is still open
-         * (trough ≥3% below first entry).
+         * 1.11.723 — mild_stabilize = scale-in only on live.
+         * Fresh flat bounce entries off (Gymbmn/7rMnp9 green-candle noise).
+         * Scale-in while open still uses dump (−25,−8] + bounce + below-peak.
          */
         MILD_DIP_MILD_STABILIZE_ENABLED: '1',
+        MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '0',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-8',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',

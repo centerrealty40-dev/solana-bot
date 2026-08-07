@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateMildStabilizeFromRing,
+  mildStabilizeLaneAllowed,
   mildStabilizeScaleInOk,
 } from '../../src/milddip/mild-stabilize.js';
 import { MildDipPriceRing } from '../../src/milddip/price-ring.js';
@@ -93,6 +94,27 @@ describe('evaluateMildStabilizeFromRing', () => {
         markPriceUsd: 0.0002113,
         minDumpBelowEntryPct: 3,
       }).pass,
+    ).toBe(true);
+  });
+});
+
+describe('mildStabilizeLaneAllowed', () => {
+  it('live default: scale-in only (no fresh green-candle seats)', () => {
+    expect(
+      mildStabilizeLaneAllowed({
+        enabled: true,
+        freshEntryEnabled: false,
+        mildStabilizeOnly: false,
+        hasOtherDipSource: false,
+      }),
+    ).toBe(false);
+    expect(
+      mildStabilizeLaneAllowed({
+        enabled: true,
+        freshEntryEnabled: false,
+        mildStabilizeOnly: true,
+        hasOtherDipSource: false,
+      }),
     ).toBe(true);
   });
 });

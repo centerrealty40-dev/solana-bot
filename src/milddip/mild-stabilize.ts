@@ -2,10 +2,23 @@
  * Mild bounce / stabilize branch (leader-style): after a dump from local peak,
  * buy the reclaim off the trough — not a fixed Dex pc5m threshold.
  *
- * Used as:
- *  - fresh entry when main band did not fire (shallow dump + bounce);
- *  - second $5 clip (scale-in) while a knife/main position is still open.
+ * Live default: scale-in only (`freshEntryEnabled=false`). Fresh flat bounce
+ * entries were buying green-candle noise (Gymbmn / 7rMnp9).
  */
+
+/** Whether fast-path may evaluate mild_stabilize for this candidate pass. */
+export function mildStabilizeLaneAllowed(args: {
+  enabled: boolean;
+  freshEntryEnabled: boolean;
+  mildStabilizeOnly: boolean;
+  /** True when another dipSource already won this pass. */
+  hasOtherDipSource: boolean;
+}): boolean {
+  if (!args.enabled) return false;
+  if (args.mildStabilizeOnly) return true;
+  if (!args.freshEntryEnabled) return false;
+  return !args.hasOtherDipSource;
+}
 
 import type { MildDipPriceRing } from './price-ring.js';
 
