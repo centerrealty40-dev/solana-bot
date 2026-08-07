@@ -2860,17 +2860,19 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
-         * 1.11.717 — leader-style bounce clip (additive):
-         * ring dump (−25,−5] + bounce [1.5%,8%] off trough (trough age≥15s).
+         * 1.11.722 — leader-style bounce clip (additive):
+         * ring dump (−25,−8] + bounce [1.5%,8%] off trough (trough age≥15s),
+         * last still ≥2% below peak (reject micro-dip green reclaim).
          * Also second $5 scale-in while a main/knife position is still open
          * (trough ≥3% below first entry).
          */
         MILD_DIP_MILD_STABILIZE_ENABLED: '1',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
-        MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-5',
+        MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-8',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '8',
         MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '15000',
+        MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT: '2',
         MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_BELOW_ENTRY_PCT: '3',
         /**
          * Red-hour shallow (own logic, not leader copy): when 1h ≤ −15% and

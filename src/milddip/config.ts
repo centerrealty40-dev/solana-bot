@@ -140,10 +140,13 @@ const MildDipConfigSchema = z.object({
    */
   mildStabilizeEnabled: z.boolean().default(false),
   mildStabilizeMinDumpPct: z.coerce.number().max(0).default(-25),
-  mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-5),
+  /** Shallowest dump allowed (more negative = require deeper). Was −5. */
+  mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-8),
   mildStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   mildStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(8),
   mildStabilizeTroughMinAgeMs: z.coerce.number().int().min(0).max(600_000).default(15_000),
+  /** Last must stay ≥ this % below local peak (0 = off). */
+  mildStabilizeMinBelowPeakPct: z.coerce.number().min(0).max(50).default(2),
   /** Scale-in: trough must be ≥ this % below first-clip entry. */
   mildStabilizeScaleInMinDumpBelowEntryPct: z.coerce.number().min(0).max(50).default(3),
   /**
@@ -413,10 +416,11 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
-    mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -5),
+    mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -8),
     mildStabilizeMinBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 8),
     mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 15_000),
+    mildStabilizeMinBelowPeakPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT', 2),
     mildStabilizeScaleInMinDumpBelowEntryPct: envNum(
       'MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_BELOW_ENTRY_PCT',
       3,
