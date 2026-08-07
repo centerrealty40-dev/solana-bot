@@ -1,4 +1,22 @@
 # So
+## [1.11.726] — 2026-08-07
+
+**Тег:** `sa-1.11.726`
+
+### Fix: scale-in allows deeper post-entry knife (−50)
+
+`BJWHLm` / `yEfT5N…`: after first clip, knife −30…−36% then +4% reclaim —
+user-visible stabilize, but second clip blocked because scale-in shared the
+fresh mild dump floor `(−25,−8]`.
+
+**Change:** open-book scale-in uses
+`MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_PCT=-50` (fresh stays −25).
+Bounce / trough-age / below-peak / ≥3% below entry unchanged.
+
+**Откат:** `SCALE_IN_MIN_DUMP_PCT=-25` + reload.
+
+---
+
 ## [1.11.725] — 2026-08-07
 
 **Тег:** `sa-1.11.725`
