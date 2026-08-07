@@ -173,6 +173,11 @@ const MildDipConfigSchema = z.object({
     minPairAgeHours: z.number(),
     maxPairAgeHours: z.number(),
     allowedDexIds: z.array(z.string()),
+    impulseMinPc5mPct: z.number(),
+    impulseMaxPc5mPct: z.number(),
+    impulseMinVolume5mUsd: z.number(),
+    impulseMinBuySellRatio5m: z.number(),
+    impulseMinTurnover5m: z.number(),
     liquidMinPc5mPct: z.number(),
     liquidMaxPc5mPct: z.number(),
     liquidMinVolume5mUsd: z.number(),
@@ -285,6 +290,12 @@ export function loadMildDipConfig(): MildDipConfig {
     minPairAgeHours: envNum('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', 0.01),
     maxPairAgeHours: envNum('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', 0), // 0 = no ceiling
     allowedDexIds,
+    // Impulse: ignore tiny greens; buy when 5m green is large enough (uncapped).
+    impulseMinPc5mPct: envNum('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', 0),
+    impulseMaxPc5mPct: envNum('MILD_DIP_GREEN_IMPULSE_MAX_PC5M_PCT', 0),
+    impulseMinVolume5mUsd: envNum('MILD_DIP_GREEN_IMPULSE_MIN_VOLUME_5M_USD', 2_500),
+    impulseMinBuySellRatio5m: envNum('MILD_DIP_GREEN_IMPULSE_MIN_BUY_SELL_5M', 1),
+    impulseMinTurnover5m: envNum('MILD_DIP_GREEN_IMPULSE_MIN_TURNOVER_5M', 0.05),
     // Fat / calm green — require >5% (0–5% was the loss zone in closed set; 2% is not a real impulse).
     liquidMinPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', 5),
     liquidMaxPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', 20),

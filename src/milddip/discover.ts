@@ -29,6 +29,7 @@ export type MildDipCandidate = {
     | 'ignition'
     | 'gradual'
     | 'green_tape'
+    | 'green_tape_impulse'
     | 'green_tape_liquid'
     | 'green_tape_early'
     | 'green_tape_rocket';
@@ -143,6 +144,7 @@ export function priorityMintsFromPriceRingGreen(
 ): string[] {
   const minRally = Math.max(
     0,
+    cfg.greenTape.impulseMinPc5mPct,
     cfg.greenTape.liquidMinPc5mPct,
     cfg.greenTape.earlyMinPc5mPct,
   );
@@ -150,6 +152,7 @@ export function priorityMintsFromPriceRingGreen(
   const maxRally = Math.max(
     cfg.greenTape.liquidMaxPc5mPct,
     cfg.greenTape.earlyMaxPc5mPct,
+    cfg.greenTape.impulseMaxPc5mPct > 0 ? cfg.greenTape.impulseMaxPc5mPct : 500,
     cfg.greenTape.rocketMaxPc5mPct > 0 ? cfg.greenTape.rocketMaxPc5mPct : 500,
   );
   const max = Math.max(0, Math.floor(opts?.max ?? 60));
@@ -475,8 +478,8 @@ export async function enrichAndFilterCandidates(
             },
           };
         }
-        // Rockets: skip 5m ring-green confirm (race leaders) but still honor short-red above.
-        if (verdict.path !== 'rocket') {
+        // Impulse/rocket: skip strict 5m ring floor (race the candle) but keep short-red.
+        if (verdict.path !== 'rocket' && verdict.path !== 'impulse') {
           if (ringPc == null) {
             return {
               kind: 'skip',
@@ -511,20 +514,24 @@ export async function enrichAndFilterCandidates(
             };
           }
         }
-        // Prefer tape quality over path label (8h RCA: high score ≠ edge).
-        const pathBonus = verdict.path === 'early' ? 5 : 0;
+        // Prefer larger impulse magnitude (leader: wait for a real green, then buy).
+        const pathBonus =
+          verdict.path === 'impulse' ? 20 : verdict.path === 'early' ? 5 : 0;
         const score =
           (verdict.turnover5m ?? 0) * 100 +
           (verdict.buySellRatio5m ?? 0) * 10 +
           pathBonus +
+          Math.min(80, Math.max(0, metrics.priceChange5mPct ?? 0)) +
           Math.min(50, ringPc ?? 0);
         const priceUsd = details.priceUsd as number;
         const entryPath =
-          verdict.path === 'rocket'
-            ? 'green_tape_rocket'
-            : verdict.path === 'early'
-              ? 'green_tape_early'
-              : 'green_tape_liquid';
+          verdict.path === 'impulse'
+            ? 'green_tape_impulse'
+            : verdict.path === 'rocket'
+              ? 'green_tape_rocket'
+              : verdict.path === 'early'
+                ? 'green_tape_early'
+                : 'green_tape_liquid';
         return {
           kind: 'pass',
           cand: {

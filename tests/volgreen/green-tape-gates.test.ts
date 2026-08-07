@@ -9,6 +9,11 @@ const gates: GreenTapeGates = {
   minPairAgeHours: 0.05,
   maxPairAgeHours: 72,
   allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
+  impulseMinPc5mPct: 0,
+  impulseMaxPc5mPct: 0,
+  impulseMinVolume5mUsd: 2500,
+  impulseMinBuySellRatio5m: 1,
+  impulseMinTurnover5m: 0.05,
   liquidMinPc5mPct: 5,
   liquidMaxPc5mPct: 20,
   liquidMinVolume5mUsd: 2_000,
@@ -33,6 +38,49 @@ const gates: GreenTapeGates = {
 };
 
 describe('evaluateGreenTapeEntry', () => {
+  it('impulse: skips tiny greens, buys large uncapped 5m green', () => {
+    const g: GreenTapeGates = {
+      ...gates,
+      impulseMinPc5mPct: 12,
+      impulseMaxPc5mPct: 0,
+      impulseMinVolume5mUsd: 2500,
+      impulseMinBuySellRatio5m: 1,
+      impulseMinTurnover5m: 0.05,
+      liquidMinPc5mPct: 8,
+    };
+    const tiny = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 6,
+        volume5mUsd: 5_000,
+        liquidityUsd: 40_000,
+        marketCapUsd: 100_000,
+        pairAgeHours: 6,
+        dexId: 'pumpswap',
+        buys5m: 40,
+        sells5m: 30,
+      },
+      g,
+    );
+    // 6% is below liquid min 8 and impulse min 12 → fail (ignore small green)
+    expect(tiny.pass).toBe(false);
+
+    const big = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 55,
+        volume5mUsd: 8_000,
+        liquidityUsd: 20_000,
+        marketCapUsd: 80_000,
+        pairAgeHours: 6,
+        dexId: 'pumpswap',
+        buys5m: 50,
+        sells5m: 40,
+      },
+      g,
+    );
+    expect(big.pass).toBe(true);
+    expect(big.path).toBe('impulse');
+  });
+
   it('passes liquid fat green tape', () => {
     const v = evaluateGreenTapeEntry(
       {

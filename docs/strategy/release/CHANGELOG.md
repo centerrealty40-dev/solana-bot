@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.719] — 2026-08-07
+
+**Тег:** `sa-1.11.719`
+
+### Feature: simple impulse path — large 5m green → buy
+
+Leader model: ignore tiny greens; enter when 5m green is large enough.
+New **impulse** path: pc5m≥**12** uncapped, vol≥$2.5k, bs≥1, to≥0.05.
+Liquid min pc raised **5→8**. Still blocks short-red ring60.
+
+**Откат:** `IMPULSE_MIN_PC5M_PCT=0`, liquid min pc 5.
+
+---
+
 ## [1.11.718] — 2026-08-07
 
 **Тег:** `sa-1.11.718`

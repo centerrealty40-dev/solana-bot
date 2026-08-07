@@ -18,8 +18,10 @@ ultra-fresh ≤20s first; age floor 0.01h; rocket pc≥12 / vol≥$10k / bs≥1.
 **Trail (1.11.715):** giveback only after **MFE≥12%** (keeps arm5/gb3/50%/gb2=5).  
 **Discovery (1.11.716):** force-enrich first-seen ≤**4/min**; block if ring60s ≤0.  
 **Age (1.11.717):** **no max pair age** (`MAX_PAIR_AGE_HOURS=0`).  
-**Speed (1.11.718):** scan 2s / probe 28 / conc 10 / budget 12s; spike force;
+**Speed (1.11.718):** scan 2s / probe 20 / conc 10 / budget 15s; spike force;
 rocket bs **1.1**.  
+**Impulse (1.11.719):** ignore tiny greens; **pc5m≥12 uncapped** → buy.  
+
 
 
 

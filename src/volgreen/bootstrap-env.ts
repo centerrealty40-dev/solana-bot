@@ -141,7 +141,14 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.01');
   // 0 = no max age — 8zkg often hits aged runners (HORSE ~450h, MIM ~500h).
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '0');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '5');
+  // Simple leader model: ignore small greens; fire on large 5m impulse (uncapped).
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '12');
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MAX_PC5M_PCT', '0');
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_VOLUME_5M_USD', '2500');
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_BUY_SELL_5M', '1.0');
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_TURNOVER_5M', '0.05');
+  // Liquid: stop nibbling 5% noise — need clearer green.
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '8');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2000');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', '0.09');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', '1');

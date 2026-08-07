@@ -1,10 +1,11 @@
 /**
  * Leader-like green-tape entry (8zkg-style).
  *
- * Three paths (OR):
- * - **liquid** — calmer green with fat absolute vol + turnover
+ * Paths (OR), simple model first:
+ * - **impulse** — ignore tiny greens; buy once 5m green is "large enough" (uncapped)
+ * - **liquid** — calmer green with fat absolute vol + turnover (band-capped)
  * - **early** — thinner/faster green with strong buy/sell
- * - **rocket** — already-huge 5m candle with extreme vol/turnover (goon / 3c32HTE)
+ * - **rocket** — extreme vol/turnover vertical
  */
 export type GreenTapeGates = {
   /** Shared structural floors. */
@@ -15,6 +16,16 @@ export type GreenTapeGates = {
   /** 0 = no max. */
   maxPairAgeHours: number;
   allowedDexIds: string[];
+
+  /**
+   * Impulse — "large green candle → buy" (leader mental model).
+   * 0 minPc = path disabled. maxPc 0 = uncapped.
+   */
+  impulseMinPc5mPct: number;
+  impulseMaxPc5mPct: number;
+  impulseMinVolume5mUsd: number;
+  impulseMinBuySellRatio5m: number;
+  impulseMinTurnover5m: number;
 
   /** Liquid path (fat tape). */
   liquidMinPc5mPct: number;
@@ -60,7 +71,7 @@ export type GreenTapeMetrics = {
   sells5m: number | null;
 };
 
-export type GreenTapePath = 'liquid' | 'early' | 'rocket';
+export type GreenTapePath = 'impulse' | 'liquid' | 'early' | 'rocket';
 
 export type GreenTapeVerdict = {
   pass: boolean;
@@ -192,7 +203,22 @@ export function evaluateGreenTapeEntry(
     return { pass: false, reasons: structural, buySellRatio5m, turnover5m };
   }
 
-  const paths: Array<{ name: GreenTapePath; g: PathGates }> = [
+  const paths: Array<{ name: GreenTapePath; g: PathGates }> = [];
+  // Impulse first — ignore small greens; buy when candle is large enough.
+  if (gates.impulseMinPc5mPct > 0) {
+    paths.push({
+      name: 'impulse',
+      g: {
+        minPc: gates.impulseMinPc5mPct,
+        maxPc: gates.impulseMaxPc5mPct,
+        minVol: gates.impulseMinVolume5mUsd,
+        minBs: gates.impulseMinBuySellRatio5m,
+        minTurnover: gates.impulseMinTurnover5m,
+        minMcap: gates.minMarketCapUsd,
+      },
+    });
+  }
+  paths.push(
     {
       name: 'liquid',
       g: {
@@ -226,7 +252,7 @@ export function evaluateGreenTapeEntry(
         minMcap: gates.rocketMinMarketCapUsd,
       },
     },
-  ];
+  );
 
   const failParts: string[] = [];
   for (const { name, g } of paths) {
