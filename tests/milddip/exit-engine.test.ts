@@ -42,7 +42,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     givebackPct: 8,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
-    neverArmDeadMinMs: 900_000,
+    neverArmDeadMinMs: 1_800_000,
     neverArmDeadPnlPct: 10,
     neverArmStaleMinMs: 600_000,
     neverArmStaleMaxMfePct: 2,
@@ -153,7 +153,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(d?.reason).toBe('never_arm_stale');
   });
 
-  it('queues never-arm dead after 15m when stale is off and MFE moved', () => {
+  it('queues never-arm dead after 30m when stale is off and MFE moved', () => {
     const openedAtMs = 1_000_000;
     const gatesNoStale = { ...gates, neverArmStaleMinMs: 0, neverArmStalePnlPct: 0 };
     const p = pos({
@@ -163,12 +163,20 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       trailArmed: false,
       openedAtMs,
     });
-    const d = decideMarkExit({
+    const early = decideMarkExit({
       mint: 'm4d',
       pos: p,
       markPriceUsd: 88, // −12%
       gates: gatesNoStale,
       nowMs: openedAtMs + 900_000,
+    });
+    expect(early?.shouldExit).toBeFalsy();
+    const d = decideMarkExit({
+      mint: 'm4d',
+      pos: p,
+      markPriceUsd: 88, // −12%
+      gates: gatesNoStale,
+      nowMs: openedAtMs + 1_800_000,
     });
     expect(d?.shouldExit).toBe(true);
     expect(d?.reason).toBe('never_arm_dead');

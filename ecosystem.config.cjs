@@ -2935,7 +2935,7 @@ const PM2_APPS = [
         /**
          * Never-armed exit (finite — never sit forever), ordered soft → hard:
          * - patience=0: no early never_arm_giveback knife
-         * - dead: after 15m unarmed + pnl ≤ −15% → never_arm_dead (rugs)
+         * - dead: after 30m unarmed + pnl ≤ −10% → never_arm_dead
          * - vol fade: sustained weak 5m windows
          * - max-hold ceiling
          */
@@ -2943,12 +2943,13 @@ const PM2_APPS = [
         /**
          * 1.11.706 — never-arm exits (keep guardrails, cut losers earlier):
          * - stale @10m: MFE≤2% and pnl≤−5% (dead-path stagnation)
-         * - dead @15m: pnl≤−10% (was −15%; leader loser med ≈ −10%)
+         * - dead: pnl≤−10% (was −15%; leader loser med ≈ −10%)
+         * 1.11.728 — dead min hold 15m → 30m (give bounce/scale-in more time).
          */
         MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '600000',
         MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '2',
         MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5',
-        MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '1800000',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '10',
         /**
          * 1.11.696 — sustained vol fade (not one-shot):

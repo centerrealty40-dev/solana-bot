@@ -1,4 +1,20 @@
 # So
+## [1.11.728] — 2026-08-07
+
+**Тег:** `sa-1.11.728`
+
+### Ops: never_arm_dead min hold 15m → 30m
+
+`14doqP` sold on `never_arm_dead` at ~19m / −10.7% before a fuller bounce /
+scale-in window. Give unarmed bags 30m before the −10% dead cut.
+
+**Live / default:** `MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS=1800000` (was `900000`).
+Pnl threshold unchanged (−10%).
+
+**Откат:** `MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS=900000` + reload.
+
+---
+
 ## [1.11.727] — 2026-08-07
 
 **Тег:** `sa-1.11.727`

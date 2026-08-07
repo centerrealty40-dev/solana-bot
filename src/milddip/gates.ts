@@ -62,7 +62,7 @@ export type MildDipExitGates = {
    */
   neverArmMaxHoldMs: number;
   /**
-   * Never-armed deep-loss cut: after this many ms, if pnl ≤ −neverArmDeadPnlPct,
+   * Never-armed deep-loss cut: after this many ms (live 30m), if pnl ≤ −neverArmDeadPnlPct,
    * full exit (`never_arm_dead`). Catches rugs before max-hold without the
    * early 5m −6% knife. 0 = disabled.
    */
