@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { MildDipPriceRing } from '../../src/milddip/price-ring.js';
-import { evaluateCooldownBounce } from '../../src/milddip/gates.js';
+import { evaluateCooldownBounce, evaluateRebuyBelowExit } from '../../src/milddip/gates.js';
 import { priorityMintsFromCooldown } from '../../src/milddip/discover.js';
 
 describe('MildDipPriceRing', () => {
@@ -57,6 +57,46 @@ describe('evaluateCooldownBounce', () => {
       troughPriceUsd: null,
       maxBouncePct: 6,
       requireTrough: false,
+    });
+    expect(v.pass).toBe(true);
+  });
+});
+
+describe('evaluateRebuyBelowExit', () => {
+  const now = 1_000_000;
+  it('blocks rebuy at same/higher price than last exit', () => {
+    const v = evaluateRebuyBelowExit({
+      freshPriceUsd: 0.00009,
+      lastExitPriceUsd: 0.00009,
+      lastExitAtMs: now - 60_000,
+      nowMs: now,
+      minBelowExitPct: 4,
+      maxAgeMs: 900_000,
+    });
+    expect(v.pass).toBe(false);
+    expect(v.reasons[0]).toContain('rebuy_below_exit');
+  });
+
+  it('allows rebuy when mark is ≥4% below exit', () => {
+    const v = evaluateRebuyBelowExit({
+      freshPriceUsd: 0.000086,
+      lastExitPriceUsd: 0.00009,
+      lastExitAtMs: now - 60_000,
+      nowMs: now,
+      minBelowExitPct: 4,
+      maxAgeMs: 900_000,
+    });
+    expect(v.pass).toBe(true);
+  });
+
+  it('ignores stale exits past maxAge', () => {
+    const v = evaluateRebuyBelowExit({
+      freshPriceUsd: 0.00009,
+      lastExitPriceUsd: 0.00009,
+      lastExitAtMs: now - 1_000_000,
+      nowMs: now,
+      minBelowExitPct: 4,
+      maxAgeMs: 900_000,
     });
     expect(v.pass).toBe(true);
   });

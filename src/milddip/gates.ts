@@ -259,6 +259,45 @@ export function evaluateMildDipPreBuy(args: {
 }
 
 /**
+ * After a full exit: refuse rebuy unless mark is at least `minBelowExitPct`
+ * cheaper than the exit fill (stream mark OK — no Dex). Stops “sell → buy the
+ * same green reclaim candle” without waiting on DexScreener.
+ */
+export function evaluateRebuyBelowExit(args: {
+  freshPriceUsd: number | null;
+  lastExitPriceUsd: number | null | undefined;
+  lastExitAtMs: number | null | undefined;
+  nowMs: number;
+  /** 0 = guard off. */
+  minBelowExitPct: number;
+  /** Ignore exits older than this (ms). 0 = no age cap. */
+  maxAgeMs: number;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const { freshPriceUsd, lastExitPriceUsd, lastExitAtMs, nowMs, minBelowExitPct, maxAgeMs } =
+    args;
+
+  if (!(minBelowExitPct > 0)) return { pass: true, reasons };
+  if (lastExitPriceUsd == null || !(lastExitPriceUsd > 0)) return { pass: true, reasons };
+  if (lastExitAtMs == null || !(lastExitAtMs > 0)) return { pass: true, reasons };
+  if (maxAgeMs > 0 && nowMs - lastExitAtMs > maxAgeMs) return { pass: true, reasons };
+
+  if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
+    reasons.push('rebuy_below_exit_missing_price');
+    return { pass: false, reasons };
+  }
+
+  const belowPct = (1 - freshPriceUsd / lastExitPriceUsd) * 100;
+  if (!(belowPct >= minBelowExitPct)) {
+    reasons.push(
+      `rebuy_below_exit=${belowPct.toFixed(2)}%<min=${minBelowExitPct}` +
+        `_exit=${lastExitPriceUsd}_ageMs=${Math.max(0, nowMs - lastExitAtMs)}`,
+    );
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
+/**
  * After mint cooldown: refuse rebuy if mark already bounced too far off the
  * trough we observed (stream/Dex samples) during the cooldown lookback window.
  */
