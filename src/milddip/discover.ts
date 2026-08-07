@@ -43,13 +43,17 @@ export type MildDipCandidate = {
 const SOLANA_CHAIN = 'solana';
 
 async function fetchJson(url: string): Promise<unknown> {
-  const { fetch } = await import('undici');
-  const res = await fetch(url, {
-    headers: { accept: 'application/json' },
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!res.ok) return null;
-  return res.json();
+  try {
+    const { fetch } = await import('undici');
+    const res = await fetch(url, {
+      headers: { accept: 'application/json' },
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
 }
 
 function mintFromBoostOrProfile(row: unknown): string | null {
@@ -214,36 +218,52 @@ export async function collectCandidateMints(
     for (const m of mildDipHotMints.list(nowMs)) push(m);
   }
   if (sources.has('boosts')) {
-    for (const m of await discoverBoostMints()) push(m);
+    try {
+      for (const m of await discoverBoostMints()) push(m);
+    } catch {
+      /* soft-fail — keep stream universe */
+    }
   }
   if (sources.has('profiles')) {
-    for (const m of await discoverProfileMints()) push(m);
+    try {
+      for (const m of await discoverProfileMints()) push(m);
+    } catch {
+      /* soft-fail */
+    }
   }
 
   // 4) Volume/trending fillers — AFTER stream/boosts so they cannot steal
   // enrich slots from fresher activity. Do NOT note into hot-list (would
   // churn maxMints and push out stream names).
   if (sources.has('pg_volume')) {
-    for (const m of await discoverPgVolumeMints({
-      nowMs,
-      max: cfg.pgVolumeMax,
-      cacheMs: cfg.pgVolumeCacheMs,
-      lookbackMin: cfg.pgVolumeLookbackMin,
-      minVolume5mUsd: cfg.entry.minVolume5mUsd,
-      minLiquidityUsd: cfg.entry.minLiquidityUsd,
-      minMarketCapUsd: cfg.entry.minMarketCapUsd,
-    })) {
-      push(m);
+    try {
+      for (const m of await discoverPgVolumeMints({
+        nowMs,
+        max: cfg.pgVolumeMax,
+        cacheMs: cfg.pgVolumeCacheMs,
+        lookbackMin: cfg.pgVolumeLookbackMin,
+        minVolume5mUsd: cfg.entry.minVolume5mUsd,
+        minLiquidityUsd: cfg.entry.minLiquidityUsd,
+        minMarketCapUsd: cfg.entry.minMarketCapUsd,
+      })) {
+        push(m);
+      }
+    } catch {
+      /* soft-fail */
     }
   }
   if (sources.has('gecko')) {
-    for (const m of await discoverGeckoTrendingMints({
-      nowMs,
-      max: cfg.geckoMax,
-      cacheMs: cfg.geckoCacheMs,
-      pages: cfg.geckoPages,
-    })) {
-      push(m);
+    try {
+      for (const m of await discoverGeckoTrendingMints({
+        nowMs,
+        max: cfg.geckoMax,
+        cacheMs: cfg.geckoCacheMs,
+        pages: cfg.geckoPages,
+      })) {
+        push(m);
+      }
+    } catch {
+      /* soft-fail */
     }
   }
 
