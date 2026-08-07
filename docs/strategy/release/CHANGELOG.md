@@ -1,4 +1,36 @@
 # So
+## [1.11.709] — 2026-08-07
+
+**Тег:** `sa-1.11.709`
+
+### Feat: mild-dip stream/leader fast-path (kill enrich lag)
+
+Root cause of missed liquid dumps (YBPUY1/Am8i): entry waited on a Dex
+enrich batch of ~80 mints behind the 120 RPM gate (10–20s), then died on
+`prebuy_chase>4%`. Stream was only a hot-list feeder, not a buy trigger.
+
+**Changes:**
+1. **Fast-path ON** — stream mint / leader-seed → one structural Dex (cached)
+   + stream drawdown → Jupiter. No enrich batch.
+2. **Slow lane shrunk** — `enrichMax=12`, cached Dex, no recent-trade force
+   enrich, drop `pg_volume`/`gecko` from live sources.
+3. **Chase** — slow `10%`, fast `12%` (was 4%). Bounce skip on fast-path.
+4. Stream price sampling for recently-hot mints (not only cooldown).
+5. `scanIntervalMs` floor lowered to **3s** so background lane
+   `MILD_DIP_SCAN_INTERVAL_MS=3000` validates (was hard min 5s → crash loop).
+
+**Env:**
+`MILD_DIP_FAST_PATH=1`
+`MILD_DIP_FAST_PATH_CHASE_PCT=12`
+`MILD_DIP_MAX_CHASE_PCT=10`
+`MILD_DIP_ENRICH_MAX=12`
+`MILD_DIP_SCAN_INTERVAL_MS=3000`
+`MILD_DIP_DISCOVER_SOURCES=stream,leaders,boosts,profiles`
+
+**Откат:** `MILD_DIP_FAST_PATH=0` + `MILD_DIP_MAX_CHASE_PCT=4` + reload.
+
+---
+
 ## [1.11.708] — 2026-08-07
 
 **Тег:** `sa-1.11.708`

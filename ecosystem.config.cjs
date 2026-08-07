@@ -2930,7 +2930,8 @@ const PM2_APPS = [
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
          * Dex hard-capped at 120 RPM; mark uses cache TTL ≈ interval.
          */
-        MILD_DIP_SCAN_INTERVAL_MS: '5000',
+        /** Background lane only — entries owned by stream/leader fast-path. */
+        MILD_DIP_SCAN_INTERVAL_MS: '3000',
         MILD_DIP_MARK_INTERVAL_MS: '2000',
         MILD_DIP_MARK_CACHE_TTL_MS: '2000',
         /**
@@ -2941,8 +2942,17 @@ const PM2_APPS = [
          */
         MILD_DIP_MARK_JOURNAL_MS: '30000',
         MILD_DIP_MARK_CONCURRENCY: '48',
-        MILD_DIP_ENRICH_CONCURRENCY: '12',
+        MILD_DIP_ENRICH_CONCURRENCY: '6',
+        MILD_DIP_ENRICH_MAX: '12',
         MILD_DIP_SELL_CONCURRENCY: '6',
+        /** Stream/leader fast-path — skip Dex enrich batch. */
+        MILD_DIP_FAST_PATH: '1',
+        MILD_DIP_FAST_PATH_CHASE_PCT: '12',
+        MILD_DIP_FAST_PATH_SKIP_BOUNCE: '1',
+        MILD_DIP_FAST_PATH_MIN_GAP_MS: '2000',
+        MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
+        MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '500',
+        MILD_DIP_STREAM_PRICE_CONCURRENCY: '6',
         /**
          * Telegram ALERT [MILD_DIP_DEX] when mark pass is slow / opens high /
          * null-ratio high — signal to move mild-dip to the idle VPS.
@@ -2969,14 +2979,12 @@ const PM2_APPS = [
         /** Stream drawdown can satisfy dip band when Dex pc5m lags (liq/mcap still Dex). */
         MILD_DIP_STREAM_DIP_ENTRY: '1',
         MILD_DIP_STREAM_PRICE_SAMPLE: '1',
-        MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '2000',
-        MILD_DIP_STREAM_PRICE_CONCURRENCY: '3',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
         MILD_DIP_SLIPPAGE_BPS: '500',
-        /** Abort if mark/quote already bounced >4% off the dip signal (LARP green-candle chase). */
         MILD_DIP_PREBUY_REVALIDATE: '1',
-        MILD_DIP_MAX_CHASE_PCT: '4',
-        LIVE_BUY_MAX_CHASE_PCT: '4',
+        /** Latency-tolerant chase (4% killed every liquid dump). */
+        MILD_DIP_MAX_CHASE_PCT: '10',
+        LIVE_BUY_MAX_CHASE_PCT: '10',
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
         /**
@@ -2997,20 +3005,13 @@ const PM2_APPS = [
         MILD_DIP_FEE_SOL_TOPUP_MIN_USD: '5',
         MILD_DIP_FEE_SOL_TOPUP_BUY_USD: '20',
         /**
-         * Discover: keep stream/boosts/profiles first; add capped fillers.
-         * leaders = observer sidecar (no Dex); pg_volume = fresh PumpSwap PG;
-         * gecko = free trending (cached 2m). Caps keep enrich budget safe.
+         * Fast-path universe: stream + leaders. Drop pg_volume/gecko fillers
+         * that bloated the Dex enrich gate.
          */
-        MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles,leaders,pg_volume,gecko',
+        MILD_DIP_DISCOVER_SOURCES: 'stream,leaders,boosts,profiles',
         MILD_DIP_LEADER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
         MILD_DIP_LEADER_SEED_MAX: '40',
         MILD_DIP_LEADER_SEED_MAX_AGE_MS: '7200000',
-        MILD_DIP_PG_VOLUME_MAX: '30',
-        MILD_DIP_PG_VOLUME_CACHE_MS: '60000',
-        MILD_DIP_PG_VOLUME_LOOKBACK_MIN: '10',
-        MILD_DIP_GECKO_MAX: '25',
-        MILD_DIP_GECKO_CACHE_MS: '120000',
-        MILD_DIP_GECKO_PAGES: '1',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),

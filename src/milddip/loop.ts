@@ -1,8 +1,5 @@
-import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
-import {
-  checkCopyFundingGate,
-  resetCopyFundingCache,
-} from '../copytrader/funding-gate.js';
+import { executeCopySell } from '../copytrader/executor.js';
+import { checkCopyFundingGate } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
@@ -11,11 +8,15 @@ import {
   enrichAndFilterCandidates,
   priorityMintsFromCooldown,
   priorityMintsFromKnifeWatch,
-  priorityMintsFromRecentTrades,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
+import { attemptMildDipEntry } from './entry-attempt.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
+import {
+  evaluateFastPathCandidate,
+  fastPathChasePct,
+} from './fast-path.js';
 import {
   applyMarkDecisionToPosition,
   decideMarkExit,
@@ -24,12 +25,7 @@ import {
   type MarkExitDecision,
 } from './exit-engine.js';
 import { cooldownMsAfterExit } from './cooldown.js';
-import {
-  evaluateCooldownBounce,
-  evaluateMildDipPreBuy,
-  resolveMildDipWantedSizeUsd,
-} from './gates.js';
-import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
+import { readLeaderSeedMints } from './discover-extra.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -91,7 +87,7 @@ function onCooldown(state: MildDipState, mint: string, nowMs: number): boolean {
   return until > nowMs;
 }
 
-/** Sample stream prices for mints cooling down or just off cooldown. */
+/** Sample stream prices for cooldown / open / recently hot mints (fast-path). */
 function shouldSampleStreamPrice(
   state: MildDipState,
   mint: string,
@@ -102,6 +98,8 @@ function shouldSampleStreamPrice(
   if (until > nowMs) return true; // actively cooling — record the trough
   if (until > 0 && nowMs - until <= lookbackMs) return true; // just ready — still useful
   if (state.open[mint]) return true; // open book — denser trail marks via stream
+  // Fast-path needs live stream marks on hot names, not only cooldown.
+  if (mildDipHotMints.isRecent(mint, nowMs, 180_000)) return true;
   return false;
 }
 
@@ -272,27 +270,91 @@ function adoptOnChainHolding(args: {
   console.log(`[mild-dip] ADOPT existing bag ${symbol} mint=${mint.slice(0, 8)}… raw=${tokenRaw}`);
 }
 
+
+async function tryFastPathForMint(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  mint: string,
+  trigger: 'stream' | 'leader' | 'scan',
+  nowMs: number,
+): Promise<boolean> {
+  if (!cfg.fastPathEnabled) return false;
+  if (state.open[mint] || buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
+  if (onCooldown(state, mint, nowMs)) return false;
+
+  const unlimited = cfg.maxOpenPositions <= 0;
+  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
+
+  const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger);
+  if (!candidate) return false;
+
+  // Build copyCfg with chase aligned to fast-path (Jupiter premium uses maxChasePct).
+  const chase = fastPathChasePct(cfg);
+  const cfgFast = { ...cfg, maxChasePct: chase };
+  const copyCfg = mildDipToCopyTraderConfig(cfgFast);
+  const result = await attemptMildDipEntry({
+    cfg: cfgFast,
+    state,
+    candidate,
+    copyCfg,
+    nowMs,
+    buyInFlight,
+    resolveEntrySizeUsd,
+    adoptOnChainHolding,
+    opts: {
+      chasePct: chase,
+      skipBounce: cfg.fastPathSkipBounce,
+      skipOnchainAdopt: true,
+      // One structural Dex already done in evaluateFastPath — avoid second round-trip.
+      freshDexPrebuy: false,
+      softSkipCooldownMs: 15_000,
+      lane: 'fast',
+    },
+  });
+  return result === 'filled';
+}
+
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
 
+  // Fast lane first: leader seeds (new buys) — do not wait for enrich batch.
+  if (cfg.fastPathEnabled) {
+    const leaders = readLeaderSeedMints(cfg.leaderSeedPath, nowMs, {
+      maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
+      max: cfg.leaderSeedMax,
+    });
+    for (const mint of leaders) {
+      if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+      await tryFastPathForMint(cfg, state, mint, 'leader', nowMs);
+    }
+    // Hot stream mints with live ring drawdown.
+    for (const mint of mildDipHotMints.list(nowMs).slice(0, 40)) {
+      if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+      const dd = mildDipPriceRing.drawdownFromPeakPct(
+        mint,
+        cfg.cooldownBounceLookbackMs,
+        nowMs,
+      );
+      if (dd == null || !(dd > cfg.entry.minDipPct && dd <= cfg.entry.maxDipPct)) continue;
+      await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
+    }
+  }
+
+  // Slow lane: tiny cached enrich for knife / leftovers only.
   const priority = priorityMintsFromCooldown(state.cooldownUntilMs, nowMs, {
     postCooldownMs: 120_000,
   });
-  const recentTraded = priorityMintsFromRecentTrades(state.cooldownUntilMs, nowMs, {
-    watchMs: 6 * 3_600_000,
-    max: 40,
-  });
   const knifePriority = priorityMintsFromKnifeWatch(state.knifeWatch);
-  const forceEnrich = [...new Set([...priority, ...knifePriority, ...recentTraded])];
+  const forceEnrich = [...new Set([...priority, ...knifePriority])];
   const mints = await collectCandidateMints(cfg, { priorityMints: forceEnrich, nowMs });
   const enrichPass = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
-    maxEnrich: 80,
-    enrichConcurrency: cfg.enrichConcurrency,
-    // Keep Dex marks flowing for cooling / knife-watch / recent-trade mints
-    // even when they won't buy yet.
+    maxEnrich: cfg.enrichMax,
+    enrichConcurrency: Math.min(cfg.enrichConcurrency, 6),
+    bypassCache: false,
+    cacheTtlMs: 3_000,
     forceEnrich,
     knifeWatch: state.knifeWatch ?? {},
   });
@@ -311,343 +373,39 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     }
   }
   saveMildDipState(cfg.statePath, state);
-  const candidates = enrichPass.candidates;
+
   const copyCfg = mildDipToCopyTraderConfig(cfg);
-
   let filled = 0;
-  for (const c of candidates) {
+  for (const c of enrichPass.candidates) {
     if (filled >= slots) break;
-    if (state.open[c.mint] || buyInFlight.has(c.mint) || sellInFlight.has(c.mint)) continue;
-    if (onCooldown(state, c.mint, nowMs)) continue;
-    if (cfg.deniedMints.includes(c.mint)) continue;
-
-    // Merge disk state — a twin process / restart may have opened this mint.
-    const disk = loadMildDipState(cfg.statePath);
-    if (disk.open[c.mint]) {
-      state.open[c.mint] = disk.open[c.mint]!;
-      continue;
-    }
-    for (const [m, until] of Object.entries(disk.cooldownUntilMs)) {
-      const local = state.cooldownUntilMs[m] ?? 0;
-      if (until > local) state.cooldownUntilMs[m] = until;
-    }
-
-    // Never rebuy a mint we already hold on-chain (state can lag after restart).
-    const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);
-    const onchainRaw = onchain && /^\d+$/.test(onchain) ? BigInt(onchain) : 0n;
-    if (onchainRaw > HOLDING_DUST_RAW) {
-      adoptOnChainHolding({
-        cfg,
-        state,
-        mint: c.mint,
-        symbol: c.symbol,
-        tokenRaw: onchainRaw.toString(),
-        priceUsd: c.priceUsd,
-        pc5m: c.metrics.priceChange5mPct,
-        nowMs,
-      });
-      continue;
-    }
-
-    // Re-check right before send — enrich can be tens of seconds stale.
-    let entryPriceUsd = c.priceUsd;
-    let entryPc5m = c.metrics.priceChange5mPct;
-    let freshPx: number | null = c.priceUsd;
-    const isKnife = c.dipSource === 'knife_stabilize';
-    const isH1RedShallow = c.dipSource === 'h1_red_shallow';
-    let sizeMetrics = {
-      liquidityUsd: c.metrics.liquidityUsd,
-      marketCapUsd: c.metrics.marketCapUsd,
-      pairAgeHours: c.metrics.pairAgeHours,
-    };
-    if (cfg.preBuyRevalidate) {
-      const freshNow = Date.now();
-      const fresh = await fetchDexScreenerPairDetails(c.mint, {
-        bypassCache: true,
-        nowMs: freshNow,
-      });
-      freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
-      const freshPc = fresh?.priceChangeM5Pct ?? null;
-      const freshVol5m = fresh?.volume5mUsd ?? c.metrics.volume5mUsd;
-      if (freshPx != null) {
-        mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
-      }
-      const pre = isKnife
-        ? evaluateKnifeStabilizePreBuy({
-            signalPriceUsd: c.priceUsd,
-            freshPriceUsd: freshPx,
-            troughPriceUsd: c.knifeWatch?.troughPriceUsd ?? null,
-            maxChasePct: cfg.maxChasePct,
-            maxBouncePct: cfg.knifeStabilizeMaxBouncePct,
-          })
-        : evaluateMildDipPreBuy({
-            signalPriceUsd: c.priceUsd,
-            freshPriceUsd: freshPx,
-            freshPc5mPct: freshPc,
-            // h1_red_shallow selects (−10,−3]; must revalidate on that band,
-            // not the main mild (−25,−5] — otherwise every real shallow is killed.
-            entryGates: isH1RedShallow
-              ? {
-                  minDipPct: cfg.h1RedShallowMinDipPct,
-                  maxDipPct: cfg.h1RedShallowMaxDipPct,
-                }
-              : cfg.entry,
-            maxChasePct: cfg.maxChasePct,
-          });
-      if (!pre.pass) {
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_prebuy_skip',
-          mint: c.mint,
-          symbol: c.symbol,
-          dipSource: c.dipSource,
-          signalPriceUsd: c.priceUsd,
-          signalPc5m: c.metrics.priceChange5mPct,
-          freshPriceUsd: freshPx,
-          freshPc5m: freshPc,
-          freshVolume5mUsd: freshVol5m,
-          reasons: pre.reasons,
-        });
-        console.log(
-          `[mild-dip] SKIP prebuy ${c.symbol} mint=${c.mint.slice(0, 8)}… ${pre.reasons.join(',')}`,
-        );
-        state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+    // Prefer fast-path for non-knife; knife still uses slow confirm.
+    if (c.dipSource !== 'knife_stabilize' && cfg.fastPathEnabled) {
+      const ok = await tryFastPathForMint(cfg, state, c.mint, 'scan', nowMs);
+      if (ok) {
+        filled += 1;
         continue;
       }
-      if (freshPx != null) entryPriceUsd = freshPx;
-      if (!isKnife && freshPc != null) entryPc5m = freshPc;
-      if (fresh) {
-        const freshAge =
-          fresh.pairCreatedAtMs != null && fresh.pairCreatedAtMs > 0
-            ? Math.max(0, (freshNow - fresh.pairCreatedAtMs) / 3_600_000)
-            : null;
-        sizeMetrics = {
-          liquidityUsd: fresh.liquidityUsd ?? sizeMetrics.liquidityUsd,
-          marketCapUsd: fresh.marketCapUsd ?? sizeMetrics.marketCapUsd,
-          pairAgeHours: freshAge ?? sizeMetrics.pairAgeHours,
-        };
-      }
     }
-
-    // After cooldown: refuse if we already bounced too far off the observed trough.
-    // Knife-stabilize intentionally buys a controlled bounce — use its own cap.
-    // Lookback covers the longer loss-cooldown window so a 10m dump trough is visible.
-    const bounceLookbackMs = Math.max(
-      cfg.cooldownBounceLookbackMs,
-      cfg.mintCooldownMs,
-      cfg.lossCooldownMs,
-    );
-    const trough = isKnife
-      ? c.knifeWatch
-        ? {
-            priceUsd: c.knifeWatch.troughPriceUsd,
-            tsMs: c.knifeWatch.troughAtMs,
-            source: 'dex' as const,
-          }
-        : mildDipPriceRing.minPrice(c.mint, bounceLookbackMs, nowMs)
-      : mildDipPriceRing.minPrice(c.mint, bounceLookbackMs, nowMs);
-    const bounce = evaluateCooldownBounce({
-      freshPriceUsd: freshPx ?? entryPriceUsd,
-      troughPriceUsd: trough?.priceUsd ?? null,
-      maxBouncePct: isKnife ? cfg.knifeStabilizeMaxBouncePct : cfg.maxCooldownBouncePct,
-      requireTrough: false,
-    });
-    if (!bounce.pass) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_cooldown_bounce_skip',
-        mint: c.mint,
-        symbol: c.symbol,
-        freshPriceUsd: freshPx ?? entryPriceUsd,
-        troughPriceUsd: trough?.priceUsd ?? null,
-        troughTsMs: trough?.tsMs ?? null,
-        troughSource: trough && 'source' in trough ? trough.source : null,
-        sampleCount: mildDipPriceRing.sampleCount(c.mint, bounceLookbackMs, nowMs),
-        lookbackMs: bounceLookbackMs,
-        dipSource: c.dipSource,
-        reasons: bounce.reasons,
-      });
-      console.log(
-        `[mild-dip] SKIP bounce ${c.symbol} mint=${c.mint.slice(0, 8)}… ${bounce.reasons.join(',')}`,
-      );
-      // Short pause — do not re-hammer the same bounced mark every scan.
-      state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
-      continue;
-    }
-
-    const wanted = resolveMildDipWantedSizeUsd({
-      basePositionUsd: cfg.positionUsd,
-      thick: {
-        positionUsd: cfg.thickPositionUsd,
-        minMarketCapUsd: cfg.thickMinMarketCapUsd,
-        minLiquidityUsd: cfg.thickMinLiquidityUsd,
-        minPairAgeHours: cfg.thickMinPairAgeHours,
+    const result = await attemptMildDipEntry({
+      cfg,
+      state,
+      candidate: c,
+      copyCfg,
+      nowMs,
+      buyInFlight,
+      resolveEntrySizeUsd,
+      adoptOnChainHolding,
+      opts: {
+        chasePct: cfg.maxChasePct,
+        skipBounce: false,
+        skipOnchainAdopt: false,
+        freshDexPrebuy: true,
+        softSkipCooldownMs: Math.min(cfg.mintCooldownMs, 60_000),
+        lane: 'slow',
       },
-      metrics: sizeMetrics,
     });
-    const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, wanted.sizeUsd);
-    if (sized.stop || !(sized.sizeUsd > 0)) {
-      if (sized.reason && sized.reason !== 'usdc_exhausted') {
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_funding_block',
-          reason: sized.reason,
-          usdc: sized.usdc ?? null,
-          wantUsd: wanted.sizeUsd,
-          sizeTier: wanted.tier,
-        });
-      }
-      break;
-    }
-
-    // Reserve seat BEFORE Jupiter send so a twin process / overlapping scan
-    // cannot open a second $5 clip on the same mint (seen on BorBvx…).
-    if (buyInFlight.has(c.mint) || state.open[c.mint]) continue;
-    buyInFlight.add(c.mint);
-    state.open[c.mint] = {
-      mint: c.mint,
-      symbol: c.symbol,
-      entryPriceUsd,
-      sizeUsd: sized.sizeUsd,
-      tokenRaw: null,
-      openedAtMs: nowMs,
-      entryPc5mPct: entryPc5m,
-      buySignature: null,
-      peakPriceUsd: entryPriceUsd,
-      trailArmed: false,
-      entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
-    };
-    if (state.knifeWatch?.[c.mint]) {
-      delete state.knifeWatch[c.mint];
-    }
-    saveMildDipState(cfg.statePath, state);
-    appendMildDipJournal(cfg.journalPath, {
-      kind: 'mild_dip_buy_reserved',
-      mint: c.mint,
-      symbol: c.symbol,
-      sizeUsd: sized.sizeUsd,
-      wantUsd: wanted.sizeUsd,
-      sizeTier: wanted.tier,
-      priceUsd: entryPriceUsd,
-      dipSource: c.dipSource,
-      knifeMode: c.knifeMode ?? null,
-    });
-
-    const leaderSig = `milddip_${c.mint.slice(0, 8)}_${nowMs}`;
-    let buy: Awaited<ReturnType<typeof executeCopyBuy>>;
-    try {
-      buy = await executeCopyBuy({
-        cfg: copyCfg,
-        mint: c.mint,
-        symbol: c.symbol,
-        priceUsd: entryPriceUsd,
-        sizeUsd: sized.sizeUsd,
-        kind: 'entry',
-        evalResult: {
-          pass: true,
-          reasons: [
-            `mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
-          ],
-          score: Math.abs(entryPc5m ?? 0),
-        },
-        leaderSignature: leaderSig,
-        // Anchor for Jupiter quote premium guard — abort mid-retry green chase.
-        leaderPriceUsd: entryPriceUsd,
-        leaderBuyTs: nowMs,
-      });
-    } catch (err) {
-      delete state.open[c.mint];
-      buyInFlight.delete(c.mint);
-      state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
-      saveMildDipState(cfg.statePath, state);
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_buy_attempt',
-        mint: c.mint,
-        symbol: c.symbol,
-        sizeUsd: sized.sizeUsd,
-        wantUsd: wanted.sizeUsd,
-        sizeTier: wanted.tier,
-        priceUsd: entryPriceUsd,
-        signalPriceUsd: c.priceUsd,
-        pc5m: entryPc5m,
-        signalPc5m: c.metrics.priceChange5mPct,
-        volume5mUsd: c.metrics.volume5mUsd,
-        volume1hUsd: c.metrics.volume1hUsd,
-        liquidityUsd: sizeMetrics.liquidityUsd,
-        marketCapUsd: sizeMetrics.marketCapUsd,
-        pairAgeHours: sizeMetrics.pairAgeHours,
-        buys5m: c.metrics.buys5m,
-        sells5m: c.metrics.sells5m,
-        dexId: c.metrics.dexId,
-        dipSource: c.dipSource,
-        ok: false,
-        reason: err instanceof Error ? err.message : String(err),
-        mode: cfg.executionMode,
-      });
-      resetCopyFundingCache();
-      continue;
-    }
-
-    appendMildDipJournal(cfg.journalPath, {
-      kind: 'mild_dip_buy_attempt',
-      mint: c.mint,
-      symbol: c.symbol,
-      sizeUsd: sized.sizeUsd,
-      wantUsd: wanted.sizeUsd,
-      sizeTier: wanted.tier,
-      priceUsd: buy.priceUsd || entryPriceUsd,
-      signalPriceUsd: c.priceUsd,
-      pc5m: entryPc5m,
-      signalPc5m: c.metrics.priceChange5mPct,
-      volume5mUsd: c.metrics.volume5mUsd,
-      volume1hUsd: c.metrics.volume1hUsd,
-      liquidityUsd: sizeMetrics.liquidityUsd,
-      marketCapUsd: sizeMetrics.marketCapUsd,
-      pairAgeHours: sizeMetrics.pairAgeHours,
-      buys5m: c.metrics.buys5m,
-      sells5m: c.metrics.sells5m,
-      dexId: c.metrics.dexId,
-      dipSource: c.dipSource,
-      ok: buy.ok,
-      reason: buy.reason ?? null,
-      signature: buy.signature ?? null,
-      mode: cfg.executionMode,
-      usdcBefore: sized.usdc ?? null,
-    });
-
-    if (!buy.ok) {
-      delete state.open[c.mint];
-      buyInFlight.delete(c.mint);
-      state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
-      saveMildDipState(cfg.statePath, state);
-      resetCopyFundingCache();
-      continue;
-    }
-
-    // Prefer confirmed on-chain raw over quote outAmount.
-    const filledRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
-    const fillPx = buy.priceUsd || entryPriceUsd;
-    state.open[c.mint] = {
-      mint: c.mint,
-      symbol: c.symbol,
-      entryPriceUsd: fillPx,
-      sizeUsd: sized.sizeUsd,
-      tokenRaw: filledRaw ?? buy.tokenRaw ?? null,
-      openedAtMs: nowMs,
-      entryPc5mPct: entryPc5m,
-      buySignature: buy.signature ?? null,
-      peakPriceUsd: fillPx,
-      trailArmed: false,
-      entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
-    };
-    buyInFlight.delete(c.mint);
-    // Persist immediately — a restart before the tick-end save used to allow a rebuy.
-    saveMildDipState(cfg.statePath, state);
-    filled += 1;
-    resetCopyFundingCache();
-    console.log(
-      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd}` +
-        `${wanted.tier === 'thick' ? ' thick' : ''} pc5m=${entryPc5m?.toFixed(1)} @$${
-          (buy.priceUsd || entryPriceUsd).toPrecision(4)
-        } mode=${cfg.executionMode}`,
-    );
+    if (result === 'filled') filled += 1;
+    if (result === 'stop') break;
   }
 }
 
@@ -1020,6 +778,16 @@ export async function runMildDipLoop(
     streamHandle = startMildDipHotMintStream({
       wsUrl: cfg.streamWsUrl || null,
       priceSampler,
+      onMint: (mint, tsMs) => {
+        // Immediate fast-path — do not wait for the 5s enrich batch.
+        if (!cfg.fastPathEnabled) return;
+        void tryFastPathForMint(cfg, state, mint, 'stream', tsMs).catch((err) => {
+          console.warn(
+            '[mild-dip] fast-path stream error',
+            err instanceof Error ? err.message : err,
+          );
+        });
+      },
     });
     stats.stream = streamHandle != null;
   }
@@ -1051,6 +819,8 @@ export async function runMildDipLoop(
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0} ` +
+      `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
+      `/skipBounce=${cfg.fastPathSkipBounce ? 1 : 0}/enrichMax=${cfg.enrichMax} ` +
       `prebuy=${cfg.preBuyRevalidate} maxChasePct=${cfg.maxChasePct} ` +
       `slippageBps=${cfg.slippageBps} buyImpactCap=${buyImpactCap}% ` +
       `jupPriority=${jupPriority} jupFeeCapSol=${jupFeeCapSol} ` +
