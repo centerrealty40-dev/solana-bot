@@ -70,20 +70,20 @@ describe('evaluateRebuyBelowExit', () => {
       lastExitPriceUsd: 0.00009,
       lastExitAtMs: now - 60_000,
       nowMs: now,
-      minBelowExitPct: 4,
+      minBelowExitPct: 20,
       maxAgeMs: 900_000,
     });
     expect(v.pass).toBe(false);
     expect(v.reasons[0]).toContain('rebuy_below_exit');
   });
 
-  it('allows rebuy when mark is ≥4% below exit', () => {
+  it('allows rebuy when mark is ≥20% below exit', () => {
     const v = evaluateRebuyBelowExit({
-      freshPriceUsd: 0.000086,
+      freshPriceUsd: 0.000072,
       lastExitPriceUsd: 0.00009,
       lastExitAtMs: now - 60_000,
       nowMs: now,
-      minBelowExitPct: 4,
+      minBelowExitPct: 20,
       maxAgeMs: 900_000,
     });
     expect(v.pass).toBe(true);
@@ -95,7 +95,7 @@ describe('evaluateRebuyBelowExit', () => {
       lastExitPriceUsd: 0.00009,
       lastExitAtMs: now - 1_000_000,
       nowMs: now,
-      minBelowExitPct: 4,
+      minBelowExitPct: 20,
       maxAgeMs: 900_000,
     });
     expect(v.pass).toBe(true);

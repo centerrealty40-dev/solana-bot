@@ -1,4 +1,16 @@
 # So
+## [1.11.719] — 2026-08-07
+
+**Тег:** `sa-1.11.719`
+
+### Ops: rebuy-below-exit **20%** (was 4%)
+
+`MILD_DIP_REBUY_BELOW_EXIT_PCT=20` — same-price reclaim guard tightened.
+
+**Откат:** `REBUY_BELOW_EXIT_PCT=4` + reload.
+
+---
+
 ## [1.11.718] — 2026-08-07
 
 **Тег:** `sa-1.11.718`
@@ -10,12 +22,13 @@ while price is back at the exit. Do **not** add DexScreener latency.
 
 **Changes:**
 1. Persist `lastExitByMint` (exit USD + ts) on full close.
-2. Rebuy only if mark is ≥ **4%** below that exit (15m memory) —
+2. Rebuy only if mark is ≥ **N%** below that exit (15m memory) —
    `evaluateRebuyBelowExit` on fast + slow (scale-in exempt).
+   Live floor raised to **20%** in 1.11.719.
 3. `FAST_PATH_SKIP_BOUNCE=0` — trough-bounce guard stays on.
 
 **Env:**
-`MILD_DIP_REBUY_BELOW_EXIT_PCT=4`
+`MILD_DIP_REBUY_BELOW_EXIT_PCT=20`
 `MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS=900000`
 `MILD_DIP_FAST_PATH_SKIP_BOUNCE=0`
 
