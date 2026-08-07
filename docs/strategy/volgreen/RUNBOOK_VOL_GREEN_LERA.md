@@ -21,16 +21,8 @@ ultra-fresh ≤20s first; age floor 0.01h; rocket pc≥12 / vol≥$10k / bs≥1.
 **Speed (1.11.718):** scan 2s / probe 20 / conc 10 / budget 15s; spike force;
 rocket bs **1.1**.  
 **Impulse (1.11.719):** ignore tiny greens; **pc5m≥12 uncapped** → buy.  
-
-
-
-
-
-
-
-
-
-
+**Buy mint-resolve (1.11.720):** when PumpSwap logs omit mint, **getTx ≤40/min**
+→ force-enrich (`buyForce` in enrich log). See candles ourselves, not via leaders.
 
 **Exit:** same W9.1 stack as Oscar `mild-dip-bot` (arm +8% / giveback −6% / never-arm / vol-fade)  
 **RPC:** Helius from `/opt/lera/.env`  

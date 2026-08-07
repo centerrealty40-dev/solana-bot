@@ -291,9 +291,12 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const spikeForce = tapeMode
     ? mildDipHotMints.takeForceEnrichHotSpike(nowMs, 8, 12_000, 12_000)
     : [];
+  // Buy/Sell getTx-resolved (or Buy logs with mint) — must probe same scan.
+  const buyForce = tapeMode ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, 16) : [];
   const forceEnrich = tapeMode
     ? [
         ...new Set([
+          ...buyForce,
           ...spikeForce,
           ...firstSeenForce,
           ...ringGreen,
@@ -304,7 +307,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
   // Smaller probe + higher concurrency → multi-second cycles, not 25–40s.
   const probeMax = tapeMode
-    ? Math.min(120, cfg.probeEnrichMax + firstSeenForce.length + spikeForce.length)
+    ? Math.min(
+        120,
+        cfg.probeEnrichMax + firstSeenForce.length + spikeForce.length + buyForce.length,
+      )
     : 80;
   const enrichConcurrency = tapeMode
     ? Math.min(12, Math.max(6, cfg.enrichConcurrency))
@@ -335,8 +341,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   if (tapeMode) {
     console.log(
       `[mild-dip] ${cfg.entryMode} enrich done universe=${mints.length} ringGreen=${ringGreen.length} ` +
-        `firstSeen=${firstSeenForce.length} spike=${spikeForce.length} force=${forceEnrich.length} ` +
-        `candidates=${candidates.length} skips=${enrichResult.skips.length} ` +
+        `firstSeen=${firstSeenForce.length} spike=${spikeForce.length} buyForce=${buyForce.length} ` +
+        `force=${forceEnrich.length} candidates=${candidates.length} skips=${enrichResult.skips.length} ` +
         `ms=${Date.now() - enrichStarted} probeMax=${probeMax} conc=${enrichConcurrency} evalTopN=${evalTopN}`,
     );
     if (cfg.journalEntrySkips && enrichResult.skips.length > 0) {
@@ -1004,6 +1010,9 @@ export async function runMildDipLoop(
     streamHandle = startMildDipHotMintStream({
       wsUrl: cfg.streamWsUrl || null,
       priceSampler,
+      rpcUrl: cfg.rpcUrl,
+      buyMintResolveMaxPerMin: cfg.buyMintResolveMaxPerMin,
+      buyMintResolveConcurrency: cfg.buyMintResolveConcurrency,
     });
     stats.stream = streamHandle != null;
   }

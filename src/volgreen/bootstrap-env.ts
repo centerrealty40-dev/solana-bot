@@ -115,6 +115,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '15000');
   setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '2000');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '6');
+  // PumpSwap Buy logs often omit mint — getTx resolve so we see candles ourselves.
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '40');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '3');
   setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '180');
   setIfAbsent('DEXSCREENER_MAX_RPM', '180');
   // Block Dex-green / local-red (goon dip-buy).

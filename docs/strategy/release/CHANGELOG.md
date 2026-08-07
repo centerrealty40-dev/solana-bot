@@ -1,5 +1,25 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.720] — 2026-08-07
+
+**Тег:** `sa-1.11.720`
+
+### Fix: see PumpSwap Buys ourselves — getTx mint-resolve
+
+RCA `fBQsSy…` / mint `AGbfomct…pump`: logs had `Instruction: Buy` but **no mint
+string** → stream extract returned []. Hot never force-probed the candle.
+
+- Cap **40 getTransaction/min** (conc 3) when Buy/Sell logs omit mint
+- Extract mint from fee-payer token delta (fallback `.pump` account key)
+- `markBuyForce` → same-scan force-enrich (`buyForce=N` in enrich log)
+- Buy logs that *do* include mint also get hit-boost + buyForce
+
+Oscar mild-dip default remains **0** (off). Vol-green hard-sets ON.
+
+**Откат:** `MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN=0`.
+
+---
+
 ## [1.11.719] — 2026-08-07
 
 **Тег:** `sa-1.11.719`

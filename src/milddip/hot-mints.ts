@@ -25,6 +25,11 @@ export class MildDipHotMintBuffer {
   /** Per-mint cooldown for spike re-force (avoid Dex stampede on one mint). */
   private spikeCooldownUntil = new Map<string, number>();
   private spikeGrantTs: number[] = [];
+  /**
+   * Mints resolved from Buy/Sell getTransaction (or Buy logs with mint) awaiting
+   * force-enrich — race the candle without waiting for top-N by vol.
+   */
+  private buyForcePending = new Map<string, number>();
 
   constructor(opts?: { maxMints?: number; ttlMs?: number }) {
     this.maxMints = opts?.maxMints ?? 400;
@@ -143,6 +148,33 @@ export class MildDipHotMintBuffer {
     return out;
   }
 
+  /** Mark mint for next-scan force enrich (Buy activity / getTx resolve). */
+  markBuyForce(mint: string, nowMs = Date.now()): void {
+    if (!mint || mint.length < 32) return;
+    this.buyForcePending.set(mint, nowMs);
+  }
+
+  /**
+   * Drain Buy-resolved force queue (newest first). Cap per call so one scan
+   * cannot consume the entire Dex budget.
+   */
+  takeForceEnrichBuyResolved(nowMs = Date.now(), maxTake = 12): string[] {
+    if (!(maxTake > 0)) return [];
+    this.prune(nowMs);
+    // Drop stale pending (>2 min — candle already gone).
+    for (const [mint, ts] of this.buyForcePending) {
+      if (nowMs - ts > 120_000) this.buyForcePending.delete(mint);
+    }
+    const ordered = [...this.buyForcePending.entries()].sort((a, b) => b[1] - a[1]);
+    const out: string[] = [];
+    for (const [mint] of ordered) {
+      if (out.length >= maxTake) break;
+      this.buyForcePending.delete(mint);
+      out.push(mint);
+    }
+    return out;
+  }
+
   size(nowMs = Date.now()): number {
     this.prune(nowMs);
     return this.byMint.size;
@@ -175,6 +207,7 @@ export class MildDipHotMintBuffer {
       if (nowMs - hit.lastSeenAtMs > this.ttlMs) {
         this.byMint.delete(mint);
         this.forceEnriched.delete(mint);
+        this.buyForcePending.delete(mint);
       }
     }
     if (this.byMint.size <= this.maxMints) return;
@@ -184,6 +217,7 @@ export class MildDipHotMintBuffer {
       const m = ordered[i]!.mint;
       this.byMint.delete(m);
       this.forceEnriched.delete(m);
+      this.buyForcePending.delete(m);
     }
   }
 }

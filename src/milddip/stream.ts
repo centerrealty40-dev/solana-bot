@@ -4,6 +4,9 @@
  *
  * DexScreener remains the liq/mcap/pc5m source; stream prices fill the trough
  * during cooldown so we can refuse bounce re-entries.
+ *
+ * When logs show Instruction: Buy/Sell but omit the mint (PumpSwap common),
+ * optionally resolve via getTransaction (capped) so we see the candle ourselves.
  */
 import { resolveLeaderStreamWsUrl } from '../copytrader/leader-stream-ws.js';
 import { PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
@@ -11,6 +14,12 @@ import { PUMP_SWAP_AMM_PROGRAM_ID } from '../parser/allowlisted-dex-swap.js';
 import { extractMintCandidatesFromLogs } from '../scripts/awakening/awakening-mint-from-logs.js';
 import type { StreamConfig } from '../stream/config.js';
 import { LogsWsClient } from '../stream/rpc-ws.js';
+import {
+  createBuyMintResolver,
+  logsIndicateBuyOrSell,
+  needsBuyMintResolve,
+  type BuyMintResolver,
+} from './buy-mint-resolve.js';
 import { mildDipHotMints } from './hot-mints.js';
 import type { StreamPriceSampler } from './stream-price-sampler.js';
 
@@ -39,6 +48,13 @@ export function startMildDipHotMintStream(opts?: {
   onMint?: (mint: string, tsMs: number) => void;
   /** When set, enqueue signature→price decode for watched mints. */
   priceSampler?: StreamPriceSampler | null;
+  /**
+   * RPC HTTP for Buy/Sell mint resolve when logs omit mint.
+   * Cap via buyMintResolveMaxPerMin (0 = off).
+   */
+  rpcUrl?: string | null;
+  buyMintResolveMaxPerMin?: number;
+  buyMintResolveConcurrency?: number;
 }): MildDipStreamHandle | null {
   const wsUrl = (opts?.wsUrl ?? resolveMildDipStreamWsUrl())?.trim() || '';
   if (!wsUrl) {
@@ -60,16 +76,38 @@ export function startMildDipHotMintStream(opts?: {
     logEveryN: 2000,
   };
 
+  const resolveMax = Math.max(0, opts?.buyMintResolveMaxPerMin ?? 0);
+  const rpcUrl = (opts?.rpcUrl ?? '').trim();
+  let resolver: BuyMintResolver | null = null;
+  if (resolveMax > 0 && rpcUrl) {
+    resolver = createBuyMintResolver({
+      rpcUrl,
+      maxPerMin: resolveMax,
+      concurrency: opts?.buyMintResolveConcurrency ?? 2,
+      onResolved: (mint, _sig, tsMs) => {
+        opts?.onMint?.(mint, tsMs);
+      },
+    });
+    console.log(
+      `[mild-dip] buy-mint-resolve ON maxPerMin=${resolveMax} conc=${opts?.buyMintResolveConcurrency ?? 2}`,
+    );
+  }
+
   const client = new LogsWsClient(cfg, (n) => {
     const tsMs = Date.now();
     if (n.err) return;
     const mints = extractMintCandidatesFromLogs(n.logs);
     for (const mint of mints) {
-      mildDipHotMints.note(mint, tsMs);
+      const buySell = logsIndicateBuyOrSell(n.logs);
+      mildDipHotMints.note(mint, tsMs, buySell ? 8 : 1);
+      if (buySell) mildDipHotMints.markBuyForce(mint, tsMs);
       opts?.onMint?.(mint, tsMs);
       if (opts?.priceSampler && n.signature) {
         opts.priceSampler.enqueue(mint, n.signature, tsMs);
       }
+    }
+    if (resolver && n.signature && needsBuyMintResolve(n.logs, mints)) {
+      resolver.enqueue(n.signature, tsMs);
     }
   });
 
@@ -80,6 +118,7 @@ export function startMildDipHotMintStream(opts?: {
   return {
     stop: () => {
       client.stop();
+      resolver?.stop();
       opts?.priceSampler?.stop();
     },
   };
