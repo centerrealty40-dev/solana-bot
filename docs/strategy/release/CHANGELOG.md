@@ -1,5 +1,21 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.711] — 2026-08-07
+
+**Тег:** `sa-1.11.711`
+
+### Tune: vol-green Jupiter buy — impact 2%, quote premium 12%
+
+Journal: ~474 buy fails were `route_too_impactful` at 1% (median ~1.8%);
+quote_premium at chase=5% also cut pump quotes. Raise
+`LIVE_BUY_MAX_PRICE_IMPACT_PCT=2`; dedicated
+`MILD_DIP_QUOTE_PREMIUM_GUARD_PCT=12` (chase/prebuy stays 5%). Oscar mild-dip
+unchanged (premium still follows maxChasePct when guard env unset).
+
+**Откат:** impact=1, unset `MILD_DIP_QUOTE_PREMIUM_GUARD_PCT`.
+
+---
+
 ## [1.11.710] — 2026-08-07
 
 **Тег:** `sa-1.11.710`

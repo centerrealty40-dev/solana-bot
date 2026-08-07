@@ -109,6 +109,12 @@ const MildDipConfigSchema = z.object({
   preBuyRevalidate: z.boolean().default(true),
   /** Max % mark can rise vs signal price before abort (0 = chase check off). */
   maxChasePct: z.coerce.number().min(0).max(50).default(4),
+  /**
+   * Jupiter quote premium vs signal/mark anchor (%). 0 = fall back to maxChasePct
+   * (legacy mild-dip). Vol-green sets this looser than chase so impacty pump
+   * quotes are not double-killed by a tight premium guard.
+   */
+  quotePremiumGuardPct: z.coerce.number().min(0).max(100).default(0),
   entry: z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
@@ -333,6 +339,7 @@ export function loadMildDipConfig(): MildDipConfig {
       return v === '1' || v === 'true' || v === 'yes';
     })(),
     maxChasePct: process.env.MILD_DIP_MAX_CHASE_PCT ?? 4,
+    quotePremiumGuardPct: process.env.MILD_DIP_QUOTE_PREMIUM_GUARD_PCT ?? 0,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
     cooldownBounceLookbackMs: process.env.MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS ?? 300_000,
     streamDipEntryEnabled: (() => {

@@ -54,9 +54,14 @@ export function mildDipToCopyTraderConfig(cfg: MildDipConfig): CopyTraderConfig 
     maxAddsPerMint: 0,
     minProportionalAddUsd: 0,
     minProportionalSellFraction: 0,
-    buyPriceMaxPremiumPct: cfg.maxChasePct > 0 ? cfg.maxChasePct : 5,
+    // Premium vs signal mark (post-Jupiter quote). Prefer dedicated guard; else chase.
+    buyPriceMaxPremiumPct: (() => {
+      const prem = cfg.quotePremiumGuardPct > 0 ? cfg.quotePremiumGuardPct : cfg.maxChasePct;
+      return prem > 0 ? prem : 5;
+    })(),
     /** Anchor = signal / pre-buy mark passed as leaderPriceUsd from the loop. */
-    quotePremiumGuardPct: cfg.maxChasePct,
+    quotePremiumGuardPct:
+      cfg.quotePremiumGuardPct > 0 ? cfg.quotePremiumGuardPct : cfg.maxChasePct,
     quotePremiumFirstShotPct: 0,
     quotePremiumGraceMs: 0,
     entryFullMcapUsd: 0,

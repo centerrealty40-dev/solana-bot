@@ -34,6 +34,7 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
     ['VOL_GREEN_MAX_OPEN_POSITIONS', 'MILD_DIP_MAX_OPEN_POSITIONS'],
     ['VOL_GREEN_SLIPPAGE_BPS', 'MILD_DIP_SLIPPAGE_BPS'],
     ['VOL_GREEN_MAX_CHASE_PCT', 'MILD_DIP_MAX_CHASE_PCT'],
+    ['VOL_GREEN_QUOTE_PREMIUM_GUARD_PCT', 'MILD_DIP_QUOTE_PREMIUM_GUARD_PCT'],
     ['VOL_GREEN_EXIT_ARM_PCT', 'MILD_DIP_EXIT_ARM_PCT'],
     ['VOL_GREEN_EXIT_GIVEBACK_PCT', 'MILD_DIP_EXIT_GIVEBACK_PCT'],
     ['VOL_GREEN_EXIT_PARTIAL_SELL_FRACTION', 'MILD_DIP_EXIT_PARTIAL_SELL_FRACTION'],
@@ -112,6 +113,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // Chase: allow up to 5% fill drift; hops≥3 still blocked (closed-set loss bucket).
   setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '5');
   setIfAbsent('LIVE_BUY_MAX_CHASE_PCT', '5');
+  setIfAbsent('MILD_DIP_QUOTE_PREMIUM_GUARD_PCT', '12');
+  setIfAbsent('LIVE_BUY_MAX_PRICE_IMPACT_PCT', '2');
   setIfAbsent('LIVE_BUY_MAX_ROUTE_HOPS', '3');
   setIfAbsent('MILD_DIP_MIN_FEE_SOL_RESERVE', '0.02');
   setIfAbsent('MILD_DIP_MIN_LIQUIDITY_USD', '15000');
