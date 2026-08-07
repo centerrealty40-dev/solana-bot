@@ -85,6 +85,19 @@ const MildDipConfigSchema = z.object({
   h1RedShallowH1MaxPct: z.coerce.number().max(0).default(-15),
   h1RedShallowMinDipPct: z.coerce.number().default(-10),
   h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-3),
+  /**
+   * Deep knife (−50, −20]: wait, then buy only on stabilize / controlled bounce.
+   * Ecosystem enables for live mild-dip-bot.
+   */
+  knifeStabilizeEnabled: z.boolean().default(false),
+  knifeStabilizeMinDipPct: z.coerce.number().max(0).default(-50),
+  knifeStabilizeMaxDipPct: z.coerce.number().max(0).default(-20),
+  knifeStabilizeWaitMs: z.coerce.number().int().min(0).max(3_600_000).default(120_000),
+  knifeStabilizeMaxWatchMs: z.coerce.number().int().min(60_000).max(3_600_000).default(600_000),
+  knifeStabilizeQuietMs: z.coerce.number().int().min(0).max(600_000).default(45_000),
+  knifeStabilizeBandPct: z.coerce.number().min(0).max(50).default(2.5),
+  knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
+  knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
   /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
   streamEnabled: z.boolean().default(true),
   streamWsUrl: z.string().optional(),
@@ -257,6 +270,15 @@ export function loadMildDipConfig(): MildDipConfig {
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
     h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
     h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -3),
+    knifeStabilizeEnabled: envBool('MILD_DIP_KNIFE_STABILIZE_ENABLED', false),
+    knifeStabilizeMinDipPct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT', -50),
+    knifeStabilizeMaxDipPct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT', -20),
+    knifeStabilizeWaitMs: envNum('MILD_DIP_KNIFE_STABILIZE_WAIT_MS', 120_000),
+    knifeStabilizeMaxWatchMs: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_WATCH_MS', 600_000),
+    knifeStabilizeQuietMs: envNum('MILD_DIP_KNIFE_STABILIZE_QUIET_MS', 45_000),
+    knifeStabilizeBandPct: envNum('MILD_DIP_KNIFE_STABILIZE_BAND_PCT', 2.5),
+    knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
+    knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
     streamEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM?.trim().toLowerCase();
       if (!v) return true;
@@ -307,6 +329,14 @@ export function loadMildDipConfig(): MildDipConfig {
   }
   if (!(parsed.data.entry.minDipPct < parsed.data.entry.maxDipPct)) {
     throw new Error('mild-dip requires MILD_DIP_MIN_DIP_PCT < MILD_DIP_MAX_DIP_PCT');
+  }
+  if (
+    parsed.data.knifeStabilizeEnabled &&
+    !(parsed.data.knifeStabilizeMinDipPct < parsed.data.knifeStabilizeMaxDipPct)
+  ) {
+    throw new Error(
+      'mild-dip requires MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT < MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT',
+    );
   }
 
   return parsed.data;

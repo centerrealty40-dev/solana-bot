@@ -2832,6 +2832,19 @@ const PM2_APPS = [
         /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
         MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
+         * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
+         * trough or starts a controlled bounce (not the falling blade).
+         */
+        MILD_DIP_KNIFE_STABILIZE_ENABLED: '1',
+        MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT: '-50',
+        MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT: '-20',
+        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '120000',
+        MILD_DIP_KNIFE_STABILIZE_MAX_WATCH_MS: '600000',
+        MILD_DIP_KNIFE_STABILIZE_QUIET_MS: '45000',
+        MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
+        MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
+        MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
+        /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
          * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
          */

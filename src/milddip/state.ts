@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { KnifeWatchEntry } from './knife-stabilize.js';
 
 export type MildDipOpenPosition = {
   mint: string;
@@ -29,11 +30,54 @@ export type MildDipState = {
   open: Record<string, MildDipOpenPosition>;
   /** mint → last close/attempt ms (cooldown). */
   cooldownUntilMs: Record<string, number>;
+  /** mint → deep-knife watch (wait for stabilize / bounce). */
+  knifeWatch?: Record<string, KnifeWatchEntry>;
   updatedAtMs: number;
 };
 
+function sanitizeKnifeWatch(
+  raw: unknown,
+): Record<string, KnifeWatchEntry> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, KnifeWatchEntry> = {};
+  for (const [mint, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!mint || mint.length < 32 || !v || typeof v !== 'object') continue;
+    const o = v as Partial<KnifeWatchEntry>;
+    const detectedAtMs = Number(o.detectedAtMs);
+    const knifeDipPct = Number(o.knifeDipPct);
+    const peakPriceUsd = Number(o.peakPriceUsd);
+    const troughPriceUsd = Number(o.troughPriceUsd);
+    const troughAtMs = Number(o.troughAtMs);
+    const lastPriceUsd = Number(o.lastPriceUsd);
+    const lastAtMs = Number(o.lastAtMs);
+    if (
+      !(detectedAtMs > 0) ||
+      !Number.isFinite(knifeDipPct) ||
+      !(peakPriceUsd > 0) ||
+      !(troughPriceUsd > 0) ||
+      !(troughAtMs > 0) ||
+      !(lastPriceUsd > 0) ||
+      !(lastAtMs > 0)
+    ) {
+      continue;
+    }
+    const readyNotifiedAtMs = Number(o.readyNotifiedAtMs);
+    out[mint] = {
+      detectedAtMs,
+      knifeDipPct,
+      peakPriceUsd,
+      troughPriceUsd,
+      troughAtMs,
+      lastPriceUsd,
+      lastAtMs,
+      ...(readyNotifiedAtMs > 0 ? { readyNotifiedAtMs } : {}),
+    };
+  }
+  return out;
+}
+
 export function emptyMildDipState(nowMs = Date.now()): MildDipState {
-  return { open: {}, cooldownUntilMs: {}, updatedAtMs: nowMs };
+  return { open: {}, cooldownUntilMs: {}, knifeWatch: {}, updatedAtMs: nowMs };
 }
 
 export function loadMildDipState(statePath: string): MildDipState {
@@ -47,6 +91,7 @@ export function loadMildDipState(statePath: string): MildDipState {
         parsed.cooldownUntilMs && typeof parsed.cooldownUntilMs === 'object'
           ? parsed.cooldownUntilMs
           : {},
+      knifeWatch: sanitizeKnifeWatch(parsed.knifeWatch),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),
     };
   } catch {
