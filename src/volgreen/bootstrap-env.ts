@@ -108,13 +108,14 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
   setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');
   setIfAbsent('MILD_DIP_STREAM', '1');
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
-  // Probe wider universe, then full-gate only top vol5m (mild-dip active scheme).
-  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '48');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '20');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '40000');
+  // Fast tape loop: was conc=4 / probe=48 / scan=5s → enrich 25–40s lag vs leaders.
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '10');
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '28');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '16');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '12000');
+  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '2000');
   // First stream sighting → force enrich, capped (Dex ~120 RPM safe).
-  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '4');
+  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '6');
   // Block Dex-green / local-red (goon dip-buy).
   setIfAbsent('MILD_DIP_GREEN_SHORT_RED_WINDOW_MS', '60000');
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
@@ -161,7 +162,7 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '10000');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.2');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.15');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.1');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '18000');
 }
 

@@ -22,6 +22,9 @@ export class MildDipHotMintBuffer {
   private readonly forceEnriched = new Set<string>();
   /** Timestamps of force-enrich grants (rolling 60s window). */
   private forceGrantTs: number[] = [];
+  /** Per-mint cooldown for spike re-force (avoid Dex stampede on one mint). */
+  private spikeCooldownUntil = new Map<string, number>();
+  private spikeGrantTs: number[] = [];
 
   constructor(opts?: { maxMints?: number; ttlMs?: number }) {
     this.maxMints = opts?.maxMints ?? 400;
@@ -99,6 +102,42 @@ export class MildDipHotMintBuffer {
       if (out.length >= slots) break;
       this.forceEnriched.add(h.mint);
       this.forceGrantTs.push(nowMs);
+      out.push(h.mint);
+    }
+    return out;
+  }
+
+  /**
+   * Re-force already-known mints with a live hit spike (lastSeen ≤ recentMs).
+   * Caps grants/min and per-mint cooldown so we re-probe goon-class impulses
+   * within seconds instead of waiting for the slow full probe cycle.
+   */
+  takeForceEnrichHotSpike(
+    nowMs = Date.now(),
+    maxPerMin = 0,
+    recentMs = 12_000,
+    perMintCooldownMs = 15_000,
+  ): string[] {
+    if (!(maxPerMin > 0)) return [];
+    this.prune(nowMs);
+    const windowMs = 60_000;
+    this.spikeGrantTs = this.spikeGrantTs.filter((t) => nowMs - t < windowMs);
+    const slots = Math.max(0, Math.floor(maxPerMin) - this.spikeGrantTs.length);
+    if (slots <= 0) return [];
+
+    const pending = [...this.byMint.values()]
+      .filter((h) => {
+        if (nowMs - h.lastSeenAtMs > recentMs) return false;
+        const cd = this.spikeCooldownUntil.get(h.mint) ?? 0;
+        return nowMs >= cd;
+      })
+      .sort((a, b) => b.hits - a.hits || b.lastSeenAtMs - a.lastSeenAtMs);
+
+    const out: string[] = [];
+    for (const h of pending) {
+      if (out.length >= slots) break;
+      this.spikeCooldownUntil.set(h.mint, nowMs + perMintCooldownMs);
+      this.spikeGrantTs.push(nowMs);
       out.push(h.mint);
     }
     return out;

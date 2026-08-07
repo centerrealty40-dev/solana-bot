@@ -39,4 +39,17 @@ describe('MildDipHotMintBuffer', () => {
     expect(later.length).toBe(2);
     expect(later.every((m) => !batch1.includes(m))).toBe(true);
   });
+
+  it('hot-spike force re-probes recently seen mints under per-min cap', () => {
+    const buf = new MildDipHotMintBuffer({ maxMints: 20, ttlMs: 600_000 });
+    const t0 = 2_000_000;
+    const m = 'MintSPIKE111111111111111111111111111111111';
+    buf.note(m, t0);
+    buf.takeForceEnrichFirstSeen(t0 + 1, 4); // consume first-seen
+    buf.note(m, t0 + 5_000, 20); // spike hits
+    const spike = buf.takeForceEnrichHotSpike(t0 + 5_000, 8, 12_000, 12_000);
+    expect(spike).toContain(m);
+    const again = buf.takeForceEnrichHotSpike(t0 + 6_000, 8, 12_000, 12_000);
+    expect(again).not.toContain(m); // per-mint cooldown
+  });
 });

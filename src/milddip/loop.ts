@@ -288,16 +288,27 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     tapeMode && cfg.forceEnrichFirstSeenPerMin > 0
       ? mildDipHotMints.takeForceEnrichFirstSeen(nowMs, cfg.forceEnrichFirstSeenPerMin)
       : [];
+  // Re-probe live spikes on already-known mints (goon-class) — was waiting 20–40s.
+  const spikeForce = tapeMode
+    ? mildDipHotMints.takeForceEnrichHotSpike(nowMs, 8, 12_000, 12_000)
+    : [];
   const forceEnrich = tapeMode
-    ? [...new Set([...firstSeenForce, ...ringGreen, ...priority.slice(0, 10)])]
+    ? [
+        ...new Set([
+          ...spikeForce,
+          ...firstSeenForce,
+          ...ringGreen,
+          ...priority.slice(0, 10),
+        ]),
+      ]
     : priority;
   const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
-  // Probe budget grows slightly with force-first-seen so they are not crowded out.
+  // Smaller probe + higher concurrency → multi-second cycles, not 25–40s.
   const probeMax = tapeMode
-    ? Math.min(120, cfg.probeEnrichMax + firstSeenForce.length)
+    ? Math.min(120, cfg.probeEnrichMax + firstSeenForce.length + spikeForce.length)
     : 80;
   const enrichConcurrency = tapeMode
-    ? Math.min(4, cfg.enrichConcurrency)
+    ? Math.min(12, Math.max(6, cfg.enrichConcurrency))
     : cfg.enrichConcurrency;
   const enrichStarted = Date.now();
   const enrichPromise = enrichAndFilterCandidates(cfg, mints, {
@@ -321,9 +332,9 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   if (tapeMode) {
     console.log(
       `[mild-dip] ${cfg.entryMode} enrich done universe=${mints.length} ringGreen=${ringGreen.length} ` +
-        `firstSeen=${firstSeenForce.length} force=${forceEnrich.length} ` +
+        `firstSeen=${firstSeenForce.length} spike=${spikeForce.length} force=${forceEnrich.length} ` +
         `candidates=${candidates.length} skips=${enrichResult.skips.length} ` +
-        `ms=${Date.now() - enrichStarted} probeMax=${probeMax} evalTopN=${evalTopN}`,
+        `ms=${Date.now() - enrichStarted} probeMax=${probeMax} conc=${enrichConcurrency} evalTopN=${evalTopN}`,
     );
     if (cfg.journalEntrySkips && enrichResult.skips.length > 0) {
       for (const skip of enrichResult.skips) {

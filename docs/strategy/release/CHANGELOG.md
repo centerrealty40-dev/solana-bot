@@ -1,5 +1,22 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.718] — 2026-08-07
+
+**Тег:** `sa-1.11.718`
+
+### Fix: kill 25–45s enrich lag + rocket bs=1.1
+
+Root cause of “+45s vs leader”: tapeMode capped enrich concurrency at **4**
+and probed **48** mints with **40s** budget / **5s** scan → one cycle ~25s+.
+
+- scan **2s**, probe **28**, conc **10**, budget **12s**
+- spike re-force for hot mints (≤12s lastSeen, 8/min)
+- rocket **buy/sell ≥ 1.1** (goon was 1.13 blocked at 1.15)
+
+**Откат:** conc 4 / probe 48 / budget 40s / scan 5s / bs 1.15.
+
+---
+
 ## [1.11.717] — 2026-08-07
 
 **Тег:** `sa-1.11.717`
