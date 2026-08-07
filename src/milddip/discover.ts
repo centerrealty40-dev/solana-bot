@@ -297,6 +297,9 @@ export async function enrichAndFilterCandidates(
       const details = await fetchDexScreenerPairDetails(mint, {
         bypassCache: true,
         nowMs,
+        // Prefer pumpswap/raydium over higher-liq meteora so we don't
+        // probe-then-reject as dex_not_allowed (NEEGY 6oGu… / 2y8Ntg…).
+        allowedDexIds: cfg.entry.allowedDexIds,
       });
       if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
       mildDipPriceRing.note(mint, details.priceUsd, { tsMs: nowMs, source: 'dex' });
@@ -325,7 +328,23 @@ export async function enrichAndFilterCandidates(
 
   const probed = probeRows.filter((p): p is DexProbe => p != null);
   probed.sort((a, b) => b.volume5mUsd - a.volume5mUsd);
-  const toEvaluate = tapeMode ? probed.slice(0, evalTopN) : probed;
+  // Force-enrich must reach gates (and journal skips) — vol5m top-N used to
+  // silently drop buyForce mints after probe (no entry_skip, "не видим").
+  const forceSet = new Set(forceList);
+  let toEvaluate: DexProbe[];
+  if (tapeMode) {
+    const forced = probed.filter((p) => forceSet.has(p.mint));
+    const rest = probed.filter((p) => !forceSet.has(p.mint)).slice(0, evalTopN);
+    const seenEval = new Set<string>();
+    toEvaluate = [];
+    for (const p of [...forced, ...rest]) {
+      if (seenEval.has(p.mint)) continue;
+      seenEval.add(p.mint);
+      toEvaluate.push(p);
+    }
+  } else {
+    toEvaluate = probed;
+  }
 
   // Phase 2 — full entry gates only on the volume-leading probe set.
   const rows = await mapPool(toEvaluate, Math.min(8, enrichConcurrency), async (probe): Promise<EnrichRow> => {

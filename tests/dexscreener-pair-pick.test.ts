@@ -42,6 +42,35 @@ describe('pickBestSolanaPairForMint', () => {
     expect((best!.quoteToken as { symbol?: string }).symbol).toBe('SOL');
   });
 
+  it('prefers allowedDexIds pumpswap over higher-liq meteora (NEEGY)', () => {
+    const pairs = [
+      {
+        chainId: 'solana',
+        dexId: 'meteora',
+        baseToken: { address: MINT, symbol: 'NEEGY' },
+        quoteToken: { address: SOL, symbol: 'SOL' },
+        priceUsd: '0.02',
+        liquidity: { usd: 218_794 },
+        volume: { m5: 3191 },
+      },
+      {
+        chainId: 'solana',
+        dexId: 'pumpswap',
+        baseToken: { address: MINT, symbol: 'NEEGY' },
+        quoteToken: { address: SOL, symbol: 'SOL' },
+        priceUsd: '0.021',
+        liquidity: { usd: 154_865 },
+        volume: { m5: 9076 },
+      },
+    ];
+    const best = pickBestSolanaPairForMint(pairs, MINT, {
+      allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
+    });
+    expect(best).not.toBeNull();
+    expect(best!.dexId).toBe('pumpswap');
+    expect((best!.liquidity as { usd: number }).usd).toBe(154_865);
+  });
+
   it('still picks max-liq when all quotes are stable', () => {
     const pairs = [
       {

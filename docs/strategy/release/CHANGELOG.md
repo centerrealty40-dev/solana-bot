@@ -1,5 +1,22 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.721] — 2026-08-07
+
+**Тег:** `sa-1.11.721`
+
+### Fix: prefer allowed dex pair + always gate forceEnrich
+
+RCA `2y8Ntg…` / NEEGY `6oGu…pump`: Dex pick took **meteora** (higher liq) →
+historical `dex=meteora_not_allowed`; around leader buy, buyForce probed but
+**vol5m top-N dropped** the mint before gates → no journal, no buy.
+
+- `pickBestSolanaPairForMint({ allowedDexIds })` prefers pumpswap/raydium
+- `enrichAndFilterCandidates`: forceEnrich probes always enter evaluation
+
+**Откат:** omit allowedDexIds in fetch; evaluate = probed.slice(0, evalTopN).
+
+---
+
 ## [1.11.720] — 2026-08-07
 
 **Тег:** `sa-1.11.720`

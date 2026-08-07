@@ -209,8 +209,9 @@ function pickBestSolanaPair(
   pairs: unknown[],
   mint: string,
   preferredDex?: string,
+  allowedDexIds?: string[],
 ): Record<string, unknown> | null {
-  return pickBestSolanaPairForMint(pairs, mint, { preferredDex });
+  return pickBestSolanaPairForMint(pairs, mint, { preferredDex, allowedDexIds });
 }
 
 function parsePairToCacheEntry(pair: Record<string, unknown> | null, mint: string, nowMs: number): CacheEntry {
@@ -331,6 +332,8 @@ export async function fetchDexScreenerPairDetails(
     cacheTtlMs?: number;
     nowMs?: number;
     preferredDex?: string;
+    /** Prefer these dex ids when present (see pickBestSolanaPairForMint). */
+    allowedDexIds?: string[];
     /** When true, always HTTP-fetch (still respects global gate + updates shared cache). */
     bypassCache?: boolean;
   },
@@ -394,7 +397,12 @@ export async function fetchDexScreenerPairDetails(
     );
     if (res.ok) {
       const j = (await res.json()) as { pairs?: unknown[] };
-      const best = pickBestSolanaPair(j.pairs ?? [], mint, opts?.preferredDex);
+      const best = pickBestSolanaPair(
+        j.pairs ?? [],
+        mint,
+        opts?.preferredDex,
+        opts?.allowedDexIds,
+      );
       cacheEntry = parsePairToCacheEntry(best, mint, nowMs);
       details = parsePairToDetails(best, mint, nowMs);
     }

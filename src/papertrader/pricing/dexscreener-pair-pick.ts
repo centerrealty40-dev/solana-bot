@@ -75,15 +75,33 @@ function maxLiqPair(pool: PairRow[]): PairRow | null {
 export function pickBestSolanaPairForMint(
   pairs: unknown[],
   mint: string,
-  opts?: { preferredDex?: string; outlierRatio?: number },
+  opts?: {
+    preferredDex?: string;
+    outlierRatio?: number;
+    /**
+     * When set, prefer pairs on these dex ids (exact match, lowercased) if any
+     * exist. Avoids picking high-liq Meteora and then failing `allowedDexIds`
+     * gates while a live PumpSwap pair was on the same mint (NEEGY / 6oGu…).
+     */
+    allowedDexIds?: string[];
+  },
 ): Record<string, unknown> | null {
   if (!Array.isArray(pairs) || pairs.length === 0 || !mint) return null;
   const outlierRatio = opts?.outlierRatio ?? 3;
 
-  const solana = pairs.filter((p) => {
+  let solana = pairs.filter((p) => {
     const row = p as PairRow;
     return !row.chainId || row.chainId === 'solana';
   }) as PairRow[];
+
+  const allowed = (opts?.allowedDexIds ?? [])
+    .map((d) => d.trim().toLowerCase())
+    .filter(Boolean);
+  if (allowed.length > 0) {
+    const allow = new Set(allowed);
+    const filtered = solana.filter((p) => allow.has(String(p.dexId ?? '').toLowerCase()));
+    if (filtered.length > 0) solana = filtered;
+  }
 
   let asBase = solana.filter((p) => (p.baseToken?.address ?? '') === mint);
   // Fallback: mint as quote — rare; priceUsd is for base, so skip for pricing unless no base pairs.
