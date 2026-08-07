@@ -1,4 +1,28 @@
 # So
+## [1.11.707] — 2026-08-07
+
+**Тег:** `sa-1.11.707`
+
+### Fix: mild-dip `h1_red_shallow` prebuy used the wrong band
+
+Autonomous red-hour branch selects when **h1 ≤ −15%** and
+**pc5m ∈ (−10, −3]** (leader-style shallow grind — own logic, not copy).
+Prebuy still revalidated against the **main mild** band, so real shallow
+signals were killed (`prebuy_pc5m=-8… outside (−20,−10]` / `(−25,−5]`).
+
+**Fix:** for `dipSource=h1_red_shallow`, prebuy uses the h1-shallow band.
+Green bounce / chase guards unchanged.
+
+**Env (unchanged defaults, now actually executable):**
+`MILD_DIP_H1_RED_SHALLOW_ENABLED=1`
+`MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT=-15`
+`MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT=-10`
+`MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT=-3`
+
+**Откат:** `MILD_DIP_H1_RED_SHALLOW_ENABLED=0` + reload.
+
+---
+
 ## [1.11.706] — 2026-08-07
 
 **Тег:** `sa-1.11.706`
