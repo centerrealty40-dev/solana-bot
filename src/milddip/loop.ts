@@ -11,6 +11,7 @@ import {
   enrichAndFilterCandidates,
   priorityMintsFromCooldown,
   priorityMintsFromKnifeWatch,
+  priorityMintsFromRecentTrades,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
@@ -279,15 +280,19 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const priority = priorityMintsFromCooldown(state.cooldownUntilMs, nowMs, {
     postCooldownMs: 120_000,
   });
+  const recentTraded = priorityMintsFromRecentTrades(state.cooldownUntilMs, nowMs, {
+    watchMs: 6 * 3_600_000,
+    max: 40,
+  });
   const knifePriority = priorityMintsFromKnifeWatch(state.knifeWatch);
-  const forceEnrich = [...new Set([...priority, ...knifePriority])];
+  const forceEnrich = [...new Set([...priority, ...knifePriority, ...recentTraded])];
   const mints = await collectCandidateMints(cfg, { priorityMints: forceEnrich, nowMs });
   const enrichPass = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
     maxEnrich: 80,
     enrichConcurrency: cfg.enrichConcurrency,
-    // Keep Dex marks flowing for cooling / knife-watch mints even when they
-    // won't buy yet.
+    // Keep Dex marks flowing for cooling / knife-watch / recent-trade mints
+    // even when they won't buy yet.
     forceEnrich,
     knifeWatch: state.knifeWatch ?? {},
   });

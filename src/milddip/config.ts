@@ -93,9 +93,24 @@ const MildDipConfigSchema = z.object({
   feeSolTopupIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(21_600_000),
   feeSolTopupMinUsd: z.coerce.number().min(0).max(1_000).default(5),
   feeSolTopupBuyUsd: z.coerce.number().positive().max(500).default(20),
-  /** Candidate mint sources: comma list — stream,boosts,profiles,seed */
+  /**
+   * Candidate mint sources: comma list —
+   * stream,boosts,profiles,leaders,pg_volume,gecko,seed
+   */
   discoverSources: z.string().default('stream,boosts,profiles'),
   seedMintsPath: z.string().optional(),
+  /** Sidecar written by leader-observer (`leader_buy_observed` → seed). */
+  leaderSeedPath: z.string().default(path.join('data', 'milddip', 'leader-seed.json')),
+  leaderSeedMaxAgeMs: z.coerce.number().int().min(60_000).max(86_400_000).default(7_200_000),
+  leaderSeedMax: z.coerce.number().int().min(0).max(80).default(40),
+  /** PumpSwap PG top-vol seed (freshness-gated; soft-fail). */
+  pgVolumeMax: z.coerce.number().int().min(0).max(80).default(30),
+  pgVolumeCacheMs: z.coerce.number().int().min(15_000).max(600_000).default(60_000),
+  pgVolumeLookbackMin: z.coerce.number().int().min(2).max(60).default(10),
+  /** GeckoTerminal trending pools seed. */
+  geckoMax: z.coerce.number().int().min(0).max(80).default(25),
+  geckoCacheMs: z.coerce.number().int().min(30_000).max(600_000).default(120_000),
+  geckoPages: z.coerce.number().int().min(1).max(2).default(1),
   /**
    * Deep knife (−50, −20]: wait, then buy only on stabilize / controlled bounce.
    * Ecosystem enables for live mild-dip-bot.
@@ -309,6 +324,17 @@ export function loadMildDipConfig(): MildDipConfig {
     feeSolTopupBuyUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_BUY_USD ?? 20,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
+    leaderSeedPath:
+      process.env.MILD_DIP_LEADER_SEED_PATH?.trim() ||
+      path.join('data', 'milddip', 'leader-seed.json'),
+    leaderSeedMaxAgeMs: process.env.MILD_DIP_LEADER_SEED_MAX_AGE_MS ?? 7_200_000,
+    leaderSeedMax: process.env.MILD_DIP_LEADER_SEED_MAX ?? 40,
+    pgVolumeMax: process.env.MILD_DIP_PG_VOLUME_MAX ?? 30,
+    pgVolumeCacheMs: process.env.MILD_DIP_PG_VOLUME_CACHE_MS ?? 60_000,
+    pgVolumeLookbackMin: process.env.MILD_DIP_PG_VOLUME_LOOKBACK_MIN ?? 10,
+    geckoMax: process.env.MILD_DIP_GECKO_MAX ?? 25,
+    geckoCacheMs: process.env.MILD_DIP_GECKO_CACHE_MS ?? 120_000,
+    geckoPages: process.env.MILD_DIP_GECKO_PAGES ?? 1,
     knifeStabilizeEnabled: envBool('MILD_DIP_KNIFE_STABILIZE_ENABLED', false),
     knifeStabilizeMinDipPct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT', -50),
     knifeStabilizeMaxDipPct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT', -20),
