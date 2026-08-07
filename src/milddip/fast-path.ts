@@ -175,20 +175,29 @@ export async function evaluateFastPathCandidate(
     const last = mildDipPriceRing.lastPrice(mint, nowMs);
     if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
   } else if (streamInMain && cfg.streamDipEntryEnabled) {
-    dipSource = 'stream';
-    metrics = { ...metrics, priceChange5mPct: streamDd };
-    const last = mildDipPriceRing.lastPrice(mint, nowMs);
-    if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
-  } else if (dexInMain) {
+    // Stream-only: require a real dump, not a −5% ring wiggle (Gs2Liw-class).
+    if (streamDd == null || !(streamDd <= cfg.streamOnlyMaxDipPct)) {
+      /* fall through — maybe Dex / h1 / flat_micro still qualify */
+    } else {
+      dipSource = 'stream';
+      metrics = { ...metrics, priceChange5mPct: streamDd };
+      const last = mildDipPriceRing.lastPrice(mint, nowMs);
+      if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
+    }
+  }
+  if (!dipSource && dexInMain) {
     dipSource = 'dex';
-  } else if (
+  }
+  if (
+    !dipSource &&
     cfg.h1RedShallowEnabled &&
     metrics.priceChange1hPct != null &&
     metrics.priceChange1hPct <= cfg.h1RedShallowH1MaxPct &&
     inDipBand(dexPc, cfg.h1RedShallowMinDipPct, cfg.h1RedShallowMaxDipPct)
   ) {
     dipSource = 'h1_red_shallow';
-  } else if (cfg.flatMicroDipEnabled) {
+  }
+  if (!dipSource && cfg.flatMicroDipEnabled) {
     const streamInFlat = inDipBand(streamDd, cfg.flatMicroMinDipPct, cfg.flatMicroMaxDipPct);
     const dexInFlat = inDipBand(dexPc, cfg.flatMicroMinDipPct, cfg.flatMicroMaxDipPct);
     const flatDip = dexInFlat ? dexPc : streamInFlat ? streamDd : dexPc;

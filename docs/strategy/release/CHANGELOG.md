@@ -3,15 +3,21 @@
 
 **Тег:** `sa-1.11.712`
 
-### Fix: mild-dip leader-observer — correct 7BNax pubkey
+### Ops/fix: deepen main band, vol floor, correct 7BNax observer
 
-Observer was polling a typo wallet `7BNaxx6KdUYrAC…` (0 signatures). Real
-leader is `7BNaxx6KdUYrjAC…` (`j` after `UY`). Solscan buy
-`2YchtT65…` on `B7wGz1…pump` never seeded mild-dip.
+1. **`MAX_DIP_PCT` −5 → −8** — main band `pc5m ∈ (−25, −8]` (cut shallow scrapes).
+2. **`MIN_VOLUME_5M_USD` $500 → $1500** — thin-vol cliff pre-filter.
+3. **7BNax pubkey typo** — observer had `…UYrAC…` (0 sigs); real is `…UYrjAC…`.
+   Solscan `2YchtT65…` never seeded mild-dip.
 
-**Env:** `LEADER_OBSERVER_LEADERS` (ecosystem + python DEFAULT_LEADERS)
+Stream-only depth gate from 1.11.711 (`STREAM_ONLY_MAX_DIP_PCT=-10`) unchanged.
 
-**Откат:** n/a (typo address was dead); keep corrected pubkey.
+**Env:**
+`MILD_DIP_MAX_DIP_PCT=-8`
+`MILD_DIP_MIN_VOLUME_5M_USD=1500`
+`LEADER_OBSERVER_LEADERS` (ecosystem + python DEFAULT_LEADERS)
+
+**Откат:** `MAX_DIP=-5` + `MIN_VOLUME_5M=500`; 7BNax keep corrected pubkey.
 
 ---
 
@@ -19,24 +25,23 @@ leader is `7BNaxx6KdUYrjAC…` (`j` after `UY`). Solscan buy
 
 **Тег:** `sa-1.11.711`
 
-### Ops: mild-dip deepen main band + restore vol floor (thin-cliff)
+### Fix: kill fast-path 15s soft-skip + stop stream-only −5% noise
 
-Journal autopsy (Aug 5–7): stream/main blood was shallow scrapes + thin tape
-(`4kLGts` cliff −63% at vol≈$502). Deeper band `(−20,−10]` had higher bounce
-rate than `(−10,−5]`; dead names cluster thinner than bounce names.
+`softSkipCooldownMs: 15_000` after failed Jupiter buy (e.g. impact 2.26%>2%)
+did **not** protect Helius WS — only delayed the next Jupiter quote while the
+dump ran +10%. HYMQdB: first quote ~+3% → ban 15s → fill +12%.
 
-1. **`MAX_DIP_PCT` −5 → −8** — main band `pc5m ∈ (−25, −8]`
-2. **`MIN_VOLUME_5M_USD` $500 → $1500** — thin-vol cliff pre-filter (structural
-   gate on all lanes, including fast-path / flat_micro / h1_red)
+Gs2Liw (`5ohFi7…`): `lane=fast` `dipSource=stream` pc5m=−5.2% — edge of
+main band, not a dump (stale leader seed ~58m).
 
-`h1_red_shallow` `(−10,−3]` and `flat_micro` `(−5,−1.5]` unchanged as own
-branches; they still need vol≥$1500.
+**Changes:**
+1. `MILD_DIP_FAST_PATH_SOFT_SKIP_MS=0` (was hardcoded 15s).
+2. Buy impact gate **3%** (was 2%) so 2.26% quotes fill.
+3. Stream-only main band must be ≤ **−10%** (`STREAM_ONLY_MAX_DIP_PCT`);
+   Dex / dex+stream still allow −5.
 
-**Env:**
-`MILD_DIP_MAX_DIP_PCT=-8`
-`MILD_DIP_MIN_VOLUME_5M_USD=1500`
-
-**Откат:** `MAX_DIP=-5` + `MIN_VOLUME_5M=500` + reload.
+**Откат:** `MILD_DIP_FAST_PATH_SOFT_SKIP_MS=15000` +
+`LIVE_BUY_MAX_PRICE_IMPACT_PCT=2` + `MILD_DIP_STREAM_ONLY_MAX_DIP_PCT=-5` + reload.
 
 ---
 
