@@ -32,7 +32,8 @@ from typing import Any
 
 DEFAULT_LEADERS = [
     "8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ",
-    "7BNaxx6KdUYrACNQZ9He26NBFoFxujQMAfNLnArLGH5",
+    # 1.11.712 — correct pubkey (typo was 7BNaxx6KdUYrAC… without `j`)
+    "7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5",
 ]
 QUOTE_MINTS = {
     "So11111111111111111111111111111111111111112",

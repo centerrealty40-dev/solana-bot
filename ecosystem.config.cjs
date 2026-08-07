@@ -3065,8 +3065,9 @@ const PM2_APPS = [
         LEADER_OBSERVER_LOOKBACK_SEC: '900',
         /** 0 = run until stopped (PM2 owns lifecycle). */
         LEADER_OBSERVER_MAX_HOURS: '0',
+        /** 1.11.712 — fix 7BNax typo (was missing `j`: …UYrAC… → …UYrjAC…). */
         LEADER_OBSERVER_LEADERS:
-          '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+          '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
         ...LIVE_OSCAR_HELIUS_RPC_ENV,
         ...(HELIUS_RPC_URL_PM2
           ? {

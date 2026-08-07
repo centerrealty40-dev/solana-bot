@@ -1,4 +1,20 @@
 # So
+## [1.11.712] — 2026-08-07
+
+**Тег:** `sa-1.11.712`
+
+### Fix: mild-dip leader-observer — correct 7BNax pubkey
+
+Observer was polling a typo wallet `7BNaxx6KdUYrAC…` (0 signatures). Real
+leader is `7BNaxx6KdUYrjAC…` (`j` after `UY`). Solscan buy
+`2YchtT65…` on `B7wGz1…pump` never seeded mild-dip.
+
+**Env:** `LEADER_OBSERVER_LEADERS` (ecosystem + python DEFAULT_LEADERS)
+
+**Откат:** n/a (typo address was dead); keep corrected pubkey.
+
+---
+
 ## [1.11.711] — 2026-08-07
 
 **Тег:** `sa-1.11.711`
