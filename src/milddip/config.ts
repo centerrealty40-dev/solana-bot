@@ -21,6 +21,14 @@ const MildDipConfigSchema = z.object({
   journalPath: z.string().min(1),
   statePath: z.string().min(1),
   positionUsd: z.coerce.number().positive().max(10_000).default(5),
+  /**
+   * Size-up clip for thick names (mcap/liq/age). 0 or ≤ positionUsd = off.
+   * Default $10 = 2× the $5 base clip.
+   */
+  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
+  thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
+  thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
+  thickMinPairAgeHours: z.coerce.number().min(0).default(6),
   /** 0 = unlimited — keep buying while USDC remains. */
   maxOpenPositions: z.coerce.number().int().min(0).max(500).default(0),
   scanIntervalMs: z.coerce.number().int().min(5_000).max(600_000).default(5_000),
@@ -224,6 +232,10 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_JOURNAL_PATH?.trim() || path.join('data', 'milddip', 'journal.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
     positionUsd: process.env.MILD_DIP_POSITION_USD ?? 5,
+    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 10,
+    thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
+    thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
+    thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,

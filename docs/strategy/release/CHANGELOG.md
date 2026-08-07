@@ -1,4 +1,30 @@
 # So
+## [1.11.705] — 2026-08-07
+
+**Тег:** `sa-1.11.705`
+
+### Feat: mild-dip thick size-up $5 → $10
+
+Leaders print edge on thick structural names. Keep base clip **$5**; size up
+to **$10** when all three clear at entry (fresh Dex when prebuy on):
+
+- market cap **≥ $100k**
+- liquidity **≥ $50k**
+- pair age **≥ 6h**
+
+Missing metrics stay on the base clip (fail closed). Journal:
+`sizeTier` / `wantUsd` on reserve + buy_attempt.
+
+**Env:**
+`MILD_DIP_THICK_POSITION_USD=10`
+`MILD_DIP_THICK_MIN_MCAP_USD=100000`
+`MILD_DIP_THICK_MIN_LIQUIDITY_USD=50000`
+`MILD_DIP_THICK_MIN_PAIR_AGE_HOURS=6`
+
+**Откат:** `MILD_DIP_THICK_POSITION_USD=0` (or `=5`) + reload.
+
+---
+
 ## [1.11.704] — 2026-08-07
 
 **Тег:** `sa-1.11.704`

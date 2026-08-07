@@ -22,7 +22,11 @@ import {
   type MarkExitDecision,
 } from './exit-engine.js';
 import { cooldownMsAfterExit } from './cooldown.js';
-import { evaluateCooldownBounce, evaluateMildDipPreBuy } from './gates.js';
+import {
+  evaluateCooldownBounce,
+  evaluateMildDipPreBuy,
+  resolveMildDipWantedSizeUsd,
+} from './gates.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -206,8 +210,9 @@ async function resolveEntrySizeUsd(
   cfg: MildDipConfig,
   copyCfg: ReturnType<typeof mildDipToCopyTraderConfig>,
   nowMs: number,
+  wantUsd: number,
 ): Promise<{ sizeUsd: number; stop: boolean; reason?: string; usdc?: number }> {
-  const want = cfg.positionUsd;
+  const want = wantUsd > 0 ? wantUsd : cfg.positionUsd;
   const full = await checkCopyFundingGate(copyCfg, want, nowMs);
   if (full.ok) return { sizeUsd: want, stop: false, usdc: full.quoteUsd };
 
@@ -317,22 +322,15 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       continue;
     }
 
-    const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs);
-    if (sized.stop || !(sized.sizeUsd > 0)) {
-      if (sized.reason && sized.reason !== 'usdc_exhausted') {
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_funding_block',
-          reason: sized.reason,
-          usdc: sized.usdc ?? null,
-        });
-      }
-      break;
-    }
-
     // Re-check right before send — enrich can be tens of seconds stale.
     let entryPriceUsd = c.priceUsd;
     let entryPc5m = c.metrics.priceChange5mPct;
     let freshPx: number | null = c.priceUsd;
+    let sizeMetrics = {
+      liquidityUsd: c.metrics.liquidityUsd,
+      marketCapUsd: c.metrics.marketCapUsd,
+      pairAgeHours: c.metrics.pairAgeHours,
+    };
     if (cfg.preBuyRevalidate) {
       const freshNow = Date.now();
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
@@ -372,6 +370,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       }
       if (freshPx != null) entryPriceUsd = freshPx;
       if (freshPc != null) entryPc5m = freshPc;
+      if (fresh) {
+        const freshAge =
+          fresh.pairCreatedAtMs != null && fresh.pairCreatedAtMs > 0
+            ? Math.max(0, (freshNow - fresh.pairCreatedAtMs) / 3_600_000)
+            : null;
+        sizeMetrics = {
+          liquidityUsd: fresh.liquidityUsd ?? sizeMetrics.liquidityUsd,
+          marketCapUsd: fresh.marketCapUsd ?? sizeMetrics.marketCapUsd,
+          pairAgeHours: freshAge ?? sizeMetrics.pairAgeHours,
+        };
+      }
     }
 
     // After cooldown: refuse if we already bounced too far off the observed trough.
@@ -410,6 +419,30 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       continue;
     }
 
+    const wanted = resolveMildDipWantedSizeUsd({
+      basePositionUsd: cfg.positionUsd,
+      thick: {
+        positionUsd: cfg.thickPositionUsd,
+        minMarketCapUsd: cfg.thickMinMarketCapUsd,
+        minLiquidityUsd: cfg.thickMinLiquidityUsd,
+        minPairAgeHours: cfg.thickMinPairAgeHours,
+      },
+      metrics: sizeMetrics,
+    });
+    const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, wanted.sizeUsd);
+    if (sized.stop || !(sized.sizeUsd > 0)) {
+      if (sized.reason && sized.reason !== 'usdc_exhausted') {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_funding_block',
+          reason: sized.reason,
+          usdc: sized.usdc ?? null,
+          wantUsd: wanted.sizeUsd,
+          sizeTier: wanted.tier,
+        });
+      }
+      break;
+    }
+
     // Reserve seat BEFORE Jupiter send so a twin process / overlapping scan
     // cannot open a second $5 clip on the same mint (seen on BorBvx…).
     if (buyInFlight.has(c.mint) || state.open[c.mint]) continue;
@@ -433,6 +466,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       mint: c.mint,
       symbol: c.symbol,
       sizeUsd: sized.sizeUsd,
+      wantUsd: wanted.sizeUsd,
+      sizeTier: wanted.tier,
       priceUsd: entryPriceUsd,
     });
 
@@ -468,15 +503,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         mint: c.mint,
         symbol: c.symbol,
         sizeUsd: sized.sizeUsd,
+        wantUsd: wanted.sizeUsd,
+        sizeTier: wanted.tier,
         priceUsd: entryPriceUsd,
         signalPriceUsd: c.priceUsd,
         pc5m: entryPc5m,
         signalPc5m: c.metrics.priceChange5mPct,
         volume5mUsd: c.metrics.volume5mUsd,
         volume1hUsd: c.metrics.volume1hUsd,
-        liquidityUsd: c.metrics.liquidityUsd,
-        marketCapUsd: c.metrics.marketCapUsd,
-        pairAgeHours: c.metrics.pairAgeHours,
+        liquidityUsd: sizeMetrics.liquidityUsd,
+        marketCapUsd: sizeMetrics.marketCapUsd,
+        pairAgeHours: sizeMetrics.pairAgeHours,
         buys5m: c.metrics.buys5m,
         sells5m: c.metrics.sells5m,
         dexId: c.metrics.dexId,
@@ -494,15 +531,17 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       mint: c.mint,
       symbol: c.symbol,
       sizeUsd: sized.sizeUsd,
+      wantUsd: wanted.sizeUsd,
+      sizeTier: wanted.tier,
       priceUsd: buy.priceUsd || entryPriceUsd,
       signalPriceUsd: c.priceUsd,
       pc5m: entryPc5m,
       signalPc5m: c.metrics.priceChange5mPct,
       volume5mUsd: c.metrics.volume5mUsd,
       volume1hUsd: c.metrics.volume1hUsd,
-      liquidityUsd: c.metrics.liquidityUsd,
-      marketCapUsd: c.metrics.marketCapUsd,
-      pairAgeHours: c.metrics.pairAgeHours,
+      liquidityUsd: sizeMetrics.liquidityUsd,
+      marketCapUsd: sizeMetrics.marketCapUsd,
+      pairAgeHours: sizeMetrics.pairAgeHours,
       buys5m: c.metrics.buys5m,
       sells5m: c.metrics.sells5m,
       dexId: c.metrics.dexId,
@@ -545,9 +584,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     filled += 1;
     resetCopyFundingCache();
     console.log(
-      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd} pc5m=${entryPc5m?.toFixed(1)} @$${
-        (buy.priceUsd || entryPriceUsd).toPrecision(4)
-      } mode=${cfg.executionMode}`,
+      `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd}` +
+        `${wanted.tier === 'thick' ? ' thick' : ''} pc5m=${entryPc5m?.toFixed(1)} @$${
+          (buy.priceUsd || entryPriceUsd).toPrecision(4)
+        } mode=${cfg.executionMode}`,
     );
   }
 }
@@ -930,6 +970,8 @@ export async function runMildDipLoop(
   const jupFeeCapSol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim() || 'n/a';
   console.log(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
+      `thickUsd=${cfg.thickPositionUsd}` +
+      `(mcap≥$${cfg.thickMinMarketCapUsd}/liq≥$${cfg.thickMinLiquidityUsd}/age≥${cfg.thickMinPairAgeHours}h) ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +

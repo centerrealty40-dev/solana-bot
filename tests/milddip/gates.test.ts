@@ -3,6 +3,7 @@ import {
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
+  resolveMildDipWantedSizeUsd,
   type MildDipCandidateMetrics,
   type MildDipEntryGates,
   type MildDipExitGates,
@@ -517,5 +518,68 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 3_600_000,
     });
     expect(v.shouldExit).toBe(false);
+  });
+});
+
+describe('resolveMildDipWantedSizeUsd', () => {
+  const thick = {
+    positionUsd: 10,
+    minMarketCapUsd: 100_000,
+    minLiquidityUsd: 50_000,
+    minPairAgeHours: 6,
+  };
+
+  it('sizes thick at $10 when mcap/liq/age clear', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 50_000, marketCapUsd: 100_000, pairAgeHours: 6 },
+    });
+    expect(v).toEqual({ sizeUsd: 10, tier: 'thick' });
+  });
+
+  it('stays base when liq is thin', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 49_999, marketCapUsd: 500_000, pairAgeHours: 12 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+  });
+
+  it('stays base when mcap below $100k', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 80_000, marketCapUsd: 99_999, pairAgeHours: 12 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+  });
+
+  it('stays base when younger than 6h', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 5.9 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+  });
+
+  it('fail-closed on missing metrics', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick,
+      metrics: { liquidityUsd: 80_000, marketCapUsd: null, pairAgeHours: 12 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+  });
+
+  it('disables size-up when thick ≤ base', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 5,
+      thick: { ...thick, positionUsd: 5 },
+      metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 12 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
   });
 });

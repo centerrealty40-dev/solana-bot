@@ -509,3 +509,45 @@ export function evaluateMildDipExit(args: {
 }): ReturnType<typeof evaluateMildDipPeakGiveback> {
   return evaluateMildDipPeakGiveback(args);
 }
+
+/** Thick-name size-up gates (liq / mcap / age) — larger clip on structural names. */
+export type MildDipThickSizeGates = {
+  /** Target clip when thick; ≤0 or ≤ base → size-up off. */
+  positionUsd: number;
+  minMarketCapUsd: number;
+  minLiquidityUsd: number;
+  minPairAgeHours: number;
+};
+
+/**
+ * Wanted entry notional: base clip, or thick clip when mcap/liq/age all clear.
+ * Missing metrics never size up (fail closed).
+ */
+export function resolveMildDipWantedSizeUsd(args: {
+  basePositionUsd: number;
+  thick: MildDipThickSizeGates;
+  metrics: Pick<MildDipCandidateMetrics, 'liquidityUsd' | 'marketCapUsd' | 'pairAgeHours'>;
+}): { sizeUsd: number; tier: 'base' | 'thick' } {
+  const base = args.basePositionUsd;
+  const thickUsd = args.thick.positionUsd;
+  if (!(thickUsd > base + 1e-9)) {
+    return { sizeUsd: base, tier: 'base' };
+  }
+  const liq = args.metrics.liquidityUsd;
+  const mcap = args.metrics.marketCapUsd;
+  const age = args.metrics.pairAgeHours;
+  if (
+    liq != null &&
+    Number.isFinite(liq) &&
+    liq >= args.thick.minLiquidityUsd &&
+    mcap != null &&
+    Number.isFinite(mcap) &&
+    mcap >= args.thick.minMarketCapUsd &&
+    age != null &&
+    Number.isFinite(age) &&
+    age >= args.thick.minPairAgeHours
+  ) {
+    return { sizeUsd: thickUsd, tier: 'thick' };
+  }
+  return { sizeUsd: base, tier: 'base' };
+}
