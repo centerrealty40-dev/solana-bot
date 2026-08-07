@@ -21,7 +21,7 @@ export type MildDipCandidate = {
   priceUsd: number;
   metrics: MildDipCandidateMetrics;
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
-  dipSource: 'dex' | 'stream' | 'dex+stream';
+  dipSource: 'dex' | 'stream' | 'dex+stream' | 'h1_red_shallow';
 };
 
 const SOLANA_CHAIN = 'solana';
@@ -240,18 +240,31 @@ export async function enrichAndFilterCandidates(
         buys5m: details.buys5m,
         sells5m: details.sells5m,
         volume1hUsd: details.volume1hUsd,
+        priceChange1hPct: details.priceChangeH1Pct,
       };
 
       const dexVerdict = evaluateMildDipEntry(metrics, cfg.entry);
       const stream = streamDipInBand(cfg, mint, nowMs);
       // Structural Dex gates (liq/mcap/age/dex) must pass; dip may come from stream.
       const structuralOk = structuralGatesPass(metrics, cfg);
+      const h1RedShallowOk =
+        cfg.h1RedShallowEnabled &&
+        structuralOk &&
+        metrics.priceChange1hPct != null &&
+        Number.isFinite(metrics.priceChange1hPct) &&
+        metrics.priceChange1hPct <= cfg.h1RedShallowH1MaxPct &&
+        metrics.priceChange5mPct != null &&
+        Number.isFinite(metrics.priceChange5mPct) &&
+        metrics.priceChange5mPct > cfg.h1RedShallowMinDipPct &&
+        metrics.priceChange5mPct <= cfg.h1RedShallowMaxDipPct;
 
       let dipSource: MildDipCandidate['dipSource'] | null = null;
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) {
         dipSource = 'stream';
+      } else if (h1RedShallowOk) {
+        dipSource = 'h1_red_shallow';
       } else return null;
 
       return {

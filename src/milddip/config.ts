@@ -13,6 +13,12 @@ function envNum(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+function envBool(name: string, fallback: boolean): boolean {
+  const v = process.env[name]?.trim().toLowerCase();
+  if (!v) return fallback;
+  return v === '1' || v === 'true' || v === 'yes';
+}
+
 const MildDipConfigSchema = z.object({
   executionMode: ExecutionModeSchema,
   rpcUrl: z.string().min(8),
@@ -74,6 +80,11 @@ const MildDipConfigSchema = z.object({
   /** Candidate mint sources: comma list — stream,boosts,profiles,seed */
   discoverSources: z.string().default('stream,boosts,profiles'),
   seedMintsPath: z.string().optional(),
+  /** Autonomous branch: red 1h context permits shallower red 5m pullbacks. */
+  h1RedShallowEnabled: z.boolean().default(false),
+  h1RedShallowH1MaxPct: z.coerce.number().max(0).default(-15),
+  h1RedShallowMinDipPct: z.coerce.number().default(-10),
+  h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-3),
   /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
   streamEnabled: z.boolean().default(true),
   streamWsUrl: z.string().optional(),
@@ -240,6 +251,10 @@ export function loadMildDipConfig(): MildDipConfig {
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
+    h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
+    h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
+    h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
+    h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -3),
     streamEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM?.trim().toLowerCase();
       if (!v) return true;
