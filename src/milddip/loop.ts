@@ -934,7 +934,7 @@ export async function runMildDipLoop(
   const jupPriority = process.env.LIVE_JUPITER_SWAP_PRIORITY_LEVEL?.trim() || 'n/a';
   const jupFeeCapSol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim() || 'n/a';
   console.log(
-    `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
+    `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=SOL ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +
