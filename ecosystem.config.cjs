@@ -2845,6 +2845,28 @@ const PM2_APPS = [
          * 10h CF: −6…−3 bucket was the worst mean PnL; require ≥5% dump depth.
          */
         MILD_DIP_MAX_DIP_PCT: '-5',
+        /**
+         * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
+         * trough or starts a controlled bounce (not the falling blade).
+         */
+        MILD_DIP_KNIFE_STABILIZE_ENABLED: '1',
+        MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT: '-50',
+        MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT: '-20',
+        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '120000',
+        MILD_DIP_KNIFE_STABILIZE_MAX_WATCH_MS: '600000',
+        MILD_DIP_KNIFE_STABILIZE_QUIET_MS: '45000',
+        MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
+        MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
+        MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
+        /**
+         * Red-hour shallow (own logic, not leader copy): when 1h ≤ −15% and
+         * pc5m ∈ (−10, −3], enter without waiting for the main mild band.
+         * Prebuy must use this same band (1.11.707).
+         */
+        MILD_DIP_H1_RED_SHALLOW_ENABLED: '1',
+        MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT: '-15',
+        MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT: '-10',
+        MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-3',
         /** 1.11.701 — lower 5m volume floor (was 1500; missed active dips at ~$600). */
         MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
