@@ -71,6 +71,9 @@ describe('evaluateMildStabilizeFromRing', () => {
       mildStabilizeScaleInOk({
         entryPriceUsd: entry,
         troughPriceUsd: v.troughPriceUsd,
+        troughAtMs: v.troughAtMs,
+        openedAtMs: buyTs,
+        markPriceUsd: 0.0002113,
         minDumpBelowEntryPct: 3,
       }).pass,
     ).toBe(true);
@@ -97,6 +100,60 @@ describe('mildStabilizeScaleInOk', () => {
       mildStabilizeScaleInOk({
         entryPriceUsd: 1.0,
         troughPriceUsd: 0.95, // −5%
+        minDumpBelowEntryPct: 3,
+      }).pass,
+    ).toBe(true);
+  });
+
+  it('rejects HuZ2yj same-price second clip (trough before entry / mark at entry)', () => {
+    // 5HaLZz first clip @ 0.0004848; 29s later 4CCSBX scale-in @ ~same print.
+    // Ring dump was the *first* buy's dump — trough before openedAt; mark ~entry.
+    const entry = 0.00048476520390222953;
+    const openedAtMs = 1_786_130_025_595;
+    const trough = 0.0004635; // ~4.4% below entry — old trough-only guard would pass
+    const troughAtMs = openedAtMs - 5_000;
+    const markAtEntry = 0.00048421047229726917;
+    expect(
+      mildStabilizeScaleInOk({
+        entryPriceUsd: entry,
+        troughPriceUsd: trough,
+        troughAtMs,
+        openedAtMs,
+        markPriceUsd: markAtEntry,
+        minDumpBelowEntryPct: 3,
+      }).pass,
+    ).toBe(false);
+    expect(
+      mildStabilizeScaleInOk({
+        entryPriceUsd: entry,
+        troughPriceUsd: trough,
+        troughAtMs,
+        openedAtMs,
+        markPriceUsd: markAtEntry,
+        minDumpBelowEntryPct: 3,
+      }).reason,
+    ).toMatch(/trough_before_entry/);
+
+    // Even with a post-entry trough, reclaim-to-entry mark must fail avg-down.
+    expect(
+      mildStabilizeScaleInOk({
+        entryPriceUsd: entry,
+        troughPriceUsd: trough,
+        troughAtMs: openedAtMs + 20_000,
+        openedAtMs,
+        markPriceUsd: markAtEntry,
+        minDumpBelowEntryPct: 3,
+      }).reason,
+    ).toMatch(/scale_in_mark=/);
+
+    // Real avg-down: post-entry trough + mark still ≥3% below entry.
+    expect(
+      mildStabilizeScaleInOk({
+        entryPriceUsd: entry,
+        troughPriceUsd: trough,
+        troughAtMs: openedAtMs + 20_000,
+        openedAtMs,
+        markPriceUsd: entry * 0.96,
         minDumpBelowEntryPct: 3,
       }).pass,
     ).toBe(true);

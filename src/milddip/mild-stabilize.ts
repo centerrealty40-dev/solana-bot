@@ -107,24 +107,60 @@ export function evaluateMildStabilizeFromRing(
   };
 }
 
-/** Scale-in guard: trough must sit below first-clip entry. */
+/**
+ * Scale-in guard (second $5 clip):
+ * 1. trough must sit ≥ N% below first-clip entry;
+ * 2. that trough must form *after* the first clip opened (not the same dump
+ *    that triggered the first buy — HuZ2yj / 5HaLZz→4CCSBX same-price bug);
+ * 3. current mark/fill must still be ≥ N% below entry (avg-down), not a
+ *    reclaim back to the first-clip print.
+ */
 export function mildStabilizeScaleInOk(args: {
   entryPriceUsd: number;
   troughPriceUsd: number | null;
   minDumpBelowEntryPct: number;
+  troughAtMs?: number | null;
+  openedAtMs?: number | null;
+  /** Live mark / intended fill — must stay below entry for avg-down. */
+  markPriceUsd?: number | null;
 }): { pass: boolean; reason?: string } {
-  const { entryPriceUsd, troughPriceUsd, minDumpBelowEntryPct } = args;
+  const {
+    entryPriceUsd,
+    troughPriceUsd,
+    minDumpBelowEntryPct,
+    troughAtMs,
+    openedAtMs,
+    markPriceUsd,
+  } = args;
   if (!(entryPriceUsd > 0)) return { pass: false, reason: 'mild_stabilize_scale_in_bad_entry' };
   if (minDumpBelowEntryPct <= 0) return { pass: true };
   if (troughPriceUsd == null || !(troughPriceUsd > 0)) {
     return { pass: false, reason: 'mild_stabilize_scale_in_missing_trough' };
   }
-  const belowPct = (1 - troughPriceUsd / entryPriceUsd) * 100;
-  if (belowPct < minDumpBelowEntryPct) {
+  if (
+    openedAtMs != null &&
+    openedAtMs > 0 &&
+    troughAtMs != null &&
+    Number.isFinite(troughAtMs) &&
+    troughAtMs <= openedAtMs
+  ) {
+    return { pass: false, reason: 'mild_stabilize_scale_in_trough_before_entry' };
+  }
+  const troughBelowPct = (1 - troughPriceUsd / entryPriceUsd) * 100;
+  if (troughBelowPct < minDumpBelowEntryPct) {
     return {
       pass: false,
-      reason: `mild_stabilize_scale_in_dump=${belowPct.toFixed(2)}%<min=${minDumpBelowEntryPct}`,
+      reason: `mild_stabilize_scale_in_dump=${troughBelowPct.toFixed(2)}%<min=${minDumpBelowEntryPct}`,
     };
+  }
+  if (markPriceUsd != null && markPriceUsd > 0) {
+    const markBelowPct = (1 - markPriceUsd / entryPriceUsd) * 100;
+    if (markBelowPct < minDumpBelowEntryPct) {
+      return {
+        pass: false,
+        reason: `mild_stabilize_scale_in_mark=${markBelowPct.toFixed(2)}%<min=${minDumpBelowEntryPct}`,
+      };
+    }
   }
   return { pass: true };
 }

@@ -77,16 +77,25 @@ export async function attemptMildDipEntry(args: {
   if (!isScaleIn && (state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
 
-  if (isScaleIn && existing) {
-    const troughPx =
-      c.mildStabilizeTroughPriceUsd ??
-      mildDipPriceRing.minPrice(c.mint, cfg.cooldownBounceLookbackMs, nowMs)?.priceUsd ??
-      null;
-    const ok = mildStabilizeScaleInOk({
+  const scaleInTroughSample = () =>
+    mildDipPriceRing.minPrice(c.mint, cfg.cooldownBounceLookbackMs, nowMs);
+  const scaleInGuard = (markPriceUsd: number | null) => {
+    if (!isScaleIn || !existing) return { pass: true as const };
+    const troughSample = scaleInTroughSample();
+    const troughPx = c.mildStabilizeTroughPriceUsd ?? troughSample?.priceUsd ?? null;
+    const troughAtMs = c.mildStabilizeTroughAtMs ?? troughSample?.tsMs ?? null;
+    return mildStabilizeScaleInOk({
       entryPriceUsd: existing.entryPriceUsd,
       troughPriceUsd: troughPx,
+      troughAtMs,
+      openedAtMs: existing.openedAtMs,
+      markPriceUsd,
       minDumpBelowEntryPct: cfg.mildStabilizeScaleInMinDumpBelowEntryPct,
     });
+  };
+
+  {
+    const ok = scaleInGuard(c.priceUsd);
     if (!ok.pass) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_scale_in_skip',
@@ -94,8 +103,11 @@ export async function attemptMildDipEntry(args: {
         symbol: c.symbol,
         dipSource: c.dipSource,
         lane: opts.lane,
-        entryPriceUsd: existing.entryPriceUsd,
-        troughPriceUsd: troughPx,
+        entryPriceUsd: existing?.entryPriceUsd ?? null,
+        troughPriceUsd: c.mildStabilizeTroughPriceUsd ?? null,
+        troughAtMs: c.mildStabilizeTroughAtMs ?? null,
+        openedAtMs: existing?.openedAtMs ?? null,
+        markPriceUsd: c.priceUsd,
         reasons: [ok.reason ?? 'mild_stabilize_scale_in_reject'],
       });
       return 'skip';
@@ -259,8 +271,33 @@ export async function attemptMildDipEntry(args: {
     }
   }
 
+  // Scale-in: re-check avg-down on fresh mark (prebuy / chase can reclaim to entry).
+  if (isScaleIn && existing) {
+    const markPx = freshPx ?? entryPriceUsd;
+    const ok = scaleInGuard(markPx);
+    if (!ok.pass) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_scale_in_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        dipSource: c.dipSource,
+        lane: opts.lane,
+        entryPriceUsd: existing.entryPriceUsd,
+        troughPriceUsd: c.mildStabilizeTroughPriceUsd ?? null,
+        troughAtMs: c.mildStabilizeTroughAtMs ?? null,
+        openedAtMs: existing.openedAtMs,
+        markPriceUsd: markPx,
+        reasons: [ok.reason ?? 'mild_stabilize_scale_in_reject'],
+      });
+      console.log(
+        `[mild-dip] SKIP scale-in ${c.symbol} mint=${c.mint.slice(0, 8)}… ${ok.reason ?? 'reject'}`,
+      );
+      return 'skip';
+    }
+  }
+
   // Always on (incl. fast-path): do not rebuy near last exit USD price.
-  // Scale-in into an open bag is exempt.
+  // Scale-in into an open bag is exempt (has its own below-entry guards).
   if (!isScaleIn && cfg.rebuyBelowExitPct > 0) {
     const last = state.lastExitByMint?.[c.mint];
     const markPx = freshPx ?? entryPriceUsd;

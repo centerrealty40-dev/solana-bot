@@ -51,6 +51,7 @@ export type MildDipCandidate = {
   mildStabilizeDumpPct?: number | null;
   mildStabilizeBouncePct?: number | null;
   mildStabilizeTroughPriceUsd?: number | null;
+  mildStabilizeTroughAtMs?: number | null;
 };
 
 const SOLANA_CHAIN = 'solana';
