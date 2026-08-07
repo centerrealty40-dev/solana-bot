@@ -5,6 +5,13 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# Manual kill-switch — do not trade while this file exists (user liquidating).
+if [[ -f "$ROOT/data/volgreen/DISABLED" ]]; then
+  echo "[vol-green-pm2-entry] REFUSING START: $ROOT/data/volgreen/DISABLED" >&2
+  cat "$ROOT/data/volgreen/DISABLED" >&2 || true
+  exit 78
+fi
+
 if [[ -f "$ROOT/.env" ]]; then
   set -a
   # shellcheck disable=SC1091
