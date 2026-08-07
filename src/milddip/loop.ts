@@ -926,6 +926,9 @@ export async function runMildDipLoop(
     streamHandle = startMildDipHotMintStream({
       wsUrl: cfg.streamWsUrl || null,
       priceSampler,
+      fallbackRpcUrl: cfg.rpcUrl,
+      fallbackMaxPerMin: Number(process.env.MILD_DIP_STREAM_FALLBACK_MAX_PER_MIN ?? 45),
+      fallbackMaxQueue: Number(process.env.MILD_DIP_STREAM_FALLBACK_MAX_QUEUE ?? 200),
     });
     stats.stream = streamHandle != null;
   }
