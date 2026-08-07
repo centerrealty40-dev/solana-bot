@@ -3,7 +3,42 @@ import {
   allowHotDexProbe,
   inDipBand,
   resetFastPathStateForTests,
+  structuralOk,
 } from '../../src/milddip/fast-path.js';
+import type { MildDipConfig } from '../../src/milddip/config.js';
+import type { MildDipCandidateMetrics } from '../../src/milddip/gates.js';
+
+function stubCfg(minMcap = 50_000): MildDipConfig {
+  return {
+    entry: {
+      minDipPct: -25,
+      maxDipPct: -8,
+      minVolume5mUsd: 1500,
+      minLiquidityUsd: 10_000,
+      minMarketCapUsd: minMcap,
+      maxMarketCapUsd: 300_000_000,
+      minPairAgeHours: 0.5,
+      maxPairAgeHours: 0,
+      allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
+    },
+  } as unknown as MildDipConfig;
+}
+
+function stubMetrics(partial: Partial<MildDipCandidateMetrics> = {}): MildDipCandidateMetrics {
+  return {
+    priceChange5mPct: -12,
+    volume5mUsd: 5_000,
+    liquidityUsd: 20_000,
+    marketCapUsd: 80_000,
+    pairAgeHours: 2,
+    dexId: 'pumpswap',
+    buys5m: 10,
+    sells5m: 10,
+    volume1hUsd: 40_000,
+    priceChange1hPct: -15,
+    ...partial,
+  };
+}
 
 describe('fast-path helpers', () => {
   beforeEach(() => {
@@ -57,5 +92,15 @@ describe('fast-path helpers', () => {
     expect(
       allowHotDexProbe('Agmu8Xgn7rU4zFv4DMPrEBhYDdPsmiEG5hCiYyvSpump', Date.now(), 10_000, 0),
     ).toBe(false);
+  });
+
+  it('1.11.727 — scale-in ignores min mcap floor; fresh entry still enforces it', () => {
+    const cfg = stubCfg(50_000);
+    const crushed = stubMetrics({ marketCapUsd: 22_000 });
+    expect(structuralOk(crushed, cfg)).toBe(false);
+    expect(structuralOk(crushed, cfg, { ignoreMinMarketCap: true })).toBe(true);
+    // Still respect max mcap on scale-in.
+    const huge = stubMetrics({ marketCapUsd: 400_000_000 });
+    expect(structuralOk(huge, cfg, { ignoreMinMarketCap: true })).toBe(false);
   });
 });

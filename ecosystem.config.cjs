@@ -2908,6 +2908,8 @@ const PM2_APPS = [
         /**
          * 1.11.725 — mcap floor $15k → $50k. 24h closed book: sub-$50k cut set
          * mean ≈ −5.9% / cliff20 ≈ 21%; keep set mean lift ≈ +0.9pp.
+         * 1.11.727 — floor applies to fresh entries only; open-book scale-in
+         * ignores min mcap (knife can crush mcap below $50k before clip-2).
          */
         MILD_DIP_MIN_MCAP_USD: '50000',
         MILD_DIP_MAX_MCAP_USD: '300000000',

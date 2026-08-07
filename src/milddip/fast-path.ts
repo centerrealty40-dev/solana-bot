@@ -98,15 +98,21 @@ export function inDipBand(
   return dipPct != null && Number.isFinite(dipPct) && dipPct > minDipPct && dipPct <= maxDipPct;
 }
 
-function structuralOk(
+/** Exported for unit tests — structural floors on fast-path candidates. */
+export function structuralOk(
   metrics: MildDipCandidateMetrics,
   cfg: MildDipConfig,
+  opts?: { ignoreMinMarketCap?: boolean },
 ): boolean {
   const g = cfg.entry;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
-  if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
-  if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
+  // Fresh entries: enforce min mcap. Open-book scale-in: keep averaging down
+  // even if the knife crushed mcap below the entry floor (e.g. $50k).
+  if (!opts?.ignoreMinMarketCap) {
+    if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
+  }
+  if (metrics.marketCapUsd != null && metrics.marketCapUsd > g.maxMarketCapUsd) return false;
   if (metrics.pairAgeHours == null || metrics.pairAgeHours < g.minPairAgeHours) return false;
   if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
   if (g.allowedDexIds.length > 0) {
@@ -201,7 +207,12 @@ export async function evaluateFastPathCandidate(
 
   // Need Dex for structural (and for Dex/h1 timing when stream not yet in band).
   const struct = await loadStructural(mint, cfg, nowMs);
-  if (!struct || !structuralOk(struct.metrics, cfg)) return null;
+  if (
+    !struct ||
+    !structuralOk(struct.metrics, cfg, { ignoreMinMarketCap: mildStabilizeOnly })
+  ) {
+    return null;
+  }
 
   const dexPc = struct.metrics.priceChange5mPct;
   const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, cfg.entry.maxDipPct);
