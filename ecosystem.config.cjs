@@ -2959,6 +2959,10 @@ const PM2_APPS = [
         MILD_DIP_FAST_PATH_CHASE_PCT: '12',
         MILD_DIP_FAST_PATH_SKIP_BOUNCE: '1',
         MILD_DIP_FAST_PATH_MIN_GAP_MS: '2000',
+        /** No soft-ban after impact/sim fail — retry next tick (Jupiter, not Helius). */
+        MILD_DIP_FAST_PATH_SOFT_SKIP_MS: '0',
+        /** Stream-only main band must be ≤ −10% (Dex confirm still allows −5). */
+        MILD_DIP_STREAM_ONLY_MAX_DIP_PCT: '-10',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
         MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '500',
         MILD_DIP_STREAM_PRICE_CONCURRENCY: '6',
@@ -2997,11 +3001,10 @@ const PM2_APPS = [
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
         /**
-         * 1.11.702 — buy impact gate 2% (was 1% canary). After liq floor $10k
-         * most attempts died at 1–2% Jupiter impact; sell still NOT gated.
-         * Priority medium + 0.00005 SOL cap.
+         * 1.11.711 — buy impact 3% (was 2). HYMQdB: 2.26% reject + 15s soft-skip
+         * → fill +12% chase. Sell still NOT gated.
          */
-        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '2',
+        LIVE_BUY_MAX_PRICE_IMPACT_PCT: '3',
         LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'medium',
         LIVE_JUPITER_PRIORITY_MAX_SOL: '0.00005',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',

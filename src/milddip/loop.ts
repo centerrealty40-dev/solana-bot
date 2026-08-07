@@ -307,7 +307,7 @@ async function tryFastPathForMint(
       skipOnchainAdopt: true,
       // One structural Dex already done in evaluateFastPath — avoid second round-trip.
       freshDexPrebuy: false,
-      softSkipCooldownMs: 15_000,
+      softSkipCooldownMs: cfg.fastPathSoftSkipCooldownMs,
       lane: 'fast',
     },
   });

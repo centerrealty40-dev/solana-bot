@@ -167,6 +167,18 @@ const MildDipConfigSchema = z.object({
   fastPathSkipBounce: z.boolean().default(true),
   /** Min gap between fast-path attempts per mint. */
   fastPathMinGapMs: z.coerce.number().int().min(0).max(120_000).default(2_000),
+  /**
+   * Soft cooldown after a failed fast-path buy (impact/sim/etc).
+   * Default 0 — 15s was burning the dump while price ran +10%.
+   * Does NOT touch Helius WS; only gates Jupiter/Dex retries.
+   */
+  fastPathSoftSkipCooldownMs: z.coerce.number().int().min(0).max(120_000).default(0),
+  /**
+   * Stream-only main-band entries (no Dex pc5m confirm) must be at least this
+   * deep (more negative / equal). Blocks −5% wiggle buys that aren't dumps.
+   * Dex+stream / Dex-only still use entry.maxDipPct (−5).
+   */
+  streamOnlyMaxDipPct: z.coerce.number().max(0).default(-10),
   /** Reuse structural Dex metrics this long (ms). */
   fastPathStructuralCacheMs: z.coerce.number().int().min(1_000).max(120_000).default(8_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
@@ -397,6 +409,8 @@ export function loadMildDipConfig(): MildDipConfig {
     fastPathChasePct: process.env.MILD_DIP_FAST_PATH_CHASE_PCT ?? 12,
     fastPathSkipBounce: envBool('MILD_DIP_FAST_PATH_SKIP_BOUNCE', true),
     fastPathMinGapMs: process.env.MILD_DIP_FAST_PATH_MIN_GAP_MS ?? 2_000,
+    fastPathSoftSkipCooldownMs: process.env.MILD_DIP_FAST_PATH_SOFT_SKIP_MS ?? 0,
+    streamOnlyMaxDipPct: process.env.MILD_DIP_STREAM_ONLY_MAX_DIP_PCT ?? -10,
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
