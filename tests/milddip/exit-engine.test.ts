@@ -40,6 +40,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
   const gates = {
     armPct: 8,
     givebackPct: 8,
+    partialSellFraction: 0,
+    secondGivebackPct: 0,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
     neverArmDeadMinMs: 900_000,
@@ -245,8 +247,47 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(d?.shouldExit).toBe(true);
     expect(d?.reason).toBe('peak_giveback');
     expect(d?.peakPriceUsd).toBe(130); // frozen — bounce must not raise HWM
+    expect(d?.sellFraction).toBe(1);
     applyMarkDecisionToPosition(p, d!);
     expect(p.peakPriceUsd).toBe(130);
+  });
+
+  it('ladder: first giveback peels 50%, second giveback after partialTaken dumps rest', () => {
+    const ladderGates = {
+      ...gates,
+      armPct: 5,
+      givebackPct: 3,
+      partialSellFraction: 0.5,
+      secondGivebackPct: 5,
+    };
+    const p = pos({
+      mint: 'mLadder',
+      entryPriceUsd: 100,
+      peakPriceUsd: 110,
+      trailArmed: true,
+      openedAtMs: 1_000_000,
+    });
+    const first = decideMarkExit({
+      mint: 'mLadder',
+      pos: p,
+      markPriceUsd: 110 * 0.97,
+      gates: ladderGates,
+      nowMs: 1_060_000,
+    });
+    expect(first?.reason).toBe('peak_giveback_partial');
+    expect(first?.sellFraction).toBe(0.5);
+
+    p.exitPartialTaken = true;
+    p.peakPriceUsd = 110 * 0.97;
+    const second = decideMarkExit({
+      mint: 'mLadder',
+      pos: p,
+      markPriceUsd: p.peakPriceUsd! * 0.95,
+      gates: ladderGates,
+      nowMs: 1_090_000,
+    });
+    expect(second?.reason).toBe('peak_giveback');
+    expect(second?.sellFraction).toBe(1);
   });
 });
 

@@ -4,6 +4,7 @@ import {
   resetCopyFundingCache,
 } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
+import { isFullCloseFraction, reduceUsdAfterPartialSell } from '../copytrader/proportional.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import {
@@ -616,6 +617,10 @@ async function executeQueuedSell(args: {
   const pos = state.open[mint];
   if (!pos || !decision.reason) return;
 
+  const fraction =
+    decision.sellFraction > 0 && decision.sellFraction <= 1 ? decision.sellFraction : 1;
+  const isPartial = !isFullCloseFraction(fraction);
+
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
   const sell = await executeCopySell({
@@ -625,7 +630,7 @@ async function executeQueuedSell(args: {
     entryPriceUsd: pos.entryPriceUsd,
     exitPriceUsd: decision.markPriceUsd,
     sizeUsd: pos.sizeUsd,
-    fraction: 1,
+    fraction,
     leaderSignature: `milddip_exit_${decision.reason}_${nowMs}`,
     sellDelayMs: 0,
   });
@@ -641,6 +646,8 @@ async function executeQueuedSell(args: {
     mfePct: +decision.mfePct.toFixed(2),
     givebackPct: +decision.givebackPct.toFixed(2),
     realizedPct: +(sell.pnlPct ?? decision.pnlPct).toFixed(2),
+    sellFraction: fraction,
+    partial: isPartial,
     armed: true,
     holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
     ok: sell.ok,
@@ -657,6 +664,36 @@ async function executeQueuedSell(args: {
   });
 
   if (sell.ok) {
+    if (isPartial && state.open[mint]) {
+      // First rung: keep bag open, reset peak for second giveback trail.
+      const live = state.open[mint]!;
+      live.exitPartialTaken = true;
+      live.exitPendingReason = null;
+      live.trailArmed = true;
+      live.peakPriceUsd = decision.markPriceUsd > 0 ? decision.markPriceUsd : live.peakPriceUsd;
+      live.sizeUsd = reduceUsdAfterPartialSell(live.sizeUsd, fraction);
+      live.tokenRaw = null;
+      saveMildDipState(cfg.statePath, state);
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_partial_taken',
+        mint,
+        symbol: pos.symbol,
+        exitReason: decision.reason,
+        sellFraction: fraction,
+        remainSizeUsd: live.sizeUsd,
+        resetPeakPx: live.peakPriceUsd,
+        pnlPct: +realizedPnl.toFixed(2),
+        mfePct: +decision.mfePct.toFixed(2),
+        givebackPct: +decision.givebackPct.toFixed(2),
+      });
+      console.log(
+        `[mild-dip] PARTIAL ${pos.symbol} reason=${decision.reason} frac=${fraction} ` +
+          `pnl=${realizedPnl.toFixed(1)}% remain=$${live.sizeUsd} ` +
+          `peakReset=$${Number(live.peakPriceUsd).toPrecision(4)} mode=${cfg.executionMode}`,
+      );
+      return;
+    }
+
     // Re-read — another path must not have already cleared it.
     if (state.open[mint]) {
       delete state.open[mint];
@@ -675,7 +712,7 @@ async function executeQueuedSell(args: {
     console.log(
       `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} pnl=${realizedPnl.toFixed(1)}% ` +
         `mfe=${decision.mfePct.toFixed(1)}% giveback=${decision.givebackPct.toFixed(1)}% ` +
-        `cooldown=${Math.round(cd.cooldownMs / 1000)}s(${cd.kind}) mode=${cfg.executionMode}`,
+        `frac=${fraction} cooldown=${Math.round(cd.cooldownMs / 1000)}s(${cd.kind}) mode=${cfg.executionMode}`,
     );
     await reclaimEmptyAta(cfg, {
       mint,
@@ -794,6 +831,7 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
             mfePct: 0,
             givebackPct: 0,
             pnlPct: 0,
+            sellFraction: 1,
           });
         }
       }
@@ -950,6 +988,7 @@ export async function runMildDipLoop(
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
+      `partial=${cfg.exit.partialSellFraction}/2ndGb=${cfg.exit.secondGivebackPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
       `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd} ` +

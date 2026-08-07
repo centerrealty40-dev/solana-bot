@@ -1,5 +1,20 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.710] — 2026-08-07
+
+**Тег:** `sa-1.11.710`
+
+### Feature: vol-green exit ladder arm5 / gb3 / 50% / −5% rest
+
+vKMkWJ sat ~+5–7% («120») under arm+8% so trail never armed, then dumped.
+Vol-green defaults: **arm 5%**, first **giveback 3% → sell 50%**, then
+**second giveback 5% → sell remainder** (peak reset after partial). Oscar
+mild-dip keeps full-exit defaults (`partialSellFraction=0`).
+
+**Откат:** `VOL_GREEN_EXIT_ARM_PCT=8`, `GIVEBACK=6`, partial/second=0.
+
+---
+
 ## [1.11.709] — 2026-08-07
 
 **Тег:** `sa-1.11.709`

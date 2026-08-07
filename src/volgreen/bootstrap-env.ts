@@ -36,6 +36,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
     ['VOL_GREEN_MAX_CHASE_PCT', 'MILD_DIP_MAX_CHASE_PCT'],
     ['VOL_GREEN_EXIT_ARM_PCT', 'MILD_DIP_EXIT_ARM_PCT'],
     ['VOL_GREEN_EXIT_GIVEBACK_PCT', 'MILD_DIP_EXIT_GIVEBACK_PCT'],
+    ['VOL_GREEN_EXIT_PARTIAL_SELL_FRACTION', 'MILD_DIP_EXIT_PARTIAL_SELL_FRACTION'],
+    ['VOL_GREEN_EXIT_SECOND_GIVEBACK_PCT', 'MILD_DIP_EXIT_SECOND_GIVEBACK_PCT'],
     ['VOL_GREEN_EXIT_NEVER_ARM_PATIENCE_MS', 'MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS'],
     ['VOL_GREEN_EXIT_NEVER_ARM_MAX_HOLD_MS', 'MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS'],
     ['VOL_GREEN_EXIT_NEVER_ARM_DEAD_MIN_MS', 'MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS'],
@@ -83,9 +85,11 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM_DIP_ENTRY', '0');
   setIfAbsent('MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT', '0');
 
-  // Mirror mild-dip prod exit defaults (canary).
-  setIfAbsent('MILD_DIP_EXIT_ARM_PCT', '8');
-  setIfAbsent('MILD_DIP_EXIT_GIVEBACK_PCT', '6');
+  // Tighter trail + 50% / −5% ladder (vKMkWJ «120» never armed at 8%).
+  setIfAbsent('MILD_DIP_EXIT_ARM_PCT', '5');
+  setIfAbsent('MILD_DIP_EXIT_GIVEBACK_PCT', '3');
+  setIfAbsent('MILD_DIP_EXIT_PARTIAL_SELL_FRACTION', '0.5');
+  setIfAbsent('MILD_DIP_EXIT_SECOND_GIVEBACK_PCT', '5');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', '0');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', '900000');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', '15');

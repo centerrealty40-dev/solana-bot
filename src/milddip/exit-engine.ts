@@ -17,7 +17,18 @@ export type MarkExitDecision = {
   mfePct: number;
   givebackPct: number;
   pnlPct: number;
+  /** Fraction of bag to sell (0..1). Partial rung uses gates.partialSellFraction. */
+  sellFraction: number;
 };
+
+const STICKY_REASONS: ReadonlySet<string> = new Set([
+  'peak_giveback',
+  'peak_giveback_partial',
+  'never_arm_giveback',
+  'never_arm_dead',
+  'never_arm_vol_fade',
+  'never_arm_timeout',
+]);
 
 /** Sticky exits first, then armed (trail can fire), then older opens. */
 export function orderMintsForMark(open: Record<string, MildDipOpenPosition>): string[] {
@@ -32,6 +43,17 @@ export function orderMintsForMark(open: Record<string, MildDipOpenPosition>): st
     if (aa !== ab) return ab - aa;
     return (pa?.openedAtMs ?? 0) - (pb?.openedAtMs ?? 0);
   });
+}
+
+function sellFractionForSticky(
+  reason: Exclude<MildDipExitReason, null>,
+  gates: MildDipExitGates,
+): number {
+  if (reason === 'peak_giveback_partial') {
+    const f = gates.partialSellFraction;
+    return f > 0 && f < 1 ? f : 1;
+  }
+  return 1;
 }
 
 /**
@@ -57,24 +79,17 @@ export function decideMarkExit(args: {
   // Sticky exit: keep forcing sell after a soft fail; freeze peak so a bounce
   // cannot raise HWM and clear giveback before the bag is flat.
   const stickyRaw = typeof pos.exitPendingReason === 'string' ? pos.exitPendingReason.trim() : '';
-  const stickyReasons: ReadonlySet<string> = new Set([
-    'peak_giveback',
-    'never_arm_giveback',
-    'never_arm_dead',
-    'never_arm_vol_fade',
-    'never_arm_timeout',
-  ]);
-  if (stickyRaw && stickyReasons.has(stickyRaw)) {
+  if (stickyRaw && STICKY_REASONS.has(stickyRaw)) {
     const sticky = stickyRaw as Exclude<MildDipExitReason, null>;
     const mfePct =
       peakPrev > 0 && pos.entryPriceUsd > 0
-        ? ((peakPrev / pos.entryPriceUsd - 1) * 100)
+        ? (peakPrev / pos.entryPriceUsd - 1) * 100
         : 0;
     const givebackPct =
-      markPriceUsd > 0 && peakPrev > 0 ? ((markPriceUsd / peakPrev - 1) * 100) : 0;
+      markPriceUsd > 0 && peakPrev > 0 ? (markPriceUsd / peakPrev - 1) * 100 : 0;
     const pnlPct =
       pos.entryPriceUsd > 0 && markPriceUsd > 0
-        ? ((markPriceUsd / pos.entryPriceUsd - 1) * 100)
+        ? (markPriceUsd / pos.entryPriceUsd - 1) * 100
         : 0;
     return {
       mint,
@@ -87,6 +102,7 @@ export function decideMarkExit(args: {
       mfePct,
       givebackPct,
       pnlPct,
+      sellFraction: sellFractionForSticky(sticky, gates),
     };
   }
 
@@ -99,6 +115,7 @@ export function decideMarkExit(args: {
     heldMs,
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
+    partialTaken: pos.exitPartialTaken === true,
   });
   return {
     mint,
@@ -111,6 +128,7 @@ export function decideMarkExit(args: {
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
+    sellFraction: verdict.sellFraction,
   };
 }
 

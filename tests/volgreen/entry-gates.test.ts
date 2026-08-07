@@ -43,6 +43,8 @@ describe('vol-green exit parity with mild-dip W9.1', () => {
   const gates = {
     armPct: 8,
     givebackPct: 6,
+    partialSellFraction: 0,
+    secondGivebackPct: 0,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
     neverArmDeadMinMs: 900_000,

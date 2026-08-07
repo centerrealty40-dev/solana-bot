@@ -19,6 +19,8 @@ export type MildDipOpenPosition = {
    * mark re-queues the same exit reason — bounce must not clear giveback.
    */
   exitPendingReason?: string | null;
+  /** First rung of the armed ladder already peeled (partial sell done). */
+  exitPartialTaken?: boolean;
   /** 5m Dex volume at entry — baseline for the activity-fade exit. */
   entryVolume5mUsd?: number | null;
 };

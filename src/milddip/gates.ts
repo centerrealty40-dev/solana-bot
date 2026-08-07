@@ -35,8 +35,21 @@ export type MildDipEntryGates = {
 export type MildDipExitGates = {
   /** Arm trail when MFE ≥ this % (default 8). */
   armPct: number;
-  /** Full exit when giveback from peak ≤ −this % after armed (default 8). */
+  /**
+   * First armed giveback threshold (%). With `partialSellFraction` in (0,1)
+   * this peels a partial; otherwise full exit. Default 8.
+   */
   givebackPct: number;
+  /**
+   * Sell this fraction of the bag on the first armed giveback (e.g. 0.5).
+   * 0 or ≥1 = legacy full exit on first giveback (Oscar default).
+   */
+  partialSellFraction: number;
+  /**
+   * After a partial peel, full-exit remaining when giveback ≤ −this %.
+   * 0 = reuse `givebackPct` for the rest. Vol-green: 5.
+   */
+  secondGivebackPct: number;
   /**
    * After this many ms still unarmed, allow the same giveback% from the
    * (sub-arm) peak. Live default **0** — early never_arm_giveback was the grind loss.
@@ -226,6 +239,7 @@ export function evaluateCooldownBounce(args: {
 
 export type MildDipExitReason =
   | 'peak_giveback'
+  | 'peak_giveback_partial'
   | 'never_arm_giveback'
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
@@ -251,7 +265,7 @@ export function mfeFromEntryPct(peakPriceUsd: number, entryPriceUsd: number): nu
  *
  * - Update running peak from entry
  * - Arm when MFE ≥ armPct
- * - Full exit when armed and giveback ≤ −givebackPct
+ * - Armed ladder: first giveback → optional partial; second giveback → full rest
  * - Never-armed: optional soft giveback after patienceMs (0 = off), deep-loss
  *   dead cut, activity fade (`never_arm_vol_fade`), then the max-hold ceiling
  * - Live default: patience off — early never_arm_giveback was cutting before pumps
@@ -269,6 +283,8 @@ export function evaluateMildDipPeakGiveback(args: {
   volume5mUsd?: number | null;
   /** 5m volume captured at entry — the fade baseline. */
   entryVolume5mUsd?: number | null;
+  /** True after a successful first-rung partial peel. */
+  partialTaken?: boolean;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -278,6 +294,8 @@ export function evaluateMildDipPeakGiveback(args: {
   shouldExit: boolean;
   reason: MildDipExitReason;
   pnlPct: number;
+  /** 0..1 — fraction of bag to sell when shouldExit. */
+  sellFraction: number;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
   const heldMs = Number.isFinite(args.heldMs) ? Math.max(0, Number(args.heldMs)) : 0;
@@ -289,6 +307,11 @@ export function evaluateMildDipPeakGiveback(args: {
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =
     entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;
+  const partialTaken = args.partialTaken === true;
+  const partialFrac =
+    gates.partialSellFraction > 0 && gates.partialSellFraction < 1
+      ? gates.partialSellFraction
+      : 0;
 
   let armed = args.armed === true;
   let justArmed = false;
@@ -301,8 +324,25 @@ export function evaluateMildDipPeakGiveback(args: {
     gates.givebackPct > 0 &&
     // epsilon: 103.5/115 is −9.999…% in IEEE float
     givebackPct <= -gates.givebackPct + 1e-9;
+  const secondThr =
+    gates.secondGivebackPct > 0 ? gates.secondGivebackPct : gates.givebackPct;
+  const secondHit =
+    secondThr > 0 && givebackPct <= -secondThr + 1e-9;
 
-  if (armed && givebackHit) {
+  if (armed && !partialTaken && givebackHit) {
+    if (partialFrac > 0) {
+      return {
+        peakPriceUsd,
+        mfePct,
+        givebackPct,
+        armed,
+        justArmed,
+        shouldExit: true,
+        reason: 'peak_giveback_partial',
+        pnlPct,
+        sellFraction: partialFrac,
+      };
+    }
     return {
       peakPriceUsd,
       mfePct,
@@ -312,6 +352,21 @@ export function evaluateMildDipPeakGiveback(args: {
       shouldExit: true,
       reason: 'peak_giveback',
       pnlPct,
+      sellFraction: 1,
+    };
+  }
+
+  if (armed && partialTaken && secondHit) {
+    return {
+      peakPriceUsd,
+      mfePct,
+      givebackPct,
+      armed,
+      justArmed,
+      shouldExit: true,
+      reason: 'peak_giveback',
+      pnlPct,
+      sellFraction: 1,
     };
   }
 
@@ -329,6 +384,7 @@ export function evaluateMildDipPeakGiveback(args: {
         shouldExit: true,
         reason: 'never_arm_giveback',
         pnlPct,
+        sellFraction: 1,
       };
     }
     const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
@@ -343,6 +399,7 @@ export function evaluateMildDipPeakGiveback(args: {
         shouldExit: true,
         reason: 'never_arm_dead',
         pnlPct,
+        sellFraction: 1,
       };
     }
     const volFadeMin = gates.neverArmVolFadeMinMs > 0 ? gates.neverArmVolFadeMinMs : 0;
@@ -364,6 +421,7 @@ export function evaluateMildDipPeakGiveback(args: {
             shouldExit: true,
             reason: 'never_arm_vol_fade',
             pnlPct,
+            sellFraction: 1,
           };
         }
       }
@@ -379,6 +437,7 @@ export function evaluateMildDipPeakGiveback(args: {
         shouldExit: true,
         reason: 'never_arm_timeout',
         pnlPct,
+        sellFraction: 1,
       };
     }
   }
@@ -392,6 +451,7 @@ export function evaluateMildDipPeakGiveback(args: {
     shouldExit: false,
     reason: null,
     pnlPct,
+    sellFraction: 1,
   };
 }
 

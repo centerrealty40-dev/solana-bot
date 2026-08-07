@@ -22,6 +22,8 @@ const baseGates: MildDipEntryGates = {
 const exitGates: MildDipExitGates = {
   armPct: 8,
   givebackPct: 8,
+  partialSellFraction: 0,
+  secondGivebackPct: 0,
   neverArmPatienceMs: 0,
   neverArmMaxHoldMs: 5_400_000,
   neverArmDeadMinMs: 900_000,
@@ -35,6 +37,8 @@ const exitGates: MildDipExitGates = {
 const exitGatesPatienceOn: MildDipExitGates = {
   ...exitGates,
   givebackPct: 6,
+  partialSellFraction: 0,
+  secondGivebackPct: 0,
   neverArmPatienceMs: 300_000,
 };
 
@@ -427,6 +431,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     const gates: MildDipExitGates = {
       armPct: 8,
       givebackPct: 8,
+      partialSellFraction: 0,
+      secondGivebackPct: 0,
       neverArmPatienceMs: 0,
       neverArmMaxHoldMs: 0,
       neverArmDeadMinMs: 0,
@@ -444,5 +450,55 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 3_600_000,
     });
     expect(v.shouldExit).toBe(false);
+  });
+
+  it('vol-green ladder: arm 5 / giveback 3 peels 50%, then −5% dumps the rest', () => {
+    const ladder: MildDipExitGates = {
+      ...exitGates,
+      armPct: 5,
+      givebackPct: 3,
+      partialSellFraction: 0.5,
+      secondGivebackPct: 5,
+    };
+    // +5.67% MFE arms (vKMkWJ «120» shape)
+    const arm = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.67,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: ladder,
+      heldMs: 60_000,
+    });
+    expect(arm.armed).toBe(true);
+    expect(arm.shouldExit).toBe(false);
+
+    // −3% from peak 105.67 → partial 50%
+    const partial = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.67 * 0.97,
+      peakPriceUsd: 105.67,
+      armed: true,
+      gates: ladder,
+      heldMs: 90_000,
+      partialTaken: false,
+    });
+    expect(partial.shouldExit).toBe(true);
+    expect(partial.reason).toBe('peak_giveback_partial');
+    expect(partial.sellFraction).toBe(0.5);
+
+    // After partial, peak reset to ~102.5; −5% from that → full rest
+    const peak2 = 105.67 * 0.97;
+    const rest = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: peak2 * 0.95,
+      peakPriceUsd: peak2,
+      armed: true,
+      gates: ladder,
+      heldMs: 120_000,
+      partialTaken: true,
+    });
+    expect(rest.shouldExit).toBe(true);
+    expect(rest.reason).toBe('peak_giveback');
+    expect(rest.sellFraction).toBe(1);
   });
 });

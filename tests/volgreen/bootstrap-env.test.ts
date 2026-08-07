@@ -10,7 +10,10 @@ const KEYS = [
   'MILD_DIP_JOURNAL_PATH',
   'MILD_DIP_MIN_DIP_PCT',
   'MILD_DIP_MAX_DIP_PCT',
+  'MILD_DIP_EXIT_ARM_PCT',
   'MILD_DIP_EXIT_GIVEBACK_PCT',
+  'MILD_DIP_EXIT_PARTIAL_SELL_FRACTION',
+  'MILD_DIP_EXIT_SECOND_GIVEBACK_PCT',
   'MILD_DIP_MAX_ENRICH',
   'MILD_DIP_PROBE_ENRICH_MAX',
   'VOL_GREEN_POSITION_USD',
@@ -40,7 +43,10 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_ENTRY_MODE).toBe('green_tape');
     expect(process.env.MILD_DIP_WALLET_PUBKEY).toBe(VOL_GREEN_DEFAULT_WALLET_PUBKEY);
     expect(process.env.MILD_DIP_JOURNAL_PATH).toContain('volgreen');
-    expect(process.env.MILD_DIP_EXIT_GIVEBACK_PCT).toBe('6');
+    expect(process.env.MILD_DIP_EXIT_ARM_PCT).toBe('5');
+    expect(process.env.MILD_DIP_EXIT_GIVEBACK_PCT).toBe('3');
+    expect(process.env.MILD_DIP_EXIT_PARTIAL_SELL_FRACTION).toBe('0.5');
+    expect(process.env.MILD_DIP_EXIT_SECOND_GIVEBACK_PCT).toBe('5');
     expect(process.env.MILD_DIP_MAX_ENRICH).toBe('20');
     expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('48');
   });

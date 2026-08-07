@@ -9,6 +9,8 @@
 pair age ≥ 0.05h, rocket pc5m ≥ 15% / vol5m ≥ $8k  
 **Exit harden (1.11.709):** sticky `exitPendingReason` after soft sell fail;
 sell pipeline retries `BlockhashNotFound` / rpc sim errors with fresh quote.  
+**Exit ladder (1.11.710):** arm **5%** → giveback **3%** sells **50%** →
+second giveback **−5%** sells the rest (full bag).  
 
 
 **Exit:** same W9.1 stack as Oscar `mild-dip-bot` (arm +8% / giveback −6% / never-arm / vol-fade)  
