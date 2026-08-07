@@ -1,4 +1,20 @@
 # So
+## [1.11.716] — 2026-08-07
+
+**Тег:** `sa-1.11.716`
+
+### Ops: fee-SOL topup check every 30m (was 6h)
+
+Healthy-path interval `MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS` **6h → 30m**.
+Urgent path from 1.11.715 unchanged (bypass when below reserve).
+
+Note: U5cWTi `jupiter_sell_quote_failed` spam is quote-API noise (no per-attempt
+on-chain fee); fee SOL still drops from real buy/sell priority tips.
+
+**Откат:** `MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS=21600000` + reload.
+
+---
+
 ## [1.11.715] — 2026-08-07
 
 **Тег:** `sa-1.11.715`

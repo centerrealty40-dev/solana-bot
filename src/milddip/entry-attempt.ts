@@ -282,7 +282,7 @@ export async function attemptMildDipEntry(args: {
         lane: opts.lane,
       });
     }
-    // Fee SOL drained (failed sells / priority) — do not wait for the 6h topup tick.
+    // Fee SOL drained — do not wait for the next healthy-path topup tick.
     if (sized.reason?.startsWith('insufficient_fee_sol')) {
       void maybeTopUpFeeSol(cfg, Date.now(), { forceUrgent: true }).catch((err) => {
         console.warn('[mild-dip] urgent fee-sol topup failed', err);

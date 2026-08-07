@@ -3027,7 +3027,8 @@ const PM2_APPS = [
          * Checked at most once per 6h (also runs soon after process start).
          */
         MILD_DIP_FEE_SOL_TOPUP: '1',
-        MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS: '21600000',
+        /** 1.11.716 — check every 30m (was 6h; drained fee SOL bricked buys). */
+        MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS: '1800000',
         MILD_DIP_FEE_SOL_TOPUP_MIN_USD: '5',
         MILD_DIP_FEE_SOL_TOPUP_BUY_USD: '20',
         /**
