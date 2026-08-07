@@ -1,5 +1,22 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.723] — 2026-08-07
+
+**Тег:** `sa-1.11.723`
+
+### Tune: hold more drawdown + never_arm_stale 50% peel
+
+RCA `3CuzwN…` / `7U3io2`: buy→`never_arm_stale` full dump in ~76s (mfe=0, −21%).
+
+- stale window **75→150s**; first hit peels **50%** (`never_arm_stale_partial`),
+  second at **2×** dumps rest (stays unarmed so bounce can develop)
+- giveback **3→5%**, 2nd giveback **5→8%**, trail unlock MFE **12→8%**
+- Oscar mild-dip `partialSellFraction=0` unchanged (full stale cut)
+
+**Откат:** stale 75s/full, giveback 3/5, trailAfterMfe 12.
+
+---
+
 ## [1.11.722] — 2026-08-07
 
 **Тег:** `sa-1.11.722`

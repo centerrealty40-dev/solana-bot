@@ -9,8 +9,9 @@
 pair age ≥ 0.05h, rocket pc5m ≥ 15% / vol5m ≥ $8k  
 **Exit harden (1.11.709):** sticky `exitPendingReason` after soft sell fail;
 sell pipeline retries `BlockhashNotFound` / rpc sim errors with fresh quote.  
-**Exit ladder (1.11.710):** arm **5%** → giveback **3%** sells **50%** →
-second giveback **−5%** sells the rest (full bag).  
+**Exit ladder (1.11.723):** arm **5%** → giveback **5%** peels **50%** →
+second giveback **−8%** dumps rest. Unarmed stale **150s** also peels **50%**
+first (`never_arm_stale_partial`), full dump at **2×** window — hold for bounce.  
 **Jupiter buy (1.11.711):** impact ≤ **2%**, quote premium ≤ **12%** (chase/prebuy still 5%).  
 **Noise cut (1.11.712):** liquid mid 10–25 needs bs≥1.4/to≥0.18; `never_arm_stale` 75s/MFE&lt;4%.  
 **Leader catch (1.11.714):** rocket vol bypasses age; no ring on rocket; enrich

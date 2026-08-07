@@ -709,11 +709,14 @@ async function executeQueuedSell(args: {
 
   if (sell.ok) {
     if (isPartial && state.open[mint]) {
-      // First rung: keep bag open, reset peak for second giveback trail.
+      // First rung: keep bag open. Peak-giveback peels arm the trail;
+      // never_arm_stale_partial stays unarmed so a bounce can still develop.
       const live = state.open[mint]!;
       live.exitPartialTaken = true;
       live.exitPendingReason = null;
-      live.trailArmed = true;
+      if (decision.reason === 'peak_giveback_partial') {
+        live.trailArmed = true;
+      }
       live.peakPriceUsd = decision.markPriceUsd > 0 ? decision.markPriceUsd : live.peakPriceUsd;
       live.sizeUsd = reduceUsdAfterPartialSell(live.sizeUsd, fraction);
       live.tokenRaw = null;

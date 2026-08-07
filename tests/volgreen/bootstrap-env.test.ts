@@ -17,6 +17,7 @@ const KEYS = [
   'MILD_DIP_QUOTE_PREMIUM_GUARD_PCT',
   'LIVE_BUY_MAX_PRICE_IMPACT_PCT',
   'MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS',
+  'MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT',
   'MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT',
   'MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN',
   'MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN',
@@ -62,13 +63,14 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_WALLET_PUBKEY).toBe(VOL_GREEN_DEFAULT_WALLET_PUBKEY);
     expect(process.env.MILD_DIP_JOURNAL_PATH).toContain('volgreen');
     expect(process.env.MILD_DIP_EXIT_ARM_PCT).toBe('5');
-    expect(process.env.MILD_DIP_EXIT_GIVEBACK_PCT).toBe('3');
+    expect(process.env.MILD_DIP_EXIT_GIVEBACK_PCT).toBe('5');
     expect(process.env.MILD_DIP_EXIT_PARTIAL_SELL_FRACTION).toBe('0.5');
-    expect(process.env.MILD_DIP_EXIT_SECOND_GIVEBACK_PCT).toBe('5');
+    expect(process.env.MILD_DIP_EXIT_SECOND_GIVEBACK_PCT).toBe('8');
     expect(process.env.MILD_DIP_QUOTE_PREMIUM_GUARD_PCT).toBe('12');
     expect(process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT).toBe('2');
-    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS).toBe('75000');
-    expect(process.env.MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT).toBe('12');
+    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS).toBe('150000');
+    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT).toBe('5');
+    expect(process.env.MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT).toBe('8');
     expect(process.env.MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN).toBe('6');
     expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN).toBe('40');
     expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY).toBe('3');

@@ -87,13 +87,13 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM_DIP_ENTRY', '0');
   setIfAbsent('MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT', '0');
 
-  // Tighter trail + 50% / −5% ladder (vKMkWJ «120» never armed at 8%).
+  // Trail: hold a bit more drawdown (3→5 giveback); 50% peel then wider 2nd rung.
   setIfAbsent('MILD_DIP_EXIT_ARM_PCT', '5');
-  setIfAbsent('MILD_DIP_EXIT_GIVEBACK_PCT', '3');
+  setIfAbsent('MILD_DIP_EXIT_GIVEBACK_PCT', '5');
   setIfAbsent('MILD_DIP_EXIT_PARTIAL_SELL_FRACTION', '0.5');
-  setIfAbsent('MILD_DIP_EXIT_SECOND_GIVEBACK_PCT', '5');
-  // Backtest: best single change — no giveback until MFE≥12% (C5YYvSo shakeout).
-  setIfAbsent('MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT', '12');
+  setIfAbsent('MILD_DIP_EXIT_SECOND_GIVEBACK_PCT', '8');
+  // Unlock trail earlier so we peel on real micro-pumps instead of only stale-cutting.
+  setIfAbsent('MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT', '8');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', '0');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', '900000');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', '15');
@@ -101,9 +101,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', '0.35');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', '500');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '5400000');
-  // False-green cut: unarmed + MFE<4% after 75s → never_arm_stale.
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '75000');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '4');
+  // False-green: wait longer (75→150s); first hit peels 50%, second at 2× dumps rest.
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '150000');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '5');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
   setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');

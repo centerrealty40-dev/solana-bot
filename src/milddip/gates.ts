@@ -257,6 +257,7 @@ export type MildDipExitReason =
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
   | 'never_arm_stale'
+  | 'never_arm_stale_partial'
   | 'never_arm_timeout'
   | null;
 
@@ -392,21 +393,52 @@ export function evaluateMildDipPeakGiveback(args: {
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
   // Order: stale false-green cut → soft giveback → dead → vol-fade → max-hold.
+  // With partialSellFraction: first stale hit peels a slice (hope for bounce);
+  // second hit (after 2× stale window) dumps the rest.
   if (!armed) {
     const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
     const staleMfe = gates.neverArmStaleMaxMfePct > 0 ? gates.neverArmStaleMaxMfePct : 0;
-    if (staleMin > 0 && staleMfe > 0 && heldMs >= staleMin && mfePct < staleMfe - 1e-9) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_stale',
-        pnlPct,
-        sellFraction: 1,
-      };
+    if (staleMin > 0 && staleMfe > 0 && mfePct < staleMfe - 1e-9) {
+      if (!partialTaken && heldMs >= staleMin) {
+        if (partialFrac > 0) {
+          return {
+            peakPriceUsd,
+            mfePct,
+            givebackPct,
+            armed,
+            justArmed,
+            shouldExit: true,
+            reason: 'never_arm_stale_partial',
+            pnlPct,
+            sellFraction: partialFrac,
+          };
+        }
+        return {
+          peakPriceUsd,
+          mfePct,
+          givebackPct,
+          armed,
+          justArmed,
+          shouldExit: true,
+          reason: 'never_arm_stale',
+          pnlPct,
+          sellFraction: 1,
+        };
+      }
+      // Second rung: still flat after another stale window → dump remainder.
+      if (partialTaken && heldMs >= staleMin * 2) {
+        return {
+          peakPriceUsd,
+          mfePct,
+          givebackPct,
+          armed,
+          justArmed,
+          shouldExit: true,
+          reason: 'never_arm_stale',
+          pnlPct,
+          sellFraction: 1,
+        };
+      }
     }
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (patience > 0 && heldMs >= patience && givebackHit) {

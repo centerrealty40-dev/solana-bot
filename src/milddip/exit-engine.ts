@@ -28,6 +28,7 @@ const STICKY_REASONS: ReadonlySet<string> = new Set([
   'never_arm_dead',
   'never_arm_vol_fade',
   'never_arm_stale',
+  'never_arm_stale_partial',
   'never_arm_timeout',
 ]);
 
@@ -50,7 +51,7 @@ function sellFractionForSticky(
   reason: Exclude<MildDipExitReason, null>,
   gates: MildDipExitGates,
 ): number {
-  if (reason === 'peak_giveback_partial') {
+  if (reason === 'peak_giveback_partial' || reason === 'never_arm_stale_partial') {
     const f = gates.partialSellFraction;
     return f > 0 && f < 1 ? f : 1;
   }

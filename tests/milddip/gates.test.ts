@@ -499,6 +499,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmStaleMinMs: 75_000,
       neverArmStaleMaxMfePct: 4,
       neverArmVolFadeMinMs: 600_000,
+      partialSellFraction: 0, // Oscar-style full cut
     };
     const early = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -520,6 +521,54 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     });
     expect(cut.shouldExit).toBe(true);
     expect(cut.reason).toBe('never_arm_stale');
+    expect(cut.sellFraction).toBe(1);
+  });
+
+  it('never_arm_stale with partial peels 50% then dumps rest at 2× window', () => {
+    const staleGates: MildDipExitGates = {
+      ...exitGates,
+      armPct: 5,
+      neverArmStaleMinMs: 150_000,
+      neverArmStaleMaxMfePct: 5,
+      partialSellFraction: 0.5,
+      neverArmVolFadeMinMs: 600_000,
+    };
+    const peel = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 90,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: staleGates,
+      heldMs: 150_000,
+      partialTaken: false,
+    });
+    expect(peel.shouldExit).toBe(true);
+    expect(peel.reason).toBe('never_arm_stale_partial');
+    expect(peel.sellFraction).toBe(0.5);
+
+    const hold = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 88,
+      peakPriceUsd: 90,
+      armed: false,
+      gates: staleGates,
+      heldMs: 200_000, // < 2×150s
+      partialTaken: true,
+    });
+    expect(hold.shouldExit).toBe(false);
+
+    const dump = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 85,
+      peakPriceUsd: 90,
+      armed: false,
+      gates: staleGates,
+      heldMs: 300_000,
+      partialTaken: true,
+    });
+    expect(dump.shouldExit).toBe(true);
+    expect(dump.reason).toBe('never_arm_stale');
+    expect(dump.sellFraction).toBe(1);
   });
 
   it('vol-green ladder: arm 5 / giveback 3 peels 50%, then −5% dumps the rest', () => {
