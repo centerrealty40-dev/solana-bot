@@ -1027,6 +1027,8 @@ export async function runMildDipLoop(
       `thickUsd=${cfg.thickPositionUsd}` +
       `(mcap≥$${cfg.thickMinMarketCapUsd}/liq≥$${cfg.thickMinLiquidityUsd}/age≥${cfg.thickMinPairAgeHours}h) ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
+      `h1RedShallow=${cfg.h1RedShallowEnabled ? 1 : 0}` +
+      `(h1≤${cfg.h1RedShallowH1MaxPct}/pc5m∈(${cfg.h1RedShallowMinDipPct},${cfg.h1RedShallowMaxDipPct}]) ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +
       `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +

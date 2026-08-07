@@ -109,6 +109,14 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeBandPct: z.coerce.number().min(0).max(50).default(2.5),
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
+  /**
+   * Autonomous red-hour shallow: when 1h ≤ h1Max and pc5m ∈ (min,max],
+   * enter without the main mild band (own logic — not leader copy).
+   */
+  h1RedShallowEnabled: z.boolean().default(false),
+  h1RedShallowH1MaxPct: z.coerce.number().max(0).default(-15),
+  h1RedShallowMinDipPct: z.coerce.number().default(-10),
+  h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-3),
   /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
   streamEnabled: z.boolean().default(true),
   streamWsUrl: z.string().optional(),
@@ -310,6 +318,10 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeBandPct: envNum('MILD_DIP_KNIFE_STABILIZE_BAND_PCT', 2.5),
     knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
+    h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
+    h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
+    h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
+    h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -3),
     streamEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM?.trim().toLowerCase();
       if (!v) return true;

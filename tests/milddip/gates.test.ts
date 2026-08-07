@@ -20,6 +20,7 @@ function metrics(partial: Partial<MildDipCandidateMetrics>): MildDipCandidateMet
     buys5m: 10,
     sells5m: 10,
     volume1hUsd: 80_000,
+    priceChange1hPct: -20,
     ...partial,
   };
 }
@@ -169,6 +170,38 @@ describe('evaluateMildDipPreBuy', () => {
       maxChasePct: 0,
     });
     expect(v.pass).toBe(true);
+  });
+
+  it('h1_red_shallow band (−10,−3]: accepts shallow red that main mild rejects', () => {
+    const h1Band = { minDipPct: -10, maxDipPct: -3 };
+    const shallow = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 0.99,
+      freshPc5mPct: -6.5,
+      entryGates: h1Band,
+      maxChasePct: 4,
+    });
+    expect(shallow.pass).toBe(true);
+
+    const onMainBand = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 0.99,
+      freshPc5mPct: -6.5,
+      entryGates: { minDipPct: -25, maxDipPct: -5 },
+      maxChasePct: 4,
+    });
+    expect(onMainBand.pass).toBe(false);
+  });
+
+  it('h1_red_shallow still rejects bounce to green', () => {
+    const v = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 1.02,
+      freshPc5mPct: 4,
+      entryGates: { minDipPct: -10, maxDipPct: -3 },
+      maxChasePct: 4,
+    });
+    expect(v.pass).toBe(false);
   });
 });
 
