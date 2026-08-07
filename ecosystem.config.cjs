@@ -2869,10 +2869,11 @@ const PM2_APPS = [
         MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT: '-10',
         MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-3',
         /**
-         * 1.11.710 — flat/chop micro-dip (leaders scalp −2…−5% on range names).
-         * Band (−5,−1.5]; 1h regime [−35,+10]. Structural liq/mcap unchanged.
+         * 1.11.714 — OFF. Was buying −2…−5% wiggles (YBPUY1 2yM2Cne… pc5m=−3.3%
+         * after a +25% rebound; same mint earlier real dumps then cliff −49%).
+         * 23 flat_micro attempts / 3h = spray, not leader-style range scalp.
          */
-        MILD_DIP_FLAT_MICRO_ENABLED: '1',
+        MILD_DIP_FLAT_MICRO_ENABLED: '0',
         MILD_DIP_FLAT_MICRO_MIN_DIP_PCT: '-5',
         MILD_DIP_FLAT_MICRO_MAX_DIP_PCT: '-1.5',
         MILD_DIP_FLAT_MICRO_H1_MIN_PCT: '-35',

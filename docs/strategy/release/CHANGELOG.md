@@ -1,4 +1,21 @@
 # So
+## [1.11.714] — 2026-08-07
+
+**Тег:** `sa-1.11.714`
+
+### Ops: kill flat_micro_dip spray
+
+**YBPUY1** (`2yM2Cne…`): `dipSource=flat_micro_dip` pc5m=**−3.33%** on a
+post-bounce wiggle (ring 5.46e-5 → 6.84e-5 then tiny pullback). Same mint had
+real dump entries earlier, then cliff −49%; this rebuy was noise, not a dump.
+23 flat_micro buy-attempts in 3h (Gs2Liw-class included).
+
+**Change:** `MILD_DIP_FLAT_MICRO_ENABLED=0`.
+
+**Откат:** `FLAT_MICRO_ENABLED=1` + reload.
+
+---
+
 ## [1.11.713] — 2026-08-07
 
 **Тег:** `sa-1.11.713`
