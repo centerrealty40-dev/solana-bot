@@ -134,6 +134,7 @@ async function loadStructural(
     nowMs,
     bypassCache: false,
     cacheTtlMs: Math.min(5_000, cfg.fastPathStructuralCacheMs),
+    allowedDexIds: cfg.entry.allowedDexIds,
   });
   if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
 

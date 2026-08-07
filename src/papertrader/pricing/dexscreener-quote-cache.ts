@@ -19,6 +19,8 @@ interface CacheEntry {
   pairAddress?: string | null;
   baseMint?: string;
   quoteMint?: string;
+  /** DexScreener dexId (pumpswap / meteora / …). Used to honor allowedDexIds on cache hit. */
+  dexId?: string | null;
   fetchedAtMs: number;
 }
 
@@ -209,8 +211,16 @@ function pickBestSolanaPair(
   pairs: unknown[],
   mint: string,
   preferredDex?: string,
+  allowedDexIds?: string[],
 ): Record<string, unknown> | null {
-  return pickBestSolanaPairForMint(pairs, mint, { preferredDex });
+  return pickBestSolanaPairForMint(pairs, mint, { preferredDex, allowedDexIds });
+}
+
+function dexIdAllowed(dexId: string | null | undefined, allowedDexIds?: string[]): boolean {
+  const allowed = (allowedDexIds ?? []).map((d) => d.trim().toLowerCase()).filter(Boolean);
+  if (allowed.length === 0) return true;
+  const dex = String(dexId ?? '').trim().toLowerCase();
+  return Boolean(dex) && allowed.includes(dex);
 }
 
 function parsePairToCacheEntry(pair: Record<string, unknown> | null, mint: string, nowMs: number): CacheEntry {
@@ -229,6 +239,7 @@ function parsePairToCacheEntry(pair: Record<string, unknown> | null, mint: strin
     pairAddress: (pair.pairAddress as string | undefined) ?? null,
     baseMint: baseToken?.address ?? mint,
     quoteMint: quoteToken?.address ?? SOL_MINT,
+    dexId: (pair.dexId as string | undefined) ?? null,
     fetchedAtMs: nowMs,
   };
 }
@@ -311,6 +322,8 @@ export async function fetchDexScreenerPairDetails(
     cacheTtlMs?: number;
     nowMs?: number;
     preferredDex?: string;
+    /** Restrict pair pick to these DexScreener dexIds (mild-dip allow-list). */
+    allowedDexIds?: string[];
     /** When true, always HTTP-fetch (still respects global gate + updates shared cache). */
     bypassCache?: boolean;
   },
@@ -319,46 +332,44 @@ export async function fetchDexScreenerPairDetails(
   const nowMs = opts?.nowMs ?? Date.now();
   const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
   const bypass = opts?.bypassCache === true;
+  const allowedDexIds = opts?.allowedDexIds;
   const doFetch = opts?.fetchImpl ?? (await import('undici')).fetch;
+
+  const detailsFromCacheEntry = (cached: CacheEntry): DexScreenerPairDetails | null => {
+    if (cached.miss || !cached.pairAddress) return null;
+    if (!dexIdAllowed(cached.dexId, allowedDexIds)) return null;
+    return parsePairToDetails(
+      {
+        priceUsd: cached.priceUsd,
+        marketCap: cached.marketCapUsd,
+        fdv: cached.marketCapUsd,
+        liquidity: { usd: cached.liquidityUsd },
+        volume: { m5: cached.volume5mUsd, h1: cached.volume1hUsd },
+        pairAddress: cached.pairAddress,
+        baseToken: { address: cached.baseMint },
+        quoteToken: { address: cached.quoteMint },
+        dexId: cached.dexId,
+      },
+      mint,
+      cached.fetchedAtMs,
+    );
+  };
 
   if (!bypass) {
     const mem = inProcess.get(mint);
     if (mem && nowMs - mem.at < ttlMs) {
       const cached = readCacheFile()[mint];
-      if (cached && !cached.miss && cached.pairAddress) {
-        return parsePairToDetails(
-          {
-            priceUsd: cached.priceUsd,
-            marketCap: cached.marketCapUsd,
-            fdv: cached.marketCapUsd,
-            liquidity: { usd: cached.liquidityUsd },
-            volume: { m5: cached.volume5mUsd, h1: cached.volume1hUsd },
-            pairAddress: cached.pairAddress,
-            baseToken: { address: cached.baseMint },
-            quoteToken: { address: cached.quoteMint },
-          },
-          mint,
-          cached.fetchedAtMs,
-        );
+      if (cached) {
+        const fromMem = detailsFromCacheEntry(cached);
+        if (fromMem) return fromMem;
+        // Cache hit but wrong/missing dex vs allow-list → fall through to HTTP.
       }
     }
     if (isDexQuoteCacheEnabled()) {
       const cached = getCachedDexQuote(mint, nowMs, ttlMs);
-      if (cached.hit && cached.entry && !cached.entry.miss && cached.entry.pairAddress) {
-        return parsePairToDetails(
-          {
-            priceUsd: cached.entry.priceUsd,
-            marketCap: cached.entry.marketCapUsd,
-            fdv: cached.entry.marketCapUsd,
-            liquidity: { usd: cached.entry.liquidityUsd },
-            volume: { m5: cached.entry.volume5mUsd, h1: cached.entry.volume1hUsd },
-            pairAddress: cached.entry.pairAddress,
-            baseToken: { address: cached.entry.baseMint },
-            quoteToken: { address: cached.entry.quoteMint },
-          },
-          mint,
-          cached.entry.fetchedAtMs,
-        );
+      if (cached.hit && cached.entry) {
+        const fromDisk = detailsFromCacheEntry(cached.entry);
+        if (fromDisk) return fromDisk;
       }
     }
   }
@@ -374,7 +385,7 @@ export async function fetchDexScreenerPairDetails(
     );
     if (res.ok) {
       const j = (await res.json()) as { pairs?: unknown[] };
-      const best = pickBestSolanaPair(j.pairs ?? [], mint, opts?.preferredDex);
+      const best = pickBestSolanaPair(j.pairs ?? [], mint, opts?.preferredDex, allowedDexIds);
       cacheEntry = parsePairToCacheEntry(best, mint, nowMs);
       details = parsePairToDetails(best, mint, nowMs);
     }

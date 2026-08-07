@@ -2920,6 +2920,11 @@ const PM2_APPS = [
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.5',
         /** 0 = no max age — do not skip older pumps on mild dips. */
         MILD_DIP_MAX_PAIR_AGE_HOURS: '0',
+        /**
+         * Venue allow-list for structural pair pick (1.11.729): Dex fetch now
+         * selects among these dexIds first. Was: pick global max-liq (often
+         * Meteora) then reject mint — NEEGY 6oGuFDbE dump missed.
+         */
         MILD_DIP_ALLOWED_DEX_IDS: 'pumpswap,pumpfun,raydium',
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',

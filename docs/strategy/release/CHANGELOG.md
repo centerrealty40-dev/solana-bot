@@ -1,4 +1,23 @@
 # So
+## [1.11.729] — 2026-08-07
+
+**Тег:** `sa-1.11.729`
+
+### Fix: pick Dex pair inside ALLOWED_DEX_IDS (NEEGY / Meteora)
+
+`6oGuFDbE` / 7BNax buy `3rbGRNC…`: observer saw pumpswap pc5m≈−17% /
+vol5m≈$25k (`main=true`), but trading path picked higher-liq **Meteora**
+pair then rejected the mint on `MILD_DIP_ALLOWED_DEX_IDS`.
+
+**Change:** `pickBestSolanaPairForMint` + `fetchDexScreenerPairDetails` accept
+`allowedDexIds`; mild-dip structural/mark/prebuy passes the allow-list so
+pumpswap/pumpfun/raydium win over Meteora when present. Cache stores `dexId`
+and refetches on allow-list mismatch.
+
+**Откат:** stop passing `allowedDexIds` from mild-dip fetch sites + reload.
+
+---
+
 ## [1.11.728] — 2026-08-07
 
 **Тег:** `sa-1.11.728`

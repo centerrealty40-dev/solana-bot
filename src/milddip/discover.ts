@@ -374,6 +374,7 @@ export async function enrichAndFilterCandidates(
         bypassCache,
         cacheTtlMs: bypassCache ? undefined : cacheTtlMs,
         nowMs,
+        allowedDexIds: cfg.entry.allowedDexIds,
       });
       if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
 
