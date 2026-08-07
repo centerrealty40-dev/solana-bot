@@ -68,6 +68,35 @@ describe('evaluateMildStabilizeFromRing', () => {
     ).toBe(true);
   });
 
+  it('BJWHLm deep post-entry knife + reclaim passes scale-in dump floor −50', () => {
+    // Live yEfT5N…: peak→trough ≈ −36%, bounce ≈ +4%. Fresh floor −25 rejected;
+    // scale-in floor −50 must accept (user: second clip on stabilize after knife).
+    const liveMint = 'BJWHLmtbabbby7LstVRvo4Q39oER9C1TrzR3gpTHpump';
+    const entry = 0.00041570487962850624;
+    const buyTs = 1_786_134_405_311;
+    const r = new MildDipPriceRing({ maxSamplesPerMint: 60, ttlMs: 3_600_000 });
+    r.note(liveMint, 0.0004155, { tsMs: buyTs + 15_000, source: 'dex' }); // post-entry peak
+    r.note(liveMint, 0.0002635, { tsMs: buyTs + 522_000, source: 'dex' }); // trough −36.6%
+    r.note(liveMint, 0.0002743, { tsMs: buyTs + 551_000, source: 'dex' }); // +4.1% reclaim
+    const nowMs = buyTs + 580_000;
+    const fresh = evaluateMildStabilizeFromRing(r, liveMint, nowMs, gates);
+    expect(fresh.pass).toBe(false);
+    expect(fresh.reasons.some((x) => x.startsWith('mild_stabilize_dump='))).toBe(true);
+    const scaleGates = { ...gates, minDumpPct: -50 };
+    const v = evaluateMildStabilizeFromRing(r, liveMint, nowMs, scaleGates);
+    expect(v.pass).toBe(true);
+    expect(
+      mildStabilizeScaleInOk({
+        entryPriceUsd: entry,
+        troughPriceUsd: v.troughPriceUsd,
+        troughAtMs: v.troughAtMs,
+        openedAtMs: buyTs,
+        markPriceUsd: 0.0002743,
+        minDumpBelowEntryPct: 3,
+      }).pass,
+    ).toBe(true);
+  });
+
   it('9nXkTP / 5vuKy3b mark path qualifies for second clip', () => {
     // Live marks after fast buy: dump to −17.75% then reclaim ~5% off trough.
     // Scale-in never fired because open mint was not scanned — gates themselves pass.

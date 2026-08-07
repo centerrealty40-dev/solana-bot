@@ -899,6 +899,7 @@ export async function runMildDipLoop(
       `mildStabilize=${cfg.mildStabilizeEnabled ? 1 : 0}` +
       `/fresh=${cfg.mildStabilizeFreshEntryEnabled ? 1 : 0}` +
       `(dump(${cfg.mildStabilizeMinDumpPct},${cfg.mildStabilizeMaxDumpPct}]` +
+      `/scaleDump(${cfg.mildStabilizeScaleInMinDumpPct},${cfg.mildStabilizeMaxDumpPct}]` +
       `/bounce[${cfg.mildStabilizeMinBouncePct},${cfg.mildStabilizeMaxBouncePct}]` +
       `/troughAge${Math.round(cfg.mildStabilizeTroughMinAgeMs / 1000)}s` +
       `/belowPeak≥${cfg.mildStabilizeMinBelowPeakPct}%) ` +

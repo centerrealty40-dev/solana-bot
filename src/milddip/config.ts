@@ -147,6 +147,11 @@ const MildDipConfigSchema = z.object({
   mildStabilizeMinDumpPct: z.coerce.number().max(0).default(-25),
   /** Shallowest dump allowed (more negative = require deeper). Was −5. */
   mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-8),
+  /**
+   * Open-book scale-in only: deeper dump floor than fresh mild_stabilize.
+   * BJWHLm: post-entry knife −30…−36% then +4% reclaim was rejected by −25.
+   */
+  mildStabilizeScaleInMinDumpPct: z.coerce.number().max(0).default(-50),
   mildStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   mildStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(8),
   mildStabilizeTroughMinAgeMs: z.coerce.number().int().min(0).max(600_000).default(15_000),
@@ -425,6 +430,8 @@ export function loadMildDipConfig(): MildDipConfig {
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
     mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -8),
+    /** 1.11.726 — scale-in dump floor −50 (was sharing fresh −25). */
+    mildStabilizeScaleInMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_PCT', -50),
     mildStabilizeMinBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 8),
     mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 15_000),
@@ -528,6 +535,14 @@ export function loadMildDipConfig(): MildDipConfig {
   ) {
     throw new Error(
       'mild-dip requires MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT < MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT',
+    );
+  }
+  if (
+    parsed.data.mildStabilizeEnabled &&
+    !(parsed.data.mildStabilizeScaleInMinDumpPct < parsed.data.mildStabilizeMaxDumpPct)
+  ) {
+    throw new Error(
+      'mild-dip requires MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_PCT < MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT',
     );
   }
 

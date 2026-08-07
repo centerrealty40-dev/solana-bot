@@ -286,9 +286,14 @@ export async function evaluateFastPathCandidate(
       hasOtherDipSource: Boolean(dipSource),
     })
   ) {
+    // Scale-in (open book): allow deeper post-entry knives than fresh mild band.
+    // BJWHLm yEfT5N…: −36% dump +4% reclaim blocked by fresh floor −25.
+    const minDumpPct = mildStabilizeOnly
+      ? cfg.mildStabilizeScaleInMinDumpPct
+      : cfg.mildStabilizeMinDumpPct;
     const mild = evaluateMildStabilizeFromRing(mildDipPriceRing, mint, nowMs, {
       enabled: true,
-      minDumpPct: cfg.mildStabilizeMinDumpPct,
+      minDumpPct,
       maxDumpPct: cfg.mildStabilizeMaxDumpPct,
       minBouncePct: cfg.mildStabilizeMinBouncePct,
       maxBouncePct: cfg.mildStabilizeMaxBouncePct,
