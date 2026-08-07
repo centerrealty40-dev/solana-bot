@@ -46,6 +46,20 @@ export class MildDipHotMintBuffer {
     return this.byMint.size;
   }
 
+  /** True when mint was noted within maxAgeMs (after prune). */
+  isRecent(mint: string, nowMs = Date.now(), maxAgeMs = 120_000): boolean {
+    if (!mint) return false;
+    this.prune(nowMs);
+    const hit = this.byMint.get(mint);
+    if (!hit) return false;
+    return nowMs - hit.lastSeenAtMs <= maxAgeMs;
+  }
+
+  lastSeenAtMs(mint: string): number | null {
+    const hit = this.byMint.get(mint);
+    return hit ? hit.lastSeenAtMs : null;
+  }
+
   toJSON(nowMs = Date.now()): HotMintHit[] {
     this.prune(nowMs);
     return [...this.byMint.values()];

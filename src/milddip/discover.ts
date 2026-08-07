@@ -12,6 +12,7 @@ import {
   discoverPgVolumeMints,
   readLeaderSeedMints,
 } from './discover-extra.js';
+import { noteStructuralCache } from './fast-path.js';
 import { mapPool } from './exit-engine.js';
 import {
   evaluateMildDipEntry,
@@ -320,6 +321,9 @@ export async function enrichAndFilterCandidates(
     nowMs?: number;
     maxEnrich?: number;
     enrichConcurrency?: number;
+    /** Prefer shared Dex cache — background lane must not starve the gate. */
+    bypassCache?: boolean;
+    cacheTtlMs?: number;
     /** Always enrich these even past maxEnrich (cooldown / knife watch). */
     forceEnrich?: string[];
     /** Prior knife watches (mutated copy returned). */
@@ -327,8 +331,10 @@ export async function enrichAndFilterCandidates(
   },
 ): Promise<MildDipEnrichPassResult> {
   const nowMs = opts?.nowMs ?? Date.now();
-  const maxEnrich = opts?.maxEnrich ?? 40;
+  const maxEnrich = opts?.maxEnrich ?? cfg.enrichMax ?? 12;
   const enrichConcurrency = opts?.enrichConcurrency ?? cfg.enrichConcurrency ?? 12;
+  const bypassCache = opts?.bypassCache ?? false;
+  const cacheTtlMs = opts?.cacheTtlMs ?? 3_000;
   const knifeGates = knifeGatesFromConfig(cfg);
   const knifeWatchIn: Record<string, KnifeWatchEntry> = {
     ...(opts?.knifeWatch ?? {}),
@@ -352,7 +358,8 @@ export async function enrichAndFilterCandidates(
     try {
       if (denied.has(mint)) return null;
       const details = await fetchDexScreenerPairDetails(mint, {
-        bypassCache: true,
+        bypassCache,
+        cacheTtlMs: bypassCache ? undefined : cacheTtlMs,
         nowMs,
       });
       if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
@@ -377,6 +384,7 @@ export async function enrichAndFilterCandidates(
         volume1hUsd: details.volume1hUsd,
         priceChange1hPct: details.priceChangeH1Pct,
       };
+      noteStructuralCache(mint, details.priceUsd, metrics, nowMs);
 
       const dexVerdict = evaluateMildDipEntry(metrics, cfg.entry);
       const stream = streamDipInBand(cfg, mint, nowMs);

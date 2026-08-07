@@ -143,7 +143,22 @@ const MildDipConfigSchema = z.object({
    */
   preBuyRevalidate: z.boolean().default(true),
   /** Max % mark can rise vs signal price before abort (0 = chase check off). */
-  maxChasePct: z.coerce.number().min(0).max(50).default(4),
+  maxChasePct: z.coerce.number().min(0).max(50).default(10),
+  /**
+   * Stream/leader fast-path: skip the Dex enrich batch; one structural fetch +
+   * stream drawdown → Jupiter. Default ON.
+   */
+  fastPathEnabled: z.boolean().default(true),
+  /** Chase allowance on fast-path (latency-tolerant). */
+  fastPathChasePct: z.coerce.number().min(0).max(50).default(12),
+  /** Skip cooldown-bounce guard on fast-path (0 = use maxCooldownBouncePct). */
+  fastPathSkipBounce: z.boolean().default(true),
+  /** Min gap between fast-path attempts per mint. */
+  fastPathMinGapMs: z.coerce.number().int().min(0).max(120_000).default(2_000),
+  /** Reuse structural Dex metrics this long (ms). */
+  fastPathStructuralCacheMs: z.coerce.number().int().min(1_000).max(120_000).default(8_000),
+  /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
+  enrichMax: z.coerce.number().int().min(5).max(80).default(12),
   entry: z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
@@ -360,7 +375,13 @@ export function loadMildDipConfig(): MildDipConfig {
       if (!v) return true;
       return v === '1' || v === 'true' || v === 'yes';
     })(),
-    maxChasePct: process.env.MILD_DIP_MAX_CHASE_PCT ?? 4,
+    maxChasePct: process.env.MILD_DIP_MAX_CHASE_PCT ?? 10,
+    fastPathEnabled: envBool('MILD_DIP_FAST_PATH', true),
+    fastPathChasePct: process.env.MILD_DIP_FAST_PATH_CHASE_PCT ?? 12,
+    fastPathSkipBounce: envBool('MILD_DIP_FAST_PATH_SKIP_BOUNCE', true),
+    fastPathMinGapMs: process.env.MILD_DIP_FAST_PATH_MIN_GAP_MS ?? 2_000,
+    fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
+    enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
     cooldownBounceLookbackMs: process.env.MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS ?? 300_000,
     streamDipEntryEnabled: (() => {
@@ -373,8 +394,8 @@ export function loadMildDipConfig(): MildDipConfig {
       if (!v) return true;
       return v === '1' || v === 'true' || v === 'yes';
     })(),
-    streamPriceMinGapMs: process.env.MILD_DIP_STREAM_PRICE_MIN_GAP_MS ?? 2_000,
-    streamPriceConcurrency: process.env.MILD_DIP_STREAM_PRICE_CONCURRENCY ?? 3,
+    streamPriceMinGapMs: process.env.MILD_DIP_STREAM_PRICE_MIN_GAP_MS ?? 500,
+    streamPriceConcurrency: process.env.MILD_DIP_STREAM_PRICE_CONCURRENCY ?? 6,
     hotMintsPath:
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:
