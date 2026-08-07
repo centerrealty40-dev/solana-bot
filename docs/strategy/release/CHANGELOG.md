@@ -1,4 +1,24 @@
 # So
+## [1.11.718] — 2026-08-07
+
+**Тег:** `sa-1.11.718`
+
+### Fix: stop green-candle buys (stream-only + mild_stabilize)
+
+**4FgenX** (`35rpps…`): `dipSource=stream` pc5m=−20.6% from price-ring while
+Dex was already out of dump; fill chase +11%; minutes later Dex pc5m=+35%.
+Same class as “bought the green candle”.
+
+**Changes:**
+1. `MILD_DIP_STREAM_DIP_ENTRY=0` — main band needs Dex pc5m in `(−25,−8]`.
+2. `MILD_DIP_MILD_STABILIZE_ENABLED=0` — bounce/reclaim clips off (look like
+   green entries: `bounce=% dump=%` in logs).
+3. If stream-only re-enabled later: refuse when Dex pc5m already `> maxDip`.
+
+**Откат:** `STREAM_DIP_ENTRY=1` + `MILD_STABILIZE_ENABLED=1` + reload.
+
+---
+
 ## [1.11.717] — 2026-08-07
 
 **Тег:** `sa-1.11.717`

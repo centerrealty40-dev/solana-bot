@@ -225,14 +225,19 @@ export async function evaluateFastPathCandidate(
     const last = mildDipPriceRing.lastPrice(mint, nowMs);
     if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
   } else if (streamInMain && cfg.streamDipEntryEnabled) {
-    // Stream-only: require a real dump, not a −5% ring wiggle (Gs2Liw-class).
-    if (streamDd == null || !(streamDd <= cfg.streamOnlyMaxDipPct)) {
-      /* fall through — maybe Dex / h1 / flat_micro still qualify */
-    } else {
-      dipSource = 'stream';
-      metrics = { ...metrics, priceChange5mPct: streamDd };
-      const last = mildDipPriceRing.lastPrice(mint, nowMs);
-      if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
+    // Stream-only (Dex NOT in main band): dangerous — ring can still print a
+    // deep dump while the live candle is already green (4FgenX). Keep gated
+    // behind STREAM_DIP_ENTRY; live default OFF (1.11.718).
+    if (streamDd != null && streamDd <= cfg.streamOnlyMaxDipPct) {
+      // Refuse when Dex 5m is already green / outside dump — don't chase reclaim.
+      if (dexPc != null && dexPc > cfg.entry.maxDipPct) {
+        /* fall through */
+      } else {
+        dipSource = 'stream';
+        metrics = { ...metrics, priceChange5mPct: streamDd };
+        const last = mildDipPriceRing.lastPrice(mint, nowMs);
+        if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
+      }
     }
   }
   if (!dipSource && dexInMain) {

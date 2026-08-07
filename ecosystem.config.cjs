@@ -2865,7 +2865,11 @@ const PM2_APPS = [
          * Also second $5 scale-in while a main/knife position is still open
          * (trough ≥3% below first entry).
          */
-        MILD_DIP_MILD_STABILIZE_ENABLED: '1',
+        /**
+         * 1.11.718 — OFF: bounce/reclaim entries look like green-candle buys
+         * (user: 4FgenX / Gymbmn bounce=… dumps). Main Dex band stays on.
+         */
+        MILD_DIP_MILD_STABILIZE_ENABLED: '0',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-5',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
@@ -3016,7 +3020,12 @@ const PM2_APPS = [
         MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '6',
         MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS: '600000',
         /** Stream drawdown can satisfy dip band when Dex pc5m lags (liq/mcap still Dex). */
-        MILD_DIP_STREAM_DIP_ENTRY: '1',
+        /**
+         * 1.11.718 — OFF: stream-only (Dex not in band) bought green reclaim
+         * while ring still showed dump (4FgenX: stream −20% → fill +11% chase,
+         * Dex now +35%). Require Dex pc5m in main band.
+         */
+        MILD_DIP_STREAM_DIP_ENTRY: '0',
         MILD_DIP_STREAM_PRICE_SAMPLE: '1',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
         MILD_DIP_SLIPPAGE_BPS: '500',

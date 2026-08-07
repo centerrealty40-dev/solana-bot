@@ -29,6 +29,12 @@ describe('fast-path helpers', () => {
     expect(inDipBand(wiggle, -25, -5)).toBe(true);
   });
 
+  it('green Dex pc5m is outside main band (−25, −8]', () => {
+    expect(inDipBand(35.05, -25, -8)).toBe(false);
+    expect(inDipBand(-3.9, -25, -8)).toBe(false);
+    expect(inDipBand(-11.3, -25, -8)).toBe(true);
+  });
+
   it('allowHotDexProbe throttles per mint and per minute', () => {
     const mintA = 'Agmu8Xgn7rU4zFv4DMPrEBhYDdPsmiEG5hCiYyvSpump';
     const mintB = 'BsKtZlDummyMintForHotDexProbeThrottleTestxxxx1';
