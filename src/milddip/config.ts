@@ -207,6 +207,13 @@ const MildDipConfigSchema = z.object({
     rocketMinMarketCapUsd: z.number(),
     extremePc5mPct: z.number(),
     extremeMinBuySellRatio5m: z.number(),
+    liquidTapeMinLiquidityUsd: z.number(),
+    liquidTapeMinPairAgeHours: z.number(),
+    liquidTapeMinVolume5mUsd: z.number(),
+    liquidTapeMinPc5mPct: z.number(),
+    liquidTapeMaxPc5mPct: z.number(),
+    liquidTapeMinBuySellRatio5m: z.number(),
+    liquidTapeMinRingPc5mPct: z.number(),
   }),
 });
 
@@ -333,6 +340,14 @@ export function loadMildDipConfig(): MildDipConfig {
     // Extreme chase: pc5m > N without buy pressure → reject (0 pc = off).
     extremePc5mPct: envNum('MILD_DIP_GREEN_EXTREME_PC5M_PCT', 0),
     extremeMinBuySellRatio5m: envNum('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', 1.5),
+    // liquid_tape: high-liq aged + ring-green (0 liq = off).
+    liquidTapeMinLiquidityUsd: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD', 0),
+    liquidTapeMinPairAgeHours: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_PAIR_AGE_HOURS', 1),
+    liquidTapeMinVolume5mUsd: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_VOLUME_5M_USD', 1_200),
+    liquidTapeMinPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_PC5M_PCT', -2),
+    liquidTapeMaxPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MAX_PC5M_PCT', 40),
+    liquidTapeMinBuySellRatio5m: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_BUY_SELL_5M', 0.85),
+    liquidTapeMinRingPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_RING_PC5M_PCT', 5),
   };
 
   const raw = {

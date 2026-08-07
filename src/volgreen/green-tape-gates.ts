@@ -66,6 +66,21 @@ export type GreenTapeGates = {
    */
   extremePc5mPct: number;
   extremeMinBuySellRatio5m: number;
+
+  /**
+   * liquid_tape — high-liq aged runners where Dex pc5m lags the chart/leader
+   * (WW / 14doqPq: Dex +2.8% at leader buy). Ring-green enforced in discover.
+   * 0 minLiquidity = path disabled.
+   */
+  liquidTapeMinLiquidityUsd: number;
+  liquidTapeMinPairAgeHours: number;
+  liquidTapeMinVolume5mUsd: number;
+  /** Soft Dex floor (can be slightly negative — Dex lag). */
+  liquidTapeMinPc5mPct: number;
+  liquidTapeMaxPc5mPct: number;
+  liquidTapeMinBuySellRatio5m: number;
+  /** Local 5m ring floor (%) required in discover after path pass. */
+  liquidTapeMinRingPc5mPct: number;
 };
 
 export type GreenTapeMetrics = {
@@ -79,7 +94,7 @@ export type GreenTapeMetrics = {
   sells5m: number | null;
 };
 
-export type GreenTapePath = 'impulse' | 'liquid' | 'early' | 'rocket';
+export type GreenTapePath = 'impulse' | 'liquid' | 'early' | 'rocket' | 'liquid_tape';
 
 export type GreenTapeVerdict = {
   pass: boolean;
@@ -328,6 +343,62 @@ export function evaluateGreenTapeEntry(
       };
     }
     for (const r of fail) failParts.push(`${name}:${r}`);
+  }
+
+  // liquid_tape last: fat/aged book where Dex pc5m lags (ring checked in discover).
+  if (gates.liquidTapeMinLiquidityUsd > 0) {
+    const ltFail: string[] = [];
+    const liq = metrics.liquidityUsd;
+    if (liq == null || !Number.isFinite(liq)) ltFail.push('missing_liquidity');
+    else if (liq < gates.liquidTapeMinLiquidityUsd) {
+      ltFail.push(`liq=${liq.toFixed(0)}<${gates.liquidTapeMinLiquidityUsd}`);
+    }
+    const age = metrics.pairAgeHours;
+    if (gates.liquidTapeMinPairAgeHours > 0) {
+      if (age == null || !Number.isFinite(age)) ltFail.push('missing_pair_age');
+      else if (age < gates.liquidTapeMinPairAgeHours) {
+        ltFail.push(`age_h=${age.toFixed(2)}<${gates.liquidTapeMinPairAgeHours}`);
+      }
+    }
+    const v = metrics.volume5mUsd;
+    if (v == null || !Number.isFinite(v)) ltFail.push('missing_volume_5m');
+    else if (v < gates.liquidTapeMinVolume5mUsd) {
+      ltFail.push(`vol5m=${v.toFixed(0)}<${gates.liquidTapeMinVolume5mUsd}`);
+    }
+    const pc = metrics.priceChange5mPct;
+    if (pc == null || !Number.isFinite(pc)) ltFail.push('missing_price_change_5m');
+    else {
+      // Soft Dex band — allow slight red (lag); cap chase into already-vertical.
+      if (!(pc > gates.liquidTapeMinPc5mPct)) {
+        ltFail.push(`pc5m=${pc.toFixed(2)}<=${gates.liquidTapeMinPc5mPct}`);
+      }
+      if (gates.liquidTapeMaxPc5mPct > 0 && pc > gates.liquidTapeMaxPc5mPct) {
+        ltFail.push(`pc5m=${pc.toFixed(2)}>${gates.liquidTapeMaxPc5mPct}`);
+      }
+    }
+    if (gates.liquidTapeMinBuySellRatio5m > 0) {
+      if (buySellRatio5m == null) ltFail.push('buy_sell_unknown');
+      else if (buySellRatio5m < gates.liquidTapeMinBuySellRatio5m) {
+        ltFail.push(
+          `buy_sell_5m=${buySellRatio5m.toFixed(2)}<${gates.liquidTapeMinBuySellRatio5m}`,
+        );
+      }
+    }
+    const mcap = metrics.marketCapUsd;
+    if (mcap == null || !Number.isFinite(mcap) || mcap <= 0) ltFail.push('missing_mcap');
+    else if (mcap < gates.minMarketCapUsd) {
+      ltFail.push(`mcap=${mcap.toFixed(0)}<${gates.minMarketCapUsd}`);
+    }
+    if (ltFail.length === 0) {
+      return {
+        pass: true,
+        reasons: [],
+        path: 'liquid_tape',
+        buySellRatio5m,
+        turnover5m,
+      };
+    }
+    for (const r of ltFail) failParts.push(`liquid_tape:${r}`);
   }
 
   return {

@@ -31,6 +31,7 @@ export type MildDipCandidate = {
     | 'green_tape'
     | 'green_tape_impulse'
     | 'green_tape_liquid'
+    | 'green_tape_liquid_tape'
     | 'green_tape_early'
     | 'green_tape_rocket';
   /** Journal helpers — spike multiples when awakening / turnover score. */
@@ -474,7 +475,13 @@ export async function enrichAndFilterCandidates(
           pc5m != null &&
           pc5m > midLo &&
           (midHi <= 0 || pc5m <= midHi);
-        const ringFloor = liquidMid ? Math.max(minRingPc, 8) : minRingPc;
+        // liquid_tape: Dex may lag — ring floor is the real green signal.
+        const ringFloor =
+          verdict.path === 'liquid_tape'
+            ? Math.max(0, cfg.greenTape.liquidTapeMinRingPc5mPct)
+            : liquidMid
+              ? Math.max(minRingPc, 8)
+              : minRingPc;
         // Short-window red (≈1m): block all paths — Dex pc5m can stay green on a dump.
         const shortMs = cfg.greenTapeShortRedWindowMs;
         const shortPc =
@@ -498,7 +505,11 @@ export async function enrichAndFilterCandidates(
           };
         }
         // Impulse/rocket: skip strict 5m ring floor (race the candle) but keep short-red.
-        if (verdict.path !== 'rocket' && verdict.path !== 'impulse') {
+        // liquid_tape MUST have ring green (that's the whole point vs Dex lag).
+        if (
+          verdict.path !== 'rocket' &&
+          verdict.path !== 'impulse'
+        ) {
           if (ringPc == null) {
             return {
               kind: 'skip',
@@ -523,7 +534,8 @@ export async function enrichAndFilterCandidates(
                 reasons: [
                   `ring_not_green:ringPc=${ringPc.toFixed(2)}<=${ringFloor}`,
                   `dex_pc5m=${metrics.priceChange5mPct ?? 'n/a'}`,
-                ],
+                  verdict.path === 'liquid_tape' ? 'path=liquid_tape' : '',
+                ].filter(Boolean),
                 metrics: {
                   ...metrics,
                   buySellRatio5m: verdict.buySellRatio5m,
@@ -535,7 +547,13 @@ export async function enrichAndFilterCandidates(
         }
         // Prefer larger impulse magnitude (leader: wait for a real green, then buy).
         const pathBonus =
-          verdict.path === 'impulse' ? 20 : verdict.path === 'early' ? 5 : 0;
+          verdict.path === 'impulse'
+            ? 20
+            : verdict.path === 'liquid_tape'
+              ? 12
+              : verdict.path === 'early'
+                ? 5
+                : 0;
         const score =
           (verdict.turnover5m ?? 0) * 100 +
           (verdict.buySellRatio5m ?? 0) * 10 +
@@ -550,7 +568,9 @@ export async function enrichAndFilterCandidates(
               ? 'green_tape_rocket'
               : verdict.path === 'early'
                 ? 'green_tape_early'
-                : 'green_tape_liquid';
+                : verdict.path === 'liquid_tape'
+                  ? 'green_tape_liquid_tape'
+                  : 'green_tape_liquid';
         return {
           kind: 'pass',
           cand: {

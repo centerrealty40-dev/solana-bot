@@ -37,6 +37,13 @@ const gates: GreenTapeGates = {
   rocketMinMarketCapUsd: 18_000,
   extremePc5mPct: 0,
   extremeMinBuySellRatio5m: 1.5,
+  liquidTapeMinLiquidityUsd: 0,
+  liquidTapeMinPairAgeHours: 1,
+  liquidTapeMinVolume5mUsd: 1200,
+  liquidTapeMinPc5mPct: -2,
+  liquidTapeMaxPc5mPct: 40,
+  liquidTapeMinBuySellRatio5m: 0.85,
+  liquidTapeMinRingPc5mPct: 5,
 };
 
 describe('evaluateGreenTapeEntry', () => {
@@ -298,6 +305,55 @@ describe('evaluateGreenTapeEntry', () => {
       g,
     );
     expect(strongBs.pass).toBe(true);
+  });
+
+  it('liquid_tape: fat/aged book passes with soft Dex pc when other paths fail', () => {
+    const g: GreenTapeGates = {
+      ...gates,
+      earlyMinPc5mPct: 0,
+      impulseMinPc5mPct: 18,
+      liquidMinPc5mPct: 12,
+      rocketMinPc5mPct: 25,
+      rocketMinVolume5mUsd: 15_000,
+      liquidTapeMinLiquidityUsd: 25_000,
+      liquidTapeMinPairAgeHours: 1,
+      liquidTapeMinVolume5mUsd: 1_200,
+      liquidTapeMinPc5mPct: -2,
+      liquidTapeMaxPc5mPct: 40,
+      liquidTapeMinBuySellRatio5m: 0.85,
+    };
+    // WW-like at leader: Dex still soft, but liq/age/vol ok.
+    const v = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 2.8,
+        volume5mUsd: 1_565,
+        liquidityUsd: 40_770,
+        marketCapUsd: 235_000,
+        pairAgeHours: 34.7,
+        dexId: 'pumpswap',
+        buys5m: 20,
+        sells5m: 20,
+      },
+      g,
+    );
+    expect(v.pass).toBe(true);
+    expect(v.path).toBe('liquid_tape');
+
+    // Thin book must not use liquid_tape.
+    const thin = evaluateGreenTapeEntry(
+      {
+        priceChange5mPct: 3,
+        volume5mUsd: 2_000,
+        liquidityUsd: 10_000,
+        marketCapUsd: 80_000,
+        pairAgeHours: 10,
+        dexId: 'pumpswap',
+        buys5m: 20,
+        sells5m: 15,
+      },
+      g,
+    );
+    expect(thin.pass).toBe(false);
   });
 
   it('earlyMinPc5mPct=0 disables early path', () => {

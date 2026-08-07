@@ -180,6 +180,15 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // Don't chase pc5m>100% without strong buy/sell (4h −60…−97 bucket).
   setIfAbsent('MILD_DIP_GREEN_EXTREME_PC5M_PCT', '100');
   setIfAbsent('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', '1.5');
+  // liquid_tape: fat/aged books when Dex pc5m lags (WW) — ring-green in discover.
+  // Does not raise enrich caps; only re-labels already-probed mints.
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD', '25000');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_PAIR_AGE_HOURS', '1');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_VOLUME_5M_USD', '1200');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_PC5M_PCT', '-2');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MAX_PC5M_PCT', '40');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_BUY_SELL_5M', '0.85');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_RING_PC5M_PCT', '5');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;

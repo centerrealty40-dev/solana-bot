@@ -36,6 +36,15 @@ const greenTape: GreenTapeGates = {
   rocketMinBuySellRatio5m: 1.15,
   rocketMinTurnover5m: 0,
   rocketMinMarketCapUsd: 18_000,
+  extremePc5mPct: 0,
+  extremeMinBuySellRatio5m: 1.5,
+  liquidTapeMinLiquidityUsd: 0,
+  liquidTapeMinPairAgeHours: 1,
+  liquidTapeMinVolume5mUsd: 1200,
+  liquidTapeMinPc5mPct: -2,
+  liquidTapeMaxPc5mPct: 40,
+  liquidTapeMinBuySellRatio5m: 0.85,
+  liquidTapeMinRingPc5mPct: 5,
 };
 
 describe('priorityMintsFromPriceRingGreen', () => {

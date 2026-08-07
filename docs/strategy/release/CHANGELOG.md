@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.726] — 2026-08-07
+
+**Тег:** `sa-1.11.726`
+
+### Feature: liquid_tape path — Dex-lag on fat/aged runners
+
+RCA WW/`14doqPq`: saw mint at −3s but Dex pc5m=+2.8% failed impulse/liquid.
+New path: liq≥$25k, age≥1h, soft Dex pc, then **ring≥5%** in discover.
+No enrich inflate (same probe/buyForce caps). Extreme chase unchanged.
+
+**Откат:** `LIQUID_TAPE_MIN_LIQUIDITY_USD=0`.
+
+---
+
 ## [1.11.725] — 2026-08-07
 
 **Тег:** `sa-1.11.725`
