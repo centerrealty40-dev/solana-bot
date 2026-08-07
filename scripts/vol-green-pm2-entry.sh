@@ -67,6 +67,8 @@ export MILD_DIP_GREEN_MIN_LIQUIDITY_USD="${MILD_DIP_GREEN_MIN_LIQUIDITY_USD:-800
 export MILD_DIP_GREEN_MIN_MCAP_USD="${MILD_DIP_GREEN_MIN_MCAP_USD:-18000}"
 # 0.01h≈36s structural floor; rocket vol bypasses age entirely in gates.
 export MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS="${MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS:-0.01}"
+# 0 = no max pair age (leaders buy aged runners: HORSE/MIM/whitedog).
+export MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS="${MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS:-0}"
 # Real green impulse: pc5m > 5% (0–5% was the closed-set loss zone, not "enough green").
 export MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT="${MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT:-5}"
 export MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD="${MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD:-2000}"

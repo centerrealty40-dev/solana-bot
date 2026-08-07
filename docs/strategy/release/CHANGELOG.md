@@ -1,5 +1,18 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.717] — 2026-08-07
+
+**Тег:** `sa-1.11.717`
+
+### Tune: remove green_tape max pair age ceiling
+
+`MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS=0` (was 72). HORSE/MIM-class aged
+runners were hard-skipped `age_h>72` while 8zkg bought the green.
+
+**Откат:** `MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS=72`.
+
+---
+
 ## [1.11.716] — 2026-08-07
 
 **Тег:** `sa-1.11.716`

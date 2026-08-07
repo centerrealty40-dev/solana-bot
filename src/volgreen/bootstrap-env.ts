@@ -137,7 +137,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '18000');
   // Structural floor; rocket-tier vol bypasses age (enter ~with leaders).
   setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.01');
-  setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '72');
+  // 0 = no max age — 8zkg often hits aged runners (HORSE ~450h, MIM ~500h).
+  setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '0');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '5');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2000');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', '0.09');
