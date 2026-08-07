@@ -45,7 +45,7 @@ const exitGates: MildDipExitGates = {
   givebackPct: 8,
   neverArmPatienceMs: 0,
   neverArmMaxHoldMs: 5_400_000,
-  neverArmDeadMinMs: 900_000,
+  neverArmDeadMinMs: 1_800_000,
   neverArmDeadPnlPct: 10,
   neverArmStaleMinMs: 600_000,
   neverArmStaleMaxMfePct: 2,
@@ -469,7 +469,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).not.toBe('never_arm_stale');
   });
 
-  it('never-arm dead cut: unarmed + pnl ≤ −10% after 15m (stale off)', () => {
+  it('never-arm dead cut: unarmed + pnl ≤ −10% after 30m (stale off)', () => {
     const gatesNoStale = { ...exitGates, neverArmStaleMinMs: 0, neverArmStalePnlPct: 0 };
     const hold = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -477,7 +477,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       peakPriceUsd: 103, // MFE 3% — above stale max if stale were on
       armed: false,
       gates: gatesNoStale,
-      heldMs: 600_000,
+      heldMs: 900_000, // 15m — under 30m floor
     });
     expect(hold.shouldExit).toBe(false);
 
@@ -487,7 +487,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       peakPriceUsd: 103,
       armed: false,
       gates: gatesNoStale,
-      heldMs: 900_000,
+      heldMs: 1_800_000,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('never_arm_dead');
@@ -502,7 +502,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       peakPriceUsd: 100,
       armed: false,
       gates: gatesNoStale,
-      heldMs: 900_000,
+      heldMs: 1_800_000,
     });
     expect(v.shouldExit).toBe(false);
   });
