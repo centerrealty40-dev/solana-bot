@@ -22,6 +22,18 @@ describe('execution-retry-errors', () => {
     expect(isRetryableSellSimError('sim_failed:InstructionError')).toBe(true);
   });
 
+  it('sell retries BlockhashNotFound / rpc_error pre-send sim (fresh quote+blockhash)', () => {
+    const blockhashMsg =
+      'rpc_error:Transaction simulation failed: Blockhash not found:BlockhashNotFound';
+    expect(isPreSendSimFailureMessage(blockhashMsg)).toBe(true);
+    expect(isRetryableSellSimError(blockhashMsg)).toBe(true);
+    expect(
+      isRetryableSellSimError(
+        'rpc_error:Transaction simulation failed: Error processing Instruction 3: custom program error: 0x1771',
+      ),
+    ).toBe(true);
+  });
+
   it('buy retries send_failed but not insufficient funds or swap-http-429', () => {
     expect(isRetryableBuySimError('swap-http-429')).toBe(false);
     expect(isRetryableBuySimError('send_failed:429')).toBe(true);

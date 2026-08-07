@@ -14,6 +14,11 @@ export type MildDipOpenPosition = {
   peakPriceUsd?: number;
   /** W9.1 trail armed after MFE ≥ armPct. */
   trailArmed?: boolean;
+  /**
+   * Sticky exit after a failed sell (e.g. BlockhashNotFound). While set, every
+   * mark re-queues the same exit reason — bounce must not clear giveback.
+   */
+  exitPendingReason?: string | null;
   /** 5m Dex volume at entry — baseline for the activity-fade exit. */
   entryVolume5mUsd?: number | null;
 };

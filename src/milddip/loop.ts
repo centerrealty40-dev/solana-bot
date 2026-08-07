@@ -713,8 +713,25 @@ async function executeQueuedSell(args: {
     return;
   }
 
-  // Keep `state.open[mint]` — retry next mark pass. Never orphan on soft fail.
-  console.warn(`[mild-dip] sell failed ${mint.slice(0, 8)}…: ${reason} (still tracking)`);
+  // Keep `state.open[mint]` — sticky-exit so a bounce cannot clear giveback
+  // before the next mark re-queues the sell (AwvwgWt BlockhashNotFound).
+  if (state.open[mint]) {
+    state.open[mint]!.exitPendingReason = decision.reason;
+    saveMildDipState(cfg.statePath, state);
+  }
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mild_dip_sticky_exit',
+    mint,
+    symbol: pos.symbol,
+    exitReason: decision.reason,
+    sellReason: reason,
+    mfePct: +decision.mfePct.toFixed(2),
+    givebackPct: +decision.givebackPct.toFixed(2),
+    pnlPct: +decision.pnlPct.toFixed(2),
+  });
+  console.warn(
+    `[mild-dip] sell failed ${mint.slice(0, 8)}…: ${reason} (sticky exit=${decision.reason}, still tracking)`,
+  );
 }
 
 /**

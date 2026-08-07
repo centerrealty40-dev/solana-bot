@@ -7,6 +7,9 @@
 (`MILD_DIP_ENTRY_MODE=awakening` still available)  
 **Floors (1.11.708):** liq ≥ $8k (or null if vol5m rocket-tier), mcap ≥ $18k,
 pair age ≥ 0.05h, rocket pc5m ≥ 15% / vol5m ≥ $8k  
+**Exit harden (1.11.709):** sticky `exitPendingReason` after soft sell fail;
+sell pipeline retries `BlockhashNotFound` / rpc sim errors with fresh quote.  
+
 
 **Exit:** same W9.1 stack as Oscar `mild-dip-bot` (arm +8% / giveback −6% / never-arm / vol-fade)  
 **RPC:** Helius from `/opt/lera/.env`  

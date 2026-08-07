@@ -1,5 +1,24 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.709] — 2026-08-07
+
+**Тег:** `sa-1.11.709`
+
+### Fix: sticky peak_giveback + BlockhashNotFound sell retry (AwvwgWt)
+
+AwvwgWt 10:47 MSK: `peak_giveback` fired (giveback −17%) but sell failed
+`BlockhashNotFound`; bounce cleared giveback so next sell waited until a new
+peak and filled −2%.
+
+1. `isRetryableSellSimError` now retries pre-send `rpc_error` / Blockhash (fresh
+   Jupiter quote+blockhash inside sell envelope).
+2. Soft sell fail sets `exitPendingReason` — every mark re-queues exit and
+   freezes peak HWM until bag is flat (`mild_dip_sticky_exit` journal).
+
+**Откат:** remove sticky field handling; restore prior sell-retry classifier.
+
+---
+
 ## [1.11.708] — 2026-08-07
 
 **Тег:** `sa-1.11.708`

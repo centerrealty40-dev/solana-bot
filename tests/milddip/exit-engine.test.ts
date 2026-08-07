@@ -18,19 +18,21 @@ function pos(partial: Partial<MildDipOpenPosition> & { mint: string }): MildDipO
     buySignature: partial.buySignature ?? null,
     peakPriceUsd: partial.peakPriceUsd,
     trailArmed: partial.trailArmed,
+    exitPendingReason: partial.exitPendingReason,
     mint: partial.mint,
   };
 }
 
 describe('orderMintsForMark', () => {
-  it('puts armed positions first, then older opens', () => {
+  it('puts sticky exits first, then armed, then older opens', () => {
     const open = {
       a: pos({ mint: 'a', openedAtMs: 100, trailArmed: false }),
       b: pos({ mint: 'b', openedAtMs: 300, trailArmed: true }),
       c: pos({ mint: 'c', openedAtMs: 200, trailArmed: false }),
       d: pos({ mint: 'd', openedAtMs: 50, trailArmed: true }),
+      e: pos({ mint: 'e', openedAtMs: 400, trailArmed: false, exitPendingReason: 'peak_giveback' }),
     };
-    expect(orderMintsForMark(open)).toEqual(['d', 'b', 'a', 'c']);
+    expect(orderMintsForMark(open)).toEqual(['e', 'd', 'b', 'a', 'c']);
   });
 });
 
@@ -221,6 +223,30 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       volume5mUsd: 50,
     });
     expect(d?.shouldExit).toBe(false);
+  });
+
+  it('sticky exitPendingReason forces sell and freezes peak through a bounce', () => {
+    const p = pos({
+      mint: 'mSticky',
+      entryPriceUsd: 100,
+      peakPriceUsd: 130,
+      trailArmed: true,
+      exitPendingReason: 'peak_giveback',
+      openedAtMs: 1_000_000,
+    });
+    // Bounce above giveback threshold — without sticky this would not exit.
+    const d = decideMarkExit({
+      mint: 'mSticky',
+      pos: p,
+      markPriceUsd: 140,
+      gates,
+      nowMs: 1_060_000,
+    });
+    expect(d?.shouldExit).toBe(true);
+    expect(d?.reason).toBe('peak_giveback');
+    expect(d?.peakPriceUsd).toBe(130); // frozen — bounce must not raise HWM
+    applyMarkDecisionToPosition(p, d!);
+    expect(p.peakPriceUsd).toBe(130);
   });
 });
 

@@ -19,11 +19,14 @@ export type MarkExitDecision = {
   pnlPct: number;
 };
 
-/** Armed positions first (trail can fire), then older opens. */
+/** Sticky exits first, then armed (trail can fire), then older opens. */
 export function orderMintsForMark(open: Record<string, MildDipOpenPosition>): string[] {
   return Object.keys(open).sort((a, b) => {
     const pa = open[a];
     const pb = open[b];
+    const sa = pa?.exitPendingReason ? 1 : 0;
+    const sb = pb?.exitPendingReason ? 1 : 0;
+    if (sa !== sb) return sb - sa;
     const aa = pa?.trailArmed === true ? 1 : 0;
     const ab = pb?.trailArmed === true ? 1 : 0;
     if (aa !== ab) return ab - aa;
@@ -50,6 +53,43 @@ export function decideMarkExit(args: {
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
   const nowMs = args.nowMs ?? Date.now();
   const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
+
+  // Sticky exit: keep forcing sell after a soft fail; freeze peak so a bounce
+  // cannot raise HWM and clear giveback before the bag is flat.
+  const stickyRaw = typeof pos.exitPendingReason === 'string' ? pos.exitPendingReason.trim() : '';
+  const stickyReasons: ReadonlySet<string> = new Set([
+    'peak_giveback',
+    'never_arm_giveback',
+    'never_arm_dead',
+    'never_arm_vol_fade',
+    'never_arm_timeout',
+  ]);
+  if (stickyRaw && stickyReasons.has(stickyRaw)) {
+    const sticky = stickyRaw as Exclude<MildDipExitReason, null>;
+    const mfePct =
+      peakPrev > 0 && pos.entryPriceUsd > 0
+        ? ((peakPrev / pos.entryPriceUsd - 1) * 100)
+        : 0;
+    const givebackPct =
+      markPriceUsd > 0 && peakPrev > 0 ? ((markPriceUsd / peakPrev - 1) * 100) : 0;
+    const pnlPct =
+      pos.entryPriceUsd > 0 && markPriceUsd > 0
+        ? ((markPriceUsd / pos.entryPriceUsd - 1) * 100)
+        : 0;
+    return {
+      mint,
+      markPriceUsd,
+      peakPriceUsd: peakPrev,
+      armed: true,
+      justArmed: false,
+      shouldExit: true,
+      reason: sticky,
+      mfePct,
+      givebackPct,
+      pnlPct,
+    };
+  }
+
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
     markPriceUsd,

@@ -39,6 +39,9 @@ export function isRetryableSellSimError(message: string): boolean {
   if (message.startsWith('confirm_timeout')) return false;
   if (isRetryablePreBroadcastError(message)) return true;
   if (message.startsWith('send_failed')) return true;
+  // AwvwgWt 10:47 — BlockhashNotFound / rpc_error pre-send sim must rebuild quote
+  // with a fresh blockhash inside the sell retry envelope (same class as buys).
+  if (isPreSendSimFailureMessage(message)) return true;
   return message.startsWith('sim_failed:') || message.includes('InstructionError');
 }
 
