@@ -12,7 +12,6 @@ import {
   enrichAndFilterCandidates,
   priorityMintsFromCooldown,
   priorityMintsFromPriceRingGreen,
-  type EntrySkip,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
