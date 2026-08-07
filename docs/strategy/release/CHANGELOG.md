@@ -1,4 +1,24 @@
 # So
+## [1.11.715] — 2026-08-07
+
+**Тег:** `sa-1.11.715`
+
+### Fix: fee-SOL topup urgent path (Cg1h miss)
+
+Leader `2FkASi…` on **Cg1h** seeded OK (~+25s), but buys were dead ~30m:
+210× `mild_dip_funding_block` `insufficient_fee_sol sol≈0.016<0.02` while
+USDC ~$112. Topup only checks every **6h** and had already logged `ok` at
+start — so drained fee SOL (U5cWTi sell-spam) bricked entries until restart.
+
+**Changes:**
+1. Urgent topup when `sol < minFeeSolReserve` or value `< minUsd` (60s gap).
+2. `insufficient_fee_sol` → kick urgent topup; return `skip` not `stop`.
+3. Funding-block journal includes mint/lane.
+
+**Откат:** revert `fee-sol-topup.ts` / `entry-attempt.ts` + reload.
+
+---
+
 ## [1.11.714] — 2026-08-07
 
 **Тег:** `sa-1.11.714`
