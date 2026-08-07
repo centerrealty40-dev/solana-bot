@@ -13,12 +13,6 @@ function envNum(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function envBool(name: string, fallback: boolean): boolean {
-  const v = process.env[name]?.trim().toLowerCase();
-  if (!v) return fallback;
-  return v === '1' || v === 'true' || v === 'yes';
-}
-
 const MildDipConfigSchema = z.object({
   executionMode: ExecutionModeSchema,
   rpcUrl: z.string().min(8),
@@ -80,15 +74,6 @@ const MildDipConfigSchema = z.object({
   /** Candidate mint sources: comma list — stream,boosts,profiles,seed */
   discoverSources: z.string().default('stream,boosts,profiles'),
   seedMintsPath: z.string().optional(),
-  /** Optional bounded polling of leader wallets; adds recent leader buys to discovery. */
-  leaderSourceWallets: z.array(z.string()).default([]),
-  leaderSourceLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(900_000),
-  leaderSourceCacheMs: z.coerce.number().int().min(5_000).max(300_000).default(15_000),
-  /** Leader-only branch: red 1h context permits shallower red 5m pullbacks. */
-  leaderShallowH1RedEnabled: z.boolean().default(false),
-  leaderShallowH1MaxPct: z.coerce.number().max(0).default(-15),
-  leaderShallowMinDipPct: z.coerce.number().default(-10),
-  leaderShallowMaxDipPct: z.coerce.number().max(0).default(-3),
   /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
   streamEnabled: z.boolean().default(true),
   streamWsUrl: z.string().optional(),
@@ -192,10 +177,6 @@ export function loadMildDipConfig(): MildDipConfig {
     .map((s) => s.trim())
     .filter((s) => s.length >= 32);
   const deniedMints = [...new Set([...defaultDenied, ...deniedExtra])];
-  const leaderSourceWallets = (process.env.MILD_DIP_LEADER_SOURCE_WALLETS ?? '')
-    .split(',')
-    .map((s) => s.trim())
-    .filter((s) => s.length >= 32);
 
   /**
    * W9.1 peak-giveback + never-armed finite exits (no infinite hold).
@@ -259,13 +240,6 @@ export function loadMildDipConfig(): MildDipConfig {
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
-    leaderSourceWallets,
-    leaderSourceLookbackMs: process.env.MILD_DIP_LEADER_SOURCE_LOOKBACK_MS ?? 900_000,
-    leaderSourceCacheMs: process.env.MILD_DIP_LEADER_SOURCE_CACHE_MS ?? 15_000,
-    leaderShallowH1RedEnabled: envBool('MILD_DIP_LEADER_SHALLOW_H1_RED_ENABLED', false),
-    leaderShallowH1MaxPct: envNum('MILD_DIP_LEADER_SHALLOW_H1_MAX_PCT', -15),
-    leaderShallowMinDipPct: envNum('MILD_DIP_LEADER_SHALLOW_MIN_DIP_PCT', -10),
-    leaderShallowMaxDipPct: envNum('MILD_DIP_LEADER_SHALLOW_MAX_DIP_PCT', -3),
     streamEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM?.trim().toLowerCase();
       if (!v) return true;

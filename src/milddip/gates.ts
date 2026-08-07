@@ -19,7 +19,6 @@ export type MildDipCandidateMetrics = {
   /** DexScreener m5 sell count — journaled; optional entry use. */
   sells5m: number | null;
   volume1hUsd: number | null;
-  priceChange1hPct: number | null;
 };
 
 export type MildDipEntryGates = {
