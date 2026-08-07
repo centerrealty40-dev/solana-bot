@@ -473,7 +473,18 @@ async function executeQueuedSell(args: {
     lossCooldownMs: cfg.lossCooldownMs,
   });
 
+  const noteLastExit = (exitPx: number): void => {
+    if (!(exitPx > 0)) return;
+    if (!state.lastExitByMint) state.lastExitByMint = {};
+    state.lastExitByMint[mint] = {
+      priceUsd: exitPx,
+      atMs: nowMs,
+      pnlPct: +realizedPnl.toFixed(2),
+    };
+  };
+
   if (sell.ok) {
+    const exitPx = sell.priceUsd || decision.markPriceUsd;
     if (isPartial && state.open[mint]) {
       // Leave the runner: mark scale-out done, shrink notional, refresh raw.
       const live = state.open[mint]!;
@@ -488,6 +499,7 @@ async function executeQueuedSell(args: {
         // Dust / empty after "partial" — treat as full close.
         delete state.open[mint];
         state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
+        noteLastExit(exitPx);
         saveMildDipState(cfg.statePath, state);
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_cooldown_set',
@@ -498,6 +510,7 @@ async function executeQueuedSell(args: {
           cooldownKind: cd.kind,
           exitReason: decision.reason,
           note: 'partial_left_dust',
+          lastExitPriceUsd: exitPx,
         });
         console.log(
           `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} (partial→flat) ` +
@@ -523,6 +536,7 @@ async function executeQueuedSell(args: {
     if (state.open[mint]) {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
+      noteLastExit(exitPx);
       saveMildDipState(cfg.statePath, state);
     }
     appendMildDipJournal(cfg.journalPath, {
@@ -533,6 +547,7 @@ async function executeQueuedSell(args: {
       cooldownMs: cd.cooldownMs,
       cooldownKind: cd.kind,
       exitReason: decision.reason,
+      lastExitPriceUsd: exitPx,
     });
     console.log(
       `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} pnl=${realizedPnl.toFixed(1)}% ` +
@@ -830,6 +845,7 @@ export async function runMildDipLoop(
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0} ` +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
       `/skipBounce=${cfg.fastPathSkipBounce ? 1 : 0}` +
+      `/rebuyBelowExit=${cfg.rebuyBelowExitPct}%/${Math.round(cfg.rebuyBelowExitMaxAgeMs / 1000)}s` +
       `/hotDexProbe=${cfg.fastPathHotDexProbeEnabled ? 1 : 0}` +
       `@${cfg.fastPathHotDexProbeGapMs}ms≤${cfg.fastPathHotDexProbeMaxPerMin}/min ` +
       `/enrichMax=${cfg.enrichMax} ` +

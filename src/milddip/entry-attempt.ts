@@ -12,6 +12,7 @@ import { noteStructuralCache } from './fast-path.js';
 import {
   evaluateCooldownBounce,
   evaluateMildDipPreBuy,
+  evaluateRebuyBelowExit,
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
@@ -255,6 +256,38 @@ export async function attemptMildDipEntry(args: {
         }
         entryPriceUsd = freshPx;
       }
+    }
+  }
+
+  // Always on (incl. fast-path): do not rebuy near last exit USD price.
+  // Scale-in into an open bag is exempt.
+  if (!isScaleIn && cfg.rebuyBelowExitPct > 0) {
+    const last = state.lastExitByMint?.[c.mint];
+    const markPx = freshPx ?? entryPriceUsd;
+    const rebuy = evaluateRebuyBelowExit({
+      freshPriceUsd: markPx,
+      lastExitPriceUsd: last?.priceUsd,
+      lastExitAtMs: last?.atMs,
+      nowMs,
+      minBelowExitPct: cfg.rebuyBelowExitPct,
+      maxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
+    });
+    if (!rebuy.pass) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_rebuy_below_exit_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        lane: opts.lane,
+        freshPriceUsd: markPx,
+        lastExitPriceUsd: last?.priceUsd ?? null,
+        lastExitAtMs: last?.atMs ?? null,
+        reasons: rebuy.reasons,
+      });
+      console.log(
+        `[mild-dip] SKIP rebuy-exit ${c.symbol} mint=${c.mint.slice(0, 8)}… ${rebuy.reasons.join(',')}`,
+      );
+      state.cooldownUntilMs[c.mint] = nowMs + softCd;
+      return 'skip';
     }
   }
 

@@ -28,10 +28,19 @@ export type MildDipOpenPosition = {
   volFadeSamples?: Array<{ ts: number; vol: number }>;
 };
 
+/** Last full exit — block rebuy near the same USD price (no Dex needed). */
+export type MildDipLastExit = {
+  priceUsd: number;
+  atMs: number;
+  pnlPct?: number;
+};
+
 export type MildDipState = {
   open: Record<string, MildDipOpenPosition>;
   /** mint → last close/attempt ms (cooldown). */
   cooldownUntilMs: Record<string, number>;
+  /** mint → last full-exit fill/mark price for same-price rebuy guard. */
+  lastExitByMint?: Record<string, MildDipLastExit>;
   /** mint → deep-knife watch (wait for stabilize / bounce). */
   knifeWatch?: Record<string, KnifeWatchEntry>;
   updatedAtMs: number;
@@ -78,8 +87,27 @@ function sanitizeKnifeWatch(
   return out;
 }
 
+function sanitizeLastExitByMint(raw: unknown): Record<string, MildDipLastExit> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, MildDipLastExit> = {};
+  for (const [mint, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!mint || mint.length < 32 || !v || typeof v !== 'object') continue;
+    const o = v as Partial<MildDipLastExit>;
+    const priceUsd = Number(o.priceUsd);
+    const atMs = Number(o.atMs);
+    if (!(priceUsd > 0) || !(atMs > 0)) continue;
+    const pnlPct = Number(o.pnlPct);
+    out[mint] = {
+      priceUsd,
+      atMs,
+      ...(Number.isFinite(pnlPct) ? { pnlPct } : {}),
+    };
+  }
+  return out;
+}
+
 export function emptyMildDipState(nowMs = Date.now()): MildDipState {
-  return { open: {}, cooldownUntilMs: {}, knifeWatch: {}, updatedAtMs: nowMs };
+  return { open: {}, cooldownUntilMs: {}, lastExitByMint: {}, knifeWatch: {}, updatedAtMs: nowMs };
 }
 
 export function loadMildDipState(statePath: string): MildDipState {
@@ -93,6 +121,7 @@ export function loadMildDipState(statePath: string): MildDipState {
         parsed.cooldownUntilMs && typeof parsed.cooldownUntilMs === 'object'
           ? parsed.cooldownUntilMs
           : {},
+      lastExitByMint: sanitizeLastExitByMint(parsed.lastExitByMint),
       knifeWatch: sanitizeKnifeWatch(parsed.knifeWatch),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),
     };

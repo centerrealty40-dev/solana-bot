@@ -1,4 +1,28 @@
 # So
+## [1.11.718] — 2026-08-07
+
+**Тег:** `sa-1.11.718`
+
+### Fix: no same-price rebuy after exit (stream mark, no Dex)
+
+Green-candle buys after our own sell / reclaim: stream still prints dump
+while price is back at the exit. Do **not** add DexScreener latency.
+
+**Changes:**
+1. Persist `lastExitByMint` (exit USD + ts) on full close.
+2. Rebuy only if mark is ≥ **4%** below that exit (15m memory) —
+   `evaluateRebuyBelowExit` on fast + slow (scale-in exempt).
+3. `FAST_PATH_SKIP_BOUNCE=0` — trough-bounce guard stays on.
+
+**Env:**
+`MILD_DIP_REBUY_BELOW_EXIT_PCT=4`
+`MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS=900000`
+`MILD_DIP_FAST_PATH_SKIP_BOUNCE=0`
+
+**Откат:** `REBUY_BELOW_EXIT_PCT=0` + `SKIP_BOUNCE=1` + reload.
+
+---
+
 ## [1.11.717] — 2026-08-07
 
 **Тег:** `sa-1.11.717`

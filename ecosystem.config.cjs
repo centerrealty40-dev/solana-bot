@@ -2976,7 +2976,11 @@ const PM2_APPS = [
         /** Stream/leader fast-path — skip Dex enrich batch. */
         MILD_DIP_FAST_PATH: '1',
         MILD_DIP_FAST_PATH_CHASE_PCT: '12',
-        MILD_DIP_FAST_PATH_SKIP_BOUNCE: '1',
+        /** Keep bounce guard on fast-path — reclaim candles are not dumps. */
+        MILD_DIP_FAST_PATH_SKIP_BOUNCE: '0',
+        /** After full exit: rebuy only if mark ≥4% below exit (15m memory). */
+        MILD_DIP_REBUY_BELOW_EXIT_PCT: '4',
+        MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
         MILD_DIP_FAST_PATH_MIN_GAP_MS: '2000',
         /** No soft-ban after impact/sim fail — retry next tick (Jupiter, not Helius). */
         MILD_DIP_FAST_PATH_SOFT_SKIP_MS: '0',
