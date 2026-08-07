@@ -2931,6 +2931,7 @@ const PM2_APPS = [
         /** Abort if mark/quote already bounced >4% off the dip signal (LARP green-candle chase). */
         MILD_DIP_PREBUY_REVALIDATE: '1',
         MILD_DIP_MAX_CHASE_PCT: '4',
+        MILD_DIP_QUOTE_PREMIUM_GUARD_PCT: '8',
         LIVE_BUY_MAX_CHASE_PCT: '4',
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',

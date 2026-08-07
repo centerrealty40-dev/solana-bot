@@ -56,7 +56,7 @@ export function mildDipToCopyTraderConfig(cfg: MildDipConfig): CopyTraderConfig 
     minProportionalSellFraction: 0,
     buyPriceMaxPremiumPct: cfg.maxChasePct > 0 ? cfg.maxChasePct : 5,
     /** Anchor = signal / pre-buy mark passed as leaderPriceUsd from the loop. */
-    quotePremiumGuardPct: cfg.maxChasePct,
+    quotePremiumGuardPct: cfg.quotePremiumGuardPct,
     quotePremiumFirstShotPct: 0,
     quotePremiumGraceMs: 0,
     entryFullMcapUsd: 0,

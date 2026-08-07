@@ -97,6 +97,8 @@ const MildDipConfigSchema = z.object({
   preBuyRevalidate: z.boolean().default(true),
   /** Max % mark can rise vs signal price before abort (0 = chase check off). */
   maxChasePct: z.coerce.number().min(0).max(50).default(4),
+  /** Max executable quote premium vs signal anchor; separate from prebuy chase. */
+  quotePremiumGuardPct: z.coerce.number().min(0).max(50).default(8),
   entry: z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
@@ -268,6 +270,7 @@ export function loadMildDipConfig(): MildDipConfig {
       return v === '1' || v === 'true' || v === 'yes';
     })(),
     maxChasePct: process.env.MILD_DIP_MAX_CHASE_PCT ?? 4,
+    quotePremiumGuardPct: process.env.MILD_DIP_QUOTE_PREMIUM_GUARD_PCT ?? 8,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
     cooldownBounceLookbackMs: process.env.MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS ?? 300_000,
     streamDipEntryEnabled: (() => {
