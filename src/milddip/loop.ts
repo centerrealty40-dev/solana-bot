@@ -10,6 +10,7 @@ import {
   collectCandidateMints,
   enrichAndFilterCandidates,
   priorityMintsFromCooldown,
+  priorityMintsFromKnifeWatch,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
@@ -23,6 +24,7 @@ import {
 } from './exit-engine.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import { evaluateCooldownBounce, evaluateMildDipPreBuy } from './gates.js';
+import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -271,14 +273,34 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const priority = priorityMintsFromCooldown(state.cooldownUntilMs, nowMs, {
     postCooldownMs: 120_000,
   });
-  const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
-  const candidates = await enrichAndFilterCandidates(cfg, mints, {
+  const knifePriority = priorityMintsFromKnifeWatch(state.knifeWatch);
+  const forceEnrich = [...new Set([...priority, ...knifePriority])];
+  const mints = await collectCandidateMints(cfg, { priorityMints: forceEnrich, nowMs });
+  const enrichPass = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
     maxEnrich: 80,
     enrichConcurrency: cfg.enrichConcurrency,
-    // Keep Dex marks flowing for cooling mints even when they won't buy yet.
-    forceEnrich: priority,
+    // Keep Dex marks flowing for cooling / knife-watch mints even when they
+    // won't buy yet.
+    forceEnrich,
+    knifeWatch: state.knifeWatch ?? {},
   });
+  state.knifeWatch = enrichPass.knifeWatch;
+  for (const ev of enrichPass.knifeEvents) {
+    appendMildDipJournal(cfg.journalPath, ev);
+    const k = String(ev.kind ?? '');
+    if (k === 'mild_dip_knife_watch_start') {
+      console.log(
+        `[mild-dip] KNIFE watch ${String(ev.mint).slice(0, 8)}… dip=${ev.knifeDipPct} wait=${cfg.knifeStabilizeWaitMs}ms`,
+      );
+    } else if (k === 'mild_dip_knife_ready') {
+      console.log(
+        `[mild-dip] KNIFE ready ${String(ev.mint).slice(0, 8)}… mode=${ev.mode} bounce=${ev.bouncePct}`,
+      );
+    }
+  }
+  saveMildDipState(cfg.statePath, state);
+  const candidates = enrichPass.candidates;
   const copyCfg = mildDipToCopyTraderConfig(cfg);
 
   let filled = 0;
@@ -332,6 +354,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     let entryPriceUsd = c.priceUsd;
     let entryPc5m = c.metrics.priceChange5mPct;
     let freshPx: number | null = c.priceUsd;
+    const isKnife = c.dipSource === 'knife_stabilize';
     if (cfg.preBuyRevalidate) {
       const freshNow = Date.now();
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
@@ -344,18 +367,27 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
-      const pre = evaluateMildDipPreBuy({
-        signalPriceUsd: c.priceUsd,
-        freshPriceUsd: freshPx,
-        freshPc5mPct: freshPc,
-        entryGates: cfg.entry,
-        maxChasePct: cfg.maxChasePct,
-      });
+      const pre = isKnife
+        ? evaluateKnifeStabilizePreBuy({
+            signalPriceUsd: c.priceUsd,
+            freshPriceUsd: freshPx,
+            troughPriceUsd: c.knifeWatch?.troughPriceUsd ?? null,
+            maxChasePct: cfg.maxChasePct,
+            maxBouncePct: cfg.knifeStabilizeMaxBouncePct,
+          })
+        : evaluateMildDipPreBuy({
+            signalPriceUsd: c.priceUsd,
+            freshPriceUsd: freshPx,
+            freshPc5mPct: freshPc,
+            entryGates: cfg.entry,
+            maxChasePct: cfg.maxChasePct,
+          });
       if (!pre.pass) {
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_prebuy_skip',
           mint: c.mint,
           symbol: c.symbol,
+          dipSource: c.dipSource,
           signalPriceUsd: c.priceUsd,
           signalPc5m: c.metrics.priceChange5mPct,
           freshPriceUsd: freshPx,
@@ -370,21 +402,30 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         continue;
       }
       if (freshPx != null) entryPriceUsd = freshPx;
-      if (freshPc != null) entryPc5m = freshPc;
+      if (!isKnife && freshPc != null) entryPc5m = freshPc;
     }
 
     // After cooldown: refuse if we already bounced too far off the observed trough.
+    // Knife-stabilize intentionally buys a controlled bounce — use its own cap.
     // Lookback covers the longer loss-cooldown window so a 10m dump trough is visible.
     const bounceLookbackMs = Math.max(
       cfg.cooldownBounceLookbackMs,
       cfg.mintCooldownMs,
       cfg.lossCooldownMs,
     );
-    const trough = mildDipPriceRing.minPrice(c.mint, bounceLookbackMs, nowMs);
+    const trough = isKnife
+      ? c.knifeWatch
+        ? {
+            priceUsd: c.knifeWatch.troughPriceUsd,
+            tsMs: c.knifeWatch.troughAtMs,
+            source: 'dex' as const,
+          }
+        : mildDipPriceRing.minPrice(c.mint, bounceLookbackMs, nowMs)
+      : mildDipPriceRing.minPrice(c.mint, bounceLookbackMs, nowMs);
     const bounce = evaluateCooldownBounce({
       freshPriceUsd: freshPx ?? entryPriceUsd,
       troughPriceUsd: trough?.priceUsd ?? null,
-      maxBouncePct: cfg.maxCooldownBouncePct,
+      maxBouncePct: isKnife ? cfg.knifeStabilizeMaxBouncePct : cfg.maxCooldownBouncePct,
       requireTrough: false,
     });
     if (!bounce.pass) {
@@ -395,7 +436,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         freshPriceUsd: freshPx ?? entryPriceUsd,
         troughPriceUsd: trough?.priceUsd ?? null,
         troughTsMs: trough?.tsMs ?? null,
-        troughSource: trough?.source ?? null,
+        troughSource: trough && 'source' in trough ? trough.source : null,
         sampleCount: mildDipPriceRing.sampleCount(c.mint, bounceLookbackMs, nowMs),
         lookbackMs: bounceLookbackMs,
         dipSource: c.dipSource,
@@ -426,6 +467,9 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       trailArmed: false,
       entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     };
+    if (state.knifeWatch?.[c.mint]) {
+      delete state.knifeWatch[c.mint];
+    }
     saveMildDipState(cfg.statePath, state);
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_buy_reserved',
@@ -433,6 +477,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       symbol: c.symbol,
       sizeUsd: sized.sizeUsd,
       priceUsd: entryPriceUsd,
+      dipSource: c.dipSource,
+      knifeMode: c.knifeMode ?? null,
     });
 
     const leaderSig = `milddip_${c.mint.slice(0, 8)}_${nowMs}`;
@@ -950,6 +996,10 @@ export async function runMildDipLoop(
       `jupPriority=${jupPriority} jupFeeCapSol=${jupFeeCapSol} ` +
       `maxCooldownBouncePct=${cfg.maxCooldownBouncePct} ` +
       `lookback=${cfg.cooldownBounceLookbackMs}ms ` +
+      `knifeStabilize=${cfg.knifeStabilizeEnabled ? 1 : 0}` +
+      `(${cfg.knifeStabilizeMinDipPct},${cfg.knifeStabilizeMaxDipPct}]` +
+      `/wait${Math.round(cfg.knifeStabilizeWaitMs / 1000)}s` +
+      `/bounce[${cfg.knifeStabilizeMinBouncePct},${cfg.knifeStabilizeMaxBouncePct}] ` +
       `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +
       `lossCooldown=${Math.round(cfg.lossCooldownMs / 1000)}s ` +
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,

@@ -13,6 +13,13 @@ import {
   type MildDipCandidateMetrics,
 } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
+import {
+  evaluateKnifeStabilizeReady,
+  isKnifeDipPct,
+  upsertKnifeWatch,
+  type KnifeStabilizeGates,
+  type KnifeWatchEntry,
+} from './knife-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 export type MildDipCandidate = {
@@ -21,7 +28,11 @@ export type MildDipCandidate = {
   priceUsd: number;
   metrics: MildDipCandidateMetrics;
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
-  dipSource: 'dex' | 'stream' | 'dex+stream';
+  dipSource: 'dex' | 'stream' | 'dex+stream' | 'knife_stabilize';
+  /** Present when dipSource=knife_stabilize. */
+  knifeMode?: 'bounce' | 'stabilize';
+  knifeBouncePct?: number | null;
+  knifeWatch?: KnifeWatchEntry;
 };
 
 const SOLANA_CHAIN = 'solana';
@@ -102,6 +113,40 @@ export function priorityMintsFromCooldown(
   return out;
 }
 
+/** Keep enriching active deep-knife watches so trough / bounce can resolve. */
+export function priorityMintsFromKnifeWatch(
+  knifeWatch: Record<string, KnifeWatchEntry> | undefined,
+): string[] {
+  if (!knifeWatch) return [];
+  return Object.keys(knifeWatch).filter((m) => m.length >= 32);
+}
+
+function knifeGatesFromConfig(cfg: MildDipConfig): KnifeStabilizeGates {
+  return {
+    enabled: cfg.knifeStabilizeEnabled,
+    minDipPct: cfg.knifeStabilizeMinDipPct,
+    maxDipPct: cfg.knifeStabilizeMaxDipPct,
+    waitMs: cfg.knifeStabilizeWaitMs,
+    maxWatchMs: cfg.knifeStabilizeMaxWatchMs,
+    quietMs: cfg.knifeStabilizeQuietMs,
+    stabilizeBandPct: cfg.knifeStabilizeBandPct,
+    minBouncePct: cfg.knifeStabilizeMinBouncePct,
+    maxBouncePct: cfg.knifeStabilizeMaxBouncePct,
+  };
+}
+
+/** Prefer the deeper (more negative) of Dex pc5m vs stream drawdown. */
+export function resolveKnifeDipPct(
+  dexPc5m: number | null | undefined,
+  streamDrawdownPct: number | null | undefined,
+): number | null {
+  const vals = [dexPc5m, streamDrawdownPct].filter(
+    (v): v is number => v != null && Number.isFinite(v),
+  );
+  if (vals.length === 0) return null;
+  return Math.min(...vals);
+}
+
 export async function collectCandidateMints(
   cfg: MildDipConfig,
   opts?: { priorityMints?: string[]; nowMs?: number },
@@ -154,6 +199,31 @@ function streamDipInBand(
   return { ok, drawdownPct: dd };
 }
 
+export type MildDipEnrichPassResult = {
+  candidates: MildDipCandidate[];
+  /** Updated knife-watch map after this enrich pass. */
+  knifeWatch: Record<string, KnifeWatchEntry>;
+  /** Journal-friendly watch lifecycle events. */
+  knifeEvents: Array<Record<string, unknown>>;
+};
+
+type EnrichRow =
+  | {
+      kind: 'candidate';
+      candidate: MildDipCandidate;
+      /** Optional watch-clear when mild path supersedes a knife watch. */
+      clearEvent?: Record<string, unknown>;
+    }
+  | {
+      kind: 'knife';
+      mint: string;
+      watch: KnifeWatchEntry;
+      event?: Record<string, unknown>;
+      candidate?: MildDipCandidate;
+    }
+  | { kind: 'knife_clear'; mint: string; event: Record<string, unknown> }
+  | null;
+
 export async function enrichAndFilterCandidates(
   cfg: MildDipConfig,
   mints: string[],
@@ -161,13 +231,19 @@ export async function enrichAndFilterCandidates(
     nowMs?: number;
     maxEnrich?: number;
     enrichConcurrency?: number;
-    /** Always enrich these even past maxEnrich (cooldown watch). */
+    /** Always enrich these even past maxEnrich (cooldown / knife watch). */
     forceEnrich?: string[];
+    /** Prior knife watches (mutated copy returned). */
+    knifeWatch?: Record<string, KnifeWatchEntry>;
   },
-): Promise<MildDipCandidate[]> {
+): Promise<MildDipEnrichPassResult> {
   const nowMs = opts?.nowMs ?? Date.now();
   const maxEnrich = opts?.maxEnrich ?? 40;
   const enrichConcurrency = opts?.enrichConcurrency ?? cfg.enrichConcurrency ?? 12;
+  const knifeGates = knifeGatesFromConfig(cfg);
+  const knifeWatchIn: Record<string, KnifeWatchEntry> = {
+    ...(opts?.knifeWatch ?? {}),
+  };
 
   const force = new Set((opts?.forceEnrich ?? []).filter(Boolean));
   const slice: string[] = [];
@@ -183,7 +259,7 @@ export async function enrichAndFilterCandidates(
 
   const denied = new Set(cfg.deniedMints.map((m) => m.trim()).filter(Boolean));
 
-  const rows = await mapPool(slice, enrichConcurrency, async (mint) => {
+  const rows = await mapPool(slice, enrichConcurrency, async (mint): Promise<EnrichRow> => {
     try {
       if (denied.has(mint)) return null;
       const details = await fetchDexScreenerPairDetails(mint, {
@@ -222,28 +298,174 @@ export async function enrichAndFilterCandidates(
       else if (dexVerdict.pass) dipSource = 'dex';
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) {
         dipSource = 'stream';
-      } else return null;
+      }
 
-      return {
+      if (dipSource) {
+        // Normal mild path wins — drop any knife watch for this mint.
+        const candidate: MildDipCandidate = {
+          mint,
+          symbol: mint.slice(0, 6),
+          priceUsd: details.priceUsd,
+          metrics:
+            dipSource === 'stream' && stream.drawdownPct != null
+              ? { ...metrics, priceChange5mPct: stream.drawdownPct }
+              : metrics,
+          dipSource,
+        };
+        return {
+          kind: 'candidate',
+          candidate,
+          clearEvent: knifeWatchIn[mint]
+            ? {
+                kind: 'mild_dip_knife_watch_clear',
+                mint,
+                reason: 'mild_path_pass',
+                dipSource,
+              }
+            : undefined,
+        };
+      }
+
+      // Deep-knife wait branch (only when mild path did not pass).
+      if (!knifeGates.enabled || !structuralOk) return null;
+
+      const rawStreamDd = mildDipPriceRing.drawdownFromPeakPct(
         mint,
-        symbol: mint.slice(0, 6),
+        cfg.cooldownBounceLookbackMs,
+        nowMs,
+      );
+      const knifeDip = resolveKnifeDipPct(metrics.priceChange5mPct, rawStreamDd);
+      const prev = knifeWatchIn[mint];
+      const inKnifeNow = isKnifeDipPct(knifeDip, knifeGates);
+
+      if (!prev && !inKnifeNow) return null;
+
+      // Still watching previously detected knife even if Dex pc5m recovered some.
+      if (!prev && knifeDip == null) return null;
+
+      const peak = mildDipPriceRing.maxPrice(mint, cfg.cooldownBounceLookbackMs, nowMs);
+      const watch = upsertKnifeWatch(prev, {
+        nowMs,
         priceUsd: details.priceUsd,
-        metrics:
-          dipSource === 'stream' && stream.drawdownPct != null
-            ? { ...metrics, priceChange5mPct: stream.drawdownPct }
-            : metrics,
-        dipSource,
-      } satisfies MildDipCandidate;
+        dipPct: knifeDip ?? prev!.knifeDipPct,
+        peakPriceUsd: peak?.priceUsd ?? null,
+      });
+
+      const ready = evaluateKnifeStabilizeReady(
+        watch,
+        knifeGates,
+        nowMs,
+        details.priceUsd,
+      );
+
+      if (ready.expire) {
+        return {
+          kind: 'knife_clear',
+          mint,
+          event: {
+            kind: 'mild_dip_knife_watch_expire',
+            mint,
+            mode: ready.mode,
+            bouncePct: ready.bouncePct,
+            knifeDipPct: watch.knifeDipPct,
+            troughPriceUsd: watch.troughPriceUsd,
+            reasons: ready.reasons,
+          },
+        };
+      }
+
+      const started = !prev;
+      const event = started
+        ? {
+            kind: 'mild_dip_knife_watch_start',
+            mint,
+            knifeDipPct: watch.knifeDipPct,
+            priceUsd: details.priceUsd,
+            troughPriceUsd: watch.troughPriceUsd,
+            peakPriceUsd: watch.peakPriceUsd,
+            waitMs: knifeGates.waitMs,
+          }
+        : undefined;
+
+      if (ready.ready) {
+        const notify = !(watch.readyNotifiedAtMs != null && watch.readyNotifiedAtMs > 0);
+        const readyWatch: KnifeWatchEntry = notify
+          ? { ...watch, readyNotifiedAtMs: nowMs }
+          : watch;
+        return {
+          kind: 'knife',
+          mint,
+          watch: readyWatch,
+          event: notify
+            ? {
+                kind: 'mild_dip_knife_ready',
+                mint,
+                mode: ready.mode,
+                bouncePct: ready.bouncePct,
+                knifeDipPct: readyWatch.knifeDipPct,
+                troughPriceUsd: readyWatch.troughPriceUsd,
+                priceUsd: details.priceUsd,
+                reasons: ready.reasons,
+                ageMs: nowMs - readyWatch.detectedAtMs,
+              }
+            : undefined,
+          candidate: {
+            mint,
+            symbol: mint.slice(0, 6),
+            priceUsd: details.priceUsd,
+            metrics: {
+              ...metrics,
+              // Surface knife depth for journaling / prebuy context.
+              priceChange5mPct: readyWatch.knifeDipPct,
+            },
+            dipSource: 'knife_stabilize',
+            knifeMode: ready.mode ?? undefined,
+            knifeBouncePct: ready.bouncePct,
+            knifeWatch: readyWatch,
+          },
+        };
+      }
+
+      return { kind: 'knife', mint, watch, event };
     } catch {
       return null;
     }
   });
 
-  const out = rows.filter((r): r is MildDipCandidate => r != null);
+  const candidates: MildDipCandidate[] = [];
+  const knifeWatch: Record<string, KnifeWatchEntry> = { ...knifeWatchIn };
+  const knifeEvents: Array<Record<string, unknown>> = [];
 
-  // Prefer deeper mild dips first (more negative pc5m / stream drawdown).
-  out.sort((a, b) => (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0));
-  return out;
+  for (const row of rows) {
+    if (!row) continue;
+    if (row.kind === 'candidate') {
+      candidates.push(row.candidate);
+      delete knifeWatch[row.candidate.mint];
+      if (row.clearEvent) knifeEvents.push(row.clearEvent);
+      continue;
+    }
+    if (row.kind === 'knife_clear') {
+      delete knifeWatch[row.mint];
+      knifeEvents.push(row.event);
+      continue;
+    }
+    if (row.kind === 'knife') {
+      knifeWatch[row.mint] = row.watch;
+      if (row.event) knifeEvents.push(row.event);
+      if (row.candidate) {
+        candidates.push(row.candidate);
+        // Keep watch until buy succeeds / chase expire — a failed prebuy must
+        // not restart the 2m wait from scratch.
+      }
+    }
+  }
+
+  // Prefer deeper dips first; knife_stabilize sorts by recorded knife depth.
+  candidates.sort(
+    (a, b) => (a.metrics.priceChange5mPct ?? 0) - (b.metrics.priceChange5mPct ?? 0),
+  );
+
+  return { candidates, knifeWatch, knifeEvents };
 }
 
 /** Liq / mcap / age / dex without requiring Dex pc5m. */
