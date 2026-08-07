@@ -94,7 +94,8 @@ export function startMildDipHotMintStream(opts?: {
       },
     });
     console.log(
-      `[mild-dip] buy-mint-resolve ON maxPerMin=${resolveMax} conc=${opts?.buyMintResolveConcurrency ?? 2}`,
+      `[mild-dip] buy-mint-resolve ON buyOnly newestFirst maxPerMin=${resolveMax} ` +
+        `conc=${opts?.buyMintResolveConcurrency ?? 2}`,
     );
   }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  createBuyMintResolver,
   extractMintFromParsedTx,
   logsIndicateBuyOrSell,
   needsBuyMintResolve,
@@ -22,6 +23,29 @@ describe('buy-mint-resolve', () => {
     const extracted = extractMintCandidatesFromLogs(logs);
     expect(extracted).toEqual([]);
     expect(needsBuyMintResolve(logs, extracted)).toBe(true);
+  });
+
+  it('does not spend getTx budget on Sell-only logs', () => {
+    const logs = ['Program log: Instruction: Sell'];
+    expect(needsBuyMintResolve(logs, [])).toBe(false);
+  });
+
+  it('keeps only newest sigs in a short queue (no 5min backlog)', () => {
+    const r = createBuyMintResolver({
+      rpcUrl: 'http://127.0.0.1:9',
+      maxPerMin: 60,
+      concurrency: 1,
+      queueMax: 3,
+      staleJobMs: 60_000,
+    });
+    for (let i = 0; i < 10; i++) {
+      r.enqueue(`${'1'.repeat(40)}${i}`, Date.now());
+    }
+    const s = r.stats();
+    // One may already be in-flight; waiting queue must stay tiny.
+    expect(s.droppedOverflow).toBeGreaterThan(0);
+    expect(s.queued).toBeLessThanOrEqual(3);
+    r.stop();
   });
 
   it('extracts mint from fee-payer positive token delta (leader Buy shape)', () => {

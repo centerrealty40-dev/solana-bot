@@ -1,7 +1,14 @@
 /**
- * Resolve mint when program logs show Instruction: Buy/Sell but omit the mint
- * (common on PumpSwap — log text has no base58 mint). Cap getTransaction RPM
- * so Helius stays healthy; force-enrich resolved mints into the tape loop.
+ * Resolve mint when program logs show Instruction: Buy but omit the mint
+ * (common on PumpSwap — log text has no base58 mint).
+ *
+ * RCA (BDdzUjk / 5mq4Ttx): FIFO queue of 200 @ 40 getTx/min → ~5 min backlog,
+ * so the leader Buy resolved too late (or never). Fix without blowing Helius /
+ * Dex enrich:
+ * - resolve **Buy only** (skip Sell — entry path doesn't need it)
+ * - process **newest first**
+ * - hard queue ≤ ~1 min of work; drop stale (>20s) jobs
+ * - keep maxPerMin cap (vol-green: 40)
  */
 import { fetchParsedTransaction } from '../copytrader/rpc.js';
 import type { TokenBal, TxJsonParsed } from '../parser/rpc-http.js';
@@ -12,6 +19,9 @@ const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
 const USDT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const SKIP = new Set([WSOL, USDC, USDT]);
 
+/** Max age of a queued sig before we drop it (candle already gone). */
+const STALE_JOB_MS = 20_000;
+
 export function logsIndicateBuyOrSell(logs: string[]): boolean {
   for (const line of logs) {
     if (typeof line !== 'string') continue;
@@ -20,8 +30,17 @@ export function logsIndicateBuyOrSell(logs: string[]): boolean {
   return false;
 }
 
+export function logsIndicateBuy(logs: string[]): boolean {
+  for (const line of logs) {
+    if (typeof line !== 'string') continue;
+    if (line.includes('Instruction: Buy')) return true;
+  }
+  return false;
+}
+
+/** Only Buys without mint — Sells skipped to protect Helius getTx budget. */
 export function needsBuyMintResolve(logs: string[], extractedMints: string[]): boolean {
-  return logsIndicateBuyOrSell(logs) && extractedMints.length === 0;
+  return logsIndicateBuy(logs) && extractedMints.length === 0;
 }
 
 function accountKeyPubkeys(tx: TxJsonParsed): string[] {
@@ -66,13 +85,11 @@ export function extractMintFromParsedTx(tx: TxJsonParsed | null | undefined): st
 
   let bestPayer: { mint: string; delta: number } | null = null;
   let bestAny: { mint: string; abs: number } | null = null;
-  const seenPost = new Set<string>();
 
   for (const b of tx.meta.postTokenBalances ?? []) {
     if (!b.mint || SKIP.has(b.mint)) continue;
     const owner = b.owner ?? '';
     const key = `${owner}|${b.mint}`;
-    seenPost.add(key);
     const post = uiAmount(b);
     const before = pre.get(key) ?? 0;
     const delta = post - before;
@@ -83,7 +100,6 @@ export function extractMintFromParsedTx(tx: TxJsonParsed | null | undefined): st
     if (abs > 0 && (!bestAny || abs > bestAny.abs)) bestAny = { mint: b.mint, abs };
   }
 
-  // New ATA: post-only balances (pre missing).
   for (const b of tx.meta.postTokenBalances ?? []) {
     if (!b.mint || SKIP.has(b.mint)) continue;
     const owner = b.owner ?? '';
@@ -112,6 +128,8 @@ export type BuyMintResolver = {
     resolved: number;
     failed: number;
     skipped: number;
+    droppedOverflow: number;
+    droppedStale: number;
   };
 };
 
@@ -120,26 +138,48 @@ export function createBuyMintResolver(args: {
   /** Cap getTransaction resolves per rolling minute (0 = off). */
   maxPerMin?: number;
   concurrency?: number;
+  /** Max waiting sigs (~1 min of work). Default = maxPerMin. */
+  queueMax?: number;
+  /** Drop jobs older than this before getTx. Default 20s. */
+  staleJobMs?: number;
   onResolved?: (mint: string, signature: string, tsMs: number) => void;
 }): BuyMintResolver {
   const maxPerMin = Math.max(0, args.maxPerMin ?? 30);
   const concurrency = Math.max(1, Math.min(6, args.concurrency ?? 2));
+  const queueMax = Math.max(concurrency, Math.min(80, args.queueMax ?? Math.max(maxPerMin, 20)));
+  const staleJobMs = Math.max(5_000, args.staleJobMs ?? STALE_JOB_MS);
   const seenSig = new Set<string>();
+  /** Newest at the end — we pop() for LIFO. */
   const queue: Array<{ signature: string; tsMs: number }> = [];
   let inFlight = 0;
   let resolved = 0;
   let failed = 0;
   let skipped = 0;
+  let droppedOverflow = 0;
+  let droppedStale = 0;
   let stopped = false;
   let grantTs: number[] = [];
 
+  const takeNextFresh = (nowMs: number): { signature: string; tsMs: number } | null => {
+    while (queue.length > 0) {
+      const job = queue.pop()!;
+      if (nowMs - job.tsMs > staleJobMs) {
+        droppedStale += 1;
+        continue;
+      }
+      return job;
+    }
+    return null;
+  };
+
   const pump = (): void => {
     if (stopped || maxPerMin <= 0) return;
-    while (inFlight < concurrency && queue.length > 0) {
+    while (inFlight < concurrency) {
       const nowMs = Date.now();
       grantTs = grantTs.filter((t) => nowMs - t < 60_000);
       if (grantTs.length >= maxPerMin) break;
-      const job = queue.shift()!;
+      const job = takeNextFresh(nowMs);
+      if (!job) break;
       grantTs.push(nowMs);
       inFlight += 1;
       void (async () => {
@@ -155,14 +195,19 @@ export function createBuyMintResolver(args: {
 
   const resolveOne = async (job: { signature: string; tsMs: number }): Promise<void> => {
     try {
+      // Skip getTx if job went stale while waiting for a worker slot.
+      if (Date.now() - job.tsMs > staleJobMs) {
+        droppedStale += 1;
+        return;
+      }
       const raw = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
       const mint = extractMintFromParsedTx(raw);
       if (!mint) {
         failed += 1;
         return;
       }
-      const ts = job.tsMs || Date.now();
-      // Heavy hit boost — Buy activity jumps enrich rank (freshBoost + hits).
+      const ts = Date.now();
+      // Fresh note + force — race the candle on the next scan (buyForce).
       mildDipHotMints.note(mint, ts, 8);
       mildDipHotMints.markBuyForce(mint, ts);
       resolved += 1;
@@ -184,8 +229,12 @@ export function createBuyMintResolver(args: {
         for (const s of [...seenSig].slice(0, 3_000)) seenSig.delete(s);
       }
       seenSig.add(signature);
-      if (queue.length > 200) queue.splice(0, queue.length - 200);
+      // Keep only the newest queueMax sigs — drop oldest at the front.
       queue.push({ signature, tsMs });
+      while (queue.length > queueMax) {
+        queue.shift();
+        droppedOverflow += 1;
+      }
       pump();
     },
     stop() {
@@ -198,6 +247,8 @@ export function createBuyMintResolver(args: {
       resolved,
       failed,
       skipped,
+      droppedOverflow,
+      droppedStale,
     }),
   };
 }

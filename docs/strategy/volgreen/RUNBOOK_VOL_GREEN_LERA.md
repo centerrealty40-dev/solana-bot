@@ -23,8 +23,8 @@ ultra-fresh ≤20s first; age floor 0.01h; rocket pc≥12 / vol≥$10k / bs≥1.
 buyForce take **8**; rocket bs **1.1**.  
 **Impulse (1.11.724):** pc5m≥**18** + bs≥1.2; liquid ≥**12**; early **OFF**;
 rocket ≥**25**/vol$15k/bs1.35; pc5m&gt;100 needs bs≥1.5.  
-**Buy mint-resolve (1.11.720):** when PumpSwap logs omit mint, **getTx ≤40/min**
-→ force-enrich (`buyForce` in enrich log). See candles ourselves, not via leaders.  
+**Buy mint-resolve (1.11.725):** Buy-only getTx ≤40/min, **newest-first**,
+queue~1min (no 5min backlog). Force-enrich via `buyForce`. Entry gates unchanged.  
 **Dex pick (1.11.721):** prefer **allowed** dex (pumpswap) over higher-liq meteora;
 forceEnrich always reaches gates (NEEGY `2y8Ntg` miss).  
 **Reconnect RCA (1.11.722):** most `websocket open` = **PM2 restarts**, not Helius.

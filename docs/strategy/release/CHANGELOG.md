@@ -1,5 +1,22 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.725] — 2026-08-07
+
+**Тег:** `sa-1.11.725`
+
+### Fix: buy-mint-resolve freshness (no 5min getTx backlog)
+
+RCA `5mq4Ttx` / `BDdzUjk`: Buy logs omit mint; FIFO queue=200 @40/min
+→ ~5 min lag; leader Buy never force-enriched. Entry gates unchanged.
+
+- resolve **Buy only** (skip Sell — saves Helius)
+- **newest-first**, queueMax≈maxPerMin, drop jobs &gt;20s
+- enrich probe/buyForce caps untouched
+
+**Откат:** FIFO queue 200, resolve Buy+Sell.
+
+---
+
 ## [1.11.724] — 2026-08-07
 
 **Тег:** `sa-1.11.724`
