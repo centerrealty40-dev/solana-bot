@@ -1,12 +1,17 @@
 /**
  * Candidate mint discovery for the mild-dip bot.
- * Universe: stream hot-list (+ boosts/profiles). Metrics: DexScreener.
- * Price samples always land in the price-ring (even on gate fail / cooldown)
- * so we remember the trough while waiting to rebuy.
+ * Universe: stream hot-list (+ boosts/profiles/leaders/pg_volume/gecko).
+ * Metrics: DexScreener. Price samples always land in the price-ring
+ * (even on gate fail / cooldown) so we remember the trough while waiting to rebuy.
  */
 import fs from 'node:fs';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
+import {
+  discoverGeckoTrendingMints,
+  discoverPgVolumeMints,
+  readLeaderSeedMints,
+} from './discover-extra.js';
 import { mapPool } from './exit-engine.js';
 import {
   evaluateMildDipEntry,
@@ -113,6 +118,28 @@ export function priorityMintsFromCooldown(
   return out;
 }
 
+/**
+ * Keep recently traded mints in the enrich universe even after stream hot-list
+ * TTL (15m) forgets them. Liquid names we already know must be pinned even when
+ * volume/list sources are offline.
+ */
+export function priorityMintsFromRecentTrades(
+  cooldownUntilMs: Record<string, number>,
+  nowMs: number,
+  opts?: { watchMs?: number; max?: number },
+): string[] {
+  const watchMs = Math.max(0, opts?.watchMs ?? 6 * 3_600_000);
+  const max = Math.max(0, Math.floor(opts?.max ?? 40));
+  const rows: Array<{ mint: string; until: number }> = [];
+  for (const [mint, until] of Object.entries(cooldownUntilMs)) {
+    if (!mint || mint.length < 32 || typeof until !== 'number') continue;
+    // `until` is cooldown-end; treat it as last-touch proxy for ~watchMs after.
+    if (until >= nowMs - watchMs) rows.push({ mint, until });
+  }
+  rows.sort((a, b) => b.until - a.until);
+  return rows.slice(0, max).map((r) => r.mint);
+}
+
 /** Keep enriching active deep-knife watches so trough / bounce can resolve. */
 export function priorityMintsFromKnifeWatch(
   knifeWatch: Record<string, KnifeWatchEntry> | undefined,
@@ -165,12 +192,26 @@ export async function collectCandidateMints(
     ordered.push(m);
   };
 
+  const nowMs = opts?.nowMs ?? Date.now();
+
   // 1) Cooldown-watched / just-ready — must win enrich slots.
   for (const m of opts?.priorityMints ?? []) push(m);
 
-  // 2) Stream-hot (freshest activity).
+  // 2) Leader buys (few, high-signal) — refresh hot-list TTL without Dex fan-out.
+  if (sources.has('leaders')) {
+    const leaders = readLeaderSeedMints(cfg.leaderSeedPath, nowMs, {
+      maxAgeMs: cfg.leaderSeedMaxAgeMs,
+      max: cfg.leaderSeedMax,
+    });
+    for (const m of leaders) {
+      mildDipHotMints.note(m, nowMs, 1);
+      push(m);
+    }
+  }
+
+  // 3) Stream-hot (freshest on-chain activity).
   if (sources.has('stream')) {
-    for (const m of mildDipHotMints.list(opts?.nowMs)) push(m);
+    for (const m of mildDipHotMints.list(nowMs)) push(m);
   }
   if (sources.has('boosts')) {
     for (const m of await discoverBoostMints()) push(m);
@@ -178,6 +219,34 @@ export async function collectCandidateMints(
   if (sources.has('profiles')) {
     for (const m of await discoverProfileMints()) push(m);
   }
+
+  // 4) Volume/trending fillers — AFTER stream/boosts so they cannot steal
+  // enrich slots from fresher activity. Do NOT note into hot-list (would
+  // churn maxMints and push out stream names).
+  if (sources.has('pg_volume')) {
+    for (const m of await discoverPgVolumeMints({
+      nowMs,
+      max: cfg.pgVolumeMax,
+      cacheMs: cfg.pgVolumeCacheMs,
+      lookbackMin: cfg.pgVolumeLookbackMin,
+      minVolume5mUsd: cfg.entry.minVolume5mUsd,
+      minLiquidityUsd: cfg.entry.minLiquidityUsd,
+      minMarketCapUsd: cfg.entry.minMarketCapUsd,
+    })) {
+      push(m);
+    }
+  }
+  if (sources.has('gecko')) {
+    for (const m of await discoverGeckoTrendingMints({
+      nowMs,
+      max: cfg.geckoMax,
+      cacheMs: cfg.geckoCacheMs,
+      pages: cfg.geckoPages,
+    })) {
+      push(m);
+    }
+  }
+
   if (sources.has('seed')) {
     for (const m of readSeedMints(cfg.seedMintsPath)) push(m);
   }

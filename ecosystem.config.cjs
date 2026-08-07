@@ -2996,7 +2996,21 @@ const PM2_APPS = [
         MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS: '21600000',
         MILD_DIP_FEE_SOL_TOPUP_MIN_USD: '5',
         MILD_DIP_FEE_SOL_TOPUP_BUY_USD: '20',
-        MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
+        /**
+         * Discover: keep stream/boosts/profiles first; add capped fillers.
+         * leaders = observer sidecar (no Dex); pg_volume = fresh PumpSwap PG;
+         * gecko = free trending (cached 2m). Caps keep enrich budget safe.
+         */
+        MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles,leaders,pg_volume,gecko',
+        MILD_DIP_LEADER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
+        MILD_DIP_LEADER_SEED_MAX: '40',
+        MILD_DIP_LEADER_SEED_MAX_AGE_MS: '7200000',
+        MILD_DIP_PG_VOLUME_MAX: '30',
+        MILD_DIP_PG_VOLUME_CACHE_MS: '60000',
+        MILD_DIP_PG_VOLUME_LOOKBACK_MIN: '10',
+        MILD_DIP_GECKO_MAX: '25',
+        MILD_DIP_GECKO_CACHE_MS: '120000',
+        MILD_DIP_GECKO_PAGES: '1',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
@@ -3006,6 +3020,45 @@ const PM2_APPS = [
         MILD_DIP_PRICE_RING_PATH: path.join(root, 'data/milddip/price-ring.json'),
         ...LIVE_OSCAR_HELIUS_RPC_ENV,
         ...(HELIUS_RPC_URL_PM2 ? { MILD_DIP_RPC_URL: HELIUS_RPC_URL_PM2 } : {}),
+      },
+    },
+    /**
+     * Shadow leader-buy observer for mild-dip (no trading).
+     * Writes jsonl + leader-seed.json consumed by discover source `leaders`.
+     */
+    {
+      name: 'mild-dip-leader-observer',
+      cwd: root,
+      script: 'python3',
+      args: 'scripts/milddip/leader-observer.py',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      autostart: true,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 10_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        LEADER_OBSERVER_OUT_DIR: path.join(root, 'data/milddip'),
+        LEADER_OBSERVER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
+        LEADER_OBSERVER_SEED_MAX: '40',
+        LEADER_OBSERVER_SEED_MAX_AGE_SEC: '7200',
+        LEADER_OBSERVER_POLL_SEC: '15',
+        LEADER_OBSERVER_LOOKBACK_SEC: '900',
+        /** 0 = run until stopped (PM2 owns lifecycle). */
+        LEADER_OBSERVER_MAX_HOURS: '0',
+        LEADER_OBSERVER_LEADERS:
+          '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+        ...LIVE_OSCAR_HELIUS_RPC_ENV,
+        ...(HELIUS_RPC_URL_PM2
+          ? {
+              LEADER_OBSERVER_RPC_URL: HELIUS_RPC_URL_PM2,
+              MILD_DIP_RPC_URL: HELIUS_RPC_URL_PM2,
+            }
+          : {}),
       },
     },
     /**

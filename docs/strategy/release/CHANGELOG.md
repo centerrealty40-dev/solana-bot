@@ -1,4 +1,31 @@
 # So
+## [1.11.708] — 2026-08-07
+
+**Тег:** `sa-1.11.708`
+
+### Feat: mild-dip capped discover seeds (leaders / PG volume / gecko)
+
+Universe no longer depends only on stream hot-list (15m TTL) + Dex boosts/profiles.
+
+1. **`leaders`** — `mild-dip-leader-observer` writes `data/milddip/leader-seed.json`
+   on each leader buy; bot seeds those mints (cap 40 / 2h) and refreshes hot TTL.
+2. **`pg_volume`** — fresh PumpSwap `pumpswap_pair_snapshots` top vol5m
+   (lookback 10m, floors = entry gates). Cached 60s, max 30. Soft-fail.
+3. **`gecko`** — GeckoTerminal Solana trending pools, cached 120s, max 25.
+4. **Recent-trade pin** — keep last-traded mints in enrich for 6h (Cg1h-class drip).
+
+Safety: new sources listed **after** stream/boosts/profiles; pg/gecko do **not**
+note into hot-list; hard caps + caches protect the Dex 120 RPM gate. Live entry
+floors (liq/mcap/h1 band) unchanged from 1.11.707.
+
+**Env:**
+`MILD_DIP_DISCOVER_SOURCES=stream,boosts,profiles,leaders,pg_volume,gecko`
+
+**Откат:** `MILD_DIP_DISCOVER_SOURCES=stream,boosts,profiles` + reload
+`mild-dip-bot` (observer can stay).
+
+---
+
 ## [1.11.707] — 2026-08-07
 
 **Тег:** `sa-1.11.707`
