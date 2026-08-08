@@ -2977,6 +2977,16 @@ const PM2_APPS = [
          * (36GuKd sat ~5m at −99% waiting for never_arm_dead 15m).
          */
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
+        /**
+         * 1.11.747 — never-arm blood branch:
+         * 1) trough ≤ −5% then bounce ≥ 6% off trough → full exit (sell into bounce)
+         * 2) else pnl ≤ −25% after 60s → freefall floor (no bounce / endless dump)
+         * cliff −50% remains the ultra-hard rug cut; dead/stale stay as time backups.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT: '5',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '6',
+        MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '25',
+        MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '60000',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
         /**
          * 1.11.734 — oneshot emptied-bag dump grace:

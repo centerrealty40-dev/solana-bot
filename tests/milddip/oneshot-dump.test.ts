@@ -144,6 +144,10 @@ describe('oneshot dump grace vs exits', () => {
     neverArmVolFadeSampleMs: 300_000,
     neverArmVolFadeWeakWindows: 3,
     cliffDumpPnlPct: 50,
+    neverArmBounceMinDumpPct: 5,
+    neverArmBouncePct: 6,
+    neverArmFreefallPnlPct: 25,
+    neverArmFreefallMinMs: 60_000,
   };
 
   it('defers peak_giveback while grace active', () => {

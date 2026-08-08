@@ -321,6 +321,15 @@ const MildDipConfigSchema = z.object({
     neverArmVolFadeWeakWindows: z.coerce.number().int().min(0).max(48).default(3),
     /** Instant rug / LP-pull cut when pnl ≤ −this % (0=off). Default 50. */
     cliffDumpPnlPct: z.coerce.number().min(0).max(100).default(50),
+    /**
+     * 1.11.747 — never-arm bounce reclaim (sell into bounce off post-entry trough).
+     * 0 bouncePct = off.
+     */
+    neverArmBounceMinDumpPct: z.coerce.number().min(0).max(100).default(5),
+    neverArmBouncePct: z.coerce.number().min(0).max(100).default(6),
+    /** Never-arm freefall floor (no bounce). 0 = off. */
+    neverArmFreefallPnlPct: z.coerce.number().min(0).max(100).default(25),
+    neverArmFreefallMinMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
   }),
 });
 
@@ -413,6 +422,14 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
     /** 1.11.697 — LP-pull cliff: exit immediately at ≤ −50% mark pnl. */
     cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
+    /**
+     * 1.11.747 — never-arm: after trough ≤ −5% vs entry, bounce ≥ 6% → full exit.
+     * Freefall floor −25% if no bounce ever prints (not sit to cliff −50%).
+     */
+    neverArmBounceMinDumpPct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT', 5),
+    neverArmBouncePct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT', 6),
+    neverArmFreefallPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', 25),
+    neverArmFreefallMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS', 60_000),
   };
 
   const raw = {

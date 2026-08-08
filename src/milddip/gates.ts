@@ -106,6 +106,20 @@ export type MildDipExitGates = {
    * rugs without waiting for never_arm_dead min-hold. 0 = off.
    */
   cliffDumpPnlPct: number;
+  /**
+   * 1.11.747 — never-armed bounce reclaim: after post-entry trough ≤ −minDump%,
+   * if mark bounces ≥ bouncePct off that trough → full exit (`never_arm_bounce`).
+   * Hard (not recover-deferred) — we sell INTO the bounce. 0 bouncePct = off.
+   */
+  neverArmBounceMinDumpPct: number;
+  neverArmBouncePct: number;
+  /**
+   * 1.11.747 — never-armed freefall floor: if still unarmed and pnl ≤ −this %
+   * after min hold → full exit (`never_arm_freefall`). Covers endless dumps
+   * that never print a bounce. 0 = off. Default 25 (between stale grind and cliff 50).
+   */
+  neverArmFreefallPnlPct: number;
+  neverArmFreefallMinMs: number;
 };
 
 /** One spaced Dex vol5m reading used by the sustained fade exit. */
@@ -345,6 +359,8 @@ export type MildDipExitReason =
   | 'peak_giveback'
   | 'peak_giveback_partial'
   | 'never_arm_giveback'
+  | 'never_arm_bounce'
+  | 'never_arm_freefall'
   | 'never_arm_stale'
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
@@ -450,9 +466,8 @@ export function sustainedVolFade(
  * - Arm when MFE ≥ armPct (live default +5%)
  * - Armed scale-out: giveback ≤ −partialGivebackPct → sell scaleOutFraction
  *   (once); giveback ≤ −givebackPct → sell remainder / full
- * - Never-armed: optional soft giveback after patienceMs (0 = off), deep-loss
- *   dead cut, sustained activity fade (`never_arm_vol_fade` over N×5m windows),
- *   then the max-hold ceiling
+ * - Never-armed: bounce reclaim → freefall floor → optional soft giveback →
+ *   stale / dead / vol-fade → max-hold ceiling
  * - Live default: patience off — early never_arm_giveback was cutting before pumps
  */
 export function evaluateMildDipPeakGiveback(args: {
@@ -474,6 +489,11 @@ export function evaluateMildDipPeakGiveback(args: {
   /** Wall clock for spacing samples; defaults to held-relative when omitted. */
   nowMs?: number;
   /**
+   * Running post-entry trough (low-water mark). When omitted, uses
+   * min(entry, mark) for this tick only.
+   */
+  postEntryTroughPriceUsd?: number | null;
+  /**
    * When true, defer peak_giveback / peak_giveback_partial / never_arm_giveback
    * (one-shot emptied-bag dump grace). cliff_dump and other hard exits still fire.
    */
@@ -490,6 +510,8 @@ export function evaluateMildDipPeakGiveback(args: {
   reason: MildDipExitReason;
   pnlPct: number;
   volFadeSamples: MildDipVolFadeSample[];
+  /** Updated post-entry trough (caller persists). */
+  postEntryTroughPriceUsd: number;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
   const scaleOutDone = args.scaleOutDone === true;
@@ -513,10 +535,26 @@ export function evaluateMildDipPeakGiveback(args: {
     args.peakPriceUsd > 0 ? args.peakPriceUsd : entryPriceUsd,
     markPriceUsd > 0 ? markPriceUsd : 0,
   );
+  const troughPrev =
+    args.postEntryTroughPriceUsd != null &&
+    Number.isFinite(args.postEntryTroughPriceUsd) &&
+    args.postEntryTroughPriceUsd > 0
+      ? args.postEntryTroughPriceUsd
+      : entryPriceUsd;
+  const postEntryTroughPriceUsd = Math.min(
+    troughPrev,
+    markPriceUsd > 0 ? markPriceUsd : troughPrev,
+  );
   const mfePct = mfeFromEntryPct(peakPriceUsd, entryPriceUsd) ?? 0;
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =
     entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;
+  const troughDumpPct =
+    entryPriceUsd > 0 && postEntryTroughPriceUsd > 0
+      ? ((postEntryTroughPriceUsd / entryPriceUsd - 1) * 100)
+      : 0;
+  const bounceOffTroughPct =
+    bounceFromTroughPct(markPriceUsd, postEntryTroughPriceUsd) ?? 0;
 
   let armed = args.armed === true;
   let justArmed = false;
@@ -536,6 +574,7 @@ export function evaluateMildDipPeakGiveback(args: {
     reason: null as MildDipExitReason,
     pnlPct,
     volFadeSamples,
+    postEntryTroughPriceUsd,
   };
 
   // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
@@ -584,11 +623,30 @@ export function evaluateMildDipPeakGiveback(args: {
   }
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
-  // Order: optional soft giveback (usually OFF) → stagnation stale cut →
-  // deep-loss dead cut → sustained vol fade → max-hold ceiling.
-  // Full givebackPct is the soft knife width when patience is on.
+  // Order: bounce reclaim (sell into bounce) → freefall floor (no bounce) →
+  // optional soft giveback → stale → dead → vol fade → max-hold.
   const givebackHit = fullGivebackHit;
   if (!armed) {
+    const bounceNeed = gates.neverArmBouncePct > 0 ? gates.neverArmBouncePct : 0;
+    const bounceDumpNeed =
+      gates.neverArmBounceMinDumpPct > 0 ? gates.neverArmBounceMinDumpPct : 0;
+    if (
+      bounceNeed > 0 &&
+      bounceDumpNeed > 0 &&
+      troughDumpPct <= -bounceDumpNeed + 1e-9 &&
+      bounceOffTroughPct >= bounceNeed - 1e-9
+    ) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' };
+    }
+    const freefallPnl = gates.neverArmFreefallPnlPct > 0 ? gates.neverArmFreefallPnlPct : 0;
+    const freefallMin = gates.neverArmFreefallMinMs > 0 ? gates.neverArmFreefallMinMs : 0;
+    if (
+      freefallPnl > 0 &&
+      heldMs >= freefallMin &&
+      pnlPct <= -freefallPnl + 1e-9
+    ) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_freefall' };
+    }
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (!oneshotGrace && patience > 0 && heldMs >= patience && givebackHit) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };

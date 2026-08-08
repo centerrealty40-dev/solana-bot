@@ -60,6 +60,10 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeSampleMs: 300_000,
   neverArmVolFadeWeakWindows: 3,
   cliffDumpPnlPct: 50,
+  neverArmBounceMinDumpPct: 5,
+  neverArmBouncePct: 6,
+  neverArmFreefallPnlPct: 25,
+  neverArmFreefallMinMs: 60_000,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -532,10 +536,84 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 40,
       peakPriceUsd: 100,
       armed: false,
-      gates: { ...exitGates, cliffDumpPnlPct: 0 },
+      gates: {
+        ...exitGates,
+        cliffDumpPnlPct: 0,
+        neverArmFreefallPnlPct: 0,
+        neverArmBouncePct: 0,
+      },
       heldMs: 30_000,
     });
     expect(v.shouldExit).toBe(false);
+  });
+
+  it('never_arm_bounce: dump to trough then reclaim ≥6% off trough → full exit', () => {
+    // trough 80 (−20%); mark 85 = +6.25% off trough
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 85,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: exitGates,
+      heldMs: 120_000,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_bounce');
+    expect(v.fraction).toBe(1);
+  });
+
+  it('never_arm_bounce: needs trough dump ≤ −5% first', () => {
+    // shallow trough 97 (−3%); bounce +8% off trough to 104.76 — still no bounce exit
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 104.76,
+      peakPriceUsd: 104.76,
+      armed: false,
+      gates: exitGates,
+      heldMs: 120_000,
+      postEntryTroughPriceUsd: 97,
+    });
+    expect(v.reason).not.toBe('never_arm_bounce');
+  });
+
+  it('never_arm_freefall: unarmed pnl ≤ −25% after min hold (no bounce needed)', () => {
+    const early = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 74,
+      peakPriceUsd: 101,
+      armed: false,
+      gates: exitGates,
+      heldMs: 30_000, // under 60s floor
+      postEntryTroughPriceUsd: 74,
+    });
+    expect(early.shouldExit).toBe(false);
+
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 74,
+      peakPriceUsd: 101,
+      armed: false,
+      gates: exitGates,
+      heldMs: 60_000,
+      postEntryTroughPriceUsd: 74,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_freefall');
+  });
+
+  it('never_arm_bounce beats freefall when reclaiming off deep trough', () => {
+    // At −26% mark would freefall, but +6% off trough 70 → bounce first
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 74.2, // +6% off 70
+      peakPriceUsd: 101,
+      armed: false,
+      gates: exitGates,
+      heldMs: 120_000,
+      postEntryTroughPriceUsd: 70,
+    });
+    expect(v.reason).toBe('never_arm_bounce');
   });
 
   it('never-arm timeout at max hold if still unarmed', () => {
@@ -653,6 +731,10 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmVolFadeFloorUsd: 0,
       neverArmVolFadeSampleMs: 0,
       neverArmVolFadeWeakWindows: 0,
+      neverArmBounceMinDumpPct: 0,
+      neverArmBouncePct: 0,
+      neverArmFreefallPnlPct: 0,
+      neverArmFreefallMinMs: 0,
     };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
