@@ -355,7 +355,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(full.fraction).toBe(1);
   });
 
-  it('full giveback at −8% skips partial even if scale-out not taken', () => {
+  it('full giveback gap still sells half first when scale-out not taken', () => {
+    // Mark gaps past −8% in one tick — must not full-dump the bag (1.11.741).
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 96.6,
@@ -365,8 +366,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       gates: exitGates,
     });
     expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('peak_giveback');
-    expect(v.fraction).toBe(1);
+    expect(v.reason).toBe('peak_giveback_partial');
+    expect(v.fraction).toBe(0.5);
   });
 
   it('arm at +8% / giveback −8%: floor ≈ −0.64% from entry at exact trigger', () => {

@@ -159,17 +159,34 @@ describe('oneshot dump grace vs exits', () => {
     expect(hold.reason).toBeNull();
   });
 
-  it('still fires peak_giveback when grace inactive', () => {
+  it('still fires peak_giveback_partial when grace inactive (half-first)', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 105.8,
       peakPriceUsd: 115,
       armed: true,
+      scaleOutDone: false,
+      gates,
+      oneshotDumpGraceActive: false,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('peak_giveback_partial');
+    expect(v.fraction).toBe(0.5);
+  });
+
+  it('full peak_giveback after scale-out when grace inactive', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.8,
+      peakPriceUsd: 115,
+      armed: true,
+      scaleOutDone: true,
       gates,
       oneshotDumpGraceActive: false,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('peak_giveback');
+    expect(v.fraction).toBe(1);
   });
 
   it('cliff_dump still fires under grace', () => {
