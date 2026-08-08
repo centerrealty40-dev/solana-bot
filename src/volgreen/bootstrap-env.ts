@@ -109,21 +109,20 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '5');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
-  // Simple mode: no Helius logsSubscribe / getTx resolve / stream prices.
-  // Universe = Dex boosts+profiles; entry = Gecko 1m triple_green only.
-  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'boosts,profiles');
+  // Simple mode: no Helius stream. Universe = gecko trending + dex profiles.
+  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'gecko,profiles');
   setIfAbsent('MILD_DIP_STREAM', '0');
   setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '0');
   setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '0');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '0');
-  // Calm enrich — no stream race.
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
-  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '12');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '8');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '15000');
-  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '5000');
-  setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '60');
-  setIfAbsent('DEXSCREENER_MAX_RPM', '60');
+  // Calm enrich — serialized Gecko OHLCV needs headroom.
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '2');
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '8');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '6');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '20000');
+  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '8000');
+  setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '40');
+  setIfAbsent('DEXSCREENER_MAX_RPM', '40');
   setIfAbsent('MILD_DIP_GREEN_SHORT_RED_WINDOW_MS', '60000');
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
   setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');
@@ -142,7 +141,6 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
 
   // Green-tape floors loosened for micro-cap verticals (CHiHkQx: mcap~$20k, liq null/$9k).
   setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '8000');
-  setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '18000');
   // No more 2-minute newborns — Prometheus-class books are hours old.
   setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.5');
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '0');
@@ -150,9 +148,11 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_ONLY', '1');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', '2');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC', '12');
-  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '20');
-  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '200');
+  // TINYTANK-class third candle was +13.4% — 20 was too strict.
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '13');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '150');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', '180000');
+  setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '12000');
   setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '0');

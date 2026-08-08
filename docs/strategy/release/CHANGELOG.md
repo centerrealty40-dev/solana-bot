@@ -1,5 +1,20 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.732] — 2026-08-08
+
+**Тег:** `sa-1.11.732`
+
+### Fix: no-buys — Gecko 429 + dead boosts universe
+
+- Serialize Gecko OHLCV (1.25s gap), cache, distinct `rate_limited` reason
+- Universe **gecko trending + profiles** (not paid boost ads)
+- huge min **20→13**, mcap **18k→12k** (TINYTANK-class)
+- enrich conc 2 / probe 8 / scan 8s
+
+**Откат:** sources=boosts,profiles; huge 20; mcap 18k.
+
+---
+
 ## [1.11.731] — 2026-08-08
 
 **Тег:** `sa-1.11.731`

@@ -9,7 +9,7 @@ const gates: TripleGreenGates = {
   enabled: true,
   smallMinPc: 2,
   smallMaxPc: 12,
-  hugeMinPc: 20,
+  hugeMinPc: 13,
   hugeMinVolUsd: 200,
   maxAgeAfterHugeMs: 180_000,
 };

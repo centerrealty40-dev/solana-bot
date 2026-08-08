@@ -364,8 +364,8 @@ export function loadMildDipConfig(): MildDipConfig {
     })(),
     tripleSmallMinPc: envNum('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', 2),
     tripleSmallMaxPc: envNum('MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC', 12),
-    tripleHugeMinPc: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', 20),
-    tripleHugeMinVolUsd: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', 200),
+    tripleHugeMinPc: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', 13),
+    tripleHugeMinVolUsd: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', 150),
     tripleMaxAgeAfterHugeMs: envNum('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', 180_000),
   };
 

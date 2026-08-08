@@ -10,7 +10,10 @@ import { loadAwakeningConfig } from '../scripts/awakening/awakening-config.js';
 import { evaluateAwakeningSignal } from '../scripts/awakening/awakening-signal.js';
 import type { AwakeningDexMarket } from '../scripts/awakening/awakening-types.js';
 import { evaluateGreenTapeEntry } from '../volgreen/green-tape-gates.js';
-import { evaluateTripleGreenEntry } from '../volgreen/triple-green.js';
+import {
+  discoverGeckoTrendingMints,
+  evaluateTripleGreenEntry,
+} from '../volgreen/triple-green.js';
 import type { MildDipConfig } from './config.js';
 import { mapPool } from './exit-engine.js';
 import { evaluateMildDipEntry, type MildDipCandidateMetrics } from './gates.js';
@@ -216,6 +219,10 @@ export async function collectCandidateMints(
   }
   if (sources.has('profiles')) {
     for (const m of await discoverProfileMints()) push(m);
+  }
+  // Live Solana pools by volume/trend — better for 1m candle patterns than boost ads.
+  if (sources.has('gecko') || sources.has('trending')) {
+    for (const m of await discoverGeckoTrendingMints()) push(m);
   }
   if (sources.has('seed')) {
     for (const m of readSeedMints(cfg.seedMintsPath)) push(m);
