@@ -82,7 +82,9 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_STREAM_PROGRAM_IDS).toContain('pAMMBay');
     expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN).toBe('30');
     expect(process.env.MILD_DIP_DISCOVER_SOURCES).toBe('stream,gecko,profiles');
-    expect(process.env.VOL_GREEN_LEADER_WATCH).toBe('0');
+    expect(process.env.VOL_GREEN_LEADER_WATCH).toBe('1');
+    expect(process.env.VOL_GREEN_LEADER_WATCH_WALLETS).toContain('7BNaxx');
+    expect(process.env.VOL_GREEN_LEADER_WATCH_WALLETS).toContain('8zkgFG');
     expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.15');
     expect(process.env.MILD_DIP_GREEN_MIN_MCAP_USD).toBe('12000');
     expect(process.env.MILD_DIP_EXIT_MAX_HOLD_MS).toBe('600000');

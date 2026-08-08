@@ -62,8 +62,7 @@ export MILD_DIP_EXIT_MAX_HOLD_MS=600000
 export VOL_GREEN_SLIPPAGE_BPS="${VOL_GREEN_SLIPPAGE_BPS:-500}"
 export VOL_GREEN_ALLOWED_DEX_IDS="${VOL_GREEN_ALLOWED_DEX_IDS:-pumpswap,pumpfun,raydium}"
 export VOL_GREEN_MIN_FEE_SOL_RESERVE="${VOL_GREEN_MIN_FEE_SOL_RESERVE:-0.02}"
-# COMPETE not follow: PumpSwap stream only + local 1m bars from swap prices.
-# NO leader-watch (always late). NO pump.fun bonding firehose.
+# PumpSwap stream + local 1m bars. Leader highlight (7BNaxx/8zkg) → force our gates.
 export VOL_GREEN_STREAM=1
 export MILD_DIP_STREAM=1
 export MILD_DIP_STREAM_PROGRAM_IDS=pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA
@@ -75,7 +74,10 @@ export MILD_DIP_STREAM_PRICE_MIN_GAP_MS=500
 export MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN=30
 export MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY=3
 export MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN=6
-export VOL_GREEN_LEADER_WATCH=0
+export VOL_GREEN_LEADER_WATCH=1
+export VOL_GREEN_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
+export MILD_DIP_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
+export MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN=30
 # Wider enrich — was probe=8/eval=6 → candidates=0 most scans.
 export MILD_DIP_ENRICH_CONCURRENCY=5
 export MILD_DIP_PROBE_ENRICH_MAX=16

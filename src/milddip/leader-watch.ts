@@ -1,7 +1,8 @@
 /**
  * Cheap Helius watch: logsSubscribe on a few leader wallets only
  * (not the full pump/pumpswap firehose). On Instruction: Buy → getTx mint
- * resolve → buyForce so triple_green can evaluate the candle.
+ * resolve → **leader highlight** → buyForce so our gates (triple_green) can
+ * evaluate. Not a blind copy — we still require our entry thresholds.
  *
  * Credit cost ≈ 2 wallet subscriptions + sparse getTx vs millions of program logs.
  */
@@ -83,7 +84,10 @@ export function startLeaderWalletWatch(opts: {
       queueMax: Math.max(10, resolveMax),
       staleJobMs: 25_000,
       onResolved: (mint) => {
-        console.log(`[mild-dip] leader-watch resolved mint=${mint.slice(0, 8)}… → buyForce`);
+        mildDipHotMints.markLeaderHighlight(mint, Date.now());
+        console.log(
+          `[mild-dip] leader-highlight mint=${mint.slice(0, 8)}… (resolved) → force eval`,
+        );
       },
     });
   }
@@ -96,8 +100,10 @@ export function startLeaderWalletWatch(opts: {
       if (!logsIndicateBuy(n.logs)) return;
       const mints = extractMintCandidatesFromLogs(n.logs);
       for (const mint of mints) {
-        mildDipHotMints.note(mint, tsMs, 12);
-        mildDipHotMints.markBuyForce(mint, tsMs);
+        mildDipHotMints.markLeaderHighlight(mint, tsMs);
+        console.log(
+          `[mild-dip] leader-highlight mint=${mint.slice(0, 8)}… sig=${n.signature.slice(0, 8)}… → force eval`,
+        );
       }
       if (resolver && n.signature && needsBuyMintResolve(n.logs, mints)) {
         resolver.enqueue(n.signature, tsMs);

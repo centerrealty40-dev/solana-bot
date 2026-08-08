@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.742] — 2026-08-08
+
+**Тег:** `sa-1.11.742`
+
+### Vol-green: leader mint highlight (7BNaxx + 8zkg) → force our gates
+
+`4CdCf9` / 8zkg Buy `5mPVUc…pump`: we saw mint but OHLCV budget/rate-limit.
+Re-enable cheap logsSubscribe on 2 leaders → `markLeaderHighlight` → buyForce
+first + Gecko priority. Still require triple_green (not blind copy).
+
+**Откат:** `VOL_GREEN_LEADER_WATCH=0`.
+
+---
+
 ## [1.11.741] — 2026-08-08
 
 **Тег:** `sa-1.11.741`

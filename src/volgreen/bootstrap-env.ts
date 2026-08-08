@@ -122,7 +122,13 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '30');
   setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '3');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '6');
-  setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');
+  // Highlight leader Buys → force our gates (not blind copy).
+  setIfAbsent('VOL_GREEN_LEADER_WATCH', '1');
+  setIfAbsent(
+    'VOL_GREEN_LEADER_WATCH_WALLETS',
+    '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+  );
+  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '30');
   setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '5');
   setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '16');
   setIfAbsent('MILD_DIP_MAX_ENRICH', '12');

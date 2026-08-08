@@ -170,7 +170,13 @@ export type OhlcvFetchResult = {
 
 export async function fetchGeckoOhlcv1m(
   pairAddress: string,
-  opts?: { fetchImpl?: typeof fetch; limit?: number; nowMs?: number },
+  opts?: {
+    fetchImpl?: typeof fetch;
+    limit?: number;
+    nowMs?: number;
+    /** Leader-highlight: may exceed process budget (still serialized). */
+    priority?: boolean;
+  },
 ): Promise<OhlcvFetchResult> {
   const pair = pairAddress?.trim();
   if (!pair || pair.length < 32) return { bars: [], rateLimited: false };
@@ -193,7 +199,9 @@ export async function fetchGeckoOhlcv1m(
     if (again && t - again.at < (again.rateLimited ? OHLCV_TTL_429_MS : OHLCV_TTL_MS)) {
       return { bars: again.bars, rateLimited: !!again.rateLimited };
     }
-    if (!geckoBudgetAllow(t)) {
+    // Leader-highlight may exceed soft budget so we don't miss must-see mints
+    // (5mPVUc: rate_limited/budget while 8zkg bought).
+    if (!opts?.priority && !geckoBudgetAllow(t)) {
       if (again && again.bars.length > 0) {
         return { bars: again.bars, rateLimited: false };
       }
@@ -306,6 +314,8 @@ export async function evaluateTripleGreenEntry(args: {
    * mints so force/hot keep the 6/min budget.
    */
   allowGeckoHttp?: boolean;
+  /** Leader-highlight: bypass soft Gecko budget skip. */
+  geckoPriority?: boolean;
 }): Promise<TripleGreenVerdict> {
   if (!args.gates.enabled) {
     return { pass: false, reasons: ['triple_green_disabled'] };
@@ -351,6 +361,7 @@ export async function evaluateTripleGreenEntry(args: {
   const fetched = await fetchGeckoOhlcv1m(pair, {
     fetchImpl: args.fetchImpl,
     nowMs,
+    priority: args.geckoPriority === true,
   });
   if (fetched.budgetSkipped) {
     return {

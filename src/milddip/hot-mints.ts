@@ -150,11 +150,34 @@ export class MildDipHotMintBuffer {
 
   /** Per-mint cooldown before re-queue after a missed Dex probe. */
   private buyForceRetryAfter = new Map<string, number>();
+  /** Leader-highlighted mints — evaluate first, Gecko priority (not blind copy). */
+  private leaderHighlightUntil = new Map<string, number>();
 
   /** Mark mint for next-scan force enrich (Buy activity / getTx resolve). */
   markBuyForce(mint: string, nowMs = Date.now()): void {
     if (!mint || mint.length < 32) return;
     this.buyForcePending.set(mint, nowMs);
+  }
+
+  /**
+   * Leader wallet Buy seen — force into enrich/triple eval. We still require
+   * our gates (triple_green etc.); this only highlights the mint.
+   */
+  markLeaderHighlight(mint: string, nowMs = Date.now()): void {
+    if (!mint || mint.length < 32) return;
+    this.markBuyForce(mint, nowMs);
+    this.note(mint, nowMs, 24);
+    this.leaderHighlightUntil.set(mint, nowMs + 300_000);
+  }
+
+  isLeaderHighlight(mint: string, nowMs = Date.now()): boolean {
+    const until = this.leaderHighlightUntil.get(mint);
+    if (until == null) return false;
+    if (nowMs > until) {
+      this.leaderHighlightUntil.delete(mint);
+      return false;
+    }
+    return true;
   }
 
   /**
@@ -184,9 +207,19 @@ export class MildDipHotMintBuffer {
     for (const [mint, ts] of this.buyForcePending) {
       if (nowMs - ts > 300_000) this.buyForcePending.delete(mint);
     }
+    for (const [mint, until] of this.leaderHighlightUntil) {
+      if (nowMs > until) this.leaderHighlightUntil.delete(mint);
+    }
+    // Leader highlights first, then newest buyForce.
+    const leaders: string[] = [];
+    const rest: string[] = [];
     const ordered = [...this.buyForcePending.entries()].sort((a, b) => b[1] - a[1]);
-    const out: string[] = [];
     for (const [mint] of ordered) {
+      if (this.isLeaderHighlight(mint, nowMs)) leaders.push(mint);
+      else rest.push(mint);
+    }
+    const out: string[] = [];
+    for (const mint of [...leaders, ...rest]) {
       if (out.length >= maxTake) break;
       out.push(mint);
     }
@@ -198,6 +231,7 @@ export class MildDipHotMintBuffer {
     if (!mint) return;
     this.buyForcePending.delete(mint);
     this.buyForceRetryAfter.delete(mint);
+    this.leaderHighlightUntil.delete(mint);
   }
 
   buyForcePendingToJSON(nowMs = Date.now()): Array<{ mint: string; tsMs: number }> {

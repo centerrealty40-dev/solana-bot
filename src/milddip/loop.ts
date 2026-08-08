@@ -1094,17 +1094,17 @@ export async function runMildDipLoop(
     stats.stream = streamHandle != null;
   }
 
-  // Leader-follow is OFF by default (always late). Optional via VOL_GREEN_LEADER_WATCH=1.
+  // Leader highlight (not blind copy): 7BNaxx/8zkg Buys → force triple eval.
   let leaderWatch: { stop: () => void } | null = null;
   const leaderWallets = parseLeaderWatchWallets();
   if (leaderWallets.length > 0 && (cfg.entryMode === 'green_tape' || cfg.entryMode === 'awakening')) {
-    const resolveCap = Number(process.env.MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN ?? 20);
+    const resolveCap = Number(process.env.MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN ?? 30);
     leaderWatch = startLeaderWalletWatch({
       wallets: leaderWallets,
       rpcUrl: cfg.rpcUrl,
       wsUrl: cfg.streamWsUrl || null,
-      resolveMaxPerMin: Number.isFinite(resolveCap) ? Math.max(0, resolveCap) : 20,
-      resolveConcurrency: 2,
+      resolveMaxPerMin: Number.isFinite(resolveCap) ? Math.max(0, resolveCap) : 30,
+      resolveConcurrency: 3,
     });
   }
 

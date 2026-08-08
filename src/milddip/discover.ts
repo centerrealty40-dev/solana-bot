@@ -510,9 +510,13 @@ export async function enrichAndFilterCandidates(
             pairAddress: details.pairAddress,
             nowMs,
             localPriceSamples: mildDipPriceRing.listSamples(mint, 20 * 60_000, nowMs),
-            // Only priority/force mints spend Gecko HTTP — stops 429 storm.
+            // Leader-highlight always allowed (+ geckoPriority bypasses soft budget).
             // Wider Gecko eligibility — was vol≥8k only → most mints hit budget/defer.
-            allowGeckoHttp: forceSet.has(mint) || (metrics.volume5mUsd ?? 0) >= 2_500,
+            allowGeckoHttp:
+              mildDipHotMints.isLeaderHighlight(mint, nowMs) ||
+              forceSet.has(mint) ||
+              (metrics.volume5mUsd ?? 0) >= 2_500,
+            geckoPriority: mildDipHotMints.isLeaderHighlight(mint, nowMs),
             gates: {
               enabled: true,
               smallMinPc: cfg.greenTape.tripleSmallMinPc,
