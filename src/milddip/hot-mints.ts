@@ -173,30 +173,37 @@ export class MildDipHotMintBuffer {
   }
 
   /**
-   * Drain Buy-resolved force queue (newest first). Cap per call so one scan
-   * cannot consume the entire Dex budget.
+   * Peek Buy-resolved force queue (newest first). Does NOT drain.
+   * triple_green needs the same mint across several scans to build local 1m
+   * bars — draining after one probe left every mint at samples=1 (zero buys).
    */
   takeForceEnrichBuyResolved(nowMs = Date.now(), maxTake = 12): string[] {
     if (!(maxTake > 0)) return [];
     this.prune(nowMs);
-    // Drop stale pending (>2 min — candle already gone).
+    // Keep ~5 min so we can accumulate ≥3 one-minute buckets.
     for (const [mint, ts] of this.buyForcePending) {
-      if (nowMs - ts > 120_000) this.buyForcePending.delete(mint);
+      if (nowMs - ts > 300_000) this.buyForcePending.delete(mint);
     }
     const ordered = [...this.buyForcePending.entries()].sort((a, b) => b[1] - a[1]);
     const out: string[] = [];
     for (const [mint] of ordered) {
       if (out.length >= maxTake) break;
-      this.buyForcePending.delete(mint);
       out.push(mint);
     }
     return out;
   }
 
+  /** Drop after buy / definitive skip so the queue does not grow forever. */
+  clearBuyForce(mint: string): void {
+    if (!mint) return;
+    this.buyForcePending.delete(mint);
+    this.buyForceRetryAfter.delete(mint);
+  }
+
   buyForcePendingToJSON(nowMs = Date.now()): Array<{ mint: string; tsMs: number }> {
     this.prune(nowMs);
     for (const [mint, ts] of this.buyForcePending) {
-      if (nowMs - ts > 120_000) this.buyForcePending.delete(mint);
+      if (nowMs - ts > 300_000) this.buyForcePending.delete(mint);
     }
     return [...this.buyForcePending.entries()].map(([mint, tsMs]) => ({ mint, tsMs }));
   }

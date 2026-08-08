@@ -1,5 +1,18 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.736] — 2026-08-08
+
+**Тег:** `sa-1.11.736`
+
+### Fix: buyForce drained after 1 scan → local bars never built
+
+`takeForceEnrichBuyResolved` deleted mints on take → every eval saw
+`triple_local_samples=1`. Now peek (keep 5 min); clear only on buy / definitive miss.
+
+**Откат:** restore drain-on-take.
+
+---
+
 ## [1.11.735] — 2026-08-08
 
 **Тег:** `sa-1.11.735`

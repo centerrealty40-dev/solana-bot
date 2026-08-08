@@ -298,7 +298,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     : [];
   // Buy/Sell getTx-resolved — cap take so Dex gate (180 RPM) finishes in budget.
   // Was 16 + probe inflate → avg enrich ~20s / "still running after 15000ms".
-  const buyForce = tapeMode ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, 8) : [];
+  // Fewer force slots → same mints re-probed → local 1m bars accumulate.
+  const buyForce = tapeMode
+    ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, tripleOnly ? 4 : 8)
+    : [];
   const forceEnrich = tapeMode
     ? [
         ...new Set([
@@ -655,6 +658,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     saveMildDipState(cfg.statePath, state);
     filled += 1;
     resetCopyFundingCache();
+    mildDipHotMints.clearBuyForce(c.mint);
     console.log(
       `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd} pc5m=${entryPc5m?.toFixed(1)} @$${
         (buy.priceUsd || entryPriceUsd).toPrecision(4)

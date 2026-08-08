@@ -509,6 +509,18 @@ export async function enrichAndFilterCandidates(
             },
           });
           if (!tg.pass) {
+            const waitingLocal = tg.reasons.some(
+              (r) =>
+                r.startsWith('triple_local_samples=') ||
+                r.startsWith('triple_local_bars=') ||
+                r === 'triple_ohlcv_budget' ||
+                r === 'triple_gecko_deferred' ||
+                r === 'triple_ohlcv_rate_limited',
+            );
+            // Peek-mode keeps waiting mints in buyForce; drop definitive misses.
+            if (!waitingLocal && forceSet.has(mint)) {
+              mildDipHotMints.clearBuyForce(mint);
+            }
             return {
               kind: 'skip',
               skip: {
@@ -522,6 +534,7 @@ export async function enrichAndFilterCandidates(
               },
             };
           }
+          mildDipHotMints.clearBuyForce(mint);
           // Short-red: only real dumps (≤ -1%), not flat 0.00.
           const shortMs = cfg.greenTapeShortRedWindowMs;
           const shortPc =
