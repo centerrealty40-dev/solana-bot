@@ -667,6 +667,34 @@ export type MildDipMicroSizeGates = {
 };
 
 /**
+ * 1.11.746 — micro size band applies only to knife_stabilize (post-knife bounce).
+ * Other dipSources always size base/thick.
+ */
+export function mildDipMicroSizeGatesForSource(
+  micro: MildDipMicroSizeGates | null | undefined,
+  dipSource: string,
+): MildDipMicroSizeGates | null {
+  if (dipSource !== 'knife_stabilize') return null;
+  if (!micro || !(micro.positionUsd > 0)) return null;
+  return micro;
+}
+
+/**
+ * When micro tier is on, knife watches may arm down to microMin mcap
+ * while the global entry floor stays higher (e.g. $50k).
+ */
+export function knifeStabilizeMinMarketCapUsd(args: {
+  entryMinMarketCapUsd: number;
+  microPositionUsd: number;
+  microMinMarketCapUsd: number;
+}): number {
+  if (args.microPositionUsd > 0 && args.microMinMarketCapUsd > 0) {
+    return args.microMinMarketCapUsd;
+  }
+  return args.entryMinMarketCapUsd;
+}
+
+/**
  * Wanted entry notional:
  * - thick clip when mcap/liq/age all clear
  * - else micro clip when mcap ∈ [microMin, microMax]

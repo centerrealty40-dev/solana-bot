@@ -13,6 +13,7 @@ import {
   evaluateCooldownBounce,
   evaluateMildDipPreBuy,
   evaluateRebuyBelowExit,
+  mildDipMicroSizeGatesForSource,
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
@@ -309,11 +310,15 @@ export async function attemptMildDipEntry(args: {
       minLiquidityUsd: cfg.thickMinLiquidityUsd,
       minPairAgeHours: cfg.thickMinPairAgeHours,
     },
-    micro: {
-      positionUsd: cfg.microPositionUsd,
-      minMarketCapUsd: cfg.microMinMarketCapUsd,
-      maxMarketCapUsd: cfg.microMaxMarketCapUsd,
-    },
+    // 1.11.746 — micro $15k–$50k @ $5 only on knife_stabilize (post-knife bounce).
+    micro: mildDipMicroSizeGatesForSource(
+      {
+        positionUsd: cfg.microPositionUsd,
+        minMarketCapUsd: cfg.microMinMarketCapUsd,
+        maxMarketCapUsd: cfg.microMaxMarketCapUsd,
+      },
+      c.dipSource,
+    ),
     metrics: sizeMetrics,
   });
   const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wanted.sizeUsd);

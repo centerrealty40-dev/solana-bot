@@ -1146,7 +1146,7 @@ export async function runMildDipLoop(
       `thickUsd=${cfg.thickPositionUsd}` +
       `(mcap≥$${cfg.thickMinMarketCapUsd}/liq≥$${cfg.thickMinLiquidityUsd}/age≥${cfg.thickMinPairAgeHours}h) ` +
       `microUsd=${cfg.microPositionUsd}` +
-      `(mcap$${cfg.microMinMarketCapUsd}–$${cfg.microMaxMarketCapUsd}) ` +
+      `(mcap$${cfg.microMinMarketCapUsd}–$${cfg.microMaxMarketCapUsd}/knifeOnly) ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `h1RedShallow=${cfg.h1RedShallowEnabled ? 1 : 0}` +
       `(h1≤${cfg.h1RedShallowH1MaxPct}/pc5m∈(${cfg.h1RedShallowMinDipPct},${cfg.h1RedShallowMaxDipPct}]) ` +

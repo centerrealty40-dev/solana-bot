@@ -1,4 +1,28 @@
 # So
+## [1.11.746] — 2026-08-08
+
+**Тег:** `sa-1.11.746`
+
+### Ops: micro tier ($15k–$50k @ $5) knife_stabilize only
+
+Re-enable the micro clip, scoped to **one** entry branch:
+`knife_stabilize` (buy after bounce/stabilize after a deep knife).
+
+- Other dipSources (`dex`, `stream`, `mild_stabilize`, …): global
+  `MIN_MCAP=$50k`, size base/thick only — no micro.
+- Knife branch: structural floor down to `MICRO_MIN_MCAP=$15k`; in
+  band `$15k–$50k` size `$5`.
+
+**Live:**
+`MILD_DIP_MICRO_POSITION_USD=5`
+`MILD_DIP_MICRO_MIN_MCAP_USD=15000`
+`MILD_DIP_MICRO_MAX_MCAP_USD=50000`
+`MILD_DIP_MIN_MCAP_USD=50000`
+
+**Откат:** `MICRO_POSITION_USD=0` + reload (knife floor returns to $50k).
+
+---
+
 ## [1.11.745] — 2026-08-08
 
 **Тег:** `sa-1.11.745`
