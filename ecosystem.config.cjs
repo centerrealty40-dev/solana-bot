@@ -2995,6 +2995,13 @@ const PM2_APPS = [
         MILD_DIP_DUMP_CLASSIFY_MASS_MIN_SELLERS: '3',
         MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE: '0.6',
         /**
+         * 1.11.744 — defer soft exits while reclaiming off local trough
+         * (5vkZWa never_arm_stale into green candles). cliff/timeout still fire.
+         */
+        MILD_DIP_RECOVER_DEFER: '1',
+        MILD_DIP_RECOVER_DEFER_LOOKBACK_MS: '300000',
+        MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT: '3',
+        /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
          * Dex hard-capped at 120 RPM; mark uses cache TTL ≈ interval.
          */

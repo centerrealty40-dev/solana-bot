@@ -1,4 +1,28 @@
 # So
+## [1.11.744] — 2026-08-08
+
+**Тег:** `sa-1.11.744`
+
+### Fix: defer soft exits while reclaiming (green off trough)
+
+`5vkZWa` / `2G8p5h…`: `never_arm_stale` at ~20m / MFE 0 sold into a
+reclaim (stream trough → +4–5% bounce; chart green). Soft exit was correct
+on absolute pnl, wrong on timing.
+
+**Change:** if mark has bounced ≥ `3%` off the price-ring trough in the
+last `5m`, defer soft exits (`never_arm_stale|dead|vol_fade`,
+`peak_giveback*`, `never_arm_giveback`). `cliff_dump` / `never_arm_timeout`
+still fire. Journal: `recover_defer`.
+
+**Env:**
+`MILD_DIP_RECOVER_DEFER=1`
+`MILD_DIP_RECOVER_DEFER_LOOKBACK_MS=300000`
+`MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT=3`
+
+**Откат:** `MILD_DIP_RECOVER_DEFER=0` + reload.
+
+---
+
 ## [1.11.743] — 2026-08-08
 
 **Тег:** `sa-1.11.743`

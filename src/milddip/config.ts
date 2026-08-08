@@ -113,6 +113,13 @@ const MildDipConfigSchema = z.object({
   /** Top seller USD share ≥ this (and ≥ minSellUsd) ⇒ whale_oneshot. */
   dumpClassifyWhaleShare: z.coerce.number().min(0.5).max(1).default(0.6),
   /**
+   * Defer soft exits (stale/dead/vol_fade/giveback) when mark has bounced
+   * ≥ minBouncePct off the ring trough in lookback. cliff/timeout still fire.
+   */
+  recoverDeferEnabled: z.boolean().default(true),
+  recoverDeferLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(300_000),
+  recoverDeferMinBouncePct: z.coerce.number().min(0).max(50).default(3),
+  /**
    * Journal one `mild_dip_mark` row per open position at most this often.
    * Gives an offline price path per trade so trail widths can be re-fitted on
    * our own tape instead of the leader's. 0 = off. 1.11.736 default 5s.
@@ -547,6 +554,10 @@ export function loadMildDipConfig(): MildDipConfig {
     dumpClassifyWaitMs: process.env.MILD_DIP_DUMP_CLASSIFY_WAIT_MS ?? 5_000,
     dumpClassifyMassMinSellers: process.env.MILD_DIP_DUMP_CLASSIFY_MASS_MIN_SELLERS ?? 3,
     dumpClassifyWhaleShare: process.env.MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE ?? 0.6,
+    /** 1.11.744 — defer soft exits while reclaiming off local trough. */
+    recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', true),
+    recoverDeferLookbackMs: process.env.MILD_DIP_RECOVER_DEFER_LOOKBACK_MS ?? 300_000,
+    recoverDeferMinBouncePct: process.env.MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT ?? 3,
     hotMintsPath:
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:

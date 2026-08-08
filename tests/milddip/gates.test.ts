@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
+  bounceFromTroughPct,
   evaluateFlatMicroDip,
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
+  isRecoveringFromTrough,
   resolveMildDipWantedSizeUsd,
   type MildDipCandidateMetrics,
   type MildDipEntryGates,
@@ -772,5 +774,39 @@ describe('resolveMildDipWantedSizeUsd', () => {
       metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 12 },
     });
     expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
+  });
+});
+
+describe('isRecoveringFromTrough', () => {
+  it('detects 5vkZWa-style reclaim off trough (≥3%)', () => {
+    // trough 6.06e-5 → mark 6.333e-5 ≈ +4.5%
+    expect(
+      isRecoveringFromTrough({
+        markPriceUsd: 6.333e-5,
+        troughPriceUsd: 6.06e-5,
+        minBouncePct: 3,
+      }),
+    ).toBe(true);
+    expect(bounceFromTroughPct(6.333e-5, 6.06e-5)).toBeGreaterThan(4);
+  });
+
+  it('false when still near trough', () => {
+    expect(
+      isRecoveringFromTrough({
+        markPriceUsd: 6.1e-5,
+        troughPriceUsd: 6.06e-5,
+        minBouncePct: 3,
+      }),
+    ).toBe(false);
+  });
+
+  it('off when minBouncePct=0', () => {
+    expect(
+      isRecoveringFromTrough({
+        markPriceUsd: 10,
+        troughPriceUsd: 5,
+        minBouncePct: 0,
+      }),
+    ).toBe(false);
   });
 });
