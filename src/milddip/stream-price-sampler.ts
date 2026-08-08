@@ -3,14 +3,19 @@
  * Only samples mints the caller marks as watched (cooldown / priority) to
  * protect Helius RPC budget.
  *
- * Also detects one-shot emptied-bag sells on open mints (same tx meta —
- * no extra balance RPC) so exits can grace peak_giveback briefly.
+ * Also extracts sell prints on open mints (tx meta balances) so exits can
+ * classify whale oneshot vs mass flee before peak_giveback.
  */
 import { fetchParsedTransaction } from '../copytrader/rpc.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { decodeAllowlistedDexSwapInserts } from '../parser/allowlisted-dex-swap.js';
 import { PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import type { TxJsonParsed } from '../parser/rpc-http.js';
+import {
+  extractMintSellPrints,
+  type DumpSellPrint,
+  type DumpSellTape,
+} from './dump-classify.js';
 import {
   detectOneshotEmptiedDump,
   type OneshotDumpDetectOpts,
@@ -32,12 +37,16 @@ export function createStreamPriceSampler(args: {
   concurrency?: number;
   /**
    * When true, bypass per-mint minGap so every unique signature is fetched
-   * (open-book oneshot dump detect). Still deduped by signature.
+   * (open-book dump classify / oneshot). Still deduped by signature.
    */
   forceFetch?: (mint: string) => boolean;
   /** Optional oneshot emptied-bag dump detection on decoded txs. */
   oneshot?: OneshotDumpDetectOpts & { enabled: boolean };
   onOneshotDump?: (ev: OneshotDumpEvent) => void;
+  /** Recent sell tape for giveback dump classify. */
+  sellTape?: DumpSellTape | null;
+  maxPostResidualFrac?: number;
+  onSellPrints?: (prints: DumpSellPrint[]) => void;
 }): StreamPriceSampler {
   const minGap = Math.max(500, args.minGapMsPerMint ?? 2_000);
   const concurrency = Math.max(1, Math.min(8, args.concurrency ?? 3));
@@ -84,33 +93,47 @@ export function createStreamPriceSampler(args: {
     lastFetchAt.set(job.mint, nowMs);
 
     const solUsd = getSolUsd();
-    if (!(solUsd > 0)) {
-      skipped += 1;
-      return;
-    }
-
     const tx = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
     if (!tx) {
       skipped += 1;
       return;
     }
 
-    const swaps = decodeAllowlistedDexSwapInserts(tx, PUMP_FUN_PROGRAM_ID, solUsd);
     let noted = false;
     let priceHint = 0;
-    for (const s of swaps) {
-      if (s.baseMint !== job.mint) continue;
-      if (!(s.priceUsd > 0)) continue;
-      mildDipPriceRing.note(job.mint, s.priceUsd, {
+    // Price decode needs SOL/USD; sell-balance classify does not.
+    if (solUsd > 0) {
+      const swaps = decodeAllowlistedDexSwapInserts(tx, PUMP_FUN_PROGRAM_ID, solUsd);
+      for (const s of swaps) {
+        if (s.baseMint !== job.mint) continue;
+        if (!(s.priceUsd > 0)) continue;
+        mildDipPriceRing.note(job.mint, s.priceUsd, {
+          tsMs: job.tsMs || nowMs,
+          source: 'stream',
+        });
+        noted = true;
+        if (s.priceUsd > priceHint) priceHint = s.priceUsd;
+      }
+    }
+
+    const ringPx = mildDipPriceRing.lastPrice(job.mint, nowMs)?.priceUsd ?? 0;
+    const px = priceHint > 0 ? priceHint : ringPx;
+
+    // Always extract sells for forced/open mints — dump classify before giveback.
+    if (forced || args.sellTape || args.onSellPrints) {
+      const prints = extractMintSellPrints(tx, job.mint, {
+        priceUsd: px,
         tsMs: job.tsMs || nowMs,
-        source: 'stream',
+        signature: job.signature,
+        maxPostResidualFrac: args.maxPostResidualFrac ?? args.oneshot?.maxPostResidualFrac,
       });
-      noted = true;
-      if (s.priceUsd > priceHint) priceHint = s.priceUsd;
+      if (prints.length > 0) {
+        args.sellTape?.noteMany(prints);
+        args.onSellPrints?.(prints);
+      }
     }
 
     if (args.oneshot?.enabled && args.onOneshotDump) {
-      const ringPx = mildDipPriceRing.lastPrice(job.mint, nowMs)?.priceUsd ?? 0;
       const dump = detectOneshotEmptiedDump(
         tx,
         job.mint,
@@ -119,7 +142,7 @@ export function createStreamPriceSampler(args: {
           maxPostResidualFrac: args.oneshot.maxPostResidualFrac,
         },
         {
-          priceUsd: priceHint > 0 ? priceHint : ringPx,
+          priceUsd: px,
           tsMs: job.tsMs || nowMs,
           signature: job.signature,
         },
@@ -143,11 +166,17 @@ export function createStreamPriceSampler(args: {
       }
       seenSig.add(signature);
       if (!args.shouldSample(mint, tsMs)) return;
+      // Open-book forceFetch: never drop on minGap at enqueue — sampleOne bypasses too.
+      const forced = args.forceFetch?.(mint) === true;
       const last = lastFetchAt.get(mint) ?? 0;
-      if (tsMs - last < minGap && queue.every((q) => q.mint !== mint)) {
-        // still allow one queued refresh after gap
+      if (!forced && tsMs - last < minGap && queue.some((q) => q.mint === mint)) {
+        // Already have a refresh queued for this mint within gap — skip pile-up.
+        return;
       }
-      if (queue.length > 400) queue.splice(0, queue.length - 400);
+      if (queue.length > 400) {
+        // Prefer keeping forced/open work: drop from the front.
+        queue.splice(0, queue.length - 400);
+      }
       queue.push({ mint, signature, tsMs });
       pump();
     },

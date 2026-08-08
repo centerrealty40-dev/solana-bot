@@ -1,4 +1,37 @@
 # So
+## [1.11.740] — 2026-08-08
+
+**Тег:** `sa-1.11.740`
+
+### Fix: classify whale vs mass-flee before peak_giveback
+
+`6f8ZQh` / `5iMDg4…`: armed trail full-sold on a red candle (`peak_giveback`
+−16%) with no dump check. Oneshot grace existed but never armed live (0
+journal events) — emptied detect needed USD price, and giveback did not wait
+for stream sell tape.
+
+**Changes:**
+1. Stream sampler extracts all signer sells on open mints into a sell tape
+   (even without SOL/USD decode).
+2. Soft giveback (`peak_giveback` / partial / `never_arm_giveback`) waits up
+   to `DUMP_CLASSIFY_WAIT_MS` (5s) for classify:
+   - `whale_oneshot` → arm oneshot grace, hold
+   - `mass_flee` (≥3 sellers) → allow sell
+   - `unknown` timeout → allow sell (do not freeze)
+3. Emptied-bag oneshot detect accepts large raw sells when price hint is 0.
+4. Journal: `dump_classify_pending|allow|whale_grace`.
+
+**Env:**
+`MILD_DIP_DUMP_CLASSIFY=1`
+`MILD_DIP_DUMP_CLASSIFY_WAIT_MS=5000`
+`MILD_DIP_DUMP_CLASSIFY_WINDOW_MS=30000`
+`MILD_DIP_DUMP_CLASSIFY_MASS_MIN_SELLERS=3`
+`MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE=0.6`
+
+**Откат:** `MILD_DIP_DUMP_CLASSIFY=0` + reload.
+
+---
+
 ## [1.11.739] — 2026-08-08
 
 **Тег:** `sa-1.11.739`

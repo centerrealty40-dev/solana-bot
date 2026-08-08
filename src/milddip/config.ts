@@ -95,6 +95,17 @@ const MildDipConfigSchema = z.object({
   /** post/pre ≤ this counts as emptied (dust left OK). */
   oneshotDumpMaxPostResidualFrac: z.coerce.number().min(0).max(1).default(0.02),
   /**
+   * Before soft peak_giveback: classify red candle as whale oneshot vs mass flee
+   * from stream sell tape. 0 wait = classify-only (no pending hold).
+   */
+  dumpClassifyEnabled: z.boolean().default(true),
+  dumpClassifyWindowMs: z.coerce.number().int().min(5_000).max(300_000).default(30_000),
+  /** Hold giveback while class=unknown, then timeout → sell as mass_flee. */
+  dumpClassifyWaitMs: z.coerce.number().int().min(0).max(60_000).default(5_000),
+  dumpClassifyMassMinSellers: z.coerce.number().int().min(2).max(20).default(3),
+  /** Top seller USD share ≥ this (and ≥ minSellUsd) ⇒ whale_oneshot. */
+  dumpClassifyWhaleShare: z.coerce.number().min(0.5).max(1).default(0.6),
+  /**
    * Journal one `mild_dip_mark` row per open position at most this often.
    * Gives an offline price path per trade so trail widths can be re-fitted on
    * our own tape instead of the leader's. 0 = off. 1.11.736 default 5s.
@@ -519,6 +530,12 @@ export function loadMildDipConfig(): MildDipConfig {
     oneshotDumpMinSellUsd: process.env.MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD ?? 500,
     oneshotDumpMaxPostResidualFrac:
       process.env.MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC ?? 0.02,
+    /** 1.11.740 — classify whale vs mass flee before soft giveback. */
+    dumpClassifyEnabled: envBool('MILD_DIP_DUMP_CLASSIFY', true),
+    dumpClassifyWindowMs: process.env.MILD_DIP_DUMP_CLASSIFY_WINDOW_MS ?? 30_000,
+    dumpClassifyWaitMs: process.env.MILD_DIP_DUMP_CLASSIFY_WAIT_MS ?? 5_000,
+    dumpClassifyMassMinSellers: process.env.MILD_DIP_DUMP_CLASSIFY_MASS_MIN_SELLERS ?? 3,
+    dumpClassifyWhaleShare: process.env.MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE ?? 0.6,
     hotMintsPath:
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:
