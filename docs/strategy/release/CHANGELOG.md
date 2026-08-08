@@ -1,4 +1,18 @@
 # So
+## [1.11.735] — 2026-08-08
+
+**Тег:** `sa-1.11.735`
+
+### Ops: entry vol5m floor $1500 → $500
+
+Buy filter: Dex 5m volume must be ≥ `$500` (was `$1500`).
+
+**Live / default:** `MILD_DIP_MIN_VOLUME_5M_USD=500`
+
+**Откат:** `MILD_DIP_MIN_VOLUME_5M_USD=1500` + reload.
+
+---
+
 ## [1.11.734] — 2026-08-08
 
 **Тег:** `sa-1.11.734`
