@@ -1,4 +1,21 @@
 # So
+## [1.11.749] — 2026-08-08
+
+**Тег:** `sa-1.11.749`
+
+### Ops: disable recover_defer — dump_classify owns giveback
+
+`5vkZWa`: trail hit −6% giveback from peak but `recover_defer` held the
+exit while mark was still ≥3% above the entry trough — sold near entry.
+New dump-classify / oneshot path never ran first.
+
+**Live:** `MILD_DIP_RECOVER_DEFER=0` (default off). Soft giveback goes to
+`dump_classify` (whale vs mass) without trough-bounce hold.
+
+**Откат:** `MILD_DIP_RECOVER_DEFER=1` + reload.
+
+---
+
 ## [1.11.748] — 2026-08-08
 
 **Тег:** `sa-1.11.748`

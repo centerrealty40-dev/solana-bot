@@ -117,7 +117,8 @@ const MildDipConfigSchema = z.object({
    * Defer soft exits (stale/dead/vol_fade/giveback) when mark has bounced
    * ≥ minBouncePct off the ring trough in lookback. cliff/timeout still fire.
    */
-  recoverDeferEnabled: z.boolean().default(true),
+  /** 1.11.749 default off — was blocking trail giveback on green-vs-trough. */
+  recoverDeferEnabled: z.boolean().default(false),
   recoverDeferLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(300_000),
   recoverDeferMinBouncePct: z.coerce.number().min(0).max(50).default(3),
   /**
@@ -576,7 +577,8 @@ export function loadMildDipConfig(): MildDipConfig {
     dumpClassifyMassMinSellers: process.env.MILD_DIP_DUMP_CLASSIFY_MASS_MIN_SELLERS ?? 3,
     dumpClassifyWhaleShare: process.env.MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE ?? 0.6,
     /** 1.11.744 — defer soft exits while reclaiming off local trough. */
-    recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', true),
+    /** 1.11.749 — default off; dump_classify owns soft-giveback gating. */
+    recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),
     recoverDeferLookbackMs: process.env.MILD_DIP_RECOVER_DEFER_LOOKBACK_MS ?? 300_000,
     recoverDeferMinBouncePct: process.env.MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT ?? 3,
     hotMintsPath:
