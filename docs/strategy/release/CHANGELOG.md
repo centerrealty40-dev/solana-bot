@@ -1,4 +1,30 @@
 # So
+## [1.11.753] — 2026-08-08
+
+**Тег:** `sa-1.11.753`
+
+### Entry: wait-dip −7% on knife / mild_stabilize too
+
+Branch CF on the same 48h book ($100/coin, MFE-bank + never-arm):
+
+| Policy | Total |
+|---|---:|
+| Immediate all | −$358 |
+| Prod 1.11.752 (wait main-band only; stabilize immediate) | +$2 384 |
+| Wait −7% **all** branches | **+$2 736** |
+
+Stabilize-only:
+
+- `mild_stabilize` immediate +$43 → wait−7 **+$256**
+- `knife_stabilize` immediate −$14 → wait−7 **+$119**
+
+Exclusion was a product assumption (“already delayed paths”), not CF-backed.
+`waitDipAppliesToSource` now includes `knife_stabilize` / `mild_stabilize`.
+
+**Откат:** revert `wait-dip.ts` source list, or `MILD_DIP_WAIT_DIP=0`.
+
+---
+
 ## [1.11.752] — 2026-08-08
 
 **Тег:** `sa-1.11.752`
@@ -16,7 +42,7 @@ hard ±10%).
   `flat_micro_dip`) **park** a `waitDipWatch` at first signal price
 - Buy only when mark ≤ signal × (1 − 7%) → `dipSource=wait_dip`
 - Expire after 20m if never filled
-- `knife_stabilize` / `mild_stabilize` unchanged (already delayed paths)
+- `knife_stabilize` / `mild_stabilize` unchanged in 1.11.752 (extended in 1.11.753)
 
 **Env:**
 - `MILD_DIP_WAIT_DIP=1`

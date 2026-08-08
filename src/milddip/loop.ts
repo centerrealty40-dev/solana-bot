@@ -567,7 +567,7 @@ async function tryFastPathForMint(
   const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger);
   if (!candidate) return false;
 
-  // 1.11.752 — park main-band signals; buy only after extra dump from signal.
+  // 1.11.753 — park signals (all branches); buy only after extra dump from signal.
   if (
     cfg.waitDipEnabled &&
     cfg.waitDipPct < 0 &&
@@ -726,7 +726,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         continue;
       }
     }
-    // Slow lane: also park main-band when fast-path off / failed without park.
+    // Slow lane: also park wait-eligible sources when fast-path off / failed without park.
     if (
       cfg.waitDipEnabled &&
       cfg.waitDipPct < 0 &&
