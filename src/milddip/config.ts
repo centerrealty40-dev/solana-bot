@@ -39,7 +39,21 @@ const MildDipConfigSchema = z.object({
   maxOpenPositions: z.coerce.number().int().min(0).max(500).default(0),
   /** Background lane may run at 3s when stream/leader fast-path owns entries. */
   scanIntervalMs: z.coerce.number().int().min(3_000).max(600_000).default(5_000),
-  markIntervalMs: z.coerce.number().int().min(2_000).max(120_000).default(2_000),
+  /**
+   * Open-book exit poll cadence. Live target ≤5s (1.11.736); was 2s on paper
+   * but Dex-only marks + scan blocking stretched real gaps to ~60s.
+   */
+  markIntervalMs: z.coerce.number().int().min(1_000).max(120_000).default(2_000),
+  /**
+   * Prefer stream/ring price for open marks when sample age ≤ this (ms).
+   * 0 = Dex-only. Avoids Dex gate stalls on the exit path (2qE4vp −17% gap).
+   */
+  markStreamMaxAgeMs: z.coerce.number().int().min(0).max(60_000).default(5_000),
+  /**
+   * How often to still hit Dex on an open mint (vol fade + structural warm).
+   * Price exits use stream between Dex refreshes.
+   */
+  markDexRefreshMs: z.coerce.number().int().min(0).max(300_000).default(15_000),
   /**
    * DexScreener mark cache TTL — avoid bypassCache hammering the gate.
    * Keep ≈ markIntervalMs (default 2s on sole-consumer Oscar).
@@ -83,9 +97,9 @@ const MildDipConfigSchema = z.object({
   /**
    * Journal one `mild_dip_mark` row per open position at most this often.
    * Gives an offline price path per trade so trail widths can be re-fitted on
-   * our own tape instead of the leader's. 0 = off.
+   * our own tape instead of the leader's. 0 = off. 1.11.736 default 5s.
    */
-  markJournalMs: z.coerce.number().int().min(0).max(3_600_000).default(30_000),
+  markJournalMs: z.coerce.number().int().min(0).max(3_600_000).default(5_000),
   hotMintsPath: z.string().default(path.join('data', 'milddip', 'hot-mints.json')),
   priceRingPath: z.string().default(path.join('data', 'milddip', 'price-ring.json')),
   /** Telegram ALERT when mark pass / opens / null-ratio signal Dex pressure. */
@@ -388,8 +402,11 @@ export function loadMildDipConfig(): MildDipConfig {
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
+    markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 5_000,
+    markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 15_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 2_000,
-    markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 30_000,
+    /** 1.11.736 — tighter journal so giveback gaps are visible (was 30s). */
+    markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 5_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,
     enrichConcurrency: process.env.MILD_DIP_ENRICH_CONCURRENCY ?? 12,
     sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 6,
