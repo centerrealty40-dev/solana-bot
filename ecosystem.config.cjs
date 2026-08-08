@@ -2982,6 +2982,12 @@ const PM2_APPS = [
         MILD_DIP_ONESHOT_DUMP_GRACE_MS: '60000',
         MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD: '500',
         MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC: '0.02',
+        /** 1.11.740 — soft giveback only after whale vs mass-flee classify. */
+        MILD_DIP_DUMP_CLASSIFY: '1',
+        MILD_DIP_DUMP_CLASSIFY_WAIT_MS: '5000',
+        MILD_DIP_DUMP_CLASSIFY_WINDOW_MS: '30000',
+        MILD_DIP_DUMP_CLASSIFY_MASS_MIN_SELLERS: '3',
+        MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE: '0.6',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
          * Dex hard-capped at 120 RPM; mark uses cache TTL ≈ interval.
@@ -2989,7 +2995,7 @@ const PM2_APPS = [
         /** Background lane only — entries owned by stream/leader fast-path. */
         MILD_DIP_SCAN_INTERVAL_MS: '3000',
         /**
-         * 1.11.739 — open marks: no slow scan while open; stream-first + bg Dex.
+         * 1.11.740 — dump classify before peak_giveback (whale vs mass).
          * Was Dex-only + scan-blocked → real gaps ~60s (2qE4vp −17% giveback).
          */
         MILD_DIP_MARK_INTERVAL_MS: '2000',

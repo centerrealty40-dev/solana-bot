@@ -100,7 +100,12 @@ export function detectOneshotEmptiedDump(
     if (!(residualFrac <= maxResidual + 1e-12)) continue;
     const soldHuman = Number(sold) / 10 ** dec;
     const soldUsd = priceUsd > 0 && soldHuman > 0 ? soldHuman * priceUsd : 0;
-    if (minSellUsd > 0 && !(soldUsd >= minSellUsd)) continue;
+    // Price missing: still accept emptied bags with ≥1 token raw (classify/grace).
+    if (minSellUsd > 0 && !(soldUsd >= minSellUsd)) {
+      if (!(priceUsd <= 0 && sold >= 1_000_000n && residualFrac <= maxResidual + 1e-12)) {
+        continue;
+      }
+    }
     const ev: OneshotDumpEvent = {
       mint,
       signature: sig,

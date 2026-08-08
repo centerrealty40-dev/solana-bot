@@ -45,6 +45,11 @@ import {
   type MildDipState,
 } from './state.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
+import {
+  createDumpSellTape,
+  createGivebackDumpGate,
+  type DumpClassifyOpts,
+} from './dump-classify.js';
 import { createOneshotDumpGraceTracker } from './oneshot-dump.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
@@ -699,11 +704,22 @@ async function executeQueuedSell(args: {
  * Phase 3: sell queue with limited concurrency — mint leaves state only after
  * confirmed sell / empty bag. In-flight mints skipped on subsequent marks.
  */
+const SOFT_GIVEBACK_REASONS = new Set([
+  'peak_giveback',
+  'peak_giveback_partial',
+  'never_arm_giveback',
+]);
+
+/** mint → last dump_classify_pending journal ts (throttle). */
+const lastDumpClassifyJournalMs = new Map<string, number>();
+
 async function tryExits(
   cfg: MildDipConfig,
   state: MildDipState,
   nowMs: number,
   oneshotDumpGrace: ReturnType<typeof createOneshotDumpGraceTracker>,
+  dumpTape: ReturnType<typeof createDumpSellTape>,
+  givebackDumpGate: ReturnType<typeof createGivebackDumpGate>,
 ): Promise<void> {
   const ordered = orderMintsForMark(state.open).filter((m) => !sellInFlight.has(m));
   if (ordered.length === 0) return;
@@ -803,7 +819,101 @@ async function tryExits(
     }
 
     if (decision.shouldExit && decision.reason) {
+      // Soft giveback only after whale-vs-mass classify (or wait timeout).
+      if (
+        cfg.dumpClassifyEnabled &&
+        decision.reason != null &&
+        SOFT_GIVEBACK_REASONS.has(decision.reason)
+      ) {
+        const classifyOpts: DumpClassifyOpts = {
+          windowMs: cfg.dumpClassifyWindowMs,
+          minSellUsd: cfg.oneshotDumpMinSellUsd,
+          maxPostResidualFrac: cfg.oneshotDumpMaxPostResidualFrac,
+          massMinSellers: cfg.dumpClassifyMassMinSellers,
+          whaleShare: cfg.dumpClassifyWhaleShare,
+        };
+        const classified = dumpTape.classify(mint, nowMs, classifyOpts);
+        const gate = givebackDumpGate.allowGiveback({
+          mint,
+          nowMs,
+          classify: classified,
+          waitMs: cfg.dumpClassifyWaitMs,
+          onWhale: () => {
+            if (!cfg.oneshotDumpGraceEnabled || cfg.oneshotDumpGraceMs <= 0) return;
+            const until = oneshotDumpGrace.note(mint, nowMs, cfg.oneshotDumpGraceMs);
+            appendMildDipJournal(cfg.journalPath, {
+              kind: 'dump_classify_whale_grace',
+              mint,
+              symbol: pos.symbol,
+              sellers: classified.sellers,
+              prints: classified.prints,
+              totalSoldUsd: +classified.totalSoldUsd.toFixed(2),
+              topSeller: classified.topSeller,
+              topSoldUsd: +classified.topSoldUsd.toFixed(2),
+              topEmptied: classified.topEmptied,
+              topShare: +classified.topShare.toFixed(3),
+              graceMs: cfg.oneshotDumpGraceMs,
+              untilMs: until,
+              wouldReason: decision.reason,
+              givebackPct: +decision.givebackPct.toFixed(2),
+            });
+            console.log(
+              `[mild-dip] DUMP_WHALE_GRACE ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+                `sellers=${classified.sellers} top~$${classified.topSoldUsd.toFixed(0)} ` +
+                `share=${(classified.topShare * 100).toFixed(0)}% ` +
+                `grace=${Math.round(cfg.oneshotDumpGraceMs / 1000)}s ` +
+                `(held ${decision.reason})`,
+            );
+          },
+        });
+        if (!gate.allow) {
+          const lastJ = lastDumpClassifyJournalMs.get(mint) ?? 0;
+          if (
+            !gate.pending ||
+            gate.class === 'whale_oneshot' ||
+            nowMs - lastJ >= 2_000
+          ) {
+            lastDumpClassifyJournalMs.set(mint, nowMs);
+            appendMildDipJournal(cfg.journalPath, {
+              kind: gate.pending ? 'dump_classify_pending' : 'dump_classify_hold',
+              mint,
+              symbol: pos.symbol,
+              class: gate.class,
+              sellers: classified.sellers,
+              prints: classified.prints,
+              totalSoldUsd: +classified.totalSoldUsd.toFixed(2),
+              topSeller: classified.topSeller,
+              topSoldUsd: +classified.topSoldUsd.toFixed(2),
+              topEmptied: classified.topEmptied,
+              topShare: +classified.topShare.toFixed(3),
+              waitedMs: gate.waitedMs,
+              wouldReason: decision.reason,
+              givebackPct: +decision.givebackPct.toFixed(2),
+              mfePct: +decision.mfePct.toFixed(2),
+            });
+          }
+          continue;
+        }
+        lastDumpClassifyJournalMs.delete(mint);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'dump_classify_allow',
+          mint,
+          symbol: pos.symbol,
+          class: gate.class,
+          sellers: classified.sellers,
+          prints: classified.prints,
+          totalSoldUsd: +classified.totalSoldUsd.toFixed(2),
+          topSeller: classified.topSeller,
+          topSoldUsd: +classified.topSoldUsd.toFixed(2),
+          topEmptied: classified.topEmptied,
+          topShare: +classified.topShare.toFixed(3),
+          waitedMs: gate.waitedMs,
+          reason: decision.reason,
+          givebackPct: +decision.givebackPct.toFixed(2),
+        });
+      }
       toSell.push(decision);
+      givebackDumpGate.clear(mint);
     }
   }
 
@@ -897,6 +1007,8 @@ export async function runMildDipLoop(
   }
 
   const oneshotDumpGrace = createOneshotDumpGraceTracker();
+  const dumpSellTape = createDumpSellTape();
+  const givebackDumpGate = createGivebackDumpGate();
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
   const sampleWatchMs = Math.max(
     cfg.cooldownBounceLookbackMs,
@@ -910,9 +1022,11 @@ export async function runMildDipLoop(
       concurrency: cfg.streamPriceConcurrency,
       shouldSample: (mint, t) => shouldSampleStreamPrice(state, mint, t, sampleWatchMs),
       forceFetch: (mint) =>
-        cfg.oneshotDumpGraceEnabled &&
-        cfg.oneshotDumpGraceMs > 0 &&
-        Boolean(state.open[mint]),
+        Boolean(state.open[mint]) &&
+        ((cfg.oneshotDumpGraceEnabled && cfg.oneshotDumpGraceMs > 0) ||
+          cfg.dumpClassifyEnabled),
+      sellTape: dumpSellTape,
+      maxPostResidualFrac: cfg.oneshotDumpMaxPostResidualFrac,
       oneshot:
         cfg.oneshotDumpGraceEnabled && cfg.oneshotDumpGraceMs > 0
           ? {
@@ -996,6 +1110,10 @@ export async function runMildDipLoop(
       `oneshotGrace=${cfg.oneshotDumpGraceEnabled ? 1 : 0}` +
       `/${Math.round(cfg.oneshotDumpGraceMs / 1000)}s` +
       `/≥$${cfg.oneshotDumpMinSellUsd} ` +
+      `dumpClassify=${cfg.dumpClassifyEnabled ? 1 : 0}` +
+      `/wait${Math.round(cfg.dumpClassifyWaitMs / 1000)}s` +
+      `/win${Math.round(cfg.dumpClassifyWindowMs / 1000)}s` +
+      `/mass≥${cfg.dumpClassifyMassMinSellers} ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0}` +
       `/reqDex=${cfg.streamOnlyRequireDexDip ? 1 : 0}≤${cfg.streamOnlyDexMaxDipPct} ` +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
@@ -1047,7 +1165,14 @@ export async function runMildDipLoop(
 
     // Open-book exits own the loop. Stream-first marks must not wait on scan/Dex.
     if (opens > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
-      await tryExits(cfg, state, Date.now(), oneshotDumpGrace);
+      await tryExits(
+        cfg,
+        state,
+        Date.now(),
+        oneshotDumpGrace,
+        dumpSellTape,
+        givebackDumpGate,
+      );
       lastMark = Date.now();
       stats.lastMarkAtMs = lastMark;
       saveMildDipState(cfg.statePath, state);

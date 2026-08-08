@@ -99,6 +99,19 @@ describe('detectOneshotEmptiedDump', () => {
     expect(ev).toBeNull();
   });
 
+  it('accepts emptied bag without price when raw ≥ 1 token', () => {
+    const tx = txWithBalances([SELLER], [bal(SELLER, '1000000000')], [bal(SELLER, '0')]);
+    const ev = detectOneshotEmptiedDump(
+      tx,
+      MINT,
+      { minSellUsd: 500, maxPostResidualFrac: 0.02 },
+      { priceUsd: 0 },
+    );
+    expect(ev).not.toBeNull();
+    expect(ev!.postRaw).toBe(0n);
+    expect(ev!.residualFrac).toBe(0);
+  });
+
   it('ignores buys / non-sellers', () => {
     const tx = txWithBalances([OTHER], [bal(OTHER, '0')], [bal(OTHER, '500000')]);
     expect(
