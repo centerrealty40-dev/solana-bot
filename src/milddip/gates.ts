@@ -51,6 +51,25 @@ export type MildDipExitGates = {
   /** Full exit when giveback from peak ≤ −this % after armed (default 8). */
   givebackPct: number;
   /**
+   * 1.11.750 — MFE bank ladder (take-profit into strength) + runner sleeve.
+   * When enabled, replaces the classic armed −3%/−8% giveback scale-out.
+   * Template: +8%×40% → +15%×40% → remainder trails −sleeveGiveback from peak.
+   */
+  mfeBankEnabled: boolean;
+  /** First bank: sell `mfeBank1Fraction` of original when MFE ≥ this % (default 8). */
+  mfeBank1Pct: number;
+  /** Fraction of original bag sold at bank1 (default 0.4). */
+  mfeBank1Fraction: number;
+  /** Second bank: sell `mfeBank2Fraction` of original when MFE ≥ this % (default 15). */
+  mfeBank2Pct: number;
+  /** Fraction of original bag sold at bank2 (default 0.4). */
+  mfeBank2Fraction: number;
+  /**
+   * After ≥1 bank taken: full-exit remaining when giveback from peak ≤ −this %
+   * (default 12). Wide sleeve so a 20% runner can still catch 50%+ moves.
+   */
+  mfeBankSleeveGivebackPct: number;
+  /**
    * After this many ms still unarmed, allow the same giveback% from the
    * (sub-arm) peak. Live default **0** — early never_arm_giveback was the grind loss.
    * 0 = disabled.
@@ -358,6 +377,9 @@ export function evaluateCooldownBounce(args: {
 export type MildDipExitReason =
   | 'peak_giveback'
   | 'peak_giveback_partial'
+  | 'mfe_bank_1'
+  | 'mfe_bank_2'
+  | 'mfe_bank_sleeve'
   | 'never_arm_giveback'
   | 'never_arm_bounce'
   | 'never_arm_freefall'
@@ -367,6 +389,36 @@ export type MildDipExitReason =
   | 'never_arm_timeout'
   | 'cliff_dump'
   | null;
+
+/** True when MFE-bank ladder is configured and should own the armed exit path. */
+export function isMfeBankEnabled(gates: MildDipExitGates): boolean {
+  return (
+    gates.mfeBankEnabled === true &&
+    gates.mfeBank1Pct > 0 &&
+    gates.mfeBank1Fraction > 0 &&
+    gates.mfeBank1Fraction < 1
+  );
+}
+
+/**
+ * Fraction of *current* bag to sell so that `wantOriginal` of the original
+ * bag is realized, given banks already taken.
+ */
+export function mfeBankSellFractionOfCurrent(args: {
+  wantOriginal: number;
+  stage: number;
+  bank1Fraction: number;
+  bank2Fraction: number;
+}): number {
+  const f1 = args.bank1Fraction > 0 ? args.bank1Fraction : 0;
+  const f2 = args.bank2Fraction > 0 ? args.bank2Fraction : 0;
+  let remainingOriginal = 1;
+  if (args.stage >= 1) remainingOriginal -= f1;
+  if (args.stage >= 2) remainingOriginal -= f2;
+  if (!(remainingOriginal > 1e-9)) return 1;
+  const want = args.wantOriginal > 0 ? args.wantOriginal : 0;
+  return Math.min(1, Math.max(0, want / remainingOriginal));
+}
 
 export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number): number | null {
   if (!(markPriceUsd > 0) || !(peakPriceUsd > 0)) return null;
@@ -464,7 +516,9 @@ export function sustainedVolFade(
  *
  * - Update running peak from entry
  * - Arm when MFE ≥ armPct (live default +5%)
- * - Armed scale-out: giveback ≤ −partialGivebackPct → sell scaleOutFraction
+ * - When MFE-bank enabled (1.11.750): bank at MFE levels into strength, then
+ *   wide sleeve giveback on the runner remainder. Classic −3%/−8% armed path off.
+ * - Else armed scale-out: giveback ≤ −partialGivebackPct → sell scaleOutFraction
  *   (once); giveback ≤ −givebackPct → sell remainder / full
  * - Never-armed: bounce reclaim → freefall floor → optional soft giveback →
  *   stale / dead / vol-fade → max-hold ceiling
@@ -478,6 +532,11 @@ export function evaluateMildDipPeakGiveback(args: {
   gates: MildDipExitGates;
   /** True after a successful partial scale-out on this position. */
   scaleOutDone?: boolean;
+  /**
+   * MFE-bank progress: 0 = none, 1 = bank1 filled, 2 = bank2 filled.
+   * When omitted, falls back to `scaleOutDone ? 1 : 0` for live migration.
+   */
+  mfeBankStage?: number;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
   /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
@@ -495,7 +554,8 @@ export function evaluateMildDipPeakGiveback(args: {
   postEntryTroughPriceUsd?: number | null;
   /**
    * When true, defer peak_giveback / peak_giveback_partial / never_arm_giveback
-   * (one-shot emptied-bag dump grace). cliff_dump and other hard exits still fire.
+   * / mfe_bank_sleeve (one-shot emptied-bag dump grace). cliff_dump and MFE
+   * banks (sell into strength) still fire.
    */
   oneshotDumpGraceActive?: boolean;
 }): {
@@ -505,7 +565,7 @@ export function evaluateMildDipPeakGiveback(args: {
   armed: boolean;
   justArmed: boolean;
   shouldExit: boolean;
-  /** 1 = full / remainder; 0.5 = scale-out; 0 = no sell. */
+  /** 1 = full / remainder; (0,1) = scale-out; 0 = no sell. */
   fraction: number;
   reason: MildDipExitReason;
   pnlPct: number;
@@ -515,6 +575,12 @@ export function evaluateMildDipPeakGiveback(args: {
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
   const scaleOutDone = args.scaleOutDone === true;
+  const mfeBankStageRaw = Number(args.mfeBankStage);
+  const mfeBankStage = Number.isFinite(mfeBankStageRaw)
+    ? Math.max(0, Math.min(2, Math.floor(mfeBankStageRaw)))
+    : scaleOutDone
+      ? 1
+      : 0;
   const heldMs = Number.isFinite(args.heldMs) ? Math.max(0, Number(args.heldMs)) : 0;
   const nowMs =
     Number.isFinite(args.nowMs) && Number(args.nowMs) > 0
@@ -597,12 +663,67 @@ export function evaluateMildDipPeakGiveback(args: {
     !scaleOutDone &&
     givebackPct <= -partialPct + 1e-9;
 
-  // One-shot emptied-bag dump: defer soft giveback knives; hard exits remain.
-  // Half-first (1.11.741): when scale-out is configured (partialPct>0) and not
-  // yet taken, never dump the full bag on the first giveback hit — even when
-  // mark gaps past full −givebackPct (phantom stream / reclaim). Runner exits
-  // later only after scaleOutDone + another full giveback hit.
-  if (!oneshotGrace) {
+  const bankOn = isMfeBankEnabled(gates);
+  if (bankOn) {
+    const f1 = gates.mfeBank1Fraction;
+    const f2 =
+      gates.mfeBank2Fraction > 0 && gates.mfeBank2Fraction < 1 - f1 + 1e-9
+        ? gates.mfeBank2Fraction
+        : 0;
+    const lvl1 = gates.mfeBank1Pct;
+    const lvl2 = gates.mfeBank2Pct > lvl1 ? gates.mfeBank2Pct : 0;
+    const sleeveGb =
+      gates.mfeBankSleeveGivebackPct > 0 ? gates.mfeBankSleeveGivebackPct : 0;
+
+    // Bank into strength (not deferred by oneshot grace — this is take-profit).
+    // One level per mark tick (same half-first discipline as classic scale-out).
+    if (mfeBankStage < 1 && mfePct >= lvl1 - 1e-9) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: mfeBankSellFractionOfCurrent({
+          wantOriginal: f1,
+          stage: 0,
+          bank1Fraction: f1,
+          bank2Fraction: f2,
+        }),
+        reason: 'mfe_bank_1',
+      };
+    }
+    if (mfeBankStage < 2 && f2 > 0 && lvl2 > 0 && mfePct >= lvl2 - 1e-9) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: mfeBankSellFractionOfCurrent({
+          wantOriginal: f2,
+          stage: 1,
+          bank1Fraction: f1,
+          bank2Fraction: f2,
+        }),
+        reason: 'mfe_bank_2',
+      };
+    }
+
+    // Wide sleeve / pre-bank armed giveback — soft, grace-deferred.
+    if (!oneshotGrace && sleeveGb > 0 && givebackPct <= -sleeveGb + 1e-9) {
+      // After any bank: trail the remainder. Before bank1 but armed: protect
+      // the full bag if the early spike already gave back sleeve width.
+      if (mfeBankStage >= 1 || armed) {
+        return {
+          ...hold,
+          shouldExit: true,
+          fraction: 1,
+          reason: 'mfe_bank_sleeve',
+        };
+      }
+    }
+  } else if (!oneshotGrace) {
+    // Classic W9.1 armed giveback path (MFE-bank off).
+    // One-shot emptied-bag dump: defer soft giveback knives; hard exits remain.
+    // Half-first (1.11.741): when scale-out is configured (partialPct>0) and not
+    // yet taken, never dump the full bag on the first giveback hit — even when
+    // mark gaps past full −givebackPct (phantom stream / reclaim). Runner exits
+    // later only after scaleOutDone + another full giveback hit.
     const scaleOutEnabled = partialPct > 0 && scaleFrac > 0;
     if (
       armed &&

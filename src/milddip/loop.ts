@@ -552,7 +552,11 @@ async function executeQueuedSell(args: {
 
   const fraction =
     decision.fraction > 0 && decision.fraction < 1 ? decision.fraction : 1;
-  const isPartial = fraction < 1 && decision.reason === 'peak_giveback_partial';
+  const isPartial =
+    fraction < 1 &&
+    (decision.reason === 'peak_giveback_partial' ||
+      decision.reason === 'mfe_bank_1' ||
+      decision.reason === 'mfe_bank_2');
 
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
@@ -612,6 +616,11 @@ async function executeQueuedSell(args: {
       // Leave the runner: mark scale-out done, shrink notional, refresh raw.
       const live = state.open[mint]!;
       live.scaleOutDone = true;
+      if (decision.reason === 'mfe_bank_1') live.mfeBankStage = 1;
+      else if (decision.reason === 'mfe_bank_2') live.mfeBankStage = 2;
+      else if (!(typeof live.mfeBankStage === 'number' && live.mfeBankStage >= 1)) {
+        live.mfeBankStage = 1;
+      }
       live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
       live.peakPriceUsd = decision.peakPriceUsd;
       live.trailArmed = decision.armed;
@@ -726,6 +735,7 @@ async function executeQueuedSell(args: {
 const SOFT_GIVEBACK_REASONS = new Set([
   'peak_giveback',
   'peak_giveback_partial',
+  'mfe_bank_sleeve',
   'never_arm_giveback',
 ]);
 
@@ -733,6 +743,7 @@ const SOFT_GIVEBACK_REASONS = new Set([
 const RECOVER_DEFER_REASONS = new Set([
   'peak_giveback',
   'peak_giveback_partial',
+  'mfe_bank_sleeve',
   'never_arm_giveback',
   'never_arm_stale',
   'never_arm_dead',
@@ -1174,8 +1185,12 @@ export async function runMildDipLoop(
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `minMcap=$${cfg.entry.minMarketCapUsd} ` +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +
-      `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
-      `fullGiveback=-${cfg.exit.givebackPct}% ` +
+      (cfg.exit.mfeBankEnabled
+        ? `mfeBank=+${cfg.exit.mfeBank1Pct}%×${cfg.exit.mfeBank1Fraction}` +
+          `/+${cfg.exit.mfeBank2Pct}%×${cfg.exit.mfeBank2Fraction}` +
+          `/sleeve=-${cfg.exit.mfeBankSleeveGivebackPct}% `
+        : `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
+          `fullGiveback=-${cfg.exit.givebackPct}% `) +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}` +
       `/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%` +

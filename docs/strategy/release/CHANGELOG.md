@@ -1,4 +1,33 @@
 # So
+## [1.11.750] — 2026-08-08
+
+**Тег:** `sa-1.11.750`
+
+### Exit: MFE bank +8×40% / +15×40% + sleeve −12%
+
+48h CF: classic arm5/−3×0.5/−8 realized ~7.5% on bottom-guess 2-sell
+cohort while MFE averaged ~21%. Causal MFE-bank into strength + wide
+runner sleeve captures more of the ladder without killing 50%+ runners.
+
+**Live default (`MILD_DIP_EXIT_MFE_BANK=1`):**
+- `mfe_bank_1` — MFE ≥ +8% → sell **40%** of original (no giveback wait)
+- `mfe_bank_2` — MFE ≥ +15% → sell **40%** of original (≈66.7% of remaining)
+- `mfe_bank_sleeve` — remaining **20%** full-exits at giveback ≤ **−12%** from peak
+  (also protects after bank1 if the spike dies before +15)
+
+Classic armed `peak_giveback_partial` / `peak_giveback` (−3%/−8%) skipped
+while bank is on. Never-arm / cliff / dump_classify (sleeve only) unchanged.
+
+**Env:**
+- `MILD_DIP_EXIT_MFE_BANK=1`
+- `MILD_DIP_EXIT_MFE_BANK1_PCT=8` / `MILD_DIP_EXIT_MFE_BANK1_FRACTION=0.4`
+- `MILD_DIP_EXIT_MFE_BANK2_PCT=15` / `MILD_DIP_EXIT_MFE_BANK2_FRACTION=0.4`
+- `MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT=12`
+
+**Откат:** `MILD_DIP_EXIT_MFE_BANK=0` + reload (restores −3%/−8% trail).
+
+---
+
 ## [1.11.749] — 2026-08-08
 
 **Тег:** `sa-1.11.749`

@@ -42,11 +42,21 @@ const baseGates: MildDipEntryGates = {
   allowedDexIds: ['pumpswap', 'pumpfun'],
 };
 
+const mfeBankOff = {
+  mfeBankEnabled: false,
+  mfeBank1Pct: 8,
+  mfeBank1Fraction: 0.4,
+  mfeBank2Pct: 15,
+  mfeBank2Fraction: 0.4,
+  mfeBankSleeveGivebackPct: 12,
+} as const;
+
 const exitGates: MildDipExitGates = {
   armPct: 5,
   partialGivebackPct: 3,
   scaleOutFraction: 0.5,
   givebackPct: 8,
+  ...mfeBankOff,
   neverArmPatienceMs: 0,
   neverArmMaxHoldMs: 5_400_000,
   neverArmDeadMinMs: 1_800_000,
@@ -718,6 +728,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       partialGivebackPct: 0,
       scaleOutFraction: 0.5,
       givebackPct: 8,
+      ...mfeBankOff,
       neverArmPatienceMs: 0,
       neverArmMaxHoldMs: 0,
       neverArmDeadMinMs: 0,
@@ -745,6 +756,131 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 3_600_000,
     });
     expect(v.shouldExit).toBe(false);
+  });
+});
+
+describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
+  const bankGates: MildDipExitGates = {
+    ...exitGates,
+    mfeBankEnabled: true,
+    mfeBank1Pct: 8,
+    mfeBank1Fraction: 0.4,
+    mfeBank2Pct: 15,
+    mfeBank2Fraction: 0.4,
+    mfeBankSleeveGivebackPct: 12,
+    // classic path must stay inert while bank owns armed exits
+    partialGivebackPct: 3,
+    scaleOutFraction: 0.5,
+    givebackPct: 8,
+  };
+
+  it('banks 40% at +8% MFE (into strength, no giveback wait)', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108,
+      peakPriceUsd: 108,
+      armed: false,
+      mfeBankStage: 0,
+      gates: bankGates,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('mfe_bank_1');
+    expect(v.fraction).toBeCloseTo(0.4, 6);
+    expect(v.armed).toBe(true);
+  });
+
+  it('banks second 40% of original at +15% (≈66.7% of remaining)', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 115,
+      peakPriceUsd: 115,
+      armed: true,
+      mfeBankStage: 1,
+      gates: bankGates,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('mfe_bank_2');
+    expect(v.fraction).toBeCloseTo(0.4 / 0.6, 6);
+  });
+
+  it('one level per tick: +20% gap still only fires bank1 when stage=0', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 120,
+      peakPriceUsd: 120,
+      armed: false,
+      mfeBankStage: 0,
+      gates: bankGates,
+    });
+    expect(v.reason).toBe('mfe_bank_1');
+    expect(v.fraction).toBeCloseTo(0.4, 6);
+  });
+
+  it('sleeve trails remaining 20% at −12% giveback after both banks', () => {
+    // peak 130, mark 114.4 → giveback = 114.4/130 - 1 = −12%
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 114.4,
+      peakPriceUsd: 130,
+      armed: true,
+      mfeBankStage: 2,
+      gates: bankGates,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('mfe_bank_sleeve');
+    expect(v.fraction).toBe(1);
+  });
+
+  it('sleeve can protect remainder after bank1 before +15', () => {
+    // peak 112, mark 98.56 → −12% giveback, stage=1
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 98.56,
+      peakPriceUsd: 112,
+      armed: true,
+      mfeBankStage: 1,
+      gates: bankGates,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('mfe_bank_sleeve');
+  });
+
+  it('does not fire classic −3% partial while MFE-bank is on', () => {
+    // Armed, peak 110, mark 106.7 → giveback ≈ −3%, MFE 10% (between banks)
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 106.7,
+      peakPriceUsd: 110,
+      armed: true,
+      mfeBankStage: 1,
+      gates: bankGates,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).toBeNull();
+  });
+
+  it('oneshot grace defers sleeve but not bank1', () => {
+    const bank = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108,
+      peakPriceUsd: 108,
+      armed: false,
+      mfeBankStage: 0,
+      gates: bankGates,
+      oneshotDumpGraceActive: true,
+    });
+    expect(bank.reason).toBe('mfe_bank_1');
+
+    const sleeve = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 114.4,
+      peakPriceUsd: 130,
+      armed: true,
+      mfeBankStage: 2,
+      gates: bankGates,
+      oneshotDumpGraceActive: true,
+    });
+    expect(sleeve.shouldExit).toBe(false);
   });
 });
 
