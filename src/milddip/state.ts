@@ -15,6 +15,8 @@ export type MildDipOpenPosition = {
   peakPriceUsd?: number;
   /** Running low-water mark from entry (never-arm bounce / freefall). */
   postEntryTroughUsd?: number;
+  /** When postEntryTroughUsd was last deepened. */
+  postEntryTroughAtMs?: number;
   /** W9.1 trail armed after MFE ≥ armPct. */
   trailArmed?: boolean;
   /** True after a successful partial scale-out (half bag sold). */

@@ -129,9 +129,17 @@ export type MildDipExitGates = {
    * 1.11.747 — never-armed bounce reclaim: after post-entry trough ≤ −minDump%,
    * if mark bounces ≥ bouncePct off that trough → full exit (`never_arm_bounce`).
    * Hard (not recover-deferred) — we sell INTO the bounce. 0 bouncePct = off.
+   * 1.11.750 — also require trough age + still red vs entry (kill stream-wick churn).
    */
   neverArmBounceMinDumpPct: number;
   neverArmBouncePct: number;
+  /** Trough must be the low-water for at least this long before bounce counts. */
+  neverArmBounceMinTroughAgeMs: number;
+  /**
+   * Only fire bounce exit while mark pnl ≤ −this % vs entry (default 3).
+   * Blocks F1XdRe/AENK1Y-style near-flat stream-wick reclaim sells. 0 = off.
+   */
+  neverArmBounceRequireRedPct: number;
   /**
    * 1.11.747 — never-armed freefall floor: if still unarmed and pnl ≤ −this %
    * after min hold → full exit (`never_arm_freefall`). Covers endless dumps
@@ -552,6 +560,8 @@ export function evaluateMildDipPeakGiveback(args: {
    * min(entry, mark) for this tick only.
    */
   postEntryTroughPriceUsd?: number | null;
+  /** Wall clock when post-entry trough was last deepened. */
+  postEntryTroughAtMs?: number | null;
   /**
    * When true, defer peak_giveback / peak_giveback_partial / never_arm_giveback
    * / mfe_bank_sleeve (one-shot emptied-bag dump grace). cliff_dump and MFE
@@ -572,6 +582,7 @@ export function evaluateMildDipPeakGiveback(args: {
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry trough (caller persists). */
   postEntryTroughPriceUsd: number;
+  postEntryTroughAtMs: number;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
   const scaleOutDone = args.scaleOutDone === true;
@@ -607,10 +618,20 @@ export function evaluateMildDipPeakGiveback(args: {
     args.postEntryTroughPriceUsd > 0
       ? args.postEntryTroughPriceUsd
       : entryPriceUsd;
+  const troughAtPrev =
+    args.postEntryTroughAtMs != null &&
+    Number.isFinite(args.postEntryTroughAtMs) &&
+    args.postEntryTroughAtMs > 0
+      ? Number(args.postEntryTroughAtMs)
+      : nowMs;
+  const markDeepensTrough =
+    markPriceUsd > 0 && markPriceUsd < troughPrev - 1e-15;
   const postEntryTroughPriceUsd = Math.min(
     troughPrev,
     markPriceUsd > 0 ? markPriceUsd : troughPrev,
   );
+  const postEntryTroughAtMs = markDeepensTrough ? nowMs : troughAtPrev;
+  const troughAgeMs = Math.max(0, nowMs - postEntryTroughAtMs);
   const mfePct = mfeFromEntryPct(peakPriceUsd, entryPriceUsd) ?? 0;
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =
@@ -641,6 +662,7 @@ export function evaluateMildDipPeakGiveback(args: {
     pnlPct,
     volFadeSamples,
     postEntryTroughPriceUsd,
+    postEntryTroughAtMs,
   };
 
   // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
@@ -751,11 +773,17 @@ export function evaluateMildDipPeakGiveback(args: {
     const bounceNeed = gates.neverArmBouncePct > 0 ? gates.neverArmBouncePct : 0;
     const bounceDumpNeed =
       gates.neverArmBounceMinDumpPct > 0 ? gates.neverArmBounceMinDumpPct : 0;
+    const bounceTroughAge =
+      gates.neverArmBounceMinTroughAgeMs > 0 ? gates.neverArmBounceMinTroughAgeMs : 0;
+    const bounceRequireRed =
+      gates.neverArmBounceRequireRedPct > 0 ? gates.neverArmBounceRequireRedPct : 0;
     if (
       bounceNeed > 0 &&
       bounceDumpNeed > 0 &&
       troughDumpPct <= -bounceDumpNeed + 1e-9 &&
-      bounceOffTroughPct >= bounceNeed - 1e-9
+      bounceOffTroughPct >= bounceNeed - 1e-9 &&
+      troughAgeMs >= bounceTroughAge &&
+      (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9)
     ) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' };
     }

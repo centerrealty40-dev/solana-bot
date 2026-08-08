@@ -23,6 +23,7 @@ export type MarkExitDecision = {
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry low-water mark. */
   postEntryTroughPriceUsd: number;
+  postEntryTroughAtMs: number;
 };
 
 /** Armed positions first (trail can fire), then older opens. */
@@ -78,6 +79,7 @@ export function decideMarkExit(args: {
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
     volFadeSamples: pos.volFadeSamples ?? null,
     postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+    postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
   });
   return {
@@ -94,6 +96,7 @@ export function decideMarkExit(args: {
     pnlPct: verdict.pnlPct,
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
+    postEntryTroughAtMs: verdict.postEntryTroughAtMs,
   };
 }
 
@@ -107,6 +110,9 @@ export function applyMarkDecisionToPosition(
   pos.volFadeSamples = decision.volFadeSamples;
   if (decision.postEntryTroughPriceUsd > 0) {
     pos.postEntryTroughUsd = decision.postEntryTroughPriceUsd;
+  }
+  if (decision.postEntryTroughAtMs > 0) {
+    pos.postEntryTroughAtMs = decision.postEntryTroughAtMs;
   }
 }
 

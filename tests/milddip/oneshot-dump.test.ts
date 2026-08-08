@@ -150,8 +150,10 @@ describe('oneshot dump grace vs exits', () => {
     neverArmVolFadeSampleMs: 300_000,
     neverArmVolFadeWeakWindows: 3,
     cliffDumpPnlPct: 50,
-    neverArmBounceMinDumpPct: 5,
-    neverArmBouncePct: 6,
+    neverArmBounceMinDumpPct: 8,
+    neverArmBouncePct: 8,
+    neverArmBounceMinTroughAgeMs: 60_000,
+    neverArmBounceRequireRedPct: 3,
     neverArmFreefallPnlPct: 25,
     neverArmFreefallMinMs: 60_000,
   };

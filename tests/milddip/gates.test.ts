@@ -70,8 +70,10 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeSampleMs: 300_000,
   neverArmVolFadeWeakWindows: 3,
   cliffDumpPnlPct: 50,
-  neverArmBounceMinDumpPct: 5,
-  neverArmBouncePct: 6,
+  neverArmBounceMinDumpPct: 8,
+  neverArmBouncePct: 8,
+  neverArmBounceMinTroughAgeMs: 60_000,
+  neverArmBounceRequireRedPct: 3,
   neverArmFreefallPnlPct: 25,
   neverArmFreefallMinMs: 60_000,
 };
@@ -557,32 +559,71 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('never_arm_bounce: dump to trough then reclaim ≥6% off trough → full exit', () => {
-    // trough 80 (−20%); mark 85 = +6.25% off trough
+  it('never_arm_bounce: dump to trough then reclaim ≥8% off trough → full exit', () => {
+    // trough 80 (−20%); mark 86.5 = +8.125% off trough; still −13.5% vs entry
+    const now = 1_000_000;
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 85,
+      markPriceUsd: 86.5,
       peakPriceUsd: 102,
       armed: false,
       gates: exitGates,
-      heldMs: 120_000,
+      heldMs: 180_000,
+      nowMs: now,
       postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('never_arm_bounce');
     expect(v.fraction).toBe(1);
   });
 
-  it('never_arm_bounce: needs trough dump ≤ −5% first', () => {
-    // shallow trough 97 (−3%); bounce +8% off trough to 104.76 — still no bounce exit
+  it('never_arm_bounce: needs trough dump ≤ −8% first', () => {
+    // shallow trough 94 (−6%); bounce +10% off trough — dump gate fails
+    const now = 1_000_000;
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 104.76,
-      peakPriceUsd: 104.76,
+      markPriceUsd: 103.4,
+      peakPriceUsd: 103.4,
       armed: false,
       gates: exitGates,
-      heldMs: 120_000,
-      postEntryTroughPriceUsd: 97,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 94,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.reason).not.toBe('never_arm_bounce');
+  });
+
+  it('never_arm_bounce: blocks near-flat reclaim (F1XdRe/AENK1Y churn)', () => {
+    // trough −11%, bounce +9.5% → mark only −2.4% vs entry (require red 3%)
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 0.0001191,
+      markPriceUsd: 0.0001162,
+      peakPriceUsd: 0.0001191,
+      armed: false,
+      gates: exitGates,
+      heldMs: 225_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 0.0001061,
+      postEntryTroughAtMs: now - 84_000,
+    });
+    expect(v.reason).not.toBe('never_arm_bounce');
+  });
+
+  it('never_arm_bounce: blocks fresh stream-wick trough (age < 60s)', () => {
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 86.5,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: exitGates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 14_000, // AENK1Y-style
     });
     expect(v.reason).not.toBe('never_arm_bounce');
   });
@@ -613,15 +654,18 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
   });
 
   it('never_arm_bounce beats freefall when reclaiming off deep trough', () => {
-    // At −26% mark would freefall, but +6% off trough 70 → bounce first
+    // At −24% mark would freefall (−25), but +8.6% off trough 70 → bounce first
+    const now = 1_000_000;
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 74.2, // +6% off 70
+      markPriceUsd: 76, // +8.57% off 70; still −24% vs entry
       peakPriceUsd: 101,
       armed: false,
       gates: exitGates,
-      heldMs: 120_000,
+      heldMs: 180_000,
+      nowMs: now,
       postEntryTroughPriceUsd: 70,
+      postEntryTroughAtMs: now - 90_000,
     });
     expect(v.reason).toBe('never_arm_bounce');
   });
@@ -744,6 +788,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmVolFadeWeakWindows: 0,
       neverArmBounceMinDumpPct: 0,
       neverArmBouncePct: 0,
+      neverArmBounceMinTroughAgeMs: 0,
+      neverArmBounceRequireRedPct: 0,
       neverArmFreefallPnlPct: 0,
       neverArmFreefallMinMs: 0,
     };
