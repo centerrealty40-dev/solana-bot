@@ -499,10 +499,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
           `[mild-dip] SKIP prebuy ${c.symbol} mint=${c.mint.slice(0, 8)}… ${pre.reasons.join(',')}`,
         );
         // F1Xd: 120s cooldown after chase skip missed the leader window entirely.
-        // Triple chase/short-red: keep buyForce, only brief cooloff.
+        // Triple: no cooldown — keep buyForce and retry next scan immediately.
         if (tripleEntry) {
           mildDipHotMints.markBuyForce(c.mint, nowMs);
-          state.cooldownUntilMs[c.mint] = nowMs + 5_000;
+          delete state.cooldownUntilMs[c.mint];
         } else {
           state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
         }
