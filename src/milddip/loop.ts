@@ -296,9 +296,9 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const spikeForce = tapeMode
     ? mildDipHotMints.takeForceEnrichHotSpike(nowMs, 8, 12_000, 12_000)
     : [];
-  // Buy/Sell getTx-resolved — cap take so Dex gate (180 RPM) finishes in budget.
-  // Was 16 + probe inflate → avg enrich ~20s / "still running after 15000ms".
-  // Fewer force slots → same mints re-probed → local 1m bars accumulate.
+  const tripleOnly = tapeMode && cfg.entryMode === 'green_tape' && cfg.greenTape.tripleGreenOnly;
+  // Buy/Sell getTx-resolved — cap take so Dex gate finishes in budget.
+  // Peek (not drain): fewer slots → same mints re-probed → local 1m bars.
   const buyForce = tapeMode
     ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, tripleOnly ? 4 : 8)
     : [];
@@ -314,7 +314,6 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       ]
     : priority;
   const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
-  const tripleOnly = tapeMode && cfg.entryMode === 'green_tape' && cfg.greenTape.tripleGreenOnly;
   // triple_green: keep probe small — each eval can hit Gecko; bloated probe → 429 → zero buys.
   const probeMax = tripleOnly
     ? Math.min(12, Math.max(cfg.probeEnrichMax, buyForce.length + 4))
