@@ -1,5 +1,17 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.739] — 2026-08-08
+
+**Тег:** `sa-1.11.739`
+
+### Fix: no cooldown after triple prebuy skip
+
+User: no 5s cooloff — retry immediately via buyForce.
+
+**Откат:** 5s cooldown on triple prebuy skip.
+
+---
+
 ## [1.11.738] — 2026-08-08
 
 **Тег:** `sa-1.11.738`
