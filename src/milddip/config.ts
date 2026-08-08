@@ -362,7 +362,7 @@ export function loadMildDipConfig(): MildDipConfig {
       if (!v) return false;
       return v === '1' || v === 'true' || v === 'yes';
     })(),
-    tripleSmallMinPc: envNum('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', 2),
+    tripleSmallMinPc: envNum('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', 1),
     tripleSmallMaxPc: envNum('MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC', 12),
     tripleHugeMinPc: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', 13),
     tripleHugeMinVolUsd: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', 150),

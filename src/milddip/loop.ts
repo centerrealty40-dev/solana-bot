@@ -47,6 +47,7 @@ import {
   bumpEnrichOverBudget,
   bumpTickError,
 } from './runtime-metrics.js';
+import { parseLeaderWatchWallets, startLeaderWalletWatch } from './leader-watch.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 
@@ -1033,6 +1034,20 @@ export async function runMildDipLoop(
     stats.stream = streamHandle != null;
   }
 
+  // Cheap wallet mentions (2 leaders) — not the pump program firehose.
+  let leaderWatch: { stop: () => void } | null = null;
+  const leaderWallets = parseLeaderWatchWallets();
+  if (leaderWallets.length > 0 && (cfg.entryMode === 'green_tape' || cfg.entryMode === 'awakening')) {
+    const resolveCap = Number(process.env.MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN ?? 20);
+    leaderWatch = startLeaderWalletWatch({
+      wallets: leaderWallets,
+      rpcUrl: cfg.rpcUrl,
+      wsUrl: cfg.streamWsUrl || null,
+      resolveMaxPerMin: Number.isFinite(resolveCap) ? Math.max(0, resolveCap) : 20,
+      resolveConcurrency: 2,
+    });
+  }
+
   const buyImpactCap = process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT?.trim() || '0';
   const jupPriority = process.env.LIVE_JUPITER_SWAP_PRIORITY_LEVEL?.trim() || 'n/a';
   const jupFeeCapSol = process.env.LIVE_JUPITER_PRIORITY_MAX_SOL?.trim() || 'n/a';
@@ -1108,6 +1123,8 @@ export async function runMildDipLoop(
   const shutdown = (): void => {
     streamHandle?.stop();
     streamHandle = null;
+    leaderWatch?.stop();
+    leaderWatch = null;
     priceSampler?.stop();
     try {
       saveMildDipHotMints(cfg.hotMintsPath);

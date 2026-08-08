@@ -7,7 +7,7 @@ import {
 
 const gates: TripleGreenGates = {
   enabled: true,
-  smallMinPc: 2,
+  smallMinPc: 1,
   smallMaxPc: 12,
   hugeMinPc: 13,
   hugeMinVolUsd: 200,
@@ -49,6 +49,18 @@ describe('detectTripleGreen', () => {
     ];
     const v = detectTripleGreen(bars, gates, t0 + 30);
     expect(v.pass).toBe(false);
+  });
+
+  it('matches Paul-class: +3.3, +1.2, +16.6', () => {
+    const t0 = 1_786_179_060;
+    const bars: Ohlcv1m[] = [
+      bar(t0 - 120, 1.0, 1.033, 311),
+      bar(t0 - 60, 1.033, 1.045, 2), // +1.2%
+      bar(t0, 1.045, 1.218, 3197), // +16.6%
+    ];
+    const v = detectTripleGreen(bars, gates, t0 + 70);
+    expect(v.pass).toBe(true);
+    expect(v.pattern?.huge).toBeGreaterThanOrEqual(13);
   });
 
   it('rejects three equal medium greens (no huge leg)', () => {

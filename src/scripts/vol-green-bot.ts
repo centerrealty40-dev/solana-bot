@@ -122,10 +122,11 @@ async function main(): Promise<void> {
     ? `triple_green small=(${cfg.greenTape.tripleSmallMinPc},${cfg.greenTape.tripleSmallMaxPc}] ` +
       `huge>=${cfg.greenTape.tripleHugeMinPc} age>=${cfg.greenTape.minPairAgeHours}h`
     : 'legacy_or_paths';
+  const leaders = (process.env.VOL_GREEN_LEADER_WATCH ?? '').trim();
   console.log(
     `[${appName()}] start mode=${cfg.executionMode} entry=${cfg.entryMode} ${triple} ` +
       `sources=${cfg.discoverSources} stream=${cfg.streamEnabled ? 1 : 0} ` +
-      `resolve=${cfg.buyMintResolveMaxPerMin}/min ` +
+      `resolve=${cfg.buyMintResolveMaxPerMin}/min leaderWatch=${leaders || '0'} ` +
       `positionUsd=${cfg.positionUsd} wallet=${cfg.walletPubkeyExpected ?? '?'} ` +
       `rpcHost=${rpcHost}`,
   );

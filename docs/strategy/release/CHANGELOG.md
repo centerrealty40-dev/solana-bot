@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.733] — 2026-08-08
+
+**Тег:** `sa-1.11.733`
+
+### Fix: must-buy Paul — leader watch + smallMin 1%
+
+`5NtNwe` / Paul: pattern 3.3→1.2→16.6 but mint never in gecko trending
+(journal empty). Add **cheap** logsSubscribe on 2 leader wallets only +
+getTx resolve ≤20/min → buyForce. triple small min **2→1%**.
+
+**Откат:** `VOL_GREEN_LEADER_WATCH=0`, small min 2.
+
+---
+
 ## [1.11.732] — 2026-08-08
 
 **Тег:** `sa-1.11.732`

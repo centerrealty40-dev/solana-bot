@@ -146,9 +146,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '0');
   // Sole entry: 1m small→small→huge. All OR-paths OFF.
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_ONLY', '1');
-  setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', '2');
+  // Paul/TINYTANK: second small was +1.2% — allow ≥1%.
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', '1');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC', '12');
-  // TINYTANK-class third candle was +13.4% — 20 was too strict.
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '13');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '150');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', '180000');
@@ -158,6 +158,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD', '0');
+  // Cheap: watch 2 leader wallets only (not pump firehose) → force triple eval.
+  setIfAbsent('VOL_GREEN_LEADER_WATCH', '1');
+  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '20');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;
