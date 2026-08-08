@@ -2,25 +2,24 @@
  * Mild bounce / stabilize branch (leader-style): after a dump from local peak,
  * buy the reclaim off the trough — not a fixed Dex pc5m threshold.
  *
- * Live default: scale-in only (`freshEntryEnabled=false`). Fresh flat bounce
- * entries were buying green-candle noise (Gymbmn / 7rMnp9).
+ * Fresh flat entries are gated by `freshEntryEnabled` (live default off —
+ * Gymbmn / 7rMnp9 green-candle noise). Second-clip scale-in was removed
+ * (1.11.730) after net-negative live impact.
  */
+
+import type { MildDipPriceRing } from './price-ring.js';
 
 /** Whether fast-path may evaluate mild_stabilize for this candidate pass. */
 export function mildStabilizeLaneAllowed(args: {
   enabled: boolean;
   freshEntryEnabled: boolean;
-  mildStabilizeOnly: boolean;
   /** True when another dipSource already won this pass. */
   hasOtherDipSource: boolean;
 }): boolean {
   if (!args.enabled) return false;
-  if (args.mildStabilizeOnly) return true;
   if (!args.freshEntryEnabled) return false;
   return !args.hasOtherDipSource;
 }
-
-import type { MildDipPriceRing } from './price-ring.js';
 
 export type MildStabilizeGates = {
   enabled: boolean;
@@ -42,11 +41,6 @@ export type MildStabilizeGates = {
    * 0 = off.
    */
   minBelowPeakPct: number;
-  /**
-   * Scale-in only: trough must be at least this % below the open entry
-   * (further dump after first clip). 0 = off.
-   */
-  scaleInMinDumpBelowEntryPct: number;
 };
 
 export type MildStabilizeVerdict = {
@@ -132,62 +126,4 @@ export function evaluateMildStabilizeFromRing(
     lastPriceUsd: last.priceUsd,
     reasons,
   };
-}
-
-/**
- * Scale-in guard (second $5 clip):
- * 1. trough must sit ≥ N% below first-clip entry;
- * 2. that trough must form *after* the first clip opened (not the same dump
- *    that triggered the first buy — HuZ2yj / 5HaLZz→4CCSBX same-price bug);
- * 3. current mark/fill must still be ≥ N% below entry (avg-down), not a
- *    reclaim back to the first-clip print.
- */
-export function mildStabilizeScaleInOk(args: {
-  entryPriceUsd: number;
-  troughPriceUsd: number | null;
-  minDumpBelowEntryPct: number;
-  troughAtMs?: number | null;
-  openedAtMs?: number | null;
-  /** Live mark / intended fill — must stay below entry for avg-down. */
-  markPriceUsd?: number | null;
-}): { pass: boolean; reason?: string } {
-  const {
-    entryPriceUsd,
-    troughPriceUsd,
-    minDumpBelowEntryPct,
-    troughAtMs,
-    openedAtMs,
-    markPriceUsd,
-  } = args;
-  if (!(entryPriceUsd > 0)) return { pass: false, reason: 'mild_stabilize_scale_in_bad_entry' };
-  if (minDumpBelowEntryPct <= 0) return { pass: true };
-  if (troughPriceUsd == null || !(troughPriceUsd > 0)) {
-    return { pass: false, reason: 'mild_stabilize_scale_in_missing_trough' };
-  }
-  if (
-    openedAtMs != null &&
-    openedAtMs > 0 &&
-    troughAtMs != null &&
-    Number.isFinite(troughAtMs) &&
-    troughAtMs <= openedAtMs
-  ) {
-    return { pass: false, reason: 'mild_stabilize_scale_in_trough_before_entry' };
-  }
-  const troughBelowPct = (1 - troughPriceUsd / entryPriceUsd) * 100;
-  if (troughBelowPct < minDumpBelowEntryPct) {
-    return {
-      pass: false,
-      reason: `mild_stabilize_scale_in_dump=${troughBelowPct.toFixed(2)}%<min=${minDumpBelowEntryPct}`,
-    };
-  }
-  if (markPriceUsd != null && markPriceUsd > 0) {
-    const markBelowPct = (1 - markPriceUsd / entryPriceUsd) * 100;
-    if (markBelowPct < minDumpBelowEntryPct) {
-      return {
-        pass: false,
-        reason: `mild_stabilize_scale_in_mark=${markBelowPct.toFixed(2)}%<min=${minDumpBelowEntryPct}`,
-      };
-    }
-  }
-  return { pass: true };
 }
