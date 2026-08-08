@@ -1,4 +1,31 @@
 # So
+## [1.11.753] — 2026-08-08
+
+**Тег:** `sa-1.11.753`
+
+### Fix: wait-dip fill ceiling (keep −7% edge)
+
+`2q6hhmf` / `Cc2Vxx`: mark ready at ≈−8–9% vs park signal, but Jupiter
+fill came back at ≈−3% (or above signal). Chase was anchored to the ready
+mark with fast-path +12% premium — most of the waited dump was eaten.
+
+**Tighten (`dipSource=wait_dip` only):**
+- Hard ceiling vs **original signal**: dump must stay ≤ `waitDipPct + overshoot`
+  (default −7% + 2pp → fill/quote ≤ −5% vs signal)
+- Chase vs ready mark ≤ 3% (not fast-path 12%)
+- Jupiter `quotePremiumGuard` anchored to that ceiling (+1%)
+- `freshDexPrebuy=1` on fire; keep `waitDipWatch` until fill succeeds
+
+**Env:**
+- `MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT=2`
+- `MILD_DIP_WAIT_DIP_MAX_CHASE_PCT=3`
+- `MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT=1`
+
+**Откат:** overshoot `20` + chase `12` + quote premium `12`, or
+`MILD_DIP_WAIT_DIP=0`.
+
+---
+
 ## [1.11.752] — 2026-08-08
 
 **Тег:** `sa-1.11.752`

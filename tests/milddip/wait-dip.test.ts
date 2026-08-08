@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import {
+  evaluateWaitDipPreBuy,
   evaluateWaitDipReady,
   upsertWaitDipWatch,
   waitDipAppliesToSource,
+  waitDipMaxPriceUsd,
   waitDipTargetPriceUsd,
   type WaitDipGates,
 } from '../../src/milddip/wait-dip.js';
@@ -96,5 +98,56 @@ describe('upsertWaitDipWatch / evaluateWaitDipReady', () => {
     const v = evaluateWaitDipReady(w, gates, t0 + 1_200_001, 99);
     expect(v.expire).toBe(true);
     expect(v.ready).toBe(false);
+  });
+});
+
+describe('waitDipMaxPriceUsd / evaluateWaitDipPreBuy', () => {
+  it('ceiling is waitDipPct + overshoot vs signal', () => {
+    // −7% + 2pp → max dump −5% → 95
+    expect(waitDipMaxPriceUsd(100, -7, 2)).toBeCloseTo(95, 8);
+  });
+
+  it('passes at ready mark (−8.9%) and rejects reclaim to −3.5%', () => {
+    const signal = 0.0000664;
+    const ready = 0.00006051; // ≈ −8.87%
+    const fillLike = 0.00006405; // ≈ −3.53% (2q6hhmf)
+
+    const ok = evaluateWaitDipPreBuy({
+      signalPriceUsd: signal,
+      readyMarkPriceUsd: ready,
+      freshPriceUsd: ready,
+      waitDipPct: -7,
+      maxOvershootPct: 2,
+      maxChaseFromReadyPct: 3,
+    });
+    expect(ok.pass).toBe(true);
+    expect(ok.maxPriceUsd).toBeCloseTo(signal * 0.95, 10);
+
+    const bad = evaluateWaitDipPreBuy({
+      signalPriceUsd: signal,
+      readyMarkPriceUsd: ready,
+      freshPriceUsd: fillLike,
+      waitDipPct: -7,
+      maxOvershootPct: 2,
+      maxChaseFromReadyPct: 3,
+    });
+    expect(bad.pass).toBe(false);
+    expect(bad.reasons.some((r) => r.startsWith('wait_dip_ceiling='))).toBe(true);
+  });
+
+  it('rejects chase above ready mark even if still under ceiling', () => {
+    const signal = 100;
+    const ready = 90; // −10%
+    const fresh = 93.5; // still ≤ 95 ceiling (−5%), but +3.89% vs ready
+    const bad = evaluateWaitDipPreBuy({
+      signalPriceUsd: signal,
+      readyMarkPriceUsd: ready,
+      freshPriceUsd: fresh,
+      waitDipPct: -7,
+      maxOvershootPct: 2,
+      maxChaseFromReadyPct: 3,
+    });
+    expect(bad.pass).toBe(false);
+    expect(bad.reasons.some((r) => r.startsWith('wait_dip_chase_ready='))).toBe(true);
   });
 });

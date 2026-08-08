@@ -2869,6 +2869,17 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
+         * 1.11.752 — park main-band; buy after extra −7% from signal.
+         * 1.11.753 — keep fill near that edge: overshoot +2pp ceiling,
+         * chase vs ready ≤3%, Jupiter premium ≤1% above ceiling.
+         */
+        MILD_DIP_WAIT_DIP: '1',
+        MILD_DIP_WAIT_DIP_PCT: '-7',
+        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
+        MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '2',
+        MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',
+        MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',
+        /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
          * 1.11.730 with scale-in removal). Scale-in stays deleted.
          * Gates keep anti-green filters: dump ≤−8, last ≥2% below peak
