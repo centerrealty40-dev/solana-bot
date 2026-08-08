@@ -2894,11 +2894,10 @@ const PM2_APPS = [
         MILD_DIP_FLAT_MICRO_H1_MIN_PCT: '-35',
         MILD_DIP_FLAT_MICRO_H1_MAX_PCT: '10',
         /**
-         * 1.11.711 — restore $1500 vol5m floor (was $500).
-         * Thin-vol cliff pre-filter: 4kLGts cliff −63% entered at vol≈$502;
-         * dead MFE<2 names cluster on thinner tape than bounce names.
+         * 1.11.735 — vol5m floor $500 (was $1500). Entry filter: Dex 5m
+         * volume must be ≥ $500 before buy.
          */
-        MILD_DIP_MIN_VOLUME_5M_USD: '1500',
+        MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
          * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
