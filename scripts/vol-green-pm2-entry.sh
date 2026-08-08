@@ -32,16 +32,15 @@ export VOL_GREEN_JOURNAL_PATH="${VOL_GREEN_JOURNAL_PATH:-$ROOT/data/volgreen/jou
 export VOL_GREEN_STATE_PATH="${VOL_GREEN_STATE_PATH:-$ROOT/data/volgreen/state.json}"
 export VOL_GREEN_HOT_MINTS_PATH="${VOL_GREEN_HOT_MINTS_PATH:-$ROOT/data/volgreen/hot-mints.json}"
 export VOL_GREEN_PRICE_RING_PATH="${VOL_GREEN_PRICE_RING_PATH:-$ROOT/data/volgreen/price-ring.json}"
-# HARD-SET exit widths — hold more drawdown; peel 50% on first stale/giveback.
-export VOL_GREEN_EXIT_ARM_PCT=5
+# HARD-SET trail: arm +8% → 50% at −5% from peak → rest at −10% from peak.
+export VOL_GREEN_EXIT_ARM_PCT=8
 export VOL_GREEN_EXIT_GIVEBACK_PCT=5
 export VOL_GREEN_EXIT_PARTIAL_SELL_FRACTION=0.5
-export VOL_GREEN_EXIT_SECOND_GIVEBACK_PCT=8
-export MILD_DIP_EXIT_ARM_PCT=5
+export VOL_GREEN_EXIT_SECOND_GIVEBACK_PCT=10
+export MILD_DIP_EXIT_ARM_PCT=8
 export MILD_DIP_EXIT_GIVEBACK_PCT=5
 export MILD_DIP_EXIT_PARTIAL_SELL_FRACTION=0.5
-export MILD_DIP_EXIT_SECOND_GIVEBACK_PCT=8
-# Trail unlock after MFE≥8% (was 12 — too late vs never_arm_stale).
+export MILD_DIP_EXIT_SECOND_GIVEBACK_PCT=10
 export MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT=8
 export VOL_GREEN_EXIT_MIN_MFE_BEFORE_TRAIL_PCT=8
 # Stale: wait 150s (was 75); first hit = 50% peel, 2× window dumps rest.

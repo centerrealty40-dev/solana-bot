@@ -1,5 +1,17 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.740] — 2026-08-08
+
+**Тег:** `sa-1.11.740`
+
+### Tune: trail arm 8% / giveback 5%→50% / second −10%
+
+User request: arm at +8%, peel half at −5% from peak, rest at −10%.
+
+**Откат:** arm 5 / giveback 5 / second 8.
+
+---
+
 ## [1.11.739] — 2026-08-08
 
 **Тег:** `sa-1.11.739`
