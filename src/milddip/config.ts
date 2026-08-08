@@ -253,10 +253,11 @@ const MildDipConfigSchema = z.object({
     /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 10. */
     neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(10),
     /**
-     * Never-armed stale: min hold before stagnation cut (0=off). Default 10m.
+     * Never-armed stale: min hold before stagnation cut (0=off). Default 20m.
      * If MFE ≤ maxMfe and pnl ≤ −stalePnl → exit (`never_arm_stale`).
+     * 1.11.733 — was 10m (BV5wre full exit at ~11m / MFE 0).
      */
-    neverArmStaleMinMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
+    neverArmStaleMinMs: z.coerce.number().int().min(0).max(86_400_000).default(1_200_000),
     neverArmStaleMaxMfePct: z.coerce.number().min(0).max(100).default(2),
     neverArmStalePnlPct: z.coerce.number().min(0).max(100).default(5),
     /** Never-armed sustained fade: min hold before checks (0=off). Default 15m. */
@@ -346,7 +347,7 @@ export function loadMildDipConfig(): MildDipConfig {
      * 1.11.706 — stagnation: 10m unarmed + MFE≤2% + pnl≤−5% → never_arm_stale.
      * Dead-path names flatten early; don't wait for −10/−15.
      */
-    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 600_000),
+    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 1_200_000),
     neverArmStaleMaxMfePct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', 2),
     neverArmStalePnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT', 5),
     /**
