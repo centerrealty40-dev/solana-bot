@@ -96,6 +96,7 @@ export async function attemptMildDipEntry(args: {
   let entryPc5m = c.metrics.priceChange5mPct;
   let freshPx: number | null = c.priceUsd;
   const isKnife = c.dipSource === 'knife_stabilize';
+  const isWaitDip = c.dipSource === 'wait_dip';
   const isH1RedShallow = c.dipSource === 'h1_red_shallow';
   const isFlatMicro = c.dipSource === 'flat_micro_dip';
   let sizeMetrics = {
@@ -175,13 +176,23 @@ export async function attemptMildDipEntry(args: {
               maxChasePct: opts.chasePct,
               maxBouncePct: cfg.mildStabilizeMaxBouncePct,
             })
-          : evaluateMildDipPreBuy({
-              signalPriceUsd: c.priceUsd,
-              freshPriceUsd: freshPx,
-              freshPc5mPct: freshPc,
-              entryGates: branchEntryGates,
-              maxChasePct: opts.chasePct,
-            });
+          : isWaitDip
+            ? evaluateKnifeStabilizePreBuy({
+                // Anchor chase to the −7% target (not the original signal).
+                signalPriceUsd: c.priceUsd,
+                freshPriceUsd: freshPx,
+                troughPriceUsd: c.waitDipSignalPriceUsd ?? null,
+                maxChasePct: opts.chasePct,
+                // Allow small reclaim off trough; reject if ripping back through target.
+                maxBouncePct: Math.max(opts.chasePct, 8),
+              })
+            : evaluateMildDipPreBuy({
+                signalPriceUsd: c.priceUsd,
+                freshPriceUsd: freshPx,
+                freshPc5mPct: freshPc,
+                entryGates: branchEntryGates,
+                maxChasePct: opts.chasePct,
+              });
       if (!pre.pass) {
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_prebuy_skip',
@@ -203,7 +214,7 @@ export async function attemptMildDipEntry(args: {
         return 'skip';
       }
       if (freshPx != null) entryPriceUsd = freshPx;
-      if (!isKnife && freshPc != null) entryPc5m = freshPc;
+      if (!isKnife && !isWaitDip && freshPc != null) entryPc5m = freshPc;
     } else {
       // Fast lane: trust candidate mark (already stream/Dex at evaluate time).
       const last = mildDipPriceRing.lastPrice(c.mint, freshNow);
@@ -363,6 +374,7 @@ export async function attemptMildDipEntry(args: {
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
+  if (state.waitDipWatch?.[c.mint]) delete state.waitDipWatch[c.mint];
   saveMildDipState(cfg.statePath, state);
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_buy_reserved',
@@ -434,6 +446,9 @@ export async function attemptMildDipEntry(args: {
     liquidityUsd: sizeMetrics.liquidityUsd,
     marketCapUsd: sizeMetrics.marketCapUsd,
     dipSource: c.dipSource,
+    waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
+    waitDipOriginalSource: c.waitDipOriginalSource ?? null,
+    waitDipDumpFromSignalPct: c.waitDipDumpFromSignalPct ?? null,
     lane: opts.lane,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
