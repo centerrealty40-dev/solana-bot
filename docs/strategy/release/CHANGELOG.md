@@ -4,11 +4,17 @@
 
 **Тег:** `sa-1.11.740`
 
-### Tune: trail arm 8% / giveback 5%→50% / second −10%
+### Mild-dip never-arm: one-chunk + faster stale/dead/vol_fade (Oscar CF)
 
-User request: arm at +8%, peel half at −5% from peak, rest at −10%.
+CF on 81 never-armed / 12h (actual −$55): 1-chunk beat 50/50; stale
+5m/MFE&lt;5% cut bucket ~−$50→−$25. Apply on Oscar `mild-dip-bot`:
 
-**Откат:** arm 5 / giveback 5 / second 8.
+- `neverArmPartialSellFraction=0` (armed trail partial unchanged)
+- stale **5m / MFE&lt;5%**
+- dead **10m / −8%**
+- vol_fade **5m / ×0.35 / $500**
+
+**Откат:** prior NEVER_ARM_* in ecosystem + `.env`, reload mild-dip-bot.
 
 ---
 

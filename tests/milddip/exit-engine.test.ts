@@ -41,8 +41,9 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     armPct: 8,
     givebackPct: 8,
     partialSellFraction: 0,
+    neverArmPartialSellFraction: 0,
     secondGivebackPct: 0,
-  minMfeBeforeTrailPct: 0,
+    minMfeBeforeTrailPct: 0,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
     maxHoldMs: 0,
@@ -51,8 +52,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmVolFadeMinMs: 600_000,
     neverArmVolFadeRatio: 0.35,
     neverArmVolFadeFloorUsd: 500,
-  neverArmStaleMinMs: 0,
-  neverArmStaleMaxMfePct: 0,
+    neverArmStaleMinMs: 0,
+    neverArmStaleMaxMfePct: 0,
   };
 
   it('updates peak and arms without exiting', () => {

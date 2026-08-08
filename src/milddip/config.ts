@@ -148,6 +148,11 @@ const MildDipConfigSchema = z.object({
     givebackPct: z.number(),
     /** 0 = full exit on first giveback; (0,1) = peel that fraction first. */
     partialSellFraction: z.coerce.number().min(0).max(1).default(0),
+    /**
+     * Never-armed stale peel (0 = one-chunk full cut — Oscar CF default).
+     * Independent of armed-trail `partialSellFraction`.
+     */
+    neverArmPartialSellFraction: z.coerce.number().min(0).max(1).default(0),
     /** After partial, full-exit rest at this giveback (0 = reuse givebackPct). */
     secondGivebackPct: z.coerce.number().min(0).max(100).default(0),
     /** Giveback disabled until MFE ≥ this % (0=off). Vol-green: 12. */
@@ -280,22 +285,31 @@ export function loadMildDipConfig(): MildDipConfig {
     givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
     /** Oscar default 0 = full exit on first giveback (no ladder). */
     partialSellFraction: envNum('MILD_DIP_EXIT_PARTIAL_SELL_FRACTION', 0),
+    /** Never-armed: 0 = one chunk (CF: 50/50 hurt). */
+    neverArmPartialSellFraction: envNum('MILD_DIP_EXIT_NEVER_ARM_PARTIAL_SELL_FRACTION', 0),
     secondGivebackPct: envNum('MILD_DIP_EXIT_SECOND_GIVEBACK_PCT', 0),
     minMfeBeforeTrailPct: envNum('MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT', 0),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
     maxHoldMs: envNum('MILD_DIP_EXIT_MAX_HOLD_MS', 0),
-    /** Deep-loss cut before max-hold (rugs); not the early 5m knife. */
-    neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 900_000),
-    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 15),
-    /** Activity fade — leave when the tape dies, not on a clock. */
-    neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 600_000),
+    /**
+     * Deep-loss cut. 1.11.740 CF: 10m / −8% beat live 30m / −10% on never-armed.
+     */
+    neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 600_000),
+    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 8),
+    /**
+     * Activity fade. 1.11.740 CF: 5m / ×0.35 helped; keep floor $500.
+     */
+    neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 300_000),
     neverArmVolFadeRatio: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', 0.35),
     neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 500),
-    /** 0 = off (Oscar). Vol-green enables ~75s / MFE&lt;4%. */
-    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 0),
-    neverArmStaleMaxMfePct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', 0),
+    /**
+     * False-green / flat bag cut. 1.11.740 CF best: 5m / MFE&lt;5% one-chunk
+     * (~−$25 vs live −$50 on never-armed sample).
+     */
+    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 300_000),
+    neverArmStaleMaxMfePct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', 5),
   };
 
   const entryModeRaw = (process.env.MILD_DIP_ENTRY_MODE ?? 'mild_dip').trim().toLowerCase();

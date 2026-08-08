@@ -2857,21 +2857,18 @@ const PM2_APPS = [
         MILD_DIP_EXIT_ARM_PCT: '8',
         MILD_DIP_EXIT_GIVEBACK_PCT: '6',
         /**
-         * Never-armed exit (finite — never sit forever), ordered soft → hard:
-         * - patience=0: no early never_arm_giveback knife
-         * - dead: after 15m unarmed + pnl ≤ −15% → never_arm_dead (rugs)
-         * - vol fade: after 10m unarmed, leave when the tape dies
-         *   (vol5m ≤ 35% of entry vol5m, or ≤ $500)
-         * - max-hold 90m ceiling
-         * 1.11.692 — the clock was the loss source: `Agmu8Xgn` was thrown out by
-         * the 40m ceiling at MFE 7.84% (arm needs 8%) and ran +55% within 11m.
-         * Leader (1506 sessions) holds >40m in 29% of cases, 33% of those end >+10%.
-         * Armed: arm +8% → giveback −6%.
+         * Never-armed exit (finite — never sit forever), ordered soft → hard.
+         * 1.11.740 CF (81 never-armed / 12h): one-chunk beat 50/50; fast stale
+         * 5m/MFE<5% cut never-arm bucket ~−$50 → ~−$25. Dead 10m/−8%, vol-fade 5m.
+         * Armed trail unchanged: arm +8% → giveback −6%.
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
-        MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '900000',
-        MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '15',
-        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '600000',
+        MILD_DIP_EXIT_NEVER_ARM_PARTIAL_SELL_FRACTION: '0',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '300000',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '5',
+        MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '600000',
+        MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '8',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO: '0.35',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '500',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',

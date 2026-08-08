@@ -107,6 +107,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // False-green: wait longer (75→150s); first hit peels 50%, second at 2× dumps rest.
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '150000');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '5');
+  // Never-arm = one chunk (armed trail may still use PARTIAL_SELL_FRACTION).
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_PARTIAL_SELL_FRACTION', '0');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
   // Compete: PumpSwap stream only (not full pump.fun firehose) + local 1m bars.

@@ -52,8 +52,12 @@ function sellFractionForSticky(
   reason: Exclude<MildDipExitReason, null>,
   gates: MildDipExitGates,
 ): number {
-  if (reason === 'peak_giveback_partial' || reason === 'never_arm_stale_partial') {
+  if (reason === 'peak_giveback_partial') {
     const f = gates.partialSellFraction;
+    return f > 0 && f < 1 ? f : 1;
+  }
+  if (reason === 'never_arm_stale_partial') {
+    const f = gates.neverArmPartialSellFraction;
     return f > 0 && f < 1 ? f : 1;
   }
   return 1;

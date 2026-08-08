@@ -57,8 +57,9 @@ describe('vol-green exit parity with mild-dip W9.1', () => {
     armPct: 8,
     givebackPct: 6,
     partialSellFraction: 0,
+    neverArmPartialSellFraction: 0,
     secondGivebackPct: 0,
-  minMfeBeforeTrailPct: 0,
+    minMfeBeforeTrailPct: 0,
     neverArmPatienceMs: 0,
     neverArmMaxHoldMs: 5_400_000,
     maxHoldMs: 0,
@@ -67,8 +68,8 @@ describe('vol-green exit parity with mild-dip W9.1', () => {
     neverArmVolFadeMinMs: 600_000,
     neverArmVolFadeRatio: 0.35,
     neverArmVolFadeFloorUsd: 500,
-  neverArmStaleMinMs: 0,
-  neverArmStaleMaxMfePct: 0,
+    neverArmStaleMinMs: 0,
+    neverArmStaleMaxMfePct: 0,
   };
 
   it('arms and exits on giveback like mild-dip', () => {

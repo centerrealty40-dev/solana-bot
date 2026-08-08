@@ -23,6 +23,7 @@ const exitGates: MildDipExitGates = {
   armPct: 8,
   givebackPct: 8,
   partialSellFraction: 0,
+  neverArmPartialSellFraction: 0,
   secondGivebackPct: 0,
   minMfeBeforeTrailPct: 0,
   neverArmPatienceMs: 0,
@@ -437,6 +438,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       armPct: 8,
       givebackPct: 8,
       partialSellFraction: 0,
+      neverArmPartialSellFraction: 0,
       secondGivebackPct: 0,
       minMfeBeforeTrailPct: 0,
       neverArmPatienceMs: 0,
@@ -532,7 +534,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       armPct: 5,
       neverArmStaleMinMs: 150_000,
       neverArmStaleMaxMfePct: 5,
-      partialSellFraction: 0.5,
+      partialSellFraction: 0, // armed trail independent
+      neverArmPartialSellFraction: 0.5,
       neverArmVolFadeMinMs: 600_000,
     };
     const peel = evaluateMildDipPeakGiveback({

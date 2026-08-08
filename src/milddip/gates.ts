@@ -54,6 +54,11 @@ export type MildDipExitGates = {
    */
   partialSellFraction: number;
   /**
+   * Never-armed stale peel fraction. Separate from armed trail partial —
+   * CF on Oscar never-armed showed 1-chunk beats 50/50. 0 = full cut (default).
+   */
+  neverArmPartialSellFraction: number;
+  /**
    * After a partial peel, full-exit remaining when giveback ≤ −this %.
    * 0 = reuse `givebackPct` for the rest. Vol-green: 5.
    */
@@ -407,14 +412,18 @@ export function evaluateMildDipPeakGiveback(args: {
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
   // Order: stale false-green cut → soft giveback → dead → vol-fade → max-hold.
-  // With partialSellFraction: first stale hit peels a slice (hope for bounce);
-  // second hit (after 2× stale window) dumps the rest.
+  // Optional neverArmPartialSellFraction: peel then dump at 2× stale window.
+  // Default 0 = one chunk (CF: two-chunk hurt never-armed PnL).
   if (!armed) {
+    const neverArmPartialFrac =
+      gates.neverArmPartialSellFraction > 0 && gates.neverArmPartialSellFraction < 1
+        ? gates.neverArmPartialSellFraction
+        : 0;
     const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
     const staleMfe = gates.neverArmStaleMaxMfePct > 0 ? gates.neverArmStaleMaxMfePct : 0;
     if (staleMin > 0 && staleMfe > 0 && mfePct < staleMfe - 1e-9) {
       if (!partialTaken && heldMs >= staleMin) {
-        if (partialFrac > 0) {
+        if (neverArmPartialFrac > 0) {
           return {
             peakPriceUsd,
             mfePct,
@@ -424,7 +433,7 @@ export function evaluateMildDipPeakGiveback(args: {
             shouldExit: true,
             reason: 'never_arm_stale_partial',
             pnlPct,
-            sellFraction: partialFrac,
+            sellFraction: neverArmPartialFrac,
           };
         }
         return {

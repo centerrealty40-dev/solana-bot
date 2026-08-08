@@ -1122,6 +1122,7 @@ export async function runMildDipLoop(
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
       `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd} ` +
       `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s/mfe<${cfg.exit.neverArmStaleMaxMfePct}% ` +
+      `neverArmPartial=${cfg.exit.neverArmPartialSellFraction} ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `maxHold=${Math.round(cfg.exit.maxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
