@@ -1,4 +1,21 @@
 # So
+## [1.11.742] — 2026-08-08
+
+**Тег:** `sa-1.11.742`
+
+### Ops: mild-dip clip size $5/$10 → $10/$20
+
+Double entry notional: base `$10`, thick `$20` (same thick gates:
+mcap≥$100k / liq≥$50k / age≥6h).
+
+**Live / default:**
+`MILD_DIP_POSITION_USD=10`
+`MILD_DIP_THICK_POSITION_USD=20`
+
+**Откат:** `POSITION_USD=5` + `THICK_POSITION_USD=10` + reload.
+
+---
+
 ## [1.11.741] — 2026-08-08
 
 **Тег:** `sa-1.11.741`

@@ -2824,12 +2824,13 @@ const PM2_APPS = [
         MILD_DIP_EXECUTION_MODE: 'live',
         MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
-        MILD_DIP_POSITION_USD: '5',
+        /** 1.11.742 — base clip $10 (was $5). */
+        MILD_DIP_POSITION_USD: '10',
         /**
-         * 1.11.705 — thick size-up: 2× clip ($10) when structural name
+         * 1.11.742 — thick size-up: 2× clip ($20) when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          */
-        MILD_DIP_THICK_POSITION_USD: '10',
+        MILD_DIP_THICK_POSITION_USD: '20',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',

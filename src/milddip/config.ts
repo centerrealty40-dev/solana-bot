@@ -26,12 +26,12 @@ const MildDipConfigSchema = z.object({
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
   journalPath: z.string().min(1),
   statePath: z.string().min(1),
-  positionUsd: z.coerce.number().positive().max(10_000).default(5),
+  positionUsd: z.coerce.number().positive().max(10_000).default(10),
   /**
    * Size-up clip for thick names (mcap/liq/age). 0 or ≤ positionUsd = off.
-   * Default $10 = 2× the $5 base clip.
+   * Default $20 = 2× the $10 base clip.
    */
-  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
+  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(20),
   thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
   thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
@@ -405,8 +405,8 @@ export function loadMildDipConfig(): MildDipConfig {
     journalPath:
       process.env.MILD_DIP_JOURNAL_PATH?.trim() || path.join('data', 'milddip', 'journal.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
-    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 5,
-    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 10,
+    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 10,
+    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 20,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
     thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
