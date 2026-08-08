@@ -2788,7 +2788,7 @@ const PM2_APPS = [
     },
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
-     * Entry: DexScreener pc5m ∈ (−25, −5], clip $5; thick $10 when
+     * Entry: DexScreener pc5m ∈ (−25, −8], clip $10; thick $20 when
      * mcap≥$100k / liq≥$50k / age≥6h; buy impact ≤2%.
      * Exit: arm MFE +5% → half @ −3% giveback / full @ −8% (no hard TP).
      * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $10/$20 USDC).
