@@ -45,6 +45,7 @@ import {
   type MildDipState,
 } from './state.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
+import { createOneshotDumpGraceTracker } from './oneshot-dump.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 
@@ -622,7 +623,12 @@ async function executeQueuedSell(args: {
  * Phase 3: sell queue with limited concurrency — mint leaves state only after
  * confirmed sell / empty bag. In-flight mints skipped on subsequent marks.
  */
-async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
+async function tryExits(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+  oneshotDumpGrace: ReturnType<typeof createOneshotDumpGraceTracker>,
+): Promise<void> {
   const ordered = orderMintsForMark(state.open).filter((m) => !sellInFlight.has(m));
   if (ordered.length === 0) return;
 
@@ -696,6 +702,8 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
       gates: cfg.exit,
       nowMs,
       volume5mUsd,
+      oneshotDumpGraceActive:
+        cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
     });
     if (!decision) continue;
 
@@ -807,6 +815,7 @@ export async function runMildDipLoop(
     );
   }
 
+  const oneshotDumpGrace = createOneshotDumpGraceTracker();
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
   const sampleWatchMs = Math.max(
     cfg.cooldownBounceLookbackMs,
@@ -819,6 +828,39 @@ export async function runMildDipLoop(
       minGapMsPerMint: cfg.streamPriceMinGapMs,
       concurrency: cfg.streamPriceConcurrency,
       shouldSample: (mint, t) => shouldSampleStreamPrice(state, mint, t, sampleWatchMs),
+      forceFetch: (mint) =>
+        cfg.oneshotDumpGraceEnabled &&
+        cfg.oneshotDumpGraceMs > 0 &&
+        Boolean(state.open[mint]),
+      oneshot:
+        cfg.oneshotDumpGraceEnabled && cfg.oneshotDumpGraceMs > 0
+          ? {
+              enabled: true,
+              minSellUsd: cfg.oneshotDumpMinSellUsd,
+              maxPostResidualFrac: cfg.oneshotDumpMaxPostResidualFrac,
+            }
+          : undefined,
+      onOneshotDump: (ev) => {
+        if (!state.open[ev.mint]) return;
+        const until = oneshotDumpGrace.note(ev.mint, ev.tsMs || Date.now(), cfg.oneshotDumpGraceMs);
+        const pos = state.open[ev.mint];
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'oneshot_dump_grace',
+          mint: ev.mint,
+          symbol: pos?.symbol ?? null,
+          seller: ev.seller,
+          signature: ev.signature,
+          soldUsd: +ev.soldUsd.toFixed(2),
+          residualFrac: +ev.residualFrac.toFixed(4),
+          graceMs: cfg.oneshotDumpGraceMs,
+          untilMs: until,
+        });
+        console.log(
+          `[mild-dip] ONESHOT_DUMP_GRACE ${pos?.symbol ?? '?'} mint=${ev.mint.slice(0, 8)}… ` +
+            `seller=${ev.seller.slice(0, 8)}… sold~$${ev.soldUsd.toFixed(0)} ` +
+            `grace=${Math.round(cfg.oneshotDumpGraceMs / 1000)}s`,
+        );
+      },
     });
   }
 
@@ -869,6 +911,9 @@ export async function runMildDipLoop(
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
+      `oneshotGrace=${cfg.oneshotDumpGraceEnabled ? 1 : 0}` +
+      `/${Math.round(cfg.oneshotDumpGraceMs / 1000)}s` +
+      `/≥$${cfg.oneshotDumpMinSellUsd} ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0}` +
       `/reqDex=${cfg.streamOnlyRequireDexDip ? 1 : 0}≤${cfg.streamOnlyDexMaxDipPct} ` +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
@@ -925,7 +970,7 @@ export async function runMildDipLoop(
 
     // Respect markInterval (previously `|| openCount>0` hammered Dex every tick).
     if (openCount(state) > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
-      await tryExits(cfg, state, nowMs);
+      await tryExits(cfg, state, nowMs, oneshotDumpGrace);
       lastMark = nowMs;
       stats.lastMarkAtMs = nowMs;
       saveMildDipState(cfg.statePath, state);

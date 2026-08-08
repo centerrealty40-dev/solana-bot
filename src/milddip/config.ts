@@ -72,6 +72,15 @@ const MildDipConfigSchema = z.object({
   streamPriceMinGapMs: z.coerce.number().int().min(500).max(60_000).default(2_000),
   streamPriceConcurrency: z.coerce.number().int().min(1).max(8).default(3),
   /**
+   * On open mints: if a stream sell empties a wallet bag (post≈0) and is large,
+   * defer peak_giveback for graceMs. cliff_dump still fires. 0 grace = off.
+   */
+  oneshotDumpGraceEnabled: z.boolean().default(true),
+  oneshotDumpGraceMs: z.coerce.number().int().min(0).max(600_000).default(60_000),
+  oneshotDumpMinSellUsd: z.coerce.number().min(0).max(1_000_000).default(500),
+  /** post/pre ≤ this counts as emptied (dust left OK). */
+  oneshotDumpMaxPostResidualFrac: z.coerce.number().min(0).max(1).default(0.02),
+  /**
    * Journal one `mild_dip_mark` row per open position at most this often.
    * Gives an offline price path per trade so trail widths can be re-fitted on
    * our own tape instead of the leader's. 0 = off.
@@ -487,6 +496,12 @@ export function loadMildDipConfig(): MildDipConfig {
     })(),
     streamPriceMinGapMs: process.env.MILD_DIP_STREAM_PRICE_MIN_GAP_MS ?? 500,
     streamPriceConcurrency: process.env.MILD_DIP_STREAM_PRICE_CONCURRENCY ?? 6,
+    /** 1.11.734 — oneshot emptied-bag dump grace on peak_giveback. */
+    oneshotDumpGraceEnabled: envBool('MILD_DIP_ONESHOT_DUMP_GRACE', true),
+    oneshotDumpGraceMs: process.env.MILD_DIP_ONESHOT_DUMP_GRACE_MS ?? 60_000,
+    oneshotDumpMinSellUsd: process.env.MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD ?? 500,
+    oneshotDumpMaxPostResidualFrac:
+      process.env.MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC ?? 0.02,
     hotMintsPath:
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:

@@ -1,4 +1,30 @@
 # So
+## [1.11.734] — 2026-08-08
+
+**Тег:** `sa-1.11.734`
+
+### Feature: oneshot emptied-bag dump grace on exit
+
+`5An9Qrv` / `5WMzts`: armed trail took `peak_giveback` after a single whale
+emptied their bag (MFE +23% → giveback −15% in ~20s). Leaders often sit
+through one-shot dumps that reclaim.
+
+**Change:** on open mints, stream tx decode flags sells where signer
+`post/pre ≤ 2%` and sold ≥ `$500`; arm **60s** grace that defers
+`peak_giveback` / `peak_giveback_partial` / `never_arm_giveback`.
+`cliff_dump` and other hard never-arm exits still fire. Open mints bypass
+stream price minGap so the dump signature is not skipped.
+
+**Env:**
+`MILD_DIP_ONESHOT_DUMP_GRACE=1`
+`MILD_DIP_ONESHOT_DUMP_GRACE_MS=60000`
+`MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD=500`
+`MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC=0.02`
+
+**Откат:** `MILD_DIP_ONESHOT_DUMP_GRACE=0` + reload.
+
+---
+
 ## [1.11.733] — 2026-08-08
 
 **Тег:** `sa-1.11.733`

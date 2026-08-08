@@ -1,0 +1,207 @@
+import { describe, expect, it } from 'vitest';
+import type { TxJsonParsed } from '../../src/parser/rpc-http.js';
+import {
+  createOneshotDumpGraceTracker,
+  detectOneshotEmptiedDump,
+} from '../../src/milddip/oneshot-dump.js';
+import { evaluateMildDipPeakGiveback, type MildDipExitGates } from '../../src/milddip/gates.js';
+import { decideMarkExit } from '../../src/milddip/exit-engine.js';
+import type { MildDipOpenPosition } from '../../src/milddip/state.js';
+
+const MINT = 'TokenMint1111111111111111111111111111111111';
+const SELLER = 'SellerWallet111111111111111111111111111111';
+const OTHER = 'OtherWallet1111111111111111111111111111111';
+
+function bal(owner: string, amount: string, decimals = 6) {
+  return {
+    mint: MINT,
+    owner,
+    uiTokenAmount: { amount, decimals, uiAmount: Number(amount) / 10 ** decimals },
+  };
+}
+
+function txWithBalances(
+  signers: string[],
+  pre: Array<ReturnType<typeof bal>>,
+  post: Array<ReturnType<typeof bal>>,
+): TxJsonParsed {
+  return {
+    transaction: {
+      signatures: ['sigOneshotDump111111111111111111111111111111111'],
+      message: {
+        accountKeys: signers.map((pubkey) => ({ pubkey, signer: true, writable: true })),
+      },
+    },
+    meta: {
+      err: null,
+      preTokenBalances: pre,
+      postTokenBalances: post,
+    },
+  };
+}
+
+describe('detectOneshotEmptiedDump', () => {
+  it('fires when seller empties bag and sold USD clears floor', () => {
+    // 1e9 raw / 1e6 decimals = 1000 tokens @ $1 = $1000
+    const tx = txWithBalances([SELLER], [bal(SELLER, '1000000000')], [bal(SELLER, '0')]);
+    const ev = detectOneshotEmptiedDump(
+      tx,
+      MINT,
+      { minSellUsd: 500, maxPostResidualFrac: 0.02 },
+      { priceUsd: 1, tsMs: 1_700_000_000_000 },
+    );
+    expect(ev).not.toBeNull();
+    expect(ev!.seller).toBe(SELLER);
+    expect(ev!.postRaw).toBe(0n);
+    expect(ev!.soldUsd).toBeGreaterThanOrEqual(500);
+  });
+
+  it('ignores residual bag (continuing seller)', () => {
+    const tx = txWithBalances(
+      [SELLER],
+      [bal(SELLER, '1000000000')],
+      [bal(SELLER, '400000000')],
+    );
+    const ev = detectOneshotEmptiedDump(
+      tx,
+      MINT,
+      { minSellUsd: 100, maxPostResidualFrac: 0.02 },
+      { priceUsd: 1 },
+    );
+    expect(ev).toBeNull();
+  });
+
+  it('allows dust residual ≤ maxPostResidualFrac', () => {
+    // 1% left, sold ≈ $990
+    const tx = txWithBalances(
+      [SELLER],
+      [bal(SELLER, '1000000000')],
+      [bal(SELLER, '10000000')],
+    );
+    const ev = detectOneshotEmptiedDump(
+      tx,
+      MINT,
+      { minSellUsd: 100, maxPostResidualFrac: 0.02 },
+      { priceUsd: 1 },
+    );
+    expect(ev).not.toBeNull();
+    expect(ev!.residualFrac).toBeLessThanOrEqual(0.02);
+  });
+
+  it('ignores dust notional below minSellUsd', () => {
+    const tx = txWithBalances([SELLER], [bal(SELLER, '1000')], [bal(SELLER, '0')]);
+    const ev = detectOneshotEmptiedDump(
+      tx,
+      MINT,
+      { minSellUsd: 500, maxPostResidualFrac: 0.02 },
+      { priceUsd: 1 },
+    );
+    expect(ev).toBeNull();
+  });
+
+  it('ignores buys / non-sellers', () => {
+    const tx = txWithBalances([OTHER], [bal(OTHER, '0')], [bal(OTHER, '500000')]);
+    expect(
+      detectOneshotEmptiedDump(
+        tx,
+        MINT,
+        { minSellUsd: 1, maxPostResidualFrac: 0.02 },
+        { priceUsd: 1 },
+      ),
+    ).toBeNull();
+  });
+});
+
+describe('oneshot dump grace vs exits', () => {
+  const gates: MildDipExitGates = {
+    armPct: 5,
+    partialGivebackPct: 3,
+    scaleOutFraction: 0.5,
+    givebackPct: 8,
+    neverArmPatienceMs: 0,
+    neverArmMaxHoldMs: 5_400_000,
+    neverArmDeadMinMs: 1_800_000,
+    neverArmDeadPnlPct: 10,
+    neverArmStaleMinMs: 600_000,
+    neverArmStaleMaxMfePct: 2,
+    neverArmStalePnlPct: 5,
+    neverArmVolFadeMinMs: 900_000,
+    neverArmVolFadeRatio: 0.25,
+    neverArmVolFadeFloorUsd: 300,
+    neverArmVolFadeSampleMs: 300_000,
+    neverArmVolFadeWeakWindows: 3,
+    cliffDumpPnlPct: 50,
+  };
+
+  it('defers peak_giveback while grace active', () => {
+    const hold = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.8,
+      peakPriceUsd: 115,
+      armed: true,
+      gates,
+      oneshotDumpGraceActive: true,
+    });
+    expect(hold.shouldExit).toBe(false);
+    expect(hold.reason).toBeNull();
+  });
+
+  it('still fires peak_giveback when grace inactive', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.8,
+      peakPriceUsd: 115,
+      armed: true,
+      gates,
+      oneshotDumpGraceActive: false,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('peak_giveback');
+  });
+
+  it('cliff_dump still fires under grace', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 40,
+      peakPriceUsd: 115,
+      armed: true,
+      gates,
+      oneshotDumpGraceActive: true,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('cliff_dump');
+  });
+
+  it('decideMarkExit respects grace flag', () => {
+    const pos: MildDipOpenPosition = {
+      mint: MINT,
+      symbol: 'T',
+      entryPriceUsd: 100,
+      peakPriceUsd: 115,
+      openedAtMs: Date.now() - 60_000,
+      trailArmed: true,
+      sizeUsd: 5,
+      tokenRaw: '1',
+      entryPc5mPct: -10,
+      buySignature: null,
+    };
+    const d = decideMarkExit({
+      mint: MINT,
+      pos,
+      markPriceUsd: 105.8,
+      gates,
+      oneshotDumpGraceActive: true,
+    });
+    expect(d?.shouldExit).toBe(false);
+  });
+});
+
+describe('createOneshotDumpGraceTracker', () => {
+  it('notes and expires grace', () => {
+    const t = createOneshotDumpGraceTracker();
+    const now = 1_000_000;
+    t.note(MINT, now, 60_000);
+    expect(t.isActive(MINT, now + 1_000)).toBe(true);
+    expect(t.isActive(MINT, now + 60_001)).toBe(false);
+  });
+});
