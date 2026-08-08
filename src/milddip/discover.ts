@@ -449,7 +449,14 @@ export async function enrichAndFilterCandidates(
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) {
-        dipSource = 'stream';
+        // Same as fast-path: do not stream-enter when Dex already healed.
+        const dexPc = metrics.priceChange5mPct;
+        const dexStillDump =
+          !cfg.streamOnlyRequireDexDip ||
+          (dexPc != null &&
+            Number.isFinite(dexPc) &&
+            dexPc <= cfg.streamOnlyDexMaxDipPct);
+        if (dexStillDump) dipSource = 'stream';
       } else if (h1RedShallowOk) {
         dipSource = 'h1_red_shallow';
       } else if (flatMicroOk) {
