@@ -506,17 +506,20 @@ export async function enrichAndFilterCandidates(
             };
           }
           const forceSet = new Set(forceList);
+          const leaderHit = mildDipHotMints.isLeaderHighlight(mint, nowMs);
+          // BJWHLm/2iY3hd: last3=1.2,82.4,14.4 at 8zkg buy — classic triple wants
+          // huge LAST so it skipped. Flex when leader-highlighted OR force+strong pc5m.
+          const strongForce =
+            forceSet.has(mint) &&
+            (metrics.priceChange5mPct ?? 0) >= Math.max(25, cfg.greenTape.tripleHugeMinPc);
+          const flex = leaderHit || strongForce;
           const tg = await evaluateTripleGreenEntry({
             pairAddress: details.pairAddress,
             nowMs,
             localPriceSamples: mildDipPriceRing.listSamples(mint, 20 * 60_000, nowMs),
-            // Leader-highlight always allowed (+ geckoPriority bypasses soft budget).
-            // Wider Gecko eligibility — was vol≥8k only → most mints hit budget/defer.
-            allowGeckoHttp:
-              mildDipHotMints.isLeaderHighlight(mint, nowMs) ||
-              forceSet.has(mint) ||
-              (metrics.volume5mUsd ?? 0) >= 2_500,
-            geckoPriority: mildDipHotMints.isLeaderHighlight(mint, nowMs),
+            allowGeckoHttp: flex || forceSet.has(mint) || (metrics.volume5mUsd ?? 0) >= 2_500,
+            geckoPriority: flex,
+            leaderFlex: flex,
             gates: {
               enabled: true,
               smallMinPc: cfg.greenTape.tripleSmallMinPc,

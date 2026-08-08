@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildOhlcv1mFromPriceSamples,
+  detectLeaderImpulseGreen,
   detectTripleGreen,
   type Ohlcv1m,
   type TripleGreenGates,
@@ -87,6 +88,24 @@ describe('detectTripleGreen', () => {
     const bars = buildOhlcv1mFromPriceSamples(samples, { nowMs: now });
     expect(bars.length).toBeGreaterThanOrEqual(2);
     expect(bars[0]!.open).toBeGreaterThan(0);
+  });
+
+  it('leader flex accepts huge-in-middle (BJWHLm 1.2/82.4/14.4)', () => {
+    const t0 = 1_786_225_357;
+    const bars: Ohlcv1m[] = [
+      bar(t0 - 120, 1.0, 1.012, 200), // +1.2%
+      bar(t0 - 60, 1.012, 1.846, 5000), // +82.4%
+      bar(t0, 1.846, 2.112, 2000), // +14.4%
+    ];
+    const classic = detectTripleGreen(bars, { ...gates, hugeMinPc: 10, smallMaxPc: 18 }, t0 + 30);
+    expect(classic.pass).toBe(false);
+    const flex = detectLeaderImpulseGreen(
+      bars,
+      { ...gates, hugeMinPc: 10, smallMaxPc: 18, hugeMinVolUsd: 100 },
+      t0 + 30,
+    );
+    expect(flex.pass).toBe(true);
+    expect(flex.pattern?.huge).toBeGreaterThan(50);
   });
 
   it('rejects stale huge (older than maxAgeAfterHugeMs)', () => {

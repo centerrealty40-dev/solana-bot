@@ -1,5 +1,20 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.743] — 2026-08-08
+
+**Тег:** `sa-1.11.743`
+
+### Fix: leader highlight — accept huge-in-middle impulse (BJWHLm)
+
+`2iY3hd` / 8zkg Buy `BJWHLm…pump`: we evaluated at buy time with
+`last3=1.2,82.4,14.4` but classic triple wants huge LAST → skip.
+Leader-flex: if highlighted, allow huge anywhere in last3 while latest
+still green.
+
+**Откат:** `leaderFlex` off (classic triple only).
+
+---
+
 ## [1.11.742] — 2026-08-08
 
 **Тег:** `sa-1.11.742`

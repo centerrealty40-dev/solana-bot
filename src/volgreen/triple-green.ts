@@ -161,6 +161,89 @@ export function detectTripleGreen(
   return { pass: false, reasons };
 }
 
+/**
+ * Leader-highlight flex: classic triple wants huge LAST, but leaders often buy
+ * mid-impulse (BJWHLm / 2iY3hd: last3=1.2,82.4,14.4 — huge in the middle).
+ * Accept when last3 has a huge green, latest is still green, and the impulse
+ * bar is fresh.
+ */
+export function detectLeaderImpulseGreen(
+  bars: Ohlcv1m[],
+  gates: TripleGreenGates,
+  nowSec: number,
+): TripleGreenVerdict {
+  if (!gates.enabled) {
+    return { pass: false, reasons: ['triple_green_disabled'] };
+  }
+  if (!Array.isArray(bars) || bars.length < 3) {
+    return { pass: false, reasons: ['triple_ohlcv_insufficient'] };
+  }
+  const ordered = [...bars].sort((a, b) => a.ts - b.ts);
+  const last3 = ordered.slice(-3);
+  if (last3.length < 3) {
+    return { pass: false, reasons: ['triple_ohlcv_insufficient'] };
+  }
+  const maxAgeSec = Math.max(60, Math.floor(gates.maxAgeAfterHugeMs / 1000));
+  const chgs = last3.map((b) => candleChgPct(b));
+  const latest = last3[2]!;
+  if (!isGreen(latest) || !(chgs[2]! > gates.smallMinPc)) {
+    return {
+      pass: false,
+      reasons: [
+        'leader_impulse_latest_not_green',
+        `last3_chg=${chgs.map((x) => x.toFixed(1)).join(',')}`,
+      ],
+    };
+  }
+  // Find the biggest green bar in last3 as the impulse.
+  let bestIdx = -1;
+  let bestChg = -Infinity;
+  for (let i = 0; i < 3; i++) {
+    const b = last3[i]!;
+    const c = chgs[i]!;
+    if (!isGreen(b)) continue;
+    if (c >= gates.hugeMinPc && c > bestChg) {
+      bestChg = c;
+      bestIdx = i;
+    }
+  }
+  if (bestIdx < 0) {
+    return {
+      pass: false,
+      reasons: [
+        'leader_impulse_no_huge',
+        `last3_chg=${chgs.map((x) => x.toFixed(1)).join(',')}`,
+      ],
+    };
+  }
+  const hugeBar = last3[bestIdx]!;
+  if (nowSec - hugeBar.ts > maxAgeSec) {
+    return { pass: false, reasons: ['leader_impulse_stale'] };
+  }
+  if (gates.hugeMinVolUsd > 0 && !(hugeBar.volumeUsd >= gates.hugeMinVolUsd)) {
+    return { pass: false, reasons: ['leader_impulse_low_vol'] };
+  }
+  // Need at least one other green in the window (not a lone wick).
+  const otherGreen = last3.some(
+    (b, i) => i !== bestIdx && isGreen(b) && candleChgPct(b) > gates.smallMinPc,
+  );
+  if (!otherGreen) {
+    return { pass: false, reasons: ['leader_impulse_no_setup_green'] };
+  }
+  const others = chgs.filter((_, i) => i !== bestIdx);
+  return {
+    pass: true,
+    reasons: [],
+    pattern: {
+      small0: +others[0]!.toFixed(2),
+      small1: +others[1]!.toFixed(2),
+      huge: +bestChg.toFixed(2),
+      hugeVol: +hugeBar.volumeUsd.toFixed(0),
+      hugeTs: hugeBar.ts,
+    },
+  };
+}
+
 export type OhlcvFetchResult = {
   bars: Ohlcv1m[];
   rateLimited: boolean;
@@ -316,12 +399,15 @@ export async function evaluateTripleGreenEntry(args: {
   allowGeckoHttp?: boolean;
   /** Leader-highlight: bypass soft Gecko budget skip. */
   geckoPriority?: boolean;
+  /** Leader-highlight: also accept huge-in-middle impulse (not only classic triple). */
+  leaderFlex?: boolean;
 }): Promise<TripleGreenVerdict> {
   if (!args.gates.enabled) {
     return { pass: false, reasons: ['triple_green_disabled'] };
   }
   const nowMs = args.nowMs ?? Date.now();
   const nowSec = Math.floor(nowMs / 1000);
+  const leaderFlex = args.leaderFlex === true || args.geckoPriority === true;
 
   // 1) Local 1m bars from stream/dex prices — race the candle.
   let localMissReason: string | null = null;
@@ -331,6 +417,10 @@ export async function evaluateTripleGreenEntry(args: {
       const localGates = { ...args.gates, hugeMinVolUsd: 0 };
       const localHit = detectTripleGreen(localBars, localGates, nowSec);
       if (localHit.pass) return localHit;
+      if (leaderFlex) {
+        const flex = detectLeaderImpulseGreen(localBars, localGates, nowSec);
+        if (flex.pass) return flex;
+      }
       localMissReason = localHit.reasons[0] ?? 'triple_pattern_not_found';
     } else {
       localMissReason = `triple_local_bars=${localBars.length}<3`;
@@ -381,7 +471,20 @@ export async function evaluateTripleGreenEntry(args: {
       reasons: [localMissReason ?? 'triple_ohlcv_insufficient'],
     };
   }
-  return detectTripleGreen(fetched.bars, args.gates, nowSec);
+  const classic = detectTripleGreen(fetched.bars, args.gates, nowSec);
+  if (classic.pass) return classic;
+  if (leaderFlex) {
+    const flex = detectLeaderImpulseGreen(fetched.bars, args.gates, nowSec);
+    if (flex.pass) return flex;
+    return {
+      pass: false,
+      reasons: [
+        ...(classic.reasons.length ? classic.reasons : [localMissReason ?? 'triple_pattern_not_found']),
+        ...(flex.reasons[0] ? [flex.reasons[0]] : []),
+      ],
+    };
+  }
+  return classic;
 }
 
 /** Trending Solana pools → base mints (no Helius). */
