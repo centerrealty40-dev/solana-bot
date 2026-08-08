@@ -2791,7 +2791,7 @@ const PM2_APPS = [
      * Entry: DexScreener pc5m ∈ (−25, −5], clip $5; thick $10 when
      * mcap≥$100k / liq≥$50k / age≥6h; buy impact ≤2%.
      * Exit: arm MFE +5% → half @ −3% giveback / full @ −8% (no hard TP).
-     * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $5 USDC).
+     * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $10/$20 USDC).
      */
     {
       name: 'mild-dip-bot',
@@ -2901,7 +2901,7 @@ const PM2_APPS = [
         MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
-         * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
+         * $10/$20 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         /**
