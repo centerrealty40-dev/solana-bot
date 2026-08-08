@@ -2989,7 +2989,7 @@ const PM2_APPS = [
         /** Background lane only — entries owned by stream/leader fast-path. */
         MILD_DIP_SCAN_INTERVAL_MS: '3000',
         /**
-         * 1.11.737 — open-book marks: ring price never blocked by Dex; bg warm.
+         * 1.11.738 — open-book marks: ring price never blocked by Dex; bg warm.
          * Was Dex-only + scan-blocked → real gaps ~60s (2qE4vp −17% giveback).
          */
         MILD_DIP_MARK_INTERVAL_MS: '2000',

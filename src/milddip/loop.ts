@@ -847,15 +847,25 @@ async function tryExits(
 
   if (toSell.length === 0) return;
 
-  await mapPool(toSell, cfg.sellConcurrency, async (decision) => {
+  /**
+   * Never await Jupiter sells on the mark path — a stuck quote (U5cWTi) was
+   * stretching every open mint's mark gap to 15–40s. sellInFlight still
+   * dedupes; marks continue while sells drain in the background.
+   */
+  void mapPool(toSell, cfg.sellConcurrency, async (decision) => {
     if (sellInFlight.has(decision.mint)) return;
     if (!state.open[decision.mint]) return;
     sellInFlight.add(decision.mint);
     try {
-      await executeQueuedSell({ cfg, state, decision, nowMs });
+      await executeQueuedSell({ cfg, state, decision, nowMs: Date.now() });
     } finally {
       sellInFlight.delete(decision.mint);
     }
+  }).catch((err) => {
+    console.warn(
+      '[mild-dip] background sell queue failed',
+      err instanceof Error ? err.message : err,
+    );
   });
 }
 
