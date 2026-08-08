@@ -45,8 +45,8 @@ const MildDipConfigSchema = z.object({
    */
   markIntervalMs: z.coerce.number().int().min(1_000).max(120_000).default(2_000),
   /**
-   * Prefer stream/ring price for open marks when sample age ≤ this (ms).
-   * 0 = Dex-only. Avoids Dex gate stalls on the exit path (2qE4vp −17% gap).
+   * Prefer stream/ring for open marks. Fresh target ≤ this (ms); usable ring
+   * may be older (see loop ringStaleMax). 0 = Dex-only.
    */
   markStreamMaxAgeMs: z.coerce.number().int().min(0).max(60_000).default(5_000),
   /**
