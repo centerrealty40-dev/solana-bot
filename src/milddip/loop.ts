@@ -478,11 +478,12 @@ async function tryFireWaitDip(
       `(need ${cfg.waitDipPct}%) wait=${Math.round((nowMs - watch.detectedAtMs) / 1000)}s`,
   );
 
-  const chase = fastPathChasePct(cfg);
-  const cfgFast = { ...cfg, maxChasePct: chase };
-  const copyCfg = mildDipToCopyTraderConfig(cfgFast);
+  // Signal-ceiling path: tight chase + fresh Dex; Jupiter premium vs ceiling.
+  const chase = cfg.waitDipMaxChasePct;
+  const cfgWait = { ...cfg, maxChasePct: cfg.waitDipQuotePremiumPct };
+  const copyCfg = mildDipToCopyTraderConfig(cfgWait);
   const result = await attemptMildDipEntry({
-    cfg: cfgFast,
+    cfg: cfgWait,
     state,
     candidate,
     copyCfg,
@@ -494,8 +495,8 @@ async function tryFireWaitDip(
       chasePct: chase,
       skipBounce: true,
       skipOnchainAdopt: true,
-      freshDexPrebuy: false,
-      softSkipCooldownMs: cfg.fastPathSoftSkipCooldownMs,
+      freshDexPrebuy: true,
+      softSkipCooldownMs: Math.min(cfg.fastPathSoftSkipCooldownMs, 1_500),
       lane: 'fast',
     },
   });
@@ -1406,7 +1407,12 @@ export async function runMildDipLoop(
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `minMcap=$${cfg.entry.minMarketCapUsd} ` +
       `waitDip=${cfg.waitDipEnabled ? 1 : 0}` +
-      (cfg.waitDipEnabled ? `/${cfg.waitDipPct}%/${Math.round(cfg.waitDipMaxWatchMs / 1000)}s ` : ' ') +
+      (cfg.waitDipEnabled
+        ? `/${cfg.waitDipPct}%/+${cfg.waitDipMaxOvershootPct}pp` +
+          `/chase${cfg.waitDipMaxChasePct}%` +
+          `/qPrem${cfg.waitDipQuotePremiumPct}%` +
+          `/${Math.round(cfg.waitDipMaxWatchMs / 1000)}s `
+        : ' ') +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +
       (cfg.exit.mfeBankEnabled
         ? `mfeBank=+${cfg.exit.mfeBank1Pct}%×${cfg.exit.mfeBank1Fraction}` +

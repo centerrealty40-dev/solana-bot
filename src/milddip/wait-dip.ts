@@ -60,6 +60,103 @@ export function waitDipTargetPriceUsd(
 }
 
 /**
+ * Hard ceiling for send/fill: signal × (1 + (waitDipPct + overshoot)/100).
+ * Example: wait −7%, overshoot +2pp → max price = signal × 0.95 (fill dump ≤ −5%).
+ */
+export function waitDipMaxPriceUsd(
+  signalPriceUsd: number,
+  waitDipPct: number,
+  maxOvershootPct: number,
+): number | null {
+  if (!(signalPriceUsd > 0) || !Number.isFinite(waitDipPct) || !(waitDipPct < 0)) {
+    return null;
+  }
+  const overshoot = Number.isFinite(maxOvershootPct) ? Math.max(0, maxOvershootPct) : 0;
+  const maxDumpPct = waitDipPct + overshoot;
+  // Still require a dump (never allow buy above signal via overshoot alone).
+  if (!(maxDumpPct < 0)) return signalPriceUsd * (1 + waitDipPct / 100);
+  return signalPriceUsd * (1 + maxDumpPct / 100);
+}
+
+export function dumpFromSignalPct(
+  priceUsd: number,
+  signalPriceUsd: number,
+): number | null {
+  if (!(priceUsd > 0) || !(signalPriceUsd > 0)) return null;
+  return (priceUsd / signalPriceUsd - 1) * 100;
+}
+
+/**
+ * Pre-send gate for wait_dip: keep the −7% edge after mark→quote drift.
+ * Anchors to the original park signal (not the ready mark).
+ */
+export function evaluateWaitDipPreBuy(args: {
+  signalPriceUsd: number;
+  readyMarkPriceUsd: number;
+  freshPriceUsd: number | null;
+  waitDipPct: number;
+  /** Percentage points of dump edge we may give up vs waitDipPct (default 2). */
+  maxOvershootPct: number;
+  /** Extra chase vs ready mark only (default 3). */
+  maxChaseFromReadyPct: number;
+}): {
+  pass: boolean;
+  reasons: string[];
+  dumpFromSignalPct: number | null;
+  maxPriceUsd: number | null;
+} {
+  const {
+    signalPriceUsd,
+    readyMarkPriceUsd,
+    freshPriceUsd,
+    waitDipPct,
+    maxOvershootPct,
+    maxChaseFromReadyPct,
+  } = args;
+  const reasons: string[] = [];
+  if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
+    return {
+      pass: false,
+      reasons: ['wait_dip_prebuy_missing_price'],
+      dumpFromSignalPct: null,
+      maxPriceUsd: null,
+    };
+  }
+  const maxPriceUsd = waitDipMaxPriceUsd(signalPriceUsd, waitDipPct, maxOvershootPct);
+  const dumpPct = dumpFromSignalPct(freshPriceUsd, signalPriceUsd);
+  if (maxPriceUsd == null || dumpPct == null) {
+    return {
+      pass: false,
+      reasons: ['wait_dip_prebuy_bad_signal'],
+      dumpFromSignalPct: dumpPct,
+      maxPriceUsd,
+    };
+  }
+  if (freshPriceUsd > maxPriceUsd + 1e-15) {
+    reasons.push(
+      `wait_dip_ceiling=${dumpPct.toFixed(2)}%>max=${(waitDipPct + Math.max(0, maxOvershootPct)).toFixed(2)}%` +
+        `_px=${freshPriceUsd}>max=${maxPriceUsd}`,
+    );
+  }
+  if (
+    maxChaseFromReadyPct > 0 &&
+    readyMarkPriceUsd > 0 &&
+    freshPriceUsd > readyMarkPriceUsd * (1 + maxChaseFromReadyPct / 100) + 1e-15
+  ) {
+    const chasePct = (freshPriceUsd / readyMarkPriceUsd - 1) * 100;
+    reasons.push(
+      `wait_dip_chase_ready=${chasePct.toFixed(2)}%>max=${maxChaseFromReadyPct}`,
+    );
+  }
+  return {
+    pass: reasons.length === 0,
+    reasons,
+    dumpFromSignalPct: dumpPct,
+    maxPriceUsd,
+  };
+}
+
+/**
  * Create or refresh a wait-dip watch. Never moves signalPrice / detectedAt —
  * otherwise the −7% target would chase the blade forever.
  */

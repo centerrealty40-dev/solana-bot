@@ -192,6 +192,15 @@ const MildDipConfigSchema = z.object({
   waitDipPct: z.coerce.number().max(0).default(-7),
   waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
   /**
+   * 1.11.753 — after ready, allow at most this many pp of dump edge to erode
+   * before abort (wait −7% + overshoot 2 → fill/quote must stay ≤ −5% vs signal).
+   */
+  waitDipMaxOvershootPct: z.coerce.number().min(0).max(20).default(2),
+  /** Chase vs ready mark only (not vs park signal). */
+  waitDipMaxChasePct: z.coerce.number().min(0).max(20).default(3),
+  /** Jupiter quote premium above signal ceiling (must be >0 so live guard runs). */
+  waitDipQuotePremiumPct: z.coerce.number().min(0.1).max(10).default(1),
+  /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
    * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
    */
@@ -554,6 +563,9 @@ export function loadMildDipConfig(): MildDipConfig {
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -7),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
+    waitDipMaxOvershootPct: envNum('MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT', 2),
+    waitDipMaxChasePct: envNum('MILD_DIP_WAIT_DIP_MAX_CHASE_PCT', 3),
+    waitDipQuotePremiumPct: envNum('MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT', 1),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
