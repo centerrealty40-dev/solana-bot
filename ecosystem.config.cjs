@@ -2835,10 +2835,9 @@ const PM2_APPS = [
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
         /**
-         * 1.11.743 — micro tier: mcap $15k–$50k → $5 clip.
-         * Entry floor lowered to $15k so this band is eligible.
+         * 1.11.745 — micro tier OFF (was $15k–$50k @ $5). Set >0 to re-enable.
          */
-        MILD_DIP_MICRO_POSITION_USD: '5',
+        MILD_DIP_MICRO_POSITION_USD: '0',
         MILD_DIP_MICRO_MIN_MCAP_USD: '15000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -2912,10 +2911,9 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         /**
-         * 1.11.743 — mcap floor $50k → $15k so micro tier ($15k–$50k @ $5) can enter.
-         * Base/thick clips still $10/$20 above the micro band.
+         * 1.11.745 — mcap floor back to $50k (micro tier off).
          */
-        MILD_DIP_MIN_MCAP_USD: '15000',
+        MILD_DIP_MIN_MCAP_USD: '50000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         /**
          * 1.11.724 — skip pairs younger than 30m (was 0.25h / 15m).
