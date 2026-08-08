@@ -58,12 +58,19 @@ export function decideMarkExit(args: {
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
   const nowMs = args.nowMs ?? Date.now();
   const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
+  const stageRaw = Number(pos.mfeBankStage);
+  const mfeBankStage = Number.isFinite(stageRaw)
+    ? Math.max(0, Math.min(2, Math.floor(stageRaw)))
+    : pos.scaleOutDone === true
+      ? 1
+      : 0;
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
     markPriceUsd,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
     scaleOutDone: pos.scaleOutDone === true,
+    mfeBankStage,
     gates,
     heldMs,
     nowMs,

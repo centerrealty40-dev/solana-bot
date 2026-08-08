@@ -293,6 +293,16 @@ const MildDipConfigSchema = z.object({
     scaleOutFraction: z.coerce.number().min(0).max(1).default(0.5),
     /** W9.1: full exit when giveback from peak ≤ −givebackPct. */
     givebackPct: z.number(),
+    /**
+     * 1.11.750 — MFE bank + runner sleeve (default on).
+     * When on, classic armed −3%/−8% giveback scale-out is skipped.
+     */
+    mfeBankEnabled: z.boolean().default(true),
+    mfeBank1Pct: z.coerce.number().min(0).max(500).default(8),
+    mfeBank1Fraction: z.coerce.number().min(0).max(1).default(0.4),
+    mfeBank2Pct: z.coerce.number().min(0).max(500).default(15),
+    mfeBank2Fraction: z.coerce.number().min(0).max(1).default(0.4),
+    mfeBankSleeveGivebackPct: z.coerce.number().min(0).max(100).default(12),
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /** Never-armed: force exit after this many ms (0=off). Hard ceiling. */
@@ -398,6 +408,16 @@ export function loadMildDipConfig(): MildDipConfig {
     partialGivebackPct: envNum('MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT', 3),
     scaleOutFraction: envNum('MILD_DIP_EXIT_SCALE_OUT_FRACTION', 0.5),
     givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 8),
+    /**
+     * 1.11.750 — bank +8%×40% / +15%×40%, sleeve 20% trails −12% from peak.
+     * Set MILD_DIP_EXIT_MFE_BANK=0 to restore classic −3%/−8% giveback trail.
+     */
+    mfeBankEnabled: envBool('MILD_DIP_EXIT_MFE_BANK', true),
+    mfeBank1Pct: envNum('MILD_DIP_EXIT_MFE_BANK1_PCT', 8),
+    mfeBank1Fraction: envNum('MILD_DIP_EXIT_MFE_BANK1_FRACTION', 0.4),
+    mfeBank2Pct: envNum('MILD_DIP_EXIT_MFE_BANK2_PCT', 15),
+    mfeBank2Fraction: envNum('MILD_DIP_EXIT_MFE_BANK2_FRACTION', 0.4),
+    mfeBankSleeveGivebackPct: envNum('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', 12),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),

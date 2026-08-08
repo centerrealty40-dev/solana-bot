@@ -19,6 +19,11 @@ export type MildDipOpenPosition = {
   trailArmed?: boolean;
   /** True after a successful partial scale-out (half bag sold). */
   scaleOutDone?: boolean;
+  /**
+   * MFE-bank ladder progress: 0/undefined = none, 1 = bank1 filled, 2 = bank2 filled.
+   * Sleeve trail owns the remainder after stage ≥ 1 (wide giveback).
+   */
+  mfeBankStage?: number;
   /** 5m Dex volume at entry — baseline for the activity-fade exit. */
   entryVolume5mUsd?: number | null;
   /**
