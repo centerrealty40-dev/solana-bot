@@ -1,4 +1,32 @@
 # So
+## [1.11.752] — 2026-08-08
+
+**Тег:** `sa-1.11.752`
+
+### Entry: wait-dip −7% before main-band buy
+
+48h CF ($100/coin, TP/SL and MFE-bank grids): entering immediately on
+signal lost money; parking until an extra **−7%** from the signal mark,
+then running the live MFE-bank (+8×40% / +15×40% / sleeve), was the
+strongest practical combo (~+$2.8–3.0k on the book vs −$1.7k immediate
+hard ±10%).
+
+**Live default (`MILD_DIP_WAIT_DIP=1`):**
+- Main-band sources (`dex` / `stream` / `dex+stream` / `h1_red_shallow` /
+  `flat_micro_dip`) **park** a `waitDipWatch` at first signal price
+- Buy only when mark ≤ signal × (1 − 7%) → `dipSource=wait_dip`
+- Expire after 20m if never filled
+- `knife_stabilize` / `mild_stabilize` unchanged (already delayed paths)
+
+**Env:**
+- `MILD_DIP_WAIT_DIP=1`
+- `MILD_DIP_WAIT_DIP_PCT=-7`
+- `MILD_DIP_WAIT_DIP_MAX_WATCH_MS=1200000`
+
+**Откат:** `MILD_DIP_WAIT_DIP=0` + reload.
+
+---
+
 ## [1.11.751] — 2026-08-08
 
 **Тег:** `sa-1.11.751`

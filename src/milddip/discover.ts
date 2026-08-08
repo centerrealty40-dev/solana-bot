@@ -43,7 +43,8 @@ export type MildDipCandidate = {
     | 'h1_red_shallow'
     | 'flat_micro_dip'
     | 'knife_stabilize'
-    | 'mild_stabilize';
+    | 'mild_stabilize'
+    | 'wait_dip';
   /** Present when dipSource=knife_stabilize. */
   knifeMode?: 'bounce' | 'stabilize';
   knifeBouncePct?: number | null;
@@ -53,6 +54,10 @@ export type MildDipCandidate = {
   mildStabilizeBouncePct?: number | null;
   mildStabilizeTroughPriceUsd?: number | null;
   mildStabilizeTroughAtMs?: number | null;
+  /** Present when dipSource=wait_dip. */
+  waitDipSignalPriceUsd?: number | null;
+  waitDipOriginalSource?: string | null;
+  waitDipDumpFromSignalPct?: number | null;
 };
 
 const SOLANA_CHAIN = 'solana';

@@ -1,6 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { KnifeWatchEntry } from './knife-stabilize.js';
+import type { WaitDipWatchEntry } from './wait-dip.js';
+import type { MildDipCandidateMetrics } from './gates.js';
 
 export type MildDipOpenPosition = {
   mint: string;
@@ -50,6 +52,8 @@ export type MildDipState = {
   lastExitByMint?: Record<string, MildDipLastExit>;
   /** mint → deep-knife watch (wait for stabilize / bounce). */
   knifeWatch?: Record<string, KnifeWatchEntry>;
+  /** mint → wait-dip watch (park main-band signal; buy after extra dump). */
+  waitDipWatch?: Record<string, WaitDipWatchEntry>;
   updatedAtMs: number;
 };
 
@@ -94,6 +98,68 @@ function sanitizeKnifeWatch(
   return out;
 }
 
+function sanitizeWaitDipWatch(raw: unknown): Record<string, WaitDipWatchEntry> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, WaitDipWatchEntry> = {};
+  for (const [mint, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!mint || mint.length < 32 || !v || typeof v !== 'object') continue;
+    const o = v as Partial<WaitDipWatchEntry>;
+    const detectedAtMs = Number(o.detectedAtMs);
+    const signalPriceUsd = Number(o.signalPriceUsd);
+    const waitDipPct = Number(o.waitDipPct);
+    const lastPriceUsd = Number(o.lastPriceUsd);
+    const lastAtMs = Number(o.lastAtMs);
+    const troughPriceUsd = Number(o.troughPriceUsd);
+    const troughAtMs = Number(o.troughAtMs);
+    const symbol = typeof o.symbol === 'string' ? o.symbol : mint.slice(0, 6);
+    const originalDipSource =
+      typeof o.originalDipSource === 'string' ? o.originalDipSource : 'dex';
+    if (
+      !(detectedAtMs > 0) ||
+      !(signalPriceUsd > 0) ||
+      !Number.isFinite(waitDipPct) ||
+      !(waitDipPct < 0) ||
+      !(lastPriceUsd > 0) ||
+      !(lastAtMs > 0) ||
+      !(troughPriceUsd > 0) ||
+      !(troughAtMs > 0)
+    ) {
+      continue;
+    }
+    const metricsRaw =
+      o.metrics && typeof o.metrics === 'object'
+        ? (o.metrics as Partial<MildDipCandidateMetrics>)
+        : {};
+    const metrics: MildDipCandidateMetrics = {
+      priceChange5mPct:
+        typeof metricsRaw.priceChange5mPct === 'number' ? metricsRaw.priceChange5mPct : null,
+      volume5mUsd: typeof metricsRaw.volume5mUsd === 'number' ? metricsRaw.volume5mUsd : null,
+      liquidityUsd: typeof metricsRaw.liquidityUsd === 'number' ? metricsRaw.liquidityUsd : null,
+      marketCapUsd: typeof metricsRaw.marketCapUsd === 'number' ? metricsRaw.marketCapUsd : null,
+      pairAgeHours: typeof metricsRaw.pairAgeHours === 'number' ? metricsRaw.pairAgeHours : null,
+      dexId: typeof metricsRaw.dexId === 'string' ? metricsRaw.dexId : null,
+      buys5m: typeof metricsRaw.buys5m === 'number' ? metricsRaw.buys5m : null,
+      sells5m: typeof metricsRaw.sells5m === 'number' ? metricsRaw.sells5m : null,
+      volume1hUsd: typeof metricsRaw.volume1hUsd === 'number' ? metricsRaw.volume1hUsd : null,
+      priceChange1hPct:
+        typeof metricsRaw.priceChange1hPct === 'number' ? metricsRaw.priceChange1hPct : null,
+    };
+    out[mint] = {
+      detectedAtMs,
+      signalPriceUsd,
+      waitDipPct,
+      symbol,
+      originalDipSource,
+      metrics,
+      lastPriceUsd,
+      lastAtMs,
+      troughPriceUsd,
+      troughAtMs,
+    };
+  }
+  return out;
+}
+
 function sanitizeLastExitByMint(raw: unknown): Record<string, MildDipLastExit> {
   if (!raw || typeof raw !== 'object') return {};
   const out: Record<string, MildDipLastExit> = {};
@@ -114,7 +180,14 @@ function sanitizeLastExitByMint(raw: unknown): Record<string, MildDipLastExit> {
 }
 
 export function emptyMildDipState(nowMs = Date.now()): MildDipState {
-  return { open: {}, cooldownUntilMs: {}, lastExitByMint: {}, knifeWatch: {}, updatedAtMs: nowMs };
+  return {
+    open: {},
+    cooldownUntilMs: {},
+    lastExitByMint: {},
+    knifeWatch: {},
+    waitDipWatch: {},
+    updatedAtMs: nowMs,
+  };
 }
 
 export function loadMildDipState(statePath: string): MildDipState {
@@ -130,6 +203,7 @@ export function loadMildDipState(statePath: string): MildDipState {
           : {},
       lastExitByMint: sanitizeLastExitByMint(parsed.lastExitByMint),
       knifeWatch: sanitizeKnifeWatch(parsed.knifeWatch),
+      waitDipWatch: sanitizeWaitDipWatch(parsed.waitDipWatch),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),
     };
   } catch {

@@ -185,6 +185,13 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
   /**
+   * 1.11.752 — park main-band signal; buy only after extra dump from signal
+   * (default −7%). Knife / mild_stabilize unchanged. 0 waitDipPct = off shape.
+   */
+  waitDipEnabled: z.boolean().default(true),
+  waitDipPct: z.coerce.number().max(0).default(-7),
+  waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
+  /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
    * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
    */
@@ -540,6 +547,13 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeBandPct: envNum('MILD_DIP_KNIFE_STABILIZE_BAND_PCT', 2.5),
     knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
+    /**
+     * 1.11.752 — wait extra −7% from signal before buy (MFE-bank CF winner).
+     * Set MILD_DIP_WAIT_DIP=0 to restore immediate main-band entries.
+     */
+    waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
+    waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -7),
+    waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),

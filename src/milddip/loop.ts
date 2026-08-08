@@ -8,6 +8,7 @@ import {
   enrichAndFilterCandidates,
   priorityMintsFromCooldown,
   priorityMintsFromKnifeWatch,
+  type MildDipCandidate,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { attemptMildDipEntry } from './entry-attempt.js';
@@ -18,6 +19,13 @@ import {
   fastPathChasePct,
   noteStructuralCache,
 } from './fast-path.js';
+import {
+  evaluateWaitDipReady,
+  priorityMintsFromWaitDipWatch,
+  upsertWaitDipWatch,
+  waitDipAppliesToSource,
+  type WaitDipGates,
+} from './wait-dip.js';
 import {
   applyMarkDecisionToPosition,
   decideMarkExit,
@@ -106,9 +114,18 @@ function shouldSampleStreamPrice(
   if (until > nowMs) return true; // actively cooling — record the trough
   if (until > 0 && nowMs - until <= lookbackMs) return true; // just ready — still useful
   if (state.open[mint]) return true; // open book — denser trail marks via stream
+  if (state.waitDipWatch?.[mint]) return true; // parked wait-dip needs live marks
   // Fast-path needs live stream marks on hot names, not only cooldown.
   if (mildDipHotMints.isRecent(mint, nowMs, 180_000)) return true;
   return false;
+}
+
+function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
+  return {
+    enabled: cfg.waitDipEnabled === true,
+    waitDipPct: cfg.waitDipPct,
+    maxWatchMs: cfg.waitDipMaxWatchMs,
+  };
 }
 
 /** mint → last Dex HTTP mark (vol fade + structural warm). */
@@ -381,6 +398,153 @@ function adoptOnChainHolding(args: {
 }
 
 
+async function tryFireWaitDip(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  mint: string,
+  nowMs: number,
+): Promise<boolean> {
+  if (!cfg.waitDipEnabled) return false;
+  const watch = state.waitDipWatch?.[mint];
+  if (!watch) return false;
+  if (buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
+  if (state.open[mint]) {
+    delete state.waitDipWatch![mint];
+    return false;
+  }
+  if (onCooldown(state, mint, nowMs)) return false;
+
+  const unlimited = cfg.maxOpenPositions <= 0;
+  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
+
+  const last = mildDipPriceRing.lastPrice(mint, nowMs);
+  const px = last && last.priceUsd > 0 ? last.priceUsd : watch.lastPriceUsd;
+  const gates = waitDipGatesFromCfg(cfg);
+  const verdict = evaluateWaitDipReady(watch, gates, nowMs, px);
+  if (state.waitDipWatch) {
+    state.waitDipWatch[mint] = upsertWaitDipWatch(watch, {
+      nowMs,
+      priceUsd: px,
+      signalPriceUsd: watch.signalPriceUsd,
+      waitDipPct: watch.waitDipPct,
+      symbol: watch.symbol,
+      originalDipSource: watch.originalDipSource,
+      metrics: watch.metrics,
+    });
+  }
+  if (verdict.expire) {
+    delete state.waitDipWatch![mint];
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_wait_dip_expire',
+      mint,
+      symbol: watch.symbol,
+      signalPriceUsd: watch.signalPriceUsd,
+      waitDipPct: watch.waitDipPct,
+      lastPriceUsd: px,
+      reasons: verdict.reasons,
+      ageMs: nowMs - watch.detectedAtMs,
+    });
+    saveMildDipState(cfg.statePath, state);
+    return false;
+  }
+  if (!verdict.ready) {
+    return false;
+  }
+
+  const candidate: MildDipCandidate = {
+    mint,
+    symbol: watch.symbol,
+    priceUsd: px,
+    metrics: watch.metrics,
+    dipSource: 'wait_dip',
+    waitDipSignalPriceUsd: watch.signalPriceUsd,
+    waitDipOriginalSource: watch.originalDipSource,
+    waitDipDumpFromSignalPct: verdict.dumpFromSignalPct,
+  };
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mild_dip_wait_dip_ready',
+    mint,
+    symbol: watch.symbol,
+    signalPriceUsd: watch.signalPriceUsd,
+    targetPriceUsd: verdict.targetPriceUsd,
+    markPriceUsd: px,
+    dumpFromSignalPct: verdict.dumpFromSignalPct,
+    originalDipSource: watch.originalDipSource,
+    waitMs: nowMs - watch.detectedAtMs,
+  });
+  console.log(
+    `[mild-dip] WAIT_DIP ready ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
+      `dump=${verdict.dumpFromSignalPct?.toFixed(1)}% from signal ` +
+      `(need ${cfg.waitDipPct}%) wait=${Math.round((nowMs - watch.detectedAtMs) / 1000)}s`,
+  );
+
+  const chase = fastPathChasePct(cfg);
+  const cfgFast = { ...cfg, maxChasePct: chase };
+  const copyCfg = mildDipToCopyTraderConfig(cfgFast);
+  const result = await attemptMildDipEntry({
+    cfg: cfgFast,
+    state,
+    candidate,
+    copyCfg,
+    nowMs,
+    buyInFlight,
+    resolveEntrySizeUsd,
+    adoptOnChainHolding,
+    opts: {
+      chasePct: chase,
+      skipBounce: true,
+      skipOnchainAdopt: true,
+      freshDexPrebuy: false,
+      softSkipCooldownMs: cfg.fastPathSoftSkipCooldownMs,
+      lane: 'fast',
+    },
+  });
+  return result === 'filled';
+}
+
+function parkWaitDipFromCandidate(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  candidate: MildDipCandidate,
+  nowMs: number,
+): void {
+  if (!cfg.waitDipEnabled || !(cfg.waitDipPct < 0)) return;
+  if (!waitDipAppliesToSource(candidate.dipSource)) return;
+  if (!(candidate.priceUsd > 0)) return;
+
+  if (!state.waitDipWatch) state.waitDipWatch = {};
+  const prev = state.waitDipWatch[candidate.mint];
+  const next = upsertWaitDipWatch(prev, {
+    nowMs,
+    priceUsd: candidate.priceUsd,
+    signalPriceUsd: prev?.signalPriceUsd ?? candidate.priceUsd,
+    waitDipPct: cfg.waitDipPct,
+    symbol: candidate.symbol,
+    originalDipSource: prev?.originalDipSource ?? candidate.dipSource,
+    metrics: prev?.metrics ?? candidate.metrics,
+  });
+  const isNew = !prev;
+  state.waitDipWatch[candidate.mint] = next;
+  if (isNew) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_wait_dip_start',
+      mint: candidate.mint,
+      symbol: candidate.symbol,
+      signalPriceUsd: next.signalPriceUsd,
+      waitDipPct: next.waitDipPct,
+      targetPriceUsd: next.signalPriceUsd * (1 + next.waitDipPct / 100),
+      originalDipSource: next.originalDipSource,
+      maxWatchMs: cfg.waitDipMaxWatchMs,
+    });
+    console.log(
+      `[mild-dip] WAIT_DIP park ${candidate.symbol} mint=${candidate.mint.slice(0, 8)}… ` +
+        `signal=$${next.signalPriceUsd.toPrecision(4)} need ${cfg.waitDipPct}% ` +
+        `(src=${next.originalDipSource})`,
+    );
+  }
+  saveMildDipState(cfg.statePath, state);
+}
+
 async function tryFastPathForMint(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -397,8 +561,23 @@ async function tryFastPathForMint(
   const unlimited = cfg.maxOpenPositions <= 0;
   if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
 
+  // Fire parked wait-dip first — must not require re-qualifying the main band.
+  if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
+
   const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger);
   if (!candidate) return false;
+
+  // 1.11.752 — park main-band signals; buy only after extra dump from signal.
+  if (
+    cfg.waitDipEnabled &&
+    cfg.waitDipPct < 0 &&
+    waitDipAppliesToSource(candidate.dipSource)
+  ) {
+    parkWaitDipFromCandidate(cfg, state, candidate, nowMs);
+    // Immediate re-check: already −7% on the same tick (gap fill).
+    if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
+    return false;
+  }
 
   // Build copyCfg with chase aligned to fast-path (Jupiter premium uses maxChasePct).
   const chase = fastPathChasePct(cfg);
@@ -426,6 +605,29 @@ async function tryFastPathForMint(
     },
   });
   return result === 'filled';
+}
+
+/** Wake parked wait-dip watches even while bags are open (stream may miss quiet names). */
+async function wakeWaitDipWatches(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<number> {
+  if (!cfg.waitDipEnabled || !cfg.fastPathEnabled) return 0;
+  const mints = priorityMintsFromWaitDipWatch(state.waitDipWatch);
+  if (mints.length === 0) return 0;
+  const unlimited = cfg.maxOpenPositions <= 0;
+  let n = 0;
+  for (const mint of mints) {
+    if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+    if (state.open[mint]) {
+      if (state.waitDipWatch?.[mint]) delete state.waitDipWatch[mint];
+      continue;
+    }
+    await tryFireWaitDip(cfg, state, mint, nowMs);
+    n += 1;
+  }
+  return n;
 }
 
 /**
@@ -515,6 +717,24 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         filled += 1;
         continue;
       }
+      // Wait-dip parks inside fast-path — do not fall through to immediate slow buy.
+      if (
+        cfg.waitDipEnabled &&
+        cfg.waitDipPct < 0 &&
+        waitDipAppliesToSource(c.dipSource)
+      ) {
+        continue;
+      }
+    }
+    // Slow lane: also park main-band when fast-path off / failed without park.
+    if (
+      cfg.waitDipEnabled &&
+      cfg.waitDipPct < 0 &&
+      waitDipAppliesToSource(c.dipSource)
+    ) {
+      parkWaitDipFromCandidate(cfg, state, c, nowMs);
+      if (await tryFireWaitDip(cfg, state, c.mint, nowMs)) filled += 1;
+      continue;
     }
     const result = await attemptMildDipEntry({
       cfg,
@@ -1185,6 +1405,8 @@ export async function runMildDipLoop(
       `(h1∈[${cfg.flatMicroH1MinPct},${cfg.flatMicroH1MaxPct}]/pc5m∈(${cfg.flatMicroMinDipPct},${cfg.flatMicroMaxDipPct}]) ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
       `minMcap=$${cfg.entry.minMarketCapUsd} ` +
+      `waitDip=${cfg.waitDipEnabled ? 1 : 0}` +
+      (cfg.waitDipEnabled ? `/${cfg.waitDipPct}%/${Math.round(cfg.waitDipMaxWatchMs / 1000)}s ` : ' ') +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +
       (cfg.exit.mfeBankEnabled
         ? `mfeBank=+${cfg.exit.mfeBank1Pct}%×${cfg.exit.mfeBank1Fraction}` +
@@ -1314,6 +1536,12 @@ export async function runMildDipLoop(
       void wakeLeaderSeeds(cfg, state, nowMs).catch((err) => {
         console.warn(
           '[mild-dip] leader-seed wake failed',
+          err instanceof Error ? err.message : err,
+        );
+      });
+      void wakeWaitDipWatches(cfg, state, nowMs).catch((err) => {
+        console.warn(
+          '[mild-dip] wait-dip wake failed',
           err instanceof Error ? err.message : err,
         );
       });
