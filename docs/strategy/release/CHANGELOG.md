@@ -1,4 +1,24 @@
 # So
+## [1.11.737] — 2026-08-08
+
+**Тег:** `sa-1.11.737`
+
+### Fix: open marks never await Dex when ring price exists
+
+Post-1.11.736 live: journal gaps fell from ~60s → ~12–15s, still not ≤5s.
+Cause: `markPriceUsd` only used stream when age ≤5s; slightly older prints
+fell through to **sync** Dex even when Dex refresh was not due.
+
+**Changes:**
+1. Use any ring print up to `max(6×streamMaxAge, dexRefresh, 30s)` for exits.
+2. Dex warm always background when due — sync Dex only if no usable ring.
+3. Fee SOL top-up runs after marks; fire-and-forget while bags are open.
+4. Journal `source` on `mild_dip_mark` for cadence forensics.
+
+**Откат:** `MILD_DIP_MARK_STREAM_MAX_AGE_MS=0` + reload (Dex-only marks).
+
+---
+
 ## [1.11.736] — 2026-08-08
 
 **Тег:** `sa-1.11.736`
