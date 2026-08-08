@@ -1,5 +1,22 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.737] — 2026-08-08
+
+**Тег:** `sa-1.11.737`
+
+### Fix: F1Xd / Xe3re8 — age_h&lt;0.5 blocked entire pump
+
+Leader `7BNaxx` sold `F1XdReo…pump` after a run we journaled from age
+0.01h with pc5m 40–186% / vol5m $50k–$170k — every skip was `age_h&lt;0.5`.
+By soft age clear, huge 1m candles were gone (`last3=3.2,3.4,0.4`).
+
+Soft age **0.5→0.15h**; **activity-aged** bypass when vol5m≥$20k and
+liq/mcap floors pass (hard floor still 0.1h without activity).
+
+**Откат:** `MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS=0.5`, remove activityAged.
+
+---
+
 ## [1.11.736] — 2026-08-08
 
 **Тег:** `sa-1.11.736`

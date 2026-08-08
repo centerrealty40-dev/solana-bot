@@ -148,7 +148,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // Green-tape floors loosened for micro-cap verticals (CHiHkQx: mcap~$20k, liq null/$9k).
   setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '8000');
   // No more 2-minute newborns — Prometheus-class books are hours old.
-  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.5');
+  // 0.15h ≈ 9m soft floor; activity-aged (vol≥20k) may enter earlier (F1Xd miss).
+  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.15');
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '0');
   // Sole entry: 1m small→small→huge. All OR-paths OFF.
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_ONLY', '1');

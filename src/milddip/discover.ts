@@ -451,10 +451,23 @@ export async function enrichAndFilterCandidates(
         if (cfg.greenTape.tripleGreenOnly) {
           const structural: string[] = [];
           const age = metrics.pairAgeHours;
+          const vol5m = metrics.volume5mUsd ?? 0;
+          const liqEarly = metrics.liquidityUsd;
+          const mcapEarly = metrics.marketCapUsd ?? 0;
+          // F1Xd / 7BNaxx: we watched the whole pump under age_h<0.5 while
+          // vol5m hit $90k–$170k. Soft floor still blocks pure 1–2m newborns,
+          // but liquid high-vol runners may enter earlier (activity-aged).
+          const activityAged =
+            vol5m >= 20_000 &&
+            (liqEarly == null || liqEarly >= cfg.greenTape.minLiquidityUsd) &&
+            mcapEarly >= cfg.greenTape.minMarketCapUsd;
           if (cfg.greenTape.minPairAgeHours > 0) {
             if (age == null) structural.push('missing_pair_age');
-            else if (age < cfg.greenTape.minPairAgeHours) {
+            else if (age < cfg.greenTape.minPairAgeHours && !activityAged) {
               structural.push(`age_h=${age.toFixed(2)}<${cfg.greenTape.minPairAgeHours}`);
+            } else if (age < 0.1 && !activityAged) {
+              // Absolute floor ~6m unless activity-aged.
+              structural.push(`age_h=${age.toFixed(2)}<0.10_hard`);
             }
           }
           if (cfg.greenTape.maxPairAgeHours > 0 && age != null && age > cfg.greenTape.maxPairAgeHours) {
