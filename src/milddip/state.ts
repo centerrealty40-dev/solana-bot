@@ -13,6 +13,8 @@ export type MildDipOpenPosition = {
   buySignature: string | null;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
+  /** Running low-water mark from entry (never-arm bounce / freefall). */
+  postEntryTroughUsd?: number;
   /** W9.1 trail armed after MFE ≥ armPct. */
   trailArmed?: boolean;
   /** True after a successful partial scale-out (half bag sold). */

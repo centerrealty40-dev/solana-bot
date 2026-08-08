@@ -1,4 +1,33 @@
 # So
+## [1.11.747] — 2026-08-08
+
+**Тег:** `sa-1.11.747`
+
+### Fix: never-arm bounce reclaim + freefall floor
+
+EjD5Y9-class path: trail never arms, coin dumps → bounces twice → we
+held to `never_arm_dead` and filled the third dump (−45%).
+
+**Two hard never-arm exits (not recover-deferred):**
+
+1. **`never_arm_bounce`** — post-entry trough ≤ `−5%` vs entry, then mark
+   bounces ≥ `6%` off that trough → **full exit** (sell into the bounce).
+2. **`never_arm_freefall`** — still unarmed, pnl ≤ `−25%` after `60s`,
+   **no bounce required** → full exit. Covers endless dumps that never
+   print a reclaim (so we do not sit toward cliff `−50%` / dead `30m`).
+
+Still kept: `cliff_dump −50%`, `never_arm_stale/dead/vol_fade/timeout`.
+
+**Live:**
+`MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT=5`
+`MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT=6`
+`MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT=25`
+`MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS=60000`
+
+**Откат:** bounce pct `0` + freefall pct `0` + reload.
+
+---
+
 ## [1.11.746] — 2026-08-08
 
 **Тег:** `sa-1.11.746`

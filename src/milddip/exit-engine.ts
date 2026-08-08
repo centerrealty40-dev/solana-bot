@@ -21,6 +21,8 @@ export type MarkExitDecision = {
   pnlPct: number;
   /** Updated spaced vol5m ring — caller persists onto the open position. */
   volFadeSamples: MildDipVolFadeSample[];
+  /** Updated post-entry low-water mark. */
+  postEntryTroughPriceUsd: number;
 };
 
 /** Armed positions first (trail can fire), then older opens. */
@@ -68,6 +70,7 @@ export function decideMarkExit(args: {
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
     volFadeSamples: pos.volFadeSamples ?? null,
+    postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
     oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
   });
   return {
@@ -83,10 +86,11 @@ export function decideMarkExit(args: {
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
     volFadeSamples: verdict.volFadeSamples,
+    postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
   };
 }
 
-/** Merge mark decision into live position (peak / arm / vol-fade samples). */
+/** Merge mark decision into live position (peak / arm / vol-fade / trough). */
 export function applyMarkDecisionToPosition(
   pos: MildDipOpenPosition,
   decision: MarkExitDecision,
@@ -94,6 +98,9 @@ export function applyMarkDecisionToPosition(
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;
+  if (decision.postEntryTroughPriceUsd > 0) {
+    pos.postEntryTroughUsd = decision.postEntryTroughPriceUsd;
+  }
 }
 
 /**

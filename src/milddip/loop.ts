@@ -789,6 +789,7 @@ async function tryExits(
             givebackPct: 0,
             pnlPct: 0,
             volFadeSamples: pos.volFadeSamples ?? [],
+            postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
           });
         }
       }
@@ -1158,6 +1159,12 @@ export async function runMildDipLoop(
       `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
       `fullGiveback=-${cfg.exit.givebackPct}% ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
+      `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}` +
+      `/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%` +
+      `/bounce≥${cfg.exit.neverArmBouncePct}% ` +
+      `neverArmFreefall=${cfg.exit.neverArmFreefallPnlPct > 0 ? 1 : 0}` +
+      `/-${cfg.exit.neverArmFreefallPnlPct}%` +
+      `/${Math.round(cfg.exit.neverArmFreefallMinMs / 1000)}s ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s` +
       `/mfe≤${cfg.exit.neverArmStaleMaxMfePct}%/pnl≤-${cfg.exit.neverArmStalePnlPct}% ` +
