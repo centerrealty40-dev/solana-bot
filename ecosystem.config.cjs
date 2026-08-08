@@ -2788,10 +2788,10 @@ const PM2_APPS = [
     },
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
-     * Entry: DexScreener pc5m ∈ (−25, −5], clip $5; thick $10 when
+     * Entry: DexScreener pc5m ∈ (−25, −8], clip $10; thick $20 when
      * mcap≥$100k / liq≥$50k / age≥6h; buy impact ≤2%.
      * Exit: arm MFE +5% → half @ −3% giveback / full @ −8% (no hard TP).
-     * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $5 USDC).
+     * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $10/$20 USDC).
      */
     {
       name: 'mild-dip-bot',
@@ -2824,12 +2824,13 @@ const PM2_APPS = [
         MILD_DIP_EXECUTION_MODE: 'live',
         MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
-        MILD_DIP_POSITION_USD: '5',
+        /** 1.11.742 — base clip $10 (was $5). */
+        MILD_DIP_POSITION_USD: '10',
         /**
-         * 1.11.705 — thick size-up: 2× clip ($10) when structural name
+         * 1.11.742 — thick size-up: 2× clip ($20) when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          */
-        MILD_DIP_THICK_POSITION_USD: '10',
+        MILD_DIP_THICK_POSITION_USD: '20',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
@@ -2900,7 +2901,7 @@ const PM2_APPS = [
         MILD_DIP_MIN_VOLUME_5M_USD: '500',
         /**
          * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
-         * $5 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
+         * $10/$20 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         /**
