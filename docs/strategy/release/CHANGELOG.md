@@ -1,4 +1,23 @@
 # So
+## [1.11.741] — 2026-08-08
+
+**Тег:** `sa-1.11.741`
+
+### Fix: peak_giveback always half-first (never gap full-dump)
+
+`6j8jLQ` / `4GyJ3d…`: armed trail sold the **full** bag on one stream mark
+that gapped past −8% giveback (`peak_giveback` fraction=1). Chart had no
+such dump; fill was bad and price reclaimed. Same class as `46amR3`.
+
+**Change:** when scale-out is on and not yet taken, any giveback hit
+(−3% or −8%+) sells **half** first (`peak_giveback_partial`). Full
+`peak_giveback` only after `scaleOutDone`. Cliff / never-arm hard exits
+unchanged.
+
+**Откат:** restore full-first order in `evaluateMildDipPeakGiveback` + reload.
+
+---
+
 ## [1.11.740] — 2026-08-08
 
 **Тег:** `sa-1.11.740`

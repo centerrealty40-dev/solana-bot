@@ -2927,9 +2927,9 @@ const PM2_APPS = [
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
         /**
-         * 1.11.699 — scale-out trail:
-         * Arm at +5% MFE; sell 50% on −3% giveback from peak; sell rest on −8%.
-         * (NV2RYH peaked +5.5% unarmed under old arm=8 and died on vol-fade.)
+         * 1.11.699 — scale-out trail; 1.11.741 — half-first even on −8% gap:
+         * Arm at +5% MFE; first giveback hit (−3% or deeper) always sells 50%;
+         * runner full-exits only after scaleOutDone + another −8% hit.
          */
         MILD_DIP_EXIT_ARM_PCT: '5',
         MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '3',

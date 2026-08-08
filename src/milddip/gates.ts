@@ -538,17 +538,27 @@ export function evaluateMildDipPeakGiveback(args: {
     givebackPct <= -partialPct + 1e-9;
 
   // One-shot emptied-bag dump: defer soft giveback knives; hard exits remain.
+  // Half-first (1.11.741): when scale-out is configured (partialPct>0) and not
+  // yet taken, never dump the full bag on the first giveback hit — even when
+  // mark gaps past full −givebackPct (phantom stream / reclaim). Runner exits
+  // later only after scaleOutDone + another full giveback hit.
   if (!oneshotGrace) {
-    if (armed && fullGivebackHit) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
-    }
-    if (armed && partialGivebackHit) {
+    const scaleOutEnabled = partialPct > 0 && scaleFrac > 0;
+    if (
+      armed &&
+      scaleOutEnabled &&
+      !scaleOutDone &&
+      (partialGivebackHit || fullGivebackHit)
+    ) {
       return {
         ...hold,
         shouldExit: true,
         fraction: scaleFrac,
         reason: 'peak_giveback_partial',
       };
+    }
+    if (armed && fullGivebackHit) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
     }
   }
 

@@ -18,6 +18,7 @@ function pos(partial: Partial<MildDipOpenPosition> & { mint: string }): MildDipO
     buySignature: partial.buySignature ?? null,
     peakPriceUsd: partial.peakPriceUsd,
     trailArmed: partial.trailArmed,
+    scaleOutDone: partial.scaleOutDone,
     mint: partial.mint,
   };
 }
@@ -94,13 +95,35 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       gates,
       nowMs: 1_060_000,
     });
+    // Half-first: scale-out not taken → partial even on full −8% gap.
     expect(d?.shouldExit).toBe(true);
-    expect(d?.reason).toBe('peak_giveback');
-    expect(d?.fraction).toBe(1);
+    expect(d?.reason).toBe('peak_giveback_partial');
+    expect(d?.fraction).toBe(0.5);
     applyMarkDecisionToPosition(p, d!);
     // Still "open" until sell confirms — we only mutate trail fields here.
     expect(p.peakPriceUsd).toBe(108);
     expect(p.trailArmed).toBe(true);
+  });
+
+  it('queues full peak_giveback only after scale-out already taken', () => {
+    const p = pos({
+      mint: 'm2c',
+      entryPriceUsd: 100,
+      peakPriceUsd: 108,
+      trailArmed: true,
+      scaleOutDone: true,
+      openedAtMs: 1_000_000,
+    });
+    const d = decideMarkExit({
+      mint: 'm2c',
+      pos: p,
+      markPriceUsd: 99.36,
+      gates,
+      nowMs: 1_060_000,
+    });
+    expect(d?.shouldExit).toBe(true);
+    expect(d?.reason).toBe('peak_giveback');
+    expect(d?.fraction).toBe(1);
   });
 
   it('queues peak_giveback_partial at −3% when scale-out not yet taken', () => {
