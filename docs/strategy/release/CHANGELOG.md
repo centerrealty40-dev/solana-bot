@@ -1,4 +1,21 @@
 # So
+## [1.11.738] — 2026-08-08
+
+**Тег:** `sa-1.11.738`
+
+### Fix: background sells so open marks stay ≤5s
+
+Live after 1.11.737: mark gaps were often fine (~4s) until a stuck Jupiter
+sell (`U5cWTi` quote fails) awaited inside `tryExits` and blocked the next
+mark pass for **all** open bags (gaps 15–40s).
+
+**Change:** fire the sell queue without awaiting it; `sellInFlight` still
+dedupes. Marks return as soon as prices/decisions are applied.
+
+**Откат:** revert this commit + reload (sells again serialize marks).
+
+---
+
 ## [1.11.737] — 2026-08-08
 
 **Тег:** `sa-1.11.737`
