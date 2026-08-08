@@ -1,4 +1,22 @@
 # So
+## [1.11.732] — 2026-08-08
+
+**Тег:** `sa-1.11.732`
+
+### Ops: re-enable mild_stabilize fresh (leader dump→bounce)
+
+1.11.730 turned `MILD_STABILIZE_ENABLED=0` with scale-in removal — that also
+killed the leader-style **stabilized dump** seat (ring dump then bounce off
+trough). Deep `knife_stabilize` was never off; stream `reqDex` (1.11.731) is
+a different gate (phantom stream while Dex flat).
+
+**Live:** `MILD_STABILIZE_ENABLED=1` + `FRESH_ENTRY=1`, keep dump `(−25,−8]`,
+bounce `[1.5,8]`, troughAge≥15s, belowPeak≥2%. Scale-in stays removed.
+
+**Откат:** `MILD_STABILIZE_ENABLED=0` + reload.
+
+---
+
 ## [1.11.731] — 2026-08-08
 
 **Тег:** `sa-1.11.731`
