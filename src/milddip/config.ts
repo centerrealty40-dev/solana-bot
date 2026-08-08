@@ -136,29 +136,22 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
   /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
-   * Additive to main-band / deep-knife. Also powers second $5 scale-in.
+   * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
    */
   mildStabilizeEnabled: z.boolean().default(false),
   /**
-   * When false (default live): mild_stabilize only powers open-book scale-in.
-   * Fresh flat entries via ring bounce are off — Gymbmn/7rMnp9 green-candle noise.
+   * When false (default): no fresh mild_stabilize seats
+   * (Gymbmn/7rMnp9 green-candle noise).
    */
   mildStabilizeFreshEntryEnabled: z.boolean().default(false),
   mildStabilizeMinDumpPct: z.coerce.number().max(0).default(-25),
   /** Shallowest dump allowed (more negative = require deeper). Was −5. */
   mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-8),
-  /**
-   * Open-book scale-in only: deeper dump floor than fresh mild_stabilize.
-   * BJWHLm: post-entry knife −30…−36% then +4% reclaim was rejected by −25.
-   */
-  mildStabilizeScaleInMinDumpPct: z.coerce.number().max(0).default(-50),
   mildStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   mildStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(8),
   mildStabilizeTroughMinAgeMs: z.coerce.number().int().min(0).max(600_000).default(15_000),
   /** Last must stay ≥ this % below local peak (0 = off). */
   mildStabilizeMinBelowPeakPct: z.coerce.number().min(0).max(50).default(2),
-  /** Scale-in: trough must be ≥ this % below first-clip entry. */
-  mildStabilizeScaleInMinDumpBelowEntryPct: z.coerce.number().min(0).max(50).default(3),
   /**
    * Autonomous red-hour shallow: when 1h ≤ h1Max and pc5m ∈ (min,max],
    * enter without the main mild band (own logic — not leader copy).
@@ -431,16 +424,10 @@ export function loadMildDipConfig(): MildDipConfig {
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
     mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -8),
-    /** 1.11.726 — scale-in dump floor −50 (was sharing fresh −25). */
-    mildStabilizeScaleInMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_PCT', -50),
     mildStabilizeMinBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 8),
     mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 15_000),
     mildStabilizeMinBelowPeakPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT', 2),
-    mildStabilizeScaleInMinDumpBelowEntryPct: envNum(
-      'MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_BELOW_ENTRY_PCT',
-      3,
-    ),
     h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
     h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
@@ -536,14 +523,6 @@ export function loadMildDipConfig(): MildDipConfig {
   ) {
     throw new Error(
       'mild-dip requires MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT < MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT',
-    );
-  }
-  if (
-    parsed.data.mildStabilizeEnabled &&
-    !(parsed.data.mildStabilizeScaleInMinDumpPct < parsed.data.mildStabilizeMaxDumpPct)
-  ) {
-    throw new Error(
-      'mild-dip requires MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_PCT < MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT',
     );
   }
 

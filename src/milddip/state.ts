@@ -17,8 +17,6 @@ export type MildDipOpenPosition = {
   trailArmed?: boolean;
   /** True after a successful partial scale-out (half bag sold). */
   scaleOutDone?: boolean;
-  /** True after mild_stabilize second $5 clip was merged into this position. */
-  bounceClipDone?: boolean;
   /** 5m Dex volume at entry — baseline for the activity-fade exit. */
   entryVolume5mUsd?: number | null;
   /**

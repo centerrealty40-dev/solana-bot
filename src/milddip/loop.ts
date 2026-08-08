@@ -308,22 +308,14 @@ async function tryFastPathForMint(
   if (!cfg.fastPathEnabled) return false;
   if (buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
 
-  const openPos = state.open[mint];
-  // Open book: only mild_stabilize scale-in (second $5 clip) is allowed.
-  if (openPos) {
-    if (!cfg.mildStabilizeEnabled || openPos.bounceClipDone) return false;
-  } else if (onCooldown(state, mint, nowMs)) {
-    return false;
-  }
+  if (state.open[mint]) return false;
+  if (onCooldown(state, mint, nowMs)) return false;
 
   const unlimited = cfg.maxOpenPositions <= 0;
-  if (!openPos && !unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
+  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
 
-  const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger, {
-    mildStabilizeOnly: Boolean(openPos),
-  });
+  const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger);
   if (!candidate) return false;
-  if (openPos && candidate.dipSource !== 'mild_stabilize') return false;
 
   // Build copyCfg with chase aligned to fast-path (Jupiter premium uses maxChasePct).
   const chase = fastPathChasePct(cfg);
@@ -354,16 +346,6 @@ async function tryFastPathForMint(
 }
 
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
-  // Open-book scale-in (second $5 mild_stabilize clip) must run even when the
-  // mint is quiet (not in leader seeds / hot stream) and when free slots are 0.
-  // 9nXkTP / 5vuKy3b: dump→bounce after entry never evaluated — open mint was
-  // only probed if it reappeared on leader/hot.
-  if (cfg.fastPathEnabled && cfg.mildStabilizeEnabled) {
-    for (const mint of Object.keys(state.open)) {
-      await tryFastPathForMint(cfg, state, mint, 'scan', nowMs);
-    }
-  }
-
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
@@ -906,7 +888,6 @@ export async function runMildDipLoop(
       `mildStabilize=${cfg.mildStabilizeEnabled ? 1 : 0}` +
       `/fresh=${cfg.mildStabilizeFreshEntryEnabled ? 1 : 0}` +
       `(dump(${cfg.mildStabilizeMinDumpPct},${cfg.mildStabilizeMaxDumpPct}]` +
-      `/scaleDump(${cfg.mildStabilizeScaleInMinDumpPct},${cfg.mildStabilizeMaxDumpPct}]` +
       `/bounce[${cfg.mildStabilizeMinBouncePct},${cfg.mildStabilizeMaxBouncePct}]` +
       `/troughAge${Math.round(cfg.mildStabilizeTroughMinAgeMs / 1000)}s` +
       `/belowPeak≥${cfg.mildStabilizeMinBelowPeakPct}%) ` +

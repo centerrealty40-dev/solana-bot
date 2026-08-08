@@ -16,13 +16,11 @@ import {
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
-import { mildStabilizeScaleInOk } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
   appendMildDipJournal,
   saveMildDipState,
-  type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
 
@@ -69,52 +67,13 @@ export async function attemptMildDipEntry(args: {
   const { cfg, state, copyCfg, nowMs, buyInFlight, opts } = args;
   const c = args.candidate;
   const isMildStabilize = c.dipSource === 'mild_stabilize';
-  const existing = state.open[c.mint];
-  const isScaleIn = Boolean(isMildStabilize && existing && !existing.bounceClipDone);
 
   if (buyInFlight.has(c.mint)) return 'skip';
-  if (existing && !isScaleIn) return 'skip';
-  if (!isScaleIn && (state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
+  if (state.open[c.mint]) return 'skip';
+  if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
 
-  const scaleInTroughSample = () =>
-    mildDipPriceRing.minPrice(c.mint, cfg.cooldownBounceLookbackMs, nowMs);
-  const scaleInGuard = (markPriceUsd: number | null) => {
-    if (!isScaleIn || !existing) return { pass: true as const };
-    const troughSample = scaleInTroughSample();
-    const troughPx = c.mildStabilizeTroughPriceUsd ?? troughSample?.priceUsd ?? null;
-    const troughAtMs = c.mildStabilizeTroughAtMs ?? troughSample?.tsMs ?? null;
-    return mildStabilizeScaleInOk({
-      entryPriceUsd: existing.entryPriceUsd,
-      troughPriceUsd: troughPx,
-      troughAtMs,
-      openedAtMs: existing.openedAtMs,
-      markPriceUsd,
-      minDumpBelowEntryPct: cfg.mildStabilizeScaleInMinDumpBelowEntryPct,
-    });
-  };
-
-  {
-    const ok = scaleInGuard(c.priceUsd);
-    if (!ok.pass) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_scale_in_skip',
-        mint: c.mint,
-        symbol: c.symbol,
-        dipSource: c.dipSource,
-        lane: opts.lane,
-        entryPriceUsd: existing?.entryPriceUsd ?? null,
-        troughPriceUsd: c.mildStabilizeTroughPriceUsd ?? null,
-        troughAtMs: c.mildStabilizeTroughAtMs ?? null,
-        openedAtMs: existing?.openedAtMs ?? null,
-        markPriceUsd: c.priceUsd,
-        reasons: [ok.reason ?? 'mild_stabilize_scale_in_reject'],
-      });
-      return 'skip';
-    }
-  }
-
-  if (!opts.skipOnchainAdopt && !isScaleIn) {
+  if (!opts.skipOnchainAdopt) {
     const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);
     const onchainRaw = onchain && /^\d+$/.test(onchain) ? BigInt(onchain) : 0n;
     if (onchainRaw > HOLDING_DUST_RAW) {
@@ -272,34 +231,8 @@ export async function attemptMildDipEntry(args: {
     }
   }
 
-  // Scale-in: re-check avg-down on fresh mark (prebuy / chase can reclaim to entry).
-  if (isScaleIn && existing) {
-    const markPx = freshPx ?? entryPriceUsd;
-    const ok = scaleInGuard(markPx);
-    if (!ok.pass) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_scale_in_skip',
-        mint: c.mint,
-        symbol: c.symbol,
-        dipSource: c.dipSource,
-        lane: opts.lane,
-        entryPriceUsd: existing.entryPriceUsd,
-        troughPriceUsd: c.mildStabilizeTroughPriceUsd ?? null,
-        troughAtMs: c.mildStabilizeTroughAtMs ?? null,
-        openedAtMs: existing.openedAtMs,
-        markPriceUsd: markPx,
-        reasons: [ok.reason ?? 'mild_stabilize_scale_in_reject'],
-      });
-      console.log(
-        `[mild-dip] SKIP scale-in ${c.symbol} mint=${c.mint.slice(0, 8)}… ${ok.reason ?? 'reject'}`,
-      );
-      return 'skip';
-    }
-  }
-
   // Always on (incl. fast-path): do not rebuy near last exit USD price.
-  // Scale-in into an open bag is exempt (has its own below-entry guards).
-  if (!isScaleIn && cfg.rebuyBelowExitPct > 0) {
+  if (cfg.rebuyBelowExitPct > 0) {
     const last = state.lastExitByMint?.[c.mint];
     const markPx = freshPx ?? entryPriceUsd;
     const rebuy = evaluateRebuyBelowExit({
@@ -404,28 +337,25 @@ export async function attemptMildDipEntry(args: {
   }
 
   if (buyInFlight.has(c.mint)) return 'skip';
-  if (state.open[c.mint] && !isScaleIn) return 'skip';
+  if (state.open[c.mint]) return 'skip';
   buyInFlight.add(c.mint);
-  const prior: MildDipOpenPosition | undefined = isScaleIn ? existing : undefined;
-  if (!isScaleIn) {
-    state.open[c.mint] = {
-      mint: c.mint,
-      symbol: c.symbol,
-      entryPriceUsd,
-      sizeUsd: sized.sizeUsd,
-      tokenRaw: null,
-      openedAtMs: nowMs,
-      entryPc5mPct: entryPc5m,
-      buySignature: null,
-      peakPriceUsd: entryPriceUsd,
-      trailArmed: false,
-      entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
-    };
-  }
+  state.open[c.mint] = {
+    mint: c.mint,
+    symbol: c.symbol,
+    entryPriceUsd,
+    sizeUsd: sized.sizeUsd,
+    tokenRaw: null,
+    openedAtMs: nowMs,
+    entryPc5mPct: entryPc5m,
+    buySignature: null,
+    peakPriceUsd: entryPriceUsd,
+    trailArmed: false,
+    entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+  };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
   saveMildDipState(cfg.statePath, state);
   appendMildDipJournal(cfg.journalPath, {
-    kind: isScaleIn ? 'mild_dip_scale_in_reserved' : 'mild_dip_buy_reserved',
+    kind: 'mild_dip_buy_reserved',
     mint: c.mint,
     symbol: c.symbol,
     sizeUsd: sized.sizeUsd,
@@ -436,7 +366,7 @@ export async function attemptMildDipEntry(args: {
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
   });
 
-  const leaderSig = `milddip_${opts.lane}_${isScaleIn ? 'scalein_' : ''}${c.mint.slice(0, 8)}_${nowMs}`;
+  const leaderSig = `milddip_${opts.lane}_${c.mint.slice(0, 8)}_${nowMs}`;
   let buy: Awaited<ReturnType<typeof executeCopyBuy>>;
   try {
     buy = await executeCopyBuy({
@@ -460,9 +390,9 @@ export async function attemptMildDipEntry(args: {
       leaderBuyTs: nowMs,
     });
   } catch (err) {
-    if (!isScaleIn) delete state.open[c.mint];
+    delete state.open[c.mint];
     buyInFlight.delete(c.mint);
-    if (!isScaleIn) state.cooldownUntilMs[c.mint] = nowMs + softCd;
+    state.cooldownUntilMs[c.mint] = nowMs + softCd;
     saveMildDipState(cfg.statePath, state);
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_buy_attempt',
@@ -473,7 +403,6 @@ export async function attemptMildDipEntry(args: {
       pc5m: entryPc5m,
       dipSource: c.dipSource,
       lane: opts.lane,
-      scaleIn: isScaleIn,
       ok: false,
       reason: err instanceof Error ? err.message : String(err),
       mode: cfg.executionMode,
@@ -496,7 +425,6 @@ export async function attemptMildDipEntry(args: {
     marketCapUsd: sizeMetrics.marketCapUsd,
     dipSource: c.dipSource,
     lane: opts.lane,
-    scaleIn: isScaleIn,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
     ok: buy.ok,
@@ -507,9 +435,9 @@ export async function attemptMildDipEntry(args: {
   });
 
   if (!buy.ok) {
-    if (!isScaleIn) delete state.open[c.mint];
+    delete state.open[c.mint];
     buyInFlight.delete(c.mint);
-    if (!isScaleIn) state.cooldownUntilMs[c.mint] = nowMs + softCd;
+    state.cooldownUntilMs[c.mint] = nowMs + softCd;
     saveMildDipState(cfg.statePath, state);
     resetCopyFundingCache();
     return 'skip';
@@ -517,43 +445,24 @@ export async function attemptMildDipEntry(args: {
 
   const filledRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
   const fillPx = buy.priceUsd || entryPriceUsd;
-  if (isScaleIn && prior) {
-    const prevSize = prior.sizeUsd > 0 ? prior.sizeUsd : sized.sizeUsd;
-    const newSize = prevSize + sized.sizeUsd;
-    const avgPx =
-      newSize > 0
-        ? (prior.entryPriceUsd * prevSize + fillPx * sized.sizeUsd) / newSize
-        : fillPx;
-    state.open[c.mint] = {
-      ...prior,
-      entryPriceUsd: avgPx,
-      sizeUsd: newSize,
-      tokenRaw: filledRaw ?? prior.tokenRaw,
-      peakPriceUsd: Math.max(prior.peakPriceUsd ?? avgPx, fillPx, avgPx),
-      bounceClipDone: true,
-      buySignature: buy.signature ?? prior.buySignature,
-    };
-  } else {
-    state.open[c.mint] = {
-      mint: c.mint,
-      symbol: c.symbol,
-      entryPriceUsd: fillPx,
-      sizeUsd: sized.sizeUsd,
-      tokenRaw: filledRaw ?? buy.tokenRaw ?? null,
-      openedAtMs: nowMs,
-      entryPc5mPct: entryPc5m,
-      buySignature: buy.signature ?? null,
-      peakPriceUsd: fillPx,
-      trailArmed: false,
-      entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
-      bounceClipDone: isMildStabilize ? true : undefined,
-    };
-  }
+  state.open[c.mint] = {
+    mint: c.mint,
+    symbol: c.symbol,
+    entryPriceUsd: fillPx,
+    sizeUsd: sized.sizeUsd,
+    tokenRaw: filledRaw ?? buy.tokenRaw ?? null,
+    openedAtMs: nowMs,
+    entryPc5mPct: entryPc5m,
+    buySignature: buy.signature ?? null,
+    peakPriceUsd: fillPx,
+    trailArmed: false,
+    entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+  };
   buyInFlight.delete(c.mint);
   saveMildDipState(cfg.statePath, state);
   resetCopyFundingCache();
   console.log(
-    `[mild-dip] ${isScaleIn ? 'SCALE-IN' : 'BUY'} ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd}` +
+    `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd}` +
       `${wanted.tier === 'thick' ? ' thick' : ''} ` +
       (isMildStabilize
         ? `bounce=${c.mildStabilizeBouncePct?.toFixed(1)}% dump=${c.mildStabilizeDumpPct?.toFixed(1)}%`

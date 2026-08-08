@@ -2860,21 +2860,17 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
-         * 1.11.723 — mild_stabilize = scale-in only on live.
-         * Fresh flat bounce entries off (Gymbmn/7rMnp9 green-candle noise).
-         * 1.11.726 — scale-in dump floor (−50,−8] (fresh stays (−25,−8]).
-         * BJWHLm: post-entry knife −36% + reclaim +4% was rejected by −25.
+         * 1.11.730 — second-clip scale-in removed (net harmful on live).
+         * mild_stabilize fresh seats stay off (Gymbmn/7rMnp9 green-candle noise).
          */
-        MILD_DIP_MILD_STABILIZE_ENABLED: '1',
+        MILD_DIP_MILD_STABILIZE_ENABLED: '0',
         MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '0',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-8',
-        MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_PCT: '-50',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '8',
         MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '15000',
         MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT: '2',
-        MILD_DIP_MILD_STABILIZE_SCALE_IN_MIN_DUMP_BELOW_ENTRY_PCT: '3',
         /**
          * Red-hour shallow (own logic, not leader copy): when 1h ≤ −15% and
          * pc5m ∈ (−10, −3], enter without waiting for the main mild band.

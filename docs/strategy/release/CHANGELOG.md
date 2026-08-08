@@ -1,4 +1,23 @@
 # So
+## [1.11.730] — 2026-08-08
+
+**Тег:** `sa-1.11.730`
+
+### Remove: mild-dip second clip (scale-in)
+
+Live forensic (~13h / 131 scaled closes): second $5 clip was net harmful
+(Δ ≈ −$21 vs first-clip-only at same exits; BE reclaim after scale-in ≈ 29%).
+
+**Change:** delete open-book scale-in entirely — no `bounceClipDone` avg-down,
+no open-mint scan, no `mildStabilizeScaleInOk` / SCALE_IN env knobs.
+`mild_stabilize` fresh seats stay available behind
+`MILD_DIP_MILD_STABILIZE_FRESH_ENTRY` (live off). Live ecosystem sets
+`MILD_DIP_MILD_STABILIZE_ENABLED=0`.
+
+**Откат:** restore scale-in path from `sa-1.11.729` + reload.
+
+---
+
 ## [1.11.729] — 2026-08-07
 
 **Тег:** `sa-1.11.729`

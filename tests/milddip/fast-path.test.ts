@@ -94,13 +94,13 @@ describe('fast-path helpers', () => {
     ).toBe(false);
   });
 
-  it('1.11.727 — scale-in ignores min mcap floor; fresh entry still enforces it', () => {
+  it('structuralOk always enforces min mcap (scale-in path removed)', () => {
     const cfg = stubCfg(50_000);
     const crushed = stubMetrics({ marketCapUsd: 22_000 });
     expect(structuralOk(crushed, cfg)).toBe(false);
-    expect(structuralOk(crushed, cfg, { ignoreMinMarketCap: true })).toBe(true);
-    // Still respect max mcap on scale-in.
+    const ok = stubMetrics({ marketCapUsd: 60_000 });
+    expect(structuralOk(ok, cfg)).toBe(true);
     const huge = stubMetrics({ marketCapUsd: 400_000_000 });
-    expect(structuralOk(huge, cfg, { ignoreMinMarketCap: true })).toBe(false);
+    expect(structuralOk(huge, cfg)).toBe(false);
   });
 });

@@ -99,20 +99,12 @@ export function inDipBand(
 }
 
 /** Exported for unit tests — structural floors on fast-path candidates. */
-export function structuralOk(
-  metrics: MildDipCandidateMetrics,
-  cfg: MildDipConfig,
-  opts?: { ignoreMinMarketCap?: boolean },
-): boolean {
+export function structuralOk(metrics: MildDipCandidateMetrics, cfg: MildDipConfig): boolean {
   const g = cfg.entry;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
-  // Fresh entries: enforce min mcap. Open-book scale-in: keep averaging down
-  // even if the knife crushed mcap below the entry floor (e.g. $50k).
-  if (!opts?.ignoreMinMarketCap) {
-    if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
-  }
-  if (metrics.marketCapUsd != null && metrics.marketCapUsd > g.maxMarketCapUsd) return false;
+  if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
+  if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
   if (metrics.pairAgeHours == null || metrics.pairAgeHours < g.minPairAgeHours) return false;
   if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
   if (g.allowedDexIds.length > 0) {
@@ -169,7 +161,6 @@ export async function evaluateFastPathCandidate(
   mint: string,
   nowMs: number,
   trigger: 'stream' | 'leader' | 'scan',
-  opts?: { mildStabilizeOnly?: boolean },
 ): Promise<MildDipCandidate | null> {
   if (!cfg.fastPathEnabled) return null;
   if (!mint || mint.length < 32) return null;
@@ -178,18 +169,13 @@ export async function evaluateFastPathCandidate(
   const prevAttempt = lastFastAttemptMs.get(mint) ?? 0;
   if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return null;
 
-  const mildStabilizeOnly = opts?.mildStabilizeOnly === true;
-
   const streamDd = streamDrawdownPct(mint, cfg.cooldownBounceLookbackMs, nowMs);
   const streamInMain = inDipBand(streamDd, cfg.entry.minDipPct, cfg.entry.maxDipPct);
 
   // Stream trigger without local drawdown: still Dex-probe (throttled).
   // Previously we returned null without cache → only leader seeds discovered
   // Dex-printed dumps (Agmu8X −18% bought 31s after 8zkg).
-  // Open-book scale-in (mildStabilizeOnly): never compete with hot-universe
-  // probe budget — marks already warm structural cache; loadStructural may
-  // fetch if stale (few open mints).
-  if (trigger === 'stream' && !streamInMain && !mildStabilizeOnly) {
+  if (trigger === 'stream' && !streamInMain) {
     const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs);
     if (!cached) {
       if (!cfg.fastPathHotDexProbeEnabled) return null;
@@ -208,10 +194,7 @@ export async function evaluateFastPathCandidate(
 
   // Need Dex for structural (and for Dex/h1 timing when stream not yet in band).
   const struct = await loadStructural(mint, cfg, nowMs);
-  if (
-    !struct ||
-    !structuralOk(struct.metrics, cfg, { ignoreMinMarketCap: mildStabilizeOnly })
-  ) {
+  if (!struct || !structuralOk(struct.metrics, cfg)) {
     return null;
   }
 
@@ -294,25 +277,18 @@ export async function evaluateFastPathCandidate(
     mildStabilizeLaneAllowed({
       enabled: cfg.mildStabilizeEnabled,
       freshEntryEnabled: cfg.mildStabilizeFreshEntryEnabled,
-      mildStabilizeOnly,
       hasOtherDipSource: Boolean(dipSource),
     })
   ) {
-    // Scale-in (open book): allow deeper post-entry knives than fresh mild band.
-    // BJWHLm yEfT5N…: −36% dump +4% reclaim blocked by fresh floor −25.
-    const minDumpPct = mildStabilizeOnly
-      ? cfg.mildStabilizeScaleInMinDumpPct
-      : cfg.mildStabilizeMinDumpPct;
     const mild = evaluateMildStabilizeFromRing(mildDipPriceRing, mint, nowMs, {
       enabled: true,
-      minDumpPct,
+      minDumpPct: cfg.mildStabilizeMinDumpPct,
       maxDumpPct: cfg.mildStabilizeMaxDumpPct,
       minBouncePct: cfg.mildStabilizeMinBouncePct,
       maxBouncePct: cfg.mildStabilizeMaxBouncePct,
       troughMinAgeMs: cfg.mildStabilizeTroughMinAgeMs,
       lookbackMs: cfg.cooldownBounceLookbackMs,
       minBelowPeakPct: cfg.mildStabilizeMinBelowPeakPct,
-      scaleInMinDumpBelowEntryPct: cfg.mildStabilizeScaleInMinDumpBelowEntryPct,
     });
     if (mild.pass) {
       dipSource = 'mild_stabilize';
@@ -327,7 +303,6 @@ export async function evaluateFastPathCandidate(
     }
   }
 
-  if (mildStabilizeOnly && dipSource !== 'mild_stabilize') return null;
   if (!dipSource) return null;
 
   // Leader/stream triggers: require a real dip print (not green chase).
