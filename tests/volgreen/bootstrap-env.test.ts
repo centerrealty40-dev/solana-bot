@@ -25,20 +25,13 @@ const KEYS = [
   'MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN',
   'MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY',
   'MILD_DIP_GREEN_SHORT_RED_WINDOW_MS',
-  'MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M',
-  'MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD',
-  'MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M',
+  'MILD_DIP_GREEN_TRIPLE_ONLY',
+  'MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC',
   'MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT',
-  'MILD_DIP_GREEN_IMPULSE_MIN_BUY_SELL_5M',
   'MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT',
   'MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT',
   'MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT',
-  'MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M',
-  'MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD',
-  'MILD_DIP_GREEN_EXTREME_PC5M_PCT',
-  'MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M',
   'MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD',
-  'MILD_DIP_GREEN_LIQUID_TAPE_MIN_RING_PC5M_PCT',
   'MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS',
   'MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS',
   'MILD_DIP_MAX_ENRICH',
@@ -67,46 +60,23 @@ describe('bootstrapVolGreenEnv', () => {
     delete process.env[k];
   }
 
-  it('defaults to green_tape entry + FxQf wallet + mild-dip exit widths', () => {
+  it('defaults to triple_green-only entry + FxQf + exit widths', () => {
     for (const k of KEYS) stash(k);
     bootstrapVolGreenEnv(process.env);
     expect(process.env.MILD_DIP_ENTRY_MODE).toBe('green_tape');
     expect(process.env.MILD_DIP_WALLET_PUBKEY).toBe(VOL_GREEN_DEFAULT_WALLET_PUBKEY);
     expect(process.env.MILD_DIP_JOURNAL_PATH).toContain('volgreen');
-    expect(process.env.MILD_DIP_EXIT_ARM_PCT).toBe('5');
-    expect(process.env.MILD_DIP_EXIT_GIVEBACK_PCT).toBe('5');
-    expect(process.env.MILD_DIP_EXIT_PARTIAL_SELL_FRACTION).toBe('0.5');
-    expect(process.env.MILD_DIP_EXIT_SECOND_GIVEBACK_PCT).toBe('8');
-    expect(process.env.MILD_DIP_QUOTE_PREMIUM_GUARD_PCT).toBe('12');
-    expect(process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT).toBe('2');
-    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS).toBe('150000');
-    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT).toBe('5');
-    expect(process.env.MILD_DIP_EXIT_MAX_HOLD_MS).toBe('600000');
-    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS).toBe('600000');
-    expect(process.env.MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT).toBe('8');
-    expect(process.env.MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN).toBe('6');
-    expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN).toBe('40');
-    expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY).toBe('3');
-    expect(process.env.MILD_DIP_GREEN_SHORT_RED_WINDOW_MS).toBe('60000');
-    expect(process.env.MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M).toBe('1.4');
-    expect(process.env.MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT).toBe('18');
-    expect(process.env.MILD_DIP_GREEN_IMPULSE_MIN_BUY_SELL_5M).toBe('1.2');
-    expect(process.env.MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT).toBe('12');
+    expect(process.env.MILD_DIP_GREEN_TRIPLE_ONLY).toBe('1');
+    expect(process.env.MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC).toBe('20');
+    expect(process.env.MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT).toBe('0');
+    expect(process.env.MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT).toBe('0');
     expect(process.env.MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT).toBe('0');
-    expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT).toBe('25');
-    expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M).toBe('1.35');
-    expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD).toBe('15000');
-    expect(process.env.MILD_DIP_GREEN_EXTREME_PC5M_PCT).toBe('100');
-    expect(process.env.MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M).toBe('1.35');
-    expect(process.env.MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD).toBe('25000');
-    expect(process.env.MILD_DIP_GREEN_LIQUID_TAPE_MIN_RING_PC5M_PCT).toBe('5');
-    expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.01');
-    expect(process.env.MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS).toBe('0');
+    expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT).toBe('0');
+    expect(process.env.MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD).toBe('0');
+    expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.5');
+    expect(process.env.MILD_DIP_EXIT_MAX_HOLD_MS).toBe('600000');
     expect(process.env.MILD_DIP_MAX_ENRICH).toBe('14');
-    expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('20');
-    expect(process.env.MILD_DIP_ENRICH_CONCURRENCY).toBe('10');
     expect(process.env.MILD_DIP_ENRICH_BUDGET_MS).toBe('22000');
-    expect(process.env.MILD_DIP_SCAN_INTERVAL_MS).toBe('2000');
   });
 
   it('maps VOL_GREEN_POSITION_USD into MILD_DIP_POSITION_USD', () => {

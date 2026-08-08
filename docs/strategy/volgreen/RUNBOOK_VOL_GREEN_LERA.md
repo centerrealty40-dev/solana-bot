@@ -3,8 +3,8 @@
 **Host:** `72.62.152.201` (`/opt/lera`, user `lera`)  
 **Wallet:** `FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX`  
 **Clip:** $5 USDC  
-**Entry (default):** `green_tape` — liquid / early / rocket paths  
-(`MILD_DIP_ENTRY_MODE=awakening` still available)  
+**Entry (1.11.730):** **triple_green ONLY** — 1m small→small→huge
+(age≥0.5h). All other green paths OFF.  
 **Floors (1.11.708):** liq ≥ $8k (or null if vol5m rocket-tier), mcap ≥ $18k,
 pair age ≥ 0.05h, rocket pc5m ≥ 15% / vol5m ≥ $8k  
 **Exit harden (1.11.709):** sticky `exitPendingReason` after soft sell fail;

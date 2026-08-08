@@ -118,8 +118,12 @@ async function main(): Promise<void> {
   } catch {
     /* ignore */
   }
+  const triple = cfg.greenTape.tripleGreenOnly
+    ? `triple_green small=(${cfg.greenTape.tripleSmallMinPc},${cfg.greenTape.tripleSmallMaxPc}] ` +
+      `huge>=${cfg.greenTape.tripleHugeMinPc} age>=${cfg.greenTape.minPairAgeHours}h`
+    : 'legacy_or_paths';
   console.log(
-    `[${appName()}] start mode=${cfg.executionMode} entry=${cfg.entryMode} ` +
+    `[${appName()}] start mode=${cfg.executionMode} entry=${cfg.entryMode} ${triple} ` +
       `positionUsd=${cfg.positionUsd} wallet=${cfg.walletPubkeyExpected ?? '?'} ` +
       `rpcHost=${rpcHost}`,
   );

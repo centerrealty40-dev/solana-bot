@@ -3,7 +3,6 @@ import path from 'node:path';
 import { z } from 'zod';
 import { liveOscarRpcHttpUrlFromEnv, resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 import type { MildDipEntryGates, MildDipExitGates } from './gates.js';
-import type { GreenTapeGates } from '../volgreen/green-tape-gates.js';
 
 const ExecutionModeSchema = z.enum(['paper', 'dry_run', 'live']);
 
@@ -216,6 +215,13 @@ const MildDipConfigSchema = z.object({
     liquidTapeMaxPc5mPct: z.number(),
     liquidTapeMinBuySellRatio5m: z.number(),
     liquidTapeMinRingPc5mPct: z.number(),
+    /** When true — ONLY 1m triple_green path (disable OR-paths in discover). */
+    tripleGreenOnly: z.boolean().default(false),
+    tripleSmallMinPc: z.number().default(2),
+    tripleSmallMaxPc: z.number().default(12),
+    tripleHugeMinPc: z.number().default(20),
+    tripleHugeMinVolUsd: z.number().default(200),
+    tripleMaxAgeAfterHugeMs: z.coerce.number().int().default(180_000),
   }),
 });
 
@@ -300,7 +306,7 @@ export function loadMildDipConfig(): MildDipConfig {
         ? 'green_tape'
         : 'mild_dip';
 
-  const greenTape: GreenTapeGates = {
+  const greenTape = {
     // CHiHkQx: Dex liq null / ~$9–11k during the vertical; age ~0.09h.
     minLiquidityUsd: envNum('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', 8_000),
     minMarketCapUsd: envNum('MILD_DIP_GREEN_MIN_MCAP_USD', 18_000),
@@ -351,6 +357,16 @@ export function loadMildDipConfig(): MildDipConfig {
     liquidTapeMaxPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MAX_PC5M_PCT', 40),
     liquidTapeMinBuySellRatio5m: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_BUY_SELL_5M', 0.85),
     liquidTapeMinRingPc5mPct: envNum('MILD_DIP_GREEN_LIQUID_TAPE_MIN_RING_PC5M_PCT', 5),
+    tripleGreenOnly: (() => {
+      const v = process.env.MILD_DIP_GREEN_TRIPLE_ONLY?.trim().toLowerCase();
+      if (!v) return false;
+      return v === '1' || v === 'true' || v === 'yes';
+    })(),
+    tripleSmallMinPc: envNum('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', 2),
+    tripleSmallMaxPc: envNum('MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC', 12),
+    tripleHugeMinPc: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', 20),
+    tripleHugeMinVolUsd: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', 200),
+    tripleMaxAgeAfterHugeMs: envNum('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', 180_000),
   };
 
   const raw = {

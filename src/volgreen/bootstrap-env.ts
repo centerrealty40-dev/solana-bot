@@ -144,54 +144,21 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // Green-tape floors loosened for micro-cap verticals (CHiHkQx: mcap~$20k, liq null/$9k).
   setIfAbsent('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', '8000');
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '18000');
-  // Structural floor; rocket-tier vol bypasses age (enter ~with leaders).
-  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.01');
-  // 0 = no max age — 8zkg often hits aged runners (HORSE ~450h, MIM ~500h).
+  // No more 2-minute newborns — Prometheus-class books are hours old.
+  setIfAbsent('MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS', '0.5');
   setIfAbsent('MILD_DIP_GREEN_MAX_PAIR_AGE_HOURS', '0');
-  // 4h RCA: soft greens + exhausted rockets without bs = never_arm_stale dumps.
-  // Impulse: clearer green + buy pressure (was 12/bs1.0).
-  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '18');
-  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MAX_PC5M_PCT', '0');
-  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_VOLUME_5M_USD', '3000');
-  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_BUY_SELL_5M', '1.2');
-  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_TURNOVER_5M', '0.05');
-  // Liquid: no soft 8–12% noise.
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '12');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_VOLUME_5M_USD', '2500');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_TURNOVER_5M', '0.1');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_BUY_SELL_5M', '1.15');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MAX_PC5M_PCT', '25');
-  // Mid-band liquid: hotter tape.
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_PC5M_LO', '12');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_PC5M_HI', '25');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_MIN_BUY_SELL_5M', '1.4');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_MID_MIN_TURNOVER_5M', '0.18');
-  // Early OFF (0 = path disabled) — soft thin tape was noise.
+  // Sole entry: 1m small→small→huge. All OR-paths OFF.
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_ONLY', '1');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', '2');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC', '12');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '20');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '200');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', '180000');
+  setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '0');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '0');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_VOLUME_5M_USD', '400');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_TURNOVER_5M', '0.02');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_BUY_SELL_5M', '2.5');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MAX_PC5M_PCT', '25');
-  setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_MCAP_USD', '18000');
-  // Rocket: only real verticals with pressure (was pc12/bs1.1/vol10k).
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '25');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MAX_PC5M_PCT', '0');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_VOLUME_5M_USD', '15000');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_TURNOVER_5M', '0.25');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_BUY_SELL_5M', '1.35');
-  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_MCAP_USD', '18000');
-  // Extreme chase: block weak-bs verticals; allow leader-like (E6cBb6 bs≈1.39 / +163%).
-  setIfAbsent('MILD_DIP_GREEN_EXTREME_PC5M_PCT', '100');
-  setIfAbsent('MILD_DIP_GREEN_EXTREME_MIN_BUY_SELL_5M', '1.35');
-  // liquid_tape: fat/aged books when Dex pc5m lags (WW) — ring-green in discover.
-  // Does not raise enrich caps; only re-labels already-probed mints.
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD', '25000');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_PAIR_AGE_HOURS', '1');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_VOLUME_5M_USD', '1200');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_PC5M_PCT', '-2');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MAX_PC5M_PCT', '40');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_BUY_SELL_5M', '0.85');
-  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_RING_PC5M_PCT', '5');
+  setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '0');
+  setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD', '0');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;

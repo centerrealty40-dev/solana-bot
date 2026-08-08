@@ -10,6 +10,7 @@ import { loadAwakeningConfig } from '../scripts/awakening/awakening-config.js';
 import { evaluateAwakeningSignal } from '../scripts/awakening/awakening-signal.js';
 import type { AwakeningDexMarket } from '../scripts/awakening/awakening-types.js';
 import { evaluateGreenTapeEntry } from '../volgreen/green-tape-gates.js';
+import { evaluateTripleGreenEntry } from '../volgreen/triple-green.js';
 import type { MildDipConfig } from './config.js';
 import { mapPool } from './exit-engine.js';
 import { evaluateMildDipEntry, type MildDipCandidateMetrics } from './gates.js';
@@ -33,7 +34,8 @@ export type MildDipCandidate = {
     | 'green_tape_liquid'
     | 'green_tape_liquid_tape'
     | 'green_tape_early'
-    | 'green_tape_rocket';
+    | 'green_tape_rocket'
+    | 'green_tape_triple';
   /** Journal helpers — spike multiples when awakening / turnover score. */
   entryScore?: number;
 };
@@ -438,6 +440,112 @@ export async function enrichAndFilterCandidates(
       }
 
       if (greenTape) {
+        // Sole path mode: 1m small→small→huge (Prometheus / 8zkg). No OR-paths.
+        if (cfg.greenTape.tripleGreenOnly) {
+          const structural: string[] = [];
+          const age = metrics.pairAgeHours;
+          if (cfg.greenTape.minPairAgeHours > 0) {
+            if (age == null) structural.push('missing_pair_age');
+            else if (age < cfg.greenTape.minPairAgeHours) {
+              structural.push(`age_h=${age.toFixed(2)}<${cfg.greenTape.minPairAgeHours}`);
+            }
+          }
+          if (cfg.greenTape.maxPairAgeHours > 0 && age != null && age > cfg.greenTape.maxPairAgeHours) {
+            structural.push(`age_h=${age.toFixed(2)}>${cfg.greenTape.maxPairAgeHours}`);
+          }
+          const liq = metrics.liquidityUsd;
+          if (cfg.greenTape.minLiquidityUsd > 0) {
+            if (liq == null) structural.push('missing_liquidity');
+            else if (liq < cfg.greenTape.minLiquidityUsd) {
+              structural.push(`liq=${liq.toFixed(0)}<${cfg.greenTape.minLiquidityUsd}`);
+            }
+          }
+          const mcap = metrics.marketCapUsd;
+          if (mcap == null || !(mcap > 0)) structural.push('missing_mcap');
+          else if (mcap < cfg.greenTape.minMarketCapUsd) {
+            structural.push(`mcap=${mcap.toFixed(0)}<${cfg.greenTape.minMarketCapUsd}`);
+          }
+          if (cfg.greenTape.allowedDexIds.length > 0) {
+            const dex = (metrics.dexId ?? '').toLowerCase();
+            if (!dex || !cfg.greenTape.allowedDexIds.includes(dex)) {
+              structural.push(`dex=${metrics.dexId ?? 'null'}_not_allowed`);
+            }
+          }
+          if (structural.length > 0) {
+            return {
+              kind: 'skip',
+              skip: {
+                mint,
+                entryMode: 'green_tape',
+                reasons: structural,
+                metrics,
+              },
+            };
+          }
+          const tg = await evaluateTripleGreenEntry({
+            pairAddress: details.pairAddress,
+            nowMs,
+            gates: {
+              enabled: true,
+              smallMinPc: cfg.greenTape.tripleSmallMinPc,
+              smallMaxPc: cfg.greenTape.tripleSmallMaxPc,
+              hugeMinPc: cfg.greenTape.tripleHugeMinPc,
+              hugeMinVolUsd: cfg.greenTape.tripleHugeMinVolUsd,
+              maxAgeAfterHugeMs: cfg.greenTape.tripleMaxAgeAfterHugeMs,
+            },
+          });
+          if (!tg.pass) {
+            return {
+              kind: 'skip',
+              skip: {
+                mint,
+                entryMode: 'green_tape',
+                reasons: tg.reasons,
+                metrics: {
+                  ...metrics,
+                  triplePattern: tg.pattern ?? null,
+                },
+              },
+            };
+          }
+          // Short-red still blocks (don't buy into an immediate dump).
+          const shortMs = cfg.greenTapeShortRedWindowMs;
+          const shortPc =
+            shortMs > 0 ? mildDipPriceRing.changeFromOldestPct(mint, shortMs, nowMs) : null;
+          if (shortPc != null && shortPc <= 0) {
+            return {
+              kind: 'skip',
+              skip: {
+                mint,
+                entryMode: 'green_tape',
+                reasons: [
+                  `tape_short_red:ring${Math.round(shortMs / 1000)}=${shortPc.toFixed(2)}<=0`,
+                  `triple=${tg.pattern?.small0}/${tg.pattern?.small1}/${tg.pattern?.huge}`,
+                ],
+                metrics,
+              },
+            };
+          }
+          const priceUsd = details.priceUsd as number;
+          const score =
+            (tg.pattern?.huge ?? 0) + (tg.pattern?.small0 ?? 0) + (tg.pattern?.small1 ?? 0);
+          return {
+            kind: 'pass',
+            cand: {
+              mint,
+              symbol: mint.slice(0, 6),
+              priceUsd,
+              metrics: {
+                ...metrics,
+                triplePattern: tg.pattern ?? null,
+              },
+              dipSource: 'dex',
+              entryPath: 'green_tape_triple',
+              entryScore: score,
+            },
+          };
+        }
+
         const verdict = evaluateGreenTapeEntry(
           {
             ...metrics,

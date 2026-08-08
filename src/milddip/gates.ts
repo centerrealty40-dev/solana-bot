@@ -14,6 +14,14 @@ export type MildDipCandidateMetrics = {
   marketCapUsd: number | null;
   pairAgeHours: number | null;
   dexId: string | null;
+  /** Present when green_tape_triple matched (journal / debug). */
+  triplePattern?: {
+    small0: number;
+    small1: number;
+    huge: number;
+    hugeVol: number;
+    hugeTs: number;
+  } | null;
 };
 
 export type MildDipEntryGates = {

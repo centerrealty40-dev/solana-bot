@@ -1,5 +1,18 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.730] — 2026-08-08
+
+**Тег:** `sa-1.11.730`
+
+### Feature: sole entry = 1m triple_green (2 small + 1 huge)
+
+Prometheus/8zkg pattern only. Disable impulse/liquid/early/rocket/liquid_tape.
+Min pair age **0.5h** (kill 2-minute newborns). Gecko 1m OHLCV detector.
+
+**Откат:** `TRIPLE_ONLY=0`, restore OR-path mins, age 0.01h.
+
+---
+
 ## [1.11.729] — 2026-08-08
 
 **Тег:** `sa-1.11.729`
