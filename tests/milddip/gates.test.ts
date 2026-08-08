@@ -1032,14 +1032,24 @@ describe('resolveMildDipWantedSizeUsd', () => {
     expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
   });
 
-  it('disables size-up when thick ≤ base', () => {
+  it('keeps thick tier when thick == base (flat $30 book)', () => {
     const v = resolveMildDipWantedSizeUsd({
-      basePositionUsd: 10,
-      thick: { ...thick, positionUsd: 10 },
-      micro,
+      basePositionUsd: 30,
+      thick: { ...thick, positionUsd: 30 },
+      micro: { ...micro, positionUsd: 30 },
       metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 12 },
     });
-    expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
+    expect(v).toEqual({ sizeUsd: 30, tier: 'thick' });
+  });
+
+  it('keeps micro tier when micro == base in micro mcap band', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 30,
+      thick: { ...thick, positionUsd: 30 },
+      micro: { ...micro, positionUsd: 30 },
+      metrics: { liquidityUsd: 20_000, marketCapUsd: 30_000, pairAgeHours: 1 },
+    });
+    expect(v).toEqual({ sizeUsd: 30, tier: 'micro' });
   });
 });
 

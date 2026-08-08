@@ -26,21 +26,21 @@ const MildDipConfigSchema = z.object({
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
   journalPath: z.string().min(1),
   statePath: z.string().min(1),
-  positionUsd: z.coerce.number().positive().max(10_000).default(10),
+  /** 1.11.754 — flat $30 across base/thick/micro. */
+  positionUsd: z.coerce.number().positive().max(10_000).default(30),
   /**
-   * Size-up clip for thick names (mcap/liq/age). 0 or ≤ positionUsd = off.
-   * Default $20 = 2× the $10 base clip.
+   * Thick-name clip (mcap/liq/age). 0 = off.
+   * 1.11.754 — same $30 as base (flat book).
    */
-  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(20),
+  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(30),
   thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
   thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
   /**
-   * Micro-cap size-down: mcap ∈ [min, max] → this clip.
-   * 1.11.746 — live $5, but sizing applies only to knife_stabilize.
-   * 0 = off.
+   * Micro-cap clip: mcap ∈ [min, max] → this size (knife_stabilize only).
+   * 1.11.754 — same $30 as base (flat book). 0 = off.
    */
-  microPositionUsd: z.coerce.number().min(0).max(10_000).default(0),
+  microPositionUsd: z.coerce.number().min(0).max(10_000).default(30),
   microMinMarketCapUsd: z.coerce.number().min(0).default(15_000),
   microMaxMarketCapUsd: z.coerce.number().min(0).default(50_000),
   /** 0 = unlimited — keep buying while USDC remains. */
@@ -185,12 +185,22 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
   /**
-   * 1.11.752 — park main-band signal; buy only after extra dump from signal
-   * (default −7%). Knife / mild_stabilize unchanged. 0 waitDipPct = off shape.
+   * 1.11.753 — park signal; buy only after extra dump from signal (default −7%).
+   * Applies to all entry branches including knife / mild_stabilize.
+   * 0 waitDipPct = off shape.
    */
   waitDipEnabled: z.boolean().default(true),
   waitDipPct: z.coerce.number().max(0).default(-7),
   waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
+  /**
+   * 1.11.753 — after ready, allow at most this many pp of dump edge to erode
+   * before abort (wait −7% + overshoot 2 → fill/quote must stay ≤ −5% vs signal).
+   */
+  waitDipMaxOvershootPct: z.coerce.number().min(0).max(20).default(2),
+  /** Chase vs ready mark only (not vs park signal). */
+  waitDipMaxChasePct: z.coerce.number().min(0).max(20).default(3),
+  /** Jupiter quote premium above signal ceiling (must be >0 so live guard runs). */
+  waitDipQuotePremiumPct: z.coerce.number().min(0.1).max(10).default(1),
   /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
    * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
@@ -484,13 +494,13 @@ export function loadMildDipConfig(): MildDipConfig {
     journalPath:
       process.env.MILD_DIP_JOURNAL_PATH?.trim() || path.join('data', 'milddip', 'journal.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
-    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 10,
-    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 20,
+    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 30,
+    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 30,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
     thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
-    /** 1.11.746 — $5 live; knife_stabilize only (see mildDipMicroSizeGatesForSource). */
-    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 0,
+    /** 1.11.754 — $30 live; knife_stabilize only (see mildDipMicroSizeGatesForSource). */
+    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 30,
     microMinMarketCapUsd: process.env.MILD_DIP_MICRO_MIN_MCAP_USD ?? 15_000,
     microMaxMarketCapUsd: process.env.MILD_DIP_MICRO_MAX_MCAP_USD ?? 50_000,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
@@ -549,11 +559,14 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
     /**
      * 1.11.752 — wait extra −7% from signal before buy (MFE-bank CF winner).
-     * Set MILD_DIP_WAIT_DIP=0 to restore immediate main-band entries.
+     * Set MILD_DIP_WAIT_DIP=0 to restore immediate entries (all branches).
      */
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -7),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
+    waitDipMaxOvershootPct: envNum('MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT', 2),
+    waitDipMaxChasePct: envNum('MILD_DIP_WAIT_DIP_MAX_CHASE_PCT', 3),
+    waitDipQuotePremiumPct: envNum('MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT', 1),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),

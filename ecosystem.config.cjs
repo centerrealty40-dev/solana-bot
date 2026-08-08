@@ -2826,12 +2826,13 @@ const PM2_APPS = [
         MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         /** 1.11.742 — base clip $10 (was $5). */
-        MILD_DIP_POSITION_USD: '10',
+        /** 1.11.754 — flat $30 across base / thick / micro. */
+        MILD_DIP_POSITION_USD: '30',
         /**
          * 1.11.742 — thick size-up: 2× clip ($20) when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          */
-        MILD_DIP_THICK_POSITION_USD: '20',
+        MILD_DIP_THICK_POSITION_USD: '30',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
@@ -2839,7 +2840,7 @@ const PM2_APPS = [
          * 1.11.746 — micro $15k–$50k @ $5, but ONLY knife_stabilize
          * (post-knife bounce). Other branches keep base/thick + $50k floor.
          */
-        MILD_DIP_MICRO_POSITION_USD: '5',
+        MILD_DIP_MICRO_POSITION_USD: '30',
         MILD_DIP_MICRO_MIN_MCAP_USD: '15000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -2868,6 +2869,17 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
+        /**
+         * 1.11.752 — park main-band; buy after extra −7% from signal.
+         * 1.11.753 — keep fill near that edge: overshoot +2pp ceiling,
+         * chase vs ready ≤3%, Jupiter premium ≤1% above ceiling.
+         */
+        MILD_DIP_WAIT_DIP: '1',
+        MILD_DIP_WAIT_DIP_PCT: '-7',
+        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
+        MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '2',
+        MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',
+        MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',
         /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
          * 1.11.730 with scale-in removal). Scale-in stays deleted.

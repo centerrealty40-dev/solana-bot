@@ -1,4 +1,32 @@
 # So
+## [1.11.754] — 2026-08-08
+
+**Тег:** `sa-1.11.754`
+
+### Entry: wait-dip align + fill ceiling + flat $30
+
+Integrates parallel 1.11.753 work and live size flat:
+
+1. **Wait −7% on all entry branches** including `knife_stabilize` /
+   `mild_stabilize` (branch CF ~+$350 vs main-band-only).
+2. **Fill ceiling** vs park signal: dump must stay ≤ waitDipPct+overshoot
+   (default −7%+2pp); chase vs ready ≤3%; Jupiter premium ≤1% above ceiling;
+   fresh Dex on fire; keep watch until fill.
+3. **Flat $30** clips: `POSITION=THICK=MICRO=30` (all tiers same notional).
+
+**Env:**
+- `MILD_DIP_POSITION_USD=30`
+- `MILD_DIP_THICK_POSITION_USD=30`
+- `MILD_DIP_MICRO_POSITION_USD=30`
+- `MILD_DIP_WAIT_DIP=1` / `WAIT_DIP_PCT=-7`
+- `MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT=2`
+- `MILD_DIP_WAIT_DIP_MAX_CHASE_PCT=3`
+- `MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT=1`
+
+**Откат:** sizes back to 10/20/5; overshoot/chase widen; or `MILD_DIP_WAIT_DIP=0`.
+
+---
+
 ## [1.11.752] — 2026-08-08
 
 **Тег:** `sa-1.11.752`
@@ -16,7 +44,7 @@ hard ±10%).
   `flat_micro_dip`) **park** a `waitDipWatch` at first signal price
 - Buy only when mark ≤ signal × (1 − 7%) → `dipSource=wait_dip`
 - Expire after 20m if never filled
-- `knife_stabilize` / `mild_stabilize` unchanged (already delayed paths)
+- `knife_stabilize` / `mild_stabilize` unchanged in 1.11.752 (extended in 1.11.753)
 
 **Env:**
 - `MILD_DIP_WAIT_DIP=1`

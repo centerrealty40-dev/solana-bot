@@ -52,7 +52,7 @@ export type MildDipState = {
   lastExitByMint?: Record<string, MildDipLastExit>;
   /** mint → deep-knife watch (wait for stabilize / bounce). */
   knifeWatch?: Record<string, KnifeWatchEntry>;
-  /** mint → wait-dip watch (park main-band signal; buy after extra dump). */
+  /** mint → wait-dip watch (park signal; buy after extra dump). */
   waitDipWatch?: Record<string, WaitDipWatchEntry>;
   updatedAtMs: number;
 };

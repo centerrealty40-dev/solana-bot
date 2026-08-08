@@ -20,6 +20,11 @@ import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
+  dumpFromSignalPct,
+  evaluateWaitDipPreBuy,
+  waitDipMaxPriceUsd,
+} from './wait-dip.js';
+import {
   appendMildDipJournal,
   saveMildDipState,
   type MildDipState,
@@ -177,14 +182,13 @@ export async function attemptMildDipEntry(args: {
               maxBouncePct: cfg.mildStabilizeMaxBouncePct,
             })
           : isWaitDip
-            ? evaluateKnifeStabilizePreBuy({
-                // Anchor chase to the −7% target (not the original signal).
-                signalPriceUsd: c.priceUsd,
+            ? evaluateWaitDipPreBuy({
+                signalPriceUsd: c.waitDipSignalPriceUsd ?? c.priceUsd,
+                readyMarkPriceUsd: c.priceUsd,
                 freshPriceUsd: freshPx,
-                troughPriceUsd: c.waitDipSignalPriceUsd ?? null,
-                maxChasePct: opts.chasePct,
-                // Allow small reclaim off trough; reject if ripping back through target.
-                maxBouncePct: Math.max(opts.chasePct, 8),
+                waitDipPct: cfg.waitDipPct,
+                maxOvershootPct: cfg.waitDipMaxOvershootPct,
+                maxChaseFromReadyPct: cfg.waitDipMaxChasePct,
               })
             : evaluateMildDipPreBuy({
                 signalPriceUsd: c.priceUsd,
@@ -201,6 +205,14 @@ export async function attemptMildDipEntry(args: {
           dipSource: c.dipSource,
           lane: opts.lane,
           signalPriceUsd: c.priceUsd,
+          waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
+          waitDipMaxPriceUsd: isWaitDip
+            ? waitDipMaxPriceUsd(
+                c.waitDipSignalPriceUsd ?? c.priceUsd,
+                cfg.waitDipPct,
+                cfg.waitDipMaxOvershootPct,
+              )
+            : null,
           signalPc5m: c.metrics.priceChange5mPct,
           freshPriceUsd: freshPx,
           freshPc5m: freshPc,
@@ -210,11 +222,45 @@ export async function attemptMildDipEntry(args: {
         console.log(
           `[mild-dip] SKIP prebuy ${c.symbol} mint=${c.mint.slice(0, 8)}… ${pre.reasons.join(',')}`,
         );
-        state.cooldownUntilMs[c.mint] = nowMs + softCd;
+        // wait_dip: keep watch; short/zero soft-cd so the next tick can retry.
+        state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
         return 'skip';
       }
       if (freshPx != null) entryPriceUsd = freshPx;
       if (!isKnife && !isWaitDip && freshPc != null) entryPc5m = freshPc;
+    } else if (isWaitDip) {
+      // wait_dip must still enforce signal ceiling even without a Dex refetch.
+      const last = mildDipPriceRing.lastPrice(c.mint, freshNow);
+      if (last && last.priceUsd > 0) freshPx = last.priceUsd;
+      const pre = evaluateWaitDipPreBuy({
+        signalPriceUsd: c.waitDipSignalPriceUsd ?? c.priceUsd,
+        readyMarkPriceUsd: c.priceUsd,
+        freshPriceUsd: freshPx,
+        waitDipPct: cfg.waitDipPct,
+        maxOvershootPct: cfg.waitDipMaxOvershootPct,
+        maxChaseFromReadyPct: cfg.waitDipMaxChasePct,
+      });
+      if (!pre.pass) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_prebuy_skip',
+          mint: c.mint,
+          symbol: c.symbol,
+          dipSource: c.dipSource,
+          lane: opts.lane,
+          signalPriceUsd: c.priceUsd,
+          waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
+          waitDipMaxPriceUsd: waitDipMaxPriceUsd(
+            c.waitDipSignalPriceUsd ?? c.priceUsd,
+            cfg.waitDipPct,
+            cfg.waitDipMaxOvershootPct,
+          ),
+          freshPriceUsd: freshPx,
+          reasons: pre.reasons,
+        });
+        state.cooldownUntilMs[c.mint] = nowMs + Math.min(softCd, 1_500);
+        return 'skip';
+      }
+      if (freshPx != null) entryPriceUsd = freshPx;
     } else {
       // Fast lane: trust candidate mark (already stream/Dex at evaluate time).
       const last = mildDipPriceRing.lastPrice(c.mint, freshNow);
@@ -374,8 +420,15 @@ export async function attemptMildDipEntry(args: {
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
-  if (state.waitDipWatch?.[c.mint]) delete state.waitDipWatch[c.mint];
+  // Keep waitDipWatch until fill succeeds — quote-premium reject must retry.
   saveMildDipState(cfg.statePath, state);
+  const waitDipCeilingPx = isWaitDip
+    ? waitDipMaxPriceUsd(
+        c.waitDipSignalPriceUsd ?? c.priceUsd,
+        cfg.waitDipPct,
+        cfg.waitDipMaxOvershootPct,
+      )
+    : null;
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_buy_reserved',
     mint: c.mint,
@@ -384,15 +437,31 @@ export async function attemptMildDipEntry(args: {
     priceUsd: entryPriceUsd,
     dipSource: c.dipSource,
     lane: opts.lane,
+    waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
+    waitDipMaxPriceUsd: waitDipCeilingPx,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
   });
 
   const leaderSig = `milddip_${opts.lane}_${c.mint.slice(0, 8)}_${nowMs}`;
+  const buyCopyCfg: CopyTraderConfig = isWaitDip
+    ? {
+        ...copyCfg,
+        buyPriceMaxPremiumPct: cfg.waitDipQuotePremiumPct,
+        quotePremiumGuardPct: cfg.waitDipQuotePremiumPct,
+        quotePremiumFirstShotPct: 0,
+        quotePremiumGraceMs: 0,
+      }
+    : copyCfg;
+  // Jupiter guard anchors to signal ceiling (not ready mark).
+  const buyLeaderPriceUsd =
+    isWaitDip && waitDipCeilingPx != null && waitDipCeilingPx > 0
+      ? waitDipCeilingPx
+      : entryPriceUsd;
   let buy: Awaited<ReturnType<typeof executeCopyBuy>>;
   try {
     buy = await executeCopyBuy({
-      cfg: copyCfg,
+      cfg: buyCopyCfg,
       mint: c.mint,
       symbol: c.symbol,
       priceUsd: entryPriceUsd,
@@ -403,18 +472,20 @@ export async function attemptMildDipEntry(args: {
         reasons: [
           isMildStabilize
             ? `mild_stabilize_bounce=${c.mildStabilizeBouncePct?.toFixed(2) ?? 'n/a'}`
-            : `mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
+            : isWaitDip
+              ? `wait_dip_ceiling=${waitDipCeilingPx ?? 'n/a'}`
+              : `mild_dip_pc5m=${entryPc5m?.toFixed(2) ?? 'n/a'}`,
         ],
         score: Math.abs(entryPc5m ?? c.mildStabilizeBouncePct ?? 0),
       },
       leaderSignature: leaderSig,
-      leaderPriceUsd: entryPriceUsd,
+      leaderPriceUsd: buyLeaderPriceUsd,
       leaderBuyTs: nowMs,
     });
   } catch (err) {
     delete state.open[c.mint];
     buyInFlight.delete(c.mint);
-    state.cooldownUntilMs[c.mint] = nowMs + softCd;
+    state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
     saveMildDipState(cfg.statePath, state);
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_buy_attempt',
@@ -425,6 +496,8 @@ export async function attemptMildDipEntry(args: {
       pc5m: entryPc5m,
       dipSource: c.dipSource,
       lane: opts.lane,
+      waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
+      waitDipMaxPriceUsd: waitDipCeilingPx,
       ok: false,
       reason: err instanceof Error ? err.message : String(err),
       mode: cfg.executionMode,
@@ -433,12 +506,21 @@ export async function attemptMildDipEntry(args: {
     return 'skip';
   }
 
+  const fillPxJournal = buy.priceUsd || entryPriceUsd;
+  const waitDipMarkDump =
+    isWaitDip && c.waitDipSignalPriceUsd
+      ? dumpFromSignalPct(c.priceUsd, c.waitDipSignalPriceUsd)
+      : null;
+  const waitDipFillDump =
+    isWaitDip && c.waitDipSignalPriceUsd
+      ? dumpFromSignalPct(fillPxJournal, c.waitDipSignalPriceUsd)
+      : null;
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_buy_attempt',
     mint: c.mint,
     symbol: c.symbol,
     sizeUsd: sized.sizeUsd,
-    priceUsd: buy.priceUsd || entryPriceUsd,
+    priceUsd: fillPxJournal,
     signalPriceUsd: c.priceUsd,
     pc5m: entryPc5m,
     signalPc5m: c.metrics.priceChange5mPct,
@@ -449,6 +531,9 @@ export async function attemptMildDipEntry(args: {
     waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
     waitDipOriginalSource: c.waitDipOriginalSource ?? null,
     waitDipDumpFromSignalPct: c.waitDipDumpFromSignalPct ?? null,
+    waitDipMarkDumpFromSignalPct: waitDipMarkDump,
+    waitDipFillDumpFromSignalPct: waitDipFillDump,
+    waitDipMaxPriceUsd: waitDipCeilingPx,
     lane: opts.lane,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
@@ -462,11 +547,13 @@ export async function attemptMildDipEntry(args: {
   if (!buy.ok) {
     delete state.open[c.mint];
     buyInFlight.delete(c.mint);
-    state.cooldownUntilMs[c.mint] = nowMs + softCd;
+    state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
     saveMildDipState(cfg.statePath, state);
     resetCopyFundingCache();
     return 'skip';
   }
+
+  if (state.waitDipWatch?.[c.mint]) delete state.waitDipWatch[c.mint];
 
   const filledRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
   const fillPx = buy.priceUsd || entryPriceUsd;
