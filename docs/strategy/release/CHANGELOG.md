@@ -1,4 +1,23 @@
 # So
+## [1.11.748] — 2026-08-08
+
+**Тег:** `sa-1.11.748`
+
+### Fix: wake leader seeds while bags are open
+
+`CgnQ8a` / `5zHbZ2…`: leader-observer saw `8zkg` buy and wrote
+`leader-seed.json`, but mild-dip never evaluated the mint — 1.11.739
+skipped all `tryEntries` while `open>0`, and leader fast-path lived only
+inside that function.
+
+**Change:** `wakeLeaderSeeds()` every 2s even with open bags (fire-and-forget,
+does not await on the mark loop). Slow enrich/scan still only when flat.
+Leaders highlight; our gates (main / h1_red / knife_stabilize) still decide.
+
+**Откат:** revert this commit + reload.
+
+---
+
 ## [1.11.747] — 2026-08-08
 
 **Тег:** `sa-1.11.747`
