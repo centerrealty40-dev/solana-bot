@@ -1,4 +1,22 @@
 # So
+## [1.11.739] — 2026-08-08
+
+**Тег:** `sa-1.11.739`
+
+### Fix: no slow-lane scan while bags are open
+
+1.11.738 detached sells, but mark journal gaps still jumped to ~14s: after a
+fast stream mark, `tryEntries` (Dex enrich) still awaited on the same tick
+and stole the next mark. Soft `scanWouldStealMark` heuristic was wrong when
+`markPassMs` was small.
+
+**Change:** while `open > 0`, skip awaited slow-lane `tryEntries` entirely.
+Stream fast-path keeps buying; enrich/scan resumes when the book is flat.
+
+**Откат:** revert this commit + reload.
+
+---
+
 ## [1.11.738] — 2026-08-08
 
 **Тег:** `sa-1.11.738`

@@ -1069,15 +1069,13 @@ export async function runMildDipLoop(
       }
     }
 
-    // Defer discover/enrich while we hold bags if the next mark would be late.
-    // 2qE4vp: scan+Dex mark passes stretched gaps to ~60s through a −8% giveback.
-    const markPassMs = stats.lastMarkPassMs ?? 0;
-    const nextMarkDueIn =
-      opens > 0 ? Math.max(0, cfg.markIntervalMs - (Date.now() - lastMark)) : cfg.scanIntervalMs;
-    const scanWouldStealMark =
-      opens > 0 && (markPassMs > cfg.markIntervalMs || nextMarkDueIn < cfg.markIntervalMs * 0.75);
-
-    if (nowMs - lastScan >= cfg.scanIntervalMs && !scanWouldStealMark) {
+    /**
+     * While bags are open: never await tryEntries on this loop.
+     * Soft "scanWouldStealMark" heuristic failed live — after a fast stream
+     * mark pass, scan still ran and blocked the next mark for 10–15s.
+     * Stream fast-path owns buys; slow enrich/scan only when flat.
+     */
+    if (opens === 0 && nowMs - lastScan >= cfg.scanIntervalMs) {
       await tryEntries(cfg, state, nowMs);
       lastScan = Date.now();
       stats.lastScanAtMs = lastScan;
