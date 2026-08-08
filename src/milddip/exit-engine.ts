@@ -47,6 +47,8 @@ export function decideMarkExit(args: {
   nowMs?: number;
   /** Current 5m Dex volume — enables the activity-fade never-arm exit. */
   volume5mUsd?: number | null;
+  /** Defer soft giveback exits while oneshot emptied-bag dump grace is active. */
+  oneshotDumpGraceActive?: boolean;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
@@ -66,6 +68,7 @@ export function decideMarkExit(args: {
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
     volFadeSamples: pos.volFadeSamples ?? null,
+    oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
   });
   return {
     mint,

@@ -2974,6 +2974,16 @@ const PM2_APPS = [
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
         /**
+         * 1.11.734 — oneshot emptied-bag dump grace:
+         * Stream sell that empties a wallet (post≈0) and ≥$500 → defer
+         * peak_giveback for 60s (leaders ignore one-shot whale dumps).
+         * cliff_dump still fires. Set GRACE=0 to disable.
+         */
+        MILD_DIP_ONESHOT_DUMP_GRACE: '1',
+        MILD_DIP_ONESHOT_DUMP_GRACE_MS: '60000',
+        MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD: '500',
+        MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC: '0.02',
+        /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
          * Dex hard-capped at 120 RPM; mark uses cache TTL ≈ interval.
          */

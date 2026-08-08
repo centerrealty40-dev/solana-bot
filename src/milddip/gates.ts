@@ -452,6 +452,11 @@ export function evaluateMildDipPeakGiveback(args: {
   volFadeSamples?: readonly MildDipVolFadeSample[] | null;
   /** Wall clock for spacing samples; defaults to held-relative when omitted. */
   nowMs?: number;
+  /**
+   * When true, defer peak_giveback / peak_giveback_partial / never_arm_giveback
+   * (one-shot emptied-bag dump grace). cliff_dump and other hard exits still fire.
+   */
+  oneshotDumpGraceActive?: boolean;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -472,6 +477,7 @@ export function evaluateMildDipPeakGiveback(args: {
     Number.isFinite(args.nowMs) && Number(args.nowMs) > 0
       ? Number(args.nowMs)
       : heldMs;
+  const oneshotGrace = args.oneshotDumpGraceActive === true;
   const sampleMs = gates.neverArmVolFadeSampleMs > 0 ? gates.neverArmVolFadeSampleMs : 300_000;
   const weakWindows =
     gates.neverArmVolFadeWeakWindows > 0 ? Math.floor(gates.neverArmVolFadeWeakWindows) : 0;
@@ -531,16 +537,19 @@ export function evaluateMildDipPeakGiveback(args: {
     !scaleOutDone &&
     givebackPct <= -partialPct + 1e-9;
 
-  if (armed && fullGivebackHit) {
-    return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
-  }
-  if (armed && partialGivebackHit) {
-    return {
-      ...hold,
-      shouldExit: true,
-      fraction: scaleFrac,
-      reason: 'peak_giveback_partial',
-    };
+  // One-shot emptied-bag dump: defer soft giveback knives; hard exits remain.
+  if (!oneshotGrace) {
+    if (armed && fullGivebackHit) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
+    }
+    if (armed && partialGivebackHit) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: scaleFrac,
+        reason: 'peak_giveback_partial',
+      };
+    }
   }
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
@@ -550,7 +559,7 @@ export function evaluateMildDipPeakGiveback(args: {
   const givebackHit = fullGivebackHit;
   if (!armed) {
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
-    if (patience > 0 && heldMs >= patience && givebackHit) {
+    if (!oneshotGrace && patience > 0 && heldMs >= patience && givebackHit) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };
     }
     const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;

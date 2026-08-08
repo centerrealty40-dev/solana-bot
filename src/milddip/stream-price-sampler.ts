@@ -2,12 +2,20 @@
  * Decode pump/PumpSwap txs from program logs → USD price samples.
  * Only samples mints the caller marks as watched (cooldown / priority) to
  * protect Helius RPC budget.
+ *
+ * Also detects one-shot emptied-bag sells on open mints (same tx meta —
+ * no extra balance RPC) so exits can grace peak_giveback briefly.
  */
 import { fetchParsedTransaction } from '../copytrader/rpc.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import { decodeAllowlistedDexSwapInserts } from '../parser/allowlisted-dex-swap.js';
 import { PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import type { TxJsonParsed } from '../parser/rpc-http.js';
+import {
+  detectOneshotEmptiedDump,
+  type OneshotDumpDetectOpts,
+  type OneshotDumpEvent,
+} from './oneshot-dump.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 export type StreamPriceSampler = {
@@ -22,6 +30,14 @@ export function createStreamPriceSampler(args: {
   /** Min gap between RPC price fetches per mint. */
   minGapMsPerMint?: number;
   concurrency?: number;
+  /**
+   * When true, bypass per-mint minGap so every unique signature is fetched
+   * (open-book oneshot dump detect). Still deduped by signature.
+   */
+  forceFetch?: (mint: string) => boolean;
+  /** Optional oneshot emptied-bag dump detection on decoded txs. */
+  oneshot?: OneshotDumpDetectOpts & { enabled: boolean };
+  onOneshotDump?: (ev: OneshotDumpEvent) => void;
 }): StreamPriceSampler {
   const minGap = Math.max(500, args.minGapMsPerMint ?? 2_000);
   const concurrency = Math.max(1, Math.min(8, args.concurrency ?? 3));
@@ -59,8 +75,9 @@ export function createStreamPriceSampler(args: {
       skipped += 1;
       return;
     }
+    const forced = args.forceFetch?.(job.mint) === true;
     const last = lastFetchAt.get(job.mint) ?? 0;
-    if (nowMs - last < minGap) {
+    if (!forced && nowMs - last < minGap) {
       skipped += 1;
       return;
     }
@@ -80,6 +97,7 @@ export function createStreamPriceSampler(args: {
 
     const swaps = decodeAllowlistedDexSwapInserts(tx, PUMP_FUN_PROGRAM_ID, solUsd);
     let noted = false;
+    let priceHint = 0;
     for (const s of swaps) {
       if (s.baseMint !== job.mint) continue;
       if (!(s.priceUsd > 0)) continue;
@@ -88,7 +106,27 @@ export function createStreamPriceSampler(args: {
         source: 'stream',
       });
       noted = true;
+      if (s.priceUsd > priceHint) priceHint = s.priceUsd;
     }
+
+    if (args.oneshot?.enabled && args.onOneshotDump) {
+      const ringPx = mildDipPriceRing.lastPrice(job.mint, nowMs)?.priceUsd ?? 0;
+      const dump = detectOneshotEmptiedDump(
+        tx,
+        job.mint,
+        {
+          minSellUsd: args.oneshot.minSellUsd,
+          maxPostResidualFrac: args.oneshot.maxPostResidualFrac,
+        },
+        {
+          priceUsd: priceHint > 0 ? priceHint : ringPx,
+          tsMs: job.tsMs || nowMs,
+          signature: job.signature,
+        },
+      );
+      if (dump) args.onOneshotDump(dump);
+    }
+
     if (noted) sampled += 1;
     else skipped += 1;
   };
