@@ -2860,11 +2860,14 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
-         * 1.11.730 — second-clip scale-in removed (net harmful on live).
-         * mild_stabilize fresh seats stay off (Gymbmn/7rMnp9 green-candle noise).
+         * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
+         * 1.11.730 with scale-in removal). Scale-in stays deleted.
+         * Gates keep anti-green filters: dump ≤−8, last ≥2% below peak
+         * (Gymbmn/7rMnp9 full reclaim blocked). Deep knife still uses
+         * knife_stabilize (−50,−20] wait+bounce — unchanged.
          */
-        MILD_DIP_MILD_STABILIZE_ENABLED: '0',
-        MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '0',
+        MILD_DIP_MILD_STABILIZE_ENABLED: '1',
+        MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '1',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-8',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
