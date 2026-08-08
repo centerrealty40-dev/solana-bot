@@ -1,5 +1,21 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.741] — 2026-08-08
+
+**Тег:** `sa-1.11.741`
+
+### Vol-green: more buys — loosen triple + Gecko/probe (no impulse)
+
+~13 buys/6h with candidates=0 most scans. Apply (impulse path still OFF):
+
+1. triple huge **13→10%**, small max **12→18%**, hugeVol **100**, ageAfter **4m**
+2. Gecko HTTP **6→12/min**, gap 900ms; gecko if vol≥$2.5k; stream price denser
+3. probe **16**, eval **12**, buyForce **8**, conc **5**, scan **3s**
+
+**Откат:** huge 13 / smallMax 12 / probe 8 / gecko 6/min.
+
+---
+
 ## [1.11.740] — 2026-08-08
 
 **Тег:** `sa-1.11.740`

@@ -297,10 +297,10 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     ? mildDipHotMints.takeForceEnrichHotSpike(nowMs, 8, 12_000, 12_000)
     : [];
   const tripleOnly = tapeMode && cfg.entryMode === 'green_tape' && cfg.greenTape.tripleGreenOnly;
-  // Buy/Sell getTx-resolved — cap take so Dex gate finishes in budget.
-  // Peek (not drain): fewer slots → same mints re-probed → local 1m bars.
+  // Buy/Sell getTx-resolved — peek (not drain) so local 1m bars can form.
+  // triple_only: wider take (4→8) — was starving discovery (candidates≈0 most scans).
   const buyForce = tapeMode
-    ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, tripleOnly ? 4 : 8)
+    ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, tripleOnly ? 8 : 8)
     : [];
   const forceEnrich = tapeMode
     ? [
@@ -314,9 +314,9 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       ]
     : priority;
   const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
-  // triple_green: keep probe small — each eval can hit Gecko; bloated probe → 429 → zero buys.
+  // triple_green: Gecko budget raised → allow larger probe again.
   const probeMax = tripleOnly
-    ? Math.min(12, Math.max(cfg.probeEnrichMax, buyForce.length + 4))
+    ? Math.min(20, Math.max(cfg.probeEnrichMax, buyForce.length + 6))
     : tapeMode
       ? Math.min(
           24,
@@ -328,7 +328,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         )
       : 80;
   const enrichConcurrency = tripleOnly
-    ? Math.min(4, Math.max(2, cfg.enrichConcurrency))
+    ? Math.min(6, Math.max(3, cfg.enrichConcurrency))
     : tapeMode
       ? Math.min(12, Math.max(6, cfg.enrichConcurrency))
       : cfg.enrichConcurrency;

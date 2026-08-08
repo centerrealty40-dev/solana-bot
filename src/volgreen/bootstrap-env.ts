@@ -117,17 +117,17 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM', '1');
   setIfAbsent('MILD_DIP_STREAM_PROGRAM_IDS', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
   setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '1');
-  setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '3');
-  setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '1000');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '20');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '2');
-  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '4');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '5');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '500');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '30');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '3');
+  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '6');
   setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '3');
-  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '8');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '6');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '12000');
-  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '4000');
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '5');
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '16');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '12');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '18000');
+  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '3000');
   setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '12');
   setIfAbsent('VOL_GREEN_MAX_CHASE_PCT', '12');
   setIfAbsent('LIVE_BUY_MAX_CHASE_PCT', '12');
@@ -157,10 +157,11 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_ONLY', '1');
   // Paul/TINYTANK: second small was +1.2% — allow ≥1%.
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC', '1');
-  setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC', '12');
-  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '13');
-  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '150');
-  setIfAbsent('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', '180000');
+  // Wider small band — second candle often 12–16% before huge.
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC', '18');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '10');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '100');
+  setIfAbsent('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', '240000');
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '12000');
   setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '0');

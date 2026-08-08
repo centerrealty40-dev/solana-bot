@@ -42,12 +42,15 @@ export type TripleGreenVerdict = {
 
 const ohlcvCache = new Map<string, { at: number; bars: Ohlcv1m[]; rateLimited?: boolean }>();
 // Short TTL — F1Xd sat on stale last3=18.2,1.5,-2.1 while 11:45 printed +100%.
-const OHLCV_TTL_MS = 25_000;
-const OHLCV_TTL_429_MS = 35_000;
+const OHLCV_TTL_MS = 20_000;
+const OHLCV_TTL_429_MS = 25_000;
 /** Min gap between Gecko HTTP calls process-wide (public free tier). */
-const GECKO_MIN_GAP_MS = 1_500;
-/** Hard cap — without this every enrich mint hits 429 and buys die. */
-const GECKO_MAX_HTTP_PER_MIN = 6;
+const GECKO_MIN_GAP_MS = 900;
+/**
+ * Hard cap — raised 6→12 so triple_only can actually fetch OHLCV
+ * (journal: thousands of triple_ohlcv_budget / rate_limited skips).
+ */
+const GECKO_MAX_HTTP_PER_MIN = 12;
 
 let geckoChain: Promise<void> = Promise.resolve();
 let geckoNextAt = 0;
@@ -132,7 +135,8 @@ export function detectTripleGreen(
     if (!(c0 > gates.smallMinPc && c0 <= gates.smallMaxPc)) continue;
     if (!(c1 > gates.smallMinPc && c1 <= gates.smallMaxPc)) continue;
     if (!(cH >= gates.hugeMinPc)) continue;
-    if (!(cH > Math.max(c0, c1) + 5)) continue;
+    // Huge must clearly dominate the two smalls (was +5; +3 with hugeMin=10).
+    if (!(cH > Math.max(c0, c1) + 3)) continue;
     if (gates.hugeMinVolUsd > 0 && !(huge.volumeUsd >= gates.hugeMinVolUsd)) continue;
 
     return {
