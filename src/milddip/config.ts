@@ -307,8 +307,8 @@ export function loadMildDipConfig(): MildDipConfig {
     minDipPct: envNum('MILD_DIP_MIN_DIP_PCT', -25),
     /** Inclusive upper bound — require dump depth (default −8 ⇒ pc5m ≤ −8%). */
     maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -8),
-    /** 1.11.712 — default $1500 (was $500). Thin-vol cliff pre-filter. */
-    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 1500),
+    /** 1.11.735 — default $500 (was $1500). Dex 5m volume floor before buy. */
+    minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 500),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
     /** 1.11.725 — floor $50k (was $15k). Sub-$50k cut set was the weak tail. */
