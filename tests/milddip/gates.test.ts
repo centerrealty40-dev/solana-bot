@@ -6,6 +6,8 @@ import {
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
   isRecoveringFromTrough,
+  knifeStabilizeMinMarketCapUsd,
+  mildDipMicroSizeGatesForSource,
   resolveMildDipWantedSizeUsd,
   type MildDipCandidateMetrics,
   type MildDipEntryGates,
@@ -774,6 +776,59 @@ describe('resolveMildDipWantedSizeUsd', () => {
       metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 12 },
     });
     expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
+  });
+});
+
+describe('mildDipMicroSizeGatesForSource (knife-only)', () => {
+  const micro = {
+    positionUsd: 5,
+    minMarketCapUsd: 15_000,
+    maxMarketCapUsd: 50_000,
+  };
+
+  it('passes micro gates only for knife_stabilize', () => {
+    expect(mildDipMicroSizeGatesForSource(micro, 'knife_stabilize')).toEqual(micro);
+  });
+
+  it('null for all other dipSources', () => {
+    for (const src of [
+      'dex',
+      'stream',
+      'dex+stream',
+      'h1_red_shallow',
+      'flat_micro_dip',
+      'mild_stabilize',
+    ]) {
+      expect(mildDipMicroSizeGatesForSource(micro, src)).toBeNull();
+    }
+  });
+
+  it('null when micro clip is 0', () => {
+    expect(
+      mildDipMicroSizeGatesForSource({ ...micro, positionUsd: 0 }, 'knife_stabilize'),
+    ).toBeNull();
+  });
+});
+
+describe('knifeStabilizeMinMarketCapUsd', () => {
+  it('drops to microMin when micro tier is on', () => {
+    expect(
+      knifeStabilizeMinMarketCapUsd({
+        entryMinMarketCapUsd: 50_000,
+        microPositionUsd: 5,
+        microMinMarketCapUsd: 15_000,
+      }),
+    ).toBe(15_000);
+  });
+
+  it('keeps global floor when micro is off', () => {
+    expect(
+      knifeStabilizeMinMarketCapUsd({
+        entryMinMarketCapUsd: 50_000,
+        microPositionUsd: 0,
+        microMinMarketCapUsd: 15_000,
+      }),
+    ).toBe(50_000);
   });
 });
 

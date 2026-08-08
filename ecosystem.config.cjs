@@ -2789,7 +2789,8 @@ const PM2_APPS = [
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
      * Entry: DexScreener pc5m ∈ (−25, −8]; clips $10 base / $20 thick
-     * (mcap≥$100k / liq≥$50k / age≥6h). Micro tier off (1.11.745).
+     * (mcap≥$100k / liq≥$50k / age≥6h). Micro $15k–$50k @ $5 only on
+     * knife_stabilize (1.11.746); global mcap floor $50k.
      * Exit: arm MFE +5% → half-first giveback / full after scale-out.
      * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live).
      */
@@ -2835,9 +2836,10 @@ const PM2_APPS = [
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
         /**
-         * 1.11.745 — micro tier OFF (was $15k–$50k @ $5). Set >0 to re-enable.
+         * 1.11.746 — micro $15k–$50k @ $5, but ONLY knife_stabilize
+         * (post-knife bounce). Other branches keep base/thick + $50k floor.
          */
-        MILD_DIP_MICRO_POSITION_USD: '0',
+        MILD_DIP_MICRO_POSITION_USD: '5',
         MILD_DIP_MICRO_MIN_MCAP_USD: '15000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -2911,7 +2913,7 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         /**
-         * 1.11.745 — mcap floor back to $50k (micro tier off).
+         * Global entry floor $50k. Knife+micro may arm from $15k (1.11.746).
          */
         MILD_DIP_MIN_MCAP_USD: '50000',
         MILD_DIP_MAX_MCAP_USD: '300000000',

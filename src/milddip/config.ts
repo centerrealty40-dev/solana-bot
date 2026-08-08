@@ -37,7 +37,8 @@ const MildDipConfigSchema = z.object({
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
   /**
    * Micro-cap size-down: mcap ∈ [min, max] → this clip.
-   * 0 = off (1.11.745 live default).
+   * 1.11.746 — live $5, but sizing applies only to knife_stabilize.
+   * 0 = off.
    */
   microPositionUsd: z.coerce.number().min(0).max(10_000).default(0),
   microMinMarketCapUsd: z.coerce.number().min(0).default(15_000),
@@ -350,7 +351,10 @@ export function loadMildDipConfig(): MildDipConfig {
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 500),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
-    /** 1.11.745 — floor $50k (micro tier off; was $15k while micro live). */
+    /**
+     * Global entry floor ($50k). Knife+micro may arm down to
+     * MILD_DIP_MICRO_MIN_MCAP_USD (see knifeStabilizeMinMarketCapUsd).
+     */
     minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 50_000),
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     /** 1.11.724 — floor 30m (was 15m). Youngest bucket had worst cliffs. */
@@ -424,7 +428,7 @@ export function loadMildDipConfig(): MildDipConfig {
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
     thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
-    /** 1.11.745 — micro tier off (0). */
+    /** 1.11.746 — $5 live; knife_stabilize only (see mildDipMicroSizeGatesForSource). */
     microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 0,
     microMinMarketCapUsd: process.env.MILD_DIP_MICRO_MIN_MCAP_USD ?? 15_000,
     microMaxMarketCapUsd: process.env.MILD_DIP_MICRO_MAX_MCAP_USD ?? 50_000,

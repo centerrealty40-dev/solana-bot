@@ -17,6 +17,7 @@ import { mapPool } from './exit-engine.js';
 import {
   evaluateFlatMicroDip,
   evaluateMildDipEntry,
+  knifeStabilizeMinMarketCapUsd,
   type MildDipCandidateMetrics,
 } from './gates.js';
 import { mildDipHotMints } from './hot-mints.js';
@@ -494,7 +495,15 @@ export async function enrichAndFilterCandidates(
       }
 
       // Deep-knife wait branch (only when mild path did not pass).
-      if (!knifeGates.enabled || !structuralOk) return null;
+      // 1.11.746 — micro tier on ⇒ knife may arm down to microMin mcap ($15k).
+      const knifeStructuralOk = structuralGatesPass(metrics, cfg, {
+        minMarketCapUsd: knifeStabilizeMinMarketCapUsd({
+          entryMinMarketCapUsd: cfg.entry.minMarketCapUsd,
+          microPositionUsd: cfg.microPositionUsd,
+          microMinMarketCapUsd: cfg.microMinMarketCapUsd,
+        }),
+      });
+      if (!knifeGates.enabled || !knifeStructuralOk) return null;
 
       const rawStreamDd = mildDipPriceRing.drawdownFromPeakPct(
         mint,
@@ -639,11 +648,16 @@ export async function enrichAndFilterCandidates(
 function structuralGatesPass(
   metrics: MildDipCandidateMetrics,
   cfg: MildDipConfig,
+  opts?: { minMarketCapUsd?: number },
 ): boolean {
   const g = cfg.entry;
+  const minMcap =
+    opts?.minMarketCapUsd != null && Number.isFinite(opts.minMarketCapUsd)
+      ? opts.minMarketCapUsd
+      : g.minMarketCapUsd;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
-  if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
+  if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= minMcap)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
   if (metrics.pairAgeHours == null || metrics.pairAgeHours < g.minPairAgeHours) return false;
   if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
