@@ -636,24 +636,36 @@ export type MildDipThickSizeGates = {
   minPairAgeHours: number;
 };
 
+/** Micro-cap size-down: smaller clip in a mcap band (e.g. $15k–$50k → $5). */
+export type MildDipMicroSizeGates = {
+  /** Target clip when in band; ≤0 → micro tier off. */
+  positionUsd: number;
+  minMarketCapUsd: number;
+  /** Inclusive upper bound. */
+  maxMarketCapUsd: number;
+};
+
 /**
- * Wanted entry notional: base clip, or thick clip when mcap/liq/age all clear.
- * Missing metrics never size up (fail closed).
+ * Wanted entry notional:
+ * - thick clip when mcap/liq/age all clear
+ * - else micro clip when mcap ∈ [microMin, microMax]
+ * - else base
+ * Missing metrics never size up (fail closed); micro needs mcap only.
  */
 export function resolveMildDipWantedSizeUsd(args: {
   basePositionUsd: number;
   thick: MildDipThickSizeGates;
+  micro?: MildDipMicroSizeGates | null;
   metrics: Pick<MildDipCandidateMetrics, 'liquidityUsd' | 'marketCapUsd' | 'pairAgeHours'>;
-}): { sizeUsd: number; tier: 'base' | 'thick' } {
+}): { sizeUsd: number; tier: 'base' | 'thick' | 'micro' } {
   const base = args.basePositionUsd;
   const thickUsd = args.thick.positionUsd;
-  if (!(thickUsd > base + 1e-9)) {
-    return { sizeUsd: base, tier: 'base' };
-  }
   const liq = args.metrics.liquidityUsd;
   const mcap = args.metrics.marketCapUsd;
   const age = args.metrics.pairAgeHours;
+
   if (
+    thickUsd > base + 1e-9 &&
     liq != null &&
     Number.isFinite(liq) &&
     liq >= args.thick.minLiquidityUsd &&
@@ -666,5 +678,22 @@ export function resolveMildDipWantedSizeUsd(args: {
   ) {
     return { sizeUsd: thickUsd, tier: 'thick' };
   }
+
+  const micro = args.micro;
+  const microUsd = micro?.positionUsd ?? 0;
+  if (
+    micro &&
+    microUsd > 0 &&
+    microUsd + 1e-9 < base &&
+    mcap != null &&
+    Number.isFinite(mcap) &&
+    micro.minMarketCapUsd > 0 &&
+    micro.maxMarketCapUsd >= micro.minMarketCapUsd &&
+    mcap >= micro.minMarketCapUsd &&
+    mcap <= micro.maxMarketCapUsd
+  ) {
+    return { sizeUsd: microUsd, tier: 'micro' };
+  }
+
   return { sizeUsd: base, tier: 'base' };
 }

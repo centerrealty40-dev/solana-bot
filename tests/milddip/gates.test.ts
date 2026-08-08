@@ -664,63 +664,113 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
 
 describe('resolveMildDipWantedSizeUsd', () => {
   const thick = {
-    positionUsd: 10,
+    positionUsd: 20,
     minMarketCapUsd: 100_000,
     minLiquidityUsd: 50_000,
     minPairAgeHours: 6,
   };
+  const micro = {
+    positionUsd: 5,
+    minMarketCapUsd: 15_000,
+    maxMarketCapUsd: 50_000,
+  };
 
-  it('sizes thick at $10 when mcap/liq/age clear', () => {
+  it('sizes thick at $20 when mcap/liq/age clear', () => {
     const v = resolveMildDipWantedSizeUsd({
-      basePositionUsd: 5,
+      basePositionUsd: 10,
       thick,
+      micro,
       metrics: { liquidityUsd: 50_000, marketCapUsd: 100_000, pairAgeHours: 6 },
     });
-    expect(v).toEqual({ sizeUsd: 10, tier: 'thick' });
+    expect(v).toEqual({ sizeUsd: 20, tier: 'thick' });
   });
 
-  it('stays base when liq is thin', () => {
+  it('sizes micro at $5 for mcap $15k–$50k', () => {
     const v = resolveMildDipWantedSizeUsd({
-      basePositionUsd: 5,
+      basePositionUsd: 10,
       thick,
+      micro,
+      metrics: { liquidityUsd: 12_000, marketCapUsd: 30_000, pairAgeHours: 1 },
+    });
+    expect(v).toEqual({ sizeUsd: 5, tier: 'micro' });
+  });
+
+  it('micro includes band edges $15k and $50k', () => {
+    expect(
+      resolveMildDipWantedSizeUsd({
+        basePositionUsd: 10,
+        thick,
+        micro,
+        metrics: { liquidityUsd: 12_000, marketCapUsd: 15_000, pairAgeHours: 1 },
+      }),
+    ).toEqual({ sizeUsd: 5, tier: 'micro' });
+    expect(
+      resolveMildDipWantedSizeUsd({
+        basePositionUsd: 10,
+        thick,
+        micro,
+        metrics: { liquidityUsd: 12_000, marketCapUsd: 50_000, pairAgeHours: 1 },
+      }),
+    ).toEqual({ sizeUsd: 5, tier: 'micro' });
+  });
+
+  it('base $10 above micro max when not thick', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 10,
+      thick,
+      micro,
+      metrics: { liquidityUsd: 12_000, marketCapUsd: 50_001, pairAgeHours: 1 },
+    });
+    expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
+  });
+
+  it('stays base when liq is thin (not thick; above micro band)', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 10,
+      thick,
+      micro,
       metrics: { liquidityUsd: 49_999, marketCapUsd: 500_000, pairAgeHours: 12 },
     });
-    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+    expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
   });
 
-  it('stays base when mcap below $100k', () => {
+  it('stays base when mcap below $100k but above micro', () => {
     const v = resolveMildDipWantedSizeUsd({
-      basePositionUsd: 5,
+      basePositionUsd: 10,
       thick,
+      micro,
       metrics: { liquidityUsd: 80_000, marketCapUsd: 99_999, pairAgeHours: 12 },
     });
-    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+    expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
   });
 
-  it('stays base when younger than 6h', () => {
+  it('stays base when younger than 6h (not thick)', () => {
     const v = resolveMildDipWantedSizeUsd({
-      basePositionUsd: 5,
+      basePositionUsd: 10,
       thick,
+      micro,
       metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 5.9 },
     });
-    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+    expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
   });
 
-  it('fail-closed on missing metrics', () => {
+  it('fail-closed on missing mcap (no micro / no thick)', () => {
     const v = resolveMildDipWantedSizeUsd({
-      basePositionUsd: 5,
+      basePositionUsd: 10,
       thick,
+      micro,
       metrics: { liquidityUsd: 80_000, marketCapUsd: null, pairAgeHours: 12 },
     });
-    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+    expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
   });
 
   it('disables size-up when thick ≤ base', () => {
     const v = resolveMildDipWantedSizeUsd({
-      basePositionUsd: 5,
-      thick: { ...thick, positionUsd: 5 },
+      basePositionUsd: 10,
+      thick: { ...thick, positionUsd: 10 },
+      micro,
       metrics: { liquidityUsd: 80_000, marketCapUsd: 200_000, pairAgeHours: 12 },
     });
-    expect(v).toEqual({ sizeUsd: 5, tier: 'base' });
+    expect(v).toEqual({ sizeUsd: 10, tier: 'base' });
   });
 });

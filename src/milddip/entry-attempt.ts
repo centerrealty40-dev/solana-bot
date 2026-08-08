@@ -309,6 +309,11 @@ export async function attemptMildDipEntry(args: {
       minLiquidityUsd: cfg.thickMinLiquidityUsd,
       minPairAgeHours: cfg.thickMinPairAgeHours,
     },
+    micro: {
+      positionUsd: cfg.microPositionUsd,
+      minMarketCapUsd: cfg.microMinMarketCapUsd,
+      maxMarketCapUsd: cfg.microMaxMarketCapUsd,
+    },
     metrics: sizeMetrics,
   });
   const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wanted.sizeUsd);
@@ -461,9 +466,11 @@ export async function attemptMildDipEntry(args: {
   buyInFlight.delete(c.mint);
   saveMildDipState(cfg.statePath, state);
   resetCopyFundingCache();
+  const tierTag =
+    wanted.tier === 'thick' ? ' thick' : wanted.tier === 'micro' ? ' micro' : '';
   console.log(
     `[mild-dip] BUY ${c.symbol} mint=${c.mint.slice(0, 8)}… $${sized.sizeUsd}` +
-      `${wanted.tier === 'thick' ? ' thick' : ''} ` +
+      `${tierTag} ` +
       (isMildStabilize
         ? `bounce=${c.mildStabilizeBouncePct?.toFixed(1)}% dump=${c.mildStabilizeDumpPct?.toFixed(1)}%`
         : `pc5m=${entryPc5m?.toFixed(1)}`) +
