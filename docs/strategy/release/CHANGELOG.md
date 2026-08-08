@@ -1,4 +1,21 @@
 # So
+## [1.11.745] — 2026-08-08
+
+**Тег:** `sa-1.11.745`
+
+### Ops: disable micro size tier ($15k–$50k)
+
+Turn off the $5 micro band. Entry mcap floor back to `$50k`.
+Base/thick remain `$10` / `$20`.
+
+**Live:**
+`MILD_DIP_MICRO_POSITION_USD=0`
+`MILD_DIP_MIN_MCAP_USD=50000`
+
+**Откат:** `MICRO_POSITION_USD=5` + `MIN_MCAP_USD=15000` + reload.
+
+---
+
 ## [1.11.744] — 2026-08-08
 
 **Тег:** `sa-1.11.744`
