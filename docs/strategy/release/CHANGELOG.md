@@ -1,4 +1,20 @@
 # So
+## [1.11.733] — 2026-08-08
+
+**Тег:** `sa-1.11.733`
+
+### Ops: never_arm_stale min hold 10m → 20m
+
+`BV5wre` / `3z8KdA88…`: full-bag `never_arm_stale` at ~11m / MFE 0% /
+pnl −6% — no trail arm, so no partial scale-out. Give unarmed stagnant
+bags 20m before the −5% stale cut (MFE≤2% / pnl≤−5% unchanged).
+
+**Live / default:** `MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS=1200000` (was `600000`).
+
+**Откат:** `MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS=600000` + reload.
+
+---
+
 ## [1.11.732] — 2026-08-08
 
 **Тег:** `sa-1.11.732`

@@ -2946,11 +2946,12 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
         /**
          * 1.11.706 — never-arm exits (keep guardrails, cut losers earlier):
-         * - stale @10m: MFE≤2% and pnl≤−5% (dead-path stagnation)
+         * - stale: MFE≤2% and pnl≤−5% (dead-path stagnation)
          * - dead: pnl≤−10% (was −15%; leader loser med ≈ −10%)
-         * 1.11.728 — dead min hold 15m → 30m (give bounce/scale-in more time).
+         * 1.11.728 — dead min hold 15m → 30m.
+         * 1.11.733 — stale min hold 10m → 20m (BV5wre full-chunk @11m).
          */
-        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '600000',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '1200000',
         MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '2',
         MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '1800000',
