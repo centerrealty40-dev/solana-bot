@@ -1,8 +1,10 @@
 /**
- * Wait-dip entry: on a main-band signal, park instead of buying; enter only
+ * Wait-dip entry: on a qualifying signal, park instead of buying; enter only
  * after price dumps another `waitDipPct` from the signal mark (default −7%).
  *
- * 48h CF: wait −7% then MFE-bank beat immediate hard TP/SL by ~$3k on $100/coin.
+ * 48h CF: wait −7% then MFE-bank ~+$3k on $100/coin. Branch CF: applying the
+ * same wait to `knife_stabilize` / `mild_stabilize` beat main-band-only by
+ * ~+$350 on the book (stabilize immediate was a weak exclusion).
  */
 
 import type { MildDipCandidateMetrics } from './gates.js';
@@ -38,14 +40,20 @@ export type WaitDipReadyVerdict = {
   reasons: string[];
 };
 
-/** Sources that park under wait-dip (not knife / mild_stabilize / already waiting). */
+/**
+ * Sources that park under wait-dip.
+ * All live entry branches wait; only `wait_dip` itself is excluded (already parked).
+ */
 export function waitDipAppliesToSource(dipSource: string | null | undefined): boolean {
+  if (!dipSource || dipSource === 'wait_dip') return false;
   return (
     dipSource === 'dex' ||
     dipSource === 'stream' ||
     dipSource === 'dex+stream' ||
     dipSource === 'h1_red_shallow' ||
-    dipSource === 'flat_micro_dip'
+    dipSource === 'flat_micro_dip' ||
+    dipSource === 'knife_stabilize' ||
+    dipSource === 'mild_stabilize'
   );
 }
 

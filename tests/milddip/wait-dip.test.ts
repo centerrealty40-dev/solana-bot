@@ -30,15 +30,16 @@ const gates: WaitDipGates = {
 };
 
 describe('waitDipAppliesToSource', () => {
-  it('parks main-band sources only', () => {
+  it('parks all entry branches except wait_dip itself', () => {
     expect(waitDipAppliesToSource('dex')).toBe(true);
     expect(waitDipAppliesToSource('dex+stream')).toBe(true);
     expect(waitDipAppliesToSource('stream')).toBe(true);
     expect(waitDipAppliesToSource('h1_red_shallow')).toBe(true);
     expect(waitDipAppliesToSource('flat_micro_dip')).toBe(true);
-    expect(waitDipAppliesToSource('knife_stabilize')).toBe(false);
-    expect(waitDipAppliesToSource('mild_stabilize')).toBe(false);
+    expect(waitDipAppliesToSource('knife_stabilize')).toBe(true);
+    expect(waitDipAppliesToSource('mild_stabilize')).toBe(true);
     expect(waitDipAppliesToSource('wait_dip')).toBe(false);
+    expect(waitDipAppliesToSource(null)).toBe(false);
   });
 });
 

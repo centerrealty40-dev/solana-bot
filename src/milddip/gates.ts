@@ -920,8 +920,9 @@ export function resolveMildDipWantedSizeUsd(args: {
   const mcap = args.metrics.marketCapUsd;
   const age = args.metrics.pairAgeHours;
 
+  // 1.11.754 — allow thick/micro when size == base (flat $30 book).
   if (
-    thickUsd > base + 1e-9 &&
+    thickUsd > 0 &&
     liq != null &&
     Number.isFinite(liq) &&
     liq >= args.thick.minLiquidityUsd &&
@@ -940,7 +941,6 @@ export function resolveMildDipWantedSizeUsd(args: {
   if (
     micro &&
     microUsd > 0 &&
-    microUsd + 1e-9 < base &&
     mcap != null &&
     Number.isFinite(mcap) &&
     micro.minMarketCapUsd > 0 &&
