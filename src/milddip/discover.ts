@@ -548,18 +548,20 @@ export async function enrichAndFilterCandidates(
             };
           }
           mildDipHotMints.clearBuyForce(mint);
-          // Short-red: only real dumps (≤ -1%), not flat 0.00.
+          // Fresh triple spike: allow mild pullback; only block dumps ≤ -8%.
+          // F1Xd 2rgKQQ: triple=3.18/10.83/63.26 then tape_short_red=-16 after,
+          // but the earlier miss was chase — still don't self-kill on -2% noise.
           const shortMs = cfg.greenTapeShortRedWindowMs;
           const shortPc =
             shortMs > 0 ? mildDipPriceRing.changeFromOldestPct(mint, shortMs, nowMs) : null;
-          if (shortPc != null && shortPc <= -1) {
+          if (shortPc != null && shortPc <= -8) {
             return {
               kind: 'skip',
               skip: {
                 mint,
                 entryMode: 'green_tape',
                 reasons: [
-                  `tape_short_red:ring${Math.round(shortMs / 1000)}=${shortPc.toFixed(2)}<=-1`,
+                  `tape_short_red:ring${Math.round(shortMs / 1000)}=${shortPc.toFixed(2)}<=-8`,
                   `triple=${tg.pattern?.small0}/${tg.pattern?.small1}/${tg.pattern?.huge}`,
                 ],
                 metrics,

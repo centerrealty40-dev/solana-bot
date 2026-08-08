@@ -41,8 +41,9 @@ export type TripleGreenVerdict = {
 };
 
 const ohlcvCache = new Map<string, { at: number; bars: Ohlcv1m[]; rateLimited?: boolean }>();
-const OHLCV_TTL_MS = 90_000;
-const OHLCV_TTL_429_MS = 60_000;
+// Short TTL — F1Xd sat on stale last3=18.2,1.5,-2.1 while 11:45 printed +100%.
+const OHLCV_TTL_MS = 25_000;
+const OHLCV_TTL_429_MS = 35_000;
 /** Min gap between Gecko HTTP calls process-wide (public free tier). */
 const GECKO_MIN_GAP_MS = 1_500;
 /** Hard cap — without this every enrich mint hits 429 and buys die. */

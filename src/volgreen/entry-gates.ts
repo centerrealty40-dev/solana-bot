@@ -43,8 +43,9 @@ export function evaluateAwakeningPreBuy(args: {
     reasons.push(`prebuy_pc5m=${pc.toFixed(2)}<min=${minFreshPc5mPct}`);
   }
 
-  if (shortRingPc != null && Number.isFinite(shortRingPc) && shortRingPc <= -1) {
-    reasons.push(`prebuy_short_red:ring60=${shortRingPc.toFixed(2)}<=-1`);
+  // Caller already applies the floor (triple uses -8, else -1); any passed value blocks.
+  if (shortRingPc != null && Number.isFinite(shortRingPc) && shortRingPc < 0) {
+    reasons.push(`prebuy_short_red:ring60=${shortRingPc.toFixed(2)}`);
   }
 
   if (

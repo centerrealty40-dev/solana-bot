@@ -441,9 +441,12 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
-      // triple_green: chase from signal→fresh only (don't clamp by liquidMax=0 paths).
-      const chaseCap =
-        greenTapeEntry && cfg.greenTape.tripleGreenOnly
+      // triple_green: the huge 1m candle IS the chase (F1Xd 2rgKQQ: matched
+      // triple 3/10/63 then prebuy_chase=29%>12 killed the buy ~55s before leader).
+      const tripleEntry = greenTapeEntry && c.entryPath === 'green_tape_triple';
+      const chaseCap = tripleEntry
+        ? Math.max(cfg.maxChasePct, 50)
+        : greenTapeEntry && cfg.greenTape.tripleGreenOnly
           ? cfg.maxChasePct
           : greenTapeEntry
             ? Math.min(
@@ -456,9 +459,12 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         greenTapeEntry && shortRedMs > 0
           ? mildDipPriceRing.changeFromOldestPct(c.mint, shortRedMs, freshNow)
           : null;
-      // Flat ring (0.00) is not a dump — only pass real red into prebuy.
+      // Fresh triple: only block violent dumps (≤ -8%). Mild pullback after huge is normal.
+      const shortFloor = tripleEntry ? -8 : -1;
       const shortRingPc =
-        rawShort != null && Number.isFinite(rawShort) && rawShort <= -1 ? rawShort : null;
+        rawShort != null && Number.isFinite(rawShort) && rawShort <= shortFloor
+          ? rawShort
+          : null;
       const pre =
         awakeningEntry || greenTapeEntry
           ? evaluateAwakeningPreBuy({
@@ -482,6 +488,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
           mint: c.mint,
           symbol: c.symbol,
           entryMode: cfg.entryMode,
+          entryPath: c.entryPath ?? null,
           signalPriceUsd: c.priceUsd,
           signalPc5m: c.metrics.priceChange5mPct,
           freshPriceUsd: freshPx,
@@ -491,7 +498,14 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
         console.log(
           `[mild-dip] SKIP prebuy ${c.symbol} mint=${c.mint.slice(0, 8)}… ${pre.reasons.join(',')}`,
         );
-        state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+        // F1Xd: 120s cooldown after chase skip missed the leader window entirely.
+        // Triple chase/short-red: keep buyForce, only brief cooloff.
+        if (tripleEntry) {
+          mildDipHotMints.markBuyForce(c.mint, nowMs);
+          state.cooldownUntilMs[c.mint] = nowMs + 5_000;
+        } else {
+          state.cooldownUntilMs[c.mint] = nowMs + Math.min(cfg.mintCooldownMs, 120_000);
+        }
         continue;
       }
       if (freshPx != null) entryPriceUsd = freshPx;

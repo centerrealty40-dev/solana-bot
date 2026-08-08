@@ -1,5 +1,23 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.738] — 2026-08-08
+
+**Тег:** `sa-1.11.738`
+
+### Fix: F1Xd 2rgKQQ — saw triple, prebuy_chase killed buy before leader
+
+Leader `7BNaxx` buy 11:47 UTC on `F1XdReo…pump`. We matched
+`triple=3.18/10.83/63.26` at 11:46:20 then `prebuy_chase=29.8%>12`.
+Gecko cache also stuck on stale `last3=18.2,1.5,-2.1` through the +100% bar.
+
+- triple prebuy chase floor **50%**
+- triple short-red floor **-8%** (was -1%)
+- Gecko OHLCV TTL **90s→25s**
+
+**Откат:** chase=maxChase only; short-red -1; TTL 90s.
+
+---
+
 ## [1.11.737] — 2026-08-08
 
 **Тег:** `sa-1.11.737`
