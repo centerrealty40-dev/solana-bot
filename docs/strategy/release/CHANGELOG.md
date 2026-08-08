@@ -1,4 +1,30 @@
 # So
+## [1.11.743] — 2026-08-08
+
+**Тег:** `sa-1.11.743`
+
+### Feature: micro size tier mcap $15k–$50k @ $5
+
+New entry size band below the $10 base clip:
+
+| tier | mcap | clip |
+|------|------|------|
+| micro | $15k–$50k | **$5** |
+| base | >$50k (not thick) | $10 |
+| thick | ≥$100k + liq/age | $20 |
+
+Entry floor lowered `$50k → $15k` so the micro band is eligible.
+
+**Env:**
+`MILD_DIP_MIN_MCAP_USD=15000`
+`MILD_DIP_MICRO_POSITION_USD=5`
+`MILD_DIP_MICRO_MIN_MCAP_USD=15000`
+`MILD_DIP_MICRO_MAX_MCAP_USD=50000`
+
+**Откат:** `MICRO_POSITION_USD=0` + `MIN_MCAP_USD=50000` + reload.
+
+---
+
 ## [1.11.742] — 2026-08-08
 
 **Тег:** `sa-1.11.742`

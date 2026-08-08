@@ -35,6 +35,13 @@ const MildDipConfigSchema = z.object({
   thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
   thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
+  /**
+   * Micro-cap size-down: mcap ∈ [min, max] → this clip (default $5 on $15k–$50k).
+   * 0 = off. Requires entry.minMarketCapUsd ≤ microMin.
+   */
+  microPositionUsd: z.coerce.number().min(0).max(10_000).default(5),
+  microMinMarketCapUsd: z.coerce.number().min(0).default(15_000),
+  microMaxMarketCapUsd: z.coerce.number().min(0).default(50_000),
   /** 0 = unlimited — keep buying while USDC remains. */
   maxOpenPositions: z.coerce.number().int().min(0).max(500).default(0),
   /** Background lane may run at 3s when stream/leader fast-path owns entries. */
@@ -336,8 +343,8 @@ export function loadMildDipConfig(): MildDipConfig {
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 500),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
-    /** 1.11.725 — floor $50k (was $15k). Sub-$50k cut set was the weak tail. */
-    minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 50_000),
+    /** 1.11.743 — floor $15k (was $50k) so micro tier $15k–$50k @ $5 can enter. */
+    minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 15_000),
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     /** 1.11.724 — floor 30m (was 15m). Youngest bucket had worst cliffs. */
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.5),
@@ -410,6 +417,10 @@ export function loadMildDipConfig(): MildDipConfig {
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
     thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
+    /** 1.11.743 — micro tier $15k–$50k @ $5. */
+    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 5,
+    microMinMarketCapUsd: process.env.MILD_DIP_MICRO_MIN_MCAP_USD ?? 15_000,
+    microMaxMarketCapUsd: process.env.MILD_DIP_MICRO_MAX_MCAP_USD ?? 50_000,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,

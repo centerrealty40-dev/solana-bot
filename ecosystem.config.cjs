@@ -2788,10 +2788,10 @@ const PM2_APPS = [
     },
     /**
      * Mild-dip test lane (USDC) — live-oscar-micro wallet.
-     * Entry: DexScreener pc5m ∈ (−25, −8], clip $10; thick $20 when
-     * mcap≥$100k / liq≥$50k / age≥6h; buy impact ≤2%.
-     * Exit: arm MFE +5% → half @ −3% giveback / full @ −8% (no hard TP).
-     * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live, $10/$20 USDC).
+     * Entry: DexScreener pc5m ∈ (−25, −8]; clips $5 micro ($15–50k mcap) /
+     * $10 base / $20 thick (mcap≥$100k / liq≥$50k / age≥6h).
+     * Exit: arm MFE +5% → half-first giveback / full after scale-out.
+     * Start: `pm2 start ecosystem.config.cjs --only mild-dip-bot` (live).
      */
     {
       name: 'mild-dip-bot',
@@ -2834,6 +2834,13 @@ const PM2_APPS = [
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
+        /**
+         * 1.11.743 — micro tier: mcap $15k–$50k → $5 clip.
+         * Entry floor lowered to $15k so this band is eligible.
+         */
+        MILD_DIP_MICRO_POSITION_USD: '5',
+        MILD_DIP_MICRO_MIN_MCAP_USD: '15000',
+        MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
         MILD_DIP_MAX_OPEN_POSITIONS: '0',
         /**
@@ -2905,12 +2912,10 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         /**
-         * 1.11.725 — mcap floor $15k → $50k. 24h closed book: sub-$50k cut set
-         * mean ≈ −5.9% / cliff20 ≈ 21%; keep set mean lift ≈ +0.9pp.
-         * 1.11.727 — floor applies to fresh entries only; open-book scale-in
-         * ignores min mcap (knife can crush mcap below $50k before clip-2).
+         * 1.11.743 — mcap floor $50k → $15k so micro tier ($15k–$50k @ $5) can enter.
+         * Base/thick clips still $10/$20 above the micro band.
          */
-        MILD_DIP_MIN_MCAP_USD: '50000',
+        MILD_DIP_MIN_MCAP_USD: '15000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         /**
          * 1.11.724 — skip pairs younger than 30m (was 0.25h / 15m).
