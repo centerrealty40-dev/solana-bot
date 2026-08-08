@@ -1018,7 +1018,11 @@ export async function runMildDipLoop(
       rpcUrl: cfg.rpcUrl,
       minGapMsPerMint: cfg.streamPriceMinGapMs,
       concurrency: cfg.streamPriceConcurrency,
-      shouldSample: (mint, t) => shouldSampleStreamPrice(state, mint, t, sampleWatchMs),
+      shouldSample: (mint, t) => {
+        // green_tape: sample every streamed mint — build local 1m bars to beat leaders.
+        if (cfg.entryMode === 'green_tape') return true;
+        return shouldSampleStreamPrice(state, mint, t, sampleWatchMs);
+      },
     });
   }
 
@@ -1034,7 +1038,7 @@ export async function runMildDipLoop(
     stats.stream = streamHandle != null;
   }
 
-  // Cheap wallet mentions (2 leaders) — not the pump program firehose.
+  // Leader-follow is OFF by default (always late). Optional via VOL_GREEN_LEADER_WATCH=1.
   let leaderWatch: { stop: () => void } | null = null;
   const leaderWallets = parseLeaderWatchWallets();
   if (leaderWallets.length > 0 && (cfg.entryMode === 'green_tape' || cfg.entryMode === 'awakening')) {

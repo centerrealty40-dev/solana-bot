@@ -492,6 +492,7 @@ export async function enrichAndFilterCandidates(
           const tg = await evaluateTripleGreenEntry({
             pairAddress: details.pairAddress,
             nowMs,
+            localPriceSamples: mildDipPriceRing.listSamples(mint, 20 * 60_000, nowMs),
             gates: {
               enabled: true,
               smallMinPc: cfg.greenTape.tripleSmallMinPc,

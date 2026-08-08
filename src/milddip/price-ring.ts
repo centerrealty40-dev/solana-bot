@@ -155,6 +155,11 @@ export class MildDipPriceRing {
     return this.samplesInWindow(mint, windowMs, nowMs).length;
   }
 
+  /** Raw samples for building local 1m OHLCV (compete with leaders — no Gecko lag). */
+  listSamples(mint: string, windowMs: number, nowMs = Date.now()): MildDipPriceSample[] {
+    return this.samplesInWindow(mint, windowMs, nowMs);
+  }
+
   watchedMints(nowMs = Date.now()): string[] {
     this.pruneAll(nowMs);
     return [...this.byMint.keys()];

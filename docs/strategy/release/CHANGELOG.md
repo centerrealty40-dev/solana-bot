@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.734] — 2026-08-08
+
+**Тег:** `sa-1.11.734`
+
+### Compete: local 1m bars + PumpSwap stream (no leader-follow)
+
+Leader-watch always late. Prefer **local OHLCV from stream prices**;
+PumpSwap-only logsSubscribe (not pump.fun firehose); leader-watch **OFF**.
+triple_green evaluates local bars first, Gecko fallback.
+
+**Откат:** `VOL_GREEN_LEADER_WATCH=1`, STREAM=0, sources=gecko,profiles.
+
+---
+
 ## [1.11.733] — 2026-08-08
 
 **Тег:** `sa-1.11.733`

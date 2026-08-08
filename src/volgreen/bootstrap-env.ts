@@ -109,20 +109,25 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '5');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
-  // Simple mode: no Helius stream. Universe = gecko trending + dex profiles.
-  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'gecko,profiles');
-  setIfAbsent('MILD_DIP_STREAM', '0');
-  setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '0');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '0');
-  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '0');
-  // Calm enrich — serialized Gecko OHLCV needs headroom.
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '2');
-  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '8');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '6');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '20000');
-  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '8000');
-  setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '40');
-  setIfAbsent('DEXSCREENER_MAX_RPM', '40');
+  // Compete: PumpSwap stream only (not full pump.fun firehose) + local 1m bars.
+  // No leader-follow (always late). Gecko is fallback OHLCV only.
+  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream,gecko,profiles');
+  setIfAbsent('MILD_DIP_STREAM', '1');
+  setIfAbsent('MILD_DIP_STREAM_PROGRAM_IDS', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '1');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '2');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '3000');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '20');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '2');
+  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '4');
+  setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '12');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '8');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '15000');
+  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '3000');
+  setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '60');
+  setIfAbsent('DEXSCREENER_MAX_RPM', '60');
   setIfAbsent('MILD_DIP_GREEN_SHORT_RED_WINDOW_MS', '60000');
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
   setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');
@@ -158,9 +163,6 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD', '0');
-  // Cheap: watch 2 leader wallets only (not pump firehose) → force triple eval.
-  setIfAbsent('VOL_GREEN_LEADER_WATCH', '1');
-  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '20');
 }
 
 export const VOL_GREEN_DEFAULT_WALLET_PUBKEY = FXQF;

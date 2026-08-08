@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  buildOhlcv1mFromPriceSamples,
   detectTripleGreen,
   type Ohlcv1m,
   type TripleGreenGates,
@@ -72,6 +73,20 @@ describe('detectTripleGreen', () => {
     ];
     const v = detectTripleGreen(bars, gates, t0 + 30);
     expect(v.pass).toBe(false);
+  });
+
+  it('builds local 1m bars from price samples', () => {
+    const now = Date.now();
+    const samples = [
+      { tsMs: now - 125_000, priceUsd: 1.0 },
+      { tsMs: now - 100_000, priceUsd: 1.05 },
+      { tsMs: now - 70_000, priceUsd: 1.08 },
+      { tsMs: now - 40_000, priceUsd: 1.2 },
+      { tsMs: now - 10_000, priceUsd: 1.5 },
+    ];
+    const bars = buildOhlcv1mFromPriceSamples(samples, { nowMs: now });
+    expect(bars.length).toBeGreaterThanOrEqual(2);
+    expect(bars[0]!.open).toBeGreaterThan(0);
   });
 
   it('rejects stale huge (older than maxAgeAfterHugeMs)', () => {

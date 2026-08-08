@@ -220,20 +220,86 @@ export async function fetchGeckoOhlcv1m(
   });
 }
 
+/**
+ * Build 1m OHLCV from local price-ring / stream samples.
+ * Volume = sample count (proxy); callers should set hugeMinVolUsd=0 for local.
+ */
+export function buildOhlcv1mFromPriceSamples(
+  samples: Array<{ tsMs: number; priceUsd: number }>,
+  opts?: { lookbackMs?: number; nowMs?: number },
+): Ohlcv1m[] {
+  const nowMs = opts?.nowMs ?? Date.now();
+  const lookback = opts?.lookbackMs ?? 20 * 60_000;
+  const cut = nowMs - lookback;
+  const buckets = new Map<number, Ohlcv1m & { n: number }>();
+  for (const s of samples) {
+    if (s.tsMs < cut || !(s.priceUsd > 0)) continue;
+    const minuteSec = Math.floor(s.tsMs / 60_000) * 60;
+    let b = buckets.get(minuteSec);
+    if (!b) {
+      b = {
+        ts: minuteSec,
+        open: s.priceUsd,
+        high: s.priceUsd,
+        low: s.priceUsd,
+        close: s.priceUsd,
+        volumeUsd: 0,
+        n: 0,
+      };
+      buckets.set(minuteSec, b);
+    }
+    b.high = Math.max(b.high, s.priceUsd);
+    b.low = Math.min(b.low, s.priceUsd);
+    b.close = s.priceUsd;
+    b.n += 1;
+    // Proxy vol so hugeMinVol can stay on when mixed with gecko later.
+    b.volumeUsd = b.n * 80;
+  }
+  return [...buckets.values()]
+    .map(({ n: _n, ...bar }) => bar)
+    .sort((a, b) => a.ts - b.ts);
+}
+
 export async function evaluateTripleGreenEntry(args: {
   pairAddress: string | null | undefined;
   gates: TripleGreenGates;
   nowMs?: number;
   fetchImpl?: typeof fetch;
+  /** Local stream/dex price samples — preferred (faster than Gecko / leaders). */
+  localPriceSamples?: Array<{ tsMs: number; priceUsd: number }>;
 }): Promise<TripleGreenVerdict> {
   if (!args.gates.enabled) {
     return { pass: false, reasons: ['triple_green_disabled'] };
   }
+  const nowMs = args.nowMs ?? Date.now();
+  const nowSec = Math.floor(nowMs / 1000);
+
+  // 1) Local 1m bars from stream prices — race the candle, don't wait for leaders/Gecko.
+  if (args.localPriceSamples && args.localPriceSamples.length >= 4) {
+    const localBars = buildOhlcv1mFromPriceSamples(args.localPriceSamples, { nowMs });
+    if (localBars.length >= 3) {
+      const localGates = { ...args.gates, hugeMinVolUsd: 0 };
+      const localHit = detectTripleGreen(localBars, localGates, nowSec);
+      if (localHit.pass) {
+        return {
+          ...localHit,
+          reasons: [],
+          pattern: localHit.pattern
+            ? { ...localHit.pattern, hugeVol: localHit.pattern.hugeVol }
+            : undefined,
+        };
+      }
+    }
+  }
+
+  // 2) Gecko fallback (slower, rate-limited).
   const pair = args.pairAddress?.trim();
-  if (!pair) return { pass: false, reasons: ['triple_missing_pair'] };
+  if (!pair) {
+    return { pass: false, reasons: ['triple_missing_pair_and_local_bars'] };
+  }
   const fetched = await fetchGeckoOhlcv1m(pair, {
     fetchImpl: args.fetchImpl,
-    nowMs: args.nowMs,
+    nowMs,
   });
   if (fetched.rateLimited) {
     return { pass: false, reasons: ['triple_ohlcv_rate_limited'] };
@@ -241,7 +307,6 @@ export async function evaluateTripleGreenEntry(args: {
   if (fetched.bars.length < 3) {
     return { pass: false, reasons: ['triple_ohlcv_insufficient'] };
   }
-  const nowSec = Math.floor((args.nowMs ?? Date.now()) / 1000);
   return detectTripleGreen(fetched.bars, args.gates, nowSec);
 }
 
