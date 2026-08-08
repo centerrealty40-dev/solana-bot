@@ -115,26 +115,27 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM', '1');
   setIfAbsent('MILD_DIP_STREAM_PROGRAM_IDS', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
   setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '1');
-  setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '2');
-  setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '3000');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '3');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '1000');
   setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '20');
   setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '2');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '4');
   setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
-  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '12');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '8');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '15000');
-  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '3000');
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '3');
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '8');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '6');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '12000');
+  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '4000');
+  setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '12');
+  setIfAbsent('VOL_GREEN_MAX_CHASE_PCT', '12');
+  setIfAbsent('LIVE_BUY_MAX_CHASE_PCT', '12');
   setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '60');
   setIfAbsent('DEXSCREENER_MAX_RPM', '60');
   setIfAbsent('MILD_DIP_GREEN_SHORT_RED_WINDOW_MS', '60000');
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
   setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');
   setIfAbsent('MILD_DIP_SLIPPAGE_BPS', '500');
-  // Chase: allow up to 5% fill drift; hops≥3 still blocked (closed-set loss bucket).
-  setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '5');
-  setIfAbsent('LIVE_BUY_MAX_CHASE_PCT', '5');
+  // Chase default set above (12%). hops≥3 still blocked.
   setIfAbsent('MILD_DIP_QUOTE_PREMIUM_GUARD_PCT', '12');
   setIfAbsent('LIVE_BUY_MAX_PRICE_IMPACT_PCT', '2');
   setIfAbsent('LIVE_BUY_MAX_ROUTE_HOPS', '3');

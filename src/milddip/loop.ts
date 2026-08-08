@@ -311,20 +311,25 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       ]
     : priority;
   const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
-  // Hard-cap probe wall: at 180 RPM serialized gap≈333ms, 24 probes ≈ 8s + HTTP.
-  const probeMax = tapeMode
-    ? Math.min(
-        24,
-        Math.max(
-          cfg.probeEnrichMax,
-          cfg.probeEnrichMax +
-            Math.min(8, firstSeenForce.length + spikeForce.length + buyForce.length),
-        ),
-      )
-    : 80;
-  const enrichConcurrency = tapeMode
-    ? Math.min(12, Math.max(6, cfg.enrichConcurrency))
-    : cfg.enrichConcurrency;
+  const tripleOnly = tapeMode && cfg.entryMode === 'green_tape' && cfg.greenTape.tripleGreenOnly;
+  // triple_green: keep probe small — each eval can hit Gecko; bloated probe → 429 → zero buys.
+  const probeMax = tripleOnly
+    ? Math.min(12, Math.max(cfg.probeEnrichMax, buyForce.length + 4))
+    : tapeMode
+      ? Math.min(
+          24,
+          Math.max(
+            cfg.probeEnrichMax,
+            cfg.probeEnrichMax +
+              Math.min(8, firstSeenForce.length + spikeForce.length + buyForce.length),
+          ),
+        )
+      : 80;
+  const enrichConcurrency = tripleOnly
+    ? Math.min(4, Math.max(2, cfg.enrichConcurrency))
+    : tapeMode
+      ? Math.min(12, Math.max(6, cfg.enrichConcurrency))
+      : cfg.enrichConcurrency;
   const enrichStarted = Date.now();
   const enrichPromise = enrichAndFilterCandidates(cfg, mints, {
     nowMs,
@@ -434,17 +439,24 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
-      const chaseCap = greenTapeEntry
-        ? Math.min(
-            cfg.maxChasePct,
-            Math.max(cfg.greenTape.liquidMaxPc5mPct, cfg.greenTape.earlyMaxPc5mPct),
-          )
-        : cfg.maxChasePct;
+      // triple_green: chase from signal→fresh only (don't clamp by liquidMax=0 paths).
+      const chaseCap =
+        greenTapeEntry && cfg.greenTape.tripleGreenOnly
+          ? cfg.maxChasePct
+          : greenTapeEntry
+            ? Math.min(
+                cfg.maxChasePct,
+                Math.max(cfg.greenTape.liquidMaxPc5mPct, cfg.greenTape.earlyMaxPc5mPct),
+              )
+            : cfg.maxChasePct;
       const shortRedMs = cfg.greenTapeShortRedWindowMs;
-      const shortRingPc =
+      const rawShort =
         greenTapeEntry && shortRedMs > 0
           ? mildDipPriceRing.changeFromOldestPct(c.mint, shortRedMs, freshNow)
           : null;
+      // Flat ring (0.00) is not a dump — only pass real red into prebuy.
+      const shortRingPc =
+        rawShort != null && Number.isFinite(rawShort) && rawShort <= -1 ? rawShort : null;
       const pre =
         awakeningEntry || greenTapeEntry
           ? evaluateAwakeningPreBuy({
@@ -795,6 +807,33 @@ async function executeQueuedSell(args: {
       symbol: pos.symbol,
       reason: 'post_drop_empty',
     });
+    return;
+  }
+
+  // Illiquid / quote-dead bags: don't sticky-loop forever (47HLk9 spam 19h+).
+  const holdMs = nowMs - pos.openedAtMs;
+  if (
+    (reason === 'jupiter_sell_quote_failed' || reason === 'no_route') &&
+    holdMs >= 20 * 60_000
+  ) {
+    if (state.open[mint]) {
+      delete state.open[mint];
+      state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
+      saveMildDipState(cfg.statePath, state);
+    }
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_drop_unroutable',
+      mint,
+      symbol: pos.symbol,
+      exitReason: decision.reason,
+      sellReason: reason,
+      holdSec: Math.floor(holdMs / 1000),
+      cooldownMs: cd.cooldownMs,
+    });
+    console.warn(
+      `[mild-dip] DROP unroutable ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+        `hold=${Math.floor(holdMs / 1000)}s sellReason=${reason}`,
+    );
     return;
   }
 

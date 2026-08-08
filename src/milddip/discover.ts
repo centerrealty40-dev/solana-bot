@@ -462,8 +462,11 @@ export async function enrichAndFilterCandidates(
           }
           const liq = metrics.liquidityUsd;
           if (cfg.greenTape.minLiquidityUsd > 0) {
-            if (liq == null) structural.push('missing_liquidity');
-            else if (liq < cfg.greenTape.minLiquidityUsd) {
+            // Null liq on Dex is common for pumpswap — don't hard-kill if mcap/vol ok.
+            if (liq == null) {
+              const vol = metrics.volume5mUsd ?? 0;
+              if (!(vol >= 2_000)) structural.push('missing_liquidity');
+            } else if (liq < cfg.greenTape.minLiquidityUsd) {
               structural.push(`liq=${liq.toFixed(0)}<${cfg.greenTape.minLiquidityUsd}`);
             }
           }
@@ -489,10 +492,13 @@ export async function enrichAndFilterCandidates(
               },
             };
           }
+          const forceSet = new Set(forceList);
           const tg = await evaluateTripleGreenEntry({
             pairAddress: details.pairAddress,
             nowMs,
             localPriceSamples: mildDipPriceRing.listSamples(mint, 20 * 60_000, nowMs),
+            // Only priority/force mints spend Gecko HTTP — stops 429 storm.
+            allowGeckoHttp: forceSet.has(mint) || (metrics.volume5mUsd ?? 0) >= 8_000,
             gates: {
               enabled: true,
               smallMinPc: cfg.greenTape.tripleSmallMinPc,
@@ -516,18 +522,18 @@ export async function enrichAndFilterCandidates(
               },
             };
           }
-          // Short-red still blocks (don't buy into an immediate dump).
+          // Short-red: only real dumps (≤ -1%), not flat 0.00.
           const shortMs = cfg.greenTapeShortRedWindowMs;
           const shortPc =
             shortMs > 0 ? mildDipPriceRing.changeFromOldestPct(mint, shortMs, nowMs) : null;
-          if (shortPc != null && shortPc <= 0) {
+          if (shortPc != null && shortPc <= -1) {
             return {
               kind: 'skip',
               skip: {
                 mint,
                 entryMode: 'green_tape',
                 reasons: [
-                  `tape_short_red:ring${Math.round(shortMs / 1000)}=${shortPc.toFixed(2)}<=0`,
+                  `tape_short_red:ring${Math.round(shortMs / 1000)}=${shortPc.toFixed(2)}<=-1`,
                   `triple=${tg.pattern?.small0}/${tg.pattern?.small1}/${tg.pattern?.huge}`,
                 ],
                 metrics,

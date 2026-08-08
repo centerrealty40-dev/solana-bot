@@ -1,5 +1,24 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.735] — 2026-08-08
+
+**Тег:** `sa-1.11.735`
+
+### Fix: zero buys — Gecko 429 storm + prebuy false blocks
+
+Root cause: every enrich mint hit Gecko → `triple_ohlcv_rate_limited`
+(~300 skips). Rare candidates killed by `prebuy_chase` / flat `short_red=0`.
+Stuck `jupiter_sell_quote_failed` bag spammed exits.
+
+- Gecko HTTP budget 6/min; only force/vol≥8k spend HTTP
+- Local bars first (samples≥3); longer cache; smaller probe
+- chase 12%; short-red only ≤ -1%; null liq ok if vol5m≥2k
+- Drop unroutable sticky bags after 20m
+
+**Откат:** prior chase=5 / unlimited gecko per enrich.
+
+---
+
 ## [1.11.734] — 2026-08-08
 
 **Тег:** `sa-1.11.734`

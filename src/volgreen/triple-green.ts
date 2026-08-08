@@ -41,13 +41,33 @@ export type TripleGreenVerdict = {
 };
 
 const ohlcvCache = new Map<string, { at: number; bars: Ohlcv1m[]; rateLimited?: boolean }>();
-const OHLCV_TTL_MS = 45_000;
-const OHLCV_TTL_429_MS = 20_000;
+const OHLCV_TTL_MS = 90_000;
+const OHLCV_TTL_429_MS = 60_000;
 /** Min gap between Gecko HTTP calls process-wide (public free tier). */
-const GECKO_MIN_GAP_MS = 1_250;
+const GECKO_MIN_GAP_MS = 1_500;
+/** Hard cap — without this every enrich mint hits 429 and buys die. */
+const GECKO_MAX_HTTP_PER_MIN = 6;
 
 let geckoChain: Promise<void> = Promise.resolve();
 let geckoNextAt = 0;
+let geckoHttpWindowStartMs = 0;
+let geckoHttpInWindow = 0;
+
+function geckoBudgetAllow(nowMs: number): boolean {
+  if (nowMs - geckoHttpWindowStartMs >= 60_000) {
+    geckoHttpWindowStartMs = nowMs;
+    geckoHttpInWindow = 0;
+  }
+  return geckoHttpInWindow < GECKO_MAX_HTTP_PER_MIN;
+}
+
+function geckoBudgetConsume(nowMs: number): void {
+  if (nowMs - geckoHttpWindowStartMs >= 60_000) {
+    geckoHttpWindowStartMs = nowMs;
+    geckoHttpInWindow = 0;
+  }
+  geckoHttpInWindow += 1;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
@@ -139,6 +159,8 @@ export function detectTripleGreen(
 export type OhlcvFetchResult = {
   bars: Ohlcv1m[];
   rateLimited: boolean;
+  /** True when process-wide HTTP budget exhausted (no request sent). */
+  budgetSkipped?: boolean;
 };
 
 export async function fetchGeckoOhlcv1m(
@@ -166,14 +188,21 @@ export async function fetchGeckoOhlcv1m(
     if (again && t - again.at < (again.rateLimited ? OHLCV_TTL_429_MS : OHLCV_TTL_MS)) {
       return { bars: again.bars, rateLimited: !!again.rateLimited };
     }
+    if (!geckoBudgetAllow(t)) {
+      if (again && again.bars.length > 0) {
+        return { bars: again.bars, rateLimited: false };
+      }
+      return { bars: [], rateLimited: false, budgetSkipped: true };
+    }
+    geckoBudgetConsume(t);
     try {
       const res = await doFetch(url, {
         headers: { accept: 'application/json' },
         signal: AbortSignal.timeout(8_000),
       });
       if (res.status === 429) {
-        ohlcvCache.set(pair, { at: t, bars: [], rateLimited: true });
-        return { bars: [], rateLimited: true };
+        ohlcvCache.set(pair, { at: t, bars: again?.bars ?? [], rateLimited: true });
+        return { bars: again?.bars ?? [], rateLimited: true };
       }
       if (!res.ok) {
         ohlcvCache.set(pair, { at: t, bars: [], rateLimited: false });
@@ -267,6 +296,11 @@ export async function evaluateTripleGreenEntry(args: {
   fetchImpl?: typeof fetch;
   /** Local stream/dex price samples — preferred (faster than Gecko / leaders). */
   localPriceSamples?: Array<{ tsMs: number; priceUsd: number }>;
+  /**
+   * When false, never hit Gecko HTTP (local/cache only). Use for non-priority
+   * mints so force/hot keep the 6/min budget.
+   */
+  allowGeckoHttp?: boolean;
 }): Promise<TripleGreenVerdict> {
   if (!args.gates.enabled) {
     return { pass: false, reasons: ['triple_green_disabled'] };
@@ -274,38 +308,62 @@ export async function evaluateTripleGreenEntry(args: {
   const nowMs = args.nowMs ?? Date.now();
   const nowSec = Math.floor(nowMs / 1000);
 
-  // 1) Local 1m bars from stream prices — race the candle, don't wait for leaders/Gecko.
-  if (args.localPriceSamples && args.localPriceSamples.length >= 4) {
+  // 1) Local 1m bars from stream/dex prices — race the candle.
+  let localMissReason: string | null = null;
+  if (args.localPriceSamples && args.localPriceSamples.length >= 3) {
     const localBars = buildOhlcv1mFromPriceSamples(args.localPriceSamples, { nowMs });
     if (localBars.length >= 3) {
       const localGates = { ...args.gates, hugeMinVolUsd: 0 };
       const localHit = detectTripleGreen(localBars, localGates, nowSec);
-      if (localHit.pass) {
-        return {
-          ...localHit,
-          reasons: [],
-          pattern: localHit.pattern
-            ? { ...localHit.pattern, hugeVol: localHit.pattern.hugeVol }
-            : undefined,
-        };
-      }
+      if (localHit.pass) return localHit;
+      localMissReason = localHit.reasons[0] ?? 'triple_pattern_not_found';
+    } else {
+      localMissReason = `triple_local_bars=${localBars.length}<3`;
     }
+  } else {
+    localMissReason = `triple_local_samples=${args.localPriceSamples?.length ?? 0}<3`;
   }
 
-  // 2) Gecko fallback (slower, rate-limited).
+  // 2) Gecko fallback — optional + budgeted.
   const pair = args.pairAddress?.trim();
   if (!pair) {
-    return { pass: false, reasons: ['triple_missing_pair_and_local_bars'] };
+    return {
+      pass: false,
+      reasons: [localMissReason ?? 'triple_missing_pair_and_local_bars'],
+    };
+  }
+  if (args.allowGeckoHttp === false) {
+    // Still serve warm cache without consuming HTTP budget.
+    const cached = ohlcvCache.get(pair);
+    if (cached && !cached.rateLimited && cached.bars.length >= 3) {
+      return detectTripleGreen(cached.bars, args.gates, nowSec);
+    }
+    return {
+      pass: false,
+      reasons: [localMissReason ?? 'triple_pattern_not_found', 'triple_gecko_deferred'],
+    };
   }
   const fetched = await fetchGeckoOhlcv1m(pair, {
     fetchImpl: args.fetchImpl,
     nowMs,
   });
-  if (fetched.rateLimited) {
-    return { pass: false, reasons: ['triple_ohlcv_rate_limited'] };
+  if (fetched.budgetSkipped) {
+    return {
+      pass: false,
+      reasons: [localMissReason ?? 'triple_pattern_not_found', 'triple_ohlcv_budget'],
+    };
+  }
+  if (fetched.rateLimited && fetched.bars.length < 3) {
+    return {
+      pass: false,
+      reasons: [localMissReason ?? 'triple_pattern_not_found', 'triple_ohlcv_rate_limited'],
+    };
   }
   if (fetched.bars.length < 3) {
-    return { pass: false, reasons: ['triple_ohlcv_insufficient'] };
+    return {
+      pass: false,
+      reasons: [localMissReason ?? 'triple_ohlcv_insufficient'],
+    };
   }
   return detectTripleGreen(fetched.bars, args.gates, nowSec);
 }
