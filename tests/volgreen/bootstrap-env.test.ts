@@ -23,7 +23,9 @@ const KEYS = [
   'MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT',
   'MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN',
   'MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN',
-  'MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY',
+  'MILD_DIP_STREAM',
+  'MILD_DIP_STREAM_PRICE_SAMPLE',
+  'MILD_DIP_DISCOVER_SOURCES',
   'MILD_DIP_GREEN_SHORT_RED_WINDOW_MS',
   'MILD_DIP_GREEN_TRIPLE_ONLY',
   'MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC',
@@ -39,6 +41,8 @@ const KEYS = [
   'MILD_DIP_ENRICH_CONCURRENCY',
   'MILD_DIP_ENRICH_BUDGET_MS',
   'MILD_DIP_SCAN_INTERVAL_MS',
+  'DEXSCREENER_GLOBAL_MAX_RPM',
+  'DEXSCREENER_MAX_RPM',
   'VOL_GREEN_POSITION_USD',
   'MILD_DIP_POSITION_USD',
   'VOL_GREEN_ENTRY_MODE',
@@ -70,13 +74,16 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC).toBe('20');
     expect(process.env.MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT).toBe('0');
     expect(process.env.MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT).toBe('0');
-    expect(process.env.MILD_DIP_GREEN_EARLY_MIN_PC5M_PCT).toBe('0');
-    expect(process.env.MILD_DIP_GREEN_ROCKET_MIN_PC5M_PCT).toBe('0');
-    expect(process.env.MILD_DIP_GREEN_LIQUID_TAPE_MIN_LIQUIDITY_USD).toBe('0');
+    expect(process.env.MILD_DIP_STREAM).toBe('0');
+    expect(process.env.MILD_DIP_STREAM_PRICE_SAMPLE).toBe('0');
+    expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN).toBe('0');
+    expect(process.env.MILD_DIP_DISCOVER_SOURCES).toBe('boosts,profiles');
     expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.5');
     expect(process.env.MILD_DIP_EXIT_MAX_HOLD_MS).toBe('600000');
-    expect(process.env.MILD_DIP_MAX_ENRICH).toBe('14');
-    expect(process.env.MILD_DIP_ENRICH_BUDGET_MS).toBe('22000');
+    expect(process.env.MILD_DIP_MAX_ENRICH).toBe('8');
+    expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('12');
+    expect(process.env.MILD_DIP_SCAN_INTERVAL_MS).toBe('5000');
+    expect(process.env.DEXSCREENER_GLOBAL_MAX_RPM).toBe('60');
   });
 
   it('maps VOL_GREEN_POSITION_USD into MILD_DIP_POSITION_USD', () => {

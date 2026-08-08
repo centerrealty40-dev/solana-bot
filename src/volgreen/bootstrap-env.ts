@@ -109,22 +109,21 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '5');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
-  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');
-  setIfAbsent('MILD_DIP_STREAM', '1');
-  // Fast tape loop: was conc=4 / probe=48 / scan=5s → enrich 25–40s lag vs leaders.
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '10');
-  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '20');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '14');
-  // 22s: hard probe cap 24 @180 RPM ≈8–12s + HTTP; was 15s → constant over-budget.
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '22000');
-  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '2000');
-  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '6');
-  // PumpSwap Buy logs often omit mint — getTx resolve so we see candles ourselves.
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '40');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '3');
-  setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '180');
-  setIfAbsent('DEXSCREENER_MAX_RPM', '180');
-  // Block Dex-green / local-red (goon dip-buy).
+  // Simple mode: no Helius logsSubscribe / getTx resolve / stream prices.
+  // Universe = Dex boosts+profiles; entry = Gecko 1m triple_green only.
+  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'boosts,profiles');
+  setIfAbsent('MILD_DIP_STREAM', '0');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '0');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '0');
+  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '0');
+  // Calm enrich — no stream race.
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '4');
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '12');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '8');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '15000');
+  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '5000');
+  setIfAbsent('DEXSCREENER_GLOBAL_MAX_RPM', '60');
+  setIfAbsent('DEXSCREENER_MAX_RPM', '60');
   setIfAbsent('MILD_DIP_GREEN_SHORT_RED_WINDOW_MS', '60000');
   setIfAbsent('MILD_DIP_JOURNAL_ENTRY_SKIPS', '1');
   setIfAbsent('DEX_QUOTE_CACHE_ENABLED', '0');

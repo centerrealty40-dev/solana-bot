@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.731] — 2026-08-08
+
+**Тег:** `sa-1.11.731`
+
+### Simplify: kill Helius stream load for vol-green
+
+No logsSubscribe / buy-mint-resolve / stream-price. Universe =
+Dex **boosts+profiles**. Entry still triple_green (Gecko 1m). Calm enrich
+(scan 5s, probe 12, Dex 60 RPM).
+
+**Откат:** STREAM=1, sources=stream, resolve=40, Dex 180 RPM.
+
+---
+
 ## [1.11.730] — 2026-08-08
 
 **Тег:** `sa-1.11.730`

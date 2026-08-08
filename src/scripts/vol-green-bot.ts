@@ -124,6 +124,8 @@ async function main(): Promise<void> {
     : 'legacy_or_paths';
   console.log(
     `[${appName()}] start mode=${cfg.executionMode} entry=${cfg.entryMode} ${triple} ` +
+      `sources=${cfg.discoverSources} stream=${cfg.streamEnabled ? 1 : 0} ` +
+      `resolve=${cfg.buyMintResolveMaxPerMin}/min ` +
       `positionUsd=${cfg.positionUsd} wallet=${cfg.walletPubkeyExpected ?? '?'} ` +
       `rpcHost=${rpcHost}`,
   );
