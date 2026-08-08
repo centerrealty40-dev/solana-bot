@@ -336,8 +336,15 @@ const MildDipConfigSchema = z.object({
      * 1.11.747 — never-arm bounce reclaim (sell into bounce off post-entry trough).
      * 0 bouncePct = off.
      */
-    neverArmBounceMinDumpPct: z.coerce.number().min(0).max(100).default(5),
-    neverArmBouncePct: z.coerce.number().min(0).max(100).default(6),
+    neverArmBounceMinDumpPct: z.coerce.number().min(0).max(100).default(8),
+    neverArmBouncePct: z.coerce.number().min(0).max(100).default(8),
+    neverArmBounceMinTroughAgeMs: z.coerce
+      .number()
+      .int()
+      .min(0)
+      .max(3_600_000)
+      .default(60_000),
+    neverArmBounceRequireRedPct: z.coerce.number().min(0).max(100).default(3),
     /** Never-arm freefall floor (no bounce). 0 = off. */
     neverArmFreefallPnlPct: z.coerce.number().min(0).max(100).default(25),
     neverArmFreefallMinMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
@@ -444,11 +451,20 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 1.11.697 — LP-pull cliff: exit immediately at ≤ −50% mark pnl. */
     cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
     /**
-     * 1.11.747 — never-arm: after trough ≤ −5% vs entry, bounce ≥ 6% → full exit.
-     * Freefall floor −25% if no bounce ever prints (not sit to cliff −50%).
+     * 1.11.751 — never-arm bounce hardened vs stream-wick churn (F1XdRe/AENK1Y):
+     * trough ≤ −8%, bounce ≥ 8%, trough age ≥ 60s, still red ≤ −3% vs entry.
+     * Freefall floor −25% if no bounce ever prints.
      */
-    neverArmBounceMinDumpPct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT', 5),
-    neverArmBouncePct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT', 6),
+    neverArmBounceMinDumpPct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT', 8),
+    neverArmBouncePct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT', 8),
+    neverArmBounceMinTroughAgeMs: envNum(
+      'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS',
+      60_000,
+    ),
+    neverArmBounceRequireRedPct: envNum(
+      'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT',
+      3,
+    ),
     neverArmFreefallPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', 25),
     neverArmFreefallMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS', 60_000),
   };

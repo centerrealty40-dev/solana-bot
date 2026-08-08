@@ -1,4 +1,31 @@
 # So
+## [1.11.751] — 2026-08-08
+
+**Тег:** `sa-1.11.751`
+
+### Fix: harden never_arm_bounce (stream-wick churn)
+
+`F1XdRe` / `AENK1Y`: bought → ~4m later `never_arm_bounce` sold near
+entry (−2% / −7% fill) off a stream wick trough + one-tick reclaim.
+No real dump/bounce on the chart.
+
+**Tighten:**
+- trough dump ≤ `−8%` (was −5%), bounce ≥ `8%` (was 6%)
+- trough must be the low for ≥ `60s`
+- exit only while still red ≤ `−3%` vs entry (no near-flat churn)
+
+Freefall `−25%` unchanged for endless dumps without reclaim.
+
+**Live:**
+`MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT=8`
+`MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT=8`
+`MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS=60000`
+`MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT=3`
+
+**Откат:** prior 1.11.747 bounce envs + reload.
+
+---
+
 ## [1.11.750] — 2026-08-08
 
 **Тег:** `sa-1.11.750`

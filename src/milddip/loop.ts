@@ -819,6 +819,7 @@ async function tryExits(
             pnlPct: 0,
             volFadeSamples: pos.volFadeSamples ?? [],
             postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+            postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
           });
         }
       }
@@ -1194,7 +1195,9 @@ export async function runMildDipLoop(
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}` +
       `/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%` +
-      `/bounce≥${cfg.exit.neverArmBouncePct}% ` +
+      `/bounce≥${cfg.exit.neverArmBouncePct}%` +
+      `/troughAge${Math.round(cfg.exit.neverArmBounceMinTroughAgeMs / 1000)}s` +
+      `/stillRed≥${cfg.exit.neverArmBounceRequireRedPct}% ` +
       `neverArmFreefall=${cfg.exit.neverArmFreefallPnlPct > 0 ? 1 : 0}` +
       `/-${cfg.exit.neverArmFreefallPnlPct}%` +
       `/${Math.round(cfg.exit.neverArmFreefallMinMs / 1000)}s ` +

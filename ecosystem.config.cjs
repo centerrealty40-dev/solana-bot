@@ -2978,13 +2978,14 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         /**
-         * 1.11.747 — never-arm blood branch:
-         * 1) trough ≤ −5% then bounce ≥ 6% off trough → full exit (sell into bounce)
-         * 2) else pnl ≤ −25% after 60s → freefall floor (no bounce / endless dump)
-         * cliff −50% remains the ultra-hard rug cut; dead/stale stay as time backups.
+         * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
+         * trough ≤ −8%, bounce ≥ 8%, trough age ≥ 60s, still ≤ −3% vs entry.
+         * Freefall −25%/60s if no bounce; cliff −50% ultra-hard.
          */
-        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT: '5',
-        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '6',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT: '8',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '8',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS: '60000',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT: '3',
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '25',
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '60000',
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
