@@ -428,6 +428,33 @@ async function tryFastPathForMint(
   return result === 'filled';
 }
 
+/**
+ * Leader buys only highlight mints — we still decide via our gates
+ * (main / h1_red / knife_stabilize). Must run even while bags are open;
+ * 1.11.739 skipped all tryEntries when open>0 and starved this wake path.
+ */
+async function wakeLeaderSeeds(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<number> {
+  if (!cfg.fastPathEnabled) return 0;
+  const unlimited = cfg.maxOpenPositions <= 0;
+  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
+  const leaders = readLeaderSeedMints(cfg.leaderSeedPath, nowMs, {
+    maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
+    max: cfg.leaderSeedMax,
+  });
+  let n = 0;
+  for (const mint of leaders) {
+    if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+    if (state.open[mint]) continue;
+    await tryFastPathForMint(cfg, state, mint, 'leader', nowMs);
+    n += 1;
+  }
+  return n;
+}
+
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
@@ -435,16 +462,7 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
 
   // Fast lane first: leader seeds (new buys) — do not wait for enrich batch.
   if (cfg.fastPathEnabled) {
-    const leaders = readLeaderSeedMints(cfg.leaderSeedPath, nowMs, {
-      maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
-      max: cfg.leaderSeedMax,
-    });
-    for (const mint of leaders) {
-      if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
-      // Open mints already handled above for scale-in.
-      if (state.open[mint]) continue;
-      await tryFastPathForMint(cfg, state, mint, 'leader', nowMs);
-    }
+    await wakeLeaderSeeds(cfg, state, nowMs);
     // Hot stream mints — prefer in-band stream drawdown, but still Dex-probe
     // when the ring has no dd yet (do not wait for a leader seed).
     for (const mint of mildDipHotMints.list(nowMs).slice(0, 40)) {
@@ -1230,6 +1248,7 @@ export async function runMildDipLoop(
   let lastScan = 0;
   let lastMark = 0;
   let lastFeeTopupTickMs = 0;
+  let lastLeaderWakeMs = 0;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
@@ -1268,10 +1287,25 @@ export async function runMildDipLoop(
     }
 
     /**
+     * Leader seeds must wake even while bags are open (CgnQ8a / 5zHbZ2…):
+     * observer writes seed, we decide via our gates. Do not await — marks stay
+     * on cadence. Slow enrich/scan still only when flat.
+     */
+    if (cfg.fastPathEnabled && nowMs - lastLeaderWakeMs >= 2_000) {
+      lastLeaderWakeMs = nowMs;
+      void wakeLeaderSeeds(cfg, state, nowMs).catch((err) => {
+        console.warn(
+          '[mild-dip] leader-seed wake failed',
+          err instanceof Error ? err.message : err,
+        );
+      });
+    }
+
+    /**
      * While bags are open: never await tryEntries on this loop.
      * Soft "scanWouldStealMark" heuristic failed live — after a fast stream
      * mark pass, scan still ran and blocked the next mark for 10–15s.
-     * Stream fast-path owns buys; slow enrich/scan only when flat.
+     * Stream onMint fast-path + leader-seed wake own buys; slow enrich when flat.
      */
     if (opens === 0 && nowMs - lastScan >= cfg.scanIntervalMs) {
       await tryEntries(cfg, state, nowMs);
