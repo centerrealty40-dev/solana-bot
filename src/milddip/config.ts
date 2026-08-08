@@ -208,11 +208,17 @@ const MildDipConfigSchema = z.object({
    */
   fastPathSoftSkipCooldownMs: z.coerce.number().int().min(0).max(120_000).default(0),
   /**
-   * Stream-only main-band entries (no Dex pc5m confirm) must be at least this
-   * deep (more negative / equal). Blocks −5% wiggle buys that aren't dumps.
-   * Dex+stream / Dex-only still use entry.maxDipPct (−8).
+   * Stream-only main-band entries must be at least this deep (more negative).
+   * Blocks −5% ring wiggles (Gs2Liw). Dex+stream / Dex-only use entry band.
    */
   streamOnlyMaxDipPct: z.coerce.number().max(0).default(-10),
+  /**
+   * When true (live default): stream-only also needs Dex pc5m ≤ dexMaxDipPct.
+   * JBKWfC 07:47 — ring −21% / Dex ≈0 after reclaim; leaders sat out.
+   */
+  streamOnlyRequireDexDip: z.boolean().default(true),
+  /** Dex ceiling for stream-only (e.g. −8 = still a dump on Dex tape). */
+  streamOnlyDexMaxDipPct: z.coerce.number().max(0).default(-8),
   /** Reuse structural Dex metrics this long (ms). */
   fastPathStructuralCacheMs: z.coerce.number().int().min(1_000).max(120_000).default(8_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
@@ -460,6 +466,8 @@ export function loadMildDipConfig(): MildDipConfig {
     fastPathHotDexProbeMaxPerMin: process.env.MILD_DIP_FAST_PATH_HOT_DEX_PROBE_MAX_PER_MIN ?? 40,
     fastPathSoftSkipCooldownMs: process.env.MILD_DIP_FAST_PATH_SOFT_SKIP_MS ?? 0,
     streamOnlyMaxDipPct: process.env.MILD_DIP_STREAM_ONLY_MAX_DIP_PCT ?? -10,
+    streamOnlyRequireDexDip: envBool('MILD_DIP_STREAM_ONLY_REQUIRE_DEX_DIP', true),
+    streamOnlyDexMaxDipPct: process.env.MILD_DIP_STREAM_ONLY_DEX_MAX_DIP_PCT ?? -8,
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,

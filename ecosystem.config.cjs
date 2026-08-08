@@ -2999,8 +2999,14 @@ const PM2_APPS = [
         MILD_DIP_FAST_PATH_MIN_GAP_MS: '2000',
         /** No soft-ban after impact/sim fail — retry next tick (Jupiter, not Helius). */
         MILD_DIP_FAST_PATH_SOFT_SKIP_MS: '0',
-        /** Stream-only main band must be ≤ −10% (Dex confirm still allows −5). */
+        /** Stream-only main band must be ≤ −10% ring dump. */
         MILD_DIP_STREAM_ONLY_MAX_DIP_PCT: '-10',
+        /**
+         * 1.11.731 — stream-only also needs Dex still dumping (≤ −8).
+         * Blocks post-reclaim phantoms (JBKWfC: ring −21% / Dex ≈ flat).
+         */
+        MILD_DIP_STREAM_ONLY_REQUIRE_DEX_DIP: '1',
+        MILD_DIP_STREAM_ONLY_DEX_MAX_DIP_PCT: '-8',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
         /**
          * 1.11.713 — Dex-probe stream-hot mints even when local ring dd is

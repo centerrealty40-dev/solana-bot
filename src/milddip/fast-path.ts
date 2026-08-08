@@ -98,6 +98,22 @@ export function inDipBand(
   return dipPct != null && Number.isFinite(dipPct) && dipPct > minDipPct && dipPct <= maxDipPct;
 }
 
+/**
+ * Stream-only gate: Dex must still print a dump (≤ dexMaxDipPct).
+ * Blocks JBKWfC-class phantoms — ring −21% while Dex ≈ flat after reclaim.
+ * Not "finding the bottom": just refuse stream when the market tape disagrees.
+ */
+export function streamOnlyDexDipOk(args: {
+  requireDexDip: boolean;
+  dexPc5m: number | null | undefined;
+  dexMaxDipPct: number;
+}): boolean {
+  if (!args.requireDexDip) return true;
+  const d = args.dexPc5m;
+  if (d == null || !Number.isFinite(d)) return false;
+  return d <= args.dexMaxDipPct;
+}
+
 /** Exported for unit tests — structural floors on fast-path candidates. */
 export function structuralOk(metrics: MildDipCandidateMetrics, cfg: MildDipConfig): boolean {
   const g = cfg.entry;
@@ -225,9 +241,17 @@ export async function evaluateFastPathCandidate(
     const last = mildDipPriceRing.lastPrice(mint, nowMs);
     if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
   } else if (streamInMain && cfg.streamDipEntryEnabled) {
-    // Stream-only: require a real dump, not a −5% ring wiggle (Gs2Liw-class).
+    // Stream-only: deep ring dump + Dex still red (not a post-reclaim phantom).
     if (streamDd == null || !(streamDd <= cfg.streamOnlyMaxDipPct)) {
       /* fall through — maybe Dex / h1 / flat_micro still qualify */
+    } else if (
+      !streamOnlyDexDipOk({
+        requireDexDip: cfg.streamOnlyRequireDexDip,
+        dexPc5m: dexPc,
+        dexMaxDipPct: cfg.streamOnlyDexMaxDipPct,
+      })
+    ) {
+      /* Dex flat/green while ring dumps — leader-style skip */
     } else {
       dipSource = 'stream';
       metrics = { ...metrics, priceChange5mPct: streamDd };

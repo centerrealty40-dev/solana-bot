@@ -3,6 +3,7 @@ import {
   allowHotDexProbe,
   inDipBand,
   resetFastPathStateForTests,
+  streamOnlyDexDipOk,
   structuralOk,
 } from '../../src/milddip/fast-path.js';
 import type { MildDipConfig } from '../../src/milddip/config.js';
@@ -62,6 +63,49 @@ describe('fast-path helpers', () => {
     expect(dump <= streamOnlyMax).toBe(true);
     // Still in main band — Dex confirm would allow it.
     expect(inDipBand(wiggle, -25, -5)).toBe(true);
+  });
+
+  it('stream-only requires Dex still red (JBKWfC phantom reclaim)', () => {
+    // Ring −21% but Dex ≈ flat after reclaim — leaders sat out.
+    expect(
+      streamOnlyDexDipOk({
+        requireDexDip: true,
+        dexPc5m: -0.53,
+        dexMaxDipPct: -8,
+      }),
+    ).toBe(false);
+    // Leader-style mild_deep: Dex still printing dump.
+    expect(
+      streamOnlyDexDipOk({
+        requireDexDip: true,
+        dexPc5m: -13.31,
+        dexMaxDipPct: -8,
+      }),
+    ).toBe(true);
+    // Deep knife Dex (−37) while stream in main — ok.
+    expect(
+      streamOnlyDexDipOk({
+        requireDexDip: true,
+        dexPc5m: -37.13,
+        dexMaxDipPct: -8,
+      }),
+    ).toBe(true);
+    // Missing Dex print → do not stream-enter blind.
+    expect(
+      streamOnlyDexDipOk({
+        requireDexDip: true,
+        dexPc5m: null,
+        dexMaxDipPct: -8,
+      }),
+    ).toBe(false);
+    // Flag off → legacy allow.
+    expect(
+      streamOnlyDexDipOk({
+        requireDexDip: false,
+        dexPc5m: -0.53,
+        dexMaxDipPct: -8,
+      }),
+    ).toBe(true);
   });
 
   it('allowHotDexProbe throttles per mint and per minute', () => {

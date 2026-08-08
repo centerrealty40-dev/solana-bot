@@ -869,7 +869,8 @@ export async function runMildDipLoop(
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
-      `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0} ` +
+      `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0}` +
+      `/reqDex=${cfg.streamOnlyRequireDexDip ? 1 : 0}≤${cfg.streamOnlyDexMaxDipPct} ` +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
       `/skipBounce=${cfg.fastPathSkipBounce ? 1 : 0}` +
       `/rebuyBelowExit=${cfg.rebuyBelowExitPct}%/${Math.round(cfg.rebuyBelowExitMaxAgeMs / 1000)}s` +

@@ -1,4 +1,26 @@
 # So
+## [1.11.731] — 2026-08-08
+
+**Тег:** `sa-1.11.731`
+
+### Fix: stream-only needs Dex still dumping
+
+`JBKWfC` / `2kPfdKK8`: stream ring −21% after reclaim while Dex ≈ flat
+(−0.53%); leaders who bought the earlier real Dex dumps (−37%/−13% at
+lower prints) sat out. Not bottom-calling — refuse stream when Dex tape
+disagrees.
+
+**Change:** `STREAM_ONLY_REQUIRE_DEX_DIP=1` + Dex pc5m ≤ `−8` for
+stream-only (fast + slow). `dex+stream` / Dex-only unchanged.
+
+**Env:**
+`MILD_DIP_STREAM_ONLY_REQUIRE_DEX_DIP=1`
+`MILD_DIP_STREAM_ONLY_DEX_MAX_DIP_PCT=-8`
+
+**Откат:** `REQUIRE_DEX_DIP=0` + reload.
+
+---
+
 ## [1.11.730] — 2026-08-08
 
 **Тег:** `sa-1.11.730`
