@@ -25,6 +25,7 @@ import {
   orderMintsForMark,
   type MarkExitDecision,
 } from './exit-engine.js';
+import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import { readLeaderSeedMints } from './discover-extra.js';
 import {
@@ -710,8 +711,20 @@ const SOFT_GIVEBACK_REASONS = new Set([
   'never_arm_giveback',
 ]);
 
+/** Soft exits deferred while reclaiming off local trough (not cliff/timeout). */
+const RECOVER_DEFER_REASONS = new Set([
+  'peak_giveback',
+  'peak_giveback_partial',
+  'never_arm_giveback',
+  'never_arm_stale',
+  'never_arm_dead',
+  'never_arm_vol_fade',
+]);
+
 /** mint → last dump_classify_pending journal ts (throttle). */
 const lastDumpClassifyJournalMs = new Map<string, number>();
+/** mint → last recover_defer journal ts (throttle). */
+const lastRecoverDeferJournalMs = new Map<string, number>();
 
 async function tryExits(
   cfg: MildDipConfig,
@@ -819,6 +832,53 @@ async function tryExits(
     }
 
     if (decision.shouldExit && decision.reason) {
+      // Don't dump into a green reclaim off the local trough (5vkZWa stale).
+      if (
+        cfg.recoverDeferEnabled &&
+        cfg.recoverDeferMinBouncePct > 0 &&
+        RECOVER_DEFER_REASONS.has(decision.reason) &&
+        decision.markPriceUsd > 0
+      ) {
+        const trough = mildDipPriceRing.minPrice(
+          mint,
+          cfg.recoverDeferLookbackMs,
+          nowMs,
+        );
+        if (
+          trough &&
+          isRecoveringFromTrough({
+            markPriceUsd: decision.markPriceUsd,
+            troughPriceUsd: trough.priceUsd,
+            minBouncePct: cfg.recoverDeferMinBouncePct,
+          })
+        ) {
+          const bounce = bounceFromTroughPct(decision.markPriceUsd, trough.priceUsd) ?? 0;
+          const lastJ = lastRecoverDeferJournalMs.get(mint) ?? 0;
+          if (nowMs - lastJ >= 5_000) {
+            lastRecoverDeferJournalMs.set(mint, nowMs);
+            appendMildDipJournal(cfg.journalPath, {
+              kind: 'recover_defer',
+              mint,
+              symbol: pos.symbol,
+              wouldReason: decision.reason,
+              bouncePct: +bounce.toFixed(2),
+              minBouncePct: cfg.recoverDeferMinBouncePct,
+              troughPx: trough.priceUsd,
+              markPx: decision.markPriceUsd,
+              lookbackMs: cfg.recoverDeferLookbackMs,
+              mfePct: +decision.mfePct.toFixed(2),
+              pnlPct: +decision.pnlPct.toFixed(2),
+            });
+            console.log(
+              `[mild-dip] RECOVER_DEFER ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+                `bounce=${bounce.toFixed(1)}%≥${cfg.recoverDeferMinBouncePct}% ` +
+                `(held ${decision.reason})`,
+            );
+          }
+          continue;
+        }
+      }
+
       // Soft giveback only after whale-vs-mass classify (or wait timeout).
       if (
         cfg.dumpClassifyEnabled &&
@@ -1117,6 +1177,9 @@ export async function runMildDipLoop(
       `/wait${Math.round(cfg.dumpClassifyWaitMs / 1000)}s` +
       `/win${Math.round(cfg.dumpClassifyWindowMs / 1000)}s` +
       `/mass≥${cfg.dumpClassifyMassMinSellers} ` +
+      `recoverDefer=${cfg.recoverDeferEnabled ? 1 : 0}` +
+      `/≥${cfg.recoverDeferMinBouncePct}%` +
+      `/${Math.round(cfg.recoverDeferLookbackMs / 1000)}s ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0}` +
       `/reqDex=${cfg.streamOnlyRequireDexDip ? 1 : 0}≤${cfg.streamOnlyDexMaxDipPct} ` +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +

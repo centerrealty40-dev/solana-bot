@@ -357,6 +357,27 @@ export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number):
   return (markPriceUsd / peakPriceUsd - 1) * 100;
 }
 
+/** Bounce % off a local trough → mark (positive when reclaiming). */
+export function bounceFromTroughPct(markPriceUsd: number, troughPriceUsd: number): number | null {
+  if (!(markPriceUsd > 0) || !(troughPriceUsd > 0)) return null;
+  return (markPriceUsd / troughPriceUsd - 1) * 100;
+}
+
+/**
+ * True when mark has reclaimed ≥ minBouncePct off the recent trough.
+ * Used to defer soft exits (stale/dead/giveback) into a green reclaim candle.
+ */
+export function isRecoveringFromTrough(args: {
+  markPriceUsd: number;
+  troughPriceUsd: number;
+  minBouncePct: number;
+}): boolean {
+  const min = args.minBouncePct > 0 ? args.minBouncePct : 0;
+  if (!(min > 0)) return false;
+  const bounce = bounceFromTroughPct(args.markPriceUsd, args.troughPriceUsd);
+  return bounce != null && bounce >= min - 1e-9;
+}
+
 function numOrNull(x: number | null | undefined): number | null {
   return typeof x === 'number' && Number.isFinite(x) ? x : null;
 }
