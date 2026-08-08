@@ -2988,15 +2988,16 @@ const PM2_APPS = [
          */
         /** Background lane only — entries owned by stream/leader fast-path. */
         MILD_DIP_SCAN_INTERVAL_MS: '3000',
-        MILD_DIP_MARK_INTERVAL_MS: '2000',
-        MILD_DIP_MARK_CACHE_TTL_MS: '2000',
         /**
-         * 1.11.694 — sample each open position's mark path into the journal
-         * (peak moves + exits always, otherwise ≤1 row / 30s / mint) so trail
-         * widths can be re-fitted on our own trades. Leader-path fit says
-         * tighter is better (4% > 5% > 6% > 8%); this measures it on our tape.
+         * 1.11.736 — open-book marks: stream-first ≤5s, Dex refresh 15s.
+         * Was Dex-only + scan-blocked → real gaps ~60s (2qE4vp −17% giveback).
          */
-        MILD_DIP_MARK_JOURNAL_MS: '30000',
+        MILD_DIP_MARK_INTERVAL_MS: '2000',
+        MILD_DIP_MARK_STREAM_MAX_AGE_MS: '5000',
+        MILD_DIP_MARK_DEX_REFRESH_MS: '15000',
+        MILD_DIP_MARK_CACHE_TTL_MS: '2000',
+        /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
+        MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',
         MILD_DIP_ENRICH_CONCURRENCY: '6',
         MILD_DIP_ENRICH_MAX: '12',

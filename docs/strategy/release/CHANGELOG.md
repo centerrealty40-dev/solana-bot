@@ -1,4 +1,31 @@
 # So
+## [1.11.736] — 2026-08-08
+
+**Тег:** `sa-1.11.736`
+
+### Fix: open-book marks ≤5s (stream-first, scan yields)
+
+`2qE4vp` / `2SaZc8b5…`: peak 0.000137 → next mark 63s later at −17%
+giveback; full `peak_giveback` skipped the −8% band. Config said
+`mark=2000ms` but Dex-only marks + discover/enrich in the same tick
+stretched real cadence to ~60s.
+
+**Changes:**
+1. Prefer stream/ring price when sample age ≤ `MARK_STREAM_MAX_AGE_MS` (5s).
+2. Dex refresh every `MARK_DEX_REFRESH_MS` (15s) for vol/structural —
+   does not block the exit price path when stream is fresh.
+3. While bags are open, defer scan/enrich if it would steal the next mark.
+4. Journal marks every 5s (was 30s).
+
+**Env:**
+`MILD_DIP_MARK_STREAM_MAX_AGE_MS=5000`
+`MILD_DIP_MARK_DEX_REFRESH_MS=15000`
+`MILD_DIP_MARK_JOURNAL_MS=5000`
+
+**Откат:** `MARK_STREAM_MAX_AGE_MS=0` + `MARK_JOURNAL_MS=30000` + reload.
+
+---
+
 ## [1.11.735] — 2026-08-08
 
 **Тег:** `sa-1.11.735`

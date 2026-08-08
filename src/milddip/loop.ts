@@ -105,27 +105,91 @@ function shouldSampleStreamPrice(
   return false;
 }
 
+/** mint → last Dex HTTP mark (vol fade + structural warm). */
+const lastDexMarkMs = new Map<string, number>();
+
 async function markPriceUsd(
   mint: string,
   nowMs: number,
-  cacheTtlMs: number,
-  allowedDexIds?: string[],
-): Promise<{ px: number | null; volume5mUsd: number | null }> {
+  cfg: Pick<
+    MildDipConfig,
+    'markCacheTtlMs' | 'markStreamMaxAgeMs' | 'markDexRefreshMs' | 'entry'
+  >,
+): Promise<{ px: number | null; volume5mUsd: number | null; source: 'stream' | 'dex' | null }> {
+  const streamMaxAge = cfg.markStreamMaxAgeMs > 0 ? cfg.markStreamMaxAgeMs : 0;
+  const dexRefresh = cfg.markDexRefreshMs > 0 ? cfg.markDexRefreshMs : 0;
+  const lastDex = lastDexMarkMs.get(mint) ?? 0;
+  const dexDue = dexRefresh <= 0 || nowMs - lastDex >= dexRefresh;
+
+  // Fast path: fresh stream/ring print — do not wait on Dex gate for exits.
+  if (streamMaxAge > 0 && !dexDue) {
+    const last = mildDipPriceRing.lastPrice(mint, nowMs);
+    if (last && last.priceUsd > 0 && nowMs - last.tsMs <= streamMaxAge) {
+      return { px: last.priceUsd, volume5mUsd: null, source: 'stream' };
+    }
+  }
+  if (streamMaxAge > 0 && dexDue) {
+    // Still prefer stream for the price decision when fresh; Dex runs for vol.
+    const last = mildDipPriceRing.lastPrice(mint, nowMs);
+    if (last && last.priceUsd > 0 && nowMs - last.tsMs <= streamMaxAge) {
+      // Fire-and-forget Dex warm (vol) — don't block exit on gate latency.
+      void fetchDexScreenerPairDetails(mint, {
+        nowMs,
+        allowedDexIds: cfg.entry.allowedDexIds,
+        ...(cfg.markCacheTtlMs > 0
+          ? { cacheTtlMs: cfg.markCacheTtlMs, bypassCache: false }
+          : { bypassCache: true }),
+      })
+        .then((details) => {
+          if (!details?.priceUsd || !(details.priceUsd > 0)) return;
+          lastDexMarkMs.set(mint, Date.now());
+          mildDipPriceRing.note(mint, details.priceUsd, {
+            tsMs: Date.now(),
+            source: 'dex',
+          });
+          const pairAgeHours =
+            details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
+              ? Math.max(0, (Date.now() - details.pairCreatedAtMs) / 3_600_000)
+              : null;
+          noteStructuralCache(
+            mint,
+            details.priceUsd,
+            {
+              priceChange5mPct: details.priceChangeM5Pct,
+              volume5mUsd: details.volume5mUsd,
+              liquidityUsd: details.liquidityUsd,
+              marketCapUsd: details.marketCapUsd,
+              pairAgeHours,
+              dexId: details.dexId,
+              buys5m: details.buys5m,
+              sells5m: details.sells5m,
+              volume1hUsd: details.volume1hUsd,
+              priceChange1hPct: details.priceChangeH1Pct,
+            },
+            Date.now(),
+          );
+        })
+        .catch(() => {
+          /* ignore background warm errors */
+        });
+      return { px: last.priceUsd, volume5mUsd: null, source: 'stream' };
+    }
+  }
+
   const details = await fetchDexScreenerPairDetails(mint, {
     nowMs,
-    allowedDexIds,
+    allowedDexIds: cfg.entry.allowedDexIds,
     // 0 = always HTTP (legacy bypass). >0 reuses shared Dex cache within TTL.
-    ...(cacheTtlMs > 0
-      ? { cacheTtlMs, bypassCache: false }
+    ...(cfg.markCacheTtlMs > 0
+      ? { cacheTtlMs: cfg.markCacheTtlMs, bypassCache: false }
       : { bypassCache: true }),
   });
-  if (!details) return { px: null, volume5mUsd: null };
+  if (!details) return { px: null, volume5mUsd: null, source: null };
   const volume5mUsd = details.volume5mUsd ?? null;
   const px = details.priceUsd;
   if (px != null && px > 0) {
+    lastDexMarkMs.set(mint, nowMs);
     mildDipPriceRing.note(mint, px, { tsMs: nowMs, source: 'dex' });
-    // Keep fast-path structural cache warm for open-book scale-in
-    // (mild_stabilize) so tryEntries does not wait on hot-probe budget.
     const pairAgeHours =
       details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
         ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
@@ -147,9 +211,9 @@ async function markPriceUsd(
       },
       nowMs,
     );
-    return { px, volume5mUsd };
+    return { px, volume5mUsd, source: 'dex' };
   }
-  return { px: null, volume5mUsd };
+  return { px: null, volume5mUsd: null, source: null };
 }
 
 /** mint → last `mild_dip_mark` journal ts (throttle, process-local). */
@@ -618,7 +682,7 @@ async function executeQueuedSell(args: {
 }
 
 /**
- * Phase 1: parallel Dex marks (armed first).
+ * Phase 1: parallel marks (stream-first, Dex refresh for vol) — armed first.
  * Phase 2: persist peak/arm updates (positions stay open).
  * Phase 3: sell queue with limited concurrency — mint leaves state only after
  * confirmed sell / empty bag. In-flight mints skipped on subsequent marks.
@@ -634,12 +698,7 @@ async function tryExits(
 
   const markStarted = Date.now();
   const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
-    const { px, volume5mUsd } = await markPriceUsd(
-      mint,
-      nowMs,
-      cfg.markCacheTtlMs,
-      cfg.entry.allowedDexIds,
-    );
+    const { px, volume5mUsd } = await markPriceUsd(mint, nowMs, cfg);
     return { mint, px, volume5mUsd };
   });
   const markPassMs = Date.now() - markStarted;
@@ -907,8 +966,9 @@ export async function runMildDipLoop(
       `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd}` +
       `/sample${Math.round(cfg.exit.neverArmVolFadeSampleMs / 1000)}s×${cfg.exit.neverArmVolFadeWeakWindows} ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
-      `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
-      `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
+      `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms` +
+      `/stream≤${cfg.markStreamMaxAgeMs}ms/dexRefresh=${cfg.markDexRefreshMs}ms ` +
+      `cacheTtl=${cfg.markCacheTtlMs}ms markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
       `oneshotGrace=${cfg.oneshotDumpGraceEnabled ? 1 : 0}` +
@@ -956,32 +1016,44 @@ export async function runMildDipLoop(
 
   let lastScan = 0;
   let lastMark = 0;
+  let lastFeeTopupTickMs = 0;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+    const opens = openCount(state);
 
-    // Fee SOL top-up (interval-gated inside helper; first check ASAP after start).
-    try {
-      await maybeTopUpFeeSol(cfg, nowMs);
-    } catch (err) {
-      console.warn('[mild-dip] fee-sol topup tick failed', err);
+    // Fee SOL top-up — don't run every tick while bags are open (mark cadence).
+    if (nowMs - lastFeeTopupTickMs >= 30_000) {
+      lastFeeTopupTickMs = nowMs;
+      try {
+        await maybeTopUpFeeSol(cfg, nowMs);
+      } catch (err) {
+        console.warn('[mild-dip] fee-sol topup tick failed', err);
+      }
     }
 
-    // Respect markInterval (previously `|| openCount>0` hammered Dex every tick).
-    if (openCount(state) > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
-      await tryExits(cfg, state, nowMs, oneshotDumpGrace);
-      lastMark = nowMs;
-      stats.lastMarkAtMs = nowMs;
+    // Open-book exits own the loop. Stream-first marks must not wait on scan/Dex.
+    if (opens > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
+      await tryExits(cfg, state, Date.now(), oneshotDumpGrace);
+      lastMark = Date.now();
+      stats.lastMarkAtMs = lastMark;
       saveMildDipState(cfg.statePath, state);
     }
 
-    if (nowMs - lastScan >= cfg.scanIntervalMs) {
+    // Defer discover/enrich while we hold bags if the next mark would be late.
+    // 2qE4vp: scan+Dex mark passes stretched gaps to ~60s through a −8% giveback.
+    const markPassMs = stats.lastMarkPassMs ?? 0;
+    const nextMarkDueIn =
+      opens > 0 ? Math.max(0, cfg.markIntervalMs - (Date.now() - lastMark)) : cfg.scanIntervalMs;
+    const scanWouldStealMark =
+      opens > 0 && (markPassMs > cfg.markIntervalMs || nextMarkDueIn < cfg.markIntervalMs * 0.75);
+
+    if (nowMs - lastScan >= cfg.scanIntervalMs && !scanWouldStealMark) {
       await tryEntries(cfg, state, nowMs);
-      lastScan = nowMs;
-      stats.lastScanAtMs = nowMs;
+      lastScan = Date.now();
+      stats.lastScanAtMs = lastScan;
       saveMildDipState(cfg.statePath, state);
-      // Persist universe + trough samples across restarts/deploys.
       try {
         saveMildDipHotMints(cfg.hotMintsPath);
         saveMildDipPriceRing(cfg.priceRingPath);
@@ -1033,7 +1105,13 @@ export async function runMildDipLoop(
           error: err instanceof Error ? err.message : String(err),
         });
       }
-      await sleep(Math.min(cfg.markIntervalMs, 5_000));
+      // Tight sleep while bags are open so stream marks hit ≤ markInterval.
+      const opensNow = openCount(state);
+      await sleep(
+        opensNow > 0
+          ? Math.min(cfg.markIntervalMs, 1_000)
+          : Math.min(cfg.markIntervalMs, 5_000),
+      );
     }
   } finally {
     shutdown();
