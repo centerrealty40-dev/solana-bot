@@ -32,14 +32,14 @@ const gates: WaitDipGates = {
 };
 
 describe('waitDipAppliesToSource', () => {
-  it('parks main/stabilize branches; skips h1_red_shallow and wait_dip', () => {
+  it('parks main-band only; skips h1 / stabilize / wait_dip', () => {
     expect(waitDipAppliesToSource('dex')).toBe(true);
     expect(waitDipAppliesToSource('dex+stream')).toBe(true);
     expect(waitDipAppliesToSource('stream')).toBe(true);
-    expect(waitDipAppliesToSource('h1_red_shallow')).toBe(false);
     expect(waitDipAppliesToSource('flat_micro_dip')).toBe(true);
-    expect(waitDipAppliesToSource('knife_stabilize')).toBe(true);
-    expect(waitDipAppliesToSource('mild_stabilize')).toBe(true);
+    expect(waitDipAppliesToSource('h1_red_shallow')).toBe(false);
+    expect(waitDipAppliesToSource('knife_stabilize')).toBe(false);
+    expect(waitDipAppliesToSource('mild_stabilize')).toBe(false);
     expect(waitDipAppliesToSource('wait_dip')).toBe(false);
     expect(waitDipAppliesToSource(null)).toBe(false);
   });
@@ -91,15 +91,8 @@ describe('shouldParkWaitDip / rebuy window', () => {
     ).toBe(false);
   });
 
-  it('does not park any branch inside rebuy-below-exit window', () => {
-    for (const src of [
-      'dex',
-      'dex+stream',
-      'stream',
-      'flat_micro_dip',
-      'knife_stabilize',
-      'mild_stabilize',
-    ] as const) {
+  it('does not park main branch inside rebuy-below-exit window', () => {
+    for (const src of ['dex', 'dex+stream', 'stream', 'flat_micro_dip'] as const) {
       expect(
         shouldParkWaitDip({
           ...base,
@@ -110,7 +103,7 @@ describe('shouldParkWaitDip / rebuy window', () => {
     }
   });
 
-  it('still parks main branch outside rebuy window', () => {
+  it('still parks main branch outside rebuy window; stabilize never parks', () => {
     expect(
       shouldParkWaitDip({
         ...base,
@@ -125,6 +118,20 @@ describe('shouldParkWaitDip / rebuy window', () => {
         lastExitAtMs: nowMs - 901_000,
       }),
     ).toBe(true);
+    expect(
+      shouldParkWaitDip({
+        ...base,
+        dipSource: 'mild_stabilize',
+        lastExitAtMs: null,
+      }),
+    ).toBe(false);
+    expect(
+      shouldParkWaitDip({
+        ...base,
+        dipSource: 'knife_stabilize',
+        lastExitAtMs: null,
+      }),
+    ).toBe(false);
   });
 });
 

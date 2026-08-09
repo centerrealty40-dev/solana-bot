@@ -2870,14 +2870,16 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
-         * 1.11.752 — park main-band; buy after extra −7% from signal.
+         * 1.11.752 — park main-band; buy after extra dump from signal.
          * 1.11.753 — keep fill near that edge: overshoot +2pp ceiling,
          * chase vs ready ≤3%, Jupiter premium ≤1% above ceiling.
          * 1.11.758 — do NOT park h1_red_shallow; do NOT park any branch
-         * while rebuy-below-exit window is active (no −7% on top of −10%).
+         * while rebuy-below-exit window is active (no wait on top of −10%).
+         * 1.11.762 — wait −10% (was −7%); knife/mild_stabilize buy immediate
+         * (no second dump wait after stabilize ready).
          */
         MILD_DIP_WAIT_DIP: '1',
-        MILD_DIP_WAIT_DIP_PCT: '-7',
+        MILD_DIP_WAIT_DIP_PCT: '-10',
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
         MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '2',
         MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',
