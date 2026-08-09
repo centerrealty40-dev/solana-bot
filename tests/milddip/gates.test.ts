@@ -800,7 +800,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(over.reason).toBe('never_arm_timeout');
   });
 
-  it('1.11.781 — armed trail is exempt from 15m never-arm max-hold', () => {
+  it('1.11.782 — green armed trail may outlive 15m max-hold', () => {
     const gates15 = { ...exitGates, neverArmMaxHoldMs: 900_000 };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -808,10 +808,43 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       peakPriceUsd: 112, // armed via MFE
       armed: true,
       gates: gates15,
-      heldMs: 3_600_000, // 1h — trail may keep holding
+      heldMs: 3_600_000, // 1h — trail may keep holding while green
     });
     expect(v.armed).toBe(true);
+    expect(v.pnlPct).toBeGreaterThan(0);
     expect(v.reason).not.toBe('never_arm_timeout');
+    expect(v.reason).not.toBe('max_hold_underwater');
+    expect(v.shouldExit).toBe(false);
+  });
+
+  it('1.11.782 — armed but underwater at 15m → max_hold_underwater', () => {
+    const gates15 = { ...exitGates, neverArmMaxHoldMs: 900_000 };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 97, // red now
+      peakPriceUsd: 112, // was armed
+      armed: true,
+      gates: gates15,
+      heldMs: 900_000,
+    });
+    expect(v.armed).toBe(true);
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('max_hold_underwater');
+    expect(v.fraction).toBe(1);
+  });
+
+  it('1.11.782 — armed flat (pnl=0) at 15m also flattens', () => {
+    const gates15 = { ...exitGates, neverArmMaxHoldMs: 900_000 };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 100,
+      peakPriceUsd: 112,
+      armed: true,
+      gates: gates15,
+      heldMs: 900_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('max_hold_underwater');
   });
 
   it('never-arm still holds at 20m when max-hold is 40m', () => {

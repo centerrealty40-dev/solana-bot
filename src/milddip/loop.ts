@@ -1433,41 +1433,43 @@ async function tryExits(
     const deadMin = cfg.exit.neverArmDeadMinMs > 0 ? cfg.exit.neverArmDeadMinMs : 0;
 
     /**
-     * Null / blind mark must NOT skip never-arm ceilings — a delisted or
+     * Null / blind mark must NOT skip hold ceilings — a delisted or
      * ring-frozen mint can otherwise sit forever (5EAUpz: pnl stuck at 0).
-     * 1.11.781 — max-hold (15m) still force-exits without a real mark.
-     * Armed trail is exempt.
+     * 1.11.781/782 — past max-hold force-exit even when armed (cannot prove green).
      */
     if (px == null) {
-      if (pos.trailArmed !== true) {
-        let forceReason: 'never_arm_timeout' | 'never_arm_dead' | null = null;
-        if (maxHold > 0 && heldMs >= maxHold) forceReason = 'never_arm_timeout';
-        else if (deadMin > 0 && heldMs >= deadMin) forceReason = 'never_arm_dead';
-        if (forceReason) {
-          const syn =
-            pos.peakPriceUsd != null && pos.peakPriceUsd > 0
-              ? pos.peakPriceUsd
-              : pos.entryPriceUsd;
-          console.warn(
-            `[mild-dip] force-exit ${pos.symbol} mint=${mint.slice(0, 8)}… reason=${forceReason} (null mark, held=${Math.round(heldMs / 1000)}s)`,
-          );
-          toSell.push({
-            mint,
-            markPriceUsd: syn,
-            peakPriceUsd: syn,
-            armed: false,
-            justArmed: false,
-            shouldExit: true,
-            fraction: 1,
-            reason: forceReason,
-            mfePct: 0,
-            givebackPct: 0,
-            pnlPct: 0,
-            volFadeSamples: pos.volFadeSamples ?? [],
-            postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
-            postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
-          });
-        }
+      let forceReason: 'never_arm_timeout' | 'max_hold_underwater' | 'never_arm_dead' | null =
+        null;
+      if (maxHold > 0 && heldMs >= maxHold) {
+        forceReason =
+          pos.trailArmed === true ? 'max_hold_underwater' : 'never_arm_timeout';
+      } else if (pos.trailArmed !== true && deadMin > 0 && heldMs >= deadMin) {
+        forceReason = 'never_arm_dead';
+      }
+      if (forceReason) {
+        const syn =
+          pos.peakPriceUsd != null && pos.peakPriceUsd > 0
+            ? pos.peakPriceUsd
+            : pos.entryPriceUsd;
+        console.warn(
+          `[mild-dip] force-exit ${pos.symbol} mint=${mint.slice(0, 8)}… reason=${forceReason} (null mark, held=${Math.round(heldMs / 1000)}s)`,
+        );
+        toSell.push({
+          mint,
+          markPriceUsd: syn,
+          peakPriceUsd: syn,
+          armed: pos.trailArmed === true,
+          justArmed: false,
+          shouldExit: true,
+          fraction: 1,
+          reason: forceReason,
+          mfePct: 0,
+          givebackPct: 0,
+          pnlPct: 0,
+          volFadeSamples: pos.volFadeSamples ?? [],
+          postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+          postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+        });
       }
       continue;
     }
