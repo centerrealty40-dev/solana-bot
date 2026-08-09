@@ -123,6 +123,24 @@ const MildDipConfigSchema = z.object({
   recoverDeferLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(300_000),
   recoverDeferMinBouncePct: z.coerce.number().min(0).max(50).default(3),
   /**
+   * 1.11.761 — when a soft exit is about to fire and a tracked leader just
+   * bought the same mint (average-down), defer the sell and optionally
+   * scale-in once. Narrow: requires shouldExit + red pnl + fresh leader hit.
+   * Not a general −5% scale-in.
+   */
+  leaderAlignEnabled: z.boolean().default(true),
+  /** Max age of leader seed hit to count as “just bought”. */
+  leaderAlignMaxAgeMs: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
+  /** Still-red floor vs entry (default 3%). Blocks green/flat align. */
+  leaderAlignRequireRedPct: z.coerce.number().min(0).max(50).default(3),
+  /** Leader fill/mark must be ≥ this % below our entry (0 = ≤ entry). */
+  leaderAlignMinBelowEntryPct: z.coerce.number().min(0).max(50).default(0),
+  /** Only count leader isAdd (not first bag open). Default off — any buy OK. */
+  leaderAlignRequireAdd: z.boolean().default(false),
+  /** One-shot average-in USD while deferring (0 = defer only, no buy). */
+  leaderAlignScaleInEnabled: z.boolean().default(true),
+  leaderAlignScaleInUsd: z.coerce.number().min(0).max(10_000).default(15),
+  /**
    * Journal one `mild_dip_mark` row per open position at most this often.
    * Gives an offline price path per trade so trail widths can be re-fitted on
    * our own tape instead of the leader's. 0 = off. 1.11.736 default 5s.
@@ -674,6 +692,14 @@ export function loadMildDipConfig(): MildDipConfig {
     recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),
     recoverDeferLookbackMs: process.env.MILD_DIP_RECOVER_DEFER_LOOKBACK_MS ?? 300_000,
     recoverDeferMinBouncePct: process.env.MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT ?? 3,
+    /** 1.11.761 — leader-align defer + one-shot average-in near soft exit. */
+    leaderAlignEnabled: envBool('MILD_DIP_LEADER_ALIGN', true),
+    leaderAlignMaxAgeMs: process.env.MILD_DIP_LEADER_ALIGN_MAX_AGE_MS ?? 120_000,
+    leaderAlignRequireRedPct: process.env.MILD_DIP_LEADER_ALIGN_REQUIRE_RED_PCT ?? 3,
+    leaderAlignMinBelowEntryPct: process.env.MILD_DIP_LEADER_ALIGN_MIN_BELOW_ENTRY_PCT ?? 0,
+    leaderAlignRequireAdd: envBool('MILD_DIP_LEADER_ALIGN_REQUIRE_ADD', false),
+    leaderAlignScaleInEnabled: envBool('MILD_DIP_LEADER_ALIGN_SCALE_IN', true),
+    leaderAlignScaleInUsd: process.env.MILD_DIP_LEADER_ALIGN_SCALE_IN_USD ?? 15,
     hotMintsPath:
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:

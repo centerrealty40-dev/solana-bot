@@ -3023,6 +3023,18 @@ const PM2_APPS = [
         MILD_DIP_RECOVER_DEFER_LOOKBACK_MS: '300000',
         MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT: '3',
         /**
+         * 1.11.761 — when soft exit is about to fire and a tracked leader just
+         * bought the same mint (still red), defer sell + one-shot $15 average-in.
+         * Narrow: requires shouldExit (not a casual −5% scale-in).
+         */
+        MILD_DIP_LEADER_ALIGN: '1',
+        MILD_DIP_LEADER_ALIGN_MAX_AGE_MS: '120000',
+        MILD_DIP_LEADER_ALIGN_REQUIRE_RED_PCT: '3',
+        MILD_DIP_LEADER_ALIGN_MIN_BELOW_ENTRY_PCT: '0',
+        MILD_DIP_LEADER_ALIGN_REQUIRE_ADD: '0',
+        MILD_DIP_LEADER_ALIGN_SCALE_IN: '1',
+        MILD_DIP_LEADER_ALIGN_SCALE_IN_USD: '15',
+        /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
          * Dex hard-capped at 120 RPM; mark uses cache TTL ≈ interval.
          */

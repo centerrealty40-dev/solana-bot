@@ -35,6 +35,11 @@ export type MildDipOpenPosition = {
    * A single weak tick must not sell — need N consecutive weak windows.
    */
   volFadeSamples?: Array<{ ts: number; vol: number }>;
+  /**
+   * 1.11.761 — one-shot leader-align average-in already filled on this bag.
+   * Prevents spam scale-in when soft exits keep re-firing under a leader buy.
+   */
+  leaderAlignScaleInDone?: boolean;
 };
 
 /** Last full exit — block rebuy near the same USD price (no Dex needed). */

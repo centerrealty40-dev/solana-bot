@@ -15,6 +15,13 @@ export type LeaderSeedHit = {
   lastSeenAtMs: number;
   leader?: string;
   signature?: string;
+  /** 1.11.760+ observer fill (quote-leg or Dex). */
+  fillPriceUsd?: number;
+  sizeUsd?: number;
+  blockTime?: number;
+  /** True when leader added to an existing bag. */
+  isAdd?: boolean;
+  class?: string;
 };
 
 export type LeaderSeedFile = {
@@ -77,6 +84,61 @@ export function readLeaderSeedMints(
   }
 }
 
+/** Rich seed hits for leader-align defer/scale-in (preserves fill/isAdd). */
+export function parseLeaderSeedHits(
+  payload: LeaderSeedFile | null | undefined,
+  nowMs: number,
+  opts?: { maxAgeMs?: number; max?: number },
+): LeaderSeedHit[] {
+  const maxAgeMs = Math.max(0, opts?.maxAgeMs ?? 2 * 3_600_000);
+  const max = Math.max(0, Math.floor(opts?.max ?? 40));
+  const hits = Array.isArray(payload?.hits) ? payload!.hits! : [];
+  const rows = hits
+    .filter(
+      (h) =>
+        h &&
+        typeof h.mint === 'string' &&
+        h.mint.length >= 32 &&
+        typeof h.lastSeenAtMs === 'number' &&
+        Number.isFinite(h.lastSeenAtMs) &&
+        nowMs - h.lastSeenAtMs <= maxAgeMs,
+    )
+    .sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs);
+  const out: LeaderSeedHit[] = [];
+  const seen = new Set<string>();
+  for (const h of rows) {
+    if (seen.has(h.mint)) continue;
+    seen.add(h.mint);
+    out.push({ ...h });
+    if (out.length >= max) break;
+  }
+  return out;
+}
+
+export function readLeaderSeedHits(
+  filePath: string | undefined,
+  nowMs: number,
+  opts?: { maxAgeMs?: number; max?: number },
+): LeaderSeedHit[] {
+  if (!filePath) return [];
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as LeaderSeedFile;
+    return parseLeaderSeedHits(raw, nowMs, opts);
+  } catch {
+    return [];
+  }
+}
+
+export function leaderSeedHitByMint(
+  hits: LeaderSeedHit[],
+  mint: string,
+): LeaderSeedHit | null {
+  for (const h of hits) {
+    if (h.mint === mint) return h;
+  }
+  return null;
+}
+
 /**
  * Merge one leader buy into the sidecar seed file (atomic). Used by observer;
  * also exported for tests / TS callers.
@@ -103,12 +165,26 @@ export function upsertLeaderSeedMint(
     byMint.set(h.mint, h);
   }
   const prev = byMint.get(hit.mint);
-  byMint.set(hit.mint, {
+  const mergedHit: LeaderSeedHit = {
     mint: hit.mint,
     lastSeenAtMs: Math.max(prev?.lastSeenAtMs ?? 0, hit.lastSeenAtMs),
     leader: hit.leader ?? prev?.leader,
     signature: hit.signature ?? prev?.signature,
-  });
+  };
+  if (hit.fillPriceUsd != null && hit.fillPriceUsd > 0) {
+    mergedHit.fillPriceUsd = hit.fillPriceUsd;
+  } else if (prev?.fillPriceUsd != null && prev.fillPriceUsd > 0) {
+    mergedHit.fillPriceUsd = prev.fillPriceUsd;
+  }
+  if (hit.sizeUsd != null && hit.sizeUsd > 0) mergedHit.sizeUsd = hit.sizeUsd;
+  else if (prev?.sizeUsd != null && prev.sizeUsd > 0) mergedHit.sizeUsd = prev.sizeUsd;
+  if (hit.blockTime != null) mergedHit.blockTime = hit.blockTime;
+  else if (prev?.blockTime != null) mergedHit.blockTime = prev.blockTime;
+  if (hit.isAdd != null) mergedHit.isAdd = hit.isAdd;
+  else if (prev?.isAdd != null) mergedHit.isAdd = prev.isAdd;
+  if (hit.class) mergedHit.class = hit.class;
+  else if (prev?.class) mergedHit.class = prev.class;
+  byMint.set(hit.mint, mergedHit);
   const merged = [...byMint.values()]
     .sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs)
     .slice(0, max);

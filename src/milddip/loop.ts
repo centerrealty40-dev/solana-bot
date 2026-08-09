@@ -1,4 +1,4 @@
-import { executeCopySell } from '../copytrader/executor.js';
+import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
 import { checkCopyFundingGate } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
@@ -36,7 +36,17 @@ import {
 } from './exit-engine.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
-import { readLeaderSeedMints } from './discover-extra.js';
+import {
+  leaderSeedHitByMint,
+  readLeaderSeedHits,
+  readLeaderSeedMints,
+  type LeaderSeedHit,
+} from './discover-extra.js';
+import {
+  averageEntryAfterScaleIn,
+  evaluateLeaderAlignDefer,
+  type LeaderAlignHit,
+} from './leader-align.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -1084,6 +1094,158 @@ const RECOVER_DEFER_REASONS = new Set([
 const lastDumpClassifyJournalMs = new Map<string, number>();
 /** mint → last recover_defer journal ts (throttle). */
 const lastRecoverDeferJournalMs = new Map<string, number>();
+/** mint → last leader_align_defer journal ts (throttle). */
+const lastLeaderAlignJournalMs = new Map<string, number>();
+
+function toLeaderAlignHit(hit: LeaderSeedHit | null): LeaderAlignHit | null {
+  if (!hit) return null;
+  return {
+    mint: hit.mint,
+    lastSeenAtMs: hit.lastSeenAtMs,
+    leader: hit.leader,
+    signature: hit.signature,
+    fillPriceUsd: hit.fillPriceUsd,
+    sizeUsd: hit.sizeUsd,
+    blockTime: hit.blockTime,
+    isAdd: hit.isAdd,
+    class: hit.class,
+  };
+}
+
+/**
+ * One-shot average-in while a soft exit is deferred on a fresh leader buy.
+ * Does not open a new seat — merges into the existing bag.
+ */
+async function attemptLeaderAlignScaleIn(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  mint: string;
+  nowMs: number;
+  markPriceUsd: number;
+  hit: LeaderAlignHit;
+  wouldReason: string;
+}): Promise<void> {
+  const { cfg, state, mint, nowMs, hit, wouldReason } = args;
+  const pos = state.open[mint];
+  if (!pos) return;
+  if (pos.leaderAlignScaleInDone) return;
+  if (buyInFlight.has(mint) || sellInFlight.has(mint)) return;
+  if (!(cfg.leaderAlignScaleInUsd > 0)) return;
+
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
+  const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, cfg.leaderAlignScaleInUsd);
+  if (sized.stop || !(sized.sizeUsd > 0)) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'leader_align_scale_in_skip',
+      mint,
+      symbol: pos.symbol,
+      reason: sized.reason ?? 'no_size',
+      wantUsd: cfg.leaderAlignScaleInUsd,
+      wouldReason,
+    });
+    return;
+  }
+
+  const fillPx =
+    hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+      ? hit.fillPriceUsd
+      : args.markPriceUsd > 0
+        ? args.markPriceUsd
+        : pos.entryPriceUsd;
+  if (!(fillPx > 0)) return;
+
+  buyInFlight.add(mint);
+  const leaderSig = `milddip_leader_align_${mint.slice(0, 8)}_${nowMs}`;
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'leader_align_scale_in_attempt',
+    mint,
+    symbol: pos.symbol,
+    sizeUsd: sized.sizeUsd,
+    priceUsd: fillPx,
+    wouldReason,
+    leader: hit.leader ?? null,
+    leaderSignature: hit.signature ?? null,
+    leaderAgeMs: Math.max(0, nowMs - hit.lastSeenAtMs),
+    prevEntryPx: pos.entryPriceUsd,
+    prevSizeUsd: pos.sizeUsd,
+  });
+
+  try {
+    const buy = await executeCopyBuy({
+      cfg: copyCfg,
+      mint,
+      symbol: pos.symbol,
+      priceUsd: fillPx,
+      sizeUsd: sized.sizeUsd,
+      kind: 'entry',
+      evalResult: {
+        pass: true,
+        reasons: [`leader_align_scale_in:${wouldReason}`],
+        score: Math.abs(args.markPriceUsd > 0 ? ((args.markPriceUsd / pos.entryPriceUsd - 1) * 100) : 0),
+      },
+      leaderSignature: leaderSig,
+      leaderPriceUsd: fillPx,
+      leaderBuyTs: hit.blockTime != null ? hit.blockTime * 1000 : nowMs,
+    });
+    if (!buy.ok) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_align_scale_in_result',
+        mint,
+        symbol: pos.symbol,
+        ok: false,
+        reason: buy.reason ?? 'buy_failed',
+        sizeUsd: sized.sizeUsd,
+      });
+      return;
+    }
+    const live = state.open[mint];
+    if (!live) return;
+    const addPx = buy.priceUsd != null && buy.priceUsd > 0 ? buy.priceUsd : fillPx;
+    const newEntry = averageEntryAfterScaleIn({
+      prevEntryUsd: live.entryPriceUsd,
+      prevSizeUsd: live.sizeUsd,
+      addFillUsd: addPx,
+      addSizeUsd: sized.sizeUsd,
+    });
+    if (newEntry != null && newEntry > 0) live.entryPriceUsd = newEntry;
+    live.sizeUsd = live.sizeUsd + sized.sizeUsd;
+    live.leaderAlignScaleInDone = true;
+    const rem = await fetchMintBalanceRaw(copyCfg, mint);
+    if (rem && /^\d+$/.test(rem) && BigInt(rem) > HOLDING_DUST_RAW) {
+      live.tokenRaw = rem;
+    }
+    saveMildDipState(cfg.statePath, state);
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'leader_align_scale_in_result',
+      mint,
+      symbol: live.symbol,
+      ok: true,
+      sizeUsd: sized.sizeUsd,
+      fillPx: addPx,
+      newEntryPx: live.entryPriceUsd,
+      newSizeUsd: live.sizeUsd,
+      signature: buy.signature ?? null,
+      leader: hit.leader ?? null,
+      wouldReason,
+    });
+    console.log(
+      `[mild-dip] LEADER_ALIGN SCALE-IN ${live.symbol} mint=${mint.slice(0, 8)}… ` +
+        `+$${sized.sizeUsd} @$${addPx.toPrecision(4)} avgEntry=$${live.entryPriceUsd.toPrecision(4)} ` +
+        `(held ${wouldReason})`,
+    );
+  } catch (err) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'leader_align_scale_in_result',
+      mint,
+      symbol: pos.symbol,
+      ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+      sizeUsd: sized.sizeUsd,
+    });
+  } finally {
+    buyInFlight.delete(mint);
+  }
+}
 
 async function tryExits(
   cfg: MildDipConfig,
@@ -1095,6 +1257,14 @@ async function tryExits(
 ): Promise<void> {
   const ordered = orderMintsForMark(state.open).filter((m) => !sellInFlight.has(m));
   if (ordered.length === 0) return;
+
+  const leaderHits =
+    cfg.leaderAlignEnabled && cfg.leaderSeedPath
+      ? readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+          maxAgeMs: Math.max(cfg.leaderAlignMaxAgeMs, 60_000),
+          max: cfg.leaderSeedMax,
+        })
+      : [];
 
   const markStarted = Date.now();
   const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
@@ -1193,6 +1363,74 @@ async function tryExits(
     }
 
     if (decision.shouldExit && decision.reason) {
+      // 1.11.761 — leader just bought this mint while a soft exit is firing:
+      // hold the sell and optionally average-in once (narrow; not a −5% scale-in).
+      if (cfg.leaderAlignEnabled) {
+        const seedHit = leaderSeedHitByMint(leaderHits, mint);
+        const align = evaluateLeaderAlignDefer({
+          enabled: true,
+          shouldExit: true,
+          reason: decision.reason,
+          pnlPct: decision.pnlPct,
+          entryPriceUsd: pos.entryPriceUsd,
+          markPriceUsd: decision.markPriceUsd,
+          nowMs,
+          hit: toLeaderAlignHit(seedHit),
+          maxAgeMs: cfg.leaderAlignMaxAgeMs,
+          requireRedPct: cfg.leaderAlignRequireRedPct,
+          minBelowEntryPct: cfg.leaderAlignMinBelowEntryPct,
+          scaleInEnabled: cfg.leaderAlignScaleInEnabled,
+          scaleInDone: pos.leaderAlignScaleInDone === true,
+          requireLeaderAdd: cfg.leaderAlignRequireAdd,
+        });
+        if (align.defer) {
+          const lastJ = lastLeaderAlignJournalMs.get(mint) ?? 0;
+          if (nowMs - lastJ >= 5_000) {
+            lastLeaderAlignJournalMs.set(mint, nowMs);
+            appendMildDipJournal(cfg.journalPath, {
+              kind: 'leader_align_defer',
+              mint,
+              symbol: pos.symbol,
+              wouldReason: decision.reason,
+              pnlPct: +decision.pnlPct.toFixed(2),
+              mfePct: +decision.mfePct.toFixed(2),
+              markPx: decision.markPriceUsd,
+              entryPx: pos.entryPriceUsd,
+              leader: align.hit?.leader ?? null,
+              leaderSignature: align.hit?.signature ?? null,
+              leaderFillPx: align.hit?.fillPriceUsd ?? null,
+              leaderAgeMs: align.leaderAgeMs,
+              scaleIn: align.scaleIn,
+              scaleInDone: pos.leaderAlignScaleInDone === true,
+            });
+            console.log(
+              `[mild-dip] LEADER_ALIGN_DEFER ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+                `held ${decision.reason} pnl=${decision.pnlPct.toFixed(1)}% ` +
+                `leader=${(align.hit?.leader ?? '').slice(0, 8)}… ` +
+                `age=${Math.round((align.leaderAgeMs ?? 0) / 1000)}s` +
+                (align.scaleIn ? ' → scale-in' : ''),
+            );
+          }
+          if (align.scaleIn && align.hit) {
+            void attemptLeaderAlignScaleIn({
+              cfg,
+              state,
+              mint,
+              nowMs,
+              markPriceUsd: decision.markPriceUsd,
+              hit: align.hit,
+              wouldReason: decision.reason,
+            }).catch((err) => {
+              console.warn(
+                '[mild-dip] leader-align scale-in error',
+                err instanceof Error ? err.message : err,
+              );
+            });
+          }
+          continue;
+        }
+      }
+
       // Don't dump into a green reclaim off the local trough (5vkZWa stale).
       if (
         cfg.recoverDeferEnabled &&
@@ -1573,6 +1811,13 @@ export async function runMildDipLoop(
       `recoverDefer=${cfg.recoverDeferEnabled ? 1 : 0}` +
       `/≥${cfg.recoverDeferMinBouncePct}%` +
       `/${Math.round(cfg.recoverDeferLookbackMs / 1000)}s ` +
+      `leaderAlign=${cfg.leaderAlignEnabled ? 1 : 0}` +
+      `/${Math.round(cfg.leaderAlignMaxAgeMs / 1000)}s` +
+      `/red≥${cfg.leaderAlignRequireRedPct}%` +
+      (cfg.leaderAlignScaleInEnabled && cfg.leaderAlignScaleInUsd > 0
+        ? `/scaleIn$${cfg.leaderAlignScaleInUsd}`
+        : '/scaleIn=0') +
+      ` ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0}` +
       `/reqDex=${cfg.streamOnlyRequireDexDip ? 1 : 0}≤${cfg.streamOnlyDexMaxDipPct} ` +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
