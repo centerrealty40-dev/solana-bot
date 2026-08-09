@@ -1,4 +1,33 @@
 # So
+## [1.11.777] — 2026-08-09
+
+**Тег:** `sa-1.11.777`
+
+### Feat: turn→dump SHALLOW OR-branch (8zkg second curve)
+
+~7% of leader dip buys miss MAIN (`dump ≈ -5.08 + 6.86·log`) but still
+follow a flatter curve. Live miss `72Jp…` (dump 3.74 vs MAIN floor ~7.8)
+is that class. Pass if **MAIN or SHALLOW**:
+
+```text
+MAIN:    pred = -5.08 + 6.86·log1p(turn·100)   band [pred−10, pred+12]
+SHALLOW: pred = -8.83 + 4.23·log1p(turn·100)   band [pred−8,  pred+8]
+```
+
+Prefer MAIN when both match. Journal `branch` on skips.
+
+Live clip / floor unchanged from 1.11.776: **$10** position, mcap **$5k**
+(leader red-buy p5 ≈ $5.3k on observer tape).
+
+- `MILD_DIP_TURN_DUMP_SHALLOW_BRANCH=1`
+- `MILD_DIP_TURN_DUMP_SHALLOW_ALPHA=-8.83`
+- `MILD_DIP_TURN_DUMP_SHALLOW_BETA=4.23`
+- `MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT=8`
+
+**Откат:** `MILD_DIP_TURN_DUMP_SHALLOW_BRANCH=0` + reload.
+
+---
+
 ## [1.11.776] — 2026-08-09
 
 **Тег:** `sa-1.11.776`

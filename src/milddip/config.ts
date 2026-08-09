@@ -230,15 +230,21 @@ const MildDipConfigSchema = z.object({
   /**
    * 1.11.773 — 8zkg turn→dump gate. When on, wait-dip is forced off (buy at
    * signal if formula allows; skip if dump too shallow vs turnover).
-   * pred = alpha + beta·log1p(turn·100); dump = −pc5m.
+   * MAIN: pred = alpha + beta·log1p(turn·100); dump = −pc5m.
+   * 1.11.777 — optional SHALLOW OR-branch (flatter curve) for scrapes.
    */
   turnDumpGateEnabled: z.boolean().default(false),
   turnDumpAlpha: z.coerce.number().default(-5.08),
   turnDumpBeta: z.coerce.number().default(6.86),
-  /** Reject when dump < pred − slack (pp). 1.11.774 default 10 (slip). */
+  /** MAIN: reject when dump < pred − slack (pp). 1.11.774 default 10 (slip). */
   turnDumpShallowSlackPct: z.coerce.number().min(0).max(50).default(10),
-  /** Reject when dump > pred + slack (pp). 0 = no deep ceiling. */
+  /** MAIN: reject when dump > pred + slack (pp). 0 = no deep ceiling. */
   turnDumpDeepSlackPct: z.coerce.number().min(0).max(80).default(12),
+  /** 1.11.777 — second branch: dump ≈ -8.83 + 4.23·log1p(turn·100) ± band. */
+  turnDumpShallowBranchEnabled: z.boolean().default(false),
+  turnDumpShallowAlpha: z.coerce.number().default(-8.83),
+  turnDumpShallowBeta: z.coerce.number().default(4.23),
+  turnDumpShallowBandPct: z.coerce.number().min(0).max(50).default(8),
   /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
    * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
@@ -646,6 +652,10 @@ export function loadMildDipConfig(): MildDipConfig {
     turnDumpBeta: envNum('MILD_DIP_TURN_DUMP_BETA', 6.86),
     turnDumpShallowSlackPct: envNum('MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT', 10),
     turnDumpDeepSlackPct: envNum('MILD_DIP_TURN_DUMP_DEEP_SLACK_PCT', 12),
+    turnDumpShallowBranchEnabled: envBool('MILD_DIP_TURN_DUMP_SHALLOW_BRANCH', false),
+    turnDumpShallowAlpha: envNum('MILD_DIP_TURN_DUMP_SHALLOW_ALPHA', -8.83),
+    turnDumpShallowBeta: envNum('MILD_DIP_TURN_DUMP_SHALLOW_BETA', 4.23),
+    turnDumpShallowBandPct: envNum('MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT', 8),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),

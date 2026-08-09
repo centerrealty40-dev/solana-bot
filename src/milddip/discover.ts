@@ -45,6 +45,10 @@ function turnDumpAllowsCandidate(
     beta: cfg.turnDumpBeta,
     shallowSlackPct: cfg.turnDumpShallowSlackPct,
     deepSlackPct: cfg.turnDumpDeepSlackPct,
+    shallowBranchEnabled: cfg.turnDumpShallowBranchEnabled,
+    shallowAlpha: cfg.turnDumpShallowAlpha,
+    shallowBeta: cfg.turnDumpShallowBeta,
+    shallowBandPct: cfg.turnDumpShallowBandPct,
   }).pass;
 }
 
