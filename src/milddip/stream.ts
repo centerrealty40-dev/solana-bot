@@ -63,6 +63,7 @@ export function startMildDipHotMintStream(opts?: {
   priceSampler?: StreamPriceSampler | null;
   rpcUrl?: string | null;
   buyMintResolveMaxPerMin?: number;
+  buyMintResolveQueueMax?: number;
   buyMintResolveConcurrency?: number;
 }): MildDipStreamHandle | null {
   const wsUrl = (opts?.wsUrl ?? resolveMildDipStreamWsUrl())?.trim() || '';
@@ -90,11 +91,15 @@ export function startMildDipHotMintStream(opts?: {
   const volMin = volumeImpulseMinSol();
   let resolver: BuyMintResolver | null = null;
   if (resolveMax > 0 && rpcUrl) {
+    const conc = opts?.buyMintResolveConcurrency ?? 4;
+    const qMax =
+      opts?.buyMintResolveQueueMax ??
+      Math.min(300, Math.max(120, resolveMax));
     resolver = createBuyMintResolver({
       rpcUrl,
       maxPerMin: resolveMax,
-      concurrency: opts?.buyMintResolveConcurrency ?? 4,
-      queueMax: Math.min(48, resolveMax),
+      concurrency: conc,
+      queueMax: qMax,
       staleJobMs: 45_000,
       volumeImpulseMinSol: volMin,
       onResolved: (result) => {
@@ -111,7 +116,7 @@ export function startMildDipHotMintStream(opts?: {
     });
     console.log(
       `[mild-dip] buy-mint-resolve ON buyOnly newestFirst maxPerMin=${resolveMax} ` +
-        `conc=${opts?.buyMintResolveConcurrency ?? 4} oneGetTx=1 ` +
+        `conc=${conc} queueMax=${qMax} oneGetTx=1 ` +
         `volumeMinSol=${volMin}`,
     );
   }

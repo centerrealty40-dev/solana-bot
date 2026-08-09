@@ -98,8 +98,10 @@ const MildDipConfigSchema = z.object({
    * Cap getTransaction mint-resolves/min when Buy/Sell logs omit mint (0=off).
    * Vol-green default 40 — close the PumpSwap blind spot without blowing RPC.
    */
-  buyMintResolveMaxPerMin: z.coerce.number().int().min(0).max(120).default(0),
-  buyMintResolveConcurrency: z.coerce.number().int().min(1).max(6).default(2),
+  buyMintResolveMaxPerMin: z.coerce.number().int().min(0).max(600).default(0),
+  buyMintResolveConcurrency: z.coerce.number().int().min(1).max(12).default(4),
+  /** 0 = derive from maxPerMin in stream starter. */
+  buyMintResolveQueueMax: z.coerce.number().int().min(0).max(400).default(0),
   /**
    * Journal one `mild_dip_mark` row per open position at most this often.
    * Gives an offline price path per trade so trail widths can be re-fitted on
@@ -396,7 +398,8 @@ export function loadMildDipConfig(): MildDipConfig {
     probeEnrichMax: process.env.MILD_DIP_PROBE_ENRICH_MAX ?? 48,
     forceEnrichFirstSeenPerMin: process.env.MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN ?? 0,
     buyMintResolveMaxPerMin: process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN ?? 0,
-    buyMintResolveConcurrency: process.env.MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY ?? 2,
+    buyMintResolveConcurrency: process.env.MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY ?? 4,
+    buyMintResolveQueueMax: process.env.MILD_DIP_BUY_MINT_RESOLVE_QUEUE_MAX ?? 0,
     greenTapeShortRedWindowMs: process.env.MILD_DIP_GREEN_SHORT_RED_WINDOW_MS ?? 60_000,
     enrichBudgetMs: process.env.MILD_DIP_ENRICH_BUDGET_MS ?? 40_000,
     streamImpulseOnly: (() => {

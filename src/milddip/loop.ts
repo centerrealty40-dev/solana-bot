@@ -16,6 +16,7 @@ import { evaluateStreamImpulseCandidates } from '../volgreen/stream-impulse.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
+import { maybeAlertStreamResolveBlind } from './stream-health.js';
 import {
   applyMarkDecisionToPosition,
   decideMarkExit,
@@ -1163,21 +1164,24 @@ export async function runMildDipLoop(
       rpcUrl: cfg.rpcUrl,
       buyMintResolveMaxPerMin: cfg.buyMintResolveMaxPerMin,
       buyMintResolveConcurrency: cfg.buyMintResolveConcurrency,
+      buyMintResolveQueueMax:
+        cfg.buyMintResolveQueueMax > 0 ? cfg.buyMintResolveQueueMax : undefined,
     });
     stats.stream = streamHandle != null;
   }
 
   // Leader highlight (not blind copy): 7BNaxx/8zkg Buys → force triple eval.
+  // Cheap wallet subscriptions — survives when program-log resolve overflows.
   let leaderWatch: { stop: () => void } | null = null;
   const leaderWallets = parseLeaderWatchWallets();
   if (leaderWallets.length > 0 && (cfg.entryMode === 'green_tape' || cfg.entryMode === 'awakening')) {
-    const resolveCap = Number(process.env.MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN ?? 30);
+    const resolveCap = Number(process.env.MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN ?? 40);
     leaderWatch = startLeaderWalletWatch({
       wallets: leaderWallets,
       rpcUrl: cfg.rpcUrl,
       wsUrl: cfg.streamWsUrl || null,
-      resolveMaxPerMin: Number.isFinite(resolveCap) ? Math.max(0, resolveCap) : 30,
-      resolveConcurrency: 3,
+      resolveMaxPerMin: Number.isFinite(resolveCap) ? Math.max(0, resolveCap) : 40,
+      resolveConcurrency: 4,
     });
   }
 
@@ -1276,6 +1280,22 @@ export async function runMildDipLoop(
           `droppedOverflow=${rsAny?.droppedOverflow ?? 0} queued=${rsAny?.queued ?? 0} | ` +
           `mintRefresh ok=${rf.ok} fail=${rf.fail} skip=${rf.skip}`,
       );
+      // Watchdog: do not stay silent when resolve is dropping the firehose.
+      void maybeAlertStreamResolveBlind({
+        snap: {
+          resolved: rsAny?.resolved ?? 0,
+          failed: rsAny?.failed ?? 0,
+          droppedOverflow: rsAny?.droppedOverflow ?? 0,
+          droppedStale: rsAny?.droppedStale ?? 0,
+          queued: rsAny?.queued ?? 0,
+          volumeMarks: rsAny?.volumeMarks ?? 0,
+        },
+        nowMs,
+        enabled: process.env.MILD_DIP_STREAM_HEALTH_ALERT !== '0',
+        cooldownMs: Number(process.env.MILD_DIP_STREAM_HEALTH_ALERT_COOLDOWN_MS ?? 600_000),
+      }).catch((err) => {
+        console.warn('[mild-dip] stream-health alert failed', err);
+      });
     }
   };
 

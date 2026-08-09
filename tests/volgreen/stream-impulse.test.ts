@@ -23,21 +23,31 @@ const ENV_KEYS = [
   'MILD_DIP_MINT_PRICE_REFRESH',
   'MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN',
   'MILD_DIP_VOLUME_IMPULSE_ENTRY',
+  'MILD_DIP_LEADER_TAPE',
   'MILD_DIP_LEADER_TAPE_MIN_SAMPLES',
   'MILD_DIP_LEADER_TAPE_MIN_BARS',
+  'MILD_DIP_LEADER_TAPE_MIN_SPAN_MS',
+  'MILD_DIP_LEADER_TAPE_MAX_G_PC',
+  'MILD_DIP_LEADER_TAPE_RUNUP_PC',
+  'MILD_DIP_LEADER_TAPE_MAX_G_MAX_PC',
+  'MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC',
   'MILD_DIP_MAX_OPEN_POSITIONS',
+  'VOL_GREEN_LEADER_WATCH',
 ];
 
 const saved: Record<string, string | undefined> = {};
 
-/** Multi-minute climb that satisfies leader-tape + first_strong. */
+/** Multi-minute climb that satisfies leader-tape + first_strong / intrabar. */
 function noteLeaderLikeClimb(mint: string, nowMs: number): void {
-  const path = [1.0, 1.01, 1.02, 1.12, 1.11, 1.28];
-  for (let i = 0; i < path.length; i++) {
-    const t = nowMs - (path.length - i) * 60_000;
-    mildDipPriceRing.note(mint, path[i]!, { tsMs: t + 5_000, source: 'stream' });
-    mildDipPriceRing.note(mint, path[i]!, { tsMs: t + 45_000, source: 'stream' });
+  // Prior minutes soft; impulse inside the last 60s so first_strong/intrabar sees green tip.
+  const prior = [1.0, 1.02, 1.03, 1.04, 1.05];
+  for (let i = 0; i < prior.length; i++) {
+    const t = nowMs - (prior.length - i + 1) * 60_000;
+    mildDipPriceRing.note(mint, prior[i]!, { tsMs: t + 5_000, source: 'stream' });
+    mildDipPriceRing.note(mint, prior[i]!, { tsMs: t + 45_000, source: 'stream' });
   }
+  mildDipPriceRing.note(mint, 1.05, { tsMs: nowMs - 50_000, source: 'stream' });
+  mildDipPriceRing.note(mint, 1.22, { tsMs: nowMs - 5_000, source: 'stream' });
 }
 
 beforeEach(() => {
@@ -49,6 +59,15 @@ beforeEach(() => {
   process.env.MILD_DIP_EXECUTION_MODE = 'paper';
   process.env.MILD_DIP_MINT_PRICE_REFRESH = '0';
   process.env.MILD_DIP_VOLUME_IMPULSE_ENTRY = '0';
+  process.env.VOL_GREEN_LEADER_WATCH = '0';
+  process.env.MILD_DIP_LEADER_TAPE = '1';
+  process.env.MILD_DIP_LEADER_TAPE_MIN_SAMPLES = '8';
+  process.env.MILD_DIP_LEADER_TAPE_MIN_BARS = '4';
+  process.env.MILD_DIP_LEADER_TAPE_MIN_SPAN_MS = '180000';
+  process.env.MILD_DIP_LEADER_TAPE_MAX_G_PC = '8';
+  process.env.MILD_DIP_LEADER_TAPE_RUNUP_PC = '10';
+  process.env.MILD_DIP_LEADER_TAPE_MAX_G_MAX_PC = '40';
+  process.env.MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC = '80';
   bootstrapVolGreenEnv(process.env);
 });
 
@@ -64,13 +83,14 @@ afterEach(() => {
 
 describe('evaluateStreamImpulseCandidates', () => {
   it('passes first_strong with real multi-minute samples (no gecko)', async () => {
+    const mint = `LeadClimb${Date.now()}1111111111111111111111`.slice(0, 44);
     const cfg = loadMildDipConfig();
     expect(cfg.streamImpulseOnly).toBe(true);
     expect(cfg.maxOpenPositions).toBe(10);
     const nowMs = Date.now();
-    noteLeaderLikeClimb(MINT, nowMs);
-    mildDipHotMints.note(MINT, nowMs, 8);
-    mildDipHotMints.markBuyForce(MINT, nowMs);
+    noteLeaderLikeClimb(mint, nowMs);
+    mildDipHotMints.note(mint, nowMs, 8);
+    mildDipHotMints.markBuyForce(mint, nowMs);
 
     let fetchCalls = 0;
     const fetchImpl = (async () => {
@@ -85,9 +105,10 @@ describe('evaluateStreamImpulseCandidates', () => {
       allowPriceRefresh: false,
     });
     expect(fetchCalls).toBe(0);
-    expect(r.candidates.length).toBeGreaterThanOrEqual(1);
-    expect(r.candidates[0]!.mint).toBe(MINT);
+    const mine = r.skips.filter((s) => s.mint === mint);
+    expect(r.candidates.map((c) => c.mint), `skips=${JSON.stringify(mine)}`).toContain(mint);
     expect(r.candidates[0]!.dipSource).toBe('stream');
+    mildDipHotMints.clearBuyForce(mint);
   });
 
   it('does NOT buy on volume-impulse alone when entry flag is off', async () => {

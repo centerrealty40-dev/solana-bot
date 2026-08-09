@@ -122,8 +122,10 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '1');
   setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '5');
   setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '500');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '100');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '5');
+  // Resolve firehose headroom — old 100/min + queue48 → droppedOverflow death.
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '250');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '8');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_QUEUE_MAX', '250');
   setIfAbsent('MILD_DIP_MINT_PRICE_REFRESH', '1');
   // Still mark fat stream buys for priority ranking — entry uses bars, not notional.
   setIfAbsent('MILD_DIP_VOLUME_IMPULSE_MIN_SOL', '2');
@@ -136,13 +138,14 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_PRICE_RING_TTL_MS', String(90 * 60_000));
   setIfAbsent('MILD_DIP_PRICE_RING_MAX_SAMPLES', '360');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '0');
-  // No leader-follow — stream impulse must win on its own.
-  setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');
+  // Leader discovery (highlight + force eval) — NOT blind copy. Cheap vs program firehose.
+  setIfAbsent('VOL_GREEN_LEADER_WATCH', '1');
   setIfAbsent(
     'VOL_GREEN_LEADER_WATCH_WALLETS',
     '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
   );
-  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '0');
+  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '40');
+  setIfAbsent('MILD_DIP_STREAM_HEALTH_ALERT', '1');
   setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '1');
   setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '1');
   setIfAbsent('MILD_DIP_MAX_ENRICH', '1');

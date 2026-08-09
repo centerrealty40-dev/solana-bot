@@ -74,8 +74,13 @@ export function createBuyMintResolver(args: {
   onResolved?: (result: BuyResolveResult) => void;
 }): BuyMintResolver {
   const maxPerMin = Math.max(0, args.maxPerMin ?? 30);
-  const concurrency = Math.max(1, Math.min(6, args.concurrency ?? 2));
-  const queueMax = Math.max(concurrency, Math.min(60, args.queueMax ?? Math.min(maxPerMin, 40)));
+  // PumpSwap Buy-without-mint firehose needs headroom; old caps (conc≤6, queue≤60)
+  // produced hundreds of thousands of droppedOverflow and blind discovery.
+  const concurrency = Math.max(1, Math.min(12, args.concurrency ?? 2));
+  const queueMax = Math.max(
+    concurrency,
+    Math.min(400, args.queueMax ?? Math.min(Math.max(maxPerMin, 80), 250)),
+  );
   const staleJobMs = Math.max(5_000, args.staleJobMs ?? STALE_JOB_MS);
   const volumeMinSol = Math.max(0, args.volumeImpulseMinSol ?? 0);
   const seenSig = new Set<string>();

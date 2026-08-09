@@ -83,8 +83,8 @@ export function startLeaderWalletWatch(opts: {
       rpcUrl,
       maxPerMin: resolveMax,
       concurrency: opts.resolveConcurrency ?? 2,
-      queueMax: Math.max(10, resolveMax),
-      staleJobMs: 25_000,
+      queueMax: Math.min(120, Math.max(40, resolveMax * 2)),
+      staleJobMs: 45_000,
       onResolved: (result) => {
         mildDipHotMints.markLeaderHighlight(result.mint, Date.now());
         console.log(
