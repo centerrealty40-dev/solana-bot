@@ -74,6 +74,9 @@ const exitGates: MildDipExitGates = {
   neverArmBouncePct: 8,
   neverArmBounceMinTroughAgeMs: 60_000,
   neverArmBounceRequireRedPct: 3,
+  neverArmBouncePartialFraction: 0.5,
+  neverArmBounce2Pct: 16,
+  mfeBankSleeveLossPartialFraction: 0.5,
   neverArmFreefallPnlPct: 25,
   neverArmFreefallMinMs: 60_000,
   neverArmTimeRedMinMs: 0,
@@ -561,7 +564,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('never_arm_bounce: dump to trough then reclaim ≥8% off trough → full exit', () => {
+  it('never_arm_bounce: dump to trough then reclaim ≥8% off trough → half exit', () => {
     // trough 80 (−20%); mark 86.5 = +8.125% off trough; still −13.5% vs entry
     const now = 1_000_000;
     const v = evaluateMildDipPeakGiveback({
@@ -577,7 +580,44 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('never_arm_bounce');
+    expect(v.fraction).toBe(0.5);
+  });
+
+  it('never_arm_bounce: second cut at ≥16% bounce after scaleOutDone', () => {
+    // trough 80; mark 93 = +16.25% off trough; still −7% vs entry
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 93,
+      peakPriceUsd: 102,
+      armed: false,
+      scaleOutDone: true,
+      gates: exitGates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_bounce');
     expect(v.fraction).toBe(1);
+  });
+
+  it('never_arm_bounce: after half, 8% bounce alone does not dump runner', () => {
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 86.5, // +8.125% off trough — first threshold only
+      peakPriceUsd: 102,
+      armed: false,
+      scaleOutDone: true,
+      gates: exitGates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.reason).not.toBe('never_arm_bounce');
   });
 
   it('never_arm_bounce: needs trough dump ≤ −8% first', () => {
@@ -670,6 +710,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       postEntryTroughAtMs: now - 90_000,
     });
     expect(v.reason).toBe('never_arm_bounce');
+    expect(v.fraction).toBe(0.5);
   });
 
   it('never-arm timeout at max hold if still unarmed', () => {
@@ -947,8 +988,8 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.fraction).toBe(1);
   });
 
-  it('sleeve can protect remainder after bank1 before +15', () => {
-    // peak 112, mark 98.56 → −12% giveback, stage=1
+  it('sleeve can protect remainder after bank1 before +15 (underwater → half)', () => {
+    // peak 112, mark 98.56 → −12% giveback, stage=1, pnl −1.44%
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 98.56,
@@ -959,6 +1000,47 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('mfe_bank_sleeve');
+    expect(v.fraction).toBe(0.5);
+  });
+
+  it('underwater sleeve after half does not dump runner on same giveback', () => {
+    // EjD5Y9 / 4aWQZP… pattern: armed, sleeve hit, already scaled once
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 89,
+      peakPriceUsd: 107.7,
+      armed: true,
+      scaleOutDone: true,
+      mfeBankStage: 0,
+      gates: bankGates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 88,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.reason).not.toBe('mfe_bank_sleeve');
+  });
+
+  it('armed runner after sleeve-loss half exits on bounce reclaim', () => {
+    // trough 80 (−20%); mark 86.5 = +8.125% bounce; still red; armed+scaled
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 86.5,
+      peakPriceUsd: 107.7,
+      armed: true,
+      scaleOutDone: true,
+      mfeBankStage: 0,
+      gates: bankGates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_bounce');
+    expect(v.fraction).toBe(1);
   });
 
   it('does not fire classic −3% partial while MFE-bank is on', () => {

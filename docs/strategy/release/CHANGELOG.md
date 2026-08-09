@@ -1,4 +1,29 @@
 # So
+## [1.11.759] — 2026-08-09
+
+**Тег:** `sa-1.11.759`
+
+### Exit: half/half on loss bounce + underwater sleeve
+
+`EjD5Y9` (tx `4aWQZP…`): `mfe_bank_sleeve` full-sold at **−11%** into a
+dump that later reclaimed. Same pattern on `never_arm_bounce` — full cut on
+the first reclaim.
+
+**Changes:**
+1. **`never_arm_bounce`**: sell **50%** at bounce ≥8%; runner at bounce ≥**16%**.
+2. **`mfe_bank_sleeve` while pnl < 0**: sell **50%** first; do **not** dump the
+   runner on the same continuous sleeve — remainder exits on bounce reclaim
+   (`never_arm_bounce` even if still armed) or cliff. Green sleeve stays full.
+
+**Env:**
+- `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION=0.5`
+- `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_2_PCT=16`
+- `MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION=0.5`
+
+**Откат:** set all three to `0` (full cuts) + reload.
+
+---
+
 ## [1.11.758] — 2026-08-09
 
 **Тег:** `sa-1.11.758`

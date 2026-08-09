@@ -915,11 +915,10 @@ async function executeQueuedSell(args: {
       // Leave the runner: mark scale-out done, shrink notional, refresh raw.
       const live = state.open[mint]!;
       live.scaleOutDone = true;
+      // Only bank reasons advance the MFE ladder — bounce/sleeve loss partials
+      // must not pretend bank1 filled (EjD5Y9-class armed-but-unbanked sleeve).
       if (decision.reason === 'mfe_bank_1') live.mfeBankStage = 1;
       else if (decision.reason === 'mfe_bank_2') live.mfeBankStage = 2;
-      else if (!(typeof live.mfeBankStage === 'number' && live.mfeBankStage >= 1)) {
-        live.mfeBankStage = 1;
-      }
       live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
       live.peakPriceUsd = decision.peakPriceUsd;
       live.trailArmed = decision.armed;
@@ -1528,13 +1527,22 @@ export async function runMildDipLoop(
       (cfg.exit.mfeBankEnabled
         ? `mfeBank=+${cfg.exit.mfeBank1Pct}%×${cfg.exit.mfeBank1Fraction}` +
           `/+${cfg.exit.mfeBank2Pct}%×${cfg.exit.mfeBank2Fraction}` +
-          `/sleeve=-${cfg.exit.mfeBankSleeveGivebackPct}% `
+          `/sleeve=-${cfg.exit.mfeBankSleeveGivebackPct}%` +
+          (cfg.exit.mfeBankSleeveLossPartialFraction > 0 &&
+          cfg.exit.mfeBankSleeveLossPartialFraction < 1
+            ? `/loss×${cfg.exit.mfeBankSleeveLossPartialFraction}`
+            : '') +
+          ` `
         : `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
           `fullGiveback=-${cfg.exit.givebackPct}% `) +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}` +
       `/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%` +
       `/bounce≥${cfg.exit.neverArmBouncePct}%` +
+      (cfg.exit.neverArmBouncePartialFraction > 0 &&
+      cfg.exit.neverArmBouncePartialFraction < 1
+        ? `×${cfg.exit.neverArmBouncePartialFraction}/≥${cfg.exit.neverArmBounce2Pct}%`
+        : '') +
       `/troughAge${Math.round(cfg.exit.neverArmBounceMinTroughAgeMs / 1000)}s` +
       `/stillRed≥${cfg.exit.neverArmBounceRequireRedPct}% ` +
       `neverArmFreefall=${cfg.exit.neverArmFreefallPnlPct > 0 ? 1 : 0}` +

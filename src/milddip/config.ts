@@ -321,6 +321,10 @@ const MildDipConfigSchema = z.object({
     mfeBank2Pct: z.coerce.number().min(0).max(500).default(15),
     mfeBank2Fraction: z.coerce.number().min(0).max(1).default(0.4),
     mfeBankSleeveGivebackPct: z.coerce.number().min(0).max(100).default(12),
+    /**
+     * 1.11.759 — underwater sleeve: sell this fraction first (0 = full legacy).
+     */
+    mfeBankSleeveLossPartialFraction: z.coerce.number().min(0).max(1).default(0.5),
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /** Never-armed: force exit after this many ms (0=off). Hard ceiling. */
@@ -363,6 +367,10 @@ const MildDipConfigSchema = z.object({
       .max(3_600_000)
       .default(60_000),
     neverArmBounceRequireRedPct: z.coerce.number().min(0).max(100).default(3),
+    /** 1.11.759 — first bounce cut (0.5); 0 = full on first bounce. */
+    neverArmBouncePartialFraction: z.coerce.number().min(0).max(1).default(0.5),
+    /** 1.11.759 — second bounce for runner (default 16). */
+    neverArmBounce2Pct: z.coerce.number().min(0).max(100).default(16),
     /** Never-arm freefall floor (no bounce). 0 = off. */
     neverArmFreefallPnlPct: z.coerce.number().min(0).max(100).default(25),
     neverArmFreefallMinMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
@@ -449,6 +457,10 @@ export function loadMildDipConfig(): MildDipConfig {
     mfeBank2Pct: envNum('MILD_DIP_EXIT_MFE_BANK2_PCT', 15),
     mfeBank2Fraction: envNum('MILD_DIP_EXIT_MFE_BANK2_FRACTION', 0.4),
     mfeBankSleeveGivebackPct: envNum('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', 12),
+    mfeBankSleeveLossPartialFraction: envNum(
+      'MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION',
+      0.5,
+    ),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
@@ -489,6 +501,11 @@ export function loadMildDipConfig(): MildDipConfig {
       'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT',
       3,
     ),
+    neverArmBouncePartialFraction: envNum(
+      'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION',
+      0.5,
+    ),
+    neverArmBounce2Pct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_2_PCT', 16),
     neverArmFreefallPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', 25),
     neverArmFreefallMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS', 60_000),
     /**
