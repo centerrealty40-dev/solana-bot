@@ -119,6 +119,9 @@ export MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN=0
 # Independent entry — patterns from leaders are encoded in tape/poison gates, not copy.
 export VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT=0
 export MILD_DIP_REQUIRE_LEADER_HIGHLIGHT=0
+# Don't chase already-vertical 5m prints (CXaS scam: entry pc5m 54%).
+export MILD_DIP_ENTRY_MAX_PC5M_PCT=40
+export VOL_GREEN_ENTRY_MAX_PC5M_PCT=40
 # Poison window: ban after nuke/crash tape (tuned so memes still trade).
 export VOL_GREEN_POISON_TAPE=1
 export MILD_DIP_POISON_TAPE=1

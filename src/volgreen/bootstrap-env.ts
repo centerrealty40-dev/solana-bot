@@ -149,7 +149,10 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '0');
   setIfAbsent('VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT', '0');
   setIfAbsent('MILD_DIP_REQUIRE_LEADER_HIGHLIGHT', '0');
-  // Remember violent tape 45m so we don't buy the soft tip after a nuke candle.
+  // Reject late chase after a vertical 5m move (CXaS: bought at +54% pc5m).
+  setIfAbsent('MILD_DIP_ENTRY_MAX_PC5M_PCT', '40');
+  setIfAbsent('VOL_GREEN_ENTRY_MAX_PC5M_PCT', '40');
+  // Remember violent tape so we don't buy the soft tip after a nuke candle.
   setIfAbsent('VOL_GREEN_POISON_TAPE', '1');
   setIfAbsent('MILD_DIP_POISON_TAPE', '1');
   setIfAbsent('MILD_DIP_POISON_TAPE_BAN_MS', String(15 * 60_000));

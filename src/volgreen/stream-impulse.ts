@@ -202,6 +202,23 @@ export async function evaluateStreamImpulseCandidates(
       mildDipHotMints.clearBuyForce(mint);
       return;
     }
+    // Chase guard (CXaS2VuF): already +54% on ring 5m → late to a dump, not a leader entry.
+    const chaseMax = Number(
+      process.env.MILD_DIP_ENTRY_MAX_PC5M_PCT ?? process.env.VOL_GREEN_ENTRY_MAX_PC5M_PCT ?? 40,
+    );
+    if (Number.isFinite(chaseMax) && chaseMax > 0) {
+      const pc5m = mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs);
+      if (pc5m != null && Number.isFinite(pc5m) && pc5m > chaseMax) {
+        skips.push({
+          mint,
+          entryMode: 'green_tape',
+          reasons: [`chase_pc5m=${pc5m.toFixed(1)}>${chaseMax}`],
+          metrics: { priceChange5mPct: pc5m },
+        });
+        mildDipHotMints.clearBuyForce(mint);
+        return;
+      }
+    }
     // Only enter if a watched leader also bought recently (not alone on junk).
     if (requireLeader && !mildDipHotMints.isLeaderHighlight(mint, nowMs)) {
       skips.push({
