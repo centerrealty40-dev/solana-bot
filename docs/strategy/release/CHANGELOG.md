@@ -1,4 +1,17 @@
 # So
+## [1.11.787] — 2026-08-09
+
+**Тег:** `sa-1.11.787`
+
+### Fix: leader trade_fill cashDelta sign
+
+Observer quoteUsdDelta magnitude can arrive unsigned. Force buy
+`cashDeltaUsd = −spent`, sell `=+received` in trades.jsonl.
+
+**Откат:** revert this commit (magnitude-only rows).
+
+---
+
 ## [1.11.786] — 2026-08-09
 
 **Тег:** `sa-1.11.786`
