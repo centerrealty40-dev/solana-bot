@@ -1,4 +1,20 @@
 # So
+## [1.11.763] — 2026-08-09
+
+**Тег:** `sa-1.11.763`
+
+### Size: flat $5 clips
+
+All mild-dip buy clips → **$5**:
+- `MILD_DIP_POSITION_USD=5`
+- `MILD_DIP_THICK_POSITION_USD=5`
+- `MILD_DIP_MICRO_POSITION_USD=5`
+- `MILD_DIP_LEADER_ALIGN_SCALE_IN_USD=5` (was $15)
+
+**Откат:** restore prior 30/30/30 + scale-in 15 + reload.
+
+---
+
 ## [1.11.762] — 2026-08-09
 
 **Тег:** `sa-1.11.762`

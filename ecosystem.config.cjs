@@ -2827,20 +2827,22 @@ const PM2_APPS = [
         MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         /** 1.11.742 — base clip $10 (was $5). */
         /** 1.11.754 — flat $30 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '30',
+        /** 1.11.763 — flat $5 across base / thick / micro. */
+        MILD_DIP_POSITION_USD: '5',
         /**
-         * 1.11.742 — thick size-up: 2× clip ($20) when structural name
+         * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
+         * 1.11.763 — same $5 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '30',
+        MILD_DIP_THICK_POSITION_USD: '5',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
         /**
-         * 1.11.746 — micro $15k–$50k @ $5, but ONLY knife_stabilize
-         * (post-knife bounce). Other branches keep base/thick + $50k floor.
+         * 1.11.746 — micro $15k–$50k, knife_stabilize only.
+         * 1.11.763 — same $5 as base.
          */
-        MILD_DIP_MICRO_POSITION_USD: '30',
+        MILD_DIP_MICRO_POSITION_USD: '5',
         MILD_DIP_MICRO_MIN_MCAP_USD: '15000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -3035,7 +3037,8 @@ const PM2_APPS = [
         MILD_DIP_LEADER_ALIGN_MIN_BELOW_ENTRY_PCT: '0',
         MILD_DIP_LEADER_ALIGN_REQUIRE_ADD: '0',
         MILD_DIP_LEADER_ALIGN_SCALE_IN: '1',
-        MILD_DIP_LEADER_ALIGN_SCALE_IN_USD: '15',
+        /** 1.11.763 — match flat $5 clips. */
+        MILD_DIP_LEADER_ALIGN_SCALE_IN_USD: '5',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
          * Dex hard-capped at 120 RPM; mark uses cache TTL ≈ interval.
