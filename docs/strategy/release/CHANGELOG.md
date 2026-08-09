@@ -1,40 +1,4 @@
 # So
-## [1.11.768] — 2026-08-09
-
-**Тег:** `sa-1.11.768`
-
-### Entry: tighter bottom / turn confirm (keep profitable branches)
-
-60h oracle+grid on live journal (1780 buys / 345 mints): **do not cut**
-`mild_stabilize` / `stream` (both net-positive). Losses concentrate on
-mid-hill stabilize bounces and shallow `h1_red_shallow` (−3…−8%).
-
-**mild_stabilize (branch kept, gates tightened):**
-- dump band `(−25, −12]` (was `(−25, −8]`)
-- bounce `[1.5, 4]` (was `[1.5, 8]`)
-- trough age ≥ 25s (was 15s)
-- require last **3** ring ticks strictly rising (`REQUIRE_RISING_TICKS=3`)
-
-**h1_red_shallow (branch kept, deeper pocket):**
-- pc5m ∈ `(−15, −8]` (was `(−10, −3]`)
-
-CF (skip-filter on actual fills): stabilize+h1 tighten ≈ **+$50** vs 60h
-baseline; turn+stabilize+h1 heuristic up to ≈ **+$100**. Branches not deleted.
-
-**Env:** `MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT=-12`,
-`MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT=4`,
-`MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS=25000`,
-`MILD_DIP_MILD_STABILIZE_REQUIRE_RISING_TICKS=3`,
-`MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT=-15`,
-`MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT=-8`.
-
-**Откат:** restore prior env values in `ecosystem.config.cjs` + reload.
-
-Research: `scripts-tmp/milddip-bottom-oracle-grid-60h.py`,
-`artifacts/milddip-oracle60h/REPORT.md`.
-
----
-
 ## [1.11.767] — 2026-08-09
 
 **Тег:** `sa-1.11.767`

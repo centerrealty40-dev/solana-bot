@@ -1842,8 +1842,7 @@ export async function runMildDipLoop(
       `(dump(${cfg.mildStabilizeMinDumpPct},${cfg.mildStabilizeMaxDumpPct}]` +
       `/bounce[${cfg.mildStabilizeMinBouncePct},${cfg.mildStabilizeMaxBouncePct}]` +
       `/troughAge${Math.round(cfg.mildStabilizeTroughMinAgeMs / 1000)}s` +
-      `/belowPeak≥${cfg.mildStabilizeMinBelowPeakPct}%` +
-      `/rise${cfg.mildStabilizeRequireRisingTicks}) ` +
+      `/belowPeak≥${cfg.mildStabilizeMinBelowPeakPct}%) ` +
       `mintCooldown=${Math.round(cfg.mintCooldownMs / 1000)}s ` +
       `lossCooldown=${Math.round(cfg.lossCooldownMs / 1000)}s ` +
       `feeSolTopup=${cfg.feeSolTopupEnabled ? 1 : 0}` +

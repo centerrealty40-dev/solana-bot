@@ -1,64 +1,45 @@
-# Mild-dip 60h: downhill grind = main bleed
+# Mild-dip 60h research — 1.11.768 tighten **REJECTED**
 
-## The real problem
+## Verdict
 
-Matched book ≈ **−$109** on 1780 buys / 345 mints.
+Skip-filter “tighten stabilize + deepen h1 + rising ticks” on 1780 live fills:
 
-**58 “downhill grind” mints** (entries stair-step lower, net red): **−$279**.  
-Of that, **first cycle only −$21**; **rest 376 entries −$258**.
+| | |
+|--|--|
+| Actual | **−$108.54** |
+| After 768 full | **−$69.30** (Δ **+$39**) |
+| Winners cut | **+$198** |
+| Losses avoided | **−$238** |
+| Churn | **~$436** |
+| Avoid/cut ratio | **1.20** |
 
-If those rest entries never fired → book ≈ **+$150**.
+**Rejected as noise.** Net +$39 on ~$400 of canceling win/loss mass is not an edge.
 
-Pattern (DKx, 7Tw72W, EKppz9, Dz2iVS, DfmUxZ, …): one scrap/reversal prints, then we keep buying **continuation dumps** on the same falling hill. Impulses are skipped by design (dip-only); the bleed is **fake reversals mid-slope**.
+## What we will not ship from this thread
 
-## What we will NOT do
+- dump `(−25,−12]` / bounce≤4 / trough 25s / rise3 / h1 `(−15,−8]` as a package  
+- Time-based rebuy bans  
+- Blind dex≤−12 / hard wait≤−12 (even worse collateral)
 
-- Ban rebuy for X minutes / mint cooldown theater  
-- Cut profitable branches (`mild_stabilize` +$14, `stream` +$21 on this window)  
-- Blind `dex pc5m ≤ −12` (net ~0)  
-- Hard `wait_dump ≤ −12` (cuts ~$280 winner PnL — too much collateral)
+## Real problem (still open)
 
-## What to ship (evidence only)
+**58 downhill-grind mints = −$279**, of which **rest entries after #1 = −$258**.  
+Without those rest fills the book ≈ **+$150**.
 
-### A — already in PR #680 / 1.11.768 (do this)
+That bleed is mostly `wait_dip` / `dex` continuation on a falling hill — **not** fixed by shaving shallow h1/stabilize. No clean low-collateral attempt-field rule found yet that removes DH-rest without chewing winners.
 
-| Gate | Change | Why |
-|------|--------|-----|
-| `mild_stabilize` dump | `(−25, −12]` (was −8) | mid-hill −8…−12 stabilize lost |
-| `mild_stabilize` bounce | max **4%** (was 8) | chase bounce net-negative |
-| trough age | **25s** (was 15s) | don’t buy the wick print |
-| rising ticks | last **3** strictly up | turn confirm |
-| `h1_red_shallow` | pc5m `(−15, −8]` (was (−10, −3]) | −3…−8 bags (DKx/7Tw72) |
+## Cleaner-but-small slices (still not “the fix”)
 
-CF: **Δ ≈ +$50**, avoid-loss/win-cut ≈ **1.55**. Branches kept.
+| Rule | Δ | win cut | lose avoid | ratio |
+|------|--:|--------:|-----------:|------:|
+| h1 skip pc5m > −4 | +$19 | $9 | $28 | 3.1 |
+| h1 skip pc5m > −5 | +$30 | $19 | $50 | 2.6 |
+| stab bounce > 6 | +$21 | $17 | $38 | 2.3 |
 
-### B — next (same idea, wider): turn required when ring knows
+Better asymmetry than 768, but small absolute dollars — not the main hole.
 
-When price-ring has samples at decision time: **reject entry if last reclaim ticks are not rising** (same turn test), for `wait_dip` / `dex` / `h1` too — not only stabilize.
+## Artifacts
 
-CF on top of A: **Δ ≈ +$85**. Still no time ban — only “no buy without a visible turn”.
-
-### C — not ready to ship
-
-Session-high / lower-high filters help downhill rest but mark coverage at entry is sparse (chicken-egg: marks exist mainly while in a bag). Needs live ring on wait/watch mints before we trust it.
-
-## Downhill mint set (top by loss)
-
-| mint | n | pnl | entry decline |
-|------|--:|----:|--------------:|
-| DfmUxZ | 8 | −33.0 | −66% |
-| Dz2iVS | 13 | −22.7 | −40% |
-| EKppz9 | 8 | −20.4 | −35% |
-| JAX8ZB | 4 | −18.2 | −76% |
-| 4pGqQG | 7 | −17.8 | −56% |
-| EtxCL9 | 4 | −15.1 | −49% |
-| BSiKCM | 13 | −11.8 | −40% |
-| … | | | |
-| DKxHTQ | 6 | −2.7 | −50% |
-| **58 total** | | **−279** | |
-
-Full list: `artifacts/milddip-oracle60h/downhill.json`.
-
-## Strategy in one sentence
-
-Stay dip-only, but **only enter a reclaiming turn** (deeper dump + small bounce + rising ticks). Stop buying red candles that are just the next step down the hill.
+- `downhill.json` — 58 grind mints  
+- `cf-768-backtest.json` — full 768 CF  
+- `scripts-tmp/milddip-bottom-oracle-grid-60h.py` — grid harness  

@@ -313,7 +313,6 @@ export async function evaluateFastPathCandidate(
       troughMinAgeMs: cfg.mildStabilizeTroughMinAgeMs,
       lookbackMs: cfg.cooldownBounceLookbackMs,
       minBelowPeakPct: cfg.mildStabilizeMinBelowPeakPct,
-      requireRisingTicks: cfg.mildStabilizeRequireRisingTicks,
     });
     if (mild.pass) {
       dipSource = 'mild_stabilize';

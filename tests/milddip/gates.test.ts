@@ -216,27 +216,26 @@ describe('evaluateMildDipPreBuy', () => {
     expect(v.pass).toBe(true);
   });
 
-  it('h1_red_shallow band (−15,−8]: accepts −9% that main mild (−25,−12] rejects as shallow', () => {
-    // 1.11.768 — deeper h1 pocket (was (−10,−3]).
-    const h1Band = { minDipPct: -15, maxDipPct: -8 };
+  it('h1_red_shallow band (−10,−3]: accepts −4% that main mild (−25,−5] rejects', () => {
+    const h1Band = { minDipPct: -10, maxDipPct: -3 };
     const shallow = evaluateMildDipPreBuy({
-      signalPriceUsd: 1,
-      freshPriceUsd: 0.99,
-      freshPc5mPct: -9,
-      entryGates: h1Band,
-      maxChasePct: 4,
-    });
-    expect(shallow.pass).toBe(true);
-
-    // −4% is no longer in h1 band.
-    const tooShallow = evaluateMildDipPreBuy({
       signalPriceUsd: 1,
       freshPriceUsd: 0.99,
       freshPc5mPct: -4,
       entryGates: h1Band,
       maxChasePct: 4,
     });
-    expect(tooShallow.pass).toBe(false);
+    expect(shallow.pass).toBe(true);
+
+    // Main mild requires pc5m ≤ −5; −4% is the h1-only pocket.
+    const onMainBand = evaluateMildDipPreBuy({
+      signalPriceUsd: 1,
+      freshPriceUsd: 0.99,
+      freshPc5mPct: -4,
+      entryGates: { minDipPct: -25, maxDipPct: -8 },
+      maxChasePct: 4,
+    });
+    expect(onMainBand.pass).toBe(false);
   });
 
   it('h1_red_shallow still rejects bounce to green', () => {
@@ -244,7 +243,7 @@ describe('evaluateMildDipPreBuy', () => {
       signalPriceUsd: 1,
       freshPriceUsd: 1.02,
       freshPc5mPct: 4,
-      entryGates: { minDipPct: -15, maxDipPct: -8 },
+      entryGates: { minDipPct: -10, maxDipPct: -3 },
       maxChasePct: 4,
     });
     expect(v.pass).toBe(false);
