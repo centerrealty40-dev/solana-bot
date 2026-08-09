@@ -48,6 +48,8 @@ import {
   type LeaderAlignHit,
 } from './leader-align.js';
 import { isRunnerPartialExit } from './sell-partial.js';
+import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
+import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -921,58 +923,55 @@ async function executeQueuedSell(args: {
 
   if (sell.ok) {
     const exitPx = sell.priceUsd || decision.markPriceUsd;
-    if (isPartial && state.open[mint]) {
-      // Leave the runner: mark scale-out done, shrink notional, refresh raw.
+    // Always settle against a fresh on-chain read. Never drop state while SPL
+    // remainder > dust — that is the root of unmanaged "orphan" bags.
+    let remStr = await fetchMintBalanceRaw(copyCfg, mint);
+    let rem = parseTokenRaw(remStr);
+    if (rem == null || rem <= HOLDING_DUST_RAW) {
+      await sleep(400);
+      remStr = await fetchMintBalanceRaw(copyCfg, mint);
+      rem = parseTokenRaw(remStr);
+    }
+    // Hint from executor only if RPC still blank (do not trust as sole truth).
+    if (rem == null) rem = parseTokenRaw(sell.tokenRawRemaining);
+
+    const settle = settleAfterSuccessfulSell({ fraction, remainingRaw: rem });
+    if (settle.action === 'keep_runner' && state.open[mint]) {
       const live = state.open[mint]!;
-      live.scaleOutDone = true;
-      // Only bank reasons advance the MFE ladder — bounce/sleeve loss partials
-      // must not pretend bank1 filled (EjD5Y9-class armed-but-unbanked sleeve).
+      if (isPartial || settle.reason === 'remainder_above_dust') {
+        live.scaleOutDone = true;
+      }
       if (decision.reason === 'mfe_bank_1') live.mfeBankStage = 1;
       else if (decision.reason === 'mfe_bank_2') live.mfeBankStage = 2;
-      live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
+      if (isPartial) {
+        live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
+      }
       live.peakPriceUsd = decision.peakPriceUsd;
       live.trailArmed = decision.armed;
-      const rem = await fetchMintBalanceRaw(copyCfg, mint);
-      if (rem && /^\d+$/.test(rem) && BigInt(rem) > HOLDING_DUST_RAW) {
-        live.tokenRaw = rem;
-      } else {
-        // Dust / empty after "partial" — treat as full close.
-        delete state.open[mint];
-        state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
-        noteLastExit(exitPx);
-        saveMildDipState(cfg.statePath, state);
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_cooldown_set',
-          mint,
-          symbol: pos.symbol,
-          pnlPct: +realizedPnl.toFixed(2),
-          cooldownMs: cd.cooldownMs,
-          cooldownKind: cd.kind,
-          exitReason: decision.reason,
-          note: 'partial_left_dust',
-          lastExitPriceUsd: exitPx,
-        });
-        console.log(
-          `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} (partial→flat) ` +
-            `pnl=${realizedPnl.toFixed(1)}% mode=${cfg.executionMode}`,
-        );
-        await reclaimEmptyAta(cfg, {
-          mint,
-          symbol: pos.symbol,
-          reason: `post_sell_${decision.reason}`,
-        });
-        return;
+      if (settle.remainingRaw != null) {
+        live.tokenRaw = settle.remainingRaw.toString();
       }
       saveMildDipState(cfg.statePath, state);
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_sell_settle',
+        mint,
+        symbol: pos.symbol,
+        exitReason: decision.reason,
+        action: 'keep_runner',
+        settleReason: settle.reason,
+        fraction,
+        remainingRaw: settle.remainingRaw?.toString() ?? null,
+        intendedPartial: isPartial,
+      });
       console.log(
         `[mild-dip] SCALE-OUT ${pos.symbol} frac=${fraction} pnl=${realizedPnl.toFixed(1)}% ` +
           `mfe=${decision.mfePct.toFixed(1)}% giveback=${decision.givebackPct.toFixed(1)}% ` +
-          `runner≈$${live.sizeUsd.toFixed(2)} mode=${cfg.executionMode}`,
+          `runner≈$${live.sizeUsd.toFixed(2)} settle=${settle.reason} mode=${cfg.executionMode}`,
       );
       return;
     }
 
-    // Re-read — another path must not have already cleared it.
+    // Confirmed flat (or keep_runner without open — nothing to do).
     if (state.open[mint]) {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
@@ -988,6 +987,7 @@ async function executeQueuedSell(args: {
       cooldownKind: cd.kind,
       exitReason: decision.reason,
       lastExitPriceUsd: exitPx,
+      settleReason: settle.reason,
     });
     console.log(
       `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} pnl=${realizedPnl.toFixed(1)}% ` +
@@ -1805,6 +1805,7 @@ export async function runMildDipLoop(
       `oneshotGrace=${cfg.oneshotDumpGraceEnabled ? 1 : 0}` +
       `/${Math.round(cfg.oneshotDumpGraceMs / 1000)}s` +
       `/≥$${cfg.oneshotDumpMinSellUsd} ` +
+      `orphanSweep=${cfg.orphanSweepEnabled ? 1 : 0}/max${cfg.orphanSweepMaxSells} ` +
       `dumpClassify=${cfg.dumpClassifyEnabled ? 1 : 0}` +
       `/wait${Math.round(cfg.dumpClassifyWaitMs / 1000)}s` +
       `/win${Math.round(cfg.dumpClassifyWindowMs / 1000)}s` +
@@ -1857,6 +1858,26 @@ export async function runMildDipLoop(
   // One-shot: reclaim rent stuck in already-empty ATAs from prior $5 tests.
   if (!opts?.once) {
     await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
+    if (cfg.orphanSweepEnabled && cfg.orphanSweepMaxSells > 0) {
+      try {
+        const swept = await sweepUnmanagedPumpOrphans({
+          cfg,
+          state,
+          maxSells: cfg.orphanSweepMaxSells,
+        });
+        if (swept.candidates > 0) {
+          console.log(
+            `[mild-dip] orphanSweep candidates=${swept.candidates} ` +
+              `sold=${swept.sold} failed=${swept.failed} skipped=${swept.skipped}`,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          '[mild-dip] orphanSweep failed',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   }
 
   let lastScan = 0;

@@ -100,6 +100,12 @@ const MildDipConfigSchema = z.object({
    */
   oneshotDumpGraceEnabled: z.boolean().default(true),
   oneshotDumpGraceMs: z.coerce.number().int().min(0).max(600_000).default(60_000),
+  /**
+   * 1.11.767 — on startup, sell unmanaged `*pump` ATAs not in `state.open`
+   * (safety net; primary fix is post-sell on-chain settle). 0 max = off.
+   */
+  orphanSweepEnabled: z.boolean().default(true),
+  orphanSweepMaxSells: z.coerce.number().int().min(0).max(200).default(25),
   oneshotDumpMinSellUsd: z.coerce.number().min(0).max(1_000_000).default(500),
   /** post/pre ≤ this counts as emptied (dust left OK). */
   oneshotDumpMaxPostResidualFrac: z.coerce.number().min(0).max(1).default(0.02),
@@ -684,6 +690,9 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 1.11.734 — oneshot emptied-bag dump grace on peak_giveback. */
     oneshotDumpGraceEnabled: envBool('MILD_DIP_ONESHOT_DUMP_GRACE', true),
     oneshotDumpGraceMs: process.env.MILD_DIP_ONESHOT_DUMP_GRACE_MS ?? 60_000,
+    /** 1.11.767 — sell unmanaged pump ATAs not in open (startup safety net). */
+    orphanSweepEnabled: envBool('MILD_DIP_ORPHAN_SWEEP', true),
+    orphanSweepMaxSells: process.env.MILD_DIP_ORPHAN_SWEEP_MAX_SELLS ?? 25,
     oneshotDumpMinSellUsd: process.env.MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD ?? 500,
     oneshotDumpMaxPostResidualFrac:
       process.env.MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC ?? 0.02,

@@ -7,6 +7,8 @@
  * Same hole for `never_arm_bounce` half-cuts (1.11.759).
  *
  * Rule: any successful sell with 0 < fraction < 1 is a runner partial.
+ * 1.11.767 — also settle against on-chain remainder (`sell-settle.ts`); a
+ * "full" exit that leaves SPL must keep the runner too.
  */
 export function isRunnerPartialExit(fraction: number): boolean {
   return Number.isFinite(fraction) && fraction > 0 && fraction < 1 - 1e-12;

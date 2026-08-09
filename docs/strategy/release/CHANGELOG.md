@@ -1,4 +1,32 @@
 # So
+## [1.11.767] — 2026-08-09
+
+**Тег:** `sa-1.11.767`
+
+### Fix: root cause of unmanaged orphan bags
+
+Live orphans (`6J4fmD`, `5CKuyx`, `46amR3`, …) were not “mystery bags” —
+half `never_arm_bounce` / sleeve sells and some full exits cleared
+`state.open` while SPL remaining stayed on-chain. Hard stop cannot see
+untracked ATAs.
+
+**Prevention (primary):** after every successful sell, settle against a
+fresh on-chain balance. Drop state **only** when remainder ≤ dust. If a
+“full” sell left tokens, keep a runner (`remainder_above_dust`). Missing
+RPC read → keep tracking (never blind-drop).
+
+**Safety net:** startup `orphanSweep` sells unmanaged `*pump` ATAs not in
+`state.open` (max 25/boot).
+
+**Buy race:** `!buy.ok` / thrown buy no longer deletes the reserved seat
+when chain already has balance — adopt instead.
+
+**Env:** `MILD_DIP_ORPHAN_SWEEP=1`, `MILD_DIP_ORPHAN_SWEEP_MAX_SELLS=25`.
+
+**Откат:** `MILD_DIP_ORPHAN_SWEEP=0` + restore prior settle path + reload.
+
+---
+
 ## [1.11.766] — 2026-08-09
 
 **Тег:** `sa-1.11.766`
