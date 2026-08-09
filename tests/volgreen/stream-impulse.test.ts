@@ -33,6 +33,10 @@ const ENV_KEYS = [
   'MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC',
   'MILD_DIP_MAX_OPEN_POSITIONS',
   'VOL_GREEN_LEADER_WATCH',
+  'VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT',
+  'MILD_DIP_REQUIRE_LEADER_HIGHLIGHT',
+  'VOL_GREEN_POISON_TAPE',
+  'MILD_DIP_POISON_TAPE',
 ];
 
 const saved: Record<string, string | undefined> = {};
@@ -60,6 +64,11 @@ beforeEach(() => {
   process.env.MILD_DIP_MINT_PRICE_REFRESH = '0';
   process.env.MILD_DIP_VOLUME_IMPULSE_ENTRY = '0';
   process.env.VOL_GREEN_LEADER_WATCH = '0';
+  // Unit tests inject leader highlight explicitly when needed.
+  process.env.VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT = '0';
+  process.env.MILD_DIP_REQUIRE_LEADER_HIGHLIGHT = '0';
+  process.env.VOL_GREEN_POISON_TAPE = '1';
+  process.env.MILD_DIP_POISON_TAPE = '1';
   process.env.MILD_DIP_LEADER_TAPE = '1';
   process.env.MILD_DIP_LEADER_TAPE_MIN_SAMPLES = '8';
   process.env.MILD_DIP_LEADER_TAPE_MIN_BARS = '4';
@@ -91,6 +100,7 @@ describe('evaluateStreamImpulseCandidates', () => {
     noteLeaderLikeClimb(mint, nowMs);
     mildDipHotMints.note(mint, nowMs, 8);
     mildDipHotMints.markBuyForce(mint, nowMs);
+    mildDipHotMints.markLeaderHighlight(mint, nowMs);
 
     let fetchCalls = 0;
     const fetchImpl = (async () => {
@@ -108,6 +118,27 @@ describe('evaluateStreamImpulseCandidates', () => {
     const mine = r.skips.filter((s) => s.mint === mint);
     expect(r.candidates.map((c) => c.mint), `skips=${JSON.stringify(mine)}`).toContain(mint);
     expect(r.candidates[0]!.dipSource).toBe('stream');
+    mildDipHotMints.clearBuyForce(mint);
+  });
+
+  it('skips entry without leader-highlight when required', async () => {
+    process.env.VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT = '1';
+    process.env.MILD_DIP_REQUIRE_LEADER_HIGHLIGHT = '1';
+    const mint = `NoLeader${Date.now()}111111111111111111111111`.slice(0, 44);
+    const cfg = loadMildDipConfig();
+    const nowMs = Date.now();
+    noteLeaderLikeClimb(mint, nowMs);
+    mildDipHotMints.note(mint, nowMs, 8);
+    mildDipHotMints.markBuyForce(mint, nowMs);
+    // no markLeaderHighlight
+    const r = await evaluateStreamImpulseCandidates(cfg, {
+      nowMs,
+      evalMax: 8,
+      allowPriceRefresh: false,
+    });
+    expect(r.candidates.find((c) => c.mint === mint)).toBeUndefined();
+    const skip = r.skips.find((s) => s.mint === mint);
+    expect(skip?.reasons.includes('require_leader_highlight')).toBe(true);
     mildDipHotMints.clearBuyForce(mint);
   });
 

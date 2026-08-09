@@ -114,6 +114,16 @@ export VOL_GREEN_LEADER_WATCH=1
 export VOL_GREEN_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
 export MILD_DIP_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
 export MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN=40
+# Entry only if leader also bought recently — don't be alone on junk (Fvav361).
+export VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT=1
+export MILD_DIP_REQUIRE_LEADER_HIGHLIGHT=1
+# Poison window: after nuke candle / absurd runup, ban mint 45m (don't buy soft tip later).
+export VOL_GREEN_POISON_TAPE=1
+export MILD_DIP_POISON_TAPE=1
+export MILD_DIP_POISON_TAPE_BAN_MS=2700000
+export MILD_DIP_POISON_TAPE_ABS_BAR_PC=40
+export MILD_DIP_POISON_TAPE_MAX_G_PC=40
+export MILD_DIP_POISON_TAPE_RUNUP_PC=80
 export MILD_DIP_STREAM_HEALTH_ALERT=1
 export MILD_DIP_STREAM_HEALTH_ALERT_COOLDOWN_MS=600000
 # Enrich unused when streamImpulseOnly — keep tiny values if flag flipped off.

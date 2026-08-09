@@ -145,6 +145,16 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
     '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
   );
   setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '40');
+  // Only buy if a watched leader also hit the mint recently (Fvav: leaders never bought).
+  setIfAbsent('VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT', '1');
+  setIfAbsent('MILD_DIP_REQUIRE_LEADER_HIGHLIGHT', '1');
+  // Remember violent tape 45m so we don't buy the soft tip after a nuke candle.
+  setIfAbsent('VOL_GREEN_POISON_TAPE', '1');
+  setIfAbsent('MILD_DIP_POISON_TAPE', '1');
+  setIfAbsent('MILD_DIP_POISON_TAPE_BAN_MS', String(45 * 60_000));
+  setIfAbsent('MILD_DIP_POISON_TAPE_ABS_BAR_PC', '40');
+  setIfAbsent('MILD_DIP_POISON_TAPE_MAX_G_PC', '40');
+  setIfAbsent('MILD_DIP_POISON_TAPE_RUNUP_PC', '80');
   setIfAbsent('MILD_DIP_STREAM_HEALTH_ALERT', '1');
   setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '1');
   setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '1');
