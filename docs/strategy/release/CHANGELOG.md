@@ -1,4 +1,18 @@
 # So
+## [1.11.791] — 2026-08-09
+
+**Тег:** `sa-1.11.791`
+
+### Fix: dense tape PnL uses Dex entry, not quote fill
+
+Quote-leg `fillPriceUsd` on pump swaps is often ~50–100× wrong → dense ticks
+showed +5000% PnL. Path metrics now prefer `entryDexPriceUsd` (Dex spot at
+buy); heal open bags from today's `leader_buy_observed.dexPriceUsd` on boot.
+
+**Откат:** revert this commit + reload `mild-dip-leader-observer`.
+
+---
+
 ## [1.11.790] — 2026-08-09
 
 **Тег:** `sa-1.11.790`

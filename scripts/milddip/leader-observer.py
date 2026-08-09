@@ -206,6 +206,22 @@ def fetch_jupiter_prices(mints: list[str], price_url: str) -> dict[str, float]:
     return out
 
 
+def path_entry_usd(bag: dict[str, Any]) -> float | None:
+    """
+    Entry for mark/tick PnL path. Prefer Dex/Jupiter spot at open — quote-leg
+    fillPriceUsd is often ~50–100x wrong on pump swaps and poisons MFE/giveback.
+    """
+    for k in ("entryDexPriceUsd", "entryMarkPriceUsd", "entryPriceUsd"):
+        v = bag.get(k)
+        try:
+            px = float(v) if v is not None else None
+        except (TypeError, ValueError):
+            px = None
+        if px is not None and px > 0 and math.isfinite(px):
+            return px
+    return None
+
+
 def entry_is_td(bag: dict[str, Any]) -> bool:
     """TD entry = non-green class or turnDump branch/main/shallow gates."""
     cls = bag.get("entryClass")
@@ -743,6 +759,7 @@ class Observer:
                 "sells": 0,
                 "mfePct": 0.0,
                 "maePct": 0.0,
+                "fillPriceUsd": fill_px,
                 "peakPriceUsd": entry0,
                 "troughPriceUsd": entry0,
                 "maxBouncePct": 0.0,
@@ -1012,6 +1029,15 @@ class Observer:
                         bag["entryClass"] = cls
                         bag["entryGates"] = gates
                         bag["entryTurnDump"] = td
+                        # Path/PnL anchor = Dex spot (fill quote-leg is unreliable).
+                        if dex_px and dex_px > 0:
+                            bag["entryDexPriceUsd"] = dex_px
+                            bag["peakPriceUsd"] = dex_px
+                            bag["troughPriceUsd"] = dex_px
+                        bag["fillPriceUsd"] = fills.get("fillPriceUsd")
+                        self._set_bag(leader, mint, bag)
+                    elif bag and dex_px and dex_px > 0 and not bag.get("entryDexPriceUsd"):
+                        bag["entryDexPriceUsd"] = dex_px
                         self._set_bag(leader, mint, bag)
                     base.update(
                         {
@@ -1255,7 +1281,7 @@ class Observer:
         path: dict[str, float] | None,
         now_ms: int,
     ) -> dict[str, Any]:
-        entry = bag.get("entryPriceUsd")
+        entry = path_entry_usd(bag)
         opened_bt = bag.get("openedBlockTime")
         held_sec = max(0, int(time.time()) - int(opened_bt)) if opened_bt else None
         held_ms = max(0, now_ms - int(opened_bt) * 1000) if opened_bt else None
@@ -1270,6 +1296,8 @@ class Observer:
             "mint": mint,
             "tokenUi": bag.get("tokenUi"),
             "entryPriceUsd": entry,
+            "entryFillPriceUsd": bag.get("fillPriceUsd") or bag.get("entryPriceUsd"),
+            "entryDexPriceUsd": bag.get("entryDexPriceUsd"),
             "markPriceUsd": px,
             "priceSource": price_source,
             "pnlPctApprox": path.get("pnlPct") if path else None,
@@ -1336,7 +1364,6 @@ class Observer:
             last_mark = int(bag.get("lastMarkAtMs") or 0)
             if last_mark and now_ms - last_mark < gap_ms:
                 continue
-            entry = bag.get("entryPriceUsd")
             dex = self._refresh_dex_cache(mint, bag, now_ms, force=True)
             px = None
             if isinstance(dex, dict) and not dex.get("error"):
@@ -1344,8 +1371,11 @@ class Observer:
                     px = float(dex.get("priceUsd") or 0) or None
                 except (TypeError, ValueError):
                     px = None
+                if px and px > 0 and not bag.get("entryDexPriceUsd"):
+                    bag["entryDexPriceUsd"] = px
+            entry = path_entry_usd(bag)
             path = None
-            if isinstance(entry, (int, float)) and entry > 0 and px and px > 0:
+            if entry and entry > 0 and px and px > 0:
                 path = apply_path_metrics(bag, px, float(entry))
             bag["lastMarkAtMs"] = now_ms
             self._set_bag(leader, mint, bag)
@@ -1384,8 +1414,24 @@ class Observer:
         mints = sorted({mint for _, mint, _ in due})
         jup = fetch_jupiter_prices(mints, self.price_url)
         for leader, mint, bag in due:
-            entry = bag.get("entryPriceUsd")
             dex = self._refresh_dex_cache(mint, bag, now_ms, force=False)
+            if isinstance(dex, dict) and not dex.get("error") and not bag.get("entryDexPriceUsd"):
+                try:
+                    dpx = float(dex.get("priceUsd") or 0) or None
+                except (TypeError, ValueError):
+                    dpx = None
+                if dpx and dpx > 0:
+                    bag["entryDexPriceUsd"] = dpx
+                    # Reset path extremes so poisoned fill-entry MFE/MAE do not stick.
+                    bag["peakPriceUsd"] = dpx
+                    bag["troughPriceUsd"] = dpx
+                    bag["mfePct"] = 0.0
+                    bag["maePct"] = 0.0
+                    bag["maxBouncePct"] = 0.0
+                    for k in ("armedMfe5", "armedMfe8", "armedMfe10", "armedMfe12"):
+                        bag[k] = False
+                        bag.pop(f"{k}AtMs", None)
+            entry = path_entry_usd(bag)
             px = jup.get(mint)
             price_source = "jupiter"
             if not px or px <= 0:
@@ -1399,7 +1445,16 @@ class Observer:
                     px = None
                     price_source = "none"
             path = None
-            if isinstance(entry, (int, float)) and float(entry) > 0 and px and px > 0:
+            if entry and entry > 0 and px and px > 0:
+                # If still insane vs mark, re-anchor path entry to current mark once.
+                ratio = float(px) / float(entry)
+                if ratio > 20.0 or ratio < 0.05:
+                    bag["entryDexPriceUsd"] = float(px)
+                    bag["peakPriceUsd"] = float(px)
+                    bag["troughPriceUsd"] = float(px)
+                    bag["mfePct"] = 0.0
+                    bag["maePct"] = 0.0
+                    entry = float(px)
                 path = apply_path_metrics(bag, float(px), float(entry))
             bag["lastDenseAtMs"] = now_ms
             self._set_bag(leader, mint, bag)
@@ -1416,8 +1471,53 @@ class Observer:
             )
             self.emit_dense(row)
 
+    def _heal_entry_dex_from_tape(self) -> int:
+        """Backfill entryDexPriceUsd for open bags from today's buy observations."""
+        healed = 0
+        try:
+            if not self.out_path.exists():
+                return 0
+            latest: dict[tuple[str, str], float] = {}
+            with self.out_path.open(encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        o = json.loads(line)
+                    except Exception:
+                        continue
+                    if o.get("kind") != "leader_buy_observed":
+                        continue
+                    leader = str(o.get("leader") or "")
+                    mint = str(o.get("mint") or "")
+                    try:
+                        dpx = float(o.get("dexPriceUsd") or 0)
+                    except (TypeError, ValueError):
+                        dpx = 0.0
+                    if leader and mint and dpx > 0:
+                        latest[(leader, mint)] = dpx
+            for leader, mint, bag in self._open_bags():
+                if bag.get("entryDexPriceUsd"):
+                    continue
+                dpx = latest.get((leader, mint))
+                if not dpx:
+                    continue
+                bag["entryDexPriceUsd"] = dpx
+                bag["peakPriceUsd"] = dpx
+                bag["troughPriceUsd"] = dpx
+                bag["mfePct"] = 0.0
+                bag["maePct"] = 0.0
+                bag["maxBouncePct"] = 0.0
+                for k in ("armedMfe5", "armedMfe8", "armedMfe10", "armedMfe12"):
+                    bag[k] = False
+                    bag.pop(f"{k}AtMs", None)
+                self._set_bag(leader, mint, bag)
+                healed += 1
+        except Exception:
+            return healed
+        return healed
+
     def run(self) -> None:
         end = None if self.max_hours <= 0 else time.time() + self.max_hours * 3600
+        healed = self._heal_entry_dex_from_tape()
         self.emit(
             {
                 "kind": "leader_observer_start",
@@ -1437,7 +1537,8 @@ class Observer:
                 "dexRefreshSec": self.dex_refresh_sec,
                 "denseOnlyTd": self.dense_only_td,
                 "priceUrl": self.price_url,
-                "version": "1.11.790",
+                "healedEntryDex": healed,
+                "version": "1.11.791",
             }
         )
         print(
