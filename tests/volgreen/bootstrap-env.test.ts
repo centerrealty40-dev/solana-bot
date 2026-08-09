@@ -36,6 +36,7 @@ const KEYS = [
   'MILD_DIP_GREEN_FIRST_STRONG_MIN_PC',
   'MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC',
   'MILD_DIP_EXIT_MFE_BANK',
+  'MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT',
   'MILD_DIP_MAX_CHASE_PCT',
   'MILD_DIP_GREEN_TRIPLE_ONLY',
   'MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC',
@@ -97,6 +98,7 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.15');
     expect(process.env.MILD_DIP_GREEN_MIN_MCAP_USD).toBe('12000');
     expect(process.env.MILD_DIP_EXIT_MFE_BANK).toBe('1');
+    expect(process.env.MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT).toBe('15');
     expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS).toBe('0');
     expect(process.env.MILD_DIP_MAX_ENRICH).toBe('1');
     expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('1');

@@ -97,7 +97,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_GIVEBACK_PCT', '8');
   setIfAbsent('MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT', '3');
   setIfAbsent('MILD_DIP_EXIT_SCALE_OUT_FRACTION', '0.5');
-  setIfAbsent('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', '50');
+  // Hard SL from entry — backtest stable window: −15% ≈ point of no return.
+  setIfAbsent('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', '15');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', '0');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '0');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', '0');
