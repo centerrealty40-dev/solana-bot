@@ -195,9 +195,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC', '80');
   // Do NOT buy on fat SOL notional alone (rug magnet).
   setIfAbsent('MILD_DIP_VOLUME_IMPULSE_ENTRY', '0');
-  // Trackable: at most 5 concurrent opens.
-  setIfAbsent('MILD_DIP_MAX_OPEN_POSITIONS', '5');
-  setIfAbsent('VOL_GREEN_MAX_OPEN_POSITIONS', '5');
+  // Trackable: at most 10 concurrent opens.
+  setIfAbsent('MILD_DIP_MAX_OPEN_POSITIONS', '10');
+  setIfAbsent('VOL_GREEN_MAX_OPEN_POSITIONS', '10');
   // First-strong aligns with leader maxG (≥8%).
   setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MIN_PC', '8');
   setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MAX_PRIOR_PC', '18');

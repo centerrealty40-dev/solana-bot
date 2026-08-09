@@ -27,9 +27,9 @@ export VOL_GREEN_EXECUTION_MODE="${VOL_GREEN_EXECUTION_MODE:-live}"
 export VOL_GREEN_WALLET_SECRET="${VOL_GREEN_WALLET_SECRET:-$ROOT/data/live/copy-8zkg.keypair.json}"
 export VOL_GREEN_WALLET_PUBKEY="${VOL_GREEN_WALLET_PUBKEY:-FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX}"
 export VOL_GREEN_POSITION_USD="${VOL_GREEN_POSITION_USD:-5}"
-# Trackable concurrency — max 5 opens; free slot after each full exit.
-export VOL_GREEN_MAX_OPEN_POSITIONS=5
-export MILD_DIP_MAX_OPEN_POSITIONS=5
+# Trackable concurrency — max 10 opens; free slot after each full exit.
+export VOL_GREEN_MAX_OPEN_POSITIONS=10
+export MILD_DIP_MAX_OPEN_POSITIONS=10
 export VOL_GREEN_JOURNAL_PATH="${VOL_GREEN_JOURNAL_PATH:-$ROOT/data/volgreen/journal.jsonl}"
 export VOL_GREEN_STATE_PATH="${VOL_GREEN_STATE_PATH:-$ROOT/data/volgreen/state.json}"
 export VOL_GREEN_HOT_MINTS_PATH="${VOL_GREEN_HOT_MINTS_PATH:-$ROOT/data/volgreen/hot-mints.json}"

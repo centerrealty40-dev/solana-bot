@@ -66,7 +66,7 @@ describe('evaluateStreamImpulseCandidates', () => {
   it('passes first_strong with real multi-minute samples (no gecko)', async () => {
     const cfg = loadMildDipConfig();
     expect(cfg.streamImpulseOnly).toBe(true);
-    expect(cfg.maxOpenPositions).toBe(5);
+    expect(cfg.maxOpenPositions).toBe(10);
     const nowMs = Date.now();
     noteLeaderLikeClimb(MINT, nowMs);
     mildDipHotMints.note(MINT, nowMs, 8);
