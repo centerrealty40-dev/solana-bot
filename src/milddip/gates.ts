@@ -77,9 +77,11 @@ export type MildDipExitGates = {
    */
   neverArmPatienceMs: number;
   /**
-   * If still unarmed after this many ms → full exit (hard ceiling; default 15m).
-   * Armed / take-profit trail is exempt — trail owns those exits.
-   * 0 = disabled (not recommended — can hold forever if trail never arms).
+   * Hard hold ceiling (default 15m):
+   * - unarmed → `never_arm_timeout` (always)
+   * - armed + pnl ≤ 0 → `max_hold_underwater` (1.11.782)
+   * - armed + pnl > 0 → keep (trail / TP steps)
+   * 0 = disabled (not recommended).
    */
   neverArmMaxHoldMs: number;
   /**
@@ -429,6 +431,8 @@ export type MildDipExitReason =
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
   | 'never_arm_timeout'
+  /** 1.11.782 — held ≥ max-hold, armed, but mark pnl ≤ 0. */
+  | 'max_hold_underwater'
   | 'cliff_dump'
   | 'hard_stop'
   | null;
@@ -712,6 +716,14 @@ export function evaluateMildDipPeakGiveback(args: {
   const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
   if (cliff > 0 && pnlPct <= -cliff) {
     return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+  }
+
+  // 1.11.782 — hard hold ceiling for underwater armed bags (before soft trail /
+  // peak_giveback_partial). Past this age only green armed runners may wait
+  // for TP / trail steps. Unarmed timeout stays in the never-arm branch below.
+  const maxHoldCeil = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
+  if (armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && pnlPct <= 0) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'max_hold_underwater' };
   }
 
   const fullGivebackHit =

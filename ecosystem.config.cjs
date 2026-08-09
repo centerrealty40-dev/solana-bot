@@ -3015,9 +3015,10 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '5',
         /**
-         * 1.11.781 — hard ceiling 15m while trail never armed (mark-blind bags
-         * were sitting forever with pnl≈0). Once armed / take-profit trail is
-         * on, this does NOT apply — trail owns the exit.
+         * 1.11.782 — hard ceiling 15m:
+         * - unarmed → always flatten (`never_arm_timeout`)
+         * - armed + pnl≤0 → flatten (`max_hold_underwater`)
+         * - armed + pnl>0 → keep waiting for TP / trail steps
          */
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '900000',
         /**

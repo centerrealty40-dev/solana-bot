@@ -396,8 +396,9 @@ const MildDipConfigSchema = z.object({
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /**
-     * Never-armed: force exit after this many ms (0=off). Hard ceiling.
-     * 1.11.781 — default 15m. Armed / take-profit trail is exempt.
+     * Hold ceiling ms (0=off). Default 15m.
+     * 1.11.782 — unarmed always; armed only when mark pnl ≤ 0.
+     * Green armed runners may outlive this for TP / trail steps.
      */
     neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
     /** Never-armed deep-loss cut min hold (0=off). Default 15m. */
