@@ -3188,6 +3188,8 @@ const PM2_APPS = [
      * Shadow leader buy/sell observer for mild-dip (no trading).
      * 1.11.760 — buys+sells, quote-leg sizeUsd/fillPriceUsd, bag ledger,
      * session open/flat. Writes jsonl + leader-seed.json for discover `leaders`.
+     * 1.11.778 — absolute tape: marks ON, denser poll/lookback/sigs, turnDump
+     * + MFE/MAE on session flat for entry/exit formula RE.
      */
     {
       name: 'mild-dip-leader-observer',
@@ -3209,14 +3211,17 @@ const PM2_APPS = [
         LEADER_OBSERVER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
         LEADER_OBSERVER_SEED_MAX: '40',
         LEADER_OBSERVER_SEED_MAX_AGE_SEC: '7200',
-        LEADER_OBSERVER_POLL_SEC: '15',
-        LEADER_OBSERVER_LOOKBACK_SEC: '900',
+        /** 1.11.778 — denser absolute capture (was 15s / 900s / 40 sigs). */
+        LEADER_OBSERVER_POLL_SEC: '10',
+        LEADER_OBSERVER_LOOKBACK_SEC: '1800',
+        LEADER_OBSERVER_SIG_LIMIT: '80',
         /** 0 = run until stopped (PM2 owns lifecycle). */
         LEADER_OBSERVER_MAX_HOURS: '0',
         /** 1.11.760 — log sells + session flat (was buy-only). */
         LEADER_OBSERVER_LOG_SELLS: '1',
-        /** Optional Dex marks while leader bag open (noisy; off by default). */
-        LEADER_OBSERVER_LOG_MARKS: '0',
+        /** 1.11.778 — mid-hold Dex path for exit formula / +/- segments. */
+        LEADER_OBSERVER_LOG_MARKS: '1',
+        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '60',
         /** 1.11.776 — match mild-dip global mcap floor ($5k). */
         LEADER_OBSERVER_MIN_MCAP_USD: '5000',
         MILD_DIP_MIN_MCAP_USD: '5000',

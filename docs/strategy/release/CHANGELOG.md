@@ -1,4 +1,24 @@
 # So
+## [1.11.778] — 2026-08-09
+
+**Тег:** `sa-1.11.778`
+
+### Ops: absolute leader tape for entry/exit formula RE
+
+Keep logging **both** leaders (`8zkg` + `7BNax`) with a denser absolute
+tape so we can measure +/- segments and fit entry/exit curves:
+
+- `LOG_MARKS=1` — mid-hold Dex path every 60s (MFE/MAE on session flat)
+- poll 10s / lookback 1800s / 80 sigs (was 15 / 900 / 40)
+- each buy/sell/mark carries `turnDump` (MAIN+SHALLOW preds)
+- `leader_session_flat` keeps `entryClass`, gates, turnDump, mfe/mae
+- `scripts/milddip/leader-segment-stats.py` — PnL by class/branch/hold
+
+**Откат:** `LEADER_OBSERVER_LOG_MARKS=0`, poll/lookback/sig prior values +
+reload `mild-dip-leader-observer`.
+
+---
+
 ## [1.11.777] — 2026-08-09
 
 **Тег:** `sa-1.11.777`
