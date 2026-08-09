@@ -2883,19 +2883,18 @@ const PM2_APPS = [
         MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',
         MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',
         /**
-         * 1.11.773/774 — ONE live formula (8zkg 60h fit):
-         *   dump ≈ -5.08 + 6.86·log1p(turn·100), band [pred−10, pred+12].
-         * Forces wait-dip off when enabled.
-         * 1.11.785 — SHALLOW OR-branch OFF. 1.11.777 added a second curve
-         * (-8.83+4.23·log) as OR; that was not the approved single entry
-         * formula. Code kept behind flag; live must stay MAIN-only.
+         * 1.11.789 — OR entry (MAIN then SHALLOW):
+         *   MAIN:    dump ≈ -5.08 + 6.86·log1p(turn·100), band [pred−10, pred+12]
+         *   SHALLOW: dump ≈ -8.83 + 4.23·log1p(turn·100), band ±8
+         * Pass if MAIN matches; else try SHALLOW. Prefer MAIN when both pass.
+         * Forces wait-dip off when gate enabled.
          */
         MILD_DIP_TURN_DUMP_GATE: '1',
         MILD_DIP_TURN_DUMP_ALPHA: '-5.08',
         MILD_DIP_TURN_DUMP_BETA: '6.86',
         MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT: '10',
         MILD_DIP_TURN_DUMP_DEEP_SLACK_PCT: '12',
-        MILD_DIP_TURN_DUMP_SHALLOW_BRANCH: '0',
+        MILD_DIP_TURN_DUMP_SHALLOW_BRANCH: '1',
         MILD_DIP_TURN_DUMP_SHALLOW_ALPHA: '-8.83',
         MILD_DIP_TURN_DUMP_SHALLOW_BETA: '4.23',
         MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT: '8',

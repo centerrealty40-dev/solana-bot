@@ -1,4 +1,21 @@
 # So
+## [1.11.789] — 2026-08-09
+
+**Тег:** `sa-1.11.789`
+
+### Ops: restore turn→dump MAIN OR SHALLOW
+
+Re-enable the second curve as OR: if MAIN fails, try SHALLOW.
+
+- `MILD_DIP_TURN_DUMP_SHALLOW_BRANCH=1`
+- MAIN: −5.08 + 6.86·log, band [pred−10, pred+12]
+- SHALLOW: −8.83 + 4.23·log, band ±8
+- Prefer MAIN when both match
+
+**Откат:** `MILD_DIP_TURN_DUMP_SHALLOW_BRANCH=0` + reload.
+
+---
+
 ## [1.11.788] — 2026-08-09
 
 **Тег:** `sa-1.11.788`
