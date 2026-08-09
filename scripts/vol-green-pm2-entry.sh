@@ -119,13 +119,13 @@ export MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN=0
 # Independent entry — patterns from leaders are encoded in tape/poison gates, not copy.
 export VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT=0
 export MILD_DIP_REQUIRE_LEADER_HIGHLIGHT=0
-# Poison window: after nuke candle / absurd runup, ban mint 45m (don't buy soft tip later).
+# Poison window: ban after nuke/crash tape (tuned so memes still trade).
 export VOL_GREEN_POISON_TAPE=1
 export MILD_DIP_POISON_TAPE=1
-export MILD_DIP_POISON_TAPE_BAN_MS=2700000
-export MILD_DIP_POISON_TAPE_ABS_BAR_PC=40
-export MILD_DIP_POISON_TAPE_MAX_G_PC=40
-export MILD_DIP_POISON_TAPE_RUNUP_PC=80
+export MILD_DIP_POISON_TAPE_BAN_MS=900000
+export MILD_DIP_POISON_TAPE_ABS_BAR_PC=60
+export MILD_DIP_POISON_TAPE_MAX_G_PC=60
+export MILD_DIP_POISON_TAPE_RUNUP_PC=100
 export MILD_DIP_STREAM_HEALTH_ALERT=1
 export MILD_DIP_STREAM_HEALTH_ALERT_COOLDOWN_MS=600000
 # Enrich unused when streamImpulseOnly — keep tiny values if flag flipped off.

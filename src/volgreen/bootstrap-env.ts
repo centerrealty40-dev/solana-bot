@@ -152,10 +152,10 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   // Remember violent tape 45m so we don't buy the soft tip after a nuke candle.
   setIfAbsent('VOL_GREEN_POISON_TAPE', '1');
   setIfAbsent('MILD_DIP_POISON_TAPE', '1');
-  setIfAbsent('MILD_DIP_POISON_TAPE_BAN_MS', String(45 * 60_000));
-  setIfAbsent('MILD_DIP_POISON_TAPE_ABS_BAR_PC', '40');
-  setIfAbsent('MILD_DIP_POISON_TAPE_MAX_G_PC', '40');
-  setIfAbsent('MILD_DIP_POISON_TAPE_RUNUP_PC', '80');
+  setIfAbsent('MILD_DIP_POISON_TAPE_BAN_MS', String(15 * 60_000));
+  setIfAbsent('MILD_DIP_POISON_TAPE_ABS_BAR_PC', '60');
+  setIfAbsent('MILD_DIP_POISON_TAPE_MAX_G_PC', '60');
+  setIfAbsent('MILD_DIP_POISON_TAPE_RUNUP_PC', '100');
   setIfAbsent('MILD_DIP_STREAM_HEALTH_ALERT', '1');
   setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '1');
   setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '1');
