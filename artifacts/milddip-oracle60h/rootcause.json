@@ -1,0 +1,29 @@
+{
+  "actual": -108.54,
+  "covered_n": 288,
+  "bought_then_deeper_3m": {
+    "n": 262,
+    "pnl": -56.49,
+    "pct_of_covered": 91.0
+  },
+  "never_armed": {
+    "n": 518,
+    "pnl": -898.06
+  },
+  "armed": {
+    "n": 1122,
+    "pnl": 789.52
+  },
+  "rebuy_lower_after_loss": {
+    "n": 475,
+    "pnl": 42.49
+  },
+  "bank_then_net_red": {
+    "n": 140,
+    "pnl": -114.9
+  },
+  "oracle_vs_actual_covered": {
+    "oracle": 332.36,
+    "actual": -11.21
+  }
+}
