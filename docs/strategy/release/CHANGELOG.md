@@ -1,4 +1,21 @@
 # So
+## [1.11.768] — 2026-08-09
+
+**Тег:** `sa-1.11.768`
+
+### Ops: fix stale `[ALERT][MILD_DIP_DEX]` copy
+
+Alert text still said “shared Oscar gate → move to idle VPS”. Mild-dip
+already runs alone on `salpha-v2` (`187.124.38.242`); the green-candle bot
+is elsewhere. Slow mark passes are **self-load** (open book × Dex latency).
+
+Copy now says: marks lag the 2s loop; relocate is not the fix — lower max
+open / raise mark concurrency / widen interval if sustained.
+
+**Откат:** restore prior alert strings in `dex-load.ts` + reload.
+
+---
+
 ## [1.11.767] — 2026-08-09
 
 **Тег:** `sa-1.11.767`

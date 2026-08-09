@@ -1,6 +1,8 @@
 /**
- * Mild-dip Dex/mark load signals — when Oscar's shared DexScreener gate
- * cannot keep up with open books, alert the operator (plan move to idle VPS).
+ * Mild-dip Dex/mark load signals — when a mark pass over the open book is
+ * too slow (or null-heavy) for the configured interval. Mild-dip already runs
+ * on its own VPS; this is self-load from open count × Dex latency, not a cue
+ * to relocate next to live-oscar.
  */
 import { sendTagged } from '../core/telegram/sender.js';
 
@@ -85,7 +87,7 @@ export async function maybeAlertMildDipDexLoad(args: {
     `[mild-dip] DEX LOAD WARN open=${args.stats.openCount} ` +
     `markPass=${args.stats.markPassMs}ms interval=${args.stats.markIntervalMs}ms ` +
     `cacheTtl=${args.stats.markCacheTtlMs}ms ok=${args.stats.markedOk} null=${args.stats.markedNull} ` +
-    `reasons=${verdict.reasons.join('; ')} — consider dedicated VPS if sustained`;
+    `reasons=${verdict.reasons.join('; ')} — self-load (open×Dex), not shared-Oscar contention`;
   console.warn(line);
 
   if (!args.enabled) {
@@ -97,12 +99,13 @@ export async function maybeAlertMildDipDexLoad(args: {
 
   const send = args.send ?? sendTagged;
   const text =
-    `mild-dip Dex/mark pressure on shared Oscar gate.\n` +
+    `mild-dip mark pass too slow for current open book (already on dedicated VPS).\n` +
     `open=${args.stats.openCount} markPass=${args.stats.markPassMs}ms ` +
     `(interval=${args.stats.markIntervalMs}ms cacheTtl=${args.stats.markCacheTtlMs}ms)\n` +
     `marks ok=${args.stats.markedOk} null=${args.stats.markedNull}\n` +
     `reasons:\n- ${verdict.reasons.join('\n- ')}\n` +
-    `If this repeats → move mild-dip-bot to the idle VPS (own Dex IP/budget).`;
+    `Meaning: exit marks lag the 2s loop — exits/trails can fire late. ` +
+    `Not a relocate cue. If sustained: lower max open, raise mark concurrency, or widen mark interval.`;
 
   const ok = await send('ALERT', 'MILD_DIP_DEX', text, { disablePreview: true });
   if (ok) lastAlertAtMs = nowMs;
