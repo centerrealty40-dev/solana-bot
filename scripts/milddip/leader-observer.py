@@ -419,6 +419,7 @@ class Observer:
         size_usd: float | None = None,
         cls: str | None = None,
         block_time: int | None = None,
+        is_add: bool | None = None,
     ) -> None:
         """Atomic sidecar for mild-dip `leaders` discover source."""
         hits: list[dict[str, Any]] = []
@@ -457,6 +458,8 @@ class Observer:
             hit["class"] = cls
         if block_time:
             hit["blockTime"] = int(block_time)
+        if is_add is not None:
+            hit["isAdd"] = bool(is_add)
         by_mint[mint] = hit
         merged = sorted(
             by_mint.values(),
@@ -745,6 +748,7 @@ class Observer:
                             size_usd=fills.get("sizeUsd"),
                             cls=classify(pc),
                             block_time=block_time,
+                            is_add=bool(bag_info.get("isAdd")),
                         )
                     except Exception as e:
                         self.emit(

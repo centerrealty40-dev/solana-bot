@@ -1,4 +1,29 @@
 # So
+## [1.11.761] — 2026-08-09
+
+**Тег:** `sa-1.11.761`
+
+### Exit: leader-align defer + one-shot average-in
+
+48h CF: `LEADER_BOUGHT_OUR_DUMP` avg **−18%** — we sold soft exits while
+leaders bought the same mint. Narrow fix (not a general −5% scale-in):
+
+When a **soft** exit is about to fire (`shouldExit`) and we are still
+**red (≥3%)** and a tracked leader bought the mint within **120s** at/below
+our entry → **defer the sell** and **one-shot +$15 average-in**.
+
+- Reasons: bounce / time_red / sleeve / giveback / stale / dead / vol_fade
+- Never defer: `cliff_dump`, `mfe_bank_1/2`
+- One scale-in per bag (`leaderAlignScaleInDone`)
+- Seed sidecar now carries `isAdd` for optional stricter gating
+
+**Env:** `MILD_DIP_LEADER_ALIGN=1`, `…_MAX_AGE_MS=120000`,
+`…_REQUIRE_RED_PCT=3`, `…_SCALE_IN=1`, `…_SCALE_IN_USD=15`.
+
+**Откат:** `MILD_DIP_LEADER_ALIGN=0` + reload.
+
+---
+
 ## [1.11.760] — 2026-08-09
 
 **Тег:** `sa-1.11.760`
