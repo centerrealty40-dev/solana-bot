@@ -1577,9 +1577,14 @@ export async function runMildDipLoop(
   const seedNow = Date.now();
   for (const [mint, pos] of Object.entries(state.open)) {
     if (!(pos.entryPriceUsd > 0)) continue;
-    if (mildDipPriceRing.lastPrice(mint, seedNow)) continue;
+    const last = mildDipPriceRing.lastPrice(mint, seedNow);
+    // Reseed when missing OR too old for exit marks (openedAtMs would age out).
+    const maxAge = cfg.markStreamMaxAgeMs > 0 ? cfg.markStreamMaxAgeMs : 0;
+    const tooOld =
+      last != null && maxAge > 0 && seedNow - last.tsMs > maxAge;
+    if (last && !tooOld) continue;
     mildDipPriceRing.note(mint, pos.entryPriceUsd, {
-      tsMs: pos.openedAtMs > 0 ? pos.openedAtMs : seedNow,
+      tsMs: seedNow,
       source: 'dex',
     });
     seeded += 1;

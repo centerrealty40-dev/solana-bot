@@ -1,4 +1,18 @@
 # So
+## [1.11.770] — 2026-08-09
+
+**Тег:** `sa-1.11.770`
+
+### Fix: seed exit ring at nowMs (not openedAtMs)
+
+After 1.11.769, startup seeded open bags with `openedAtMs` → age >
+`MARK_STREAM_MAX_AGE` → null marks (`null_ratio` alerts) while markPass
+was already 0–1ms. Seed/refresh with **nowMs**.
+
+**Откат:** prior seed `tsMs=openedAtMs` + reload.
+
+---
+
 ## [1.11.769] — 2026-08-09
 
 **Тег:** `sa-1.11.769`
