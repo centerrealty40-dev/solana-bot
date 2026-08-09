@@ -5,8 +5,12 @@ import type { MildDipConfig } from './config.js';
 import {
   collectCandidateMints,
   enrichAndFilterCandidates,
+  ownTapeWakeMints,
   priorityMintsFromCooldown,
   priorityMintsFromKnifeWatch,
+  priorityMintsFromLastExit,
+  priorityMintsFromRecentTrades,
+  resolveKnifeDipPct,
   type MildDipCandidate,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
@@ -16,7 +20,14 @@ import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   evaluateFastPathCandidate,
   fastPathChasePct,
+  getStructuralCache,
+  streamDrawdownPct,
 } from './fast-path.js';
+import {
+  isKnifeDipPct,
+  upsertKnifeWatch,
+  type KnifeStabilizeGates,
+} from './knife-stabilize.js';
 import {
   evaluateWaitDipReady,
   isRebuyBelowExitWindow,
@@ -118,7 +129,7 @@ function onCooldown(state: MildDipState, mint: string, nowMs: number): boolean {
   return until > nowMs;
 }
 
-/** Sample stream prices for cooldown / open / recently hot mints (fast-path). */
+/** Sample stream prices for cooldown / open / post-exit / hot mints (fast-path). */
 function shouldSampleStreamPrice(
   state: MildDipState,
   mint: string,
@@ -130,9 +141,69 @@ function shouldSampleStreamPrice(
   if (until > 0 && nowMs - until <= lookbackMs) return true; // just ready — still useful
   if (state.open[mint]) return true; // open book — denser trail marks via stream
   if (state.waitDipWatch?.[mint]) return true; // parked wait-dip needs live marks
+  if (state.knifeWatch?.[mint]) return true; // deep-knife watch needs trough marks
+  const lastEx = state.lastExitByMint?.[mint]?.atMs ?? 0;
+  if (lastEx > 0 && nowMs - lastEx <= lookbackMs) return true; // 1.11.783 post-exit wake
   // Fast-path needs live stream marks on hot names, not only cooldown.
   if (mildDipHotMints.isRecent(mint, nowMs, 180_000)) return true;
   return false;
+}
+
+function knifeGatesFromCfg(cfg: MildDipConfig): KnifeStabilizeGates {
+  return {
+    enabled: cfg.knifeStabilizeEnabled,
+    minDipPct: cfg.knifeStabilizeMinDipPct,
+    maxDipPct: cfg.knifeStabilizeMaxDipPct,
+    waitMs: cfg.knifeStabilizeWaitMs,
+    maxWatchMs: cfg.knifeStabilizeMaxWatchMs,
+    quietMs: cfg.knifeStabilizeQuietMs,
+    stabilizeBandPct: cfg.knifeStabilizeBandPct,
+    minBouncePct: cfg.knifeStabilizeMinBouncePct,
+    maxBouncePct: cfg.knifeStabilizeMaxBouncePct,
+  };
+}
+
+/**
+ * 1.11.783 — when stream fast-path defers a deep knife, arm knifeWatch from the
+ * structural cache so own-tape names stay watched (slow enrich may be flat-only).
+ */
+function maybeArmKnifeWatchFromFastPath(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  mint: string,
+  nowMs: number,
+): void {
+  if (!cfg.knifeStabilizeEnabled) return;
+  if (state.open[mint] || state.knifeWatch?.[mint]) return;
+  const struct = getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs);
+  if (!struct) return;
+  const streamDd = streamDrawdownPct(mint, cfg.cooldownBounceLookbackMs, nowMs);
+  const knifeDip = resolveKnifeDipPct(struct.metrics.priceChange5mPct, streamDd);
+  const gates = knifeGatesFromCfg(cfg);
+  if (!isKnifeDipPct(knifeDip, gates) || knifeDip == null) return;
+  const peak = mildDipPriceRing.maxPrice(mint, cfg.cooldownBounceLookbackMs, nowMs);
+  if (!state.knifeWatch) state.knifeWatch = {};
+  state.knifeWatch[mint] = upsertKnifeWatch(undefined, {
+    nowMs,
+    priceUsd: struct.priceUsd,
+    dipPct: knifeDip,
+    peakPriceUsd: peak?.priceUsd ?? null,
+  });
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mild_dip_knife_watch_start',
+    mint,
+    knifeDipPct: knifeDip,
+    priceUsd: struct.priceUsd,
+    troughPriceUsd: state.knifeWatch[mint]!.troughPriceUsd,
+    peakPriceUsd: state.knifeWatch[mint]!.peakPriceUsd,
+    waitMs: cfg.knifeStabilizeWaitMs,
+    source: 'own_tape_fast_path',
+  });
+  mildDipHotMints.note(mint, nowMs);
+  console.log(
+    `[mild-dip] KNIFE watch ${mint.slice(0, 8)}… dip=${knifeDip} wait=${cfg.knifeStabilizeWaitMs}ms (own-tape)`,
+  );
+  saveMildDipState(cfg.statePath, state);
 }
 
 function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
@@ -571,7 +642,13 @@ async function tryFastPathForMint(
     trigger,
     trigger === 'leader' ? seedHit : null,
   );
-  if (!candidate) return false;
+  if (!candidate) {
+    // Deep knife skips entry but must stay on own-tape knife watch.
+    if (trigger === 'stream' || trigger === 'scan') {
+      maybeArmKnifeWatchFromFastPath(cfg, state, mint, nowMs);
+    }
+    return false;
+  }
 
   // 1.11.753 — park signals; buy only after extra dump from signal.
   // 1.11.758 — skip park for h1_red_shallow + any branch inside rebuy-below-exit window.
@@ -674,24 +751,19 @@ async function wakeLeaderSeeds(
 }
 
 /**
- * Own-tape watch set — never leader-seed driven (1.11.782).
- * hot stream swaps + our recent exits.
+ * Own-tape watch set — never leader-seed driven (1.11.782/783).
+ * post-exit ∪ cooldown-touch ∪ hot stream.
  */
 function streamWakeMintList(cfg: MildDipConfig, state: MildDipState, nowMs: number): string[] {
-  const out: string[] = [];
-  const seen = new Set<string>();
-  const push = (mint: string | undefined | null) => {
-    if (!mint || mint.length < 32 || seen.has(mint)) return;
-    seen.add(mint);
-    out.push(mint);
-  };
-  for (const mint of mildDipHotMints.list(nowMs)) push(mint);
-  const lookback = Math.max(cfg.cooldownBounceLookbackMs, 600_000);
-  for (const [mint, ex] of Object.entries(state.lastExitByMint ?? {})) {
-    const at = ex?.atMs ?? 0;
-    if (at > 0 && nowMs - at <= lookback) push(mint);
-  }
-  return out.slice(0, 60);
+  return ownTapeWakeMints({
+    hotMints: mildDipHotMints.list(nowMs),
+    lastExitByMint: state.lastExitByMint,
+    cooldownUntilMs: state.cooldownUntilMs,
+    nowMs,
+    postExitWakeMs: cfg.postExitWakeMs,
+    postExitWakeMax: cfg.postExitWakeMax,
+    maxTotal: 80,
+  });
 }
 
 /** 1.11.779/781 — re-check watch set even while bags are open (not only onMint). */
@@ -713,6 +785,81 @@ async function wakeStreamHotMints(
   return n;
 }
 
+/**
+ * 1.11.783 — advance knife watches + post-exit Dex enrich even while bags open
+ * (tryEntries is flat-only). Throttled / tiny enrich set — marks stay primary.
+ */
+async function wakeOwnTapeKnifeEnrich(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<number> {
+  if (!cfg.knifeStabilizeEnabled) return 0;
+  const unlimited = cfg.maxOpenPositions <= 0;
+  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
+
+  const knifePriority = priorityMintsFromKnifeWatch(state.knifeWatch);
+  const postExit = priorityMintsFromLastExit(state.lastExitByMint, nowMs, {
+    watchMs: cfg.postExitWakeMs,
+    max: Math.min(12, cfg.postExitWakeMax),
+  });
+  const forceEnrich = [...new Set([...knifePriority, ...postExit])].slice(0, 12);
+  if (forceEnrich.length === 0) return 0;
+
+  const enrichPass = await enrichAndFilterCandidates(cfg, forceEnrich, {
+    nowMs,
+    maxEnrich: Math.min(cfg.enrichMax, 12),
+    enrichConcurrency: Math.min(cfg.enrichConcurrency, 4),
+    bypassCache: false,
+    cacheTtlMs: 3_000,
+    forceEnrich,
+    knifeWatch: state.knifeWatch ?? {},
+  });
+  state.knifeWatch = enrichPass.knifeWatch;
+  for (const ev of enrichPass.knifeEvents) {
+    appendMildDipJournal(cfg.journalPath, ev);
+    const k = String(ev.kind ?? '');
+    if (k === 'mild_dip_knife_watch_start') {
+      console.log(
+        `[mild-dip] KNIFE watch ${String(ev.mint).slice(0, 8)}… dip=${ev.knifeDipPct} wait=${cfg.knifeStabilizeWaitMs}ms`,
+      );
+    } else if (k === 'mild_dip_knife_ready') {
+      console.log(
+        `[mild-dip] KNIFE ready ${String(ev.mint).slice(0, 8)}… mode=${ev.mode} bounce=${ev.bouncePct}`,
+      );
+    }
+  }
+  saveMildDipState(cfg.statePath, state);
+
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
+  let filled = 0;
+  for (const c of enrichPass.candidates) {
+    if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+    if (c.dipSource !== 'knife_stabilize') continue;
+    if (state.open[c.mint]) continue;
+    const result = await attemptMildDipEntry({
+      cfg,
+      state,
+      candidate: c,
+      copyCfg,
+      nowMs,
+      buyInFlight,
+      resolveEntrySizeUsd,
+      adoptOnChainHolding,
+      opts: {
+        chasePct: cfg.maxChasePct,
+        skipBounce: false,
+        skipOnchainAdopt: false,
+        freshDexPrebuy: true,
+        softSkipCooldownMs: Math.min(cfg.mintCooldownMs, 60_000),
+        lane: 'slow',
+      },
+    });
+    if (result === 'filled') filled += 1;
+  }
+  return filled;
+}
+
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
@@ -730,12 +877,27 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     }
   }
 
-  // Slow lane: tiny cached enrich for knife / leftovers only.
+  // Slow lane: tiny cached enrich for knife / post-exit leftovers.
   const priority = priorityMintsFromCooldown(state.cooldownUntilMs, nowMs, {
     postCooldownMs: 120_000,
   });
   const knifePriority = priorityMintsFromKnifeWatch(state.knifeWatch);
-  const forceEnrich = [...new Set([...priority, ...knifePriority])];
+  const postExitPriority = priorityMintsFromLastExit(state.lastExitByMint, nowMs, {
+    watchMs: cfg.postExitWakeMs,
+    max: cfg.postExitWakeMax,
+  });
+  const recentTradePriority = priorityMintsFromRecentTrades(state.cooldownUntilMs, nowMs, {
+    watchMs: cfg.postExitWakeMs,
+    max: cfg.postExitWakeMax,
+  });
+  const forceEnrich = [
+    ...new Set([
+      ...priority,
+      ...knifePriority,
+      ...postExitPriority,
+      ...recentTradePriority,
+    ]),
+  ];
   const mints = await collectCandidateMints(cfg, { priorityMints: forceEnrich, nowMs });
   const enrichPass = await enrichAndFilterCandidates(cfg, mints, {
     nowMs,
@@ -895,6 +1057,8 @@ async function executeQueuedSell(args: {
       atMs: nowMs,
       pnlPct: +realizedPnl.toFixed(2),
     };
+    // 1.11.783 — pin to hot buffer so stream wake / sampler keep the name.
+    mildDipHotMints.note(mint, nowMs);
   };
 
   if (sell.ok) {
@@ -1014,6 +1178,8 @@ async function executeQueuedSell(args: {
     if (state.open[mint]) {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
+      // 1.11.783 — drop_empty was wiping the bag without lastExit → post-exit wake blind.
+      noteLastExit(decision.markPriceUsd || pos.entryPriceUsd);
       saveMildDipState(cfg.statePath, state);
     }
     appendMildDipJournal(cfg.journalPath, {
@@ -1025,6 +1191,7 @@ async function executeQueuedSell(args: {
       cooldownMs: cd.cooldownMs,
       cooldownKind: cd.kind,
       confirmedEmpty: true,
+      lastExitPriceUsd: decision.markPriceUsd || pos.entryPriceUsd,
     });
     console.warn(
       `[mild-dip] DROP empty bag ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
@@ -1671,6 +1838,7 @@ export async function runMildDipLoop(
     cfg.cooldownBounceLookbackMs,
     cfg.mintCooldownMs,
     cfg.lossCooldownMs,
+    cfg.postExitWakeMs,
   );
   if (cfg.streamPriceSampleEnabled) {
     priceSampler = createStreamPriceSampler({
@@ -1810,6 +1978,7 @@ export async function runMildDipLoop(
       `/≥${cfg.recoverDeferMinBouncePct}%` +
       `/${Math.round(cfg.recoverDeferLookbackMs / 1000)}s ` +
       `leaderSeedEntry=${cfg.leaderSeedEntryEnabled ? 1 : 0} ` +
+      `postExitWake=${Math.round(cfg.postExitWakeMs / 60_000)}m/max${cfg.postExitWakeMax} ` +
       `leaderAlign=${cfg.leaderAlignEnabled ? 1 : 0}` +
       `/${Math.round(cfg.leaderAlignMaxAgeMs / 1000)}s` +
       `/red≥${cfg.leaderAlignRequireRedPct}%` +
@@ -1881,6 +2050,7 @@ export async function runMildDipLoop(
   let lastMark = 0;
   let lastFeeTopupTickMs = 0;
   let lastLeaderWakeMs = 0;
+  let lastOwnTapeKnifeMs = 0;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
@@ -1919,8 +2089,9 @@ export async function runMildDipLoop(
     }
 
     /**
-     * 1.11.782 — own stream wake only (no leader-seed entry).
-     * Do not await — marks stay on cadence. Slow enrich/scan still only when flat.
+     * 1.11.782/783 — own stream wake only (no leader-seed entry).
+     * Do not await — marks stay on cadence. Slow enrich/scan still only when flat;
+     * post-exit knife enrich is a separate throttled wake.
      */
     if (cfg.fastPathEnabled && nowMs - lastLeaderWakeMs >= 2_000) {
       lastLeaderWakeMs = nowMs;
@@ -1937,6 +2108,19 @@ export async function runMildDipLoop(
       void wakeWaitDipWatches(cfg, state, nowMs).catch((err) => {
         console.warn(
           '[mild-dip] wait-dip wake failed',
+          err instanceof Error ? err.message : err,
+        );
+      });
+    }
+    if (
+      cfg.knifeStabilizeEnabled &&
+      cfg.postExitWakeMs > 0 &&
+      nowMs - lastOwnTapeKnifeMs >= 8_000
+    ) {
+      lastOwnTapeKnifeMs = nowMs;
+      void wakeOwnTapeKnifeEnrich(cfg, state, nowMs).catch((err) => {
+        console.warn(
+          '[mild-dip] own-tape knife wake failed',
           err instanceof Error ? err.message : err,
         );
       });

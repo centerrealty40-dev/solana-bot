@@ -3048,6 +3048,12 @@ const PM2_APPS = [
          * scale-in OFF. Observer may still log leaders for research only.
          */
         MILD_DIP_LEADER_SEED_ENTRY: '0',
+        /**
+         * 1.11.783 — after our exit keep mint on stream/knife wake 2h
+         * (was ~10m via bounce lookback → 23e4CN knife at +61m invisible).
+         */
+        MILD_DIP_POST_EXIT_WAKE_MS: '7200000',
+        MILD_DIP_POST_EXIT_WAKE_MAX: '48',
         MILD_DIP_LEADER_ALIGN: '0',
         MILD_DIP_LEADER_ALIGN_MAX_AGE_MS: '120000',
         MILD_DIP_LEADER_ALIGN_REQUIRE_RED_PCT: '3',

@@ -186,6 +186,66 @@ export function priorityMintsFromRecentTrades(
   return rows.slice(0, max).map((r) => r.mint);
 }
 
+/** Own full exits — primary post-exit wake source (1.11.783). */
+export function priorityMintsFromLastExit(
+  lastExitByMint: Record<string, { atMs?: number } | undefined> | undefined,
+  nowMs: number,
+  opts?: { watchMs?: number; max?: number },
+): string[] {
+  const watchMs = Math.max(0, opts?.watchMs ?? 7_200_000);
+  const max = Math.max(0, Math.floor(opts?.max ?? 48));
+  if (!(watchMs > 0) || max <= 0 || !lastExitByMint) return [];
+  const rows: Array<{ mint: string; atMs: number }> = [];
+  for (const [mint, ex] of Object.entries(lastExitByMint)) {
+    if (!mint || mint.length < 32) continue;
+    const at = ex?.atMs ?? 0;
+    if (at > 0 && nowMs - at <= watchMs) rows.push({ mint, atMs: at });
+  }
+  rows.sort((a, b) => b.atMs - a.atMs);
+  return rows.slice(0, max).map((r) => r.mint);
+}
+
+/**
+ * Own-tape wake set: post-exit first, then cooldown-touch proxy, then hot stream.
+ * Never includes leader seeds (1.11.782/783).
+ */
+export function ownTapeWakeMints(args: {
+  hotMints: string[];
+  lastExitByMint?: Record<string, { atMs?: number } | undefined>;
+  cooldownUntilMs?: Record<string, number>;
+  nowMs: number;
+  postExitWakeMs: number;
+  postExitWakeMax: number;
+  maxTotal?: number;
+}): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (mint: string | undefined | null) => {
+    if (!mint || mint.length < 32 || seen.has(mint)) return;
+    seen.add(mint);
+    out.push(mint);
+  };
+  const wakeMs = Math.max(0, args.postExitWakeMs);
+  const wakeMax = Math.max(0, Math.floor(args.postExitWakeMax));
+  if (wakeMs > 0 && wakeMax > 0) {
+    for (const m of priorityMintsFromLastExit(args.lastExitByMint, args.nowMs, {
+      watchMs: wakeMs,
+      max: wakeMax,
+    })) {
+      push(m);
+    }
+    for (const m of priorityMintsFromRecentTrades(args.cooldownUntilMs ?? {}, args.nowMs, {
+      watchMs: wakeMs,
+      max: wakeMax,
+    })) {
+      push(m);
+    }
+  }
+  for (const m of args.hotMints) push(m);
+  const maxTotal = Math.max(1, Math.floor(args.maxTotal ?? 80));
+  return out.slice(0, maxTotal);
+}
+
 /** Keep enriching active deep-knife watches so trough / bounce can resolve. */
 export function priorityMintsFromKnifeWatch(
   knifeWatch: Record<string, KnifeWatchEntry> | undefined,
