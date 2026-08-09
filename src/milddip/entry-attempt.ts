@@ -612,6 +612,8 @@ export async function attemptMildDipEntry(args: {
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
   };
+  // Seed exit mark ring so stream-only marks have a print before first swap decode.
+  mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });
   buyInFlight.delete(c.mint);
   saveMildDipState(cfg.statePath, state);
   resetCopyFundingCache();

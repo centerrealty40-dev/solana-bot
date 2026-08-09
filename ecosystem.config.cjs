@@ -3054,9 +3054,13 @@ const PM2_APPS = [
          * Was Dex-only + scan-blocked → real gaps ~60s (2qE4vp −17% giveback).
          */
         MILD_DIP_MARK_INTERVAL_MS: '2000',
-        MILD_DIP_MARK_STREAM_MAX_AGE_MS: '5000',
-        MILD_DIP_MARK_DEX_REFRESH_MS: '15000',
-        MILD_DIP_MARK_CACHE_TTL_MS: '2000',
+        /**
+         * 1.11.769 — exit marks = price ring only (stream + fill seed).
+         * Never await Dex on mark pass (that built the 20–60s gate queue).
+         */
+        MILD_DIP_MARK_STREAM_MAX_AGE_MS: '300000',
+        MILD_DIP_MARK_DEX_REFRESH_MS: '0',
+        MILD_DIP_MARK_CACHE_TTL_MS: '20000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
         MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',

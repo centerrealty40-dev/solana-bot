@@ -1,4 +1,26 @@
 # So
+## [1.11.769] — 2026-08-09
+
+**Тег:** `sa-1.11.769`
+
+### Architecture: exit marks = stream/ring only (no Dex await)
+
+Root cause of `[MILD_DIP_DEX]` / markPass 20–60s: open-book exits fell
+through to **sync DexScreener** behind the 120 RPM gate, while background
+warm (TTL 2s / refresh 15s) and probes already queued the same gate.
+
+**New contract:**
+- Exit `markPriceUsd` reads the **price ring only** (stream swap decodes +
+  entry/adopt fill seed). **Never awaits Dex.**
+- Open bags always `forceFetch` in the stream price sampler.
+- `MILD_DIP_MARK_STREAM_MAX_AGE_MS=300000` (ring max age; 0 = any).
+- `MILD_DIP_MARK_DEX_REFRESH_MS=0` (deprecated for exits).
+- Dex remains for discovery/entry enrich only.
+
+**Откат:** restore prior `markPriceUsd` Dex fallback + warm + env 5s/15s/2s.
+
+---
+
 ## [1.11.768] — 2026-08-09
 
 **Тег:** `sa-1.11.768`
