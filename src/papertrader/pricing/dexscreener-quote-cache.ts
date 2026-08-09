@@ -326,6 +326,11 @@ export async function fetchDexScreenerPairDetails(
     allowedDexIds?: string[];
     /** When true, always HTTP-fetch (still respects global gate + updates shared cache). */
     bypassCache?: boolean;
+    /**
+     * When true, skip the shared DexScreener RPM file-gate.
+     * Use only for tightly self-rate-limited callers (open-bag mark refresh).
+     */
+    bypassGate?: boolean;
   },
 ): Promise<DexScreenerPairDetails | null> {
   if (!mint) return null;
@@ -374,7 +379,9 @@ export async function fetchDexScreenerPairDetails(
     }
   }
 
-  await acquireDexScreenerSlot();
+  if (opts?.bypassGate !== true) {
+    await acquireDexScreenerSlot();
+  }
 
   let details: DexScreenerPairDetails | null = null;
   let cacheEntry: CacheEntry = { miss: true, fetchedAtMs: nowMs };

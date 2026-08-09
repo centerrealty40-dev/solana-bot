@@ -1,4 +1,21 @@
 # So
+## [1.11.772] — 2026-08-09
+
+**Тег:** `sa-1.11.772`
+
+### Fix: open-bag Dex refresh bypasses global RPM gate
+
+1.11.771 refresh was still stuck behind the shared DexScreener file-gate
+(`nextAllowedMs` ~11m ahead under discovery load) → in-flight refreshes
+waited forever, ring stayed at entry seed, EtxCL9 marks still pnl=0.
+
+Open-mark refresh is already capped (8s/mint, max 3 in flight); it now
+uses `bypassGate` + `bypassCache` so live px actually lands in the ring.
+
+**Откат:** revert this commit (refresh returns to gated path).
+
+---
+
 ## [1.11.771] — 2026-08-09
 
 **Тег:** `sa-1.11.771`
