@@ -3207,6 +3207,8 @@ const PM2_APPS = [
      * session open/flat. Writes jsonl + leader-seed.json for discover `leaders`.
      * 1.11.778 — absolute tape: marks ON, denser poll/lookback/sigs, turnDump
      * + MFE/MAE on session flat for entry/exit formula RE.
+     * 1.11.790 — 1Hz dense exit tape (`leader-dense-YYYYMMDD.jsonl`) via Jupiter
+     * price + cached Dex features for overnight per-wallet exit formula RE.
      */
     {
       name: 'mild-dip-leader-observer',
@@ -3230,17 +3232,24 @@ const PM2_APPS = [
         LEADER_OBSERVER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
         LEADER_OBSERVER_SEED_MAX: '40',
         LEADER_OBSERVER_SEED_MAX_AGE_SEC: '7200',
-        /** 1.11.778 — denser absolute capture (was 15s / 900s / 40 sigs). */
-        LEADER_OBSERVER_POLL_SEC: '10',
+        /** 1.11.790 — sig poll every 5s; dense ticks every 1s while bags open. */
+        LEADER_OBSERVER_POLL_SEC: '5',
         LEADER_OBSERVER_LOOKBACK_SEC: '1800',
         LEADER_OBSERVER_SIG_LIMIT: '80',
         /** 0 = run until stopped (PM2 owns lifecycle). */
         LEADER_OBSERVER_MAX_HOURS: '0',
         /** 1.11.760 — log sells + session flat (was buy-only). */
         LEADER_OBSERVER_LOG_SELLS: '1',
-        /** 1.11.778 — mid-hold Dex path for exit formula / +/- segments. */
+        /** Slow Dex snapshot marks (features refresh). */
         LEADER_OBSERVER_LOG_MARKS: '1',
-        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '60',
+        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '15',
+        /** 1.11.790 — second-level exit tape for formula recovery. */
+        LEADER_OBSERVER_DENSE_TICKS: '1',
+        LEADER_OBSERVER_DENSE_GAP_SEC: '1',
+        LEADER_OBSERVER_DEX_REFRESH_SEC: '15',
+        /** 0 = dense-tick ALL open bags (wins + losses); set 1 to TD-only. */
+        LEADER_OBSERVER_DENSE_ONLY_TD: '0',
+        LEADER_OBSERVER_PRICE_URL: 'https://api.jup.ag/price/v3',
         /** 1.11.780 — match mild-dip leader-like structural floors. */
         LEADER_OBSERVER_MIN_MCAP_USD: '5000',
         LEADER_OBSERVER_MIN_LIQUIDITY_USD: '5000',
@@ -3251,6 +3260,7 @@ const PM2_APPS = [
         /** 1.11.712 — fix 7BNax typo (was missing `j`: …UYrAC… → …UYrjAC…). */
         LEADER_OBSERVER_LEADERS:
           '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+        ...PM2_JUPITER_KEY_ENV,
         ...LIVE_OSCAR_HELIUS_RPC_ENV,
         ...(HELIUS_RPC_URL_PM2
           ? {

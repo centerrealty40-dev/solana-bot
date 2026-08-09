@@ -1,4 +1,28 @@
 # So
+## [1.11.790] — 2026-08-09
+
+**Тег:** `sa-1.11.790`
+
+### Logger: 1Hz dense leader exit tape
+
+`mild-dip-leader-observer` now writes second-level open-bag ticks for
+overnight exit-formula RE (previous ~65s Dex marks were too sparse).
+
+- `leader-dense-YYYYMMDD.jsonl` ← `leader_bag_tick` @ 1s (Jupiter price)
+- Dex features refreshed every 15s (cached onto ticks)
+- Precomputed: `pnl/mfe/mae/giveback/bounce/ddFromPeak`, `armedMfe{5,8,10,12}`,
+  `durNeg{8,10,12,15,20,25}`, tape `pc5m/pc1h/vol/liq/turn`, `isTdEntry`
+- Slow `leader_bag_mark` kept at 15s with the same feature set
+- Fit helper: `scripts/milddip/leader-dense-exit-fit.py`
+
+Env (PM2): `LEADER_OBSERVER_DENSE_TICKS=1`, `DENSE_GAP_SEC=1`,
+`DEX_REFRESH_SEC=15`, `POLL_SEC=5`, `MARK_MIN_GAP_SEC=15`.
+
+**Откат:** `LEADER_OBSERVER_DENSE_TICKS=0` + prior mark gap 60 / poll 10 +
+reload `mild-dip-leader-observer`.
+
+---
+
 ## [1.11.789] — 2026-08-09
 
 **Тег:** `sa-1.11.789`
