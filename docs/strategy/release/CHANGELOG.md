@@ -1,4 +1,25 @@
 # So
+## [1.11.783] — 2026-08-09
+
+**Тег:** `sa-1.11.783`
+
+### Fix: own-tape post-exit wake (see names we already traded)
+
+`23e4CN…`: leaders re-bought deep_knife at 20:09; we had traded the mint
+and fully exited ~19:08, then dropped it from hot/ring. Stream wake only
+kept recent exits ~10m, and `drop_empty` never wrote `lastExitByMint` —
+so at +61m the name was invisible without leader-seed (now OFF).
+
+- `MILD_DIP_POST_EXIT_WAKE_MS=7200000` (2h) + max 48 — pin exits on wake
+- Wake set = lastExit ∪ cooldown-touch ∪ hot (no leaders)
+- Stream sampler + slow enrich include post-exit; knife arm from fast-path
+  deep_knife defer; throttled own-tape knife enrich while bags open
+- `drop_empty` records `lastExitByMint` + hot note
+
+**Откат:** `POST_EXIT_WAKE_MS=0` (hot-only wake) / prior lookback behavior.
+
+---
+
 ## [1.11.782] — 2026-08-09
 
 **Тег:** `sa-1.11.782`
