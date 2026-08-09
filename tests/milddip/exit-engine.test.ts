@@ -61,6 +61,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmVolFadeWeakWindows: 3,
     cliffDumpPnlPct: 50,
     hardStopPnlPct: 15,
+    hardStopPartialFraction: 0,
     neverArmBounceMinDumpPct: 8,
     neverArmBouncePct: 8,
     neverArmBounceMinTroughAgeMs: 60_000,

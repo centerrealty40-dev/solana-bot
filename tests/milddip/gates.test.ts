@@ -71,6 +71,7 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeWeakWindows: 3,
   cliffDumpPnlPct: 50,
   hardStopPnlPct: 15,
+  hardStopPartialFraction: 0,
   neverArmBounceMinDumpPct: 8,
   neverArmBouncePct: 8,
   neverArmBounceMinTroughAgeMs: 60_000,
@@ -580,6 +581,76 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('hard_stop');
   });
 
+  it('1.11.791 — staged hard stop: half at −25%, runner waits until −50%', () => {
+    const staged = {
+      ...exitGates,
+      hardStopPnlPct: 25,
+      hardStopPartialFraction: 0.5,
+      cliffDumpPnlPct: 50,
+      neverArmFreefallPnlPct: 0,
+      neverArmBouncePct: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const half = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 75,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(half.shouldExit).toBe(true);
+    expect(half.reason).toBe('hard_stop');
+    expect(half.fraction).toBe(0.5);
+
+    const holdRunner = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 70,
+      peakPriceUsd: 100,
+      armed: false,
+      scaleOutDone: true,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(holdRunner.shouldExit).toBe(false);
+
+    const rest = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 50,
+      peakPriceUsd: 100,
+      armed: false,
+      scaleOutDone: true,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(rest.shouldExit).toBe(true);
+    expect(rest.reason).toBe('cliff_dump');
+    expect(rest.fraction).toBe(1);
+  });
+
+  it('1.11.791 — staged: gap to −50% full cliff_dump (no orphan half)', () => {
+    const staged = {
+      ...exitGates,
+      hardStopPnlPct: 25,
+      hardStopPartialFraction: 0.5,
+      cliffDumpPnlPct: 50,
+      neverArmFreefallPnlPct: 0,
+      neverArmBouncePct: 0,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 40,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('cliff_dump');
+    expect(v.fraction).toBe(1);
+  });
+
   it('cliff_dump exits immediately at ≤ −50% without waiting dead min-hold', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -965,6 +1036,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmVolFadeRatio: 0,
       cliffDumpPnlPct: 0,
       hardStopPnlPct: 0,
+      hardStopPartialFraction: 0,
       neverArmVolFadeFloorUsd: 0,
       neverArmVolFadeSampleMs: 0,
       neverArmVolFadeWeakWindows: 0,

@@ -429,9 +429,14 @@ const MildDipConfigSchema = z.object({
     /** Instant rug / LP-pull cut when pnl ≤ −this % (0=off). Default 50. */
     cliffDumpPnlPct: z.coerce.number().min(0).max(100).default(50),
     /**
-     * 1.11.765 — hard stop from entry when pnl ≤ −this % (0=off). Default 15.
+     * 1.11.791 — hard stop from entry when pnl ≤ −this % (0=off). Default 25.
      */
-    hardStopPnlPct: z.coerce.number().min(0).max(100).default(15),
+    hardStopPnlPct: z.coerce.number().min(0).max(100).default(25),
+    /**
+     * 1.11.791 — fraction sold at hard stop (0=full legacy; live 0.5 → half@-25,
+     * remainder at cliff −50).
+     */
+    hardStopPartialFraction: z.coerce.number().min(0).max(1).default(0.5),
     /**
      * 1.11.747 — never-arm bounce reclaim (sell into bounce off post-entry trough).
      * 0 bouncePct = off.
@@ -564,8 +569,10 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
     /** 1.11.697 — LP-pull cliff: exit immediately at ≤ −50% mark pnl. */
     cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
-    /** 1.11.765 — hard stop from entry (60h CF pick −15%). 0 = off. */
-    hardStopPnlPct: envNum('MILD_DIP_EXIT_HARD_STOP_PNL_PCT', 15),
+    /** 1.11.791 — first loss stage (half). 0 = off. */
+    hardStopPnlPct: envNum('MILD_DIP_EXIT_HARD_STOP_PNL_PCT', 25),
+    /** 1.11.791 — sell this fraction at hard stop; 0 = full hard_stop. */
+    hardStopPartialFraction: envNum('MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION', 0.5),
     /**
      * 1.11.751 — never-arm bounce hardened vs stream-wick churn (F1XdRe/AENK1Y):
      * trough ≤ −8%, bounce ≥ 8%, trough age ≥ 60s, still red ≤ −3% vs entry.

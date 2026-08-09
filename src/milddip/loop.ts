@@ -1981,7 +1981,11 @@ export async function runMildDipLoop(
           ` `
         : `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
           `fullGiveback=-${cfg.exit.givebackPct}% `) +
-      `hardStop=-${cfg.exit.hardStopPnlPct}% ` +
+      `hardStop=-${cfg.exit.hardStopPnlPct}%` +
+      (cfg.exit.hardStopPartialFraction > 0 && cfg.exit.hardStopPartialFraction < 1
+        ? `×${cfg.exit.hardStopPartialFraction}`
+        : '') +
+      ` ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}` +
       `/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%` +
