@@ -29,6 +29,24 @@ import {
   type KnifeWatchEntry,
 } from './knife-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
+import { evaluateTurnDumpGate } from './turn-dump.js';
+
+function turnDumpAllowsCandidate(
+  cfg: MildDipConfig,
+  metrics: MildDipCandidateMetrics,
+): boolean {
+  if (!cfg.turnDumpGateEnabled) return true;
+  return evaluateTurnDumpGate({
+    enabled: true,
+    pc5m: metrics.priceChange5mPct,
+    volume5mUsd: metrics.volume5mUsd,
+    liquidityUsd: metrics.liquidityUsd,
+    alpha: cfg.turnDumpAlpha,
+    beta: cfg.turnDumpBeta,
+    shallowSlackPct: cfg.turnDumpShallowSlackPct,
+    deepSlackPct: cfg.turnDumpDeepSlackPct,
+  }).pass;
+}
 
 export type MildDipCandidate = {
   mint: string;
@@ -471,18 +489,22 @@ export async function enrichAndFilterCandidates(
 
       if (dipSource) {
         // Normal mild path wins — drop any knife watch for this mint.
+        const candidateMetrics =
+          dipSource === 'stream' && stream.drawdownPct != null
+            ? { ...metrics, priceChange5mPct: stream.drawdownPct }
+            : dipSource === 'flat_micro_dip' &&
+                flatMicroDipPct != null &&
+                flatMicroDipPct !== metrics.priceChange5mPct
+              ? { ...metrics, priceChange5mPct: flatMicroDipPct }
+              : metrics;
+        if (!turnDumpAllowsCandidate(cfg, candidateMetrics)) {
+          return null;
+        }
         const candidate: MildDipCandidate = {
           mint,
           symbol: mint.slice(0, 6),
           priceUsd: details.priceUsd,
-          metrics:
-            dipSource === 'stream' && stream.drawdownPct != null
-              ? { ...metrics, priceChange5mPct: stream.drawdownPct }
-              : dipSource === 'flat_micro_dip' &&
-                  flatMicroDipPct != null &&
-                  flatMicroDipPct !== metrics.priceChange5mPct
-                ? { ...metrics, priceChange5mPct: flatMicroDipPct }
-                : metrics,
+          metrics: candidateMetrics,
           dipSource,
         };
         return {
@@ -573,6 +595,14 @@ export async function enrichAndFilterCandidates(
         const readyWatch: KnifeWatchEntry = notify
           ? { ...watch, readyNotifiedAtMs: nowMs }
           : watch;
+        const knifeMetrics = {
+          ...metrics,
+          // Surface knife depth for journaling / prebuy context.
+          priceChange5mPct: readyWatch.knifeDipPct,
+        };
+        if (!turnDumpAllowsCandidate(cfg, knifeMetrics)) {
+          return { kind: 'knife', mint, watch: readyWatch, event: undefined };
+        }
         return {
           kind: 'knife',
           mint,
@@ -594,11 +624,7 @@ export async function enrichAndFilterCandidates(
             mint,
             symbol: mint.slice(0, 6),
             priceUsd: details.priceUsd,
-            metrics: {
-              ...metrics,
-              // Surface knife depth for journaling / prebuy context.
-              priceChange5mPct: readyWatch.knifeDipPct,
-            },
+            metrics: knifeMetrics,
             dipSource: 'knife_stabilize',
             knifeMode: ready.mode ?? undefined,
             knifeBouncePct: ready.bouncePct,

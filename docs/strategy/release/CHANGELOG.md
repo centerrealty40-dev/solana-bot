@@ -1,4 +1,24 @@
 # So
+## [1.11.773] — 2026-08-09
+
+**Тег:** `sa-1.11.773`
+
+### Feat: turn→dump entry gate; wait-dip off
+
+Replace park-and-wait (−7/−10% from signal) with 8zkg formula gate:
+
+`dump ≈ -5.08 + 6.86·log1p(vol5m/liq · 100)`
+
+- Enter **immediately** when dump depth matches turnover (±slacks).
+- Skip when dump too shallow for turn (CF: main PnL win) or too deep.
+- Live: `WAIT_DIP=0`, `TURN_DUMP_GATE=1`, main/stream shallow floor −2.
+- Stream discovery / hot-mints unchanged.
+
+**Откат:** `MILD_DIP_TURN_DUMP_GATE=0`, restore `WAIT_DIP=1`,
+`MAX_DIP_PCT=-8`, stream-only dips −10/−8.
+
+---
+
 ## [1.11.772] — 2026-08-09
 
 **Тег:** `sa-1.11.772`
