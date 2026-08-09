@@ -1,0 +1,60 @@
+{
+  "window": "60h FIFO cycles",
+  "actual": -108.54,
+  "ceiling_skip_DH_rest": {
+    "\u0394": 258.1,
+    "keep": 149.56,
+    "note": "oracle labels, not live"
+  },
+  "best_causal_clean": [
+    {
+      "rule": "pc5m<=-17 & reclaim3m<2",
+      "skip": 30,
+      "\u0394": 34.34,
+      "cutW": 2.19,
+      "avoidL": -36.52,
+      "ratio": 16.7,
+      "dh_rest_caught": -21.93
+    },
+    {
+      "rule": "pc5m<=-18 & reclaim3m<2",
+      "skip": 29,
+      "\u0394": 32.48,
+      "cutW": 2.19,
+      "avoidL": -34.66,
+      "ratio": 15.85,
+      "dh_rest_caught": -21.93
+    },
+    {
+      "rule": "pc5m<=-22",
+      "skip": 164,
+      "\u0394": 89.93,
+      "cutW": 95.6,
+      "avoidL": -185.52,
+      "ratio": 1.94,
+      "dh_rest_caught": -67.52
+    },
+    {
+      "rule": "pc5m<=-17",
+      "skip": 433,
+      "\u0394": 174.25,
+      "cutW": 313.15,
+      "avoidL": -487.39,
+      "ratio": 1.56,
+      "dh_rest_caught": -117.88,
+      "note": "cuts +$313 winners"
+    },
+    {
+      "rule": "n>=1 & reclaim3m<2",
+      "skip": 57,
+      "\u0394": 28.17,
+      "cutW": 21.38,
+      "avoidL": -49.55,
+      "ratio": 2.32,
+      "dh_rest_caught": -25.61
+    }
+  ],
+  "failed_rebuy_structure": "after_loss/vs_prev/vs_sess alone \u2248 ratio 0.9\u20131.06 churn",
+  "coverage_note": "pre-buy reclaim/slope only ~169/1780 cycles have mark path; rest uncovered",
+  "gap_to_ceiling": "best clean rules catch ~$22\u2013$67 of -$258 DH-rest; need denser pre-buy marks for full turn gate"
+}
