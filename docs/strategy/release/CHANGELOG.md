@@ -1,4 +1,23 @@
 # So
+## [1.11.764] — 2026-08-09
+
+**Тег:** `sa-1.11.764`
+
+### Fix: partial sleeve/bounce no longer orphans the runner
+
+`mfe_bank_sleeve` / `never_arm_bounce` half-cuts sold `fraction=0.5` on-chain
+but `executeQueuedSell` only treated `peak_giveback_partial` / `mfe_bank_1|2`
+as partial → **deleted `state.open`** while the remainder stayed in the wallet
+unmanaged (live: `GZudMdxm…` ~−80% orphan after 50% sleeve).
+
+**Fix:** any successful sell with `0 < fraction < 1` keeps the runner
+(`isRunnerPartialExit`).
+
+**Откат:** restore prior `isPartial` reason whitelist + reload. Orphans already
+dropped still need a one-shot sell/adopt.
+
+---
+
 ## [1.11.763] — 2026-08-09
 
 **Тег:** `sa-1.11.763`

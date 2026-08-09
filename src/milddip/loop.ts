@@ -47,6 +47,7 @@ import {
   evaluateLeaderAlignDefer,
   type LeaderAlignHit,
 } from './leader-align.js';
+import { isRunnerPartialExit } from './sell-partial.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -861,11 +862,10 @@ async function executeQueuedSell(args: {
 
   const fraction =
     decision.fraction > 0 && decision.fraction < 1 ? decision.fraction : 1;
-  const isPartial =
-    fraction < 1 &&
-    (decision.reason === 'peak_giveback_partial' ||
-      decision.reason === 'mfe_bank_1' ||
-      decision.reason === 'mfe_bank_2');
+  // Any 0<frac<1 must keep a runner. Reason whitelist omitted mfe_bank_sleeve /
+  // never_arm_bounce half-cuts → state deleted while ~50% remained on-chain
+  // (GZudMdxm orphan −80%).
+  const isPartial = isRunnerPartialExit(fraction);
 
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
