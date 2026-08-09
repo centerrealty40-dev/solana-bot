@@ -84,7 +84,8 @@ const MildDipConfigSchema = z.object({
    * After a full exit: require mark ≥ this % below exit price before rebuy.
    * Stream mark only — no Dex. 0 = off. Default 4.
    */
-  rebuyBelowExitPct: z.coerce.number().min(0).max(50).default(20),
+  /** 1.11.757 — live default 10 (was 20). */
+  rebuyBelowExitPct: z.coerce.number().min(0).max(50).default(10),
   /** How long the last-exit floor applies (ms). Default 15m. */
   rebuyBelowExitMaxAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
   /** Allow entry when stream drawdown is in dip band even if Dex pc5m is flat. */
@@ -624,7 +625,7 @@ export function loadMildDipConfig(): MildDipConfig {
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
-    rebuyBelowExitPct: process.env.MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 20,
+    rebuyBelowExitPct: process.env.MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 10,
     rebuyBelowExitMaxAgeMs: process.env.MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS ?? 900_000,
     cooldownBounceLookbackMs: process.env.MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS ?? 300_000,
     streamDipEntryEnabled: (() => {

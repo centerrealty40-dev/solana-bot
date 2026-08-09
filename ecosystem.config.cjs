@@ -3041,7 +3041,8 @@ const PM2_APPS = [
         /** Keep bounce guard on fast-path — reclaim candles are not dumps. */
         MILD_DIP_FAST_PATH_SKIP_BOUNCE: '0',
         /** After full exit: rebuy only if mark ≥20% below exit (15m memory). */
-        MILD_DIP_REBUY_BELOW_EXIT_PCT: '20',
+        /** 1.11.757 — rebuy if ≥10% below last exit (was 20%; Sheep 09:15 miss). */
+        MILD_DIP_REBUY_BELOW_EXIT_PCT: '10',
         MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
         MILD_DIP_FAST_PATH_MIN_GAP_MS: '2000',
         /** No soft-ban after impact/sim fail — retry next tick (Jupiter, not Helius). */

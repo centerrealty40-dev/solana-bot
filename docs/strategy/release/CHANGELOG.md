@@ -1,4 +1,20 @@
 # So
+## [1.11.757] — 2026-08-09
+
+**Тег:** `sa-1.11.757`
+
+### Entry: rebuy-below-exit 20% → 10%
+
+After a full exit, allow rebuy when mark is ≥**10%** below the exit fill
+(was 20%). Sheep (`Dz2iVS`): sold `never_arm_time_red` then blocked a
+stabilize/wait re-entry at ~−8…−10% below exit while another wallet bought.
+
+**Env:** `MILD_DIP_REBUY_BELOW_EXIT_PCT=10` (max age still 15m).
+
+**Откат:** `MILD_DIP_REBUY_BELOW_EXIT_PCT=20` + reload.
+
+---
+
 ## [1.11.756] — 2026-08-09
 
 **Тег:** `sa-1.11.756`
