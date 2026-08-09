@@ -22,11 +22,22 @@ import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
 import {
   copyBuyInputAmountRaw,
   copyBuyQuotePriceUsd,
+  copyQuoteRawToUsd,
   copyQuoteSpec,
   copySellQuotePriceUsd,
 } from './quote-mint.js';
+import { peekCopyQuoteBalances } from './funding-gate.js';
 import { bumpSlippageBps } from './slippage-bump.js';
 import { isQuoteOutRegressed, parseTokenRaw } from './quote-quality.js';
+
+export type LiveCashFillFields = {
+  quoteSpentUsd?: number;
+  quoteReceivedUsd?: number;
+  usdcBefore?: number;
+  usdcAfter?: number;
+  feeSolBefore?: number;
+  feeSolAfter?: number;
+};
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
@@ -117,7 +128,15 @@ export async function executeLiveCopyBuy(args: {
   leaderPriceUsd?: number;
   /** Leader buy timestamp — selects first-shot vs steady premium cap. */
   leaderBuyTs?: number;
-}): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRaw?: string; reason?: string }> {
+}): Promise<
+  {
+    ok: boolean;
+    priceUsd: number;
+    signature?: string;
+    tokenRaw?: string;
+    reason?: string;
+  } & LiveCashFillFields
+> {
   const {
     cfg,
     mint,
@@ -132,6 +151,7 @@ export async function executeLiveCopyBuy(args: {
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
   const quoteSpec = copyQuoteSpec(cfg);
+  const beforeBal = await peekCopyQuoteBalances(cfg);
 
   const inputAmountRaw = copyBuyInputAmountRaw(quoteSpec, sizeUsd, solUsd);
   if (inputAmountRaw == null) {
@@ -327,11 +347,23 @@ export async function executeLiveCopyBuy(args: {
     });
 
     if (sent.ok) {
+      const quoteSpentUsd = copyQuoteRawToUsd(
+        quoteSpec,
+        Number(quote.quoteResponse.inAmount),
+        solUsd,
+      );
+      await sleep(450);
+      const afterBal = await peekCopyQuoteBalances(cfg);
       return {
         ok: true,
         priceUsd,
         signature: sent.signature,
         tokenRaw: outRaw != null ? String(outRaw) : undefined,
+        quoteSpentUsd: quoteSpentUsd > 0 ? quoteSpentUsd : undefined,
+        usdcBefore: beforeBal?.quoteUsd,
+        usdcAfter: afterBal?.quoteUsd,
+        feeSolBefore: beforeBal?.feeSol,
+        feeSolAfter: afterBal?.feeSol,
       };
     }
 
@@ -343,6 +375,8 @@ export async function executeLiveCopyBuy(args: {
         signature: sent.signature,
         tokenRaw: outRaw != null ? String(outRaw) : undefined,
         reason: lastReason,
+        usdcBefore: beforeBal?.quoteUsd,
+        feeSolBefore: beforeBal?.feeSol,
       };
     }
 
@@ -367,10 +401,18 @@ export async function executeLiveCopyBuy(args: {
       signature: sent.signature,
       tokenRaw: outRaw != null ? String(outRaw) : undefined,
       reason: lastReason,
+      usdcBefore: beforeBal?.quoteUsd,
+      feeSolBefore: beforeBal?.feeSol,
     };
   }
 
-  return { ok: false, priceUsd: lastPriceUsd, reason: lastReason };
+  return {
+    ok: false,
+    priceUsd: lastPriceUsd,
+    reason: lastReason,
+    usdcBefore: beforeBal?.quoteUsd,
+    feeSolBefore: beforeBal?.feeSol,
+  };
 }
 
 export async function executeLiveCopySell(args: {
@@ -381,12 +423,21 @@ export async function executeLiveCopySell(args: {
   fraction: number;
   /** Copy-attributed balance (required in shared-wallet mode). */
   tokenRawBase?: string;
-}): Promise<{ ok: boolean; priceUsd: number; signature?: string; tokenRawRemaining?: string; reason?: string }> {
+}): Promise<
+  {
+    ok: boolean;
+    priceUsd: number;
+    signature?: string;
+    tokenRawRemaining?: string;
+    reason?: string;
+  } & LiveCashFillFields
+> {
   const { cfg, mint, symbol, leaderSignature, fraction, tokenRawBase } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
   const quoteSpec = copyQuoteSpec(cfg);
+  const beforeBal = await peekCopyQuoteBalances(cfg);
 
   /**
    * Prefer attributed `tokenRawBase` (shared-wallet lanes), but never sell more
@@ -453,7 +504,7 @@ export async function executeLiveCopySell(args: {
       return { ok: false, priceUsd: 0, reason: lastReason };
     }
 
-    const { priceUsd: exitPriceUsd } = copySellQuotePriceUsd({
+    const { priceUsd: exitPriceUsd, proceedsUsd } = copySellQuotePriceUsd({
       spec: quoteSpec,
       outAmountRaw: prep.quoteResponse.outAmount,
       tokenAmountRaw: sellRaw,
@@ -479,11 +530,18 @@ export async function executeLiveCopySell(args: {
     const remaining = totalRaw > sellRaw ? (totalRaw - sellRaw).toString() : '0';
 
     if (sent.ok) {
+      await sleep(450);
+      const afterBal = await peekCopyQuoteBalances(cfg);
       return {
         ok: true,
         priceUsd: exitPriceUsd,
         signature: sent.signature,
         tokenRawRemaining: remaining,
+        quoteReceivedUsd: proceedsUsd > 0 ? proceedsUsd : undefined,
+        usdcBefore: beforeBal?.quoteUsd,
+        usdcAfter: afterBal?.quoteUsd,
+        feeSolBefore: beforeBal?.feeSol,
+        feeSolAfter: afterBal?.feeSol,
       };
     }
 
@@ -495,6 +553,9 @@ export async function executeLiveCopySell(args: {
         signature: sent.signature,
         tokenRawRemaining: remaining,
         reason: lastReason,
+        quoteReceivedUsd: proceedsUsd > 0 ? proceedsUsd : undefined,
+        usdcBefore: beforeBal?.quoteUsd,
+        feeSolBefore: beforeBal?.feeSol,
       };
     }
 
@@ -519,8 +580,16 @@ export async function executeLiveCopySell(args: {
       signature: sent.signature,
       tokenRawRemaining: remaining,
       reason: lastReason,
+      usdcBefore: beforeBal?.quoteUsd,
+      feeSolBefore: beforeBal?.feeSol,
     };
   }
 
-  return { ok: false, priceUsd: 0, reason: lastReason };
+  return {
+    ok: false,
+    priceUsd: 0,
+    reason: lastReason,
+    usdcBefore: beforeBal?.quoteUsd,
+    feeSolBefore: beforeBal?.feeSol,
+  };
 }

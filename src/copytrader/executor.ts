@@ -19,6 +19,12 @@ export type BuyExecutionResult = {
   signature?: string;
   tokenRaw?: string;
   reason?: string;
+  /** Jupiter quote USDC spent (buy). */
+  quoteSpentUsd?: number;
+  usdcBefore?: number;
+  usdcAfter?: number;
+  feeSolBefore?: number;
+  feeSolAfter?: number;
 };
 
 export type SellExecutionResult = {
@@ -28,6 +34,12 @@ export type SellExecutionResult = {
   pnlPct?: number;
   tokenRawRemaining?: string;
   reason?: string;
+  /** Jupiter quote USDC received (sell). */
+  quoteReceivedUsd?: number;
+  usdcBefore?: number;
+  usdcAfter?: number;
+  feeSolBefore?: number;
+  feeSolAfter?: number;
 };
 
 export async function executeCopyBuy(args: {
@@ -97,6 +109,11 @@ export async function executeCopyBuy(args: {
       txSignature: live.signature ?? null,
       ok: live.ok,
       reason: live.reason ?? null,
+      quoteSpentUsd: live.quoteSpentUsd ?? null,
+      usdcBefore: live.usdcBefore ?? null,
+      usdcAfter: live.usdcAfter ?? null,
+      feeSolBefore: live.feeSolBefore ?? null,
+      feeSolAfter: live.feeSolAfter ?? null,
     });
     return {
       ok: live.ok,
@@ -104,6 +121,11 @@ export async function executeCopyBuy(args: {
       signature: live.signature,
       tokenRaw: live.tokenRaw,
       reason: live.reason,
+      quoteSpentUsd: live.quoteSpentUsd,
+      usdcBefore: live.usdcBefore,
+      usdcAfter: live.usdcAfter,
+      feeSolBefore: live.feeSolBefore,
+      feeSolAfter: live.feeSolAfter,
     };
   }
 
@@ -187,6 +209,11 @@ export async function executeCopySell(args: {
       txSignature: live.signature ?? null,
       ok: live.ok,
       reason: live.reason ?? null,
+      quoteReceivedUsd: live.quoteReceivedUsd ?? null,
+      usdcBefore: live.usdcBefore ?? null,
+      usdcAfter: live.usdcAfter ?? null,
+      feeSolBefore: live.feeSolBefore ?? null,
+      feeSolAfter: live.feeSolAfter ?? null,
     });
     return {
       ok: live.ok,
@@ -195,6 +222,11 @@ export async function executeCopySell(args: {
       signature: live.signature,
       tokenRawRemaining: live.tokenRawRemaining,
       reason: live.reason,
+      quoteReceivedUsd: live.quoteReceivedUsd,
+      usdcBefore: live.usdcBefore,
+      usdcAfter: live.usdcAfter,
+      feeSolBefore: live.feeSolBefore,
+      feeSolAfter: live.feeSolAfter,
     };
   }
 

@@ -31,6 +31,17 @@ describe('mild-dip leader-observer contract (1.11.778)', () => {
     expect(py).toContain('-25 < pc_f <= -2');
   });
 
+  it('dual-writes cash trade_fill/roundtrip into shared trades.jsonl (1.11.786)', () => {
+    expect(eco).toContain('LEADER_OBSERVER_TRADES_PATH');
+    expect(eco).toContain('MILD_DIP_TRADES_PATH');
+    expect(eco).toContain('trades.jsonl');
+    expect(py).toContain('emit_trade');
+    expect(py).toContain('trade_fill');
+    expect(py).toContain('trade_roundtrip');
+    expect(py).toContain('totalCostUsd');
+    expect(py).toContain('cashPnlUsd');
+  });
+
   it('ships 48h divergence + segment stats scripts', () => {
     const report = readFileSync(
       resolve('scripts/milddip/leader-divergence-48h.py'),

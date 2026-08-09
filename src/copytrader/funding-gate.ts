@@ -79,6 +79,22 @@ async function readBalances(
   return next;
 }
 
+/**
+ * Fresh wallet quote+SOL balances (bypasses the 5s funding cache).
+ * Used for cash-accurate trade journal usdcBefore/usdcAfter.
+ */
+export async function peekCopyQuoteBalances(
+  cfg: CopyTraderConfig,
+  nowMs = Date.now(),
+): Promise<{ quoteUsd: number; feeSol: number } | null> {
+  const pk = executionWalletPubkey(cfg);
+  if (pk) cache.delete(pk);
+  const spec = copyQuoteSpec(cfg);
+  const bal = await readBalances(cfg, spec.mint, spec.unit, nowMs);
+  if (!bal) return null;
+  return { quoteUsd: bal.quoteUsd, feeSol: bal.feeSol };
+}
+
 /** Verifies USDC covers `buyUsd` and native SOL still covers fees. */
 export async function checkCopyFundingGate(
   cfg: CopyTraderConfig,

@@ -406,10 +406,25 @@ class Observer:
         self._sol_cache: dict[str, Any] = {}
         self._load_state()
         self.out_path = self._out_path_for_today()
+        # 1.11.786 — dual-write cash trade rows next to mild-dip fills.
+        trades_env = os.environ.get("LEADER_OBSERVER_TRADES_PATH", "").strip()
+        self.trades_path = (
+            Path(trades_env) if trades_env else self.out_dir / "trades.jsonl"
+        )
 
     def _out_path_for_today(self) -> Path:
         day = dt.datetime.utcnow().strftime("%Y%m%d")
         return self.out_dir / f"leader-observer-{day}.jsonl"
+
+    def emit_trade(self, payload: dict[str, Any]) -> None:
+        """Canonical trade_fill / trade_roundtrip into shared trades.jsonl."""
+        try:
+            self.trades_path.parent.mkdir(parents=True, exist_ok=True)
+            row = {"ts": int(time.time() * 1000), "v": 1, **payload}
+            with self.trades_path.open("a", encoding="utf-8") as f:
+                f.write(json.dumps(row, ensure_ascii=False) + "\n")
+        except Exception:
+            pass
 
     def _load_state(self) -> None:
         try:
@@ -574,9 +589,12 @@ class Observer:
         prev = self._bag(leader, mint)
         is_new = prev is None or float(prev.get("tokenUi") or 0) <= FLAT_UI_EPS
         if is_new:
+            cost = float(size_usd or 0)
             bag = {
                 "tokenUi": token_ui,
-                "costUsd": float(size_usd or 0),
+                "costUsd": cost,
+                "totalCostUsd": cost,
+                "totalProceedsUsd": 0.0,
                 "entryPriceUsd": fill_px,
                 "openedBlockTime": block_time,
                 "openedSignature": signature,
@@ -599,6 +617,8 @@ class Observer:
         bag = dict(prev)
         bag["tokenUi"] = new_ui
         bag["costUsd"] = prev_cost + add_cost
+        bag["totalCostUsd"] = float(prev.get("totalCostUsd") or prev_cost) + add_cost
+        bag.setdefault("totalProceedsUsd", float(prev.get("totalProceedsUsd") or 0))
         if new_ui > 0 and bag["costUsd"] > 0:
             bag["entryPriceUsd"] = bag["costUsd"] / new_ui
         bag["lastBuySignature"] = signature
@@ -648,11 +668,19 @@ class Observer:
         bag["lastSellSignature"] = signature
         bag["lastSellBlockTime"] = block_time
         bag["sells"] = int(bag.get("sells") or 0) + 1
+        proceeds = float(size_usd or 0)
+        bag["totalProceedsUsd"] = float(prev.get("totalProceedsUsd") or 0) + proceeds
+        cost_basis = 0.0
         if prev_ui > 0 and sold > 0:
             # reduce cost pro-rata
             frac = min(1.0, sold / prev_ui)
-            bag["costUsd"] = max(0.0, float(prev.get("costUsd") or 0) * (1 - frac))
+            prev_cost = float(prev.get("costUsd") or 0)
+            cost_basis = prev_cost * frac
+            bag["costUsd"] = max(0.0, prev_cost * (1 - frac))
+        cash_pnl = proceeds - cost_basis if proceeds or cost_basis else None
         if is_flat:
+            total_cost = float(prev.get("totalCostUsd") or prev.get("costUsd") or 0)
+            total_proceeds = float(bag.get("totalProceedsUsd") or proceeds)
             session = {
                 "isFlat": True,
                 "soldUi": sold,
@@ -663,6 +691,10 @@ class Observer:
                 "openedSignature": prev.get("openedSignature"),
                 "openedBlockTime": opened_bt,
                 "sizeUsdProceeds": size_usd,
+                "costBasisUsd": cost_basis,
+                "cashPnlUsd": cash_pnl,
+                "totalCostUsd": total_cost,
+                "totalProceedsUsd": total_proceeds,
                 "entryClass": prev.get("entryClass"),
                 "entryGates": prev.get("entryGates"),
                 "entryTurnDump": prev.get("entryTurnDump"),
@@ -686,6 +718,8 @@ class Observer:
                 "entryPriceUsd": entry_px,
                 "exitPriceUsd": fill_px,
                 "sizeUsdProceeds": size_usd,
+                "costBasisUsd": cost_basis,
+                "cashPnlUsd": cash_pnl,
             },
         }
 
@@ -817,6 +851,31 @@ class Observer:
                         }
                     )
                     self.emit(base)
+                    qdelta = quote.get("quoteUsdDelta")
+                    self.emit_trade(
+                        {
+                            "kind": "trade_fill",
+                            "actor": "leader",
+                            "wallet": leader,
+                            "leader": leader,
+                            "mint": mint,
+                            "side": "buy",
+                            "ok": True,
+                            "signature": sig,
+                            "sizeUsdIntent": fills.get("sizeUsd"),
+                            "quoteSpentUsd": (
+                                abs(float(qdelta))
+                                if isinstance(qdelta, (int, float)) and qdelta != 0
+                                else fills.get("sizeUsd")
+                            ),
+                            "quoteReceivedUsd": None,
+                            "cashDeltaUsd": qdelta,
+                            "fillPriceUsd": fills.get("fillPriceUsd"),
+                            "cashSource": "observed_delta" if qdelta else "quote",
+                            "source": "leader_observer",
+                            "blockTime": block_time,
+                        }
+                    )
                     if bag_info["isNewBag"]:
                         self.emit(
                             {
@@ -880,6 +939,34 @@ class Observer:
                         }
                     )
                     self.emit(base)
+                    qdelta = quote.get("quoteUsdDelta")
+                    self.emit_trade(
+                        {
+                            "kind": "trade_fill",
+                            "actor": "leader",
+                            "wallet": leader,
+                            "leader": leader,
+                            "mint": mint,
+                            "side": "sell",
+                            "ok": True,
+                            "signature": sig,
+                            "sizeUsdIntent": fills.get("sizeUsd"),
+                            "quoteSpentUsd": None,
+                            "quoteReceivedUsd": (
+                                float(qdelta)
+                                if isinstance(qdelta, (int, float)) and qdelta > 0
+                                else fills.get("sizeUsd")
+                            ),
+                            "cashDeltaUsd": qdelta,
+                            "fillPriceUsd": fills.get("fillPriceUsd"),
+                            "markPnlPct": sess.get("pnlPctApprox"),
+                            "cashPnlUsd": sess.get("cashPnlUsd"),
+                            "costBasisUsd": sess.get("costBasisUsd"),
+                            "cashSource": "observed_delta" if qdelta else "quote",
+                            "source": "leader_observer",
+                            "blockTime": block_time,
+                        }
+                    )
                     if bag_info.get("isFlat"):
                         self.emit(
                             {
@@ -896,6 +983,14 @@ class Observer:
                                 "pnlPctApprox": sess.get("pnlPctApprox"),
                                 "heldSec": sess.get("heldSec"),
                                 "sizeUsdProceeds": sess.get("sizeUsdProceeds"),
+                                "totalCostUsd": sess.get("totalCostUsd"),
+                                "totalProceedsUsd": sess.get("totalProceedsUsd"),
+                                "cashPnlUsd": (
+                                    (sess.get("totalProceedsUsd") or 0)
+                                    - (sess.get("totalCostUsd") or 0)
+                                    if sess.get("totalCostUsd") is not None
+                                    else sess.get("cashPnlUsd")
+                                ),
                                 "entryClass": sess.get("entryClass"),
                                 "entryGates": sess.get("entryGates"),
                                 "entryTurnDump": sess.get("entryTurnDump"),
@@ -906,6 +1001,29 @@ class Observer:
                                 "maePct": sess.get("maePct"),
                                 "buys": sess.get("buys"),
                                 "sells": sess.get("sells"),
+                            }
+                        )
+                        buy_cost = float(sess.get("totalCostUsd") or 0)
+                        sell_proceeds = float(sess.get("totalProceedsUsd") or 0)
+                        self.emit_trade(
+                            {
+                                "kind": "trade_roundtrip",
+                                "actor": "leader",
+                                "wallet": leader,
+                                "leader": leader,
+                                "mint": mint,
+                                "buyCostUsd": round(buy_cost, 6),
+                                "sellProceedsUsd": round(sell_proceeds, 6),
+                                "cashPnlUsd": round(sell_proceeds - buy_cost, 6),
+                                "holdSec": sess.get("heldSec"),
+                                "openedAtMs": (
+                                    int(sess["openedBlockTime"]) * 1000
+                                    if sess.get("openedBlockTime")
+                                    else None
+                                ),
+                                "closedAtMs": int(block_time) * 1000 if block_time else None,
+                                "source": "leader_observer",
+                                "signature": sig,
                             }
                         )
 

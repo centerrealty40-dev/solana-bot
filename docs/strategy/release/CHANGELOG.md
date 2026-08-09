@@ -1,4 +1,29 @@
 # So
+## [1.11.786] — 2026-08-09
+
+**Тег:** `sa-1.11.786`
+
+### Feat: cash-accurate trades.jsonl (us + 2 leaders)
+
+Ops `journal.jsonl` mark% (`realizedPct`) is **not** wallet PnL — CF was
+lying. Add a dedicated trade journal:
+
+- Path: `data/milddip/trades.jsonl` (`MILD_DIP_TRADES_PATH`)
+- Events: `trade_fill` (buy/sell) + `trade_roundtrip` (flat)
+- Actors: `us` (mild-dip) and `leader` (8zkg + 7BNax observer)
+- Cash fields: `usdcBefore`/`usdcAfter`, `cashDeltaUsd`, `quoteSpentUsd` /
+  `quoteReceivedUsd`, `cashPnlUsd`, `costBasisUsd`, `cashSource`
+- Live buy/sell peek wallet USDC around the swap; fall back to Jupiter quote
+- Leader observer dual-writes observed quote deltas + bag cost/proceeds
+- Reader: `scripts/milddip/trades-pnl.py`
+
+Old journal kept for ops; **CF/PnL tests must use trades.jsonl**.
+
+**Откат:** ignore `trades.jsonl` / unset `MILD_DIP_TRADES_PATH` +
+`LEADER_OBSERVER_TRADES_PATH` (behavior falls back to mark journal only).
+
+---
+
 ## [1.11.785] — 2026-08-09
 
 **Тег:** `sa-1.11.785`

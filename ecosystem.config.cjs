@@ -3192,6 +3192,8 @@ const PM2_APPS = [
         MILD_DIP_STREAM: '1',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
         MILD_DIP_JOURNAL_PATH: path.join(root, 'data/milddip/journal.jsonl'),
+        /** 1.11.786 — cash-accurate fills (us + leaders). CF / PnL truth. */
+        MILD_DIP_TRADES_PATH: path.join(root, 'data/milddip/trades.jsonl'),
         MILD_DIP_STATE_PATH: path.join(root, 'data/milddip/state.json'),
         MILD_DIP_HOT_MINTS_PATH: path.join(root, 'data/milddip/hot-mints.json'),
         MILD_DIP_PRICE_RING_PATH: path.join(root, 'data/milddip/price-ring.json'),
@@ -3223,6 +3225,8 @@ const PM2_APPS = [
       env: {
         NODE_ENV: 'production',
         LEADER_OBSERVER_OUT_DIR: path.join(root, 'data/milddip'),
+        /** Dual-write canonical trade_fill / trade_roundtrip rows. */
+        LEADER_OBSERVER_TRADES_PATH: path.join(root, 'data/milddip/trades.jsonl'),
         LEADER_OBSERVER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
         LEADER_OBSERVER_SEED_MAX: '40',
         LEADER_OBSERVER_SEED_MAX_AGE_SEC: '7200',
