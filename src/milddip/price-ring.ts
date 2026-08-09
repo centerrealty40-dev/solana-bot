@@ -19,12 +19,30 @@ type MintRing = {
 
 export class MildDipPriceRing {
   private readonly byMint = new Map<string, MintRing>();
-  private readonly maxSamplesPerMint: number;
-  private readonly ttlMs: number;
+  private maxSamplesPerMint: number;
+  private ttlMs: number;
 
   constructor(opts?: { maxSamplesPerMint?: number; ttlMs?: number }) {
     this.maxSamplesPerMint = opts?.maxSamplesPerMint ?? 180;
     this.ttlMs = opts?.ttlMs ?? 15 * 60_000;
+  }
+
+  /** Reconfigure TTL / sample cap (vol-green needs ~90m for scam-ladder). */
+  configure(opts: { maxSamplesPerMint?: number; ttlMs?: number }): void {
+    if (opts.maxSamplesPerMint != null && opts.maxSamplesPerMint > 0) {
+      this.maxSamplesPerMint = Math.floor(opts.maxSamplesPerMint);
+    }
+    if (opts.ttlMs != null && opts.ttlMs > 0) {
+      this.ttlMs = Math.floor(opts.ttlMs);
+    }
+  }
+
+  getTtlMs(): number {
+    return this.ttlMs;
+  }
+
+  getMaxSamplesPerMint(): number {
+    return this.maxSamplesPerMint;
   }
 
   note(

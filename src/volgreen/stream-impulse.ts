@@ -15,9 +15,11 @@ import {
   refreshMintPriceFromChain,
 } from '../milddip/mint-price-refresh.js';
 import { mildDipPriceRing } from '../milddip/price-ring.js';
+import { defaultScamLadderGates, detectMonotonicGrind } from './scam-ladder.js';
 import { evaluateTripleGreenEntry } from './triple-green.js';
 
-const LOOKBACK_MS = 20 * 60_000;
+/** Keep enough history for scam-ladder (~1h grind). */
+const LOOKBACK_MS = 60 * 60_000;
 const DEFAULT_EVAL_MAX = 24;
 /** Refresh when last ring sample older than this. */
 const STALE_SAMPLE_MS = 15_000;
@@ -147,13 +149,75 @@ export async function evaluateStreamImpulseCandidates(
     firstStrongMaxPriorPc: cfg.greenTape.firstStrongMaxPriorPc,
   };
 
+  const scamGates = defaultScamLadderGates(process.env);
+
+  const pushOrSkipLadder = (
+    mint: string,
+    samples: Array<{ tsMs: number; priceUsd: number }>,
+    cand: MildDipCandidate | null,
+  ): void => {
+    if (!cand) {
+      skips.push({
+        mint,
+        entryMode: 'green_tape',
+        reasons: ['stream_impulse_no_price'],
+      });
+      return;
+    }
+    const grind = detectMonotonicGrind(samples, scamGates, nowMs);
+    if (grind.hit) {
+      skips.push({
+        mint,
+        entryMode: 'green_tape',
+        reasons: grind.reasons,
+        metrics: {
+          priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
+        },
+      });
+      // Keep buyForce cleared by candidateFromPass — do not re-chase late grind.
+      return;
+    }
+    candidates.push(cand);
+  };
+
   for (const { mint } of ranked) {
     const samples = mildDipPriceRing.listSamples(mint, LOOKBACK_MS, nowMs);
+
+    // Late scam ladder — block every entry path (volume / impulse / triple).
+    if (samples.length >= 2) {
+      const grindEarly = detectMonotonicGrind(samples, scamGates, nowMs);
+      if (grindEarly.hit) {
+        skips.push({
+          mint,
+          entryMode: 'green_tape',
+          reasons: grindEarly.reasons,
+          metrics: {
+            priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
+          },
+        });
+        mildDipHotMints.clearBuyForce(mint);
+        continue;
+      }
+    }
 
     // Large SOL buy from stream resolve — enter on notional, don't wait for 1m bars.
     if (mildDipHotMints.isVolumeImpulse(mint, nowMs)) {
       const solN = mildDipHotMints.volumeImpulseSol(mint, nowMs);
       const last = mildDipPriceRing.lastPrice(mint, nowMs);
+      const ringPc60 = mildDipPriceRing.changeFromOldestPct(mint, INTRABAR_MS, nowMs);
+      // Fat buy on a known-flat tape (gpR1: sol=3.6, pc5m=0.9) — skip.
+      // Thin history (pc60 null) still allowed; late ladder already blocked above.
+      if (last && last.priceUsd > 0 && solN > 0 && ringPc60 != null && ringPc60 < 3) {
+        skips.push({
+          mint,
+          entryMode: 'green_tape',
+          reasons: [
+            `volume_no_price_impulse:sol=${solN.toFixed(2)} pc60=${ringPc60.toFixed(1)}`,
+          ],
+        });
+        mildDipHotMints.clearBuyForce(mint);
+        continue;
+      }
       if (last && last.priceUsd > 0 && solN > 0) {
         const cand = candidateFromPass({
           mint,
@@ -163,13 +227,11 @@ export async function evaluateStreamImpulseCandidates(
           huge: Math.max(firstStrongMin || 20, solN * 5),
           small0: 0,
           small1: 0,
-          hugeVol: solN * 150, // proxy USD if SOL≈$150
+          hugeVol: solN * 150,
           hugeTs: Math.floor(nowMs / 1000),
         });
-        if (cand) {
-          candidates.push(cand);
-          continue;
-        }
+        pushOrSkipLadder(mint, samples, cand);
+        continue;
       }
     }
 
@@ -188,10 +250,8 @@ export async function evaluateStreamImpulseCandidates(
           hugeVol: 0,
           hugeTs: Math.floor(nowMs / 1000),
         });
-        if (cand) {
-          candidates.push(cand);
-          continue;
-        }
+        pushOrSkipLadder(mint, samples, cand);
+        continue;
       }
     }
 
@@ -246,15 +306,7 @@ export async function evaluateStreamImpulseCandidates(
       hugeVol: tg.pattern?.hugeVol ?? 0,
       hugeTs: tg.pattern?.hugeTs ?? Math.floor(nowMs / 1000),
     });
-    if (!cand) {
-      skips.push({
-        mint,
-        entryMode: 'green_tape',
-        reasons: ['stream_impulse_no_price'],
-      });
-      continue;
-    }
-    candidates.push(cand);
+    pushOrSkipLadder(mint, samples, cand);
   }
 
   return { candidates, skips };

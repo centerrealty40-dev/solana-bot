@@ -1112,6 +1112,21 @@ export async function runMildDipLoop(
   };
   loopStatsRef = stats;
 
+  // Vol-green scam-ladder needs ~90m of local prices (default ring TTL is 15m).
+  {
+    const ttl = Number(process.env.MILD_DIP_PRICE_RING_TTL_MS ?? 0);
+    const maxS = Number(process.env.MILD_DIP_PRICE_RING_MAX_SAMPLES ?? 0);
+    if ((ttl > 0 || maxS > 0) && cfg.entryMode === 'green_tape') {
+      mildDipPriceRing.configure({
+        ttlMs: ttl > 0 ? ttl : undefined,
+        maxSamplesPerMint: maxS > 0 ? maxS : undefined,
+      });
+      console.log(
+        `[mild-dip] price-ring ttlMs=${mildDipPriceRing.getTtlMs()} ` +
+          `maxSamples=${mildDipPriceRing.getMaxSamplesPerMint()}`,
+      );
+    }
+  }
   const hotLoaded = loadMildDipHotMints(cfg.hotMintsPath);
   const ringLoaded = loadMildDipPriceRing(cfg.priceRingPath);
   if (hotLoaded > 0 || ringLoaded > 0) {

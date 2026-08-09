@@ -126,6 +126,14 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_MINT_PRICE_REFRESH', '1');
   // Large PumpSwap buys (e.g. 8.8 SOL leader) → enter without waiting for 1m bars.
   setIfAbsent('MILD_DIP_VOLUME_IMPULSE_MIN_SOL', '2');
+  // Reject late monotonic "scam ladder" grinds (gpR1-style).
+  setIfAbsent('MILD_DIP_SCAM_LADDER', '1');
+  setIfAbsent('MILD_DIP_SCAM_LADDER_MIN_AGE_MIN', '25');
+  setIfAbsent('MILD_DIP_SCAM_LADDER_MAX_STEP_PC', '4');
+  setIfAbsent('MILD_DIP_SCAM_LADDER_MIN_CUM_PC', '12');
+  setIfAbsent('MILD_DIP_SCAM_LADDER_MAX_BAR_PC', '10');
+  setIfAbsent('MILD_DIP_PRICE_RING_TTL_MS', String(90 * 60_000));
+  setIfAbsent('MILD_DIP_PRICE_RING_MAX_SAMPLES', '360');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '0');
   // No leader-follow — stream impulse must win on its own.
   setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');

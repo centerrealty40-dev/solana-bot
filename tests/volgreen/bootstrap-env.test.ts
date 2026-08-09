@@ -24,6 +24,8 @@ const KEYS = [
   'MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN',
   'MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN',
   'MILD_DIP_VOLUME_IMPULSE_MIN_SOL',
+  'MILD_DIP_SCAM_LADDER',
+  'MILD_DIP_PRICE_RING_TTL_MS',
   'MILD_DIP_STREAM',
   'MILD_DIP_STREAM_PRICE_SAMPLE',
   'MILD_DIP_STREAM_PROGRAM_IDS',
@@ -92,6 +94,8 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_STREAM_PROGRAM_IDS).toContain('pAMMBay');
     expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN).toBe('100');
     expect(process.env.MILD_DIP_VOLUME_IMPULSE_MIN_SOL).toBe('2');
+    expect(process.env.MILD_DIP_SCAM_LADDER).toBe('1');
+    expect(process.env.MILD_DIP_PRICE_RING_TTL_MS).toBe(String(90 * 60_000));
     expect(process.env.MILD_DIP_STREAM_IMPULSE_ONLY).toBe('1');
     expect(process.env.MILD_DIP_DISCOVER_SOURCES).toBe('stream');
     expect(process.env.VOL_GREEN_LEADER_WATCH).toBe('0');
