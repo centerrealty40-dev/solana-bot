@@ -2915,11 +2915,11 @@ const PM2_APPS = [
         MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '15000',
         MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT: '2',
         /**
-         * Red-hour shallow (own logic, not leader copy): when 1h ≤ −15% and
-         * pc5m ∈ (−10, −3], enter without waiting for the main mild band.
-         * Prebuy must use this same band (1.11.707).
+         * 1.11.784 — OFF. Single entry formula = turn→dump (+ mild/knife
+         * stabilize on the same dump tape). h1-red-shallow was a second path
+         * (pc5m ∈ (−10,−3] with h1≤−15) and polluted dump-overlap vs leaders.
          */
-        MILD_DIP_H1_RED_SHALLOW_ENABLED: '1',
+        MILD_DIP_H1_RED_SHALLOW_ENABLED: '0',
         MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT: '-15',
         MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT: '-10',
         MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-3',
