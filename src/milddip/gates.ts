@@ -130,11 +130,17 @@ export type MildDipExitGates = {
    */
   cliffDumpPnlPct: number;
   /**
-   * 1.11.765 — hard stop from entry: full exit when mark pnl ≤ −this %
-   * (live default 15). Fires before soft exits; never deferred by leader-align
-   * or oneshot dump grace. 0 = off. Distinct from cliff (catastrophic −50%).
+   * 1.11.765 / 1.11.791 — hard stop from entry when mark pnl ≤ −this %
+   * (live default 25). Fires before soft exits; never deferred by leader-align
+   * or oneshot dump grace. 0 = off. Distinct from cliff (second-stage −50%).
    */
   hardStopPnlPct: number;
+  /**
+   * 1.11.791 — when ∈ (0,1): sell this fraction at `hardStopPnlPct`, keep
+   * runner until `cliffDumpPnlPct` (gap-down past cliff → full `cliff_dump`).
+   * 0 or ≥1 = legacy full hard_stop (hard before cliff).
+   */
+  hardStopPartialFraction: number;
   /**
    * 1.11.747 — never-armed bounce reclaim: after post-entry trough ≤ −minDump%,
    * if mark bounces ≥ bouncePct off that trough → exit (`never_arm_bounce`).
@@ -705,17 +711,36 @@ export function evaluateMildDipPeakGiveback(args: {
     postEntryTroughAtMs,
   };
 
-  // Hard stop from entry — fire before soft exits / grace / leader-align.
+  // Loss floors from entry — fire before soft exits / grace / leader-align.
   const hardStop = gates.hardStopPnlPct > 0 ? gates.hardStopPnlPct : 0;
-  if (hardStop > 0 && pnlPct <= -hardStop) {
-    return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
-  }
-
-  // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
-  // Note: when hardStop ≤ cliff and both on, hard_stop wins first (tighter).
   const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
-  if (cliff > 0 && pnlPct <= -cliff) {
-    return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+  const hardPartial =
+    gates.hardStopPartialFraction > 0 && gates.hardStopPartialFraction < 1
+      ? gates.hardStopPartialFraction
+      : 0;
+
+  if (hardPartial > 0) {
+    // 1.11.791 — staged: half @ hardStop, remainder @ cliff.
+    // Gap straight through cliff → full cliff_dump (do not leave a half bag).
+    if (cliff > 0 && pnlPct <= -cliff) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+    }
+    if (hardStop > 0 && pnlPct <= -hardStop && !scaleOutDone) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: hardPartial,
+        reason: 'hard_stop',
+      };
+    }
+  } else {
+    // Legacy: full hard_stop before cliff (tighter floor wins first).
+    if (hardStop > 0 && pnlPct <= -hardStop) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
+    }
+    if (cliff > 0 && pnlPct <= -cliff) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+    }
   }
 
   // 1.11.782 — hard hold ceiling for underwater armed bags (before soft trail /

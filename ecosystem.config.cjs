@@ -2990,10 +2990,12 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
         /**
-         * 1.11.697 — LP-pull cliff: exit as soon as mark pnl ≤ −50%
-         * (36GuKd sat ~5m at −99% waiting for never_arm_dead 15m).
+         * 1.11.791 — staged loss from entry:
+         * half at −25% (`hard_stop`), remainder at −50% (`cliff_dump`).
+         * Gap straight to −50% → full cliff_dump.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
+        MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0.5',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         /**
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
@@ -3011,16 +3013,14 @@ const PM2_APPS = [
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '0',
-        /** 1.11.755 — time-red: 15m unarmed + pnl ≤ −5% → never_arm_time_red. */
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '5',
+        /** 1.11.791 — time-red OFF (no time stop). */
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '0',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '0',
         /**
-         * 1.11.782 — hard ceiling 15m:
-         * - unarmed → always flatten (`never_arm_timeout`)
-         * - armed + pnl≤0 → flatten (`max_hold_underwater`)
-         * - armed + pnl>0 → keep waiting for TP / trail steps
+         * 1.11.791 — max-hold / underwater time ceiling OFF.
+         * Loss exits are staged −25%/−50% only; green armed trail may wait.
          */
-        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '0',
         /**
          * 1.11.734 — oneshot emptied-bag dump grace:
          * Stream sell that empties a wallet (post≈0) and ≥$500 → defer
