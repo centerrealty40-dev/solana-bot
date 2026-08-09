@@ -89,6 +89,12 @@ export type MildDipExitGates = {
    */
   neverArmMaxHoldMs: number;
   /**
+   * Hard wall-clock ceiling for ANY open (armed or not). Forces full exit
+   * with `max_hold_timeout`. 0 = disabled. Vol-green default 30m so bags
+   * cannot sit an hour after arm while liquidity dies.
+   */
+  hardMaxHoldMs: number;
+  /**
    * Never-armed deep-loss cut: after this many ms (live 30m), if pnl ≤ −neverArmDeadPnlPct,
    * full exit (`never_arm_dead`). Catches rugs before max-hold without the
    * early 5m −6% knife. 0 = disabled.
@@ -412,6 +418,7 @@ export type MildDipExitReason =
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
   | 'never_arm_timeout'
+  | 'max_hold_timeout'
   | 'cliff_dump'
   | null;
 

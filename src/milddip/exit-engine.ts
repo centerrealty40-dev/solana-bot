@@ -82,6 +82,36 @@ export function decideMarkExit(args: {
   const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
   const peakSticky =
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
+  // Hard ceiling even when armed — prevent hour-long zombie bags after liquidity dies.
+  const hardMax = gates.hardMaxHoldMs > 0 ? gates.hardMaxHoldMs : 0;
+  if (hardMax > 0 && heldMs >= hardMax) {
+    const mfePct =
+      peakSticky > 0 && pos.entryPriceUsd > 0
+        ? (peakSticky / pos.entryPriceUsd - 1) * 100
+        : 0;
+    const givebackPct =
+      markPriceUsd > 0 && peakSticky > 0 ? (markPriceUsd / peakSticky - 1) * 100 : 0;
+    const pnlPct =
+      pos.entryPriceUsd > 0 && markPriceUsd > 0
+        ? (markPriceUsd / pos.entryPriceUsd - 1) * 100
+        : 0;
+    return {
+      mint,
+      markPriceUsd,
+      peakPriceUsd: peakSticky,
+      armed: pos.trailArmed === true,
+      justArmed: false,
+      shouldExit: true,
+      fraction: 1,
+      reason: 'max_hold_timeout',
+      mfePct,
+      givebackPct,
+      pnlPct,
+      volFadeSamples: pos.volFadeSamples ?? [],
+      postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+      postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+    };
+  }
   const stickyRaw = typeof pos.exitPendingReason === 'string' ? pos.exitPendingReason.trim() : '';
   if (stickyRaw && STICKY_REASONS.has(stickyRaw)) {
     const sticky = stickyRaw as Exclude<MildDipExitReason, null>;

@@ -50,6 +50,7 @@ import {
 } from './runtime-metrics.js';
 import { parseLeaderWatchWallets, startLeaderWalletWatch } from './leader-watch.js';
 import { mintPriceRefreshStats } from './mint-price-refresh.js';
+import { listOrphanTokenAccounts } from './orphan-janitor.js';
 import { startMildDipHotMintStream, type MildDipStreamHandle } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 
@@ -271,6 +272,51 @@ function adoptOnChainHolding(args: {
     pc5m,
   });
   console.log(`[mild-dip] ADOPT existing bag ${symbol} mint=${mint.slice(0, 8)}… raw=${tokenRaw}`);
+}
+
+/**
+ * Wallet bags not in state.open are invisible to exits (tpg7s/H67 orphans).
+ * Adopt them so mark/exit watches — better than silent zombie inventory.
+ */
+async function adoptWalletOrphans(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<number> {
+  const owner = cfg.walletPubkeyExpected?.trim();
+  if (!owner || cfg.executionMode !== 'live') return 0;
+  let rows: Awaited<ReturnType<typeof listOrphanTokenAccounts>> = [];
+  try {
+    rows = await listOrphanTokenAccounts({
+      rpcUrl: cfg.rpcUrl,
+      owner,
+      protectMints: Object.keys(state.open),
+    });
+  } catch (err) {
+    console.warn('[mild-dip] orphan scan failed', err);
+    return 0;
+  }
+  let adopted = 0;
+  for (const row of rows) {
+    if (state.open[row.mint]) continue;
+    if (sellInFlight.has(row.mint) || buyInFlight.has(row.mint)) continue;
+    const raw = BigInt(row.amountRaw);
+    if (raw <= HOLDING_DUST_RAW) continue;
+    const last = mildDipPriceRing.lastPrice(row.mint, nowMs);
+    const px = last && last.priceUsd > 0 ? last.priceUsd : 0;
+    adoptOnChainHolding({
+      cfg,
+      state,
+      mint: row.mint,
+      symbol: row.mint.slice(0, 6),
+      tokenRaw: row.amountRaw,
+      priceUsd: px,
+      pc5m: mildDipPriceRing.changeFromOldestPct(row.mint, 300_000, nowMs),
+      nowMs,
+    });
+    adopted += 1;
+  }
+  return adopted;
 }
 
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
@@ -1201,6 +1247,7 @@ export async function runMildDipLoop(
       `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s ` +
       `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
+      `hardMaxHold=${Math.round(cfg.exit.hardMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `streamImpulseOnly=${cfg.streamImpulseOnly ? 1 : 0} ` +
@@ -1223,12 +1270,23 @@ export async function runMildDipLoop(
   }
 
   let lastStreamStatsLog = 0;
+  let lastOrphanAdoptMs = 0;
+
   let lastScan = 0;
   let lastMark = 0;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+
+    // Adopt wallet bags missing from state so exits keep watching them.
+    if (nowMs - lastOrphanAdoptMs >= 60_000) {
+      lastOrphanAdoptMs = nowMs;
+      const n = await adoptWalletOrphans(cfg, state, nowMs);
+      if (n > 0) {
+        console.warn(`[mild-dip] adopted ${n} orphan wallet bag(s) into open state`);
+      }
+    }
 
     // Respect markInterval (previously `|| openCount>0` hammered Dex every tick).
     if (openCount(state) > 0 && nowMs - lastMark >= cfg.markIntervalMs) {

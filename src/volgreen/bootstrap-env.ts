@@ -105,6 +105,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', '0');
   // Hold blend of leaders (~10m 7BNaxx / ~30m 8zkg) if never armed.
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', String(20 * 60_000));
+  // Absolute ceiling even when armed — no hour-long zombie bags.
+  setIfAbsent('MILD_DIP_EXIT_HARD_MAX_HOLD_MS', String(30 * 60_000));
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', '0');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT', '8');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT', '8');

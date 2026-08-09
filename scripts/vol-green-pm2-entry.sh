@@ -55,6 +55,8 @@ export MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS=0
 export MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS=0
 # Hold blend of leaders (~10m / ~30m) if never armed — see leader-tape gate.
 export MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS=1200000
+# Hard ceiling for ALL opens (armed too) — kill zombie bags at 30m.
+export MILD_DIP_EXIT_HARD_MAX_HOLD_MS=1800000
 export MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT=0
 export MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS=0
 export MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT=8

@@ -33,6 +33,7 @@ const oscarExit: MildDipExitGates = {
   mfeBankSleeveGivebackPct: 12,
   neverArmPatienceMs: 0,
   neverArmMaxHoldMs: 0,
+  hardMaxHoldMs: 0,
   neverArmDeadMinMs: 0,
   neverArmDeadPnlPct: 10,
   neverArmStaleMinMs: 0,
