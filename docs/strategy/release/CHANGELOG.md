@@ -1,4 +1,27 @@
 # So
+## [1.11.765] — 2026-08-09
+
+**Тег:** `sa-1.11.765`
+
+### Exit: hard stop −15% from entry + clips $30
+
+60h blind CF: hard stop from entry best around −10…−15%; user pick **−15%**.
+Immediate full exit (`hard_stop`) when mark pnl ≤ **−15%** vs entry —
+before soft exits; **not** deferred by leader-align or oneshot dump grace.
+Cliff LP-pull floor stays at −50%.
+
+Clips back to flat **$30** (was $5 canary):
+- `MILD_DIP_POSITION_USD=30`
+- `MILD_DIP_THICK_POSITION_USD=30`
+- `MILD_DIP_MICRO_POSITION_USD=30`
+- `MILD_DIP_LEADER_ALIGN_SCALE_IN_USD=15`
+
+**Env:** `MILD_DIP_EXIT_HARD_STOP_PNL_PCT=15` (0 = off).
+
+**Откат:** `MILD_DIP_EXIT_HARD_STOP_PNL_PCT=0` + restore $5 clips + reload.
+
+---
+
 ## [1.11.764] — 2026-08-09
 
 **Тег:** `sa-1.11.764`

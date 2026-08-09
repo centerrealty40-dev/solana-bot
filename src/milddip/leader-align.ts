@@ -43,7 +43,7 @@ export type LeaderAlignDeferVerdict = {
  * Pure gate: should we hold this soft exit and (optionally) average-in?
  *
  * Narrowness knobs:
- * - reason must be in LEADER_ALIGN_DEFER_REASONS (not cliff / MFE banks)
+ * - reason must be in LEADER_ALIGN_DEFER_REASONS (not cliff / hard_stop / MFE banks)
  * - leader buy must be fresher than maxAgeMs
  * - we must already be red vs entry (pnl ≤ −requireRedPct)
  * - leader fill (or mark) must be ≤ entry (true average-down)

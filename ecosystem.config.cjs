@@ -2828,13 +2828,13 @@ const PM2_APPS = [
         /** 1.11.742 — base clip $10 (was $5). */
         /** 1.11.754 — flat $30 across base / thick / micro. */
         /** 1.11.763 — flat $5 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '5',
+        MILD_DIP_POSITION_USD: '30',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          * 1.11.763 — same $5 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '5',
+        MILD_DIP_THICK_POSITION_USD: '30',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
@@ -2842,7 +2842,7 @@ const PM2_APPS = [
          * 1.11.746 — micro $15k–$50k, knife_stabilize only.
          * 1.11.763 — same $5 as base.
          */
-        MILD_DIP_MICRO_POSITION_USD: '5',
+        MILD_DIP_MICRO_POSITION_USD: '30',
         MILD_DIP_MICRO_MIN_MCAP_USD: '15000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -2980,6 +2980,7 @@ const PM2_APPS = [
          * 1.11.697 — LP-pull cliff: exit as soon as mark pnl ≤ −50%
          * (36GuKd sat ~5m at −99% waiting for never_arm_dead 15m).
          */
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         /**
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
@@ -3038,7 +3039,7 @@ const PM2_APPS = [
         MILD_DIP_LEADER_ALIGN_REQUIRE_ADD: '0',
         MILD_DIP_LEADER_ALIGN_SCALE_IN: '1',
         /** 1.11.763 — match flat $5 clips. */
-        MILD_DIP_LEADER_ALIGN_SCALE_IN_USD: '5',
+        MILD_DIP_LEADER_ALIGN_SCALE_IN_USD: '15',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
          * Dex hard-capped at 120 RPM; mark uses cache TTL ≈ interval.

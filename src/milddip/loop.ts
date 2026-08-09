@@ -1773,6 +1773,7 @@ export async function runMildDipLoop(
           ` `
         : `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
           `fullGiveback=-${cfg.exit.givebackPct}% `) +
+      `hardStop=-${cfg.exit.hardStopPnlPct}% ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}` +
       `/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%` +
