@@ -77,7 +77,8 @@ export type MildDipExitGates = {
    */
   neverArmPatienceMs: number;
   /**
-   * If still unarmed after this many ms → full exit (hard ceiling; default 40m).
+   * If still unarmed after this many ms → full exit (hard ceiling; default 15m).
+   * Armed / take-profit trail is exempt — trail owns those exits.
    * 0 = disabled (not recommended — can hold forever if trail never arms).
    */
   neverArmMaxHoldMs: number;

@@ -3014,8 +3014,12 @@ const PM2_APPS = [
         /** 1.11.755 — time-red: 15m unarmed + pnl ≤ −5% → never_arm_time_red. */
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '5',
-        /** 1.11.755 — max-hold off (option-2); bounce/time-red/cliff cover exits. */
-        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '0',
+        /**
+         * 1.11.781 — hard ceiling 15m while trail never armed (mark-blind bags
+         * were sitting forever with pnl≈0). Once armed / take-profit trail is
+         * on, this does NOT apply — trail owns the exit.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '900000',
         /**
          * 1.11.734 — oneshot emptied-bag dump grace:
          * Stream sell that empties a wallet (post≈0) and ≥$500 → defer

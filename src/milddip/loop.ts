@@ -1433,8 +1433,10 @@ async function tryExits(
     const deadMin = cfg.exit.neverArmDeadMinMs > 0 ? cfg.exit.neverArmDeadMinMs : 0;
 
     /**
-     * Null Dex mark must NOT skip never-arm ceilings — a delisted mint can
-     * otherwise sit forever. Force-exit without needing a real mark.
+     * Null / blind mark must NOT skip never-arm ceilings — a delisted or
+     * ring-frozen mint can otherwise sit forever (5EAUpz: pnl stuck at 0).
+     * 1.11.781 — max-hold (15m) still force-exits without a real mark.
+     * Armed trail is exempt.
      */
     if (px == null) {
       if (pos.trailArmed !== true) {

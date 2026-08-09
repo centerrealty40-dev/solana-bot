@@ -777,6 +777,43 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('never_arm_timeout');
   });
 
+  it('1.11.781 — never-arm hard ceiling at 15m (live MAX_HOLD)', () => {
+    const gates15 = { ...exitGates, neverArmMaxHoldMs: 900_000 };
+    const under = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 99,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: gates15,
+      heldMs: 899_000,
+    });
+    expect(under.shouldExit).toBe(false);
+    const over = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 99,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: gates15,
+      heldMs: 900_000,
+    });
+    expect(over.shouldExit).toBe(true);
+    expect(over.reason).toBe('never_arm_timeout');
+  });
+
+  it('1.11.781 — armed trail is exempt from 15m never-arm max-hold', () => {
+    const gates15 = { ...exitGates, neverArmMaxHoldMs: 900_000 };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108, // still above entry; giveback small
+      peakPriceUsd: 112, // armed via MFE
+      armed: true,
+      gates: gates15,
+      heldMs: 3_600_000, // 1h — trail may keep holding
+    });
+    expect(v.armed).toBe(true);
+    expect(v.reason).not.toBe('never_arm_timeout');
+  });
+
   it('never-arm still holds at 20m when max-hold is 40m', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
