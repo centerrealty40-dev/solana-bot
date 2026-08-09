@@ -31,6 +31,9 @@ const DEFAULT_LEADERS = [
 ];
 
 export function parseLeaderWatchWallets(env: NodeJS.ProcessEnv = process.env): string[] {
+  const onRaw = (env.VOL_GREEN_LEADER_WATCH ?? env.MILD_DIP_LEADER_WATCH ?? '').trim().toLowerCase();
+  // Explicit off wins even if WALLETS list is still exported by pm2 entry.
+  if (onRaw === '0' || onRaw === 'false' || onRaw === 'no' || onRaw === 'off') return [];
   const raw = env.VOL_GREEN_LEADER_WATCH_WALLETS?.trim() || env.MILD_DIP_LEADER_WATCH_WALLETS?.trim();
   if (raw) {
     return raw
@@ -38,8 +41,7 @@ export function parseLeaderWatchWallets(env: NodeJS.ProcessEnv = process.env): s
       .map((s) => s.trim())
       .filter((s) => s.length >= 32);
   }
-  const on = (env.VOL_GREEN_LEADER_WATCH ?? env.MILD_DIP_LEADER_WATCH ?? '').trim().toLowerCase();
-  if (on === '1' || on === 'true' || on === 'yes') return [...DEFAULT_LEADERS];
+  if (onRaw === '1' || onRaw === 'true' || onRaw === 'yes') return [...DEFAULT_LEADERS];
   return [];
 }
 
