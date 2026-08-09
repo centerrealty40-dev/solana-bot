@@ -1,26 +1,22 @@
 /**
- * Resolve mint when program logs show Instruction: Buy but omit the mint
- * (common on PumpSwap — log text has no base58 mint).
+ * Resolve mint (+ price + SOL notional) when program logs show Instruction: Buy
+ * but omit the mint (common on PumpSwap).
  *
- * RCA (BDdzUjk / 5mq4Ttx): FIFO queue of 200 @ 40 getTx/min → ~5 min backlog,
- * so the leader Buy resolved too late (or never). Fix without blowing Helius /
- * Dex enrich:
- * - resolve **Buy only** (skip Sell — entry path doesn't need it)
- * - process **newest first**
- * - hard queue ≤ ~1 min of work; drop stale (>20s) jobs
- * - keep maxPerMin cap (vol-green: 40)
+ * One getTransaction per sig — economics extracted in the same call (no second
+ * getTx via priceSampler). Cap getTx/min so we don't burn Helius on the firehose;
+ * newest-first + short queue; overflow drops oldest.
  */
 import { fetchParsedTransaction } from '../copytrader/rpc.js';
-import type { TokenBal, TxJsonParsed } from '../parser/rpc-http.js';
+import { getSolUsd } from '../papertrader/pricing.js';
+import type { TxJsonParsed } from '../parser/rpc-http.js';
+import { extractBuyEconomics, type BuyEconomics } from './buy-economics.js';
 import { mildDipHotMints } from './hot-mints.js';
+import { mildDipPriceRing } from './price-ring.js';
 
-const WSOL = 'So11111111111111111111111111111111111111112';
-const USDC = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-const USDT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
-const SKIP = new Set([WSOL, USDC, USDT]);
+export { extractMintFromParsedTx } from './buy-economics.js';
 
-/** Max age of a queued sig before we drop it (candle already gone). */
-const STALE_JOB_MS = 60_000;
+/** Max age of a queued sig before we drop it. */
+const STALE_JOB_MS = 45_000;
 
 export function logsIndicateBuyOrSell(logs: string[]): boolean {
   for (const line of logs) {
@@ -43,81 +39,9 @@ export function needsBuyMintResolve(logs: string[], extractedMints: string[]): b
   return logsIndicateBuy(logs) && extractedMints.length === 0;
 }
 
-function accountKeyPubkeys(tx: TxJsonParsed): string[] {
-  const msg = tx.transaction?.message as
-    | { accountKeys?: Array<string | { pubkey?: string }> }
-    | undefined;
-  const keys = msg?.accountKeys;
-  if (!Array.isArray(keys)) return [];
-  const out: string[] = [];
-  for (const k of keys) {
-    if (typeof k === 'string') out.push(k);
-    else if (k && typeof k.pubkey === 'string') out.push(k.pubkey);
-  }
-  return out;
-}
-
-function uiAmount(b: TokenBal): number {
-  const ui = b.uiTokenAmount?.uiAmount;
-  if (typeof ui === 'number' && Number.isFinite(ui)) return ui;
-  const amt = b.uiTokenAmount?.amount;
-  const dec = b.uiTokenAmount?.decimals ?? 0;
-  if (typeof amt === 'string' && /^\d+$/.test(amt)) {
-    return Number(amt) / 10 ** dec;
-  }
-  return 0;
-}
-
-/**
- * Prefer fee-payer's largest positive non-stable token delta (Buy).
- * Fallback: .pump in account keys, then largest |delta| non-stable mint.
- */
-export function extractMintFromParsedTx(tx: TxJsonParsed | null | undefined): string | null {
-  if (!tx?.meta || tx.meta.err) return null;
-  const keys = accountKeyPubkeys(tx);
-  const payer = keys[0] ?? '';
-  const pre = new Map<string, number>();
-  for (const b of tx.meta.preTokenBalances ?? []) {
-    if (!b.mint || SKIP.has(b.mint)) continue;
-    const owner = b.owner ?? '';
-    pre.set(`${owner}|${b.mint}`, uiAmount(b));
-  }
-
-  let bestPayer: { mint: string; delta: number } | null = null;
-  let bestAny: { mint: string; abs: number } | null = null;
-
-  for (const b of tx.meta.postTokenBalances ?? []) {
-    if (!b.mint || SKIP.has(b.mint)) continue;
-    const owner = b.owner ?? '';
-    const key = `${owner}|${b.mint}`;
-    const post = uiAmount(b);
-    const before = pre.get(key) ?? 0;
-    const delta = post - before;
-    if (owner === payer && delta > 0) {
-      if (!bestPayer || delta > bestPayer.delta) bestPayer = { mint: b.mint, delta };
-    }
-    const abs = Math.abs(delta);
-    if (abs > 0 && (!bestAny || abs > bestAny.abs)) bestAny = { mint: b.mint, abs };
-  }
-
-  for (const b of tx.meta.postTokenBalances ?? []) {
-    if (!b.mint || SKIP.has(b.mint)) continue;
-    const owner = b.owner ?? '';
-    const key = `${owner}|${b.mint}`;
-    if (pre.has(key)) continue;
-    const post = uiAmount(b);
-    if (owner === payer && post > 0) {
-      if (!bestPayer || post > bestPayer.delta) bestPayer = { mint: b.mint, delta: post };
-    }
-  }
-
-  if (bestPayer?.mint) return bestPayer.mint;
-
-  const pumpKey = keys.find((k) => k.endsWith('pump') && !SKIP.has(k));
-  if (pumpKey) return pumpKey;
-
-  return bestAny?.mint ?? null;
-}
+export type BuyResolveResult = BuyEconomics & {
+  tsMs: number;
+};
 
 export type BuyMintResolver = {
   enqueue: (signature: string, tsMs?: number) => void;
@@ -127,9 +51,12 @@ export type BuyMintResolver = {
     inFlight: number;
     resolved: number;
     failed: number;
+    failedRpc: number;
+    failedNoEcon: number;
     skipped: number;
     droppedOverflow: number;
     droppedStale: number;
+    volumeMarks: number;
   };
 };
 
@@ -138,25 +65,31 @@ export function createBuyMintResolver(args: {
   /** Cap getTransaction resolves per rolling minute (0 = off). */
   maxPerMin?: number;
   concurrency?: number;
-  /** Max waiting sigs (~1 min of work). Default = maxPerMin. */
+  /** Max waiting sigs. Default = maxPerMin. */
   queueMax?: number;
-  /** Drop jobs older than this before getTx. Default 20s. */
+  /** Drop jobs older than this before getTx. */
   staleJobMs?: number;
-  onResolved?: (mint: string, signature: string, tsMs: number) => void;
+  /** SOL size to mark volume-impulse (0 = off). */
+  volumeImpulseMinSol?: number;
+  onResolved?: (result: BuyResolveResult) => void;
 }): BuyMintResolver {
   const maxPerMin = Math.max(0, args.maxPerMin ?? 30);
   const concurrency = Math.max(1, Math.min(6, args.concurrency ?? 2));
-  const queueMax = Math.max(concurrency, Math.min(80, args.queueMax ?? Math.max(maxPerMin, 20)));
+  const queueMax = Math.max(concurrency, Math.min(60, args.queueMax ?? Math.min(maxPerMin, 40)));
   const staleJobMs = Math.max(5_000, args.staleJobMs ?? STALE_JOB_MS);
+  const volumeMinSol = Math.max(0, args.volumeImpulseMinSol ?? 0);
   const seenSig = new Set<string>();
   /** Newest at the end — we pop() for LIFO. */
   const queue: Array<{ signature: string; tsMs: number }> = [];
   let inFlight = 0;
   let resolved = 0;
   let failed = 0;
+  let failedRpc = 0;
+  let failedNoEcon = 0;
   let skipped = 0;
   let droppedOverflow = 0;
   let droppedStale = 0;
+  let volumeMarks = 0;
   let stopped = false;
   let grantTs: number[] = [];
 
@@ -195,25 +128,37 @@ export function createBuyMintResolver(args: {
 
   const resolveOne = async (job: { signature: string; tsMs: number }): Promise<void> => {
     try {
-      // Skip getTx if job went stale while waiting for a worker slot.
       if (Date.now() - job.tsMs > staleJobMs) {
         droppedStale += 1;
         return;
       }
       const raw = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
-      const mint = extractMintFromParsedTx(raw);
-      if (!mint) {
+      if (!raw) {
         failed += 1;
+        failedRpc += 1;
+        return;
+      }
+      const solUsd = getSolUsd();
+      const econ = extractBuyEconomics(raw, { solUsd: solUsd > 0 ? solUsd : 150 });
+      if (!econ) {
+        failed += 1;
+        failedNoEcon += 1;
         return;
       }
       const ts = Date.now();
-      // Fresh note + force — race the candle on the next scan (buyForce).
-      mildDipHotMints.note(mint, ts, 8);
-      mildDipHotMints.markBuyForce(mint, ts);
+      mildDipHotMints.note(econ.mint, ts, 8);
+      mildDipHotMints.markBuyForce(econ.mint, ts);
+      // Seed ring from THIS tx — no second getTx.
+      mildDipPriceRing.note(econ.mint, econ.priceUsd, { tsMs: job.tsMs || ts, source: 'stream' });
+      if (volumeMinSol > 0 && econ.solNotional >= volumeMinSol) {
+        mildDipHotMints.markVolumeImpulse(econ.mint, econ.solNotional, ts);
+        volumeMarks += 1;
+      }
       resolved += 1;
-      args.onResolved?.(mint, job.signature, ts);
+      args.onResolved?.({ ...econ, tsMs: ts });
     } catch {
       failed += 1;
+      failedRpc += 1;
     }
   };
 
@@ -229,7 +174,6 @@ export function createBuyMintResolver(args: {
         for (const s of [...seenSig].slice(0, 3_000)) seenSig.delete(s);
       }
       seenSig.add(signature);
-      // Keep only the newest queueMax sigs — drop oldest at the front.
       queue.push({ signature, tsMs });
       while (queue.length > queueMax) {
         queue.shift();
@@ -246,9 +190,12 @@ export function createBuyMintResolver(args: {
       inFlight,
       resolved,
       failed,
+      failedRpc,
+      failedNoEcon,
       skipped,
       droppedOverflow,
       droppedStale,
+      volumeMarks,
     }),
   };
 }

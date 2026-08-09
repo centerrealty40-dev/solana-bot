@@ -1242,11 +1242,23 @@ export async function runMildDipLoop(
       const ps = st.priceSampler;
       const rs = st.resolve;
       const rf = mintPriceRefreshStats();
+      const rsAny = rs as null | {
+        resolved?: number;
+        failed?: number;
+        failedRpc?: number;
+        failedNoEcon?: number;
+        droppedStale?: number;
+        droppedOverflow?: number;
+        queued?: number;
+        volumeMarks?: number;
+      };
       console.log(
         `[mild-dip] streamPrice sampled=${ps?.sampled ?? 0} skipped=${ps?.skipped ?? 0} ` +
-          `queued=${ps?.queued ?? 0} | resolve resolved=${rs?.resolved ?? 0} ` +
-          `failed=${rs?.failed ?? 0} droppedStale=${rs?.droppedStale ?? 0} ` +
-          `droppedOverflow=${rs?.droppedOverflow ?? 0} queued=${rs?.queued ?? 0} | ` +
+          `queued=${ps?.queued ?? 0} | resolve resolved=${rsAny?.resolved ?? 0} ` +
+          `failed=${rsAny?.failed ?? 0} rpc=${rsAny?.failedRpc ?? 0} ` +
+          `noEcon=${rsAny?.failedNoEcon ?? 0} volMarks=${rsAny?.volumeMarks ?? 0} ` +
+          `droppedStale=${rsAny?.droppedStale ?? 0} ` +
+          `droppedOverflow=${rsAny?.droppedOverflow ?? 0} queued=${rsAny?.queued ?? 0} | ` +
           `mintRefresh ok=${rf.ok} fail=${rf.fail} skip=${rf.skip}`,
       );
     }

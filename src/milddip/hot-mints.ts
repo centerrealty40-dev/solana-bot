@@ -152,11 +152,46 @@ export class MildDipHotMintBuffer {
   private buyForceRetryAfter = new Map<string, number>();
   /** Leader-highlighted mints — evaluate first, Gecko priority (not blind copy). */
   private leaderHighlightUntil = new Map<string, number>();
+  /** Large SOL buy seen via resolve — race entry without waiting for 1m bars. */
+  private volumeImpulseUntil = new Map<string, { until: number; solNotional: number }>();
 
   /** Mark mint for next-scan force enrich (Buy activity / getTx resolve). */
   markBuyForce(mint: string, nowMs = Date.now()): void {
     if (!mint || mint.length < 32) return;
     this.buyForcePending.set(mint, nowMs);
+  }
+
+  /**
+   * Large on-stream Buy (SOL notional ≥ threshold). TTL 3m — evaluate as
+   * volume impulse even if local 1m bars are not ready yet.
+   */
+  markVolumeImpulse(mint: string, solNotional: number, nowMs = Date.now()): void {
+    if (!mint || mint.length < 32) return;
+    if (!(solNotional > 0)) return;
+    this.markBuyForce(mint, nowMs);
+    this.note(mint, nowMs, 16);
+    const prev = this.volumeImpulseUntil.get(mint);
+    const sol = Math.max(solNotional, prev?.solNotional ?? 0);
+    this.volumeImpulseUntil.set(mint, { until: nowMs + 180_000, solNotional: sol });
+  }
+
+  isVolumeImpulse(mint: string, nowMs = Date.now()): boolean {
+    const row = this.volumeImpulseUntil.get(mint);
+    if (!row) return false;
+    if (nowMs > row.until) {
+      this.volumeImpulseUntil.delete(mint);
+      return false;
+    }
+    return true;
+  }
+
+  volumeImpulseSol(mint: string, nowMs = Date.now()): number {
+    const row = this.volumeImpulseUntil.get(mint);
+    if (!row || nowMs > row.until) {
+      if (row) this.volumeImpulseUntil.delete(mint);
+      return 0;
+    }
+    return row.solNotional;
   }
 
   /**
@@ -210,16 +245,22 @@ export class MildDipHotMintBuffer {
     for (const [mint, until] of this.leaderHighlightUntil) {
       if (nowMs > until) this.leaderHighlightUntil.delete(mint);
     }
-    // Leader highlights first, then newest buyForce.
+    // Volume impulses + leader highlights first, then newest buyForce.
+    const volume: string[] = [];
     const leaders: string[] = [];
     const rest: string[] = [];
     const ordered = [...this.buyForcePending.entries()].sort((a, b) => b[1] - a[1]);
     for (const [mint] of ordered) {
-      if (this.isLeaderHighlight(mint, nowMs)) leaders.push(mint);
+      if (this.isVolumeImpulse(mint, nowMs)) volume.push(mint);
+      else if (this.isLeaderHighlight(mint, nowMs)) leaders.push(mint);
       else rest.push(mint);
     }
+    // Bigger SOL notional first among volume marks.
+    volume.sort(
+      (a, b) => this.volumeImpulseSol(b, nowMs) - this.volumeImpulseSol(a, nowMs),
+    );
     const out: string[] = [];
-    for (const mint of [...leaders, ...rest]) {
+    for (const mint of [...volume, ...leaders, ...rest]) {
       if (out.length >= maxTake) break;
       out.push(mint);
     }
@@ -232,6 +273,7 @@ export class MildDipHotMintBuffer {
     this.buyForcePending.delete(mint);
     this.buyForceRetryAfter.delete(mint);
     this.leaderHighlightUntil.delete(mint);
+    this.volumeImpulseUntil.delete(mint);
   }
 
   buyForcePendingToJSON(nowMs = Date.now()): Array<{ mint: string; tsMs: number }> {

@@ -2,11 +2,8 @@
  * Helius (or any Solana RPC) logsSubscribe on pump.fun / PumpSwap → hot mint universe
  * + optional signature enqueue for stream price sampling.
  *
- * DexScreener remains the liq/mcap/pc5m source; stream prices fill the trough
- * during cooldown so we can refuse bounce re-entries.
- *
- * When logs show Instruction: Buy/Sell but omit the mint (PumpSwap common),
- * optionally resolve via getTransaction (capped) so we see the candle ourselves.
+ * When logs show Instruction: Buy but omit the mint (PumpSwap common),
+ * resolve via getTransaction (capped): mint + price + SOL notional in ONE getTx.
  */
 import { resolveLeaderStreamWsUrl } from '../copytrader/leader-stream-ws.js';
 import { PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
@@ -53,16 +50,17 @@ export function mildDipStreamProgramIds(env: NodeJS.ProcessEnv = process.env): s
   return [PUMP_FUN_PROGRAM_ID, PUMP_SWAP_AMM_PROGRAM_ID];
 }
 
+function volumeImpulseMinSol(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number(env.MILD_DIP_VOLUME_IMPULSE_MIN_SOL ?? env.VOL_GREEN_VOLUME_IMPULSE_MIN_SOL ?? 2);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
 export function startMildDipHotMintStream(opts?: {
   wsUrl?: string | null;
   programIds?: string[];
   onMint?: (mint: string, tsMs: number) => void;
-  /** When set, enqueue signature→price decode for watched mints. */
+  /** When set, enqueue signature→price decode for mints already in logs. */
   priceSampler?: StreamPriceSampler | null;
-  /**
-   * RPC HTTP for Buy/Sell mint resolve when logs omit mint.
-   * Cap via buyMintResolveMaxPerMin (0 = off).
-   */
   rpcUrl?: string | null;
   buyMintResolveMaxPerMin?: number;
   buyMintResolveConcurrency?: number;
@@ -89,24 +87,32 @@ export function startMildDipHotMintStream(opts?: {
 
   const resolveMax = Math.max(0, opts?.buyMintResolveMaxPerMin ?? 0);
   const rpcUrl = (opts?.rpcUrl ?? '').trim();
+  const volMin = volumeImpulseMinSol();
   let resolver: BuyMintResolver | null = null;
   if (resolveMax > 0 && rpcUrl) {
     resolver = createBuyMintResolver({
       rpcUrl,
       maxPerMin: resolveMax,
-      concurrency: opts?.buyMintResolveConcurrency ?? 2,
-      staleJobMs: 60_000,
-      onResolved: (mint, signature, tsMs) => {
-        // PumpSwap Buys omit mint in logs — seed local 1m bars from this tx.
-        if (opts?.priceSampler && signature) {
-          opts.priceSampler.enqueue(mint, signature, tsMs);
+      concurrency: opts?.buyMintResolveConcurrency ?? 4,
+      queueMax: Math.min(48, resolveMax),
+      staleJobMs: 45_000,
+      volumeImpulseMinSol: volMin,
+      onResolved: (result) => {
+        // Price already seeded inside resolver from the same getTx.
+        opts?.onMint?.(result.mint, result.tsMs);
+        if (result.solNotional >= volMin && volMin > 0) {
+          console.log(
+            `[mild-dip] volume-impulse mint=${result.mint.slice(0, 8)}… ` +
+              `sol=${result.solNotional.toFixed(2)} usd=${result.amountUsd.toFixed(0)} ` +
+              `px=${result.priceUsd.toExponential(3)}`,
+          );
         }
-        opts?.onMint?.(mint, tsMs);
       },
     });
     console.log(
       `[mild-dip] buy-mint-resolve ON buyOnly newestFirst maxPerMin=${resolveMax} ` +
-        `conc=${opts?.buyMintResolveConcurrency ?? 2} priceSampleOnResolve=1`,
+        `conc=${opts?.buyMintResolveConcurrency ?? 4} oneGetTx=1 ` +
+        `volumeMinSol=${volMin}`,
     );
   }
 
@@ -121,7 +127,8 @@ export function startMildDipHotMintStream(opts?: {
         mildDipHotMints.note(mint, tsMs, buySell ? 8 : 1);
         if (buySell) mildDipHotMints.markBuyForce(mint, tsMs);
         opts?.onMint?.(mint, tsMs);
-        if (opts?.priceSampler && n.signature) {
+        // Mint already in logs — still need getTx for price (sampler).
+        if (opts?.priceSampler && n.signature && buySell) {
           opts.priceSampler.enqueue(mint, n.signature, tsMs);
         }
       }

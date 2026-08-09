@@ -7,9 +7,8 @@ import {
   fetchWalletSignatures,
 } from '../copytrader/rpc.js';
 import { getSolUsd } from '../papertrader/pricing.js';
-import { decodeAllowlistedDexSwapInserts } from '../parser/allowlisted-dex-swap.js';
-import { PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import type { TxJsonParsed } from '../parser/rpc-http.js';
+import { extractBuyEconomics } from './buy-economics.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 export type MintPriceRefreshResult = {
@@ -56,18 +55,9 @@ export function priceUsdFromParsedSwapTx(
   solUsd: number,
 ): { priceUsd: number; signature: string } | null {
   if (!tx || !(solUsd > 0) || !mint) return null;
-  const swaps = decodeAllowlistedDexSwapInserts(tx, PUMP_FUN_PROGRAM_ID, solUsd);
-  for (const s of swaps) {
-    if (s.baseMint === mint && s.priceUsd > 0) {
-      const sig =
-        typeof s.signature === 'string' && s.signature.length >= 32
-          ? s.signature
-          : (tx.transaction?.signatures?.[0] as string | undefined) ?? '';
-      if (!sig) continue;
-      return { priceUsd: s.priceUsd, signature: sig };
-    }
-  }
-  return null;
+  const econ = extractBuyEconomics(tx, { solUsd });
+  if (!econ || econ.mint !== mint || !(econ.priceUsd > 0)) return null;
+  return { priceUsd: econ.priceUsd, signature: econ.signature };
 }
 
 /**
@@ -87,8 +77,8 @@ export async function refreshMintPriceFromChain(
 ): Promise<MintPriceRefreshResult> {
   const nowMs = opts?.nowMs ?? Date.now();
   const minGap = Math.max(500, opts?.minGapMs ?? 2_000);
-  const maxPerMin = Math.max(1, Math.min(120, opts?.maxPerMin ?? 30));
-  const sigLimit = Math.max(1, Math.min(10, opts?.sigLimit ?? 5));
+  const maxPerMin = Math.max(1, Math.min(120, opts?.maxPerMin ?? 20));
+  const sigLimit = Math.max(1, Math.min(10, opts?.sigLimit ?? 4));
   const noteRing = opts?.noteRing !== false;
 
   if (!mint || mint.length < 32 || !rpcUrl?.trim()) {

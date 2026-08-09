@@ -124,9 +124,9 @@ export async function evaluateStreamImpulseCandidates(
       await mapPool(need, 4, async (mint) => {
         await refreshMintPriceFromChain(mint, rpcUrl, {
           nowMs,
-          minGapMs: 2_000,
-          maxPerMin: 30,
-          sigLimit: 5,
+          minGapMs: 3_000,
+          maxPerMin: 20,
+          sigLimit: 4,
         });
         return null;
       });
@@ -149,6 +149,29 @@ export async function evaluateStreamImpulseCandidates(
 
   for (const { mint } of ranked) {
     const samples = mildDipPriceRing.listSamples(mint, LOOKBACK_MS, nowMs);
+
+    // Large SOL buy from stream resolve — enter on notional, don't wait for 1m bars.
+    if (mildDipHotMints.isVolumeImpulse(mint, nowMs)) {
+      const solN = mildDipHotMints.volumeImpulseSol(mint, nowMs);
+      const last = mildDipPriceRing.lastPrice(mint, nowMs);
+      if (last && last.priceUsd > 0 && solN > 0) {
+        const cand = candidateFromPass({
+          mint,
+          nowMs,
+          entryPath: 'green_tape_impulse',
+          score: solN * 10,
+          huge: Math.max(firstStrongMin || 20, solN * 5),
+          small0: 0,
+          small1: 0,
+          hugeVol: solN * 150, // proxy USD if SOL≈$150
+          hugeTs: Math.floor(nowMs / 1000),
+        });
+        if (cand) {
+          candidates.push(cand);
+          continue;
+        }
+      }
+    }
 
     // Intrabar: strong move in last 60s even if completed 1m bars look flat/stale.
     if (firstStrongMin > 0) {

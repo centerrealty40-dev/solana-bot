@@ -85,10 +85,10 @@ export function startLeaderWalletWatch(opts: {
       concurrency: opts.resolveConcurrency ?? 2,
       queueMax: Math.max(10, resolveMax),
       staleJobMs: 25_000,
-      onResolved: (mint) => {
-        mildDipHotMints.markLeaderHighlight(mint, Date.now());
+      onResolved: (result) => {
+        mildDipHotMints.markLeaderHighlight(result.mint, Date.now());
         console.log(
-          `[mild-dip] leader-highlight mint=${mint.slice(0, 8)}… (resolved) → force eval`,
+          `[mild-dip] leader-highlight mint=${result.mint.slice(0, 8)}… (resolved) → force eval`,
         );
       },
     });
