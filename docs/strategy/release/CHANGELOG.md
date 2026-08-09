@@ -1,4 +1,29 @@
 # So
+## [1.11.762] — 2026-08-09
+
+**Тег:** `sa-1.11.762`
+
+### Entry: main wait −10%; stabilize buys immediate
+
+Live + CF review of wait_dip stack:
+
+1. **Main band** (`dex` / `stream` / `dex+stream` / `flat_micro_dip`): deepen
+   park from **−7% → −10%** from signal. Shallow wait fills (often −7…−9)
+   were the live drag; deeper fills held up better.
+2. **`knife_stabilize` / `mild_stabilize`**: **stop parking** under wait-dip —
+   buy at stabilize ready. Stacking another −7% after reclaim was a live
+   loser and skipped CF winners that went up without a second dump.
+
+`h1_red_shallow` and rebuy-below-exit no-park rules unchanged (1.11.758).
+
+**Env:** `MILD_DIP_WAIT_DIP_PCT=-10` (was −7). Stabilize exclusion is code
+(`waitDipAppliesToSource`).
+
+**Откат:** `MILD_DIP_WAIT_DIP_PCT=-7` + restore stabilize in
+`waitDipAppliesToSource` + reload.
+
+---
+
 ## [1.11.761] — 2026-08-09
 
 **Тег:** `sa-1.11.761`

@@ -1,13 +1,13 @@
 /**
  * Wait-dip entry: on a qualifying signal, park instead of buying; enter only
- * after price dumps another `waitDipPct` from the signal mark (default −7%).
+ * after price dumps another `waitDipPct` from the signal mark (default −10%).
  *
- * 48h CF: wait −7% then MFE-bank ~+$3k on $100/coin. Branch CF: applying the
- * same wait to `knife_stabilize` / `mild_stabilize` beat main-band-only by
- * ~+$350 on the book (stabilize immediate was a weak exclusion).
+ * 1.11.762 — main-band wait deepened −7%→−10% (live shallow fills were the
+ * drag). `knife_stabilize` / `mild_stabilize` buy immediately again (second
+ * −7% after stabilize was a live loser; CF missed winners on skip).
  *
  * 1.11.758 — not on `h1_red_shallow`; not on any branch inside the
- * rebuy-below-exit window (no −7% stack on top of the −10% rebuy floor).
+ * rebuy-below-exit window (no wait stack on top of the −10% rebuy floor).
  */
 
 import type { MildDipCandidateMetrics } from './gates.js';
@@ -16,7 +16,7 @@ export type WaitDipWatchEntry = {
   detectedAtMs: number;
   /** First qualifying signal mark — wait target is anchored here (never walks). */
   signalPriceUsd: number;
-  /** Extra dump from signal, negative percent (e.g. −7). */
+  /** Extra dump from signal, negative percent (e.g. −10). */
   waitDipPct: number;
   symbol: string;
   originalDipSource: string;
@@ -29,7 +29,7 @@ export type WaitDipWatchEntry = {
 
 export type WaitDipGates = {
   enabled: boolean;
-  /** Extra dump from signal required before buy (negative, e.g. −7). */
+  /** Extra dump from signal required before buy (negative, e.g. −10). */
   waitDipPct: number;
   /** Expire watch if never filled. */
   maxWatchMs: number;
@@ -44,27 +44,27 @@ export type WaitDipReadyVerdict = {
 };
 
 /**
- * Sources that park under wait-dip.
- * `h1_red_shallow` buys at signal (already a shallow red-hour scrape — stacking
- * −7% parked the 39jq7B rebuy while the leader filled the dip).
- * `wait_dip` itself is excluded (already parked).
+ * Sources that park under wait-dip (main band only).
+ * - `h1_red_shallow` — buy at signal (1.11.758).
+ * - `knife_stabilize` / `mild_stabilize` — buy at stabilize ready (1.11.762);
+ *   do not stack another dump wait after the reclaim signal.
+ * - `wait_dip` itself — already parked.
  */
 export function waitDipAppliesToSource(dipSource: string | null | undefined): boolean {
   if (!dipSource || dipSource === 'wait_dip') return false;
   if (dipSource === 'h1_red_shallow') return false;
+  if (dipSource === 'knife_stabilize' || dipSource === 'mild_stabilize') return false;
   return (
     dipSource === 'dex' ||
     dipSource === 'stream' ||
     dipSource === 'dex+stream' ||
-    dipSource === 'flat_micro_dip' ||
-    dipSource === 'knife_stabilize' ||
-    dipSource === 'mild_stabilize'
+    dipSource === 'flat_micro_dip'
   );
 }
 
 /**
  * True while `rebuy_below_exit` is still active for this mint (recent full exit
- * within max age). In that window wait−7% must not stack on top of the −10%
+ * within max age). In that window wait-dip must not stack on top of the −10%
  * rebuy floor — buy at signal once rebuy-below-exit passes.
  */
 export function isRebuyBelowExitWindow(args: {
@@ -110,7 +110,7 @@ export function waitDipTargetPriceUsd(
 
 /**
  * Hard ceiling for send/fill: signal × (1 + (waitDipPct + overshoot)/100).
- * Example: wait −7%, overshoot +2pp → max price = signal × 0.95 (fill dump ≤ −5%).
+ * Example: wait −10%, overshoot +2pp → max price = signal × 0.92 (fill dump ≤ −8%).
  */
 export function waitDipMaxPriceUsd(
   signalPriceUsd: number,
@@ -136,7 +136,7 @@ export function dumpFromSignalPct(
 }
 
 /**
- * Pre-send gate for wait_dip: keep the −7% edge after mark→quote drift.
+ * Pre-send gate for wait_dip: keep the wait-dip edge after mark→quote drift.
  * Anchors to the original park signal (not the ready mark).
  */
 export function evaluateWaitDipPreBuy(args: {
@@ -207,7 +207,7 @@ export function evaluateWaitDipPreBuy(args: {
 
 /**
  * Create or refresh a wait-dip watch. Never moves signalPrice / detectedAt —
- * otherwise the −7% target would chase the blade forever.
+ * otherwise the wait target would chase the blade forever.
  */
 export function upsertWaitDipWatch(
   prev: WaitDipWatchEntry | undefined,

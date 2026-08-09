@@ -204,12 +204,12 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
   /**
-   * 1.11.753 — park signal; buy only after extra dump from signal (default −7%).
-   * Applies to all entry branches including knife / mild_stabilize.
+   * 1.11.753 — park signal; buy only after extra dump from signal.
+   * 1.11.762 — default −10%; main-band only (stabilize buys immediate).
    * 0 waitDipPct = off shape.
    */
   waitDipEnabled: z.boolean().default(true),
-  waitDipPct: z.coerce.number().max(0).default(-7),
+  waitDipPct: z.coerce.number().max(0).default(-10),
   waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
   /**
    * 1.11.753 — after ready, allow at most this many pp of dump edge to erode
@@ -610,7 +610,7 @@ export function loadMildDipConfig(): MildDipConfig {
      * Set MILD_DIP_WAIT_DIP=0 to restore immediate entries (all branches).
      */
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
-    waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -7),
+    waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
     waitDipMaxOvershootPct: envNum('MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT', 2),
     waitDipMaxChasePct: envNum('MILD_DIP_WAIT_DIP_MAX_CHASE_PCT', 3),
