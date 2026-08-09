@@ -31,6 +31,14 @@ export type TripleGreenGates = {
    * this many ms after its open (default 3m — buy on/just after the spike).
    */
   maxAgeAfterHugeMs: number;
+  /**
+   * First-strong branch (8zkg on 8XjTbP): buy when the *latest* 1m bar is the
+   * first real green impulse — not waiting for small→small→huge.
+   * 0 = off.
+   */
+  firstStrongMinPc?: number;
+  /** Prior 1m bar must be ≤ this % (or red). Default = smallMaxPc. */
+  firstStrongMaxPriorPc?: number;
 };
 
 export type TripleGreenVerdict = {
@@ -159,6 +167,68 @@ export function detectTripleGreen(
     reasons.push(`last3_chg=${ch.map((x) => x.toFixed(1)).join(',')}`);
   }
   return { pass: false, reasons };
+}
+
+/**
+ * First strong 1m green (leader-style): latest bar is the impulse, prior bar
+ * is not already a huge green. Example 8XjTbP / 5n4FsG: last3=-8.8,16.1,42.0
+ * — leader bought on the +42% candle; we waited for a later triple.
+ */
+export function detectFirstStrongGreen(
+  bars: Ohlcv1m[],
+  gates: TripleGreenGates,
+  nowSec: number,
+): TripleGreenVerdict {
+  const minPc = gates.firstStrongMinPc ?? 0;
+  if (!(minPc > 0)) {
+    return { pass: false, reasons: ['first_strong_disabled'] };
+  }
+  if (!Array.isArray(bars) || bars.length < 2) {
+    return { pass: false, reasons: ['first_strong_ohlcv_insufficient'] };
+  }
+  const ordered = [...bars].sort((a, b) => a.ts - b.ts);
+  const latest = ordered[ordered.length - 1]!;
+  const prior = ordered[ordered.length - 2]!;
+  const maxAgeSec = Math.max(60, Math.floor(gates.maxAgeAfterHugeMs / 1000));
+  if (nowSec - latest.ts > maxAgeSec) {
+    return { pass: false, reasons: ['first_strong_stale'] };
+  }
+  if (!isGreen(latest)) {
+    return { pass: false, reasons: ['first_strong_latest_red'] };
+  }
+  const cH = candleChgPct(latest);
+  const cP = candleChgPct(prior);
+  if (!(cH >= minPc)) {
+    return {
+      pass: false,
+      reasons: [`first_strong_chg=${cH.toFixed(1)}<${minPc}`],
+    };
+  }
+  const maxPrior =
+    gates.firstStrongMaxPriorPc != null && gates.firstStrongMaxPriorPc > 0
+      ? gates.firstStrongMaxPriorPc
+      : gates.smallMaxPc;
+  // Prior must not already be a huge green (then this isn't the "first" strong).
+  if (isGreen(prior) && cP > maxPrior) {
+    return {
+      pass: false,
+      reasons: [`first_strong_prior_already_huge=${cP.toFixed(1)}>${maxPrior}`],
+    };
+  }
+  if (gates.hugeMinVolUsd > 0 && !(latest.volumeUsd >= gates.hugeMinVolUsd)) {
+    return { pass: false, reasons: ['first_strong_low_vol'] };
+  }
+  return {
+    pass: true,
+    reasons: [],
+    pattern: {
+      small0: +cP.toFixed(2),
+      small1: 0,
+      huge: +cH.toFixed(2),
+      hugeVol: +latest.volumeUsd.toFixed(0),
+      hugeTs: latest.ts,
+    },
+  };
 }
 
 /**
@@ -409,24 +479,36 @@ export async function evaluateTripleGreenEntry(args: {
   const nowSec = Math.floor(nowMs / 1000);
   const leaderFlex = args.leaderFlex === true || args.geckoPriority === true;
 
+  const tryPaths = (bars: Ohlcv1m[], volGate: TripleGreenGates): TripleGreenVerdict | null => {
+    const classic = detectTripleGreen(bars, volGate, nowSec);
+    if (classic.pass) return classic;
+    const first = detectFirstStrongGreen(bars, volGate, nowSec);
+    if (first.pass) return first;
+    if (leaderFlex) {
+      const flex = detectLeaderImpulseGreen(bars, volGate, nowSec);
+      if (flex.pass) return flex;
+    }
+    return null;
+  };
+
   // 1) Local 1m bars from stream/dex prices — race the candle.
   let localMissReason: string | null = null;
-  if (args.localPriceSamples && args.localPriceSamples.length >= 3) {
+  if (args.localPriceSamples && args.localPriceSamples.length >= 2) {
     const localBars = buildOhlcv1mFromPriceSamples(args.localPriceSamples, { nowMs });
-    if (localBars.length >= 3) {
+    if (localBars.length >= 2) {
       const localGates = { ...args.gates, hugeMinVolUsd: 0 };
-      const localHit = detectTripleGreen(localBars, localGates, nowSec);
-      if (localHit.pass) return localHit;
-      if (leaderFlex) {
-        const flex = detectLeaderImpulseGreen(localBars, localGates, nowSec);
-        if (flex.pass) return flex;
+      const hit = tryPaths(localBars, localGates);
+      if (hit) return hit;
+      if (localBars.length < 3) {
+        localMissReason = `triple_local_bars=${localBars.length}<3`;
+      } else {
+        localMissReason = 'triple_pattern_not_found';
       }
-      localMissReason = localHit.reasons[0] ?? 'triple_pattern_not_found';
     } else {
-      localMissReason = `triple_local_bars=${localBars.length}<3`;
+      localMissReason = `triple_local_bars=${localBars.length}<2`;
     }
   } else {
-    localMissReason = `triple_local_samples=${args.localPriceSamples?.length ?? 0}<3`;
+    localMissReason = `triple_local_samples=${args.localPriceSamples?.length ?? 0}<2`;
   }
 
   // 2) Gecko fallback — optional + budgeted.
@@ -471,20 +553,19 @@ export async function evaluateTripleGreenEntry(args: {
       reasons: [localMissReason ?? 'triple_ohlcv_insufficient'],
     };
   }
+  const hit = tryPaths(fetched.bars, args.gates);
+  if (hit) return hit;
   const classic = detectTripleGreen(fetched.bars, args.gates, nowSec);
-  if (classic.pass) return classic;
-  if (leaderFlex) {
-    const flex = detectLeaderImpulseGreen(fetched.bars, args.gates, nowSec);
-    if (flex.pass) return flex;
-    return {
-      pass: false,
-      reasons: [
-        ...(classic.reasons.length ? classic.reasons : [localMissReason ?? 'triple_pattern_not_found']),
-        ...(flex.reasons[0] ? [flex.reasons[0]] : []),
-      ],
-    };
-  }
-  return classic;
+  const first = detectFirstStrongGreen(fetched.bars, args.gates, nowSec);
+  return {
+    pass: false,
+    reasons: [
+      ...(classic.reasons.length ? classic.reasons : [localMissReason ?? 'triple_pattern_not_found']),
+      ...(first.reasons[0] && first.reasons[0] !== 'first_strong_disabled'
+        ? [first.reasons[0]]
+        : []),
+    ],
+  };
 }
 
 /** Trending Solana pools → base mints (no Helius). */

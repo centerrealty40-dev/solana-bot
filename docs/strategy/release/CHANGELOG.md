@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.745] — 2026-08-09
+
+**Тег:** `sa-1.11.745`
+
+### Vol-green: first-strong 1m branch (leader-style first candle)
+
+`5n4FsG` / 8XjTbP: 8zkg bought on first big 1m (+42%); we waited for triple.
+Add `detectFirstStrongGreen`: latest 1m ≥20%, prior not already huge (≤18%).
+OR with classic triple + leader-flex. Env: `MILD_DIP_GREEN_FIRST_STRONG_MIN_PC=20`.
+
+**Откат:** `MILD_DIP_GREEN_FIRST_STRONG_MIN_PC=0`.
+
+---
+
 ## [1.11.744] — 2026-08-09
 
 **Тег:** `sa-1.11.744`

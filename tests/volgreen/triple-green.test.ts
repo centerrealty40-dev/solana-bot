@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   buildOhlcv1mFromPriceSamples,
+  detectFirstStrongGreen,
   detectLeaderImpulseGreen,
   detectTripleGreen,
   type Ohlcv1m,
@@ -88,6 +89,42 @@ describe('detectTripleGreen', () => {
     const bars = buildOhlcv1mFromPriceSamples(samples, { nowMs: now });
     expect(bars.length).toBeGreaterThanOrEqual(2);
     expect(bars[0]!.open).toBeGreaterThan(0);
+  });
+
+  it('first-strong accepts latest huge with mild prior (8XjTbP -8.8/16.1/42)', () => {
+    const t0 = 1_786_266_830;
+    const bars: Ohlcv1m[] = [
+      bar(t0 - 120, 1.0, 0.912, 100), // -8.8%
+      bar(t0 - 60, 0.912, 1.059, 200), // +16.1%
+      bar(t0, 1.059, 1.504, 800), // +42%
+    ];
+    const g = {
+      ...gates,
+      hugeMinPc: 10,
+      smallMaxPc: 18,
+      hugeMinVolUsd: 100,
+      firstStrongMinPc: 20,
+      firstStrongMaxPriorPc: 18,
+    };
+    expect(detectTripleGreen(bars, g, t0 + 30).pass).toBe(false);
+    const fs = detectFirstStrongGreen(bars, g, t0 + 30);
+    expect(fs.pass).toBe(true);
+    expect(fs.pattern?.huge).toBeGreaterThanOrEqual(40);
+  });
+
+  it('first-strong rejects when prior was already huge', () => {
+    const t0 = 1_786_266_830;
+    const bars: Ohlcv1m[] = [
+      bar(t0 - 60, 1.0, 1.9, 500), // +90% prior
+      bar(t0, 1.9, 2.3, 500), // +21% latest
+    ];
+    const g = {
+      ...gates,
+      firstStrongMinPc: 20,
+      firstStrongMaxPriorPc: 18,
+      hugeMinVolUsd: 100,
+    };
+    expect(detectFirstStrongGreen(bars, g, t0 + 30).pass).toBe(false);
   });
 
   it('leader flex accepts huge-in-middle (BJWHLm 1.2/82.4/14.4)', () => {

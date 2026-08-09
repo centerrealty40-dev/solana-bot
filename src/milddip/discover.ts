@@ -531,6 +531,8 @@ export async function enrichAndFilterCandidates(
               hugeMinPc: cfg.greenTape.tripleHugeMinPc,
               hugeMinVolUsd: cfg.greenTape.tripleHugeMinVolUsd,
               maxAgeAfterHugeMs: cfg.greenTape.tripleMaxAgeAfterHugeMs,
+              firstStrongMinPc: cfg.greenTape.firstStrongMinPc,
+              firstStrongMaxPriorPc: cfg.greenTape.firstStrongMaxPriorPc,
             },
           });
           if (!tg.pass) {
@@ -583,6 +585,12 @@ export async function enrichAndFilterCandidates(
           const priceUsd = details.priceUsd as number;
           const score =
             (tg.pattern?.huge ?? 0) + (tg.pattern?.small0 ?? 0) + (tg.pattern?.small1 ?? 0);
+          // first_strong patterns have small1=0 by convention.
+          const firstStrong =
+            tg.pattern != null &&
+            tg.pattern.small1 === 0 &&
+            (cfg.greenTape.firstStrongMinPc ?? 0) > 0 &&
+            tg.pattern.huge >= cfg.greenTape.firstStrongMinPc;
           return {
             kind: 'pass',
             cand: {
@@ -594,7 +602,7 @@ export async function enrichAndFilterCandidates(
                 triplePattern: tg.pattern ?? null,
               },
               dipSource: 'dex',
-              entryPath: 'green_tape_triple',
+              entryPath: firstStrong ? 'green_tape_impulse' : 'green_tape_triple',
               entryScore: score,
             },
           };

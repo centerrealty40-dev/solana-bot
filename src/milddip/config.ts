@@ -201,6 +201,8 @@ const MildDipConfigSchema = z.object({
     tripleHugeMinPc: z.number().default(20),
     tripleHugeMinVolUsd: z.number().default(200),
     tripleMaxAgeAfterHugeMs: z.coerce.number().int().default(180_000),
+    firstStrongMinPc: z.number().default(0),
+    firstStrongMaxPriorPc: z.number().default(18),
   }),
 });
 
@@ -363,6 +365,9 @@ export function loadMildDipConfig(): MildDipConfig {
     tripleHugeMinPc: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', 13),
     tripleHugeMinVolUsd: envNum('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', 150),
     tripleMaxAgeAfterHugeMs: envNum('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', 180_000),
+    // 8XjTbP / 5n4FsG: leader bought first +42% 1m; we waited for triple.
+    firstStrongMinPc: envNum('MILD_DIP_GREEN_FIRST_STRONG_MIN_PC', 0),
+    firstStrongMaxPriorPc: envNum('MILD_DIP_GREEN_FIRST_STRONG_MAX_PRIOR_PC', 18),
   };
 
   const raw = {

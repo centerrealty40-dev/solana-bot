@@ -168,6 +168,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '10');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '100');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', '240000');
+  // First-strong 1m (8zkg on 8XjTbP): buy the first big green, don't wait for triple.
+  setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MIN_PC', '20');
+  setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MAX_PRIOR_PC', '18');
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '12000');
   setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '0');
   setIfAbsent('MILD_DIP_GREEN_LIQUID_MIN_PC5M_PCT', '0');
