@@ -56,6 +56,12 @@ describe('evaluateLeaderAlignDefer', () => {
     expect(v.defer).toBe(false);
   });
 
+  it('does not defer hard_stop', () => {
+    expect(LEADER_ALIGN_DEFER_REASONS.has('hard_stop')).toBe(false);
+    const v = evaluateLeaderAlignDefer({ ...base, reason: 'hard_stop', pnlPct: -16 });
+    expect(v.defer).toBe(false);
+  });
+
   it('does not defer mfe_bank take-profit', () => {
     const v = evaluateLeaderAlignDefer({ ...base, reason: 'mfe_bank_1', pnlPct: 8 });
     expect(v.defer).toBe(false);

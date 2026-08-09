@@ -150,10 +150,14 @@ describe('oneshot dump grace vs exits', () => {
     neverArmVolFadeSampleMs: 300_000,
     neverArmVolFadeWeakWindows: 3,
     cliffDumpPnlPct: 50,
+    hardStopPnlPct: 15,
     neverArmBounceMinDumpPct: 8,
     neverArmBouncePct: 8,
     neverArmBounceMinTroughAgeMs: 60_000,
     neverArmBounceRequireRedPct: 3,
+    neverArmBouncePartialFraction: 0.5,
+    neverArmBounce2Pct: 16,
+    mfeBankSleeveLossPartialFraction: 0.5,
     neverArmFreefallPnlPct: 25,
     neverArmFreefallMinMs: 60_000,
     neverArmTimeRedMinMs: 0,
@@ -203,13 +207,26 @@ describe('oneshot dump grace vs exits', () => {
     expect(v.fraction).toBe(1);
   });
 
-  it('cliff_dump still fires under grace', () => {
+  it('hard_stop still fires under grace', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 85,
+      peakPriceUsd: 115,
+      armed: true,
+      gates,
+      oneshotDumpGraceActive: true,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('hard_stop');
+  });
+
+  it('cliff_dump still fires under grace when hard stop off', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
       peakPriceUsd: 115,
       armed: true,
-      gates,
+      gates: { ...gates, hardStopPnlPct: 0 },
       oneshotDumpGraceActive: true,
     });
     expect(v.shouldExit).toBe(true);

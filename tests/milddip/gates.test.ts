@@ -70,6 +70,7 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeSampleMs: 300_000,
   neverArmVolFadeWeakWindows: 3,
   cliffDumpPnlPct: 50,
+  hardStopPnlPct: 15,
   neverArmBounceMinDumpPct: 8,
   neverArmBouncePct: 8,
   neverArmBounceMinTroughAgeMs: 60_000,
@@ -533,13 +534,59 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
+  it('hard_stop exits immediately at ≤ −15% (before soft exits)', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 85,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: exitGates,
+      heldMs: 5_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('hard_stop');
+    expect(v.fraction).toBe(1);
+    expect(v.pnlPct).toBeLessThanOrEqual(-15);
+  });
+
+  it('hard_stop off when hardStopPnlPct=0', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 85,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: {
+        ...exitGates,
+        hardStopPnlPct: 0,
+        neverArmFreefallPnlPct: 0,
+        neverArmBouncePct: 0,
+        neverArmTimeRedMinMs: 0,
+      },
+      heldMs: 5_000,
+    });
+    expect(v.shouldExit).toBe(false);
+  });
+
+  it('hard_stop wins over cliff when both thresholds are breached', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 40,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: exitGates,
+      heldMs: 5_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('hard_stop');
+  });
+
   it('cliff_dump exits immediately at ≤ −50% without waiting dead min-hold', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
       peakPriceUsd: 103.71,
       armed: false,
-      gates: exitGates,
+      gates: { ...exitGates, hardStopPnlPct: 0 },
       heldMs: 30_000,
     });
     expect(v.shouldExit).toBe(true);
@@ -555,6 +602,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       armed: false,
       gates: {
         ...exitGates,
+        hardStopPnlPct: 0,
         cliffDumpPnlPct: 0,
         neverArmFreefallPnlPct: 0,
         neverArmBouncePct: 0,
@@ -671,12 +719,14 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
   });
 
   it('never_arm_freefall: unarmed pnl ≤ −25% after min hold (no bounce needed)', () => {
+    // hard stop off — exercise freefall path below −15%
+    const gates = { ...exitGates, hardStopPnlPct: 0 };
     const early = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 74,
       peakPriceUsd: 101,
       armed: false,
-      gates: exitGates,
+      gates,
       heldMs: 30_000, // under 60s floor
       postEntryTroughPriceUsd: 74,
     });
@@ -687,7 +737,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 74,
       peakPriceUsd: 101,
       armed: false,
-      gates: exitGates,
+      gates,
       heldMs: 60_000,
       postEntryTroughPriceUsd: 74,
     });
@@ -703,7 +753,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       markPriceUsd: 76, // +8.57% off 70; still −24% vs entry
       peakPriceUsd: 101,
       armed: false,
-      gates: exitGates,
+      gates: { ...exitGates, hardStopPnlPct: 0 },
       heldMs: 180_000,
       nowMs: now,
       postEntryTroughPriceUsd: 70,
@@ -795,7 +845,26 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('no SL-from-entry before patience: mark 85 with tiny peak 102 holds', () => {
+  it('soft path holds at −14% when hard stop off (no patience knife)', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 86,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: {
+        ...exitGates,
+        hardStopPnlPct: 0,
+        neverArmBouncePct: 0,
+        neverArmFreefallPnlPct: 0,
+        neverArmTimeRedMinMs: 0,
+      },
+      heldMs: 60_000,
+    });
+    expect(v.armed).toBe(false);
+    expect(v.shouldExit).toBe(false);
+  });
+
+  it('hard_stop cuts −15% even when soft patience path would hold', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 85,
@@ -804,9 +873,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       gates: exitGates,
       heldMs: 60_000,
     });
-    // MFE only +2% < arm 8 → not armed; early dump is not an entry-SL
-    expect(v.armed).toBe(false);
-    expect(v.shouldExit).toBe(false);
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('hard_stop');
   });
 
   it('never-arm exits disabled when patience/maxHold/dead/stale are 0 (unsafe — for unit only)', () => {
@@ -826,6 +894,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmVolFadeMinMs: 0,
       neverArmVolFadeRatio: 0,
       cliffDumpPnlPct: 0,
+      hardStopPnlPct: 0,
       neverArmVolFadeFloorUsd: 0,
       neverArmVolFadeSampleMs: 0,
       neverArmVolFadeWeakWindows: 0,
@@ -833,6 +902,9 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmBouncePct: 0,
       neverArmBounceMinTroughAgeMs: 0,
       neverArmBounceRequireRedPct: 0,
+      neverArmBouncePartialFraction: 0,
+      neverArmBounce2Pct: 0,
+      mfeBankSleeveLossPartialFraction: 0,
       neverArmFreefallPnlPct: 0,
       neverArmFreefallMinMs: 0,
       neverArmTimeRedMinMs: 0,

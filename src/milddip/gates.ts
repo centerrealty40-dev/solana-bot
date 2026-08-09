@@ -4,7 +4,8 @@
  * Entry: DexScreener priceChange5m ∈ (minDipPct, maxDipPct] — default (−25, −8].
  * Exit: W9.1 peak-giveback — arm on MFE, full exit on giveback from running peak.
  *        Never-armed branch (leaders 8zkg / 7BNax): same giveback width after
- *        patience, plus max-hold if trail never arms. No SL% from entry.
+ *        patience, plus max-hold if trail never arms.
+ *        Hard stop from entry (`hard_stop`) + cliff LP-pull floor.
  */
 
 export type MildDipCandidateMetrics = {
@@ -125,6 +126,12 @@ export type MildDipExitGates = {
    * rugs without waiting for never_arm_dead min-hold. 0 = off.
    */
   cliffDumpPnlPct: number;
+  /**
+   * 1.11.765 — hard stop from entry: full exit when mark pnl ≤ −this %
+   * (live default 15). Fires before soft exits; never deferred by leader-align
+   * or oneshot dump grace. 0 = off. Distinct from cliff (catastrophic −50%).
+   */
+  hardStopPnlPct: number;
   /**
    * 1.11.747 — never-armed bounce reclaim: after post-entry trough ≤ −minDump%,
    * if mark bounces ≥ bouncePct off that trough → exit (`never_arm_bounce`).
@@ -422,6 +429,7 @@ export type MildDipExitReason =
   | 'never_arm_vol_fade'
   | 'never_arm_timeout'
   | 'cliff_dump'
+  | 'hard_stop'
   | null;
 
 /** True when MFE-bank ladder is configured and should own the armed exit path. */
@@ -591,8 +599,8 @@ export function evaluateMildDipPeakGiveback(args: {
   postEntryTroughAtMs?: number | null;
   /**
    * When true, defer peak_giveback / peak_giveback_partial / never_arm_giveback
-   * / mfe_bank_sleeve (one-shot emptied-bag dump grace). cliff_dump and MFE
-   * banks (sell into strength) still fire.
+   * / mfe_bank_sleeve (one-shot emptied-bag dump grace). cliff_dump / hard_stop
+   * and MFE banks (sell into strength) still fire.
    */
   oneshotDumpGraceActive?: boolean;
 }): {
@@ -692,7 +700,14 @@ export function evaluateMildDipPeakGiveback(args: {
     postEntryTroughAtMs,
   };
 
+  // Hard stop from entry — fire before soft exits / grace / leader-align.
+  const hardStop = gates.hardStopPnlPct > 0 ? gates.hardStopPnlPct : 0;
+  if (hardStop > 0 && pnlPct <= -hardStop) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
+  }
+
   // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
+  // Note: when hardStop ≤ cliff and both on, hard_stop wins first (tighter).
   const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
   if (cliff > 0 && pnlPct <= -cliff) {
     return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };

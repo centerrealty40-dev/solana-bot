@@ -60,10 +60,14 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmVolFadeSampleMs: 300_000,
     neverArmVolFadeWeakWindows: 3,
     cliffDumpPnlPct: 50,
+    hardStopPnlPct: 15,
     neverArmBounceMinDumpPct: 8,
     neverArmBouncePct: 8,
     neverArmBounceMinTroughAgeMs: 60_000,
     neverArmBounceRequireRedPct: 3,
+    neverArmBouncePartialFraction: 0.5,
+    neverArmBounce2Pct: 16,
+    mfeBankSleeveLossPartialFraction: 0.5,
     neverArmFreefallPnlPct: 25,
     neverArmFreefallMinMs: 60_000,
     neverArmTimeRedMinMs: 0,
@@ -170,10 +174,11 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       trailArmed: false,
       openedAtMs,
     });
+    // −10% — still above hard-stop −15%; stale wants ≤ −5%
     const early = decideMarkExit({
       mint: 'm4',
       pos: p,
-      markPriceUsd: 80,
+      markPriceUsd: 90,
       gates,
       nowMs: openedAtMs + 300_000,
     });
@@ -182,7 +187,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     const d = decideMarkExit({
       mint: 'm4',
       pos: p,
-      markPriceUsd: 80,
+      markPriceUsd: 90,
       gates,
       nowMs: openedAtMs + 600_000,
     });
