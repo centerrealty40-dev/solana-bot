@@ -62,13 +62,15 @@ import {
 import { createOneshotDumpGraceTracker } from './oneshot-dump.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
+import {
+  HOLDING_DUST_RAW,
+  verdictDropEmptyOnNoBalance,
+} from './sell-empty-guard.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
 /** Floor for a last partial clip when draining the wallet. */
 const MIN_CLIP_USD = 1;
-/** Raw units below this are dust — ignore for rebuy/adopt. */
-const HOLDING_DUST_RAW = 1000n;
 
 export type MildDipLoopStats = {
   open: number;
@@ -917,6 +919,37 @@ async function executeQueuedSell(args: {
 
   const reason = sell.reason ?? 'unknown';
   if (reason === 'no_token_balance') {
+    // Re-read chain before dropping — sell path races RPC right after buy
+    // (CkTFDN: false empty → drop_empty → unmanaged −80% bag).
+    await sleep(400);
+    const raw = await fetchMintBalanceRaw(copyCfg, mint);
+    const onchainRaw = raw && /^\d+$/.test(raw) ? BigInt(raw) : 0n;
+    const verdict = verdictDropEmptyOnNoBalance({
+      onchainRaw,
+      openedAtMs: pos.openedAtMs,
+      nowMs,
+    });
+    if (!verdict.drop) {
+      if (state.open[mint] && onchainRaw > HOLDING_DUST_RAW && raw) {
+        state.open[mint]!.tokenRaw = raw;
+        saveMildDipState(cfg.statePath, state);
+      }
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_sell_balance_race',
+        mint,
+        symbol: pos.symbol,
+        exitReason: decision.reason,
+        guardReason: verdict.reason,
+        onchainRaw: onchainRaw.toString(),
+        pnlPct: +realizedPnl.toFixed(2),
+        holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
+      });
+      console.warn(
+        `[mild-dip] sell no_token_balance but ${verdict.reason} ` +
+          `${pos.symbol} mint=${mint.slice(0, 8)}… (still tracking)`,
+      );
+      return;
+    }
     if (state.open[mint]) {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
@@ -930,6 +963,7 @@ async function executeQueuedSell(args: {
       pnlPct: +realizedPnl.toFixed(2),
       cooldownMs: cd.cooldownMs,
       cooldownKind: cd.kind,
+      confirmedEmpty: true,
     });
     console.warn(
       `[mild-dip] DROP empty bag ${pos.symbol} mint=${mint.slice(0, 8)}… ` +

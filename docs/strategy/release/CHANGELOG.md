@@ -1,4 +1,24 @@
 # So
+## [1.11.756] — 2026-08-09
+
+**Тег:** `sa-1.11.756`
+
+### Fix: do not orphan bags on false `no_token_balance`
+
+**Инцидент:** `CkTFDN` — buy confirmed, ~8s later `mfe_bank_1` got
+`no_token_balance` (RPC lag), `mild_dip_drop_empty` cleared state while
+~$30 SPL stayed on-chain → unmanaged bag to ~−80%.
+
+**Fix:** on sell `no_token_balance`, re-read ATA (400ms settle), then
+`verdictDropEmptyOnNoBalance`:
+- balance present → keep tracking (`mild_dip_sell_balance_race`)
+- within 120s of open → keep tracking even if RPC still empty
+- only confirmed empty after grace → `mild_dip_drop_empty`
+
+**Откат:** revert `sell-empty-guard.ts` + `loop.ts` empty-drop branch.
+
+---
+
 ## [1.11.755] — 2026-08-09
 
 **Тег:** `sa-1.11.755`
