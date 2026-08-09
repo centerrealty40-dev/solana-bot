@@ -2934,15 +2934,14 @@ const PM2_APPS = [
         MILD_DIP_FLAT_MICRO_H1_MIN_PCT: '-35',
         MILD_DIP_FLAT_MICRO_H1_MAX_PCT: '10',
         /**
-         * 1.11.735 — vol5m floor $500 (was $1500). Entry filter: Dex 5m
-         * volume must be ≥ $500 before buy.
+         * 1.11.780 — leader-like floors (8zkg/7BNax buy book, 3d):
+         * vol5m p10≈$287 / liq p10≈$4.6k. Was $500 / $10k — covered only
+         * ~63% of leader buys (~76% of dump-band buys). New $300 / $5k →
+         * ~82% all / ~91% dump-band. Timing stays independent (turn→dump /
+         * stream-first), not pure copy.
          */
-        MILD_DIP_MIN_VOLUME_5M_USD: '500',
-        /**
-         * 1.11.700 — floor back to $10k (was $40k exec-friction canary).
-         * $10/$20 clips; impact capped by LIVE_BUY_MAX_PRICE_IMPACT_PCT (1.11.702 → 2).
-         */
-        MILD_DIP_MIN_LIQUIDITY_USD: '10000',
+        MILD_DIP_MIN_VOLUME_5M_USD: '300',
+        MILD_DIP_MIN_LIQUIDITY_USD: '5000',
         /**
          * 1.11.776 — global entry floor $5k (was $50k). One clip tier ($10);
          * turn→dump gate still selects depth. Knife/micro floor matches.
@@ -3228,9 +3227,13 @@ const PM2_APPS = [
         /** 1.11.778 — mid-hold Dex path for exit formula / +/- segments. */
         LEADER_OBSERVER_LOG_MARKS: '1',
         LEADER_OBSERVER_MARK_MIN_GAP_SEC: '60',
-        /** 1.11.776 — match mild-dip global mcap floor ($5k). */
+        /** 1.11.780 — match mild-dip leader-like structural floors. */
         LEADER_OBSERVER_MIN_MCAP_USD: '5000',
+        LEADER_OBSERVER_MIN_LIQUIDITY_USD: '5000',
+        LEADER_OBSERVER_MIN_VOL5M_USD: '300',
         MILD_DIP_MIN_MCAP_USD: '5000',
+        MILD_DIP_MIN_LIQUIDITY_USD: '5000',
+        MILD_DIP_MIN_VOLUME_5M_USD: '300',
         /** 1.11.712 — fix 7BNax typo (was missing `j`: …UYrAC… → …UYrjAC…). */
         LEADER_OBSERVER_LEADERS:
           '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',

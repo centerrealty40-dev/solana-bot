@@ -1,4 +1,29 @@
 # So
+## [1.11.780] — 2026-08-09
+
+**Тег:** `sa-1.11.780`
+
+### Ops: leader-like structural floors (liq/vol)
+
+Miss `2Atdc1…` (7BNax buy): we skipped `structural_fail` on
+`liq=$8.9k < $10k` while leaders routinely trade thinner books.
+
+3d observer book (n=2737 buys with Dex):
+- liq p10≈$4.6k, vol5m p10≈$287, mcap p10≈$6.0k
+- old floors `$5k/$10k/$500` → 63% of leader buys (76% of dump-band)
+- new floors `$5k/$5k/$300` → 82% all / **91.5%** dump-band
+
+Keep independent timing (turn→dump + stream-first). Do **not** open
+green/momentum buys — that is a different strategy.
+
+- `MILD_DIP_MIN_LIQUIDITY_USD=5000` (was 10000)
+- `MILD_DIP_MIN_VOLUME_5M_USD=300` (was 500)
+- observer structural floors env-aligned
+
+**Откат:** `MIN_LIQUIDITY=10000`, `MIN_VOLUME_5M=500` + reload.
+
+---
+
 ## [1.11.779] — 2026-08-09
 
 **Тег:** `sa-1.11.779`
