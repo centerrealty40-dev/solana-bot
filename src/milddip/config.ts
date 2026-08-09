@@ -228,6 +228,18 @@ const MildDipConfigSchema = z.object({
   /** Jupiter quote premium above signal ceiling (must be >0 so live guard runs). */
   waitDipQuotePremiumPct: z.coerce.number().min(0.1).max(10).default(1),
   /**
+   * 1.11.773 — 8zkg turn→dump gate. When on, wait-dip is forced off (buy at
+   * signal if formula allows; skip if dump too shallow vs turnover).
+   * pred = alpha + beta·log1p(turn·100); dump = −pc5m.
+   */
+  turnDumpGateEnabled: z.boolean().default(false),
+  turnDumpAlpha: z.coerce.number().default(-5.08),
+  turnDumpBeta: z.coerce.number().default(6.86),
+  /** Reject when dump < pred − slack (pp). */
+  turnDumpShallowSlackPct: z.coerce.number().min(0).max(50).default(8),
+  /** Reject when dump > pred + slack (pp). 0 = no deep ceiling. */
+  turnDumpDeepSlackPct: z.coerce.number().min(0).max(80).default(12),
+  /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
    * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
    */
@@ -621,6 +633,7 @@ export function loadMildDipConfig(): MildDipConfig {
     /**
      * 1.11.752 — wait extra −7% from signal before buy (MFE-bank CF winner).
      * Set MILD_DIP_WAIT_DIP=0 to restore immediate entries (all branches).
+     * 1.11.773 — forced off when turn-dump gate is enabled.
      */
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
@@ -628,6 +641,11 @@ export function loadMildDipConfig(): MildDipConfig {
     waitDipMaxOvershootPct: envNum('MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT', 2),
     waitDipMaxChasePct: envNum('MILD_DIP_WAIT_DIP_MAX_CHASE_PCT', 3),
     waitDipQuotePremiumPct: envNum('MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT', 1),
+    turnDumpGateEnabled: envBool('MILD_DIP_TURN_DUMP_GATE', false),
+    turnDumpAlpha: envNum('MILD_DIP_TURN_DUMP_ALPHA', -5.08),
+    turnDumpBeta: envNum('MILD_DIP_TURN_DUMP_BETA', 6.86),
+    turnDumpShallowSlackPct: envNum('MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT', 8),
+    turnDumpDeepSlackPct: envNum('MILD_DIP_TURN_DUMP_DEEP_SLACK_PCT', 12),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
@@ -762,6 +780,11 @@ export function loadMildDipConfig(): MildDipConfig {
     throw new Error(
       'mild-dip requires MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT < MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT',
     );
+  }
+
+  // 1.11.773 — turn-dump replaces park-and-wait: enter at signal when formula ok.
+  if (parsed.data.turnDumpGateEnabled && parsed.data.waitDipEnabled) {
+    return { ...parsed.data, waitDipEnabled: false };
   }
 
   return parsed.data;

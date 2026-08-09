@@ -2853,11 +2853,11 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_DIP_PCT: '-25',
         /**
-         * 1.11.711 — deepen shallow edge −5 → −8 (pc5m ∈ (−25, −8]).
-         * Journal: (−10,−5] dead-rate worse than (−20,−10]; leaders' quality
-         * dips med ≈ −12. Cut mild scrapes that never bounce.
+         * 1.11.773 — shallow edge opened to −2 so turn→dump formula can allow
+         * low-turn scrapes (8zkg p50≈4% at turn<0.05). Depth quality is
+         * enforced by MILD_DIP_TURN_DUMP_GATE, not a fixed −8 floor.
          */
-        MILD_DIP_MAX_DIP_PCT: '-8',
+        MILD_DIP_MAX_DIP_PCT: '-2',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).
@@ -2872,20 +2872,25 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
-         * 1.11.752 — park main-band; buy after extra dump from signal.
-         * 1.11.753 — keep fill near that edge: overshoot +2pp ceiling,
-         * chase vs ready ≤3%, Jupiter premium ≤1% above ceiling.
-         * 1.11.758 — do NOT park h1_red_shallow; do NOT park any branch
-         * while rebuy-below-exit window is active (no wait on top of −10%).
-         * 1.11.762 — wait −10% (was −7%); knife/mild_stabilize buy immediate
-         * (no second dump wait after stabilize ready).
+         * 1.11.773 — wait-dip OFF. Replaced by turn→dump: enter immediately
+         * when dump depth matches turnover formula (no park for −7/−10% more).
          */
-        MILD_DIP_WAIT_DIP: '1',
+        MILD_DIP_WAIT_DIP: '0',
         MILD_DIP_WAIT_DIP_PCT: '-10',
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
         MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '2',
         MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',
         MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',
+        /**
+         * 1.11.773 — 8zkg formula: dump ≈ -5.08 + 6.86·log1p(turn·100).
+         * Reject too-shallow (resid < −8) and too-deep (resid > +12).
+         * Forces wait-dip off when enabled.
+         */
+        MILD_DIP_TURN_DUMP_GATE: '1',
+        MILD_DIP_TURN_DUMP_ALPHA: '-5.08',
+        MILD_DIP_TURN_DUMP_BETA: '6.86',
+        MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT: '8',
+        MILD_DIP_TURN_DUMP_DEEP_SLACK_PCT: '12',
         /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
          * 1.11.730 with scale-in removal). Scale-in stays deleted.
@@ -3081,13 +3086,15 @@ const PM2_APPS = [
         /** No soft-ban after impact/sim fail — retry next tick (Jupiter, not Helius). */
         MILD_DIP_FAST_PATH_SOFT_SKIP_MS: '0',
         /** Stream-only main band must be ≤ −10% ring dump. */
-        MILD_DIP_STREAM_ONLY_MAX_DIP_PCT: '-10',
+        /** 1.11.773 — align with turn-dump shallow floor (was −10). */
+        MILD_DIP_STREAM_ONLY_MAX_DIP_PCT: '-2',
         /**
          * 1.11.731 — stream-only also needs Dex still dumping (≤ −8).
          * Blocks post-reclaim phantoms (JBKWfC: ring −21% / Dex ≈ flat).
          */
         MILD_DIP_STREAM_ONLY_REQUIRE_DEX_DIP: '1',
-        MILD_DIP_STREAM_ONLY_DEX_MAX_DIP_PCT: '-8',
+        /** 1.11.773 — align with turn-dump shallow floor (was −8). */
+        MILD_DIP_STREAM_ONLY_DEX_MAX_DIP_PCT: '-2',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
         /**
          * 1.11.713 — Dex-probe stream-hot mints even when local ring dd is

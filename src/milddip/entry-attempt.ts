@@ -24,6 +24,7 @@ import {
   evaluateWaitDipPreBuy,
   waitDipMaxPriceUsd,
 } from './wait-dip.js';
+import { evaluateTurnDumpGate } from './turn-dump.js';
 import {
   appendMildDipJournal,
   saveMildDipState,
@@ -99,6 +100,7 @@ export async function attemptMildDipEntry(args: {
 
   let entryPriceUsd = c.priceUsd;
   let entryPc5m = c.metrics.priceChange5mPct;
+  let entryVol5m = c.metrics.volume5mUsd;
   let freshPx: number | null = c.priceUsd;
   const isKnife = c.dipSource === 'knife_stabilize';
   const isWaitDip = c.dipSource === 'wait_dip';
@@ -134,6 +136,7 @@ export async function attemptMildDipEntry(args: {
       freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
       const freshPc = fresh?.priceChangeM5Pct ?? null;
       const freshVol5m = fresh?.volume5mUsd ?? c.metrics.volume5mUsd;
+      if (fresh?.volume5mUsd != null) entryVol5m = fresh.volume5mUsd;
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       }
@@ -286,6 +289,40 @@ export async function attemptMildDipEntry(args: {
         }
         entryPriceUsd = freshPx;
       }
+    }
+  }
+
+  // 1.11.773 — final turn→dump choke (fresh vol/liq/pc5m when available).
+  if (cfg.turnDumpGateEnabled) {
+    const td = evaluateTurnDumpGate({
+      enabled: true,
+      pc5m: entryPc5m,
+      volume5mUsd: entryVol5m,
+      liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
+      alpha: cfg.turnDumpAlpha,
+      beta: cfg.turnDumpBeta,
+      shallowSlackPct: cfg.turnDumpShallowSlackPct,
+      deepSlackPct: cfg.turnDumpDeepSlackPct,
+    });
+    if (!td.pass) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_turn_dump_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        dipSource: c.dipSource,
+        lane: opts.lane,
+        pc5m: entryPc5m,
+        dump: td.dump,
+        turn: td.turn,
+        pred: td.pred,
+        resid: td.resid,
+        reasons: td.reasons,
+      });
+      console.log(
+        `[mild-dip] SKIP turn-dump ${c.symbol} mint=${c.mint.slice(0, 8)}… ${td.reasons.join(',')}`,
+      );
+      state.cooldownUntilMs[c.mint] = nowMs + softCd;
+      return 'skip';
     }
   }
 

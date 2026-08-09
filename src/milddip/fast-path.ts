@@ -13,6 +13,7 @@ import {
   mildStabilizeLaneAllowed,
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
+import { evaluateTurnDumpGate } from './turn-dump.js';
 
 export type StructuralCacheEntry = {
   fetchedAtMs: number;
@@ -328,6 +329,21 @@ export async function evaluateFastPathCandidate(
   }
 
   if (!dipSource) return null;
+
+  // 1.11.773 — turn→dump: buy now if depth matches turnover; skip if too shallow.
+  if (cfg.turnDumpGateEnabled) {
+    const td = evaluateTurnDumpGate({
+      enabled: true,
+      pc5m: metrics.priceChange5mPct,
+      volume5mUsd: metrics.volume5mUsd,
+      liquidityUsd: metrics.liquidityUsd,
+      alpha: cfg.turnDumpAlpha,
+      beta: cfg.turnDumpBeta,
+      shallowSlackPct: cfg.turnDumpShallowSlackPct,
+      deepSlackPct: cfg.turnDumpDeepSlackPct,
+    });
+    if (!td.pass) return null;
+  }
 
   // Leader/stream triggers: require a real dip print (not green chase).
   if (trigger === 'leader' || trigger === 'stream') {
