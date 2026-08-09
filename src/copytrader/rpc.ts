@@ -85,10 +85,19 @@ export async function fetchWalletSignatures(
 }
 
 export async function fetchParsedTransaction(rpcUrl: string, signature: string): Promise<unknown | null> {
+  // Prefer confirmed — WS logsSubscribe is confirmed; finalized-only often
+  // returns null for brand-new sigs (buy-mint-resolve saw rpc=100% fails).
   return rpcCall(
     rpcUrl,
     'getTransaction',
-    [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
+    [
+      signature,
+      {
+        encoding: 'jsonParsed',
+        maxSupportedTransactionVersion: 0,
+        commitment: 'confirmed',
+      },
+    ],
     6,
   );
 }

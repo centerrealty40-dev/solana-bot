@@ -132,7 +132,12 @@ export function createBuyMintResolver(args: {
         droppedStale += 1;
         return;
       }
-      const raw = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
+      let raw = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
+      // Brand-new WS sigs are often not indexed on the first poll — one short retry.
+      if (!raw && Date.now() - job.tsMs < staleJobMs) {
+        await new Promise((r) => setTimeout(r, 350));
+        raw = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
+      }
       if (!raw) {
         failed += 1;
         failedRpc += 1;
