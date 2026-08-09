@@ -25,6 +25,8 @@ const MildDipConfigSchema = z.object({
   walletSecret: z.string().optional(),
   walletPubkeyExpected: z.string().min(32).max(64).optional(),
   journalPath: z.string().min(1),
+  /** Cash-accurate fills + roundtrips (us + leaders). CF source of truth. */
+  tradesPath: z.string().min(1),
   statePath: z.string().min(1),
   /** 1.11.765 — flat $30 across base/thick/micro. */
   positionUsd: z.coerce.number().positive().max(10_000).default(10),
@@ -601,6 +603,8 @@ export function loadMildDipConfig(): MildDipConfig {
     walletPubkeyExpected: process.env.MILD_DIP_WALLET_PUBKEY?.trim() || undefined,
     journalPath:
       process.env.MILD_DIP_JOURNAL_PATH?.trim() || path.join('data', 'milddip', 'journal.jsonl'),
+    tradesPath:
+      process.env.MILD_DIP_TRADES_PATH?.trim() || path.join('data', 'milddip', 'trades.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
     positionUsd: process.env.MILD_DIP_POSITION_USD ?? 10,
     thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 10,

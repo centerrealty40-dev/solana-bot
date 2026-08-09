@@ -77,6 +77,8 @@ import {
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
+import { writeUsSellFill } from './trade-journal.js';
+import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
   createDumpSellTape,
@@ -1031,7 +1033,13 @@ async function executeQueuedSell(args: {
     exitPx: sell.priceUsd || decision.markPriceUsd,
     mfePct: +decision.mfePct.toFixed(2),
     givebackPct: +decision.givebackPct.toFixed(2),
+    /** Mark/quote price-ratio % — NOT wallet cash. Use trades.jsonl cashPnlUsd. */
     realizedPct: +(sell.pnlPct ?? decision.pnlPct).toFixed(2),
+    quoteReceivedUsd: sell.quoteReceivedUsd ?? null,
+    usdcBefore: sell.usdcBefore ?? null,
+    usdcAfter: sell.usdcAfter ?? null,
+    feeSolBefore: sell.feeSolBefore ?? null,
+    feeSolAfter: sell.feeSolAfter ?? null,
     fraction,
     scaleOut: isPartial,
     armed: decision.armed,
@@ -1041,6 +1049,33 @@ async function executeQueuedSell(args: {
     signature: sell.signature ?? null,
     mode: cfg.executionMode,
   });
+  try {
+    const wallet =
+      cfg.walletPubkeyExpected?.trim() ||
+      executionWalletPubkey(copyCfg) ||
+      'unknown';
+    writeUsSellFill({
+      tradesPath: cfg.tradesPath,
+      wallet,
+      mint,
+      symbol: pos.symbol,
+      ok: sell.ok,
+      signature: sell.signature ?? null,
+      sizeUsdIntent: pos.sizeUsd,
+      fraction,
+      usdcBefore: sell.usdcBefore ?? null,
+      usdcAfter: sell.usdcAfter ?? null,
+      feeSolBefore: sell.feeSolBefore ?? null,
+      feeSolAfter: sell.feeSolAfter ?? null,
+      quoteReceivedUsd: sell.quoteReceivedUsd ?? null,
+      fillPriceUsd: sell.priceUsd || decision.markPriceUsd,
+      markPnlPct: sell.pnlPct ?? decision.pnlPct,
+      reason: decision.reason,
+      nowMs,
+    });
+  } catch {
+    /* never block exit on journal IO */
+  }
 
   const realizedPnl = sell.pnlPct ?? decision.pnlPct;
   const cd = cooldownMsAfterExit({

@@ -30,6 +30,8 @@ import {
   saveMildDipState,
   type MildDipState,
 } from './state.js';
+import { writeUsBuyFill } from './trade-journal.js';
+import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 
 const HOLDING_DUST_RAW = 1000n;
 
@@ -604,8 +606,39 @@ export async function attemptMildDipEntry(args: {
     reason: buy.reason ?? null,
     signature: buy.signature ?? null,
     mode: cfg.executionMode,
-    usdcBefore: sized.usdc ?? null,
+    usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
+    usdcAfter: buy.usdcAfter ?? null,
+    quoteSpentUsd: buy.quoteSpentUsd ?? null,
+    feeSolBefore: buy.feeSolBefore ?? null,
+    feeSolAfter: buy.feeSolAfter ?? null,
   });
+  // Cash-accurate trades.jsonl — CF / PnL source of truth (not mark%).
+  try {
+    const wallet =
+      cfg.walletPubkeyExpected?.trim() ||
+      executionWalletPubkey(buyCopyCfg) ||
+      'unknown';
+    writeUsBuyFill({
+      tradesPath: cfg.tradesPath,
+      wallet,
+      mint: c.mint,
+      symbol: c.symbol,
+      ok: buy.ok,
+      signature: buy.signature ?? null,
+      sizeUsdIntent: sized.sizeUsd,
+      usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
+      usdcAfter: buy.usdcAfter ?? null,
+      feeSolBefore: buy.feeSolBefore ?? null,
+      feeSolAfter: buy.feeSolAfter ?? null,
+      quoteSpentUsd: buy.quoteSpentUsd ?? null,
+      fillPriceUsd: fillPxJournal,
+      reason: buy.reason ?? null,
+      dipSource: c.dipSource,
+      nowMs,
+    });
+  } catch {
+    /* never block entry on journal IO */
+  }
 
   if (!buy.ok) {
     buyInFlight.delete(c.mint);
