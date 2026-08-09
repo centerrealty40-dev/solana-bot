@@ -1,4 +1,34 @@
 # So
+## [1.11.755] — 2026-08-09
+
+**Тег:** `sa-1.11.755`
+
+### Exit: never-arm option-2 — bounce + time-red 15m/−5%
+
+Simplify never-armed exits (CF vs full stack on wait−7 + MFE-bank, $30):
+
+**Keep:**
+- `never_arm_bounce` 8/8 (trough ≤−8%, bounce ≥8%, trough age ≥60s, still ≤−3%)
+- `never_arm_time_red`: held ≥15m and pnl ≤−5% → full sell (new)
+- `cliff_dump` −50%
+- MFE-bank armed path unchanged
+
+**Off (env 0):** freefall, stale, dead, vol_fade, max-hold.
+
+**Env:**
+- `MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS=900000`
+- `MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT=5`
+- `MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT=0`
+- `MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS=0`
+- `MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS=0`
+- `MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS=0`
+- `MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS=0`
+
+**Откат:** restore freefall 25/60s, stale 20m, dead 30m/−10, vol_fade 15m,
+max-hold 90m; set `TIME_RED_MIN_MS=0`.
+
+---
+
 ## [1.11.754] — 2026-08-08
 
 **Тег:** `sa-1.11.754`

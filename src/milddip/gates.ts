@@ -147,6 +147,14 @@ export type MildDipExitGates = {
    */
   neverArmFreefallPnlPct: number;
   neverArmFreefallMinMs: number;
+  /**
+   * 1.11.755 — never-armed time-red cut: after this many ms unarmed, if mark
+   * pnl ≤ −neverArmTimeRedPnlPct → full exit (`never_arm_time_red`).
+   * Live option-2: 15m / −5%. 0 min = off.
+   */
+  neverArmTimeRedMinMs: number;
+  /** See neverArmTimeRedMinMs. Positive percent (e.g. 5 = exit at ≤ −5%). 0 = off. */
+  neverArmTimeRedPnlPct: number;
 };
 
 /** One spaced Dex vol5m reading used by the sustained fade exit. */
@@ -391,6 +399,7 @@ export type MildDipExitReason =
   | 'never_arm_giveback'
   | 'never_arm_bounce'
   | 'never_arm_freefall'
+  | 'never_arm_time_red'
   | 'never_arm_stale'
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
@@ -529,8 +538,9 @@ export function sustainedVolFade(
  * - Else armed scale-out: giveback ≤ −partialGivebackPct → sell scaleOutFraction
  *   (once); giveback ≤ −givebackPct → sell remainder / full
  * - Never-armed: bounce reclaim → freefall floor → optional soft giveback →
- *   stale / dead / vol-fade → max-hold ceiling
- * - Live default: patience off — early never_arm_giveback was cutting before pumps
+ *   time-red → stale / dead / vol-fade → max-hold ceiling
+ * - Live default (1.11.755 option-2): bounce + time-red 15m/−5%; freefall /
+ *   stale / dead / vol-fade / max-hold off; patience off
  */
 export function evaluateMildDipPeakGiveback(args: {
   entryPriceUsd: number;
@@ -767,7 +777,7 @@ export function evaluateMildDipPeakGiveback(args: {
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
   // Order: bounce reclaim (sell into bounce) → freefall floor (no bounce) →
-  // optional soft giveback → stale → dead → vol fade → max-hold.
+  // optional soft giveback → time-red → stale → dead → vol fade → max-hold.
   const givebackHit = fullGivebackHit;
   if (!armed) {
     const bounceNeed = gates.neverArmBouncePct > 0 ? gates.neverArmBouncePct : 0;
@@ -799,6 +809,16 @@ export function evaluateMildDipPeakGiveback(args: {
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (!oneshotGrace && patience > 0 && heldMs >= patience && givebackHit) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };
+    }
+    const timeRedMin = gates.neverArmTimeRedMinMs > 0 ? gates.neverArmTimeRedMinMs : 0;
+    const timeRedPnl = gates.neverArmTimeRedPnlPct > 0 ? gates.neverArmTimeRedPnlPct : 0;
+    if (
+      timeRedMin > 0 &&
+      timeRedPnl > 0 &&
+      heldMs >= timeRedMin &&
+      pnlPct <= -timeRedPnl + 1e-9
+    ) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
     }
     const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
     const stalePnl = gates.neverArmStalePnlPct > 0 ? gates.neverArmStalePnlPct : 0;

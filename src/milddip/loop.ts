@@ -1429,6 +1429,9 @@ export async function runMildDipLoop(
       `neverArmFreefall=${cfg.exit.neverArmFreefallPnlPct > 0 ? 1 : 0}` +
       `/-${cfg.exit.neverArmFreefallPnlPct}%` +
       `/${Math.round(cfg.exit.neverArmFreefallMinMs / 1000)}s ` +
+      `neverArmTimeRed=${cfg.exit.neverArmTimeRedMinMs > 0 ? 1 : 0}` +
+      `/${Math.round(cfg.exit.neverArmTimeRedMinMs / 1000)}s` +
+      `/pnl≤-${cfg.exit.neverArmTimeRedPnlPct}% ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s` +
       `/mfe≤${cfg.exit.neverArmStaleMaxMfePct}%/pnl≤-${cfg.exit.neverArmStalePnlPct}% ` +

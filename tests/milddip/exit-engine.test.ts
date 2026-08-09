@@ -66,6 +66,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmBounceRequireRedPct: 3,
     neverArmFreefallPnlPct: 25,
     neverArmFreefallMinMs: 60_000,
+    neverArmTimeRedMinMs: 0,
+    neverArmTimeRedPnlPct: 5,
   };
 
   it('updates peak and arms without exiting', () => {

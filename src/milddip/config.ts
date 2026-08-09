@@ -365,6 +365,12 @@ const MildDipConfigSchema = z.object({
     /** Never-arm freefall floor (no bounce). 0 = off. */
     neverArmFreefallPnlPct: z.coerce.number().min(0).max(100).default(25),
     neverArmFreefallMinMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
+    /**
+     * 1.11.755 — never-arm time-red: min hold then exit if still ≤ −pnl%.
+     * Live option-2 default 15m / −5%. 0 min = off.
+     */
+    neverArmTimeRedMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
+    neverArmTimeRedPnlPct: z.coerce.number().min(0).max(100).default(5),
   }),
 });
 
@@ -484,6 +490,12 @@ export function loadMildDipConfig(): MildDipConfig {
     ),
     neverArmFreefallPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', 25),
     neverArmFreefallMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS', 60_000),
+    /**
+     * 1.11.755 — option-2 never-arm: bounce + time-red 15m/−5%.
+     * Ecosystem zeros freefall/stale/dead/vol_fade/max_hold.
+     */
+    neverArmTimeRedMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS', 900_000),
+    neverArmTimeRedPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', 5),
   };
 
   const raw = {
