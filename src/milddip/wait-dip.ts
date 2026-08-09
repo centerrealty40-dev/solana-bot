@@ -5,6 +5,9 @@
  * 48h CF: wait −7% then MFE-bank ~+$3k on $100/coin. Branch CF: applying the
  * same wait to `knife_stabilize` / `mild_stabilize` beat main-band-only by
  * ~+$350 on the book (stabilize immediate was a weak exclusion).
+ *
+ * 1.11.758 — not on `h1_red_shallow`; not on any branch inside the
+ * rebuy-below-exit window (no −7% stack on top of the −10% rebuy floor).
  */
 
 import type { MildDipCandidateMetrics } from './gates.js';
@@ -42,19 +45,57 @@ export type WaitDipReadyVerdict = {
 
 /**
  * Sources that park under wait-dip.
- * All live entry branches wait; only `wait_dip` itself is excluded (already parked).
+ * `h1_red_shallow` buys at signal (already a shallow red-hour scrape — stacking
+ * −7% parked the 39jq7B rebuy while the leader filled the dip).
+ * `wait_dip` itself is excluded (already parked).
  */
 export function waitDipAppliesToSource(dipSource: string | null | undefined): boolean {
   if (!dipSource || dipSource === 'wait_dip') return false;
+  if (dipSource === 'h1_red_shallow') return false;
   return (
     dipSource === 'dex' ||
     dipSource === 'stream' ||
     dipSource === 'dex+stream' ||
-    dipSource === 'h1_red_shallow' ||
     dipSource === 'flat_micro_dip' ||
     dipSource === 'knife_stabilize' ||
     dipSource === 'mild_stabilize'
   );
+}
+
+/**
+ * True while `rebuy_below_exit` is still active for this mint (recent full exit
+ * within max age). In that window wait−7% must not stack on top of the −10%
+ * rebuy floor — buy at signal once rebuy-below-exit passes.
+ */
+export function isRebuyBelowExitWindow(args: {
+  lastExitAtMs: number | null | undefined;
+  nowMs: number;
+  rebuyBelowExitPct: number;
+  rebuyBelowExitMaxAgeMs: number;
+}): boolean {
+  if (!(args.rebuyBelowExitPct > 0)) return false;
+  const at = args.lastExitAtMs;
+  if (at == null || !(at > 0)) return false;
+  if (
+    args.rebuyBelowExitMaxAgeMs > 0 &&
+    args.nowMs - at > args.rebuyBelowExitMaxAgeMs
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/** Park wait-dip only when source allows it and we are not in a rebuy window. */
+export function shouldParkWaitDip(args: {
+  dipSource: string | null | undefined;
+  lastExitAtMs: number | null | undefined;
+  nowMs: number;
+  rebuyBelowExitPct: number;
+  rebuyBelowExitMaxAgeMs: number;
+}): boolean {
+  if (!waitDipAppliesToSource(args.dipSource)) return false;
+  if (isRebuyBelowExitWindow(args)) return false;
+  return true;
 }
 
 export function waitDipTargetPriceUsd(

@@ -1,4 +1,26 @@
 # So
+## [1.11.758] — 2026-08-09
+
+**Тег:** `sa-1.11.758`
+
+### Entry: no wait−7% on h1_red_shallow + rebuy window
+
+`39jq7B` (tx `3fA8dS…`): sold `never_arm_time_red`, then parked
+wait−7% on `h1_red_shallow` while leader `8zkg` bought the dip at signal
+and caught the pump. Wait expired without fill.
+
+**Changes:**
+1. `waitDipAppliesToSource('h1_red_shallow')` → **false** — buy at signal.
+2. While `rebuy_below_exit` window is active (recent full exit within
+   max age), **do not park wait−7% on any branch** — rebuy floor (−10%)
+   alone gates the re-entry. Existing parks clear with
+   `wait_dip_cleared_rebuy_window`.
+
+**Откат:** restore prior `waitDipAppliesToSource` + remove
+`shouldParkWaitDip` / rebuy clear in `loop.ts`.
+
+---
+
 ## [1.11.757] — 2026-08-09
 
 **Тег:** `sa-1.11.757`

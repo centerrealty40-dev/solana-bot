@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateWaitDipPreBuy,
   evaluateWaitDipReady,
+  isRebuyBelowExitWindow,
+  shouldParkWaitDip,
   upsertWaitDipWatch,
   waitDipAppliesToSource,
   waitDipMaxPriceUsd,
@@ -30,16 +32,99 @@ const gates: WaitDipGates = {
 };
 
 describe('waitDipAppliesToSource', () => {
-  it('parks all entry branches except wait_dip itself', () => {
+  it('parks main/stabilize branches; skips h1_red_shallow and wait_dip', () => {
     expect(waitDipAppliesToSource('dex')).toBe(true);
     expect(waitDipAppliesToSource('dex+stream')).toBe(true);
     expect(waitDipAppliesToSource('stream')).toBe(true);
-    expect(waitDipAppliesToSource('h1_red_shallow')).toBe(true);
+    expect(waitDipAppliesToSource('h1_red_shallow')).toBe(false);
     expect(waitDipAppliesToSource('flat_micro_dip')).toBe(true);
     expect(waitDipAppliesToSource('knife_stabilize')).toBe(true);
     expect(waitDipAppliesToSource('mild_stabilize')).toBe(true);
     expect(waitDipAppliesToSource('wait_dip')).toBe(false);
     expect(waitDipAppliesToSource(null)).toBe(false);
+  });
+});
+
+describe('shouldParkWaitDip / rebuy window', () => {
+  const nowMs = 1_000_000;
+  const base = {
+    nowMs,
+    rebuyBelowExitPct: 10,
+    rebuyBelowExitMaxAgeMs: 900_000,
+  };
+
+  it('isRebuyBelowExitWindow only inside max age with pct>0', () => {
+    expect(
+      isRebuyBelowExitWindow({
+        ...base,
+        lastExitAtMs: nowMs - 60_000,
+      }),
+    ).toBe(true);
+    expect(
+      isRebuyBelowExitWindow({
+        ...base,
+        lastExitAtMs: nowMs - 901_000,
+      }),
+    ).toBe(false);
+    expect(
+      isRebuyBelowExitWindow({
+        ...base,
+        rebuyBelowExitPct: 0,
+        lastExitAtMs: nowMs - 60_000,
+      }),
+    ).toBe(false);
+    expect(
+      isRebuyBelowExitWindow({
+        ...base,
+        lastExitAtMs: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not park h1_red_shallow even outside rebuy', () => {
+    expect(
+      shouldParkWaitDip({
+        ...base,
+        dipSource: 'h1_red_shallow',
+        lastExitAtMs: null,
+      }),
+    ).toBe(false);
+  });
+
+  it('does not park any branch inside rebuy-below-exit window', () => {
+    for (const src of [
+      'dex',
+      'dex+stream',
+      'stream',
+      'flat_micro_dip',
+      'knife_stabilize',
+      'mild_stabilize',
+    ] as const) {
+      expect(
+        shouldParkWaitDip({
+          ...base,
+          dipSource: src,
+          lastExitAtMs: nowMs - 120_000,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it('still parks main branch outside rebuy window', () => {
+    expect(
+      shouldParkWaitDip({
+        ...base,
+        dipSource: 'dex',
+        lastExitAtMs: null,
+      }),
+    ).toBe(true);
+    expect(
+      shouldParkWaitDip({
+        ...base,
+        dipSource: 'dex',
+        lastExitAtMs: nowMs - 901_000,
+      }),
+    ).toBe(true);
   });
 });
 
