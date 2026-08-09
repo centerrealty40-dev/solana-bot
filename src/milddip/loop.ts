@@ -77,7 +77,7 @@ import {
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
-import { writeUsSellFill } from './trade-journal.js';
+import { hydrateTradeLotsFromOpen, writeUsSellFill } from './trade-journal.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
@@ -1838,6 +1838,11 @@ export async function runMildDipLoop(
     stream: false,
   };
   loopStatsRef = stats;
+
+  const lotsHydrated = hydrateTradeLotsFromOpen(state.open ?? {}, Date.now());
+  if (lotsHydrated > 0) {
+    console.log(`[mild-dip] hydrated trade lots from open state: ${lotsHydrated}`);
+  }
 
   const hotLoaded = loadMildDipHotMints(cfg.hotMintsPath);
   const ringLoaded = loadMildDipPriceRing(cfg.priceRingPath);

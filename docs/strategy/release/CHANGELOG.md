@@ -1,4 +1,17 @@
 # So
+## [1.11.788] — 2026-08-09
+
+**Тег:** `sa-1.11.788`
+
+### Fix: hydrate trade lots from open state on boot
+
+In-memory buy cost ledger was empty after PM2 reload → sell `cashPnlUsd`
+treated cost as $0. Seed lots from `state.open[].sizeUsd` at loop start.
+
+**Откат:** revert this commit.
+
+---
+
 ## [1.11.787] — 2026-08-09
 
 **Тег:** `sa-1.11.787`

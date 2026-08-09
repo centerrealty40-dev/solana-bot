@@ -79,6 +79,31 @@ export function resetTradeLotsForTests(): void {
   lots.clear();
 }
 
+/**
+ * Seed in-memory lots from open state after process restart so sell cashPnl
+ * still has a cost basis (sizeUsd) until the next live buy fill arrives.
+ */
+export function hydrateTradeLotsFromOpen(
+  open: Record<string, { sizeUsd?: number; openedAtMs?: number }>,
+  nowMs = Date.now(),
+): number {
+  let n = 0;
+  for (const [mint, pos] of Object.entries(open)) {
+    if (lots.has(mint)) continue;
+    const cost = Number(pos.sizeUsd) || 0;
+    if (!(cost > 0)) continue;
+    lots.set(mint, {
+      mint,
+      costUsd: cost,
+      totalCostUsd: cost,
+      proceedsUsd: 0,
+      openedAtMs: Number(pos.openedAtMs) || nowMs,
+    });
+    n += 1;
+  }
+  return n;
+}
+
 export function resolveBuyCash(args: {
   usdcBefore?: number | null;
   usdcAfter?: number | null;
