@@ -3216,17 +3216,17 @@ const PM2_APPS = [
         LEADER_OBSERVER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
         LEADER_OBSERVER_SEED_MAX: '40',
         LEADER_OBSERVER_SEED_MAX_AGE_SEC: '7200',
-        /** 1.11.778 — denser absolute capture (was 15s / 900s / 40 sigs). */
-        LEADER_OBSERVER_POLL_SEC: '10',
+        /** 1.11.780 — denser exit tape (was poll 10 / marks 60 / sigs 80). */
+        LEADER_OBSERVER_POLL_SEC: '5',
         LEADER_OBSERVER_LOOKBACK_SEC: '1800',
-        LEADER_OBSERVER_SIG_LIMIT: '80',
+        LEADER_OBSERVER_SIG_LIMIT: '100',
         /** 0 = run until stopped (PM2 owns lifecycle). */
         LEADER_OBSERVER_MAX_HOURS: '0',
         /** 1.11.760 — log sells + session flat (was buy-only). */
         LEADER_OBSERVER_LOG_SELLS: '1',
-        /** 1.11.778 — mid-hold Dex path for exit formula / +/- segments. */
+        /** 1.11.780 — ~15s Dex marks + Dex-rebased MFE/MAE/giveback for exit formula RE. */
         LEADER_OBSERVER_LOG_MARKS: '1',
-        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '60',
+        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '15',
         /** 1.11.780 — match mild-dip leader-like structural floors. */
         LEADER_OBSERVER_MIN_MCAP_USD: '5000',
         LEADER_OBSERVER_MIN_LIQUIDITY_USD: '5000',
