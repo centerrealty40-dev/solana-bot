@@ -3143,8 +3143,9 @@ const PM2_APPS = [
       },
     },
     /**
-     * Shadow leader-buy observer for mild-dip (no trading).
-     * Writes jsonl + leader-seed.json consumed by discover source `leaders`.
+     * Shadow leader buy/sell observer for mild-dip (no trading).
+     * 1.11.760 — buys+sells, quote-leg sizeUsd/fillPriceUsd, bag ledger,
+     * session open/flat. Writes jsonl + leader-seed.json for discover `leaders`.
      */
     {
       name: 'mild-dip-leader-observer',
@@ -3170,6 +3171,10 @@ const PM2_APPS = [
         LEADER_OBSERVER_LOOKBACK_SEC: '900',
         /** 0 = run until stopped (PM2 owns lifecycle). */
         LEADER_OBSERVER_MAX_HOURS: '0',
+        /** 1.11.760 — log sells + session flat (was buy-only). */
+        LEADER_OBSERVER_LOG_SELLS: '1',
+        /** Optional Dex marks while leader bag open (noisy; off by default). */
+        LEADER_OBSERVER_LOG_MARKS: '0',
         /** 1.11.712 — fix 7BNax typo (was missing `j`: …UYrAC… → …UYrjAC…). */
         LEADER_OBSERVER_LEADERS:
           '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',

@@ -1,4 +1,30 @@
 # So
+## [1.11.760] — 2026-08-09
+
+**Тег:** `sa-1.11.760`
+
+### Leader observer: buys+sells + fill size for backtests
+
+Buy-only shadow log blocked 48h divergence CF (no leader exits, no
+sizeUsd/fill px, Dex mid ≠ fill). `39jq7B` / `EjD5Y9` forensics needed
+hand RPC.
+
+**Logger (`scripts/milddip/leader-observer.py`):**
+- `leader_sell_observed` + `leader_session_open` / `leader_session_flat`
+- quote-leg `sizeUsd` / `fillPriceUsd` (SOL/USDC deltas)
+- bag ledger (`isNewBag` / `isAdd` / `isFlat` / `pnlPctApprox` / `heldSec`)
+- seed sidecar keeps fill/class/blockTime
+- gate_fit aligned to live main `(−25,−8]` + h1_red_shallow `(−10,−3]`
+
+**Report:** `scripts/milddip/leader-divergence-48h.py` — our exits vs
+leader buy/sell on overlap mints (RPC-replays sells until log fills).
+
+**Env:** `LEADER_OBSERVER_LOG_SELLS=1`, `LEADER_OBSERVER_LOG_MARKS=0`.
+
+**Откат:** prior buy-only observer script + reload `mild-dip-leader-observer`.
+
+---
+
 ## [1.11.759] — 2026-08-09
 
 **Тег:** `sa-1.11.759`
