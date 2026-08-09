@@ -27,12 +27,12 @@ const MildDipConfigSchema = z.object({
   journalPath: z.string().min(1),
   statePath: z.string().min(1),
   /** 1.11.765 — flat $30 across base/thick/micro. */
-  positionUsd: z.coerce.number().positive().max(10_000).default(30),
+  positionUsd: z.coerce.number().positive().max(10_000).default(10),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
    * 1.11.765 — same $30 as base (flat book).
    */
-  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(30),
+  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
   thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
   thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
@@ -40,7 +40,7 @@ const MildDipConfigSchema = z.object({
    * Micro-cap clip: mcap ∈ [min, max] → this size (knife_stabilize only).
    * 1.11.765 — same $30 as base (flat book). 0 = off.
    */
-  microPositionUsd: z.coerce.number().min(0).max(10_000).default(30),
+  microPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
   microMinMarketCapUsd: z.coerce.number().min(0).default(15_000),
   microMaxMarketCapUsd: z.coerce.number().min(0).default(50_000),
   /** 0 = unlimited — keep buying while USDC remains. */
@@ -139,7 +139,7 @@ const MildDipConfigSchema = z.object({
   leaderAlignRequireAdd: z.boolean().default(false),
   /** One-shot average-in USD while deferring (0 = defer only, no buy). */
   leaderAlignScaleInEnabled: z.boolean().default(true),
-  leaderAlignScaleInUsd: z.coerce.number().min(0).max(10_000).default(15),
+  leaderAlignScaleInUsd: z.coerce.number().min(0).max(10_000).default(10),
   /**
    * Journal one `mild_dip_mark` row per open position at most this often.
    * Gives an offline price path per trade so trail widths can be re-fitted on
@@ -548,13 +548,13 @@ export function loadMildDipConfig(): MildDipConfig {
     journalPath:
       process.env.MILD_DIP_JOURNAL_PATH?.trim() || path.join('data', 'milddip', 'journal.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
-    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 30,
-    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 30,
+    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 10,
+    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 10,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
     thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
     /** 1.11.765 — $30 live; knife_stabilize only (see mildDipMicroSizeGatesForSource). */
-    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 30,
+    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 10,
     microMinMarketCapUsd: process.env.MILD_DIP_MICRO_MIN_MCAP_USD ?? 15_000,
     microMaxMarketCapUsd: process.env.MILD_DIP_MICRO_MAX_MCAP_USD ?? 50_000,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
@@ -705,7 +705,7 @@ export function loadMildDipConfig(): MildDipConfig {
     leaderAlignMinBelowEntryPct: process.env.MILD_DIP_LEADER_ALIGN_MIN_BELOW_ENTRY_PCT ?? 0,
     leaderAlignRequireAdd: envBool('MILD_DIP_LEADER_ALIGN_REQUIRE_ADD', false),
     leaderAlignScaleInEnabled: envBool('MILD_DIP_LEADER_ALIGN_SCALE_IN', true),
-    leaderAlignScaleInUsd: process.env.MILD_DIP_LEADER_ALIGN_SCALE_IN_USD ?? 15,
+    leaderAlignScaleInUsd: process.env.MILD_DIP_LEADER_ALIGN_SCALE_IN_USD ?? 10,
     hotMintsPath:
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:
