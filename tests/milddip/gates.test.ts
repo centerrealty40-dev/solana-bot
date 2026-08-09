@@ -76,6 +76,8 @@ const exitGates: MildDipExitGates = {
   neverArmBounceRequireRedPct: 3,
   neverArmFreefallPnlPct: 25,
   neverArmFreefallMinMs: 60_000,
+  neverArmTimeRedMinMs: 0,
+  neverArmTimeRedPnlPct: 5,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -792,6 +794,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmBounceRequireRedPct: 0,
       neverArmFreefallPnlPct: 0,
       neverArmFreefallMinMs: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmTimeRedPnlPct: 0,
     };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -802,6 +806,72 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 3_600_000,
     });
     expect(v.shouldExit).toBe(false);
+  });
+
+  it('never_arm_time_red: 15m unarmed + pnl ≤ −5% → full exit (option-2)', () => {
+    const early = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 94,
+      peakPriceUsd: 101,
+      armed: false,
+      gates: {
+        ...exitGates,
+        neverArmFreefallPnlPct: 0,
+        neverArmStaleMinMs: 0,
+        neverArmDeadMinMs: 0,
+        neverArmVolFadeMinMs: 0,
+        neverArmMaxHoldMs: 0,
+        neverArmTimeRedMinMs: 900_000,
+        neverArmTimeRedPnlPct: 5,
+      },
+      heldMs: 800_000,
+      postEntryTroughPriceUsd: 94,
+    });
+    expect(early.shouldExit).toBe(false);
+
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 94,
+      peakPriceUsd: 101,
+      armed: false,
+      gates: {
+        ...exitGates,
+        neverArmFreefallPnlPct: 0,
+        neverArmStaleMinMs: 0,
+        neverArmDeadMinMs: 0,
+        neverArmVolFadeMinMs: 0,
+        neverArmMaxHoldMs: 0,
+        neverArmTimeRedMinMs: 900_000,
+        neverArmTimeRedPnlPct: 5,
+      },
+      heldMs: 900_000,
+      postEntryTroughPriceUsd: 94,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_time_red');
+    expect(v.fraction).toBe(1);
+  });
+
+  it('never_arm_time_red: does not fire when pnl > −threshold', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 97,
+      peakPriceUsd: 101,
+      armed: false,
+      gates: {
+        ...exitGates,
+        neverArmFreefallPnlPct: 0,
+        neverArmStaleMinMs: 0,
+        neverArmDeadMinMs: 0,
+        neverArmVolFadeMinMs: 0,
+        neverArmMaxHoldMs: 0,
+        neverArmTimeRedMinMs: 900_000,
+        neverArmTimeRedPnlPct: 5,
+      },
+      heldMs: 1_200_000,
+      postEntryTroughPriceUsd: 97,
+    });
+    expect(v.reason).not.toBe('never_arm_time_red');
   });
 });
 

@@ -2954,32 +2954,18 @@ const PM2_APPS = [
         MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0.5',
         MILD_DIP_EXIT_GIVEBACK_PCT: '8',
         /**
-         * Never-armed exit (finite — never sit forever), ordered soft → hard:
-         * - patience=0: no early never_arm_giveback knife
-         * - dead: after 30m unarmed + pnl ≤ −10% → never_arm_dead
-         * - vol fade: sustained weak 5m windows
-         * - max-hold ceiling
+         * 1.11.755 — never-arm option-2 (CF vs full stack):
+         * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
+         * Freefall / stale / dead / vol_fade / max-hold OFF (0).
+         * patience=0: no early never_arm_giveback knife.
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
-        /**
-         * 1.11.706 — never-arm exits (keep guardrails, cut losers earlier):
-         * - stale: MFE≤2% and pnl≤−5% (dead-path stagnation)
-         * - dead: pnl≤−10% (was −15%; leader loser med ≈ −10%)
-         * 1.11.728 — dead min hold 15m → 30m.
-         * 1.11.733 — stale min hold 10m → 20m (BV5wre full-chunk @11m).
-         */
-        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '1200000',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '2',
         MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5',
-        MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '1800000',
+        MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '10',
-        /**
-         * 1.11.696 — sustained vol fade (not one-shot):
-         * Sample Dex vol5m every 5m; exit only after 3 consecutive weak windows
-         * (≤25% of entry vol OR ≤$300), and not before 15m hold. Gymbmn-style
-         * single dip must not sell.
-         */
-        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO: '0.25',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '300',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
@@ -2992,15 +2978,19 @@ const PM2_APPS = [
         /**
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
          * trough ≤ −8%, bounce ≥ 8%, trough age ≥ 60s, still ≤ −3% vs entry.
-         * Freefall −25%/60s if no bounce; cliff −50% ultra-hard.
          */
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT: '8',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '8',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS: '60000',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT: '3',
-        MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '25',
-        MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '60000',
-        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
+        /** 1.11.755 — freefall off (option-2). */
+        MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
+        MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '0',
+        /** 1.11.755 — time-red: 15m unarmed + pnl ≤ −5% → never_arm_time_red. */
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '5',
+        /** 1.11.755 — max-hold off (option-2); bounce/time-red/cliff cover exits. */
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '0',
         /**
          * 1.11.734 — oneshot emptied-bag dump grace:
          * Stream sell that empties a wallet (post≈0) and ≥$500 → defer
