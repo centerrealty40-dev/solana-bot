@@ -2,7 +2,7 @@
  * Pure helpers for mild-dip mark/exit scheduling.
  * Keep I/O (Dex / Jupiter / ATA) out of this module so unit tests stay offline.
  */
-import type { MildDipExitGates } from './gates.js';
+import type { MildDipExitGates, MildDipVolFadeSample } from './gates.js';
 import { evaluateMildDipPeakGiveback, type MildDipExitReason } from './gates.js';
 import type { MildDipOpenPosition } from './state.js';
 
@@ -13,27 +13,38 @@ export type MarkExitDecision = {
   armed: boolean;
   justArmed: boolean;
   shouldExit: boolean;
+  /** 1 = full close; (0,1) = scale-out leave runner. */
+  fraction: number;
   reason: MildDipExitReason;
   mfePct: number;
   givebackPct: number;
   pnlPct: number;
-  /** Fraction of bag to sell (0..1). Partial rung uses gates.partialSellFraction. */
-  sellFraction: number;
+  /** Updated spaced vol5m ring — caller persists onto the open position. */
+  volFadeSamples: MildDipVolFadeSample[];
+  /** Updated post-entry low-water mark. */
+  postEntryTroughPriceUsd: number;
+  postEntryTroughAtMs: number;
 };
 
 const STICKY_REASONS: ReadonlySet<string> = new Set([
   'peak_giveback',
   'peak_giveback_partial',
+  'mfe_bank_1',
+  'mfe_bank_2',
+  'mfe_bank_sleeve',
   'never_arm_giveback',
   'never_arm_dead',
   'never_arm_vol_fade',
   'never_arm_stale',
-  'never_arm_stale_partial',
   'never_arm_timeout',
+  'never_arm_time_red',
+  'never_arm_bounce',
+  'never_arm_freefall',
+  'cliff_dump',
   'max_hold_timeout',
 ]);
 
-/** Sticky exits first, then armed (trail can fire), then older opens. */
+/** Sticky exits first, then armed, then older opens. */
 export function orderMintsForMark(open: Record<string, MildDipOpenPosition>): string[] {
   return Object.keys(open).sort((a, b) => {
     const pa = open[a];
@@ -48,21 +59,6 @@ export function orderMintsForMark(open: Record<string, MildDipOpenPosition>): st
   });
 }
 
-function sellFractionForSticky(
-  reason: Exclude<MildDipExitReason, null>,
-  gates: MildDipExitGates,
-): number {
-  if (reason === 'peak_giveback_partial') {
-    const f = gates.partialSellFraction;
-    return f > 0 && f < 1 ? f : 1;
-  }
-  if (reason === 'never_arm_stale_partial') {
-    const f = gates.neverArmPartialSellFraction;
-    return f > 0 && f < 1 ? f : 1;
-  }
-  return 1;
-}
-
 /**
  * Apply one mark to a position snapshot. Returns null if mark unusable.
  * Does not mutate `pos` — caller merges fields.
@@ -75,6 +71,8 @@ export function decideMarkExit(args: {
   nowMs?: number;
   /** Current 5m Dex volume — enables the activity-fade never-arm exit. */
   volume5mUsd?: number | null;
+  /** Defer soft giveback exits while oneshot emptied-bag dump grace is active. */
+  oneshotDumpGraceActive?: boolean;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
@@ -82,18 +80,17 @@ export function decideMarkExit(args: {
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
   const nowMs = args.nowMs ?? Date.now();
   const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
-
-  // Sticky exit: keep forcing sell after a soft fail; freeze peak so a bounce
-  // cannot raise HWM and clear giveback before the bag is flat.
+  const peakSticky =
+    pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
   const stickyRaw = typeof pos.exitPendingReason === 'string' ? pos.exitPendingReason.trim() : '';
   if (stickyRaw && STICKY_REASONS.has(stickyRaw)) {
     const sticky = stickyRaw as Exclude<MildDipExitReason, null>;
     const mfePct =
-      peakPrev > 0 && pos.entryPriceUsd > 0
-        ? (peakPrev / pos.entryPriceUsd - 1) * 100
+      peakSticky > 0 && pos.entryPriceUsd > 0
+        ? (peakSticky / pos.entryPriceUsd - 1) * 100
         : 0;
     const givebackPct =
-      markPriceUsd > 0 && peakPrev > 0 ? (markPriceUsd / peakPrev - 1) * 100 : 0;
+      markPriceUsd > 0 && peakSticky > 0 ? (markPriceUsd / peakSticky - 1) * 100 : 0;
     const pnlPct =
       pos.entryPriceUsd > 0 && markPriceUsd > 0
         ? (markPriceUsd / pos.entryPriceUsd - 1) * 100
@@ -101,28 +98,43 @@ export function decideMarkExit(args: {
     return {
       mint,
       markPriceUsd,
-      peakPriceUsd: peakPrev,
+      peakPriceUsd: peakSticky,
       armed: true,
       justArmed: false,
       shouldExit: true,
+      fraction: 1,
       reason: sticky,
       mfePct,
       givebackPct,
       pnlPct,
-      sellFraction: sellFractionForSticky(sticky, gates),
+      volFadeSamples: pos.volFadeSamples ?? [],
+      postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+      postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     };
   }
 
+  const stageRaw = Number(pos.mfeBankStage);
+  const mfeBankStage = Number.isFinite(stageRaw)
+    ? Math.max(0, Math.min(2, Math.floor(stageRaw)))
+    : pos.scaleOutDone === true
+      ? 1
+      : 0;
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
     markPriceUsd,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
+    scaleOutDone: pos.scaleOutDone === true,
+    mfeBankStage,
     gates,
     heldMs,
+    nowMs,
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
-    partialTaken: pos.exitPartialTaken === true,
+    volFadeSamples: pos.volFadeSamples ?? null,
+    postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+    postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+    oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
   });
   return {
     mint,
@@ -131,21 +143,31 @@ export function decideMarkExit(args: {
     armed: verdict.armed,
     justArmed: verdict.justArmed,
     shouldExit: verdict.shouldExit,
+    fraction: verdict.fraction,
     reason: verdict.reason,
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
-    sellFraction: verdict.sellFraction,
+    volFadeSamples: verdict.volFadeSamples,
+    postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
+    postEntryTroughAtMs: verdict.postEntryTroughAtMs,
   };
 }
 
-/** Merge mark decision into live position (peak / arm only). */
+/** Merge mark decision into live position (peak / arm / vol-fade / trough). */
 export function applyMarkDecisionToPosition(
   pos: MildDipOpenPosition,
   decision: MarkExitDecision,
 ): void {
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
+  pos.volFadeSamples = decision.volFadeSamples;
+  if (decision.postEntryTroughPriceUsd > 0) {
+    pos.postEntryTroughUsd = decision.postEntryTroughPriceUsd;
+  }
+  if (decision.postEntryTroughAtMs > 0) {
+    pos.postEntryTroughAtMs = decision.postEntryTroughAtMs;
+  }
 }
 
 /**

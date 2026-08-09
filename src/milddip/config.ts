@@ -6,6 +6,14 @@ import type { MildDipEntryGates, MildDipExitGates } from './gates.js';
 
 const ExecutionModeSchema = z.enum(['paper', 'dry_run', 'live']);
 
+function envBool(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (raw == null || raw === '') return fallback;
+  if (raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on') return true;
+  if (raw === '0' || raw === 'false' || raw === 'no' || raw === 'off') return false;
+  return fallback;
+}
+
 function envNum(name: string, fallback: number): number {
   const v = process.env[name]?.trim();
   if (!v) return fallback;
@@ -141,42 +149,8 @@ const MildDipConfigSchema = z.object({
     maxPairAgeHours: z.number(),
     allowedDexIds: z.array(z.string()),
   }),
-  exit: z.object({
-    /** W9.1: arm when MFE ≥ armPct. */
-    armPct: z.number(),
-    /** W9.1: first giveback threshold (partial or full). */
-    givebackPct: z.number(),
-    /** 0 = full exit on first giveback; (0,1) = peel that fraction first. */
-    partialSellFraction: z.coerce.number().min(0).max(1).default(0),
-    /**
-     * Never-armed stale peel (0 = one-chunk full cut — Oscar CF default).
-     * Independent of armed-trail `partialSellFraction`.
-     */
-    neverArmPartialSellFraction: z.coerce.number().min(0).max(1).default(0),
-    /** After partial, full-exit rest at this giveback (0 = reuse givebackPct). */
-    secondGivebackPct: z.coerce.number().min(0).max(100).default(0),
-    /** Giveback disabled until MFE ≥ this % (0=off). Vol-green: 12. */
-    minMfeBeforeTrailPct: z.coerce.number().min(0).max(100).default(0),
-    /** Never-armed soft giveback after this many ms (0=off). Default off. */
-    neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
-    /** Never-armed: force exit after this many ms (0=off). Hard ceiling. */
-    neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(2_400_000),
-    /** Absolute hold ceiling armed or not (0=off). Vol-green: 10m. */
-    maxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
-    /** Never-armed deep-loss cut min hold (0=off). Default 15m. */
-    neverArmDeadMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
-    /** Never-armed deep-loss cut: exit if pnl ≤ −this % (0=off). Default 15. */
-    neverArmDeadPnlPct: z.coerce.number().min(0).max(100).default(15),
-    /** Never-armed activity fade: min hold before the vol check (0=off). Default 10m. */
-    neverArmVolFadeMinMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
-    /** Exit when vol5m ≤ ratio × entry vol5m (0=off). Default 0.35. */
-    neverArmVolFadeRatio: z.coerce.number().min(0).max(10).default(0.35),
-    /** Exit when vol5m ≤ this USD floor (0=off). Default 500. */
-    neverArmVolFadeFloorUsd: z.coerce.number().min(0).default(500),
-    /** False-green cut: unarmed + low MFE after this ms (0=off). */
-    neverArmStaleMinMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
-    neverArmStaleMaxMfePct: z.coerce.number().min(0).max(100).default(0),
-  }),
+  /** Oscar exit stack (mfeBank / bounce / time_red) — validated at runtime via MildDipExitGates. */
+  exit: z.custom<import('./gates.js').MildDipExitGates>(),
   /** Leader-like green candle gates — liquid OR early OR rocket. */
   greenTape: z.object({
     minLiquidityUsd: z.number(),
@@ -277,39 +251,47 @@ export function loadMildDipConfig(): MildDipConfig {
   const deniedMints = [...new Set([...defaultDenied, ...deniedExtra])];
 
   /**
-   * W9.1 peak-giveback + never-armed finite exits (no infinite hold).
-   * No SL% from entry / hard TP on the armed path.
+   * Oscar exit stack (ported for vol-green): mfeBank +8%×0.4 / +15%×0.4 /
+   * sleeve −12%; never-arm bounce + time_red 15m/−5%; stale/dead/fade/maxHold off.
    */
   const exit: MildDipExitGates = {
-    armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 8),
-    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 6),
-    /** Oscar default 0 = full exit on first giveback (no ladder). */
-    partialSellFraction: envNum('MILD_DIP_EXIT_PARTIAL_SELL_FRACTION', 0),
-    /** Never-armed: 0 = one chunk (CF: 50/50 hurt). */
-    neverArmPartialSellFraction: envNum('MILD_DIP_EXIT_NEVER_ARM_PARTIAL_SELL_FRACTION', 0),
-    secondGivebackPct: envNum('MILD_DIP_EXIT_SECOND_GIVEBACK_PCT', 0),
-    minMfeBeforeTrailPct: envNum('MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT', 0),
-    /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
+    armPct: envNum('MILD_DIP_EXIT_ARM_PCT', 5),
+    partialGivebackPct: envNum('MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT', 3),
+    scaleOutFraction: envNum('MILD_DIP_EXIT_SCALE_OUT_FRACTION', 0.5),
+    givebackPct: envNum('MILD_DIP_EXIT_GIVEBACK_PCT', 8),
+    mfeBankEnabled: envBool('MILD_DIP_EXIT_MFE_BANK', true),
+    mfeBank1Pct: envNum('MILD_DIP_EXIT_MFE_BANK1_PCT', 8),
+    mfeBank1Fraction: envNum('MILD_DIP_EXIT_MFE_BANK1_FRACTION', 0.4),
+    mfeBank2Pct: envNum('MILD_DIP_EXIT_MFE_BANK2_PCT', 15),
+    mfeBank2Fraction: envNum('MILD_DIP_EXIT_MFE_BANK2_FRACTION', 0.4),
+    mfeBankSleeveGivebackPct: envNum('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', 12),
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
-    neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 2_400_000),
-    maxHoldMs: envNum('MILD_DIP_EXIT_MAX_HOLD_MS', 0),
-    /**
-     * Deep-loss cut. 1.11.740 CF: 10m / −8% beat live 30m / −10% on never-armed.
-     */
-    neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 600_000),
-    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 8),
-    /**
-     * Activity fade. 1.11.740 CF: 5m / ×0.35 helped; keep floor $500.
-     */
-    neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 300_000),
-    neverArmVolFadeRatio: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', 0.35),
-    neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 500),
-    /**
-     * False-green / flat bag cut. 1.11.740 CF best: 5m / MFE&lt;5% one-chunk
-     * (~−$25 vs live −$50 on never-armed sample).
-     */
-    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 300_000),
-    neverArmStaleMaxMfePct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', 5),
+    neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 0),
+    neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 0),
+    neverArmDeadPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', 10),
+    neverArmStaleMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', 0),
+    neverArmStaleMaxMfePct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', 2),
+    neverArmStalePnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT', 5),
+    neverArmVolFadeMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 0),
+    neverArmVolFadeRatio: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', 0.25),
+    neverArmVolFadeFloorUsd: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', 300),
+    neverArmVolFadeSampleMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS', 300_000),
+    neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
+    cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
+    neverArmBounceMinDumpPct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT', 8),
+    neverArmBouncePct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT', 8),
+    neverArmBounceMinTroughAgeMs: envNum(
+      'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS',
+      60_000,
+    ),
+    neverArmBounceRequireRedPct: envNum(
+      'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT',
+      3,
+    ),
+    neverArmFreefallPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', 0),
+    neverArmFreefallMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS', 0),
+    neverArmTimeRedMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS', 900_000),
+    neverArmTimeRedPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', 5),
   };
 
   const entryModeRaw = (process.env.MILD_DIP_ENTRY_MODE ?? 'mild_dip').trim().toLowerCase();

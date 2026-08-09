@@ -37,12 +37,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
     ['VOL_GREEN_QUOTE_PREMIUM_GUARD_PCT', 'MILD_DIP_QUOTE_PREMIUM_GUARD_PCT'],
     ['VOL_GREEN_EXIT_ARM_PCT', 'MILD_DIP_EXIT_ARM_PCT'],
     ['VOL_GREEN_EXIT_GIVEBACK_PCT', 'MILD_DIP_EXIT_GIVEBACK_PCT'],
-    ['VOL_GREEN_EXIT_PARTIAL_SELL_FRACTION', 'MILD_DIP_EXIT_PARTIAL_SELL_FRACTION'],
-    ['VOL_GREEN_EXIT_SECOND_GIVEBACK_PCT', 'MILD_DIP_EXIT_SECOND_GIVEBACK_PCT'],
-    ['VOL_GREEN_EXIT_MIN_MFE_BEFORE_TRAIL_PCT', 'MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT'],
+    ['VOL_GREEN_EXIT_MFE_BANK', 'MILD_DIP_EXIT_MFE_BANK'],
     ['VOL_GREEN_EXIT_NEVER_ARM_PATIENCE_MS', 'MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS'],
     ['VOL_GREEN_EXIT_NEVER_ARM_MAX_HOLD_MS', 'MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS'],
-    ['VOL_GREEN_EXIT_MAX_HOLD_MS', 'MILD_DIP_EXIT_MAX_HOLD_MS'],
     ['VOL_GREEN_EXIT_NEVER_ARM_DEAD_MIN_MS', 'MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS'],
     ['VOL_GREEN_EXIT_NEVER_ARM_DEAD_PNL_PCT', 'MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT'],
     ['VOL_GREEN_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', 'MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS'],
@@ -88,27 +85,30 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM_DIP_ENTRY', '0');
   setIfAbsent('MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT', '0');
 
-  // Trail: hold a bit more drawdown (3→5 giveback); 50% peel then wider 2nd rung.
+  // Oscar exit stack (ported): mfeBank + bounce/time_red; stale OFF.
   setIfAbsent('MILD_DIP_EXIT_ARM_PCT', '5');
-  setIfAbsent('MILD_DIP_EXIT_GIVEBACK_PCT', '5');
-  setIfAbsent('MILD_DIP_EXIT_PARTIAL_SELL_FRACTION', '0.5');
-  setIfAbsent('MILD_DIP_EXIT_SECOND_GIVEBACK_PCT', '8');
-  // Unlock trail earlier so we peel on real micro-pumps instead of only stale-cutting.
-  setIfAbsent('MILD_DIP_EXIT_MIN_MFE_BEFORE_TRAIL_PCT', '8');
+  setIfAbsent('MILD_DIP_EXIT_MFE_BANK', '1');
+  setIfAbsent('MILD_DIP_EXIT_MFE_BANK1_PCT', '8');
+  setIfAbsent('MILD_DIP_EXIT_MFE_BANK1_FRACTION', '0.4');
+  setIfAbsent('MILD_DIP_EXIT_MFE_BANK2_PCT', '15');
+  setIfAbsent('MILD_DIP_EXIT_MFE_BANK2_FRACTION', '0.4');
+  setIfAbsent('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', '12');
+  setIfAbsent('MILD_DIP_EXIT_GIVEBACK_PCT', '8');
+  setIfAbsent('MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT', '3');
+  setIfAbsent('MILD_DIP_EXIT_SCALE_OUT_FRACTION', '0.5');
+  setIfAbsent('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', '50');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', '0');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', '900000');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT', '15');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', '600000');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO', '0.35');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD', '500');
-  // Spike book: hard 10m ceiling (armed or not) — was 90m never-arm-only.
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '600000');
-  setIfAbsent('MILD_DIP_EXIT_MAX_HOLD_MS', '600000');
-  // False-green: wait longer (75→150s); first hit peels 50%, second at 2× dumps rest.
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '150000');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT', '5');
-  // Never-arm = one chunk (armed trail may still use PARTIAL_SELL_FRACTION).
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_PARTIAL_SELL_FRACTION', '0');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '0');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', '0');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', '0');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '0');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', '0');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT', '8');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT', '8');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS', '60000');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT', '3');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS', '900000');
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', '5');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
   // Compete: PumpSwap stream only (not full pump.fun firehose) + local 1m bars.

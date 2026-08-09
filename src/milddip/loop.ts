@@ -4,7 +4,6 @@ import {
   resetCopyFundingCache,
 } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
-import { isFullCloseFraction, reduceUsdAfterPartialSell } from '../copytrader/proportional.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import {
@@ -692,8 +691,12 @@ async function executeQueuedSell(args: {
   if (!pos || !decision.reason) return;
 
   const fraction =
-    decision.sellFraction > 0 && decision.sellFraction <= 1 ? decision.sellFraction : 1;
-  const isPartial = !isFullCloseFraction(fraction);
+    decision.fraction > 0 && decision.fraction < 1 ? decision.fraction : 1;
+  const isPartial =
+    fraction < 1 &&
+    (decision.reason === 'peak_giveback_partial' ||
+      decision.reason === 'mfe_bank_1' ||
+      decision.reason === 'mfe_bank_2');
 
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
@@ -739,16 +742,22 @@ async function executeQueuedSell(args: {
 
   if (sell.ok) {
     if (isPartial && state.open[mint]) {
-      // First rung: keep bag open. Peak-giveback peels arm the trail;
-      // never_arm_stale_partial stays unarmed so a bounce can still develop.
+      // Oscar mfeBank / scale-out: leave runner, advance bank stage.
       const live = state.open[mint]!;
       live.exitPartialTaken = true;
+      live.scaleOutDone = true;
       live.exitPendingReason = null;
+      if (decision.reason === 'mfe_bank_1') live.mfeBankStage = 1;
+      else if (decision.reason === 'mfe_bank_2') live.mfeBankStage = 2;
+      else if (!(typeof live.mfeBankStage === 'number' && live.mfeBankStage >= 1)) {
+        live.mfeBankStage = 1;
+      }
       if (decision.reason === 'peak_giveback_partial') {
         live.trailArmed = true;
       }
-      live.peakPriceUsd = decision.markPriceUsd > 0 ? decision.markPriceUsd : live.peakPriceUsd;
-      live.sizeUsd = reduceUsdAfterPartialSell(live.sizeUsd, fraction);
+      live.peakPriceUsd = decision.peakPriceUsd > 0 ? decision.peakPriceUsd : live.peakPriceUsd;
+      live.trailArmed = decision.armed || live.trailArmed === true;
+      live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
       live.tokenRaw = null;
       saveMildDipState(cfg.statePath, state);
       appendMildDipJournal(cfg.journalPath, {
@@ -759,14 +768,15 @@ async function executeQueuedSell(args: {
         sellFraction: fraction,
         remainSizeUsd: live.sizeUsd,
         resetPeakPx: live.peakPriceUsd,
+        mfeBankStage: live.mfeBankStage ?? null,
         pnlPct: +realizedPnl.toFixed(2),
         mfePct: +decision.mfePct.toFixed(2),
         givebackPct: +decision.givebackPct.toFixed(2),
       });
       console.log(
-        `[mild-dip] PARTIAL ${pos.symbol} reason=${decision.reason} frac=${fraction} ` +
-          `pnl=${realizedPnl.toFixed(1)}% remain=$${live.sizeUsd} ` +
-          `peakReset=$${Number(live.peakPriceUsd).toPrecision(4)} mode=${cfg.executionMode}`,
+        `[mild-dip] SCALE-OUT ${pos.symbol} reason=${decision.reason} frac=${fraction} ` +
+          `pnl=${realizedPnl.toFixed(1)}% remain=$${live.sizeUsd.toFixed(2)} ` +
+          `mfe=${decision.mfePct.toFixed(1)}% mode=${cfg.executionMode}`,
       );
       return;
     }
@@ -905,18 +915,15 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
 
     const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
     const maxHold = cfg.exit.neverArmMaxHoldMs > 0 ? cfg.exit.neverArmMaxHoldMs : 0;
-    const absMaxHold = cfg.exit.maxHoldMs > 0 ? cfg.exit.maxHoldMs : 0;
     const deadMin = cfg.exit.neverArmDeadMinMs > 0 ? cfg.exit.neverArmDeadMinMs : 0;
 
     /**
-     * Null Dex mark must NOT skip hold ceilings — a delisted mint can
+     * Null Dex mark must NOT skip never-arm ceilings — a delisted mint can
      * otherwise sit forever. Force-exit without needing a real mark.
-     * Absolute maxHold applies even when trail is armed (vol-green spikes).
      */
     if (px == null) {
-      let forceReason: 'never_arm_timeout' | 'never_arm_dead' | 'max_hold_timeout' | null = null;
-      if (absMaxHold > 0 && heldMs >= absMaxHold) forceReason = 'max_hold_timeout';
-      else if (pos.trailArmed !== true) {
+      let forceReason: 'never_arm_timeout' | 'never_arm_dead' | null = null;
+      if (pos.trailArmed !== true) {
         if (maxHold > 0 && heldMs >= maxHold) forceReason = 'never_arm_timeout';
         else if (deadMin > 0 && heldMs >= deadMin) forceReason = 'never_arm_dead';
       }
@@ -935,11 +942,14 @@ async function tryExits(cfg: MildDipConfig, state: MildDipState, nowMs: number):
           armed: pos.trailArmed === true,
           justArmed: false,
           shouldExit: true,
+          fraction: 1,
           reason: forceReason,
           mfePct: 0,
           givebackPct: 0,
           pnlPct: 0,
-          sellFraction: 1,
+          volFadeSamples: pos.volFadeSamples ?? [],
+          postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+          postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
         });
       }
       continue;
@@ -1115,16 +1125,15 @@ export async function runMildDipLoop(
     `[mild-dip] start mode=${cfg.executionMode} positionUsd=${cfg.positionUsd} quote=USDC ` +
       `entry=(${cfg.entry.minDipPct},${cfg.entry.maxDipPct}] ` +
       `minLiq=$${cfg.entry.minLiquidityUsd} minVol5m=$${cfg.entry.minVolume5mUsd} ` +
-      `exit=W9.1 arm=${cfg.exit.armPct}% giveback=${cfg.exit.givebackPct}% ` +
-      `partial=${cfg.exit.partialSellFraction}/2ndGb=${cfg.exit.secondGivebackPct}% ` +
-      `trailAfterMfe=${cfg.exit.minMfeBeforeTrailPct}% ` +
-      `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
-      `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s/-${cfg.exit.neverArmDeadPnlPct}% ` +
-      `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s/x${cfg.exit.neverArmVolFadeRatio}/$${cfg.exit.neverArmVolFadeFloorUsd} ` +
-      `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s/mfe<${cfg.exit.neverArmStaleMaxMfePct}% ` +
-      `neverArmPartial=${cfg.exit.neverArmPartialSellFraction} ` +
+      `exit=Oscar arm=${cfg.exit.armPct}% ` +
+      `mfeBank=${cfg.exit.mfeBankEnabled ? 1 : 0}/+${cfg.exit.mfeBank1Pct}%×${cfg.exit.mfeBank1Fraction}/+${cfg.exit.mfeBank2Pct}%×${cfg.exit.mfeBank2Fraction}/sleeve=-${cfg.exit.mfeBankSleeveGivebackPct}% ` +
+      `cliff=-${cfg.exit.cliffDumpPnlPct}% ` +
+      `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%/bounce≥${cfg.exit.neverArmBouncePct}% ` +
+      `neverArmTimeRed=${Math.round(cfg.exit.neverArmTimeRedMinMs / 1000)}s/pnl≤-${cfg.exit.neverArmTimeRedPnlPct}% ` +
+      `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s ` +
+      `neverArmDead=${Math.round(cfg.exit.neverArmDeadMinMs / 1000)}s ` +
+      `neverArmVolFade=${Math.round(cfg.exit.neverArmVolFadeMinMs / 1000)}s ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
-      `maxHold=${Math.round(cfg.exit.maxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +

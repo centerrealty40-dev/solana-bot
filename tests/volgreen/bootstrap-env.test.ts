@@ -87,7 +87,8 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.VOL_GREEN_LEADER_WATCH_WALLETS).toContain('8zkgFG');
     expect(process.env.MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS).toBe('0.15');
     expect(process.env.MILD_DIP_GREEN_MIN_MCAP_USD).toBe('12000');
-    expect(process.env.MILD_DIP_EXIT_MAX_HOLD_MS).toBe('600000');
+    expect(process.env.MILD_DIP_EXIT_MFE_BANK).toBe('1');
+    expect(process.env.MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS).toBe('0');
     expect(process.env.MILD_DIP_MAX_ENRICH).toBe('12');
     expect(process.env.MILD_DIP_PROBE_ENRICH_MAX).toBe('16');
     expect(process.env.MILD_DIP_SCAN_INTERVAL_MS).toBe('3000');

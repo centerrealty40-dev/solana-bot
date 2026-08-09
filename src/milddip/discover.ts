@@ -329,6 +329,10 @@ export async function enrichAndFilterCandidates(
           marketCapUsd: details.marketCapUsd,
           pairAgeHours,
           dexId: details.dexId,
+          buys5m: details.buys5m ?? null,
+          sells5m: details.sells5m ?? null,
+          volume1hUsd: details.volume1hUsd ?? null,
+          priceChange1hPct: details.priceChangeH1Pct ?? null,
         },
       };
     } catch {

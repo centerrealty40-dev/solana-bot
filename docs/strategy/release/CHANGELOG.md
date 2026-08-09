@@ -1,5 +1,19 @@
 # Solana Alpha — журнал релизов продукта
 
+## [1.11.744] — 2026-08-09
+
+**Тег:** `sa-1.11.744`
+
+### Vol-green: port Oscar exit (mfeBank + bounce/time_red)
+
+CF on green trades: Oscar mfeBank ~−$20 vs live stale grind −$60.
+Port Oscar gates/exit-engine: bank +8%×40% / +15%×40% / sleeve −12%;
+never-arm bounce + time_red 15m/−5%; stale/dead/vol_fade/maxHold OFF.
+
+**Откат:** `MILD_DIP_EXIT_MFE_BANK=0` + restore prior NEVER_ARM_STALE=150000.
+
+---
+
 ## [1.11.743] — 2026-08-08
 
 **Тег:** `sa-1.11.743`

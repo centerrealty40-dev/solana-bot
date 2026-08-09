@@ -1,7 +1,7 @@
 /**
  * Mild-dip branch gates (entry reverse-engineered from leader sessions).
  *
- * Entry: DexScreener priceChange5m ∈ (minDipPct, maxDipPct] — default (−20, −4].
+ * Entry: DexScreener priceChange5m ∈ (minDipPct, maxDipPct] — default (−25, −8].
  * Exit: W9.1 peak-giveback — arm on MFE, full exit on giveback from running peak.
  *        Never-armed branch (leaders 8zkg / 7BNax): same giveback width after
  *        patience, plus max-hold if trail never arms. No SL% from entry.
@@ -14,7 +14,13 @@ export type MildDipCandidateMetrics = {
   marketCapUsd: number | null;
   pairAgeHours: number | null;
   dexId: string | null;
-  /** Present when green_tape_triple matched (journal / debug). */
+  /** DexScreener m5 buy count — journaled; optional entry use. */
+  buys5m: number | null;
+  /** DexScreener m5 sell count — journaled; optional entry use. */
+  sells5m: number | null;
+  volume1hUsd: number | null;
+  priceChange1hPct: number | null;
+  /** Vol-green triple_green / leader-flex match (journal only). */
   triplePattern?: {
     small0: number;
     small1: number;
@@ -41,34 +47,36 @@ export type MildDipEntryGates = {
 
 /** W9.1 peak-giveback exit parameters (+ never-armed dead-trade). */
 export type MildDipExitGates = {
-  /** Arm trail when MFE ≥ this % (default 8). */
+  /** Arm trail when MFE ≥ this % (default 5). */
   armPct: number;
   /**
-   * First armed giveback threshold (%). With `partialSellFraction` in (0,1)
-   * this peels a partial; otherwise full exit. Default 8.
+   * After armed: sell `scaleOutFraction` when giveback from peak ≤ −this %
+   * (default 3). 0 = no partial scale-out (full exit only at givebackPct).
    */
+  partialGivebackPct: number;
+  /** Fraction of bag to sell on partial giveback (default 0.5). */
+  scaleOutFraction: number;
+  /** Full exit when giveback from peak ≤ −this % after armed (default 8). */
   givebackPct: number;
   /**
-   * Sell this fraction of the bag on the first armed giveback (e.g. 0.5).
-   * 0 or ≥1 = legacy full exit on first giveback (Oscar default).
+   * 1.11.750 — MFE bank ladder (take-profit into strength) + runner sleeve.
+   * When enabled, replaces the classic armed −3%/−8% giveback scale-out.
+   * Template: +8%×40% → +15%×40% → remainder trails −sleeveGiveback from peak.
    */
-  partialSellFraction: number;
+  mfeBankEnabled: boolean;
+  /** First bank: sell `mfeBank1Fraction` of original when MFE ≥ this % (default 8). */
+  mfeBank1Pct: number;
+  /** Fraction of original bag sold at bank1 (default 0.4). */
+  mfeBank1Fraction: number;
+  /** Second bank: sell `mfeBank2Fraction` of original when MFE ≥ this % (default 15). */
+  mfeBank2Pct: number;
+  /** Fraction of original bag sold at bank2 (default 0.4). */
+  mfeBank2Fraction: number;
   /**
-   * Never-armed stale peel fraction. Separate from armed trail partial —
-   * CF on Oscar never-armed showed 1-chunk beats 50/50. 0 = full cut (default).
+   * After ≥1 bank taken: full-exit remaining when giveback from peak ≤ −this %
+   * (default 12). Wide sleeve so a 20% runner can still catch 50%+ moves.
    */
-  neverArmPartialSellFraction: number;
-  /**
-   * After a partial peel, full-exit remaining when giveback ≤ −this %.
-   * 0 = reuse `givebackPct` for the rest. Vol-green: 5.
-   */
-  secondGivebackPct: number;
-  /**
-   * Do not fire peak_giveback / partial until MFE has reached this % (even if
-   * already armed). Stops micro-peak shakeouts (C5YYvSo: armed at +5.6% then
-   * −3% giveback). 0 = trail as soon as armed (Oscar default).
-   */
-  minMfeBeforeTrailPct: number;
+  mfeBankSleeveGivebackPct: number;
   /**
    * After this many ms still unarmed, allow the same giveback% from the
    * (sub-arm) peak. Live default **0** — early never_arm_giveback was the grind loss.
@@ -81,36 +89,86 @@ export type MildDipExitGates = {
    */
   neverArmMaxHoldMs: number;
   /**
-   * Absolute hold ceiling for ANY open (armed or not). Spike/green bots: 10m.
-   * 0 = off (Oscar mild-dip default). Fires `max_hold_timeout`, full bag.
-   */
-  maxHoldMs: number;
-  /**
-   * Never-armed deep-loss cut: after this many ms, if pnl ≤ −neverArmDeadPnlPct,
+   * Never-armed deep-loss cut: after this many ms (live 30m), if pnl ≤ −neverArmDeadPnlPct,
    * full exit (`never_arm_dead`). Catches rugs before max-hold without the
    * early 5m −6% knife. 0 = disabled.
    */
   neverArmDeadMinMs: number;
-  /** See neverArmDeadMinMs. Positive percent (e.g. 15 = exit at ≤ −15%). */
+  /** See neverArmDeadMinMs. Positive percent (e.g. 10 = exit at ≤ −10%). */
   neverArmDeadPnlPct: number;
   /**
-   * Activity-based never-armed exit (`never_arm_vol_fade`): once held this long,
-   * exit when the 5m volume has faded relative to entry. Leaders leave a mint
-   * when the tape dies, not on a clock — a flat mint that still trades can still
-   * run (see `diag-leader-exit-policy.json`). 0 = disabled.
-   */
-  neverArmVolFadeMinMs: number;
-  /** Exit when vol5m ≤ this fraction of entry vol5m (e.g. 0.35). 0 = disabled. */
-  neverArmVolFadeRatio: number;
-  /** Exit when vol5m ≤ this absolute USD floor regardless of ratio. 0 = disabled. */
-  neverArmVolFadeFloorUsd: number;
-  /**
-   * Fast cut for false greens: still unarmed after this many ms and MFE below
-   * `neverArmStaleMaxMfePct` → `never_arm_stale`. 0 = off (Oscar default).
+   * Never-armed stagnation cut: after this many ms, if MFE never exceeded
+   * `neverArmStaleMaxMfePct` AND pnl ≤ −neverArmStalePnlPct → `never_arm_stale`.
+   * Catches dead-path names before they grind to the deep dead threshold.
+   * 0 min = off.
    */
   neverArmStaleMinMs: number;
-  /** See neverArmStaleMinMs (e.g. 4 = exit if MFE still &lt; 4% after stale window). */
+  /** Max MFE % still considered “never moved” for stale (default 2). */
   neverArmStaleMaxMfePct: number;
+  /** Stale cut when pnl ≤ −this % (default 5). 0 = off. */
+  neverArmStalePnlPct: number;
+  /**
+   * Activity-based never-armed exit (`never_arm_vol_fade`): once held this long,
+   * start evaluating sustained volume fade across spaced 5m windows. A single
+   * weak Dex reading must NOT sell — need `neverArmVolFadeWeakWindows` consecutive
+   * weak samples spaced ≥ `neverArmVolFadeSampleMs` apart. 0 = disabled.
+   */
+  neverArmVolFadeMinMs: number;
+  /** A window is weak when vol5m ≤ this fraction of entry vol5m (e.g. 0.25). 0 = off. */
+  neverArmVolFadeRatio: number;
+  /** A window is weak when vol5m ≤ this absolute USD floor. 0 = off. */
+  neverArmVolFadeFloorUsd: number;
+  /**
+   * Min spacing between vol5m samples that count as distinct 5m windows
+   * (default 300_000 = 5m). Dex rolling m5 is autocorrelated on every mark tick.
+   */
+  neverArmVolFadeSampleMs: number;
+  /**
+   * Require this many consecutive weak 5m windows before `never_arm_vol_fade`
+   * (default 3 ≈ 15m of sustained fade). 1 = legacy one-shot (not recommended).
+   */
+  neverArmVolFadeWeakWindows: number;
+  /**
+   * Immediate cliff exit when mark pnl ≤ −this % (default 50). Catches LP-pull
+   * rugs without waiting for never_arm_dead min-hold. 0 = off.
+   */
+  cliffDumpPnlPct: number;
+  /**
+   * 1.11.747 — never-armed bounce reclaim: after post-entry trough ≤ −minDump%,
+   * if mark bounces ≥ bouncePct off that trough → full exit (`never_arm_bounce`).
+   * Hard (not recover-deferred) — we sell INTO the bounce. 0 bouncePct = off.
+   * 1.11.750 — also require trough age + still red vs entry (kill stream-wick churn).
+   */
+  neverArmBounceMinDumpPct: number;
+  neverArmBouncePct: number;
+  /** Trough must be the low-water for at least this long before bounce counts. */
+  neverArmBounceMinTroughAgeMs: number;
+  /**
+   * Only fire bounce exit while mark pnl ≤ −this % vs entry (default 3).
+   * Blocks F1XdRe/AENK1Y-style near-flat stream-wick reclaim sells. 0 = off.
+   */
+  neverArmBounceRequireRedPct: number;
+  /**
+   * 1.11.747 — never-armed freefall floor: if still unarmed and pnl ≤ −this %
+   * after min hold → full exit (`never_arm_freefall`). Covers endless dumps
+   * that never print a bounce. 0 = off. Default 25 (between stale grind and cliff 50).
+   */
+  neverArmFreefallPnlPct: number;
+  neverArmFreefallMinMs: number;
+  /**
+   * 1.11.755 — never-armed time-red cut: after this many ms unarmed, if mark
+   * pnl ≤ −neverArmTimeRedPnlPct → full exit (`never_arm_time_red`).
+   * Live option-2: 15m / −5%. 0 min = off.
+   */
+  neverArmTimeRedMinMs: number;
+  /** See neverArmTimeRedMinMs. Positive percent (e.g. 5 = exit at ≤ −5%). 0 = off. */
+  neverArmTimeRedPnlPct: number;
+};
+
+/** One spaced Dex vol5m reading used by the sustained fade exit. */
+export type MildDipVolFadeSample = {
+  ts: number;
+  vol: number;
 };
 
 export type MildDipGateVerdict = {
@@ -181,6 +239,39 @@ export function evaluateMildDipEntry(
 }
 
 /**
+ * Flat / chop micro-dip: small pullback (−5, −1.5] while the 1h tape is not a
+ * fresh knife and not ripping green. Fills the gap below main mild (≤−5) and
+ * past h1_red_shallow (≤−3) — e.g. fartdog prebuy_pc5m=−2.21 before leader buy.
+ */
+export function evaluateFlatMicroDip(args: {
+  priceChange5mPct: number | null | undefined;
+  priceChange1hPct: number | null | undefined;
+  minDipPct: number;
+  maxDipPct: number;
+  h1MinPct: number;
+  h1MaxPct: number;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const pc = args.priceChange5mPct;
+  if (pc == null || !Number.isFinite(pc)) {
+    reasons.push('flat_micro_missing_pc5m');
+  } else if (!(pc > args.minDipPct && pc <= args.maxDipPct)) {
+    reasons.push(
+      `flat_micro_pc5m=${pc.toFixed(2)}_outside_(${args.minDipPct},${args.maxDipPct}]`,
+    );
+  }
+  const h1 = args.priceChange1hPct;
+  if (h1 == null || !Number.isFinite(h1)) {
+    reasons.push('flat_micro_missing_pc1h');
+  } else if (!(h1 >= args.h1MinPct && h1 <= args.h1MaxPct)) {
+    reasons.push(
+      `flat_micro_pc1h=${h1.toFixed(2)}_outside_[${args.h1MinPct},${args.h1MaxPct}]`,
+    );
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
+/**
  * Immediate pre-send check: DexScreener snapshot can go stale while we enrich
  * dozens of mints / wait on funding RPC. Abort if the 5m dip is gone or the
  * mark already bounced above the signal price by more than `maxChasePct`.
@@ -221,6 +312,45 @@ export function evaluateMildDipPreBuy(args: {
     }
   }
 
+  return { pass: reasons.length === 0, reasons };
+}
+
+/**
+ * After a full exit: refuse rebuy unless mark is at least `minBelowExitPct`
+ * cheaper than the exit fill (stream mark OK — no Dex). Stops “sell → buy the
+ * same green reclaim candle” without waiting on DexScreener.
+ */
+export function evaluateRebuyBelowExit(args: {
+  freshPriceUsd: number | null;
+  lastExitPriceUsd: number | null | undefined;
+  lastExitAtMs: number | null | undefined;
+  nowMs: number;
+  /** 0 = guard off. */
+  minBelowExitPct: number;
+  /** Ignore exits older than this (ms). 0 = no age cap. */
+  maxAgeMs: number;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const { freshPriceUsd, lastExitPriceUsd, lastExitAtMs, nowMs, minBelowExitPct, maxAgeMs } =
+    args;
+
+  if (!(minBelowExitPct > 0)) return { pass: true, reasons };
+  if (lastExitPriceUsd == null || !(lastExitPriceUsd > 0)) return { pass: true, reasons };
+  if (lastExitAtMs == null || !(lastExitAtMs > 0)) return { pass: true, reasons };
+  if (maxAgeMs > 0 && nowMs - lastExitAtMs > maxAgeMs) return { pass: true, reasons };
+
+  if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
+    reasons.push('rebuy_below_exit_missing_price');
+    return { pass: false, reasons };
+  }
+
+  const belowPct = (1 - freshPriceUsd / lastExitPriceUsd) * 100;
+  if (!(belowPct >= minBelowExitPct)) {
+    reasons.push(
+      `rebuy_below_exit=${belowPct.toFixed(2)}%<min=${minBelowExitPct}` +
+        `_exit=${lastExitPriceUsd}_ageMs=${Math.max(0, nowMs - lastExitAtMs)}`,
+    );
+  }
   return { pass: reasons.length === 0, reasons };
 }
 
@@ -271,18 +401,74 @@ export function evaluateCooldownBounce(args: {
 export type MildDipExitReason =
   | 'peak_giveback'
   | 'peak_giveback_partial'
+  | 'mfe_bank_1'
+  | 'mfe_bank_2'
+  | 'mfe_bank_sleeve'
   | 'never_arm_giveback'
+  | 'never_arm_bounce'
+  | 'never_arm_freefall'
+  | 'never_arm_time_red'
+  | 'never_arm_stale'
   | 'never_arm_dead'
   | 'never_arm_vol_fade'
-  | 'never_arm_stale'
-  | 'never_arm_stale_partial'
   | 'never_arm_timeout'
-  | 'max_hold_timeout'
+  | 'cliff_dump'
   | null;
+
+/** True when MFE-bank ladder is configured and should own the armed exit path. */
+export function isMfeBankEnabled(gates: MildDipExitGates): boolean {
+  return (
+    gates.mfeBankEnabled === true &&
+    gates.mfeBank1Pct > 0 &&
+    gates.mfeBank1Fraction > 0 &&
+    gates.mfeBank1Fraction < 1
+  );
+}
+
+/**
+ * Fraction of *current* bag to sell so that `wantOriginal` of the original
+ * bag is realized, given banks already taken.
+ */
+export function mfeBankSellFractionOfCurrent(args: {
+  wantOriginal: number;
+  stage: number;
+  bank1Fraction: number;
+  bank2Fraction: number;
+}): number {
+  const f1 = args.bank1Fraction > 0 ? args.bank1Fraction : 0;
+  const f2 = args.bank2Fraction > 0 ? args.bank2Fraction : 0;
+  let remainingOriginal = 1;
+  if (args.stage >= 1) remainingOriginal -= f1;
+  if (args.stage >= 2) remainingOriginal -= f2;
+  if (!(remainingOriginal > 1e-9)) return 1;
+  const want = args.wantOriginal > 0 ? args.wantOriginal : 0;
+  return Math.min(1, Math.max(0, want / remainingOriginal));
+}
 
 export function givebackFromPeakPct(markPriceUsd: number, peakPriceUsd: number): number | null {
   if (!(markPriceUsd > 0) || !(peakPriceUsd > 0)) return null;
   return (markPriceUsd / peakPriceUsd - 1) * 100;
+}
+
+/** Bounce % off a local trough → mark (positive when reclaiming). */
+export function bounceFromTroughPct(markPriceUsd: number, troughPriceUsd: number): number | null {
+  if (!(markPriceUsd > 0) || !(troughPriceUsd > 0)) return null;
+  return (markPriceUsd / troughPriceUsd - 1) * 100;
+}
+
+/**
+ * True when mark has reclaimed ≥ minBouncePct off the recent trough.
+ * Used to defer soft exits (stale/dead/giveback) into a green reclaim candle.
+ */
+export function isRecoveringFromTrough(args: {
+  markPriceUsd: number;
+  troughPriceUsd: number;
+  minBouncePct: number;
+}): boolean {
+  const min = args.minBouncePct > 0 ? args.minBouncePct : 0;
+  if (!(min > 0)) return false;
+  const bounce = bounceFromTroughPct(args.markPriceUsd, args.troughPriceUsd);
+  return bounce != null && bounce >= min - 1e-9;
 }
 
 function numOrNull(x: number | null | undefined): number | null {
@@ -294,16 +480,75 @@ export function mfeFromEntryPct(peakPriceUsd: number, entryPriceUsd: number): nu
   return (peakPriceUsd / entryPriceUsd - 1) * 100;
 }
 
+/** True when a single 5m vol reading is weak vs entry baseline / floor. */
+export function isVolFadeWeak(
+  vol5mUsd: number,
+  entryVolume5mUsd: number | null | undefined,
+  ratio: number,
+  floorUsd: number,
+): boolean {
+  if (!(vol5mUsd >= 0) || !Number.isFinite(vol5mUsd)) return false;
+  const entryVol = numOrNull(entryVolume5mUsd);
+  const fadedVsEntry =
+    ratio > 0 && entryVol != null && entryVol > 0 && vol5mUsd <= entryVol * ratio;
+  const belowFloor = floorUsd > 0 && vol5mUsd <= floorUsd;
+  return fadedVsEntry || belowFloor;
+}
+
+/**
+ * Append a Dex vol5m reading at most once per `sampleMs` (distinct 5m windows).
+ * Null/non-finite volumes are ignored so data gaps do not count as fade.
+ */
+export function recordVolFadeSample(
+  prev: readonly MildDipVolFadeSample[] | null | undefined,
+  nowMs: number,
+  volume5mUsd: number | null | undefined,
+  sampleMs: number,
+  keep: number,
+): MildDipVolFadeSample[] {
+  const out = Array.isArray(prev)
+    ? prev.filter((s) => s && Number.isFinite(s.ts) && Number.isFinite(s.vol) && s.vol >= 0)
+    : [];
+  const vol = numOrNull(volume5mUsd);
+  const spacing = sampleMs > 0 ? sampleMs : 300_000;
+  if (vol != null) {
+    const last = out.length > 0 ? out[out.length - 1]! : null;
+    if (!last || nowMs - last.ts >= spacing) {
+      out.push({ ts: nowMs, vol });
+    }
+  }
+  const maxKeep = Math.max(2, keep > 0 ? keep + 2 : 8);
+  return out.length > maxKeep ? out.slice(-maxKeep) : out;
+}
+
+/** Last `weakWindows` spaced samples are all weak → sustained fade. */
+export function sustainedVolFade(
+  samples: readonly MildDipVolFadeSample[] | null | undefined,
+  weakWindows: number,
+  entryVolume5mUsd: number | null | undefined,
+  ratio: number,
+  floorUsd: number,
+): boolean {
+  const need = weakWindows > 0 ? Math.floor(weakWindows) : 0;
+  if (need <= 0) return false;
+  if (!Array.isArray(samples) || samples.length < need) return false;
+  const recent = samples.slice(-need);
+  return recent.every((s) => isVolFadeWeak(s.vol, entryVolume5mUsd, ratio, floorUsd));
+}
+
 /**
  * W9.1 peak-giveback («flow») exit — pure decision, no network.
  *
  * - Update running peak from entry
- * - Arm when MFE ≥ armPct
- * - Armed ladder: first giveback → optional partial; second giveback → full rest
- * - Never-armed: optional soft giveback after patienceMs (0 = off), deep-loss
- *   dead cut, activity fade (`never_arm_vol_fade`), then the max-hold ceiling
- * - Live default: patience off — early never_arm_giveback was cutting before pumps
- * - Loss-by-flow (realized < 0) is a valid outcome of the armed trail
+ * - Arm when MFE ≥ armPct (live default +5%)
+ * - When MFE-bank enabled (1.11.750): bank at MFE levels into strength, then
+ *   wide sleeve giveback on the runner remainder. Classic −3%/−8% armed path off.
+ * - Else armed scale-out: giveback ≤ −partialGivebackPct → sell scaleOutFraction
+ *   (once); giveback ≤ −givebackPct → sell remainder / full
+ * - Never-armed: bounce reclaim → freefall floor → optional soft giveback →
+ *   time-red → stale / dead / vol-fade → max-hold ceiling
+ * - Live default (1.11.755 option-2): bounce + time-red 15m/−5%; freefall /
+ *   stale / dead / vol-fade / max-hold off; patience off
  */
 export function evaluateMildDipPeakGiveback(args: {
   entryPriceUsd: number;
@@ -311,14 +556,36 @@ export function evaluateMildDipPeakGiveback(args: {
   peakPriceUsd: number;
   armed: boolean;
   gates: MildDipExitGates;
+  /** True after a successful partial scale-out on this position. */
+  scaleOutDone?: boolean;
+  /**
+   * MFE-bank progress: 0 = none, 1 = bank1 filled, 2 = bank2 filled.
+   * When omitted, falls back to `scaleOutDone ? 1 : 0` for live migration.
+   */
+  mfeBankStage?: number;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
-  /** Current 5m volume (Dex) — enables the activity-fade exit. */
+  /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
   volume5mUsd?: number | null;
   /** 5m volume captured at entry — the fade baseline. */
   entryVolume5mUsd?: number | null;
-  /** True after a successful first-rung partial peel. */
-  partialTaken?: boolean;
+  /** Prior spaced vol5m samples on this position (mutated via return value). */
+  volFadeSamples?: readonly MildDipVolFadeSample[] | null;
+  /** Wall clock for spacing samples; defaults to held-relative when omitted. */
+  nowMs?: number;
+  /**
+   * Running post-entry trough (low-water mark). When omitted, uses
+   * min(entry, mark) for this tick only.
+   */
+  postEntryTroughPriceUsd?: number | null;
+  /** Wall clock when post-entry trough was last deepened. */
+  postEntryTroughAtMs?: number | null;
+  /**
+   * When true, defer peak_giveback / peak_giveback_partial / never_arm_giveback
+   * / mfe_bank_sleeve (one-shot emptied-bag dump grace). cliff_dump and MFE
+   * banks (sell into strength) still fire.
+   */
+  oneshotDumpGraceActive?: boolean;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -326,26 +593,73 @@ export function evaluateMildDipPeakGiveback(args: {
   armed: boolean;
   justArmed: boolean;
   shouldExit: boolean;
+  /** 1 = full / remainder; (0,1) = scale-out; 0 = no sell. */
+  fraction: number;
   reason: MildDipExitReason;
   pnlPct: number;
-  /** 0..1 — fraction of bag to sell when shouldExit. */
-  sellFraction: number;
+  volFadeSamples: MildDipVolFadeSample[];
+  /** Updated post-entry trough (caller persists). */
+  postEntryTroughPriceUsd: number;
+  postEntryTroughAtMs: number;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
+  const scaleOutDone = args.scaleOutDone === true;
+  const mfeBankStageRaw = Number(args.mfeBankStage);
+  const mfeBankStage = Number.isFinite(mfeBankStageRaw)
+    ? Math.max(0, Math.min(2, Math.floor(mfeBankStageRaw)))
+    : scaleOutDone
+      ? 1
+      : 0;
   const heldMs = Number.isFinite(args.heldMs) ? Math.max(0, Number(args.heldMs)) : 0;
+  const nowMs =
+    Number.isFinite(args.nowMs) && Number(args.nowMs) > 0
+      ? Number(args.nowMs)
+      : heldMs;
+  const oneshotGrace = args.oneshotDumpGraceActive === true;
+  const sampleMs = gates.neverArmVolFadeSampleMs > 0 ? gates.neverArmVolFadeSampleMs : 300_000;
+  const weakWindows =
+    gates.neverArmVolFadeWeakWindows > 0 ? Math.floor(gates.neverArmVolFadeWeakWindows) : 0;
+  const volFadeSamples = recordVolFadeSample(
+    args.volFadeSamples,
+    nowMs,
+    args.volume5mUsd,
+    sampleMs,
+    weakWindows > 0 ? weakWindows : 3,
+  );
   const peakPriceUsd = Math.max(
     args.peakPriceUsd > 0 ? args.peakPriceUsd : entryPriceUsd,
     markPriceUsd > 0 ? markPriceUsd : 0,
   );
+  const troughPrev =
+    args.postEntryTroughPriceUsd != null &&
+    Number.isFinite(args.postEntryTroughPriceUsd) &&
+    args.postEntryTroughPriceUsd > 0
+      ? args.postEntryTroughPriceUsd
+      : entryPriceUsd;
+  const troughAtPrev =
+    args.postEntryTroughAtMs != null &&
+    Number.isFinite(args.postEntryTroughAtMs) &&
+    args.postEntryTroughAtMs > 0
+      ? Number(args.postEntryTroughAtMs)
+      : nowMs;
+  const markDeepensTrough =
+    markPriceUsd > 0 && markPriceUsd < troughPrev - 1e-15;
+  const postEntryTroughPriceUsd = Math.min(
+    troughPrev,
+    markPriceUsd > 0 ? markPriceUsd : troughPrev,
+  );
+  const postEntryTroughAtMs = markDeepensTrough ? nowMs : troughAtPrev;
+  const troughAgeMs = Math.max(0, nowMs - postEntryTroughAtMs);
   const mfePct = mfeFromEntryPct(peakPriceUsd, entryPriceUsd) ?? 0;
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =
     entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;
-  const partialTaken = args.partialTaken === true;
-  const partialFrac =
-    gates.partialSellFraction > 0 && gates.partialSellFraction < 1
-      ? gates.partialSellFraction
+  const troughDumpPct =
+    entryPriceUsd > 0 && postEntryTroughPriceUsd > 0
+      ? ((postEntryTroughPriceUsd / entryPriceUsd - 1) * 100)
       : 0;
+  const bounceOffTroughPct =
+    bounceFromTroughPct(markPriceUsd, postEntryTroughPriceUsd) ?? 0;
 
   let armed = args.armed === true;
   let justArmed = false;
@@ -354,211 +668,207 @@ export function evaluateMildDipPeakGiveback(args: {
     justArmed = true;
   }
 
-  const minTrail =
-    typeof gates.minMfeBeforeTrailPct === 'number' && gates.minMfeBeforeTrailPct > 0
-      ? gates.minMfeBeforeTrailPct
-      : 0;
-  const trailUnlocked = minTrail <= 0 || mfePct >= minTrail - 1e-9;
-  const givebackHit =
-    trailUnlocked &&
-    gates.givebackPct > 0 &&
-    // epsilon: 103.5/115 is −9.999…% in IEEE float
-    givebackPct <= -gates.givebackPct + 1e-9;
-  const secondThr =
-    gates.secondGivebackPct > 0 ? gates.secondGivebackPct : gates.givebackPct;
-  const secondHit =
-    trailUnlocked && secondThr > 0 && givebackPct <= -secondThr + 1e-9;
-
-  if (armed && !partialTaken && givebackHit) {
-    if (partialFrac > 0) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'peak_giveback_partial',
-        pnlPct,
-        sellFraction: partialFrac,
-      };
-    }
-    return {
-      peakPriceUsd,
-      mfePct,
-      givebackPct,
-      armed,
-      justArmed,
-      shouldExit: true,
-      reason: 'peak_giveback',
-      pnlPct,
-      sellFraction: 1,
-    };
-  }
-
-  if (armed && partialTaken && secondHit) {
-    return {
-      peakPriceUsd,
-      mfePct,
-      givebackPct,
-      armed,
-      justArmed,
-      shouldExit: true,
-      reason: 'peak_giveback',
-      pnlPct,
-      sellFraction: 1,
-    };
-  }
-
-  // Never-armed branch — must always have a finite exit (no infinite hold).
-  // Order: stale false-green cut → soft giveback → dead → vol-fade → max-hold.
-  // Optional neverArmPartialSellFraction: peel then dump at 2× stale window.
-  // Default 0 = one chunk (CF: two-chunk hurt never-armed PnL).
-  if (!armed) {
-    const neverArmPartialFrac =
-      gates.neverArmPartialSellFraction > 0 && gates.neverArmPartialSellFraction < 1
-        ? gates.neverArmPartialSellFraction
-        : 0;
-    const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
-    const staleMfe = gates.neverArmStaleMaxMfePct > 0 ? gates.neverArmStaleMaxMfePct : 0;
-    if (staleMin > 0 && staleMfe > 0 && mfePct < staleMfe - 1e-9) {
-      if (!partialTaken && heldMs >= staleMin) {
-        if (neverArmPartialFrac > 0) {
-          return {
-            peakPriceUsd,
-            mfePct,
-            givebackPct,
-            armed,
-            justArmed,
-            shouldExit: true,
-            reason: 'never_arm_stale_partial',
-            pnlPct,
-            sellFraction: neverArmPartialFrac,
-          };
-        }
-        return {
-          peakPriceUsd,
-          mfePct,
-          givebackPct,
-          armed,
-          justArmed,
-          shouldExit: true,
-          reason: 'never_arm_stale',
-          pnlPct,
-          sellFraction: 1,
-        };
-      }
-      // Second rung: still flat after another stale window → dump remainder.
-      if (partialTaken && heldMs >= staleMin * 2) {
-        return {
-          peakPriceUsd,
-          mfePct,
-          givebackPct,
-          armed,
-          justArmed,
-          shouldExit: true,
-          reason: 'never_arm_stale',
-          pnlPct,
-          sellFraction: 1,
-        };
-      }
-    }
-    const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
-    if (patience > 0 && heldMs >= patience && givebackHit) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_giveback',
-        pnlPct,
-        sellFraction: 1,
-      };
-    }
-    const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
-    const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
-    if (deadMin > 0 && deadPnl > 0 && heldMs >= deadMin && pnlPct <= -deadPnl) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_dead',
-        pnlPct,
-        sellFraction: 1,
-      };
-    }
-    const volFadeMin = gates.neverArmVolFadeMinMs > 0 ? gates.neverArmVolFadeMinMs : 0;
-    if (volFadeMin > 0 && heldMs >= volFadeMin) {
-      const vol = numOrNull(args.volume5mUsd);
-      if (vol != null) {
-        const floor = gates.neverArmVolFadeFloorUsd > 0 ? gates.neverArmVolFadeFloorUsd : 0;
-        const entryVol = numOrNull(args.entryVolume5mUsd);
-        const ratio = gates.neverArmVolFadeRatio > 0 ? gates.neverArmVolFadeRatio : 0;
-        const fadedVsEntry = ratio > 0 && entryVol != null && entryVol > 0 && vol <= entryVol * ratio;
-        const belowFloor = floor > 0 && vol <= floor;
-        if (fadedVsEntry || belowFloor) {
-          return {
-            peakPriceUsd,
-            mfePct,
-            givebackPct,
-            armed,
-            justArmed,
-            shouldExit: true,
-            reason: 'never_arm_vol_fade',
-            pnlPct,
-            sellFraction: 1,
-          };
-        }
-      }
-    }
-    const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
-    if (maxHold > 0 && heldMs >= maxHold) {
-      return {
-        peakPriceUsd,
-        mfePct,
-        givebackPct,
-        armed,
-        justArmed,
-        shouldExit: true,
-        reason: 'never_arm_timeout',
-        pnlPct,
-        sellFraction: 1,
-      };
-    }
-  }
-
-  // Absolute ceiling — applies even when trail is armed (vol-green spikes).
-  const absMax = typeof gates.maxHoldMs === 'number' && gates.maxHoldMs > 0 ? gates.maxHoldMs : 0;
-  if (absMax > 0 && heldMs >= absMax) {
-    return {
-      peakPriceUsd,
-      mfePct,
-      givebackPct,
-      armed,
-      justArmed,
-      shouldExit: true,
-      reason: 'max_hold_timeout',
-      pnlPct,
-      sellFraction: 1,
-    };
-  }
-
-  return {
+  const hold = {
     peakPriceUsd,
     mfePct,
     givebackPct,
     armed,
     justArmed,
-    shouldExit: false,
-    reason: null,
+    shouldExit: false as const,
+    fraction: 0,
+    reason: null as MildDipExitReason,
     pnlPct,
-    sellFraction: 1,
+    volFadeSamples,
+    postEntryTroughPriceUsd,
+    postEntryTroughAtMs,
   };
+
+  // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
+  const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
+  if (cliff > 0 && pnlPct <= -cliff) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+  }
+
+  const fullGivebackHit =
+    gates.givebackPct > 0 &&
+    // epsilon: 103.5/115 is −9.999…% in IEEE float
+    givebackPct <= -gates.givebackPct + 1e-9;
+
+  const partialPct = gates.partialGivebackPct > 0 ? gates.partialGivebackPct : 0;
+  const scaleFrac =
+    gates.scaleOutFraction > 0 && gates.scaleOutFraction < 1 ? gates.scaleOutFraction : 0;
+  const partialGivebackHit =
+    partialPct > 0 &&
+    scaleFrac > 0 &&
+    !scaleOutDone &&
+    givebackPct <= -partialPct + 1e-9;
+
+  const bankOn = isMfeBankEnabled(gates);
+  if (bankOn) {
+    const f1 = gates.mfeBank1Fraction;
+    const f2 =
+      gates.mfeBank2Fraction > 0 && gates.mfeBank2Fraction < 1 - f1 + 1e-9
+        ? gates.mfeBank2Fraction
+        : 0;
+    const lvl1 = gates.mfeBank1Pct;
+    const lvl2 = gates.mfeBank2Pct > lvl1 ? gates.mfeBank2Pct : 0;
+    const sleeveGb =
+      gates.mfeBankSleeveGivebackPct > 0 ? gates.mfeBankSleeveGivebackPct : 0;
+
+    // Bank into strength (not deferred by oneshot grace — this is take-profit).
+    // One level per mark tick (same half-first discipline as classic scale-out).
+    if (mfeBankStage < 1 && mfePct >= lvl1 - 1e-9) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: mfeBankSellFractionOfCurrent({
+          wantOriginal: f1,
+          stage: 0,
+          bank1Fraction: f1,
+          bank2Fraction: f2,
+        }),
+        reason: 'mfe_bank_1',
+      };
+    }
+    if (mfeBankStage < 2 && f2 > 0 && lvl2 > 0 && mfePct >= lvl2 - 1e-9) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: mfeBankSellFractionOfCurrent({
+          wantOriginal: f2,
+          stage: 1,
+          bank1Fraction: f1,
+          bank2Fraction: f2,
+        }),
+        reason: 'mfe_bank_2',
+      };
+    }
+
+    // Wide sleeve / pre-bank armed giveback — soft, grace-deferred.
+    if (!oneshotGrace && sleeveGb > 0 && givebackPct <= -sleeveGb + 1e-9) {
+      // After any bank: trail the remainder. Before bank1 but armed: protect
+      // the full bag if the early spike already gave back sleeve width.
+      if (mfeBankStage >= 1 || armed) {
+        return {
+          ...hold,
+          shouldExit: true,
+          fraction: 1,
+          reason: 'mfe_bank_sleeve',
+        };
+      }
+    }
+  } else if (!oneshotGrace) {
+    // Classic W9.1 armed giveback path (MFE-bank off).
+    // One-shot emptied-bag dump: defer soft giveback knives; hard exits remain.
+    // Half-first (1.11.741): when scale-out is configured (partialPct>0) and not
+    // yet taken, never dump the full bag on the first giveback hit — even when
+    // mark gaps past full −givebackPct (phantom stream / reclaim). Runner exits
+    // later only after scaleOutDone + another full giveback hit.
+    const scaleOutEnabled = partialPct > 0 && scaleFrac > 0;
+    if (
+      armed &&
+      scaleOutEnabled &&
+      !scaleOutDone &&
+      (partialGivebackHit || fullGivebackHit)
+    ) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: scaleFrac,
+        reason: 'peak_giveback_partial',
+      };
+    }
+    if (armed && fullGivebackHit) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
+    }
+  }
+
+  // Never-armed branch — must always have a finite exit (no infinite hold).
+  // Order: bounce reclaim (sell into bounce) → freefall floor (no bounce) →
+  // optional soft giveback → time-red → stale → dead → vol fade → max-hold.
+  const givebackHit = fullGivebackHit;
+  if (!armed) {
+    const bounceNeed = gates.neverArmBouncePct > 0 ? gates.neverArmBouncePct : 0;
+    const bounceDumpNeed =
+      gates.neverArmBounceMinDumpPct > 0 ? gates.neverArmBounceMinDumpPct : 0;
+    const bounceTroughAge =
+      gates.neverArmBounceMinTroughAgeMs > 0 ? gates.neverArmBounceMinTroughAgeMs : 0;
+    const bounceRequireRed =
+      gates.neverArmBounceRequireRedPct > 0 ? gates.neverArmBounceRequireRedPct : 0;
+    if (
+      bounceNeed > 0 &&
+      bounceDumpNeed > 0 &&
+      troughDumpPct <= -bounceDumpNeed + 1e-9 &&
+      bounceOffTroughPct >= bounceNeed - 1e-9 &&
+      troughAgeMs >= bounceTroughAge &&
+      (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9)
+    ) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' };
+    }
+    const freefallPnl = gates.neverArmFreefallPnlPct > 0 ? gates.neverArmFreefallPnlPct : 0;
+    const freefallMin = gates.neverArmFreefallMinMs > 0 ? gates.neverArmFreefallMinMs : 0;
+    if (
+      freefallPnl > 0 &&
+      heldMs >= freefallMin &&
+      pnlPct <= -freefallPnl + 1e-9
+    ) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_freefall' };
+    }
+    const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
+    if (!oneshotGrace && patience > 0 && heldMs >= patience && givebackHit) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };
+    }
+    const timeRedMin = gates.neverArmTimeRedMinMs > 0 ? gates.neverArmTimeRedMinMs : 0;
+    const timeRedPnl = gates.neverArmTimeRedPnlPct > 0 ? gates.neverArmTimeRedPnlPct : 0;
+    if (
+      timeRedMin > 0 &&
+      timeRedPnl > 0 &&
+      heldMs >= timeRedMin &&
+      pnlPct <= -timeRedPnl + 1e-9
+    ) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
+    }
+    const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
+    const stalePnl = gates.neverArmStalePnlPct > 0 ? gates.neverArmStalePnlPct : 0;
+    const staleMaxMfe =
+      gates.neverArmStaleMaxMfePct >= 0 ? gates.neverArmStaleMaxMfePct : 0;
+    if (
+      staleMin > 0 &&
+      stalePnl > 0 &&
+      heldMs >= staleMin &&
+      mfePct <= staleMaxMfe + 1e-9 &&
+      pnlPct <= -stalePnl
+    ) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_stale' };
+    }
+    const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
+    const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
+    if (deadMin > 0 && deadPnl > 0 && heldMs >= deadMin && pnlPct <= -deadPnl) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_dead' };
+    }
+    const volFadeMin = gates.neverArmVolFadeMinMs > 0 ? gates.neverArmVolFadeMinMs : 0;
+    if (volFadeMin > 0 && heldMs >= volFadeMin && weakWindows > 0) {
+      const floor = gates.neverArmVolFadeFloorUsd > 0 ? gates.neverArmVolFadeFloorUsd : 0;
+      const ratio = gates.neverArmVolFadeRatio > 0 ? gates.neverArmVolFadeRatio : 0;
+      if (
+        sustainedVolFade(
+          volFadeSamples,
+          weakWindows,
+          args.entryVolume5mUsd,
+          ratio,
+          floor,
+        )
+      ) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_vol_fade' };
+      }
+    }
+    const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
+    if (maxHold > 0 && heldMs >= maxHold) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_timeout' };
+    }
+  }
+
+  return hold;
 }
 
 /** @deprecated Use evaluateMildDipPeakGiveback — kept name alias for call sites. */
@@ -571,4 +881,103 @@ export function evaluateMildDipExit(args: {
   heldMs?: number;
 }): ReturnType<typeof evaluateMildDipPeakGiveback> {
   return evaluateMildDipPeakGiveback(args);
+}
+
+/** Thick-name size-up gates (liq / mcap / age) — larger clip on structural names. */
+export type MildDipThickSizeGates = {
+  /** Target clip when thick; ≤0 or ≤ base → size-up off. */
+  positionUsd: number;
+  minMarketCapUsd: number;
+  minLiquidityUsd: number;
+  minPairAgeHours: number;
+};
+
+/** Micro-cap size-down: smaller clip in a mcap band (e.g. $15k–$50k → $5). */
+export type MildDipMicroSizeGates = {
+  /** Target clip when in band; ≤0 → micro tier off. */
+  positionUsd: number;
+  minMarketCapUsd: number;
+  /** Inclusive upper bound. */
+  maxMarketCapUsd: number;
+};
+
+/**
+ * 1.11.746 — micro size band applies only to knife_stabilize (post-knife bounce).
+ * Other dipSources always size base/thick.
+ */
+export function mildDipMicroSizeGatesForSource(
+  micro: MildDipMicroSizeGates | null | undefined,
+  dipSource: string,
+): MildDipMicroSizeGates | null {
+  if (dipSource !== 'knife_stabilize') return null;
+  if (!micro || !(micro.positionUsd > 0)) return null;
+  return micro;
+}
+
+/**
+ * When micro tier is on, knife watches may arm down to microMin mcap
+ * while the global entry floor stays higher (e.g. $50k).
+ */
+export function knifeStabilizeMinMarketCapUsd(args: {
+  entryMinMarketCapUsd: number;
+  microPositionUsd: number;
+  microMinMarketCapUsd: number;
+}): number {
+  if (args.microPositionUsd > 0 && args.microMinMarketCapUsd > 0) {
+    return args.microMinMarketCapUsd;
+  }
+  return args.entryMinMarketCapUsd;
+}
+
+/**
+ * Wanted entry notional:
+ * - thick clip when mcap/liq/age all clear
+ * - else micro clip when mcap ∈ [microMin, microMax]
+ * - else base
+ * Missing metrics never size up (fail closed); micro needs mcap only.
+ */
+export function resolveMildDipWantedSizeUsd(args: {
+  basePositionUsd: number;
+  thick: MildDipThickSizeGates;
+  micro?: MildDipMicroSizeGates | null;
+  metrics: Pick<MildDipCandidateMetrics, 'liquidityUsd' | 'marketCapUsd' | 'pairAgeHours'>;
+}): { sizeUsd: number; tier: 'base' | 'thick' | 'micro' } {
+  const base = args.basePositionUsd;
+  const thickUsd = args.thick.positionUsd;
+  const liq = args.metrics.liquidityUsd;
+  const mcap = args.metrics.marketCapUsd;
+  const age = args.metrics.pairAgeHours;
+
+  // 1.11.754 — allow thick/micro when size == base (flat $30 book).
+  if (
+    thickUsd > 0 &&
+    liq != null &&
+    Number.isFinite(liq) &&
+    liq >= args.thick.minLiquidityUsd &&
+    mcap != null &&
+    Number.isFinite(mcap) &&
+    mcap >= args.thick.minMarketCapUsd &&
+    age != null &&
+    Number.isFinite(age) &&
+    age >= args.thick.minPairAgeHours
+  ) {
+    return { sizeUsd: thickUsd, tier: 'thick' };
+  }
+
+  const micro = args.micro;
+  const microUsd = micro?.positionUsd ?? 0;
+  if (
+    micro &&
+    microUsd > 0 &&
+    mcap != null &&
+    Number.isFinite(mcap) &&
+    micro.minMarketCapUsd > 0 &&
+    micro.maxMarketCapUsd >= micro.minMarketCapUsd &&
+    mcap >= micro.minMarketCapUsd &&
+    mcap <= micro.maxMarketCapUsd
+  ) {
+    return { sizeUsd: microUsd, tier: 'micro' };
+  }
+
+  return { sizeUsd: base, tier: 'base' };
 }
