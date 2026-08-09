@@ -718,6 +718,14 @@ export function evaluateMildDipPeakGiveback(args: {
     return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
   }
 
+  // 1.11.782 — hard hold ceiling for underwater armed bags (before soft trail /
+  // peak_giveback_partial). Past this age only green armed runners may wait
+  // for TP / trail steps. Unarmed timeout stays in the never-arm branch below.
+  const maxHoldCeil = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
+  if (armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && pnlPct <= 0) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'max_hold_underwater' };
+  }
+
   const fullGivebackHit =
     gates.givebackPct > 0 &&
     // epsilon: 103.5/115 is −9.999…% in IEEE float
@@ -951,13 +959,6 @@ export function evaluateMildDipPeakGiveback(args: {
     if (maxHold > 0 && heldMs >= maxHold) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_timeout' };
     }
-  }
-
-  // 1.11.782 — past max-hold, only green armed runners may wait for TP steps.
-  // Underwater (pnl ≤ 0) armed bags flatten even if trail was armed earlier.
-  const maxHoldAll = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
-  if (armed && maxHoldAll > 0 && heldMs >= maxHoldAll && pnlPct <= 0) {
-    return { ...hold, shouldExit: true, fraction: 1, reason: 'max_hold_underwater' };
   }
 
   return hold;

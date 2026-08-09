@@ -804,7 +804,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     const gates15 = { ...exitGates, neverArmMaxHoldMs: 900_000 };
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 108, // still above entry; giveback small
+      markPriceUsd: 110, // still green; giveback from 112 < partial 3%
       peakPriceUsd: 112, // armed via MFE
       armed: true,
       gates: gates15,
