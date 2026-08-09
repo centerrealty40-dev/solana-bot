@@ -2873,6 +2873,8 @@ const PM2_APPS = [
          * 1.11.752 — park main-band; buy after extra −7% from signal.
          * 1.11.753 — keep fill near that edge: overshoot +2pp ceiling,
          * chase vs ready ≤3%, Jupiter premium ≤1% above ceiling.
+         * 1.11.758 — do NOT park h1_red_shallow; do NOT park any branch
+         * while rebuy-below-exit window is active (no −7% on top of −10%).
          */
         MILD_DIP_WAIT_DIP: '1',
         MILD_DIP_WAIT_DIP_PCT: '-7',

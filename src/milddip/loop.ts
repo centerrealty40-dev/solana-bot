@@ -21,9 +21,10 @@ import {
 } from './fast-path.js';
 import {
   evaluateWaitDipReady,
+  isRebuyBelowExitWindow,
   priorityMintsFromWaitDipWatch,
+  shouldParkWaitDip,
   upsertWaitDipWatch,
-  waitDipAppliesToSource,
   type WaitDipGates,
 } from './wait-dip.js';
 import {
@@ -400,6 +401,50 @@ function adoptOnChainHolding(args: {
 }
 
 
+function rebuyWindowForMint(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  mint: string,
+  nowMs: number,
+): boolean {
+  return isRebuyBelowExitWindow({
+    lastExitAtMs: state.lastExitByMint?.[mint]?.atMs,
+    nowMs,
+    rebuyBelowExitPct: cfg.rebuyBelowExitPct,
+    rebuyBelowExitMaxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
+  });
+}
+
+function clearWaitDipForRebuyWindow(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  mint: string,
+  nowMs: number,
+): boolean {
+  const watch = state.waitDipWatch?.[mint];
+  if (!watch) return false;
+  if (!rebuyWindowForMint(cfg, state, mint, nowMs)) return false;
+  delete state.waitDipWatch![mint];
+  const last = mildDipPriceRing.lastPrice(mint, nowMs);
+  const px = last && last.priceUsd > 0 ? last.priceUsd : watch.lastPriceUsd;
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mild_dip_wait_dip_expire',
+    mint,
+    symbol: watch.symbol,
+    signalPriceUsd: watch.signalPriceUsd,
+    waitDipPct: watch.waitDipPct,
+    lastPriceUsd: px,
+    reasons: ['wait_dip_cleared_rebuy_window'],
+    ageMs: nowMs - watch.detectedAtMs,
+  });
+  saveMildDipState(cfg.statePath, state);
+  console.log(
+    `[mild-dip] WAIT_DIP clear-rebuy ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
+      `(rebuyBelowExit=${cfg.rebuyBelowExitPct}% — no wait−${Math.abs(cfg.waitDipPct)}% stack)`,
+  );
+  return true;
+}
+
 async function tryFireWaitDip(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -414,6 +459,8 @@ async function tryFireWaitDip(
     delete state.waitDipWatch![mint];
     return false;
   }
+  // Post-exit rebuy window: do not hold for extra −7% — fall through to direct buy.
+  if (clearWaitDipForRebuyWindow(cfg, state, mint, nowMs)) return false;
   if (onCooldown(state, mint, nowMs)) return false;
 
   const unlimited = cfg.maxOpenPositions <= 0;
@@ -512,7 +559,17 @@ function parkWaitDipFromCandidate(
   nowMs: number,
 ): void {
   if (!cfg.waitDipEnabled || !(cfg.waitDipPct < 0)) return;
-  if (!waitDipAppliesToSource(candidate.dipSource)) return;
+  if (
+    !shouldParkWaitDip({
+      dipSource: candidate.dipSource,
+      lastExitAtMs: state.lastExitByMint?.[candidate.mint]?.atMs,
+      nowMs,
+      rebuyBelowExitPct: cfg.rebuyBelowExitPct,
+      rebuyBelowExitMaxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
+    })
+  ) {
+    return;
+  }
   if (!(candidate.priceUsd > 0)) return;
 
   if (!state.waitDipWatch) state.waitDipWatch = {};
@@ -570,11 +627,18 @@ async function tryFastPathForMint(
   const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger);
   if (!candidate) return false;
 
-  // 1.11.753 — park signals (all branches); buy only after extra dump from signal.
+  // 1.11.753 — park signals; buy only after extra dump from signal.
+  // 1.11.758 — skip park for h1_red_shallow + any branch inside rebuy-below-exit window.
   if (
     cfg.waitDipEnabled &&
     cfg.waitDipPct < 0 &&
-    waitDipAppliesToSource(candidate.dipSource)
+    shouldParkWaitDip({
+      dipSource: candidate.dipSource,
+      lastExitAtMs: state.lastExitByMint?.[mint]?.atMs,
+      nowMs,
+      rebuyBelowExitPct: cfg.rebuyBelowExitPct,
+      rebuyBelowExitMaxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
+    })
   ) {
     parkWaitDipFromCandidate(cfg, state, candidate, nowMs);
     // Immediate re-check: already −7% on the same tick (gap fill).
@@ -724,7 +788,13 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
       if (
         cfg.waitDipEnabled &&
         cfg.waitDipPct < 0 &&
-        waitDipAppliesToSource(c.dipSource)
+        shouldParkWaitDip({
+          dipSource: c.dipSource,
+          lastExitAtMs: state.lastExitByMint?.[c.mint]?.atMs,
+          nowMs,
+          rebuyBelowExitPct: cfg.rebuyBelowExitPct,
+          rebuyBelowExitMaxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
+        })
       ) {
         continue;
       }
@@ -733,7 +803,13 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     if (
       cfg.waitDipEnabled &&
       cfg.waitDipPct < 0 &&
-      waitDipAppliesToSource(c.dipSource)
+      shouldParkWaitDip({
+        dipSource: c.dipSource,
+        lastExitAtMs: state.lastExitByMint?.[c.mint]?.atMs,
+        nowMs,
+        rebuyBelowExitPct: cfg.rebuyBelowExitPct,
+        rebuyBelowExitMaxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
+      })
     ) {
       parkWaitDipFromCandidate(cfg, state, c, nowMs);
       if (await tryFireWaitDip(cfg, state, c.mint, nowMs)) filled += 1;
@@ -1445,7 +1521,8 @@ export async function runMildDipLoop(
         ? `/${cfg.waitDipPct}%/+${cfg.waitDipMaxOvershootPct}pp` +
           `/chase${cfg.waitDipMaxChasePct}%` +
           `/qPrem${cfg.waitDipQuotePremiumPct}%` +
-          `/${Math.round(cfg.waitDipMaxWatchMs / 1000)}s `
+          `/${Math.round(cfg.waitDipMaxWatchMs / 1000)}s` +
+          `/skipH1=1/skipRebuyWin=1 `
         : ' ') +
       `exit=W9.1 arm=${cfg.exit.armPct}% ` +
       (cfg.exit.mfeBankEnabled
