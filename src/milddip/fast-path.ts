@@ -430,6 +430,10 @@ export async function evaluateFastPathCandidate(
       beta: cfg.turnDumpBeta,
       shallowSlackPct: cfg.turnDumpShallowSlackPct,
       deepSlackPct: cfg.turnDumpDeepSlackPct,
+      shallowBranchEnabled: cfg.turnDumpShallowBranchEnabled,
+      shallowAlpha: cfg.turnDumpShallowAlpha,
+      shallowBeta: cfg.turnDumpShallowBeta,
+      shallowBandPct: cfg.turnDumpShallowBandPct,
     });
     if (!td.pass) {
       // 1.11.774 — was silent null; journal so live misses are visible.
@@ -445,6 +449,7 @@ export async function evaluateFastPathCandidate(
         turn: td.turn,
         pred: td.pred,
         resid: td.resid,
+        branch: td.branch,
         reasons: td.reasons,
       });
       return null;

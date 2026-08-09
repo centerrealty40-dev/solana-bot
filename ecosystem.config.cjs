@@ -2883,16 +2883,22 @@ const PM2_APPS = [
         MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',
         MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',
         /**
-         * 1.11.773/774 — 8zkg formula: dump ≈ -5.08 + 6.86·log1p(turn·100).
+         * 1.11.773/774 — MAIN: dump ≈ -5.08 + 6.86·log1p(turn·100).
          * Shallow slack 10 (was 8): +~2pp for observe/fill slip — live miss
          * tpg7… resid −8.32 under slack 8. Deep ceiling unchanged +12.
          * Forces wait-dip off when enabled.
+         * 1.11.777 — SHALLOW OR-branch: dump ≈ -8.83 + 4.23·log1p(turn·100) ±8
+         * (~7% of 8zkg dip buys that miss MAIN; live miss 72Jp… dump 3.74).
          */
         MILD_DIP_TURN_DUMP_GATE: '1',
         MILD_DIP_TURN_DUMP_ALPHA: '-5.08',
         MILD_DIP_TURN_DUMP_BETA: '6.86',
         MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT: '10',
         MILD_DIP_TURN_DUMP_DEEP_SLACK_PCT: '12',
+        MILD_DIP_TURN_DUMP_SHALLOW_BRANCH: '1',
+        MILD_DIP_TURN_DUMP_SHALLOW_ALPHA: '-8.83',
+        MILD_DIP_TURN_DUMP_SHALLOW_BETA: '4.23',
+        MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT: '8',
         /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
          * 1.11.730 with scale-in removal). Scale-in stays deleted.

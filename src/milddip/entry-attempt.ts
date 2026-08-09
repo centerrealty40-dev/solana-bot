@@ -303,6 +303,10 @@ export async function attemptMildDipEntry(args: {
       beta: cfg.turnDumpBeta,
       shallowSlackPct: cfg.turnDumpShallowSlackPct,
       deepSlackPct: cfg.turnDumpDeepSlackPct,
+      shallowBranchEnabled: cfg.turnDumpShallowBranchEnabled,
+      shallowAlpha: cfg.turnDumpShallowAlpha,
+      shallowBeta: cfg.turnDumpShallowBeta,
+      shallowBandPct: cfg.turnDumpShallowBandPct,
     });
     if (!td.pass) {
       appendMildDipJournal(cfg.journalPath, {
@@ -316,6 +320,7 @@ export async function attemptMildDipEntry(args: {
         turn: td.turn,
         pred: td.pred,
         resid: td.resid,
+        branch: td.branch,
         reasons: td.reasons,
       });
       console.log(
