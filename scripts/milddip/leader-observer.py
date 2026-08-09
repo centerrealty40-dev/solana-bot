@@ -174,6 +174,54 @@ def classify(pc: Any) -> str:
     return "shallow"
 
 
+def flatten_dex(dex: dict[str, Any] | None) -> dict[str, Any]:
+    """Top-level market fields for offline CF (avoid nested-only dex)."""
+    if not dex or dex.get("error"):
+        return {
+            "pc5m": None,
+            "pc1h": None,
+            "vol5m": None,
+            "vol1h": None,
+            "liq": None,
+            "mcap": None,
+            "buys5m": None,
+            "sells5m": None,
+            "ageHours": None,
+            "turnover5mLiq": None,
+            "vol1hMcap": None,
+            "buySellRatio5m": None,
+        }
+    vol5 = dex.get("vol5m")
+    liq = dex.get("liq")
+    vol1 = dex.get("vol1h")
+    mcap = dex.get("mcap")
+    buys = dex.get("buys5m")
+    sells = dex.get("sells5m")
+    turn = dex.get("turnover5mLiq")
+    if turn is None and vol5 is not None and liq and float(liq) > 0:
+        turn = float(vol5) / float(liq)
+    v2m = None
+    if vol1 is not None and mcap and float(mcap) > 0:
+        v2m = float(vol1) / float(mcap)
+    pressure = None
+    if buys is not None and sells is not None and float(sells) > 0:
+        pressure = float(buys) / float(sells)
+    return {
+        "pc5m": dex.get("pc5m"),
+        "pc1h": dex.get("pc1h"),
+        "vol5m": vol5,
+        "vol1h": vol1,
+        "liq": liq,
+        "mcap": mcap,
+        "buys5m": buys,
+        "sells5m": sells,
+        "ageHours": dex.get("ageHours"),
+        "turnover5mLiq": turn,
+        "vol1hMcap": v2m,
+        "buySellRatio5m": pressure,
+    }
+
+
 def gate_fit(d: dict[str, Any] | None) -> dict[str, Any]:
     """
     Compare Dex snapshot vs current live mild-dip entry stack (1.11.760).
@@ -348,6 +396,8 @@ class Observer:
         # leader -> mint -> bag state
         self.bags: dict[str, dict[str, dict[str, Any]]] = {}
         self._sol_cache: dict[str, Any] = {}
+        # leader -> day -> rolling flat stats (emitted as leader_daily_rollup)
+        self._daily: dict[str, dict[str, dict[str, Any]]] = {}
         self._load_state()
         self.out_path = self._out_path_for_today()
 
@@ -511,6 +561,8 @@ class Observer:
                 "lastBuyBlockTime": block_time,
                 "buys": 1,
                 "sells": 0,
+                # Filled by caller with flatten_dex at open (for session_flat CF).
+                "entryMarket": None,
             }
             self._set_bag(leader, mint, bag)
             return {"isNewBag": True, "isAdd": False, "bag": bag}
@@ -589,7 +641,13 @@ class Observer:
                 "sizeUsdProceeds": size_usd,
             }
             self._set_bag(leader, mint, None)
-            return {"isFlat": True, "isPartial": False, "bag": None, "session": session}
+            return {
+                "isFlat": True,
+                "isPartial": False,
+                "bag": None,
+                "session": session,
+                "prevBag": prev,
+            }
         self._set_bag(leader, mint, bag)
         return {
             "isFlat": False,
@@ -604,6 +662,7 @@ class Observer:
                 "exitPriceUsd": fill_px,
                 "sizeUsdProceeds": size_usd,
             },
+            "prevBag": prev,
         }
 
     def observe_leader(self, leader: str) -> None:
@@ -675,6 +734,7 @@ class Observer:
                         dex_px = None
                 pc = (dex or {}).get("pc5m") if isinstance(dex, dict) else None
                 gates = gate_fit(dex if isinstance(dex, dict) else None)
+                flat = flatten_dex(dex if isinstance(dex, dict) else None)
                 fills = fill_metrics(delta, quote, dex_px)
                 ts_ms = int(time.time() * 1000)
 
@@ -700,6 +760,8 @@ class Observer:
                     "dex": dex,
                     "class": classify(pc),
                     "gates": gates,
+                    # Flat market snapshot (missing before: only nested dex).
+                    **flat,
                 }
 
                 if side == "buy":
@@ -712,6 +774,12 @@ class Observer:
                         block_time=block_time,
                         signature=sig,
                     )
+                    if bag_info["isNewBag"] and bag_info.get("bag") is not None:
+                        bag_info["bag"]["entryMarket"] = {
+                            "class": classify(pc),
+                            **flat,
+                        }
+                        self._set_bag(leader, mint, bag_info["bag"])
                     base.update(
                         {
                             "kind": "leader_buy_observed",
@@ -736,6 +804,7 @@ class Observer:
                                 "sizeUsd": fills.get("sizeUsd"),
                                 "tokenUi": post_ui,
                                 "class": classify(pc),
+                                **flat,
                             }
                         )
                     try:
@@ -769,6 +838,16 @@ class Observer:
                         signature=sig,
                     )
                     sess = bag_info.get("session") or {}
+                    prev_bag = bag_info.get("prevBag") or {}
+                    entry_mkt = prev_bag.get("entryMarket") if isinstance(prev_bag, dict) else None
+                    if not isinstance(entry_mkt, dict):
+                        entry_mkt = {}
+                    pct = sess.get("pnlPctApprox")
+                    cost = float(prev_bag.get("costUsd") or 0) if isinstance(prev_bag, dict) else 0.0
+                    pnl_usd = None
+                    if pct is not None and cost > 0:
+                        pct_w = max(-95.0, min(float(pct), 300.0))
+                        pnl_usd = cost * pct_w / 100.0
                     base.update(
                         {
                             "kind": "leader_sell_observed",
@@ -776,31 +855,96 @@ class Observer:
                             "isPartial": bag_info.get("isPartial"),
                             "bagTokenUi": post_ui,
                             "soldUi": sess.get("soldUi"),
-                            "pnlPctApprox": sess.get("pnlPctApprox"),
+                            "pnlPctApprox": pct,
+                            "pnlUsdApprox": pnl_usd,
                             "heldSec": sess.get("heldSec"),
                             "entryPriceUsd": sess.get("entryPriceUsd"),
                             "exitPriceUsd": sess.get("exitPriceUsd") or fills.get("fillPriceUsd"),
+                            "bagCostUsd": cost if cost > 0 else None,
                         }
                     )
                     self.emit(base)
                     if bag_info.get("isFlat"):
-                        self.emit(
-                            {
-                                "kind": "leader_session_flat",
-                                "leader": leader,
-                                "mint": mint,
-                                "signature": sig,
-                                "blockTime": block_time,
-                                "blockIso": utc_iso(block_time) if block_time else None,
-                                "openedSignature": sess.get("openedSignature"),
-                                "openedBlockTime": sess.get("openedBlockTime"),
-                                "entryPriceUsd": sess.get("entryPriceUsd"),
-                                "exitPriceUsd": sess.get("exitPriceUsd") or fills.get("fillPriceUsd"),
-                                "pnlPctApprox": sess.get("pnlPctApprox"),
-                                "heldSec": sess.get("heldSec"),
-                                "sizeUsdProceeds": sess.get("sizeUsdProceeds"),
-                            }
-                        )
+                        flat_ev = {
+                            "kind": "leader_session_flat",
+                            "leader": leader,
+                            "mint": mint,
+                            "signature": sig,
+                            "blockTime": block_time,
+                            "blockIso": utc_iso(block_time) if block_time else None,
+                            "openedSignature": sess.get("openedSignature"),
+                            "openedBlockTime": sess.get("openedBlockTime"),
+                            "entryPriceUsd": sess.get("entryPriceUsd"),
+                            "exitPriceUsd": sess.get("exitPriceUsd") or fills.get("fillPriceUsd"),
+                            "pnlPctApprox": pct,
+                            "pnlUsdApprox": pnl_usd,
+                            "heldSec": sess.get("heldSec"),
+                            "sizeUsdProceeds": sess.get("sizeUsdProceeds"),
+                            "bagCostUsd": cost if cost > 0 else None,
+                            "entryClass": entry_mkt.get("class"),
+                            "entryPc5m": entry_mkt.get("pc5m"),
+                            "entryPc1h": entry_mkt.get("pc1h"),
+                            "entryTurnover5mLiq": entry_mkt.get("turnover5mLiq"),
+                            "entryVol1hMcap": entry_mkt.get("vol1hMcap"),
+                            "entryBuySellRatio5m": entry_mkt.get("buySellRatio5m"),
+                            "entryAgeHours": entry_mkt.get("ageHours"),
+                            "entryVol5m": entry_mkt.get("vol5m"),
+                            "entryVol1h": entry_mkt.get("vol1h"),
+                            "entryLiq": entry_mkt.get("liq"),
+                            "entryMcap": entry_mkt.get("mcap"),
+                        }
+                        self.emit(flat_ev)
+                        self._note_session_flat(leader, flat_ev)
+
+    def _note_session_flat(self, leader: str, flat_ev: dict[str, Any]) -> None:
+        """Accumulate per-UTC-day session stats; emit rollup snapshot after each flat."""
+        day = (flat_ev.get("blockIso") or utc_iso())[:10]
+        by_day = self._daily.setdefault(leader, {})
+        row = by_day.get(day)
+        if not row:
+            row = {
+                "n": 0,
+                "wins": 0,
+                "sumPct": 0.0,
+                "sumUsd": 0.0,
+                "holdSumSec": 0.0,
+                "byEntryClass": {},
+            }
+            by_day[day] = row
+        pct = flat_ev.get("pnlPctApprox")
+        usd = flat_ev.get("pnlUsdApprox")
+        held = flat_ev.get("heldSec")
+        row["n"] = int(row["n"]) + 1
+        if isinstance(pct, (int, float)):
+            row["sumPct"] = float(row["sumPct"]) + float(pct)
+            if pct > 0:
+                row["wins"] = int(row["wins"]) + 1
+        if isinstance(usd, (int, float)):
+            row["sumUsd"] = float(row["sumUsd"]) + float(usd)
+        if isinstance(held, (int, float)):
+            row["holdSumSec"] = float(row["holdSumSec"]) + float(held)
+        cls = flat_ev.get("entryClass") or "unknown"
+        bc = row["byEntryClass"]
+        cell = bc.get(cls) or {"n": 0, "sumUsd": 0.0}
+        cell["n"] = int(cell["n"]) + 1
+        if isinstance(usd, (int, float)):
+            cell["sumUsd"] = float(cell["sumUsd"]) + float(usd)
+        bc[cls] = cell
+        n = int(row["n"])
+        self.emit(
+            {
+                "kind": "leader_daily_rollup",
+                "leader": leader,
+                "day": day,
+                "n": n,
+                "wins": int(row["wins"]),
+                "winRate": (int(row["wins"]) / n) if n else None,
+                "sumPct": round(float(row["sumPct"]), 2),
+                "sumUsd": round(float(row["sumUsd"]), 2),
+                "avgHoldSec": round(float(row["holdSumSec"]) / n, 1) if n else None,
+                "byEntryClass": bc,
+            }
+        )
 
     def emit_bag_marks(self) -> None:
         if not self.log_marks:

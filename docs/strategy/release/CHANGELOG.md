@@ -1,4 +1,22 @@
 # So
+## [1.11.769] — 2026-08-09
+
+**Тег:** `sa-1.11.769`
+
+### Research/log: leader daily-edge fields + attempt context
+
+Why 8zkg is green most days: positive EV × volume (mean ~+3.9%/session, ~400/day → P(day>0)≈99.6%). Bootstrap confirms.
+
+**Logging:**
+- `leader-observer`: flat `pc5m/pc1h/vol*/liq/mcap/turnover/vol1hMcap/buySellRatio5m`, `pnlUsdApprox`, entry market on `leader_session_flat`, `leader_daily_rollup`
+- `mild_dip_buy_attempt`: `pc1h`, `volume1hUsd`, `turnover5mLiq`, `vol1hMcap`, `buys5m`, `sells5m`
+
+Artifacts: `artifacts/milddip-leader-edge/LEADER_DAILY_EDGE.md`
+
+**Откат:** revert observer flatten + attempt journal fields; reload observer/bot.
+
+---
+
 ## [1.11.767] — 2026-08-09
 
 **Тег:** `sa-1.11.767`

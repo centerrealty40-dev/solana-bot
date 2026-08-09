@@ -533,6 +533,15 @@ export async function attemptMildDipEntry(args: {
     isWaitDip && c.waitDipSignalPriceUsd
       ? dumpFromSignalPct(fillPxJournal, c.waitDipSignalPriceUsd)
       : null;
+  const liqForTurn = sizeMetrics.liquidityUsd;
+  const vol5ForTurn = c.metrics.volume5mUsd;
+  const turnover5mLiq =
+    vol5ForTurn != null && liqForTurn != null && liqForTurn > 0
+      ? vol5ForTurn / liqForTurn
+      : null;
+  const vol1h = c.metrics.volume1hUsd ?? null;
+  const mcap = sizeMetrics.marketCapUsd ?? null;
+  const vol1hMcap = vol1h != null && mcap != null && mcap > 0 ? vol1h / mcap : null;
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_buy_attempt',
     mint: c.mint,
@@ -542,9 +551,15 @@ export async function attemptMildDipEntry(args: {
     signalPriceUsd: c.priceUsd,
     pc5m: entryPc5m,
     signalPc5m: c.metrics.priceChange5mPct,
+    pc1h: c.metrics.priceChange1hPct ?? null,
     volume5mUsd: c.metrics.volume5mUsd,
+    volume1hUsd: vol1h,
     liquidityUsd: sizeMetrics.liquidityUsd,
-    marketCapUsd: sizeMetrics.marketCapUsd,
+    marketCapUsd: mcap,
+    turnover5mLiq,
+    vol1hMcap,
+    buys5m: c.metrics.buys5m ?? null,
+    sells5m: c.metrics.sells5m ?? null,
     dipSource: c.dipSource,
     waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
     waitDipOriginalSource: c.waitDipOriginalSource ?? null,
