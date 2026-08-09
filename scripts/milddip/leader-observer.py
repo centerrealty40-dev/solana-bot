@@ -7,11 +7,16 @@ quote-leg deltas, snapshots DexScreener, classifies the 5m tape, records whether
 current mild-dip gates would have taken the name, and maintains a per-leader
 bag ledger for session open/flat events. Does not trade.
 
+Dense exit tape (1.11.790): while bags are open, emits `leader_bag_tick` every
+~1s with Jupiter mark price + cached Dex tape features and precomputed
+exit-formula fields (mfe/mae/giveback/bounce/armed proxies/DUR counters) so
+overnight RE can recover per-wallet exit rules without 65s mark sparsity.
+
 Env:
   LEADER_OBSERVER_RPC_URL   — required unless mild-dip-bot pm2 env is readable
   LEADER_OBSERVER_LEADERS   — comma wallets (default: 8zkg + 7BNax)
   LEADER_OBSERVER_OUT_DIR   — default data/milddip
-  LEADER_OBSERVER_POLL_SEC  — default 10
+  LEADER_OBSERVER_POLL_SEC  — signature poll interval (default 5; floor 1)
   LEADER_OBSERVER_LOOKBACK_SEC — ignore older sigs (default 1800)
   LEADER_OBSERVER_SIG_LIMIT — getSignaturesForAddress limit (default 80)
   LEADER_OBSERVER_MAX_HOURS — 0 = run forever (default 72)
@@ -19,8 +24,14 @@ Env:
   LEADER_OBSERVER_SEED_MAX  — max mints in sidecar (default 40)
   LEADER_OBSERVER_SEED_MAX_AGE_SEC — drop older seed hits (default 7200)
   LEADER_OBSERVER_LOG_SELLS — 1 (default) log leader_sell_observed
-  LEADER_OBSERVER_LOG_MARKS — 1 (default) bag marks while open (exit-path tape)
-  LEADER_OBSERVER_MARK_MIN_GAP_SEC — min seconds between marks per bag (default 60)
+  LEADER_OBSERVER_LOG_MARKS — 1 (default) slow Dex bag marks while open
+  LEADER_OBSERVER_MARK_MIN_GAP_SEC — min seconds between Dex marks (default 15; floor 1)
+  LEADER_OBSERVER_DENSE_TICKS — 1 (default) emit 1Hz leader_bag_tick
+  LEADER_OBSERVER_DENSE_GAP_SEC — dense tick cadence (default 1; floor 1)
+  LEADER_OBSERVER_DEX_REFRESH_SEC — refresh Dex features on open bags (default 15)
+  LEADER_OBSERVER_DENSE_ONLY_TD — 1 = dense ticks only for TD entry bags (default 0 = all open)
+  LEADER_OBSERVER_PRICE_URL — Jupiter price v3 base (default https://api.jup.ag/price/v3)
+  JUPITER_API_KEY — optional; forwarded as x-api-key for price v3
 """
 
 from __future__ import annotations
@@ -155,6 +166,108 @@ def fetch_dex(mint: str) -> dict[str, Any] | None:
         }
     except Exception as e:
         return {"error": str(e)}
+
+
+def fetch_jupiter_prices(mints: list[str], price_url: str) -> dict[str, float]:
+    """Batch Jupiter price v3. Returns mint -> usdPrice for hits only."""
+    out: dict[str, float] = {}
+    ids = [m for m in mints if m and len(m) >= 32]
+    if not ids:
+        return out
+    # API accepts comma-separated ids; chunk to keep URLs sane.
+    key = (os.environ.get("JUPITER_API_KEY") or "").strip()
+    headers = {"accept": "application/json", "user-agent": "mild-dip-leader-observer"}
+    if key:
+        headers["x-api-key"] = key
+    base = (price_url or "https://api.jup.ag/price/v3").rstrip("?&")
+    for i in range(0, len(ids), 40):
+        chunk = ids[i : i + 40]
+        url = f"{base}?ids={','.join(chunk)}"
+        try:
+            req = urllib.request.Request(url, headers=headers)
+            with urllib.request.urlopen(req, timeout=8) as r:
+                j = json.loads(r.read().decode())
+        except Exception:
+            continue
+        data = j.get("data") if isinstance(j, dict) and isinstance(j.get("data"), dict) else j
+        if not isinstance(data, dict):
+            continue
+        for mint, row in data.items():
+            if mint in ("data", "timeTaken", "contextSlot"):
+                continue
+            if not isinstance(row, dict):
+                continue
+            try:
+                px = float(row.get("usdPrice") if row.get("usdPrice") is not None else row.get("price") or 0)
+            except (TypeError, ValueError):
+                continue
+            if px > 0 and math.isfinite(px):
+                out[str(mint)] = px
+    return out
+
+
+def entry_is_td(bag: dict[str, Any]) -> bool:
+    """TD entry = non-green class or turnDump branch/main/shallow gates."""
+    cls = bag.get("entryClass")
+    if cls and cls != "green" and cls != "unknown":
+        if cls in ("shallow", "mild_shallow", "mild_deep", "deep_knife", "rug_knife"):
+            return True
+    td = bag.get("entryTurnDump") or {}
+    if isinstance(td, dict):
+        if td.get("inMain") or td.get("inShallow"):
+            return True
+        if td.get("branch") in ("main", "shallow"):
+            return True
+    gates = bag.get("entryGates") or {}
+    if isinstance(gates, dict) and gates.get("main") is True:
+        return True
+    return False
+
+
+def apply_path_metrics(bag: dict[str, Any], px: float, entry: float) -> dict[str, float]:
+    """Update bag peak/trough/mfe/mae and return derived exit-formula fields."""
+    pnl = (px / entry - 1.0) * 100.0
+    peak = float(bag.get("peakPriceUsd") or entry)
+    trough = float(bag.get("troughPriceUsd") or entry)
+    if px > peak:
+        peak = px
+    if px < trough:
+        trough = px
+    bag["peakPriceUsd"] = peak
+    bag["troughPriceUsd"] = trough
+    mfe = max(float(bag.get("mfePct") or 0.0), pnl)
+    mae = min(float(bag.get("maePct") or 0.0), pnl)
+    bag["mfePct"] = mfe
+    bag["maePct"] = mae
+    giveback = (px / peak - 1.0) * 100.0 if peak > 0 else 0.0
+    bounce = (px / trough - 1.0) * 100.0 if trough > 0 else 0.0
+    dd_from_peak = mfe - pnl
+    max_bounce = max(float(bag.get("maxBouncePct") or 0.0), bounce)
+    bag["maxBouncePct"] = max_bounce
+    # Armed proxies (sticky once true).
+    for thr, key in ((5.0, "armedMfe5"), (8.0, "armedMfe8"), (10.0, "armedMfe10"), (12.0, "armedMfe12")):
+        if mfe >= thr:
+            bag[key] = True
+            if not bag.get(f"{key}AtMs"):
+                bag[f"{key}AtMs"] = int(time.time() * 1000)
+    # DUR-style consecutive red counters at common SL thresholds (mark/tick samples).
+    for sl in (8, 10, 12, 15, 20, 25):
+        k = f"durNeg{sl}"
+        if pnl <= -float(sl):
+            bag[k] = int(bag.get(k) or 0) + 1
+        else:
+            bag[k] = 0
+    return {
+        "pnlPct": pnl,
+        "mfePct": mfe,
+        "maePct": mae,
+        "givebackPct": giveback,
+        "bouncePct": bounce,
+        "ddFromPeakPct": dd_from_peak,
+        "maxBouncePct": max_bounce,
+        "peakPriceUsd": peak,
+        "troughPriceUsd": trough,
+    }
 
 
 def classify(pc: Any) -> str:
@@ -387,8 +500,8 @@ class Observer:
         self.leaders = [x.strip() for x in raw.split(",") if x.strip()] or list(DEFAULT_LEADERS)
         self.out_dir = Path(os.environ.get("LEADER_OBSERVER_OUT_DIR", "data/milddip"))
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        # 1.11.778 — denser absolute tape for entry/exit formula RE.
-        self.poll_sec = max(5, int(env_num("LEADER_OBSERVER_POLL_SEC", 10)))
+        # 1.11.790 — 1Hz dense ticks; signature poll can stay a few seconds.
+        self.poll_sec = max(1, int(env_num("LEADER_OBSERVER_POLL_SEC", 5)))
         self.lookback_sec = max(60, int(env_num("LEADER_OBSERVER_LOOKBACK_SEC", 1800)))
         self.sig_limit = max(20, min(100, int(env_num("LEADER_OBSERVER_SIG_LIMIT", 80))))
         self.max_hours = env_num("LEADER_OBSERVER_MAX_HOURS", 72)
@@ -398,7 +511,15 @@ class Observer:
         self.seed_max_age_sec = max(60, int(env_num("LEADER_OBSERVER_SEED_MAX_AGE_SEC", 7200)))
         self.log_sells = env_bool("LEADER_OBSERVER_LOG_SELLS", True)
         self.log_marks = env_bool("LEADER_OBSERVER_LOG_MARKS", True)
-        self.mark_min_gap_sec = max(15, int(env_num("LEADER_OBSERVER_MARK_MIN_GAP_SEC", 60)))
+        self.mark_min_gap_sec = max(1, int(env_num("LEADER_OBSERVER_MARK_MIN_GAP_SEC", 15)))
+        self.dense_ticks = env_bool("LEADER_OBSERVER_DENSE_TICKS", True)
+        self.dense_gap_sec = max(1, int(env_num("LEADER_OBSERVER_DENSE_GAP_SEC", 1)))
+        self.dex_refresh_sec = max(5, int(env_num("LEADER_OBSERVER_DEX_REFRESH_SEC", 15)))
+        self.dense_only_td = env_bool("LEADER_OBSERVER_DENSE_ONLY_TD", False)
+        self.price_url = (
+            os.environ.get("LEADER_OBSERVER_PRICE_URL", "").strip()
+            or "https://api.jup.ag/price/v3"
+        )
         self.state_path = self.out_dir / "leader-observer-state.json"
         self.seen: set[str] = set()
         # leader -> mint -> bag state
@@ -406,6 +527,9 @@ class Observer:
         self._sol_cache: dict[str, Any] = {}
         self._load_state()
         self.out_path = self._out_path_for_today()
+        self.dense_path = self._dense_path_for_today()
+        self._last_sig_poll_at = 0.0
+        self._last_state_save_at = 0.0
         # 1.11.786 — dual-write cash trade rows next to mild-dip fills.
         trades_env = os.environ.get("LEADER_OBSERVER_TRADES_PATH", "").strip()
         self.trades_path = (
@@ -415,6 +539,10 @@ class Observer:
     def _out_path_for_today(self) -> Path:
         day = dt.datetime.utcnow().strftime("%Y%m%d")
         return self.out_dir / f"leader-observer-{day}.jsonl"
+
+    def _dense_path_for_today(self) -> Path:
+        day = dt.datetime.utcnow().strftime("%Y%m%d")
+        return self.out_dir / f"leader-dense-{day}.jsonl"
 
     def emit_trade(self, payload: dict[str, Any]) -> None:
         """Canonical trade_fill / trade_roundtrip into shared trades.jsonl."""
@@ -477,6 +605,16 @@ class Observer:
         payload.setdefault("tsMs", int(time.time() * 1000))
         payload.setdefault("iso", utc_iso())
         with self.out_path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+
+    def emit_dense(self, payload: dict[str, Any]) -> None:
+        """Write dense ticks to dedicated daily jsonl (keeps main tape readable)."""
+        today = self._dense_path_for_today()
+        if today != self.dense_path:
+            self.dense_path = today
+        payload.setdefault("tsMs", int(time.time() * 1000))
+        payload.setdefault("iso", utc_iso())
+        with self.dense_path.open("a", encoding="utf-8") as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
 
     def upsert_seed(
@@ -590,6 +728,7 @@ class Observer:
         is_new = prev is None or float(prev.get("tokenUi") or 0) <= FLAT_UI_EPS
         if is_new:
             cost = float(size_usd or 0)
+            entry0 = float(fill_px) if isinstance(fill_px, (int, float)) and fill_px > 0 else None
             bag = {
                 "tokenUi": token_ui,
                 "costUsd": cost,
@@ -604,7 +743,17 @@ class Observer:
                 "sells": 0,
                 "mfePct": 0.0,
                 "maePct": 0.0,
+                "peakPriceUsd": entry0,
+                "troughPriceUsd": entry0,
+                "maxBouncePct": 0.0,
+                "armedMfe5": False,
+                "armedMfe8": False,
+                "armedMfe10": False,
+                "armedMfe12": False,
                 "lastMarkAtMs": 0,
+                "lastDenseAtMs": 0,
+                "lastDexAtMs": 0,
+                "lastDex": None,
             }
             self._set_bag(leader, mint, bag)
             return {"isNewBag": True, "isAdd": False, "bag": bag}
@@ -700,6 +849,30 @@ class Observer:
                 "entryTurnDump": prev.get("entryTurnDump"),
                 "mfePct": prev.get("mfePct"),
                 "maePct": prev.get("maePct"),
+                "peakPriceUsd": prev.get("peakPriceUsd"),
+                "troughPriceUsd": prev.get("troughPriceUsd"),
+                "maxBouncePct": prev.get("maxBouncePct"),
+                "armedMfe5": bool(prev.get("armedMfe5")),
+                "armedMfe8": bool(prev.get("armedMfe8")),
+                "armedMfe10": bool(prev.get("armedMfe10")),
+                "armedMfe12": bool(prev.get("armedMfe12")),
+                "givebackPctAtExit": (
+                    ((float(fill_px) / float(prev["peakPriceUsd"])) - 1.0) * 100.0
+                    if isinstance(fill_px, (int, float))
+                    and fill_px > 0
+                    and isinstance(prev.get("peakPriceUsd"), (int, float))
+                    and float(prev["peakPriceUsd"]) > 0
+                    else None
+                ),
+                "bouncePctAtExit": (
+                    ((float(fill_px) / float(prev["troughPriceUsd"])) - 1.0) * 100.0
+                    if isinstance(fill_px, (int, float))
+                    and fill_px > 0
+                    and isinstance(prev.get("troughPriceUsd"), (int, float))
+                    and float(prev["troughPriceUsd"]) > 0
+                    else None
+                ),
+                "isTdEntry": entry_is_td(prev),
                 "buys": prev.get("buys"),
                 "sells": int(prev.get("sells") or 0) + 1,
             }
@@ -1003,6 +1176,16 @@ class Observer:
                                 "exitTurnDump": td,
                                 "mfePct": sess.get("mfePct"),
                                 "maePct": sess.get("maePct"),
+                                "peakPriceUsd": sess.get("peakPriceUsd"),
+                                "troughPriceUsd": sess.get("troughPriceUsd"),
+                                "maxBouncePct": sess.get("maxBouncePct"),
+                                "givebackPctAtExit": sess.get("givebackPctAtExit"),
+                                "bouncePctAtExit": sess.get("bouncePctAtExit"),
+                                "armedMfe5": sess.get("armedMfe5"),
+                                "armedMfe8": sess.get("armedMfe8"),
+                                "armedMfe10": sess.get("armedMfe10"),
+                                "armedMfe12": sess.get("armedMfe12"),
+                                "isTdEntry": sess.get("isTdEntry"),
                                 "buys": sess.get("buys"),
                                 "sells": sess.get("sells"),
                             }
@@ -1031,63 +1214,207 @@ class Observer:
                             }
                         )
 
+    def _open_bags(self) -> list[tuple[str, str, dict[str, Any]]]:
+        out: list[tuple[str, str, dict[str, Any]]] = []
+        for leader, by_mint in list(self.bags.items()):
+            for mint, bag in list((by_mint or {}).items()):
+                if not isinstance(bag, dict):
+                    continue
+                if float(bag.get("tokenUi") or 0) <= FLAT_UI_EPS:
+                    continue
+                out.append((leader, mint, bag))
+        return out
+
+    def _refresh_dex_cache(self, mint: str, bag: dict[str, Any], now_ms: int, force: bool = False) -> dict[str, Any] | None:
+        last = int(bag.get("lastDexAtMs") or 0)
+        cached = bag.get("lastDex") if isinstance(bag.get("lastDex"), dict) else None
+        if (
+            not force
+            and cached
+            and not cached.get("error")
+            and last
+            and now_ms - last < self.dex_refresh_sec * 1000
+        ):
+            return cached
+        dex = fetch_dex(mint)
+        if isinstance(dex, dict):
+            bag["lastDex"] = dex
+            bag["lastDexAtMs"] = now_ms
+        return dex if isinstance(dex, dict) else cached
+
+    def _exit_feature_row(
+        self,
+        *,
+        kind: str,
+        leader: str,
+        mint: str,
+        bag: dict[str, Any],
+        px: float | None,
+        price_source: str,
+        dex: dict[str, Any] | None,
+        path: dict[str, float] | None,
+        now_ms: int,
+    ) -> dict[str, Any]:
+        entry = bag.get("entryPriceUsd")
+        opened_bt = bag.get("openedBlockTime")
+        held_sec = max(0, int(time.time()) - int(opened_bt)) if opened_bt else None
+        held_ms = max(0, now_ms - int(opened_bt) * 1000) if opened_bt else None
+        pc = None
+        if isinstance(dex, dict) and not dex.get("error"):
+            pc = dex.get("pc5m")
+        td_entry = bag.get("entryTurnDump") if isinstance(bag.get("entryTurnDump"), dict) else None
+        dex_ok = isinstance(dex, dict) and not dex.get("error")
+        row: dict[str, Any] = {
+            "kind": kind,
+            "leader": leader,
+            "mint": mint,
+            "tokenUi": bag.get("tokenUi"),
+            "entryPriceUsd": entry,
+            "markPriceUsd": px,
+            "priceSource": price_source,
+            "pnlPctApprox": path.get("pnlPct") if path else None,
+            "pnlPct": path.get("pnlPct") if path else None,
+            "mfePct": bag.get("mfePct"),
+            "maePct": bag.get("maePct"),
+            "peakPriceUsd": bag.get("peakPriceUsd"),
+            "troughPriceUsd": bag.get("troughPriceUsd"),
+            "givebackPct": path.get("givebackPct") if path else None,
+            "bouncePct": path.get("bouncePct") if path else None,
+            "ddFromPeakPct": path.get("ddFromPeakPct") if path else None,
+            "maxBouncePct": bag.get("maxBouncePct"),
+            "armedMfe5": bool(bag.get("armedMfe5")),
+            "armedMfe8": bool(bag.get("armedMfe8")),
+            "armedMfe10": bool(bag.get("armedMfe10")),
+            "armedMfe12": bool(bag.get("armedMfe12")),
+            "armedMfe5AtMs": bag.get("armedMfe5AtMs"),
+            "armedMfe8AtMs": bag.get("armedMfe8AtMs"),
+            "armedMfe10AtMs": bag.get("armedMfe10AtMs"),
+            "armedMfe12AtMs": bag.get("armedMfe12AtMs"),
+            "durNeg8": int(bag.get("durNeg8") or 0),
+            "durNeg10": int(bag.get("durNeg10") or 0),
+            "durNeg12": int(bag.get("durNeg12") or 0),
+            "durNeg15": int(bag.get("durNeg15") or 0),
+            "durNeg20": int(bag.get("durNeg20") or 0),
+            "durNeg25": int(bag.get("durNeg25") or 0),
+            "heldSec": held_sec,
+            "heldMs": held_ms,
+            "openedBlockTime": opened_bt,
+            "costUsd": bag.get("costUsd"),
+            "entryClass": bag.get("entryClass"),
+            "entryBranch": (td_entry or {}).get("branch") if td_entry else None,
+            "isTdEntry": entry_is_td(bag),
+            "class": classify(pc),
+            "pc5m": dex.get("pc5m") if dex_ok else None,
+            "pc1h": dex.get("pc1h") if dex_ok else None,
+            "vol5m": dex.get("vol5m") if dex_ok else None,
+            "vol1h": dex.get("vol1h") if dex_ok else None,
+            "liq": dex.get("liq") if dex_ok else None,
+            "mcap": dex.get("mcap") if dex_ok else None,
+            "turn": dex.get("turnover5mLiq") if dex_ok else None,
+            "ageHours": dex.get("ageHours") if dex_ok else None,
+            "buys5m": dex.get("buys5m") if dex_ok else None,
+            "sells5m": dex.get("sells5m") if dex_ok else None,
+            "dexAgeSec": (
+                max(0.0, (now_ms - int(bag.get("lastDexAtMs") or now_ms)) / 1000.0)
+                if bag.get("lastDexAtMs")
+                else None
+            ),
+            "gates": gate_fit(dex if dex_ok else None),
+            "turnDump": turn_dump_snapshot(dex if dex_ok else None),
+            "dex": dex if kind == "leader_bag_mark" else None,
+        }
+        if kind == "leader_bag_tick":
+            row.pop("dex", None)
+        return row
+
     def emit_bag_marks(self) -> None:
         if not self.log_marks:
             return
         now_ms = int(time.time() * 1000)
         gap_ms = self.mark_min_gap_sec * 1000
-        for leader, by_mint in list(self.bags.items()):
-            for mint, bag in list(by_mint.items()):
-                token_ui = float(bag.get("tokenUi") or 0)
-                if token_ui <= FLAT_UI_EPS:
-                    continue
-                last_mark = int(bag.get("lastMarkAtMs") or 0)
-                if last_mark and now_ms - last_mark < gap_ms:
-                    continue
-                entry = bag.get("entryPriceUsd")
-                dex = fetch_dex(mint)
-                px = None
-                pc = None
+        for leader, mint, bag in self._open_bags():
+            last_mark = int(bag.get("lastMarkAtMs") or 0)
+            if last_mark and now_ms - last_mark < gap_ms:
+                continue
+            entry = bag.get("entryPriceUsd")
+            dex = self._refresh_dex_cache(mint, bag, now_ms, force=True)
+            px = None
+            if isinstance(dex, dict) and not dex.get("error"):
+                try:
+                    px = float(dex.get("priceUsd") or 0) or None
+                except (TypeError, ValueError):
+                    px = None
+            path = None
+            if isinstance(entry, (int, float)) and entry > 0 and px and px > 0:
+                path = apply_path_metrics(bag, px, float(entry))
+            bag["lastMarkAtMs"] = now_ms
+            self._set_bag(leader, mint, bag)
+            self.emit(
+                self._exit_feature_row(
+                    kind="leader_bag_mark",
+                    leader=leader,
+                    mint=mint,
+                    bag=bag,
+                    px=px,
+                    price_source="dex",
+                    dex=dex,
+                    path=path,
+                    now_ms=now_ms,
+                )
+            )
+
+    def emit_dense_ticks(self) -> None:
+        if not self.dense_ticks:
+            return
+        now_ms = int(time.time() * 1000)
+        gap_ms = self.dense_gap_sec * 1000
+        open_bags = self._open_bags()
+        if not open_bags:
+            return
+        due: list[tuple[str, str, dict[str, Any]]] = []
+        for leader, mint, bag in open_bags:
+            if self.dense_only_td and not entry_is_td(bag):
+                continue
+            last = int(bag.get("lastDenseAtMs") or 0)
+            if last and now_ms - last < gap_ms:
+                continue
+            due.append((leader, mint, bag))
+        if not due:
+            return
+        mints = sorted({mint for _, mint, _ in due})
+        jup = fetch_jupiter_prices(mints, self.price_url)
+        for leader, mint, bag in due:
+            entry = bag.get("entryPriceUsd")
+            dex = self._refresh_dex_cache(mint, bag, now_ms, force=False)
+            px = jup.get(mint)
+            price_source = "jupiter"
+            if not px or px <= 0:
                 if isinstance(dex, dict) and not dex.get("error"):
                     try:
                         px = float(dex.get("priceUsd") or 0) or None
                     except (TypeError, ValueError):
                         px = None
-                    pc = dex.get("pc5m")
-                pnl = None
-                if isinstance(entry, (int, float)) and entry > 0 and px and px > 0:
-                    pnl = (px / float(entry) - 1) * 100
-                    mfe = float(bag.get("mfePct") or 0)
-                    mae = float(bag.get("maePct") or 0)
-                    bag["mfePct"] = max(mfe, pnl)
-                    bag["maePct"] = min(mae, pnl)
-                held_sec = None
-                opened_bt = bag.get("openedBlockTime")
-                if opened_bt:
-                    held_sec = max(0, int(time.time()) - int(opened_bt))
-                bag["lastMarkAtMs"] = now_ms
-                self._set_bag(leader, mint, bag)
-                self.emit(
-                    {
-                        "kind": "leader_bag_mark",
-                        "leader": leader,
-                        "mint": mint,
-                        "tokenUi": token_ui,
-                        "entryPriceUsd": entry,
-                        "markPriceUsd": px,
-                        "pnlPctApprox": pnl,
-                        "mfePct": bag.get("mfePct"),
-                        "maePct": bag.get("maePct"),
-                        "heldSec": held_sec,
-                        "openedBlockTime": opened_bt,
-                        "costUsd": bag.get("costUsd"),
-                        "class": classify(pc),
-                        "gates": gate_fit(dex if isinstance(dex, dict) else None),
-                        "turnDump": turn_dump_snapshot(dex if isinstance(dex, dict) else None),
-                        "dex": dex,
-                        "entryClass": bag.get("entryClass"),
-                    }
-                )
+                    price_source = "dex"
+                else:
+                    px = None
+                    price_source = "none"
+            path = None
+            if isinstance(entry, (int, float)) and float(entry) > 0 and px and px > 0:
+                path = apply_path_metrics(bag, float(px), float(entry))
+            bag["lastDenseAtMs"] = now_ms
+            self._set_bag(leader, mint, bag)
+            row = self._exit_feature_row(
+                kind="leader_bag_tick",
+                leader=leader,
+                mint=mint,
+                bag=bag,
+                px=px,
+                price_source=price_source,
+                dex=dex,
+                path=path,
+                now_ms=now_ms,
+            )
+            self.emit_dense(row)
 
     def run(self) -> None:
         end = None if self.max_hours <= 0 else time.time() + self.max_hours * 3600
@@ -1096,6 +1423,7 @@ class Observer:
                 "kind": "leader_observer_start",
                 "leaders": self.leaders,
                 "outPath": str(self.out_path),
+                "densePath": str(self.dense_path),
                 "seedPath": str(self.seed_path),
                 "pollSec": self.poll_sec,
                 "lookbackSec": self.lookback_sec,
@@ -1104,35 +1432,60 @@ class Observer:
                 "logSells": self.log_sells,
                 "logMarks": self.log_marks,
                 "markMinGapSec": self.mark_min_gap_sec,
-                "version": "1.11.778",
+                "denseTicks": self.dense_ticks,
+                "denseGapSec": self.dense_gap_sec,
+                "dexRefreshSec": self.dex_refresh_sec,
+                "denseOnlyTd": self.dense_only_td,
+                "priceUrl": self.price_url,
+                "version": "1.11.790",
             }
         )
         print(
             f"[leader-observer] start leaders={len(self.leaders)} out={self.out_path} "
-            f"seed={self.seed_path} poll={self.poll_sec}s sigLimit={self.sig_limit} "
-            f"sells={int(self.log_sells)} marks={int(self.log_marks)} "
-            f"markGap={self.mark_min_gap_sec}s maxHours={self.max_hours}",
+            f"dense={self.dense_path} seed={self.seed_path} poll={self.poll_sec}s "
+            f"sigLimit={self.sig_limit} sells={int(self.log_sells)} marks={int(self.log_marks)} "
+            f"markGap={self.mark_min_gap_sec}s dense={int(self.dense_ticks)}/"
+            f"{self.dense_gap_sec}s dexRefresh={self.dex_refresh_sec}s "
+            f"maxHours={self.max_hours}",
             flush=True,
         )
         while end is None or time.time() < end:
-            for leader in self.leaders:
-                try:
-                    self.observe_leader(leader)
-                except Exception as e:
-                    self.emit(
-                        {
-                            "kind": "leader_observer_error",
-                            "leader": leader,
-                            "error": str(e)[:300],
-                        }
-                    )
+            loop_t0 = time.time()
+            if loop_t0 - self._last_sig_poll_at >= self.poll_sec:
+                for leader in self.leaders:
+                    try:
+                        self.observe_leader(leader)
+                    except Exception as e:
+                        self.emit(
+                            {
+                                "kind": "leader_observer_error",
+                                "leader": leader,
+                                "error": str(e)[:300],
+                            }
+                        )
+                self._last_sig_poll_at = loop_t0
             try:
                 self.emit_bag_marks()
             except Exception as e:
                 self.emit({"kind": "leader_observer_error", "error": f"marks:{str(e)[:200]}"})
-            self._save_state()
-            time.sleep(self.poll_sec)
-        self.emit({"kind": "leader_observer_done", "outPath": str(self.out_path)})
+            try:
+                self.emit_dense_ticks()
+            except Exception as e:
+                self.emit({"kind": "leader_observer_error", "error": f"dense:{str(e)[:200]}"})
+            # Persist often enough for crash recovery, not every tick.
+            if loop_t0 - self._last_state_save_at >= max(2.0, float(self.poll_sec)):
+                self._save_state()
+                self._last_state_save_at = loop_t0
+            # Sleep until next dense tick (or poll if dense off / no bags).
+            open_n = len(self._open_bags())
+            if self.dense_ticks and open_n > 0:
+                target = float(self.dense_gap_sec)
+            else:
+                target = float(self.poll_sec)
+            elapsed = time.time() - loop_t0
+            time.sleep(max(0.05, target - elapsed))
+        self._save_state()
+        self.emit({"kind": "leader_observer_done", "outPath": str(self.out_path), "densePath": str(self.dense_path)})
         print("[leader-observer] done", flush=True)
 
 
