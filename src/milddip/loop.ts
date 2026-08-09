@@ -1,7 +1,6 @@
 import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
 import { checkCopyFundingGate } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
-import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import {
   collectCandidateMints,
@@ -17,7 +16,6 @@ import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   evaluateFastPathCandidate,
   fastPathChasePct,
-  noteStructuralCache,
 } from './fast-path.js';
 import {
   evaluateWaitDipReady,
@@ -48,6 +46,7 @@ import {
   type LeaderAlignHit,
 } from './leader-align.js';
 import { isRunnerPartialExit } from './sell-partial.js';
+import { resolveExitMarkFromRing } from './exit-mark.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
 import {
@@ -144,125 +143,29 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
   };
 }
 
-/** mint → last Dex HTTP mark (vol fade + structural warm). */
-const lastDexMarkMs = new Map<string, number>();
-
-function warmDexMarkInBackground(
+/**
+ * Open-book exit mark: price-ring only (stream swaps + entry fill seed).
+ * Never awaits DexScreener — that gate queue was the markPass 20–60s bug.
+ */
+function markPriceUsd(
   mint: string,
   nowMs: number,
-  cfg: Pick<MildDipConfig, 'markCacheTtlMs' | 'entry'>,
-): void {
-  void fetchDexScreenerPairDetails(mint, {
+  cfg: Pick<MildDipConfig, 'markStreamMaxAgeMs'>,
+): { px: number | null; volume5mUsd: number | null; source: 'stream' | 'dex' | null } {
+  const last = mildDipPriceRing.lastPrice(mint, nowMs);
+  const resolved = resolveExitMarkFromRing({
+    last: last
+      ? { priceUsd: last.priceUsd, tsMs: last.tsMs, source: last.source }
+      : null,
     nowMs,
-    allowedDexIds: cfg.entry.allowedDexIds,
-    ...(cfg.markCacheTtlMs > 0
-      ? { cacheTtlMs: cfg.markCacheTtlMs, bypassCache: false }
-      : { bypassCache: true }),
-  })
-    .then((details) => {
-      if (!details?.priceUsd || !(details.priceUsd > 0)) return;
-      lastDexMarkMs.set(mint, Date.now());
-      mildDipPriceRing.note(mint, details.priceUsd, {
-        tsMs: Date.now(),
-        source: 'dex',
-      });
-      const pairAgeHours =
-        details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
-          ? Math.max(0, (Date.now() - details.pairCreatedAtMs) / 3_600_000)
-          : null;
-      noteStructuralCache(
-        mint,
-        details.priceUsd,
-        {
-          priceChange5mPct: details.priceChangeM5Pct,
-          volume5mUsd: details.volume5mUsd,
-          liquidityUsd: details.liquidityUsd,
-          marketCapUsd: details.marketCapUsd,
-          pairAgeHours,
-          dexId: details.dexId,
-          buys5m: details.buys5m,
-          sells5m: details.sells5m,
-          volume1hUsd: details.volume1hUsd,
-          priceChange1hPct: details.priceChangeH1Pct,
-        },
-        Date.now(),
-      );
-    })
-    .catch(() => {
-      /* ignore background warm errors */
-    });
-}
-
-async function markPriceUsd(
-  mint: string,
-  nowMs: number,
-  cfg: Pick<
-    MildDipConfig,
-    'markCacheTtlMs' | 'markStreamMaxAgeMs' | 'markDexRefreshMs' | 'entry'
-  >,
-): Promise<{ px: number | null; volume5mUsd: number | null; source: 'stream' | 'dex' | null }> {
-  const streamMaxAge = cfg.markStreamMaxAgeMs > 0 ? cfg.markStreamMaxAgeMs : 0;
-  const dexRefresh = cfg.markDexRefreshMs > 0 ? cfg.markDexRefreshMs : 0;
-  const lastDex = lastDexMarkMs.get(mint) ?? 0;
-  const dexDue = dexRefresh <= 0 || nowMs - lastDex >= dexRefresh;
-
-  /**
-   * Exit path must not await Dex when any recent ring print exists.
-   * Live after 1.11.736: stream age >5s still fell through to sync Dex and
-   * stretched mark passes to ~12–15s (was ~60s before stream-first). Prefer
-   * ring up to a looser stale ceiling; Dex warms in background for vol.
-   */
-  if (streamMaxAge > 0) {
-    const last = mildDipPriceRing.lastPrice(mint, nowMs);
-    const ringStaleMaxMs = Math.max(
-      streamMaxAge * 6,
-      dexRefresh > 0 ? dexRefresh : 60_000,
-      30_000,
-    );
-    if (last && last.priceUsd > 0 && nowMs - last.tsMs <= ringStaleMaxMs) {
-      if (dexDue) warmDexMarkInBackground(mint, nowMs, cfg);
-      return { px: last.priceUsd, volume5mUsd: null, source: 'stream' };
-    }
-  }
-
-  const details = await fetchDexScreenerPairDetails(mint, {
-    nowMs,
-    allowedDexIds: cfg.entry.allowedDexIds,
-    // 0 = always HTTP (legacy bypass). >0 reuses shared Dex cache within TTL.
-    ...(cfg.markCacheTtlMs > 0
-      ? { cacheTtlMs: cfg.markCacheTtlMs, bypassCache: false }
-      : { bypassCache: true }),
+    // 0 in config = accept any last print; else ring max age for exits.
+    maxAgeMs: cfg.markStreamMaxAgeMs > 0 ? cfg.markStreamMaxAgeMs : 0,
   });
-  if (!details) return { px: null, volume5mUsd: null, source: null };
-  const volume5mUsd = details.volume5mUsd ?? null;
-  const px = details.priceUsd;
-  if (px != null && px > 0) {
-    lastDexMarkMs.set(mint, nowMs);
-    mildDipPriceRing.note(mint, px, { tsMs: nowMs, source: 'dex' });
-    const pairAgeHours =
-      details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
-        ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
-        : null;
-    noteStructuralCache(
-      mint,
-      px,
-      {
-        priceChange5mPct: details.priceChangeM5Pct,
-        volume5mUsd: details.volume5mUsd,
-        liquidityUsd: details.liquidityUsd,
-        marketCapUsd: details.marketCapUsd,
-        pairAgeHours,
-        dexId: details.dexId,
-        buys5m: details.buys5m,
-        sells5m: details.sells5m,
-        volume1hUsd: details.volume1hUsd,
-        priceChange1hPct: details.priceChangeH1Pct,
-      },
-      nowMs,
-    );
-    return { px, volume5mUsd, source: 'dex' };
-  }
-  return { px: null, volume5mUsd: null, source: null };
+  return {
+    px: resolved.px,
+    volume5mUsd: resolved.volume5mUsd,
+    source: resolved.source,
+  };
 }
 
 /** mint → last `mild_dip_mark` journal ts (throttle, process-local). */
@@ -400,6 +303,9 @@ function adoptOnChainHolding(args: {
     trailArmed: false,
   };
   state.open[mint] = pos;
+  if (priceUsd > 0) {
+    mildDipPriceRing.note(mint, priceUsd, { tsMs: nowMs, source: 'dex' });
+  }
   saveMildDipState(cfg.statePath, state);
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_adopt_holding',
@@ -1267,8 +1173,9 @@ async function tryExits(
       : [];
 
   const markStarted = Date.now();
-  const markRows = await mapPool(ordered, cfg.markConcurrency, async (mint) => {
-    const { px, volume5mUsd, source } = await markPriceUsd(mint, nowMs, cfg);
+  // Ring reads are sync — concurrency knob kept for API stability only.
+  const markRows = ordered.map((mint) => {
+    const { px, volume5mUsd, source } = markPriceUsd(mint, nowMs, cfg);
     return { mint, px, volume5mUsd, source };
   });
   const markPassMs = Date.now() - markStarted;
@@ -1664,6 +1571,22 @@ export async function runMildDipLoop(
         `from ${cfg.hotMintsPath} / ${cfg.priceRingPath}`,
     );
   }
+  // Seed ring from open entry prices so stream-only marks work immediately
+  // after restart (disk ring often lags / misses live bags).
+  let seeded = 0;
+  const seedNow = Date.now();
+  for (const [mint, pos] of Object.entries(state.open)) {
+    if (!(pos.entryPriceUsd > 0)) continue;
+    if (mildDipPriceRing.lastPrice(mint, seedNow)) continue;
+    mildDipPriceRing.note(mint, pos.entryPriceUsd, {
+      tsMs: pos.openedAtMs > 0 ? pos.openedAtMs : seedNow,
+      source: 'dex',
+    });
+    seeded += 1;
+  }
+  if (seeded > 0) {
+    console.log(`[mild-dip] seeded price-ring from ${seeded} open entries (exit marks)`);
+  }
 
   const oneshotDumpGrace = createOneshotDumpGraceTracker();
   const dumpSellTape = createDumpSellTape();
@@ -1680,10 +1603,8 @@ export async function runMildDipLoop(
       minGapMsPerMint: cfg.streamPriceMinGapMs,
       concurrency: cfg.streamPriceConcurrency,
       shouldSample: (mint, t) => shouldSampleStreamPrice(state, mint, t, sampleWatchMs),
-      forceFetch: (mint) =>
-        Boolean(state.open[mint]) &&
-        ((cfg.oneshotDumpGraceEnabled && cfg.oneshotDumpGraceMs > 0) ||
-          cfg.dumpClassifyEnabled),
+      // Always force-fetch open bags so exit marks stay stream-fed.
+      forceFetch: (mint) => Boolean(state.open[mint]),
       sellTape: dumpSellTape,
       maxPostResidualFrac: cfg.oneshotDumpMaxPostResidualFrac,
       oneshot:
@@ -1798,7 +1719,7 @@ export async function runMildDipLoop(
       `/sample${Math.round(cfg.exit.neverArmVolFadeSampleMs / 1000)}s×${cfg.exit.neverArmVolFadeWeakWindows} ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms` +
-      `/stream≤${cfg.markStreamMaxAgeMs}ms/dexRefresh=${cfg.markDexRefreshMs}ms ` +
+      `/ringOnly≤${cfg.markStreamMaxAgeMs}ms/noExitDex ` +
       `cacheTtl=${cfg.markCacheTtlMs}ms markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +

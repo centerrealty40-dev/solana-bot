@@ -53,21 +53,21 @@ const MildDipConfigSchema = z.object({
    */
   markIntervalMs: z.coerce.number().int().min(1_000).max(120_000).default(2_000),
   /**
-   * Prefer stream/ring for open marks. Fresh target ≤ this (ms); usable ring
-   * may be older (see loop ringStaleMax). 0 = Dex-only.
+   * Exit marks use the price ring only (stream + entry seed). Max age of the
+   * last ring print before the mark is treated as null. 0 = any age accepted.
+   * Dex is never awaited on the exit mark path (1.11.769).
    */
-  markStreamMaxAgeMs: z.coerce.number().int().min(0).max(60_000).default(5_000),
+  markStreamMaxAgeMs: z.coerce.number().int().min(0).max(900_000).default(300_000),
   /**
-   * How often to still hit Dex on an open mint (vol fade + structural warm).
-   * Price exits use stream between Dex refreshes.
+   * Deprecated for exits (ignored). Kept so old env files still load.
+   * Was: Dex warm cadence on open bags — that flooded the 120 RPM gate.
    */
-  markDexRefreshMs: z.coerce.number().int().min(0).max(300_000).default(15_000),
+  markDexRefreshMs: z.coerce.number().int().min(0).max(300_000).default(0),
   /**
-   * DexScreener mark cache TTL — avoid bypassCache hammering the gate.
-   * Keep ≈ markIntervalMs (default 2s on sole-consumer Oscar).
+   * Dex cache TTL for discovery/entry Dex calls (not exit marks).
    */
-  markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(2_000),
-  /** Parallel DexScreener marks per exit pass. */
+  markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(20_000),
+  /** Legacy parallel mark pool size (exit marks are sync ring reads now). */
   markConcurrency: z.coerce.number().int().min(1).max(64).default(48),
   /** Parallel Dex enrich during candidate scan (still behind Dex gate). */
   enrichConcurrency: z.coerce.number().int().min(1).max(32).default(12),
@@ -566,9 +566,9 @@ export function loadMildDipConfig(): MildDipConfig {
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
-    markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 5_000,
-    markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 15_000,
-    markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 2_000,
+    markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
+    markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 0,
+    markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
     /** 1.11.736 — tighter journal so giveback gaps are visible (was 30s). */
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 5_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,
