@@ -237,21 +237,35 @@ const MildDipConfigSchema = z.object({
    */
   mildStabilizeFreshEntryEnabled: z.boolean().default(false),
   mildStabilizeMinDumpPct: z.coerce.number().max(0).default(-25),
-  /** Shallowest dump allowed (more negative = require deeper). Was −5. */
-  mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-8),
+  /**
+   * Shallowest dump allowed (more negative = require deeper).
+   * 1.11.768 — −12 (was −8); 60h CF: mid-hill −8…−12 stabilize lost money.
+   */
+  mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-12),
   mildStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
-  mildStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(8),
-  mildStabilizeTroughMinAgeMs: z.coerce.number().int().min(0).max(600_000).default(15_000),
+  /** 1.11.768 — 4 (was 8); chase bounce >4% was net-negative on 60h. */
+  mildStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(4),
+  /** 1.11.768 — 25s (was 15s); give the trough a beat before reclaim. */
+  mildStabilizeTroughMinAgeMs: z.coerce.number().int().min(0).max(600_000).default(25_000),
   /** Last must stay ≥ this % below local peak (0 = off). */
   mildStabilizeMinBelowPeakPct: z.coerce.number().min(0).max(50).default(2),
+  /**
+   * 1.11.768 — require last N ring ticks strictly rising (0 = off).
+   * Bottom/turn confirm without deleting the mild_stabilize branch.
+   */
+  mildStabilizeRequireRisingTicks: z.coerce.number().int().min(0).max(12).default(3),
   /**
    * Autonomous red-hour shallow: when 1h ≤ h1Max and pc5m ∈ (min,max],
    * enter without the main mild band (own logic — not leader copy).
    */
   h1RedShallowEnabled: z.boolean().default(false),
   h1RedShallowH1MaxPct: z.coerce.number().max(0).default(-15),
-  h1RedShallowMinDipPct: z.coerce.number().default(-10),
-  h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-3),
+  /**
+   * 1.11.768 — deeper h1 band (−15, −8] (was (−10, −3]).
+   * Shallow −3…−8 fills (DKx h1 @ −4/−7.5) were the bag-makers.
+   */
+  h1RedShallowMinDipPct: z.coerce.number().default(-15),
+  h1RedShallowMaxDipPct: z.coerce.number().max(0).default(-8),
   /**
    * Flat/chop micro-dip: pc5m ∈ (min,max] while pc1h ∈ [h1Min,h1Max].
    * Own logic (not leader copy) — small scrapes leaders take on range names.
@@ -630,15 +644,16 @@ export function loadMildDipConfig(): MildDipConfig {
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
-    mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -8),
+    mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -12),
     mildStabilizeMinBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT', 1.5),
-    mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 8),
-    mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 15_000),
+    mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 4),
+    mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 25_000),
     mildStabilizeMinBelowPeakPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT', 2),
+    mildStabilizeRequireRisingTicks: envNum('MILD_DIP_MILD_STABILIZE_REQUIRE_RISING_TICKS', 3),
     h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
-    h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
-    h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -3),
+    h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -15),
+    h1RedShallowMaxDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT', -8),
     flatMicroDipEnabled: envBool('MILD_DIP_FLAT_MICRO_ENABLED', false),
     flatMicroMinDipPct: envNum('MILD_DIP_FLAT_MICRO_MIN_DIP_PCT', -5),
     flatMicroMaxDipPct: envNum('MILD_DIP_FLAT_MICRO_MAX_DIP_PCT', -1.5),

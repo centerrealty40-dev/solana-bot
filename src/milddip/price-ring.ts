@@ -124,6 +124,19 @@ export class MildDipPriceRing {
     return this.samplesInWindow(mint, windowMs, nowMs).length;
   }
 
+  /** Last N samples in lookback (oldest → newest). Empty if fewer than n. */
+  lastNSamples(
+    mint: string,
+    n: number,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): MildDipPriceSample[] {
+    if (!(n > 0)) return [];
+    const samples = this.samplesInWindow(mint, windowMs, nowMs);
+    if (samples.length < n) return [];
+    return samples.slice(samples.length - n);
+  }
+
   watchedMints(nowMs = Date.now()): string[] {
     this.pruneAll(nowMs);
     return [...this.byMint.keys()];

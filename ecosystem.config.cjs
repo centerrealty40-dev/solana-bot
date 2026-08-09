@@ -2896,20 +2896,21 @@ const PM2_APPS = [
         MILD_DIP_MILD_STABILIZE_ENABLED: '1',
         MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '1',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
-        MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-8',
+        /** 1.11.768 — deeper dump / tighter bounce / turn confirm (60h oracle). */
+        MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-12',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
-        MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '8',
-        MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '15000',
+        MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '4',
+        MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '25000',
         MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT: '2',
+        MILD_DIP_MILD_STABILIZE_REQUIRE_RISING_TICKS: '3',
         /**
-         * Red-hour shallow (own logic, not leader copy): when 1h ≤ −15% and
-         * pc5m ∈ (−10, −3], enter without waiting for the main mild band.
-         * Prebuy must use this same band (1.11.707).
+         * Red-hour shallow (own logic, not leader copy).
+         * 1.11.768 — pc5m ∈ (−15, −8] (was (−10, −3]); shallow −3…−8 was toxic.
          */
         MILD_DIP_H1_RED_SHALLOW_ENABLED: '1',
         MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT: '-15',
-        MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT: '-10',
-        MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-3',
+        MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT: '-15',
+        MILD_DIP_H1_RED_SHALLOW_MAX_DIP_PCT: '-8',
         /**
          * 1.11.714 — OFF. Was buying −2…−5% wiggles (YBPUY1 2yM2Cne… pc5m=−3.3%
          * after a +25% rebound; same mint earlier real dumps then cliff −49%).

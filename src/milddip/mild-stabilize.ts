@@ -41,6 +41,11 @@ export type MildStabilizeGates = {
    * 0 = off.
    */
   minBelowPeakPct: number;
+  /**
+   * Require the last N ring ticks to be strictly rising (bottom turn confirm).
+   * 0 = off. 1.11.768 — default 3 from 60h oracle/grid (skip mid-downhill bounces).
+   */
+  requireRisingTicks: number;
 };
 
 export type MildStabilizeVerdict = {
@@ -113,6 +118,16 @@ export function evaluateMildStabilizeFromRing(
       reasons.push(
         `mild_stabilize_below_peak=${belowPeakPct.toFixed(2)}%<min=${gates.minBelowPeakPct}`,
       );
+    }
+  }
+  if (gates.requireRisingTicks > 0) {
+    const ticks = ring.lastNSamples(mint, gates.requireRisingTicks, gates.lookbackMs, nowMs);
+    let rising = ticks.length >= gates.requireRisingTicks;
+    for (let i = 1; rising && i < ticks.length; i++) {
+      if (!(ticks[i]!.priceUsd > ticks[i - 1]!.priceUsd)) rising = false;
+    }
+    if (!rising) {
+      reasons.push(`mild_stabilize_no_rising_${gates.requireRisingTicks}_ticks`);
     }
   }
 
