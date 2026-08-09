@@ -1,13 +1,13 @@
 /**
- * 8zkg turn→dump entry gate — ONE live formula (1.11.773 / 1.11.785).
+ * 8zkg turn→dump entry gate — OR live (1.11.789).
  *
- * MAIN (live): pred = -5.08 + 6.86·log1p(turn·100), band [pred−10, pred+12]
- * SHALLOW (off): optional OR curve from 1.11.777; live flag defaults/ecosystem OFF.
+ * MAIN:    pred = -5.08 + 6.86·log1p(turn·100), band [pred−10, pred+12]
+ * SHALLOW: pred = -8.83 + 4.23·log1p(turn·100), band [pred−8, pred+8]
  *
  * turn = vol5m / liq
  * dump = −pc5m  (positive depth %)
  *
- * Live: MAIN only. Prefer MAIN when both would pass (if SHALLOW re-enabled).
+ * Live: pass if MAIN or SHALLOW. Prefer MAIN when both pass.
  */
 
 export type TurnDumpBranch = 'main' | 'shallow';
