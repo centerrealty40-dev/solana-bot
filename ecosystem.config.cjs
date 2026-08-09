@@ -3011,6 +3011,9 @@ const PM2_APPS = [
          */
         MILD_DIP_ONESHOT_DUMP_GRACE: '1',
         MILD_DIP_ONESHOT_DUMP_GRACE_MS: '60000',
+        /** 1.11.767 — sell unmanaged *pump ATAs not in state.open on boot. */
+        MILD_DIP_ORPHAN_SWEEP: '1',
+        MILD_DIP_ORPHAN_SWEEP_MAX_SELLS: '25',
         MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD: '500',
         MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC: '0.02',
         /** 1.11.740 — soft giveback only after whale vs mass-flee classify. */

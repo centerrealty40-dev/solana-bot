@@ -483,10 +483,27 @@ export async function attemptMildDipEntry(args: {
       leaderBuyTs: nowMs,
     });
   } catch (err) {
-    delete state.open[c.mint];
     buyInFlight.delete(c.mint);
-    state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
-    saveMildDipState(cfg.statePath, state);
+    // Buy threw — only drop reserved seat if chain is still empty (landed tx race).
+    const rawAfterThrow = await fetchMintBalanceRaw(copyCfg, c.mint);
+    const onchainAfterThrow =
+      rawAfterThrow && /^\d+$/.test(rawAfterThrow) ? BigInt(rawAfterThrow) : 0n;
+    if (onchainAfterThrow > HOLDING_DUST_RAW) {
+      args.adoptOnChainHolding({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        tokenRaw: onchainAfterThrow.toString(),
+        priceUsd: entryPriceUsd,
+        pc5m: entryPc5m,
+        nowMs,
+      });
+    } else {
+      delete state.open[c.mint];
+      state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
+      saveMildDipState(cfg.statePath, state);
+    }
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_buy_attempt',
       mint: c.mint,
@@ -501,6 +518,7 @@ export async function attemptMildDipEntry(args: {
       ok: false,
       reason: err instanceof Error ? err.message : String(err),
       mode: cfg.executionMode,
+      onchainRawAfterFail: onchainAfterThrow.toString(),
     });
     resetCopyFundingCache();
     return 'skip';
@@ -545,10 +563,34 @@ export async function attemptMildDipEntry(args: {
   });
 
   if (!buy.ok) {
-    delete state.open[c.mint];
     buyInFlight.delete(c.mint);
-    state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
-    saveMildDipState(cfg.statePath, state);
+    // Soft-fail buy must not orphan a landed fill (RPC/quote said no, chain yes).
+    const rawAfterFail = await fetchMintBalanceRaw(copyCfg, c.mint);
+    const onchainAfterFail =
+      rawAfterFail && /^\d+$/.test(rawAfterFail) ? BigInt(rawAfterFail) : 0n;
+    if (onchainAfterFail > HOLDING_DUST_RAW) {
+      args.adoptOnChainHolding({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        tokenRaw: onchainAfterFail.toString(),
+        priceUsd: buy.priceUsd || entryPriceUsd,
+        pc5m: entryPc5m,
+        nowMs,
+      });
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_buy_fail_adopt',
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: buy.reason ?? null,
+        tokenRaw: onchainAfterFail.toString(),
+      });
+    } else {
+      delete state.open[c.mint];
+      state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
+      saveMildDipState(cfg.statePath, state);
+    }
     resetCopyFundingCache();
     return 'skip';
   }
