@@ -12,6 +12,12 @@ import {
   priorityMintsFromCooldown,
   priorityMintsFromPriceRingGreen,
 } from './discover.js';
+import {
+  configureLeaderMintAllowlist,
+  leaderBoughtCount,
+  loadLeaderMintAllowlist,
+  saveLeaderMintAllowlist,
+} from '../volgreen/leader-mint-allowlist.js';
 import { evaluateStreamImpulseCandidates } from '../volgreen/stream-impulse.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
@@ -1176,9 +1182,17 @@ export async function runMildDipLoop(
   }
   const hotLoaded = loadMildDipHotMints(cfg.hotMintsPath);
   const ringLoaded = loadMildDipPriceRing(cfg.priceRingPath);
-  if (hotLoaded > 0 || ringLoaded > 0) {
+  const leaderMintsPath = (
+    process.env.VOL_GREEN_LEADER_MINTS_PATH ??
+    process.env.MILD_DIP_LEADER_MINTS_PATH ??
+    ''
+  ).trim();
+  if (leaderMintsPath) configureLeaderMintAllowlist(leaderMintsPath);
+  const leaderMintsLoaded = loadLeaderMintAllowlist();
+  if (hotLoaded > 0 || ringLoaded > 0 || leaderMintsLoaded > 0) {
     console.log(
       `[mild-dip] restored hotMints=${hotLoaded} priceSamples=${ringLoaded} ` +
+        `leaderMints=${leaderMintsLoaded} ` +
         `from ${cfg.hotMintsPath} / ${cfg.priceRingPath}`,
     );
   }
@@ -1229,6 +1243,10 @@ export async function runMildDipLoop(
       resolveMaxPerMin: Number.isFinite(resolveCap) ? Math.max(0, resolveCap) : 40,
       resolveConcurrency: 4,
     });
+    console.log(
+      `[mild-dip] leader-mint allowlist size=${leaderBoughtCount()} ` +
+        `(require_bought=${process.env.VOL_GREEN_REQUIRE_LEADER_BOUGHT ?? process.env.MILD_DIP_REQUIRE_LEADER_BOUGHT ?? '0'})`,
+    );
   }
 
   const buyImpactCap = process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT?.trim() || '0';
@@ -1305,6 +1323,7 @@ export async function runMildDipLoop(
       try {
         saveMildDipHotMints(cfg.hotMintsPath);
         saveMildDipPriceRing(cfg.priceRingPath);
+        saveLeaderMintAllowlist();
       } catch (err) {
         console.warn('[mild-dip] persist hot/price ring failed', err);
       }
@@ -1369,6 +1388,7 @@ export async function runMildDipLoop(
     try {
       saveMildDipHotMints(cfg.hotMintsPath);
       saveMildDipPriceRing(cfg.priceRingPath);
+      saveLeaderMintAllowlist();
     } catch {
       /* ignore */
     }

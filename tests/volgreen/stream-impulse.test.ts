@@ -35,6 +35,8 @@ const ENV_KEYS = [
   'VOL_GREEN_LEADER_WATCH',
   'VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT',
   'MILD_DIP_REQUIRE_LEADER_HIGHLIGHT',
+  'VOL_GREEN_REQUIRE_LEADER_BOUGHT',
+  'MILD_DIP_REQUIRE_LEADER_BOUGHT',
   'VOL_GREEN_POISON_TAPE',
   'MILD_DIP_POISON_TAPE',
 ];
@@ -64,9 +66,10 @@ beforeEach(() => {
   process.env.MILD_DIP_MINT_PRICE_REFRESH = '0';
   process.env.MILD_DIP_VOLUME_IMPULSE_ENTRY = '0';
   process.env.VOL_GREEN_LEADER_WATCH = '0';
-  // Unit tests inject leader highlight explicitly when needed.
   process.env.VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT = '0';
   process.env.MILD_DIP_REQUIRE_LEADER_HIGHLIGHT = '0';
+  process.env.VOL_GREEN_REQUIRE_LEADER_BOUGHT = '0';
+  process.env.MILD_DIP_REQUIRE_LEADER_BOUGHT = '0';
   process.env.VOL_GREEN_POISON_TAPE = '1';
   process.env.MILD_DIP_POISON_TAPE = '1';
   process.env.MILD_DIP_LEADER_TAPE = '1';
@@ -121,16 +124,15 @@ describe('evaluateStreamImpulseCandidates', () => {
     mildDipHotMints.clearBuyForce(mint);
   });
 
-  it('skips entry without leader-highlight when required', async () => {
-    process.env.VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT = '1';
-    process.env.MILD_DIP_REQUIRE_LEADER_HIGHLIGHT = '1';
+  it('skips entry when leaders never bought the mint', async () => {
+    process.env.VOL_GREEN_REQUIRE_LEADER_BOUGHT = '1';
+    process.env.MILD_DIP_REQUIRE_LEADER_BOUGHT = '1';
     const mint = `NoLeader${Date.now()}111111111111111111111111`.slice(0, 44);
     const cfg = loadMildDipConfig();
     const nowMs = Date.now();
     noteLeaderLikeClimb(mint, nowMs);
     mildDipHotMints.note(mint, nowMs, 8);
     mildDipHotMints.markBuyForce(mint, nowMs);
-    // no markLeaderHighlight
     const r = await evaluateStreamImpulseCandidates(cfg, {
       nowMs,
       evalMax: 8,
@@ -138,7 +140,7 @@ describe('evaluateStreamImpulseCandidates', () => {
     });
     expect(r.candidates.find((c) => c.mint === mint)).toBeUndefined();
     const skip = r.skips.find((s) => s.mint === mint);
-    expect(skip?.reasons.includes('require_leader_highlight')).toBe(true);
+    expect(skip?.reasons.includes('require_leader_bought')).toBe(true);
     mildDipHotMints.clearBuyForce(mint);
   });
 

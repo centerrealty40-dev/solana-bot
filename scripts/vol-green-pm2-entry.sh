@@ -111,14 +111,17 @@ export MILD_DIP_LEADER_TAPE_MIN_SPAN_MS=180000
 export MILD_DIP_LEADER_TAPE_MAX_G_MAX_PC=40
 export MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC=80
 export MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN=0
-# Leaders are for offline pattern research only — do NOT follow/copy in live.
-export VOL_GREEN_LEADER_WATCH=0
+# Watch leaders only to learn which mints they touched (allowlist). Not size-copy.
+export VOL_GREEN_LEADER_WATCH=1
 export VOL_GREEN_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
 export MILD_DIP_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
-export MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN=0
-# Independent entry — patterns from leaders are encoded in tape/poison gates, not copy.
+export MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN=40
+# Ban entry unless 8zkg or 7BNaxx has bought the mint at least once (persisted).
+export VOL_GREEN_REQUIRE_LEADER_BOUGHT=1
+export MILD_DIP_REQUIRE_LEADER_BOUGHT=1
 export VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT=0
 export MILD_DIP_REQUIRE_LEADER_HIGHLIGHT=0
+export VOL_GREEN_LEADER_MINTS_PATH="${VOL_GREEN_LEADER_MINTS_PATH:-$ROOT/data/volgreen/leader-mints.json}"
 # Don't chase already-vertical 5m prints (CXaS scam: entry pc5m 54%).
 export MILD_DIP_ENTRY_MAX_PC5M_PCT=40
 export VOL_GREEN_ENTRY_MAX_PC5M_PCT=40

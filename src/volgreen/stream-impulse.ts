@@ -20,10 +20,13 @@ import {
   detectLeaderTape,
 } from './leader-tape.js';
 import {
+  hasLeaderBought,
+  requireLeaderBoughtEnabled,
+} from './leader-mint-allowlist.js';
+import {
   defaultPoisonTapeGates,
   evaluatePoisonTape,
   notePoisonFromLeaderTapeReject,
-  requireLeaderHighlightEnabled,
 } from './poison-tape.js';
 import { defaultScamLadderGates, detectMonotonicGrind } from './scam-ladder.js';
 import { evaluateTripleGreenEntry } from './triple-green.js';
@@ -162,7 +165,7 @@ export async function evaluateStreamImpulseCandidates(
   const scamGates = defaultScamLadderGates(process.env);
   const leaderTapeGates = defaultLeaderTapeGates(process.env);
   const poisonGates = defaultPoisonTapeGates(process.env);
-  const requireLeader = requireLeaderHighlightEnabled(process.env);
+  const requireLeaderBought = requireLeaderBoughtEnabled(process.env);
   // Naked volume-impulse ENTRY off by default — fat tape only prioritizes eval.
   // Leaders do not buy "any ≥2 SOL print"; that path bought EmvB/Avow rugs.
   const volumeEntryRaw = (
@@ -219,12 +222,12 @@ export async function evaluateStreamImpulseCandidates(
         return;
       }
     }
-    // Only enter if a watched leader also bought recently (not alone on junk).
-    if (requireLeader && !mildDipHotMints.isLeaderHighlight(mint, nowMs)) {
+    // Ban if neither watched leader has ever bought this mint.
+    if (requireLeaderBought && !hasLeaderBought(mint)) {
       skips.push({
         mint,
         entryMode: 'green_tape',
-        reasons: ['require_leader_highlight'],
+        reasons: ['require_leader_bought'],
         metrics: {
           priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
         },

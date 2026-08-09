@@ -5,6 +5,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { markLeaderBought } from '../volgreen/leader-mint-allowlist.js';
 
 export type HotMintHit = {
   mint: string;
@@ -203,6 +204,8 @@ export class MildDipHotMintBuffer {
     this.markBuyForce(mint, nowMs);
     this.note(mint, nowMs, 24);
     this.leaderHighlightUntil.set(mint, nowMs + 300_000);
+    // Persistent allowlist: leader bought this mint at least once.
+    markLeaderBought(mint, nowMs);
   }
 
   isLeaderHighlight(mint: string, nowMs = Date.now()): boolean {

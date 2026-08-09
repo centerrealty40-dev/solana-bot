@@ -140,15 +140,18 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_PRICE_RING_TTL_MS', String(90 * 60_000));
   setIfAbsent('MILD_DIP_PRICE_RING_MAX_SAMPLES', '360');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '0');
-  // Leaders = offline pattern research only. Live acts independently (no follow/copy).
-  setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');
+  // Watch leaders to build allowlist of mints they bought — not copy size/timing.
+  setIfAbsent('VOL_GREEN_LEADER_WATCH', '1');
   setIfAbsent(
     'VOL_GREEN_LEADER_WATCH_WALLETS',
     '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
   );
-  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '0');
+  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '40');
+  setIfAbsent('VOL_GREEN_REQUIRE_LEADER_BOUGHT', '1');
+  setIfAbsent('MILD_DIP_REQUIRE_LEADER_BOUGHT', '1');
   setIfAbsent('VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT', '0');
   setIfAbsent('MILD_DIP_REQUIRE_LEADER_HIGHLIGHT', '0');
+  setIfAbsent('VOL_GREEN_LEADER_MINTS_PATH', path.join('data', 'volgreen', 'leader-mints.json'));
   // Reject late chase after a vertical 5m move (CXaS: bought at +54% pc5m).
   setIfAbsent('MILD_DIP_ENTRY_MAX_PC5M_PCT', '40');
   setIfAbsent('VOL_GREEN_ENTRY_MAX_PC5M_PCT', '40');
