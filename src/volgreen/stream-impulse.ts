@@ -23,11 +23,6 @@ import {
   hasLeaderBought,
   requireLeaderBoughtEnabled,
 } from './leader-mint-allowlist.js';
-import {
-  defaultPoisonTapeGates,
-  evaluatePoisonTape,
-  notePoisonFromLeaderTapeReject,
-} from './poison-tape.js';
 import { defaultScamLadderGates, detectMonotonicGrind } from './scam-ladder.js';
 import { evaluateTripleGreenEntry } from './triple-green.js';
 
@@ -164,7 +159,6 @@ export async function evaluateStreamImpulseCandidates(
 
   const scamGates = defaultScamLadderGates(process.env);
   const leaderTapeGates = defaultLeaderTapeGates(process.env);
-  const poisonGates = defaultPoisonTapeGates(process.env);
   const requireLeaderBought = requireLeaderBoughtEnabled(process.env);
   // Naked volume-impulse ENTRY off by default — fat tape only prioritizes eval.
   // Leaders do not buy "any ≥2 SOL print"; that path bought EmvB/Avow rugs.
@@ -189,20 +183,6 @@ export async function evaluateStreamImpulseCandidates(
         entryMode: 'green_tape',
         reasons: ['stream_impulse_no_price'],
       });
-      return;
-    }
-    // Poison memory (Fvav361): violent tape → ban even after spike leaves lookback.
-    const poison = evaluatePoisonTape(mint, samples, poisonGates, nowMs);
-    if (poison.poisoned) {
-      skips.push({
-        mint,
-        entryMode: 'green_tape',
-        reasons: poison.reasons,
-        metrics: {
-          priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
-        },
-      });
-      mildDipHotMints.clearBuyForce(mint);
       return;
     }
     // Ban if neither watched leader has ever bought this mint.
@@ -234,7 +214,6 @@ export async function evaluateStreamImpulseCandidates(
     // Leader tape (8zkg/7BNaxx): recent maxG≥8% + run-up≥10%. Soft buy-bar OK.
     const tape = detectLeaderTape(samples, leaderTapeGates, nowMs);
     if (!tape.pass) {
-      notePoisonFromLeaderTapeReject(mint, tape.reasons, poisonGates, nowMs);
       skips.push({
         mint,
         entryMode: 'green_tape',
@@ -262,23 +241,6 @@ export async function evaluateStreamImpulseCandidates(
 
   for (const { mint } of ranked) {
     const samples = mildDipPriceRing.listSamples(mint, LOOKBACK_MS, nowMs);
-
-    // Poison first — ban survives soft "normal" lookbacks after a nuke candle.
-    if (samples.length >= 2) {
-      const poisonEarly = evaluatePoisonTape(mint, samples, poisonGates, nowMs);
-      if (poisonEarly.poisoned) {
-        skips.push({
-          mint,
-          entryMode: 'green_tape',
-          reasons: poisonEarly.reasons,
-          metrics: {
-            priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
-          },
-        });
-        mildDipHotMints.clearBuyForce(mint);
-        continue;
-      }
-    }
 
     // Late scam ladder — block every entry path (volume / impulse / triple).
     if (samples.length >= 2) {

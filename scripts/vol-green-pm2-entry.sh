@@ -125,13 +125,9 @@ export VOL_GREEN_LEADER_MINTS_PATH="${VOL_GREEN_LEADER_MINTS_PATH:-$ROOT/data/vo
 # No pc5m chase cap — high 5m% is not a scam signal (leaders also buy continuations).
 export MILD_DIP_ENTRY_MAX_PC5M_PCT=0
 export VOL_GREEN_ENTRY_MAX_PC5M_PCT=0
-# Poison window: ban after nuke/crash tape (tuned so memes still trade).
-export VOL_GREEN_POISON_TAPE=1
-export MILD_DIP_POISON_TAPE=1
-export MILD_DIP_POISON_TAPE_BAN_MS=900000
-export MILD_DIP_POISON_TAPE_ABS_BAR_PC=60
-export MILD_DIP_POISON_TAPE_MAX_G_PC=60
-export MILD_DIP_POISON_TAPE_RUNUP_PC=100
+# Poison tape REMOVED — false bans on live leader mints (A13o runup artifact).
+export VOL_GREEN_POISON_TAPE=0
+export MILD_DIP_POISON_TAPE=0
 export MILD_DIP_STREAM_HEALTH_ALERT=1
 export MILD_DIP_STREAM_HEALTH_ALERT_COOLDOWN_MS=600000
 # Enrich unused when streamImpulseOnly — keep tiny values if flag flipped off.

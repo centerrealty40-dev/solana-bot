@@ -37,8 +37,6 @@ const ENV_KEYS = [
   'MILD_DIP_REQUIRE_LEADER_HIGHLIGHT',
   'VOL_GREEN_REQUIRE_LEADER_BOUGHT',
   'MILD_DIP_REQUIRE_LEADER_BOUGHT',
-  'VOL_GREEN_POISON_TAPE',
-  'MILD_DIP_POISON_TAPE',
 ];
 
 const saved: Record<string, string | undefined> = {};
@@ -70,8 +68,6 @@ beforeEach(() => {
   process.env.MILD_DIP_REQUIRE_LEADER_HIGHLIGHT = '0';
   process.env.VOL_GREEN_REQUIRE_LEADER_BOUGHT = '0';
   process.env.MILD_DIP_REQUIRE_LEADER_BOUGHT = '0';
-  process.env.VOL_GREEN_POISON_TAPE = '1';
-  process.env.MILD_DIP_POISON_TAPE = '1';
   process.env.MILD_DIP_LEADER_TAPE = '1';
   process.env.MILD_DIP_LEADER_TAPE_MIN_SAMPLES = '8';
   process.env.MILD_DIP_LEADER_TAPE_MIN_BARS = '4';

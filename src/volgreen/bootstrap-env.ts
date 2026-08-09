@@ -152,13 +152,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT', '0');
   setIfAbsent('MILD_DIP_REQUIRE_LEADER_HIGHLIGHT', '0');
   setIfAbsent('VOL_GREEN_LEADER_MINTS_PATH', path.join('data', 'volgreen', 'leader-mints.json'));
-  // Remember violent tape so we don't buy the soft tip after a nuke candle.
-  setIfAbsent('VOL_GREEN_POISON_TAPE', '1');
-  setIfAbsent('MILD_DIP_POISON_TAPE', '1');
-  setIfAbsent('MILD_DIP_POISON_TAPE_BAN_MS', String(15 * 60_000));
-  setIfAbsent('MILD_DIP_POISON_TAPE_ABS_BAR_PC', '60');
-  setIfAbsent('MILD_DIP_POISON_TAPE_MAX_G_PC', '60');
-  setIfAbsent('MILD_DIP_POISON_TAPE_RUNUP_PC', '100');
+  setIfAbsent('VOL_GREEN_POISON_TAPE', '0');
+  setIfAbsent('MILD_DIP_POISON_TAPE', '0');
   setIfAbsent('MILD_DIP_STREAM_HEALTH_ALERT', '1');
   setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '1');
   setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '1');
