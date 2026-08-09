@@ -15,6 +15,10 @@ import {
   refreshMintPriceFromChain,
 } from '../milddip/mint-price-refresh.js';
 import { mildDipPriceRing } from '../milddip/price-ring.js';
+import {
+  defaultLeaderTapeGates,
+  detectLeaderTape,
+} from './leader-tape.js';
 import { defaultScamLadderGates, detectMonotonicGrind } from './scam-ladder.js';
 import { evaluateTripleGreenEntry } from './triple-green.js';
 
@@ -150,6 +154,7 @@ export async function evaluateStreamImpulseCandidates(
   };
 
   const scamGates = defaultScamLadderGates(process.env);
+  const leaderTapeGates = defaultLeaderTapeGates(process.env);
 
   const pushOrSkipLadder = (
     mint: string,
@@ -175,6 +180,31 @@ export async function evaluateStreamImpulseCandidates(
         },
       });
       // Keep buyForce cleared by candidateFromPass — do not re-chase late grind.
+      return;
+    }
+    // Leader tape (8zkg/7BNaxx): recent maxG≥8% + run-up≥10%. Soft buy-bar OK.
+    const tape = detectLeaderTape(samples, leaderTapeGates, nowMs);
+    if (!tape.pass) {
+      skips.push({
+        mint,
+        entryMode: 'green_tape',
+        reasons: tape.reasons,
+        metrics: {
+          priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
+          ...(tape.stats
+            ? {
+                triplePattern: {
+                  small0: tape.stats.chg1m,
+                  small1: tape.stats.maxG1m,
+                  huge: tape.stats.runup25m,
+                  hugeVol: 0,
+                  hugeTs: Math.floor(nowMs / 1000),
+                },
+              }
+            : {}),
+        },
+      });
+      mildDipHotMints.clearBuyForce(mint);
       return;
     }
     candidates.push(cand);

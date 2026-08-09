@@ -103,7 +103,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS', '0');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', '0');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS', '0');
-  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', '0');
+  // Hold blend of leaders (~10m 7BNaxx / ~30m 8zkg) if never armed.
+  setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', String(20 * 60_000));
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', '0');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT', '8');
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT', '8');
@@ -181,8 +182,14 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '10');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '100');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', '240000');
-  // First-strong 1m (8zkg on 8XjTbP): buy the first big green, don't wait for triple.
-  setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MIN_PC', '20');
+  // Leader tape (60h 8zkg+7BNaxx): maxG1m≥8% + runup25≥10% on every stream entry.
+  setIfAbsent('MILD_DIP_LEADER_TAPE', '1');
+  setIfAbsent('MILD_DIP_LEADER_TAPE_MAX_G_PC', '8');
+  setIfAbsent('MILD_DIP_LEADER_TAPE_RUNUP_PC', '10');
+  setIfAbsent('MILD_DIP_LEADER_TAPE_MAX_G_BARS', '5');
+  setIfAbsent('MILD_DIP_LEADER_TAPE_RUNUP_MS', String(25 * 60_000));
+  // First-strong aligns with leader maxG (≥8%), not the old +20% tip chase.
+  setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MIN_PC', '8');
   setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MAX_PRIOR_PC', '18');
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '12000');
   setIfAbsent('MILD_DIP_GREEN_IMPULSE_MIN_PC5M_PCT', '0');

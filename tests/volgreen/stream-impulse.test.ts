@@ -96,7 +96,33 @@ describe('evaluateStreamImpulseCandidates', () => {
     });
     expect(r.candidates.length).toBeGreaterThanOrEqual(1);
     expect(r.candidates[0]!.entryPath).toBe('green_tape_impulse');
-    expect(r.candidates[0]!.entryScore).toBeGreaterThanOrEqual(20);
+    // firstStrongMinPc aligned to leader maxG (≥8).
+    expect(r.candidates[0]!.entryScore).toBeGreaterThanOrEqual(8);
+  });
+
+  it('skips volume-impulse on soft tape (leader maxG/runup)', async () => {
+    const soft = 'SoftTape11111111111111111111111111111111111';
+    const cfg = loadMildDipConfig();
+    const nowMs = Date.now();
+    // Fat SOL mark but flat prices — volume path hits leader-tape gate.
+    // pc60≈4% (>3 so volume path proceeds) but maxG/runup still < leader floors.
+    mildDipPriceRing.note(soft, 1.0, { tsMs: nowMs - 180_000, source: 'stream' });
+    mildDipPriceRing.note(soft, 1.01, { tsMs: nowMs - 120_000, source: 'stream' });
+    mildDipPriceRing.note(soft, 1.0, { tsMs: nowMs - 55_000, source: 'stream' });
+    mildDipPriceRing.note(soft, 1.04, { tsMs: nowMs - 5_000, source: 'stream' });
+    mildDipHotMints.note(soft, nowMs, 8);
+    mildDipHotMints.markBuyForce(soft, nowMs);
+    mildDipHotMints.markVolumeImpulse(soft, 3.5, nowMs);
+
+    const r = await evaluateStreamImpulseCandidates(cfg, {
+      nowMs,
+      evalMax: 8,
+      allowPriceRefresh: false,
+    });
+    expect(r.candidates.find((c) => c.mint === soft)).toBeUndefined();
+    const skip = r.skips.find((s) => s.mint === soft);
+    expect(skip?.reasons.some((x) => x.startsWith('leader_tape_'))).toBe(true);
+    mildDipHotMints.clearBuyForce(soft);
   });
 
   it('skips when samples insufficient and does not fetch', async () => {
