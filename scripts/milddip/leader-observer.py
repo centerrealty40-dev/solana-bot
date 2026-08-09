@@ -194,10 +194,15 @@ def gate_fit(d: dict[str, Any] | None) -> dict[str, Any]:
     mcap = float(d.get("mcap") or 0)
     age = d.get("ageHours")
 
+    # Align with mild-dip live floor (1.11.776 → $5k; was hardcoded $50k).
+    min_mcap = env_num(
+        "LEADER_OBSERVER_MIN_MCAP_USD",
+        env_num("MILD_DIP_MIN_MCAP_USD", 5_000.0),
+    )
     structural = (
         vol >= 500
         and liq >= 10_000
-        and mcap >= 50_000
+        and mcap >= min_mcap
         and (age is None or float(age) >= 0.5)
     )
     try:

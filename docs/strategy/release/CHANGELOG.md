@@ -1,4 +1,23 @@
 # So
+## [1.11.776] — 2026-08-09
+
+**Тег:** `sa-1.11.776`
+
+### Ops: mild-dip / Deep Bot mcap floor $50k → $5k
+
+One live clip tier ($10) on the turn→dump formula. Lower the global
+entry floor so we can buy from **$5k** mcap (was $50k). Knife/micro floor
+and leader-observer structural gate aligned to the same $5k.
+
+- `MILD_DIP_MIN_MCAP_USD=5000`
+- `MILD_DIP_MICRO_MIN_MCAP_USD=5000`
+- `LEADER_OBSERVER_MIN_MCAP_USD=5000` (was hardcoded $50k)
+
+**Откат:** `MILD_DIP_MIN_MCAP_USD=50000`, `MICRO_MIN=15000`, observer
+`MIN_MCAP=50000` + reload.
+
+---
+
 ## [1.11.775] — 2026-08-09
 
 **Тег:** `sa-1.11.775`

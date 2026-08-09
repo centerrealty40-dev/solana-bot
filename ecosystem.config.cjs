@@ -2839,11 +2839,12 @@ const PM2_APPS = [
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
         /**
-         * 1.11.746 — micro $15k–$50k, knife_stabilize only.
-         * 1.11.763 — same $5 as base.
+         * 1.11.746 — micro band, knife_stabilize only.
+         * 1.11.776 — floor aligned to global $5k (was $15k–$50k).
+         * Clip size flat $10 with base/thick (one economic tier).
          */
         MILD_DIP_MICRO_POSITION_USD: '10',
-        MILD_DIP_MICRO_MIN_MCAP_USD: '15000',
+        MILD_DIP_MICRO_MIN_MCAP_USD: '5000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
         MILD_DIP_MAX_OPEN_POSITIONS: '0',
@@ -2937,9 +2938,10 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_LIQUIDITY_USD: '10000',
         /**
-         * Global entry floor $50k. Knife+micro may arm from $15k (1.11.746).
+         * 1.11.776 — global entry floor $5k (was $50k). One clip tier ($10);
+         * turn→dump gate still selects depth. Knife/micro floor matches.
          */
-        MILD_DIP_MIN_MCAP_USD: '50000',
+        MILD_DIP_MIN_MCAP_USD: '5000',
         MILD_DIP_MAX_MCAP_USD: '300000000',
         /**
          * 1.11.724 — skip pairs younger than 30m (was 0.25h / 15m).
@@ -3209,6 +3211,9 @@ const PM2_APPS = [
         LEADER_OBSERVER_LOG_SELLS: '1',
         /** Optional Dex marks while leader bag open (noisy; off by default). */
         LEADER_OBSERVER_LOG_MARKS: '0',
+        /** 1.11.776 — match mild-dip global mcap floor ($5k). */
+        LEADER_OBSERVER_MIN_MCAP_USD: '5000',
+        MILD_DIP_MIN_MCAP_USD: '5000',
         /** 1.11.712 — fix 7BNax typo (was missing `j`: …UYrAC… → …UYrjAC…). */
         LEADER_OBSERVER_LEADERS:
           '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',

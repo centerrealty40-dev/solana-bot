@@ -41,7 +41,7 @@ const MildDipConfigSchema = z.object({
    * 1.11.765 — same $30 as base (flat book). 0 = off.
    */
   microPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
-  microMinMarketCapUsd: z.coerce.number().min(0).default(15_000),
+  microMinMarketCapUsd: z.coerce.number().min(0).default(5_000),
   microMaxMarketCapUsd: z.coerce.number().min(0).default(50_000),
   /** 0 = unlimited — keep buying while USDC remains. */
   maxOpenPositions: z.coerce.number().int().min(0).max(500).default(0),
@@ -452,10 +452,10 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 10_000),
     /**
-     * Global entry floor ($50k). Knife+micro may arm down to
+     * Global entry floor ($5k). Knife+micro may arm down to
      * MILD_DIP_MICRO_MIN_MCAP_USD (see knifeStabilizeMinMarketCapUsd).
      */
-    minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 50_000),
+    minMarketCapUsd: envNum('MILD_DIP_MIN_MCAP_USD', 5_000),
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     /** 1.11.724 — floor 30m (was 15m). Youngest bucket had worst cliffs. */
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.5),
@@ -574,7 +574,7 @@ export function loadMildDipConfig(): MildDipConfig {
     thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
     /** 1.11.765 — $30 live; knife_stabilize only (see mildDipMicroSizeGatesForSource). */
     microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 10,
-    microMinMarketCapUsd: process.env.MILD_DIP_MICRO_MIN_MCAP_USD ?? 15_000,
+    microMinMarketCapUsd: process.env.MILD_DIP_MICRO_MIN_MCAP_USD ?? 5_000,
     microMaxMarketCapUsd: process.env.MILD_DIP_MICRO_MAX_MCAP_USD ?? 50_000,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,

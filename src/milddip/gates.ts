@@ -996,7 +996,7 @@ export function mildDipMicroSizeGatesForSource(
 
 /**
  * When micro tier is on, knife watches may arm down to microMin mcap
- * while the global entry floor stays higher (e.g. $50k).
+ * while the global entry floor stays higher (e.g. historically $50k).
  */
 export function knifeStabilizeMinMarketCapUsd(args: {
   entryMinMarketCapUsd: number;
