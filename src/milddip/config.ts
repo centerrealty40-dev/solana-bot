@@ -130,12 +130,16 @@ const MildDipConfigSchema = z.object({
   recoverDeferLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(300_000),
   recoverDeferMinBouncePct: z.coerce.number().min(0).max(50).default(3),
   /**
+   * 1.11.782 — OFF by default. Leader-seed must NOT drive buys (own stream/
+   * discovery only). Observer may still write seed for research.
+   */
+  leaderSeedEntryEnabled: z.boolean().default(false),
+  /**
    * 1.11.761 — when a soft exit is about to fire and a tracked leader just
    * bought the same mint (average-down), defer the sell and optionally
-   * scale-in once. Narrow: requires shouldExit + red pnl + fresh leader hit.
-   * Not a general −5% scale-in.
+   * scale-in once. 1.11.782 — OFF by default (not copytrading).
    */
-  leaderAlignEnabled: z.boolean().default(true),
+  leaderAlignEnabled: z.boolean().default(false),
   /** Max age of leader seed hit to count as “just bought”. */
   leaderAlignMaxAgeMs: z.coerce.number().int().min(5_000).max(600_000).default(120_000),
   /** Still-red floor vs entry (default 3%). Blocks green/flat align. */
@@ -755,13 +759,15 @@ export function loadMildDipConfig(): MildDipConfig {
     recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),
     recoverDeferLookbackMs: process.env.MILD_DIP_RECOVER_DEFER_LOOKBACK_MS ?? 300_000,
     recoverDeferMinBouncePct: process.env.MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT ?? 3,
-    /** 1.11.761 — leader-align defer + one-shot average-in near soft exit. */
-    leaderAlignEnabled: envBool('MILD_DIP_LEADER_ALIGN', true),
+    /** 1.11.782 — leader-seed must not open buys. */
+    leaderSeedEntryEnabled: envBool('MILD_DIP_LEADER_SEED_ENTRY', false),
+    /** 1.11.782 — leader-align OFF (own exits; not copy defer/scale-in). */
+    leaderAlignEnabled: envBool('MILD_DIP_LEADER_ALIGN', false),
     leaderAlignMaxAgeMs: process.env.MILD_DIP_LEADER_ALIGN_MAX_AGE_MS ?? 120_000,
     leaderAlignRequireRedPct: process.env.MILD_DIP_LEADER_ALIGN_REQUIRE_RED_PCT ?? 3,
     leaderAlignMinBelowEntryPct: process.env.MILD_DIP_LEADER_ALIGN_MIN_BELOW_ENTRY_PCT ?? 0,
     leaderAlignRequireAdd: envBool('MILD_DIP_LEADER_ALIGN_REQUIRE_ADD', false),
-    leaderAlignScaleInEnabled: envBool('MILD_DIP_LEADER_ALIGN_SCALE_IN', true),
+    leaderAlignScaleInEnabled: envBool('MILD_DIP_LEADER_ALIGN_SCALE_IN', false),
     leaderAlignScaleInUsd: process.env.MILD_DIP_LEADER_ALIGN_SCALE_IN_USD ?? 10,
     hotMintsPath:
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),

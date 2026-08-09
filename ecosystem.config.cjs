@@ -3044,17 +3044,16 @@ const PM2_APPS = [
         MILD_DIP_RECOVER_DEFER_LOOKBACK_MS: '300000',
         MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT: '3',
         /**
-         * 1.11.761 — when soft exit is about to fire and a tracked leader just
-         * bought the same mint (still red), defer sell + one-shot $15 average-in.
-         * Narrow: requires shouldExit (not a casual −5% scale-in).
+         * 1.11.782 — NOT copytrading. Leader-seed does not open buys; align/
+         * scale-in OFF. Observer may still log leaders for research only.
          */
-        MILD_DIP_LEADER_ALIGN: '1',
+        MILD_DIP_LEADER_SEED_ENTRY: '0',
+        MILD_DIP_LEADER_ALIGN: '0',
         MILD_DIP_LEADER_ALIGN_MAX_AGE_MS: '120000',
         MILD_DIP_LEADER_ALIGN_REQUIRE_RED_PCT: '3',
         MILD_DIP_LEADER_ALIGN_MIN_BELOW_ENTRY_PCT: '0',
         MILD_DIP_LEADER_ALIGN_REQUIRE_ADD: '0',
-        MILD_DIP_LEADER_ALIGN_SCALE_IN: '1',
-        /** 1.11.763 — match flat $5 clips. */
+        MILD_DIP_LEADER_ALIGN_SCALE_IN: '0',
         MILD_DIP_LEADER_ALIGN_SCALE_IN_USD: '10',
         /**
          * 1.11.686 — sole Dex/Jupiter/Helius consumer: floor cadence + concurrency.
@@ -3171,10 +3170,10 @@ const PM2_APPS = [
         MILD_DIP_FEE_SOL_TOPUP_MIN_USD: '5',
         MILD_DIP_FEE_SOL_TOPUP_BUY_USD: '20',
         /**
-         * Fast-path universe: stream + leaders. Drop pg_volume/gecko fillers
-         * that bloated the Dex enrich gate.
+         * 1.11.782 — own universe only (no leaders in discover).
+         * Observer seed file kept for research; entry path ignores it.
          */
-        MILD_DIP_DISCOVER_SOURCES: 'stream,leaders,boosts,profiles',
+        MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
         MILD_DIP_LEADER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
         MILD_DIP_LEADER_SEED_MAX: '40',
         MILD_DIP_LEADER_SEED_MAX_AGE_MS: '7200000',

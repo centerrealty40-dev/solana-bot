@@ -654,10 +654,11 @@ async function wakeLeaderSeeds(
   state: MildDipState,
   nowMs: number,
 ): Promise<number> {
+  // 1.11.782 — disabled: leader-seed entry is copytrading. Own stream only.
+  if (!cfg.leaderSeedEntryEnabled) return 0;
   if (!cfg.fastPathEnabled) return 0;
   const unlimited = cfg.maxOpenPositions <= 0;
   if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
-  // 1.11.775 — rich hits carry observer Dex; buy from that print.
   const leaders = readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
     maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
     max: cfg.leaderSeedMax,
@@ -673,8 +674,8 @@ async function wakeLeaderSeeds(
 }
 
 /**
- * Mints we must evaluate on our own tape — not only after the next leader tx.
- * 1.11.781: hot stream + recent exits + leader-touched seeds.
+ * Own-tape watch set — never leader-seed driven (1.11.782).
+ * hot stream swaps + our recent exits.
  */
 function streamWakeMintList(cfg: MildDipConfig, state: MildDipState, nowMs: number): string[] {
   const out: string[] = [];
@@ -689,12 +690,6 @@ function streamWakeMintList(cfg: MildDipConfig, state: MildDipState, nowMs: numb
   for (const [mint, ex] of Object.entries(state.lastExitByMint ?? {})) {
     const at = ex?.atMs ?? 0;
     if (at > 0 && nowMs - at <= lookback) push(mint);
-  }
-  for (const hit of readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
-    maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
-    max: cfg.leaderSeedMax,
-  })) {
-    push(hit.mint);
   }
   return out.slice(0, 60);
 }
@@ -723,14 +718,16 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
 
-  // 1.11.779/781 — own-tape watch FIRST; leader-seed secondary attention.
+  // 1.11.782 — own-tape only. Leader-seed entry is opt-in (default off).
   if (cfg.fastPathEnabled) {
     for (const mint of streamWakeMintList(cfg, state, nowMs)) {
       if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
       if (state.open[mint]) continue;
       await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
     }
-    await wakeLeaderSeeds(cfg, state, nowMs);
+    if (cfg.leaderSeedEntryEnabled) {
+      await wakeLeaderSeeds(cfg, state, nowMs);
+    }
   }
 
   // Slow lane: tiny cached enrich for knife / leftovers only.
@@ -1812,6 +1809,7 @@ export async function runMildDipLoop(
       `recoverDefer=${cfg.recoverDeferEnabled ? 1 : 0}` +
       `/≥${cfg.recoverDeferMinBouncePct}%` +
       `/${Math.round(cfg.recoverDeferLookbackMs / 1000)}s ` +
+      `leaderSeedEntry=${cfg.leaderSeedEntryEnabled ? 1 : 0} ` +
       `leaderAlign=${cfg.leaderAlignEnabled ? 1 : 0}` +
       `/${Math.round(cfg.leaderAlignMaxAgeMs / 1000)}s` +
       `/red≥${cfg.leaderAlignRequireRedPct}%` +
@@ -1921,16 +1919,18 @@ export async function runMildDipLoop(
     }
 
     /**
-     * 1.11.779 — stream hot first, then leader-seed (even while bags open).
+     * 1.11.782 — own stream wake only (no leader-seed entry).
      * Do not await — marks stay on cadence. Slow enrich/scan still only when flat.
      */
     if (cfg.fastPathEnabled && nowMs - lastLeaderWakeMs >= 2_000) {
       lastLeaderWakeMs = nowMs;
       void wakeStreamHotMints(cfg, state, nowMs)
-        .then(() => wakeLeaderSeeds(cfg, state, nowMs))
+        .then(() =>
+          cfg.leaderSeedEntryEnabled ? wakeLeaderSeeds(cfg, state, nowMs) : Promise.resolve(0),
+        )
         .catch((err) => {
           console.warn(
-            '[mild-dip] stream/leader wake failed',
+            '[mild-dip] stream wake failed',
             err instanceof Error ? err.message : err,
           );
         });
@@ -1946,7 +1946,7 @@ export async function runMildDipLoop(
      * While bags are open: never await tryEntries on this loop.
      * Soft "scanWouldStealMark" heuristic failed live — after a fast stream
      * mark pass, scan still ran and blocked the next mark for 10–15s.
-     * Stream onMint fast-path + leader-seed wake own buys; slow enrich when flat.
+     * Stream onMint / own-tape wake own buys; slow enrich when flat.
      */
     if (opens === 0 && nowMs - lastScan >= cfg.scanIntervalMs) {
       await tryEntries(cfg, state, nowMs);

@@ -1,4 +1,23 @@
 # So
+## [1.11.782] — 2026-08-09
+
+**Тег:** `sa-1.11.782`
+
+### Ops: kill leader-seed entry — own logic only
+
+User mandate: this is **not** copytrading. Buys must come from our stream/
+discovery + turn→dump / near-trough logic, not from “leader bought → we buy”.
+
+- `MILD_DIP_LEADER_SEED_ENTRY=0` — no `wakeLeaderSeeds` buys
+- `MILD_DIP_DISCOVER_SOURCES=stream,boosts,profiles` (drop `leaders`)
+- `MILD_DIP_LEADER_ALIGN=0` / scale-in off — no defer/average on leader
+- Stream wake set = hot ∪ our recent exits only (no seed mints)
+- Observer process may stay up for research logs only
+
+**Откат:** `LEADER_SEED_ENTRY=1`, `DISCOVER_SOURCES=…,leaders`, `LEADER_ALIGN=1`.
+
+---
+
 ## [1.11.781] — 2026-08-09
 
 **Тег:** `sa-1.11.781`
