@@ -1,4 +1,28 @@
 # So
+## [1.11.779] — 2026-08-09
+
+**Тег:** `sa-1.11.779`
+
+### Feat: stream-first entry — beat leader-seed on own tape
+
+Stop waiting on leader-seed as the primary wake. Enter from Pump
+stream/price-ring when the dump is real and still near the trough — even
+if Dex `pc5m` has not confirmed yet.
+
+- `tryEntries` / 2s wake: **stream hot → then leader-seed**
+- turn→dump uses deeper stream ring dump vs lagging Dex pc5m
+- stream-only: Dex confirm **or** near-trough fallback
+  (`bounce ≤ 3%`, ≥3 samples); green Dex hard-blocks
+- blocks JBKWfC reclaim (large bounce off trough) without needing leader
+
+Env: `STREAM_ONLY_NEAR_TROUGH=1`, `NEAR_TROUGH_MAX_BOUNCE_PCT=3`,
+`MIN_SAMPLES=3`, `ALLOW_MISSING_DEX=1`, `BLOCK_DEX_GREEN=1`.
+
+**Откат:** `MILD_DIP_STREAM_ONLY_NEAR_TROUGH=0` + reload (leader-seed
+primary again only via code revert of wake order).
+
+---
+
 ## [1.11.778] — 2026-08-09
 
 **Тег:** `sa-1.11.778`

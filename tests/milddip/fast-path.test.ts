@@ -4,6 +4,7 @@ import {
   inDipBand,
   resetFastPathStateForTests,
   streamOnlyDexDipOk,
+  streamOnlyNearTroughOk,
   structuralOk,
 } from '../../src/milddip/fast-path.js';
 import type { MildDipConfig } from '../../src/milddip/config.js';
@@ -90,7 +91,7 @@ describe('fast-path helpers', () => {
         dexMaxDipPct: -8,
       }),
     ).toBe(true);
-    // Missing Dex print → do not stream-enter blind.
+    // Missing Dex print → reject unless allowMissingDex.
     expect(
       streamOnlyDexDipOk({
         requireDexDip: true,
@@ -98,7 +99,15 @@ describe('fast-path helpers', () => {
         dexMaxDipPct: -8,
       }),
     ).toBe(false);
-    // Flag off → legacy allow.
+    expect(
+      streamOnlyDexDipOk({
+        requireDexDip: true,
+        allowMissingDex: true,
+        dexPc5m: null,
+        dexMaxDipPct: -8,
+      }),
+    ).toBe(true);
+    // Flag off → legacy allow (but green still blocked by default).
     expect(
       streamOnlyDexDipOk({
         requireDexDip: false,
@@ -106,6 +115,47 @@ describe('fast-path helpers', () => {
         dexMaxDipPct: -8,
       }),
     ).toBe(true);
+    expect(
+      streamOnlyDexDipOk({
+        requireDexDip: false,
+        blockDexGreen: true,
+        dexPc5m: 2.5,
+        dexMaxDipPct: -8,
+      }),
+    ).toBe(false);
+  });
+
+  it('1.11.779 near-trough: early dump OK, reclaim bounce rejected', () => {
+    // Early dump: still sitting on trough.
+    expect(
+      streamOnlyNearTroughOk({
+        enabled: true,
+        bounceFromTroughPct: 0.8,
+        maxBouncePct: 3,
+        sampleCount: 5,
+        minSamples: 3,
+      }),
+    ).toBe(true);
+    // JBKWfC-class reclaim: large bounce off trough while ring peak→last still red.
+    expect(
+      streamOnlyNearTroughOk({
+        enabled: true,
+        bounceFromTroughPct: 18,
+        maxBouncePct: 3,
+        sampleCount: 8,
+        minSamples: 3,
+      }),
+    ).toBe(false);
+    // Too few samples.
+    expect(
+      streamOnlyNearTroughOk({
+        enabled: true,
+        bounceFromTroughPct: 0.5,
+        maxBouncePct: 3,
+        sampleCount: 1,
+        minSamples: 3,
+      }),
+    ).toBe(false);
   });
 
   it('allowHotDexProbe throttles per mint and per minute', () => {

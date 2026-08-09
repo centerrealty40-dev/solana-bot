@@ -144,19 +144,45 @@ export function inDipBand(
 }
 
 /**
- * Stream-only gate: Dex must still print a dump (≤ dexMaxDipPct).
- * Blocks JBKWfC-class phantoms — ring −21% while Dex ≈ flat after reclaim.
- * Not "finding the bottom": just refuse stream when the market tape disagrees.
+ * Stream-only Dex confirm.
+ * - requireDexDip: Dex must print ≤ dexMaxDipPct (classic).
+ * - allowMissingDex: null Dex OK (API lag) when require on.
+ * - blockDexGreen: Dex > 0 always fails (reclaim), even if require off.
  */
 export function streamOnlyDexDipOk(args: {
   requireDexDip: boolean;
   dexPc5m: number | null | undefined;
   dexMaxDipPct: number;
+  allowMissingDex?: boolean;
+  blockDexGreen?: boolean;
 }): boolean {
-  if (!args.requireDexDip) return true;
   const d = args.dexPc5m;
-  if (d == null || !Number.isFinite(d)) return false;
+  if (args.blockDexGreen !== false && d != null && Number.isFinite(d) && d > 0) {
+    return false;
+  }
+  if (!args.requireDexDip) return true;
+  if (d == null || !Number.isFinite(d)) return args.allowMissingDex === true;
   return d <= args.dexMaxDipPct;
+}
+
+/**
+ * 1.11.779 — when Dex has not confirmed the dump yet, still allow stream-only
+ * if the ring is near the trough (not a post-reclaim phantom).
+ * JBKWfC: ring −21% after reclaim → large bounce off trough → reject.
+ * Early dump: Dex flat/lagging, price still at lows → allow (beat leader-seed).
+ */
+export function streamOnlyNearTroughOk(args: {
+  enabled: boolean;
+  bounceFromTroughPct: number | null | undefined;
+  maxBouncePct: number;
+  sampleCount: number;
+  minSamples: number;
+}): boolean {
+  if (!args.enabled) return false;
+  if (args.sampleCount < Math.max(1, args.minSamples)) return false;
+  const b = args.bounceFromTroughPct;
+  if (b == null || !Number.isFinite(b)) return false;
+  return b <= Math.max(0, args.maxBouncePct);
 }
 
 /** Exported for unit tests — structural floors on fast-path candidates. */
@@ -324,22 +350,45 @@ export async function evaluateFastPathCandidate(
     const last = mildDipPriceRing.lastPrice(mint, nowMs);
     if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
   } else if (streamInMain && cfg.streamDipEntryEnabled) {
-    // Stream-only: deep ring dump + Dex still red (not a post-reclaim phantom).
+    // Stream-only: deep ring dump; Dex confirm OR near-trough fallback (1.11.779).
     if (streamDd == null || !(streamDd <= cfg.streamOnlyMaxDipPct)) {
       /* fall through — maybe Dex / h1 / flat_micro still qualify */
-    } else if (
-      !streamOnlyDexDipOk({
+    } else {
+      const dexConfirm = streamOnlyDexDipOk({
         requireDexDip: cfg.streamOnlyRequireDexDip,
         dexPc5m: dexPc,
         dexMaxDipPct: cfg.streamOnlyDexMaxDipPct,
-      })
-    ) {
-      /* Dex flat/green while ring dumps — leader-style skip */
-    } else {
-      dipSource = 'stream';
-      metrics = { ...metrics, priceChange5mPct: streamDd };
+        allowMissingDex: cfg.streamOnlyAllowMissingDex,
+        blockDexGreen: cfg.streamOnlyBlockDexGreen,
+      });
       const last = mildDipPriceRing.lastPrice(mint, nowMs);
-      if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
+      const lastPx = last && last.priceUsd > 0 ? last.priceUsd : priceUsd;
+      const bounce = mildDipPriceRing.bounceFromTroughPct(
+        mint,
+        lastPx,
+        cfg.cooldownBounceLookbackMs,
+        nowMs,
+      );
+      const samples = mildDipPriceRing.sampleCount(
+        mint,
+        cfg.cooldownBounceLookbackMs,
+        nowMs,
+      );
+      const nearTrough = streamOnlyNearTroughOk({
+        enabled: cfg.streamOnlyNearTroughEnabled,
+        bounceFromTroughPct: bounce,
+        maxBouncePct: cfg.streamOnlyNearTroughMaxBouncePct,
+        sampleCount: samples,
+        minSamples: cfg.streamOnlyMinSamples,
+      });
+      // Green Dex hard-blocks even near-trough (reclaim).
+      const dexGreen =
+        cfg.streamOnlyBlockDexGreen && dexPc != null && Number.isFinite(dexPc) && dexPc > 0;
+      if ((dexConfirm || nearTrough) && !dexGreen) {
+        dipSource = 'stream';
+        metrics = { ...metrics, priceChange5mPct: streamDd };
+        if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
+      }
     }
   }
   if (!dipSource && dexInMain) {
@@ -420,10 +469,19 @@ export async function evaluateFastPathCandidate(
   }
 
   // 1.11.773 — turn→dump: buy now if depth matches turnover; skip if too shallow.
+  // 1.11.779 — prefer deeper stream ring dump vs lagging Dex pc5m for the gate.
   if (cfg.turnDumpGateEnabled) {
+    const tdPc5m =
+      streamDd != null &&
+      Number.isFinite(streamDd) &&
+      (metrics.priceChange5mPct == null ||
+        !Number.isFinite(metrics.priceChange5mPct) ||
+        streamDd < metrics.priceChange5mPct)
+        ? streamDd
+        : metrics.priceChange5mPct;
     const td = evaluateTurnDumpGate({
       enabled: true,
-      pc5m: metrics.priceChange5mPct,
+      pc5m: tdPc5m,
       volume5mUsd: metrics.volume5mUsd,
       liquidityUsd: metrics.liquidityUsd,
       alpha: cfg.turnDumpAlpha,
@@ -444,7 +502,9 @@ export async function evaluateFastPathCandidate(
         lane: 'fast',
         trigger,
         structSource,
-        pc5m: metrics.priceChange5mPct,
+        pc5m: tdPc5m,
+        streamDd,
+        dexPc,
         dump: td.dump,
         turn: td.turn,
         pred: td.pred,

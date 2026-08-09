@@ -324,12 +324,25 @@ const MildDipConfigSchema = z.object({
    */
   streamOnlyMaxDipPct: z.coerce.number().max(0).default(-10),
   /**
-   * When true (live default): stream-only also needs Dex pc5m ≤ dexMaxDipPct.
+   * When true: stream-only also needs Dex pc5m ≤ dexMaxDipPct.
    * JBKWfC 07:47 — ring −21% / Dex ≈0 after reclaim; leaders sat out.
+   * 1.11.779 — can stay on; near-trough fallback covers Dex lag without reclaim.
    */
   streamOnlyRequireDexDip: z.boolean().default(true),
   /** Dex ceiling for stream-only (e.g. −8 = still a dump on Dex tape). */
   streamOnlyDexMaxDipPct: z.coerce.number().max(0).default(-8),
+  /** 1.11.779 — null Dex OK when requireDexDip (API lag). */
+  streamOnlyAllowMissingDex: z.boolean().default(true),
+  /** Hard-reject stream-only when Dex pc5m > 0 (green reclaim). */
+  streamOnlyBlockDexGreen: z.boolean().default(true),
+  /**
+   * When Dex has not confirmed dump: allow stream-only if still near trough
+   * (bounce ≤ max). Beats leader-seed on early dumps; blocks JBKWfC reclaim.
+   */
+  streamOnlyNearTroughEnabled: z.boolean().default(true),
+  streamOnlyNearTroughMaxBouncePct: z.coerce.number().min(0).max(50).default(3),
+  /** Min price-ring samples in lookback before near-trough / stream-only. */
+  streamOnlyMinSamples: z.coerce.number().int().min(1).max(64).default(3),
   /** Reuse structural Dex metrics this long (ms). */
   fastPathStructuralCacheMs: z.coerce.number().int().min(1_000).max(120_000).default(8_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
@@ -698,6 +711,12 @@ export function loadMildDipConfig(): MildDipConfig {
     streamOnlyMaxDipPct: process.env.MILD_DIP_STREAM_ONLY_MAX_DIP_PCT ?? -10,
     streamOnlyRequireDexDip: envBool('MILD_DIP_STREAM_ONLY_REQUIRE_DEX_DIP', true),
     streamOnlyDexMaxDipPct: process.env.MILD_DIP_STREAM_ONLY_DEX_MAX_DIP_PCT ?? -8,
+    streamOnlyAllowMissingDex: envBool('MILD_DIP_STREAM_ONLY_ALLOW_MISSING_DEX', true),
+    streamOnlyBlockDexGreen: envBool('MILD_DIP_STREAM_ONLY_BLOCK_DEX_GREEN', true),
+    streamOnlyNearTroughEnabled: envBool('MILD_DIP_STREAM_ONLY_NEAR_TROUGH', true),
+    streamOnlyNearTroughMaxBouncePct:
+      process.env.MILD_DIP_STREAM_ONLY_NEAR_TROUGH_MAX_BOUNCE_PCT ?? 3,
+    streamOnlyMinSamples: process.env.MILD_DIP_STREAM_ONLY_MIN_SAMPLES ?? 3,
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,

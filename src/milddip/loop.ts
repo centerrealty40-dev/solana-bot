@@ -643,6 +643,7 @@ async function wakeWaitDipWatches(
  * Leader buys only highlight mints — we still decide via our gates
  * (main / h1_red / knife_stabilize). Must run even while bags are open;
  * 1.11.739 skipped all tryEntries when open>0 and starved this wake path.
+ * 1.11.779 — secondary to stream hot wake.
  */
 async function wakeLeaderSeeds(
   cfg: MildDipConfig,
@@ -667,21 +668,38 @@ async function wakeLeaderSeeds(
   return n;
 }
 
+/** 1.11.779 — re-check hot stream mints even while bags are open (not only onMint). */
+async function wakeStreamHotMints(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<number> {
+  if (!cfg.fastPathEnabled) return 0;
+  const unlimited = cfg.maxOpenPositions <= 0;
+  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
+  let n = 0;
+  for (const mint of mildDipHotMints.list(nowMs).slice(0, 40)) {
+    if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+    if (state.open[mint]) continue;
+    await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
+    n += 1;
+  }
+  return n;
+}
+
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
 
-  // Fast lane first: leader seeds (new buys) — do not wait for enrich batch.
+  // 1.11.779 — stream hot FIRST (own tape); leader-seed secondary attention.
   if (cfg.fastPathEnabled) {
-    await wakeLeaderSeeds(cfg, state, nowMs);
-    // Hot stream mints — prefer in-band stream drawdown, but still Dex-probe
-    // when the ring has no dd yet (do not wait for a leader seed).
     for (const mint of mildDipHotMints.list(nowMs).slice(0, 40)) {
       if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
       if (state.open[mint]) continue;
       await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
     }
+    await wakeLeaderSeeds(cfg, state, nowMs);
   }
 
   // Slow lane: tiny cached enrich for knife / leftovers only.
@@ -1872,18 +1890,19 @@ export async function runMildDipLoop(
     }
 
     /**
-     * Leader seeds must wake even while bags are open (CgnQ8a / 5zHbZ2…):
-     * observer writes seed, we decide via our gates. Do not await — marks stay
-     * on cadence. Slow enrich/scan still only when flat.
+     * 1.11.779 — stream hot first, then leader-seed (even while bags open).
+     * Do not await — marks stay on cadence. Slow enrich/scan still only when flat.
      */
     if (cfg.fastPathEnabled && nowMs - lastLeaderWakeMs >= 2_000) {
       lastLeaderWakeMs = nowMs;
-      void wakeLeaderSeeds(cfg, state, nowMs).catch((err) => {
-        console.warn(
-          '[mild-dip] leader-seed wake failed',
-          err instanceof Error ? err.message : err,
-        );
-      });
+      void wakeStreamHotMints(cfg, state, nowMs)
+        .then(() => wakeLeaderSeeds(cfg, state, nowMs))
+        .catch((err) => {
+          console.warn(
+            '[mild-dip] stream/leader wake failed',
+            err instanceof Error ? err.message : err,
+          );
+        });
       void wakeWaitDipWatches(cfg, state, nowMs).catch((err) => {
         console.warn(
           '[mild-dip] wait-dip wake failed',

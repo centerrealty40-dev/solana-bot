@@ -477,14 +477,44 @@ export async function enrichAndFilterCandidates(
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) {
-        // Same as fast-path: do not stream-enter when Dex already healed.
+        // Same as fast-path (1.11.779): Dex confirm, or near-trough if Dex lags.
         const dexPc = metrics.priceChange5mPct;
-        const dexStillDump =
-          !cfg.streamOnlyRequireDexDip ||
-          (dexPc != null &&
-            Number.isFinite(dexPc) &&
-            dexPc <= cfg.streamOnlyDexMaxDipPct);
-        if (dexStillDump) dipSource = 'stream';
+        const dexGreen =
+          cfg.streamOnlyBlockDexGreen &&
+          dexPc != null &&
+          Number.isFinite(dexPc) &&
+          dexPc > 0;
+        const dexConfirm =
+          !dexGreen &&
+          (!cfg.streamOnlyRequireDexDip ||
+            (dexPc == null
+              ? cfg.streamOnlyAllowMissingDex
+              : Number.isFinite(dexPc) && dexPc <= cfg.streamOnlyDexMaxDipPct));
+        let nearTrough = false;
+        if (!dexConfirm && !dexGreen && cfg.streamOnlyNearTroughEnabled) {
+          const last = mildDipPriceRing.lastPrice(mint, nowMs);
+          const lastPx =
+            last && last.priceUsd > 0 ? last.priceUsd : details.priceUsd;
+          const bounce =
+            lastPx != null && lastPx > 0
+              ? mildDipPriceRing.bounceFromTroughPct(
+                  mint,
+                  lastPx,
+                  cfg.cooldownBounceLookbackMs,
+                  nowMs,
+                )
+              : null;
+          const samples = mildDipPriceRing.sampleCount(
+            mint,
+            cfg.cooldownBounceLookbackMs,
+            nowMs,
+          );
+          nearTrough =
+            samples >= cfg.streamOnlyMinSamples &&
+            bounce != null &&
+            bounce <= cfg.streamOnlyNearTroughMaxBouncePct;
+        }
+        if (dexConfirm || nearTrough) dipSource = 'stream';
       } else if (h1RedShallowOk) {
         dipSource = 'h1_red_shallow';
       } else if (flatMicroOk) {

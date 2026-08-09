@@ -3098,12 +3098,18 @@ const PM2_APPS = [
         /** 1.11.773 — align with turn-dump shallow floor (was −10). */
         MILD_DIP_STREAM_ONLY_MAX_DIP_PCT: '-2',
         /**
-         * 1.11.731 — stream-only also needs Dex still dumping (≤ −8).
-         * Blocks post-reclaim phantoms (JBKWfC: ring −21% / Dex ≈ flat).
+         * 1.11.731/779 — Dex confirm still preferred; when Dex lags/flat,
+         * near-trough fallback allows stream-only (early dump before leader).
+         * Green Dex hard-blocks. JBKWfC reclaim fails near-trough (bounced).
          */
         MILD_DIP_STREAM_ONLY_REQUIRE_DEX_DIP: '1',
         /** 1.11.773 — align with turn-dump shallow floor (was −8). */
         MILD_DIP_STREAM_ONLY_DEX_MAX_DIP_PCT: '-2',
+        MILD_DIP_STREAM_ONLY_ALLOW_MISSING_DEX: '1',
+        MILD_DIP_STREAM_ONLY_BLOCK_DEX_GREEN: '1',
+        MILD_DIP_STREAM_ONLY_NEAR_TROUGH: '1',
+        MILD_DIP_STREAM_ONLY_NEAR_TROUGH_MAX_BOUNCE_PCT: '3',
+        MILD_DIP_STREAM_ONLY_MIN_SAMPLES: '3',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
         /**
          * 1.11.713 — Dex-probe stream-hot mints even when local ring dd is
