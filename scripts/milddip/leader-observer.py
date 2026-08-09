@@ -11,16 +11,16 @@ Env:
   LEADER_OBSERVER_RPC_URL   — required unless mild-dip-bot pm2 env is readable
   LEADER_OBSERVER_LEADERS   — comma wallets (default: 8zkg + 7BNax)
   LEADER_OBSERVER_OUT_DIR   — default data/milddip
-  LEADER_OBSERVER_POLL_SEC  — default 10
+  LEADER_OBSERVER_POLL_SEC  — default 5 (1.11.780 denser exit tape)
   LEADER_OBSERVER_LOOKBACK_SEC — ignore older sigs (default 1800)
-  LEADER_OBSERVER_SIG_LIMIT — getSignaturesForAddress limit (default 80)
+  LEADER_OBSERVER_SIG_LIMIT — getSignaturesForAddress limit (default 100)
   LEADER_OBSERVER_MAX_HOURS — 0 = run forever (default 72)
   LEADER_OBSERVER_SEED_PATH — sidecar for mild-dip discover (default <out>/leader-seed.json)
   LEADER_OBSERVER_SEED_MAX  — max mints in sidecar (default 40)
   LEADER_OBSERVER_SEED_MAX_AGE_SEC — drop older seed hits (default 7200)
   LEADER_OBSERVER_LOG_SELLS — 1 (default) log leader_sell_observed
   LEADER_OBSERVER_LOG_MARKS — 1 (default) bag marks while open (exit-path tape)
-  LEADER_OBSERVER_MARK_MIN_GAP_SEC — min seconds between marks per bag (default 60)
+  LEADER_OBSERVER_MARK_MIN_GAP_SEC — min seconds between marks per bag (default 15)
 """
 
 from __future__ import annotations
@@ -387,10 +387,10 @@ class Observer:
         self.leaders = [x.strip() for x in raw.split(",") if x.strip()] or list(DEFAULT_LEADERS)
         self.out_dir = Path(os.environ.get("LEADER_OBSERVER_OUT_DIR", "data/milddip"))
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        # 1.11.778 — denser absolute tape for entry/exit formula RE.
-        self.poll_sec = max(5, int(env_num("LEADER_OBSERVER_POLL_SEC", 10)))
+        # 1.11.780 — denser exit-path tape (was poll 10 / marks 60 / sigs 80).
+        self.poll_sec = max(3, int(env_num("LEADER_OBSERVER_POLL_SEC", 5)))
         self.lookback_sec = max(60, int(env_num("LEADER_OBSERVER_LOOKBACK_SEC", 1800)))
-        self.sig_limit = max(20, min(100, int(env_num("LEADER_OBSERVER_SIG_LIMIT", 80))))
+        self.sig_limit = max(20, min(100, int(env_num("LEADER_OBSERVER_SIG_LIMIT", 100))))
         self.max_hours = env_num("LEADER_OBSERVER_MAX_HOURS", 72)
         seed_env = os.environ.get("LEADER_OBSERVER_SEED_PATH", "").strip()
         self.seed_path = Path(seed_env) if seed_env else self.out_dir / "leader-seed.json"
@@ -398,7 +398,7 @@ class Observer:
         self.seed_max_age_sec = max(60, int(env_num("LEADER_OBSERVER_SEED_MAX_AGE_SEC", 7200)))
         self.log_sells = env_bool("LEADER_OBSERVER_LOG_SELLS", True)
         self.log_marks = env_bool("LEADER_OBSERVER_LOG_MARKS", True)
-        self.mark_min_gap_sec = max(15, int(env_num("LEADER_OBSERVER_MARK_MIN_GAP_SEC", 60)))
+        self.mark_min_gap_sec = max(5, int(env_num("LEADER_OBSERVER_MARK_MIN_GAP_SEC", 15)))
         self.state_path = self.out_dir / "leader-observer-state.json"
         self.seen: set[str] = set()
         # leader -> mint -> bag state
@@ -578,6 +578,11 @@ class Observer:
                 "tokenUi": token_ui,
                 "costUsd": float(size_usd or 0),
                 "entryPriceUsd": fill_px,
+                # 1.11.780 — Dex path basis (fill often 20–1000× garbage vs Dex).
+                "entryDexPriceUsd": None,
+                "entryPriceSource": "fill" if fill_px else None,
+                "peakDexPriceUsd": None,
+                "troughDexPriceUsd": None,
                 "openedBlockTime": block_time,
                 "openedSignature": signature,
                 "lastBuySignature": signature,
@@ -668,6 +673,10 @@ class Observer:
                 "entryTurnDump": prev.get("entryTurnDump"),
                 "mfePct": prev.get("mfePct"),
                 "maePct": prev.get("maePct"),
+                "entryDexPriceUsd": prev.get("entryDexPriceUsd"),
+                "entryPriceSource": prev.get("entryPriceSource"),
+                "peakDexPriceUsd": prev.get("peakDexPriceUsd"),
+                "troughDexPriceUsd": prev.get("troughDexPriceUsd"),
                 "buys": prev.get("buys"),
                 "sells": int(prev.get("sells") or 0) + 1,
             }
@@ -686,6 +695,12 @@ class Observer:
                 "entryPriceUsd": entry_px,
                 "exitPriceUsd": fill_px,
                 "sizeUsdProceeds": size_usd,
+                "entryDexPriceUsd": bag.get("entryDexPriceUsd"),
+                "entryPriceSource": bag.get("entryPriceSource"),
+                "mfePct": bag.get("mfePct"),
+                "maePct": bag.get("maePct"),
+                "peakDexPriceUsd": bag.get("peakDexPriceUsd"),
+                "troughDexPriceUsd": bag.get("troughDexPriceUsd"),
             },
         }
 
@@ -805,6 +820,25 @@ class Observer:
                         bag["entryClass"] = cls
                         bag["entryGates"] = gates
                         bag["entryTurnDump"] = td
+                        # Seed Dex path basis at buy when Dex quote is sane vs fill.
+                        if dex_px and dex_px > 0:
+                            fill0 = bag.get("entryPriceUsd")
+                            if (
+                                isinstance(fill0, (int, float))
+                                and float(fill0) > 0
+                                and 1 / 20 < (dex_px / float(fill0)) < 20
+                            ):
+                                bag["entryDexPriceUsd"] = float(fill0)
+                                bag["entryPriceSource"] = "fill"
+                            else:
+                                bag["entryDexPriceUsd"] = float(dex_px)
+                                bag["entryPriceSource"] = (
+                                    "dex_at_buy"
+                                    if not (isinstance(fill0, (int, float)) and float(fill0) > 0)
+                                    else "dex_rebase_at_buy"
+                                )
+                            bag["peakDexPriceUsd"] = float(bag["entryDexPriceUsd"])
+                            bag["troughDexPriceUsd"] = float(bag["entryDexPriceUsd"])
                         self._set_bag(leader, mint, bag)
                     base.update(
                         {
@@ -866,6 +900,15 @@ class Observer:
                         signature=sig,
                     )
                     sess = bag_info.get("session") or {}
+                    sell_pnl_dex = None
+                    entry_dex_sell = sess.get("entryDexPriceUsd")
+                    if (
+                        isinstance(entry_dex_sell, (int, float))
+                        and float(entry_dex_sell) > 0
+                        and dex_px
+                        and dex_px > 0
+                    ):
+                        sell_pnl_dex = (float(dex_px) / float(entry_dex_sell) - 1) * 100
                     base.update(
                         {
                             "kind": "leader_sell_observed",
@@ -874,6 +917,11 @@ class Observer:
                             "bagTokenUi": post_ui,
                             "soldUi": sess.get("soldUi"),
                             "pnlPctApprox": sess.get("pnlPctApprox"),
+                            "pnlDexPct": sell_pnl_dex,
+                            "entryDexPriceUsd": entry_dex_sell,
+                            "entryPriceSource": sess.get("entryPriceSource"),
+                            "mfePct": sess.get("mfePct"),
+                            "maePct": sess.get("maePct"),
                             "heldSec": sess.get("heldSec"),
                             "entryPriceUsd": sess.get("entryPriceUsd"),
                             "exitPriceUsd": sess.get("exitPriceUsd") or fills.get("fillPriceUsd"),
@@ -881,6 +929,36 @@ class Observer:
                     )
                     self.emit(base)
                     if bag_info.get("isFlat"):
+                        entry_dex = sess.get("entryDexPriceUsd")
+                        exit_dex = dex_px
+                        pnl_dex = None
+                        mfe_dex = sess.get("mfePct")
+                        mae_dex = sess.get("maePct")
+                        giveback_dex = None
+                        peak_dex = sess.get("peakDexPriceUsd")
+                        trough_dex = sess.get("troughDexPriceUsd")
+                        if (
+                            isinstance(entry_dex, (int, float))
+                            and float(entry_dex) > 0
+                            and isinstance(exit_dex, (int, float))
+                            and float(exit_dex) > 0
+                        ):
+                            pnl_dex = (float(exit_dex) / float(entry_dex) - 1) * 100
+                            peak_f = max(
+                                float(peak_dex) if isinstance(peak_dex, (int, float)) else float(exit_dex),
+                                float(exit_dex),
+                            )
+                            trough_f = min(
+                                float(trough_dex)
+                                if isinstance(trough_dex, (int, float))
+                                else float(entry_dex),
+                                float(exit_dex),
+                            )
+                            mfe_dex = (peak_f / float(entry_dex) - 1) * 100
+                            mae_dex = (trough_f / float(entry_dex) - 1) * 100
+                            giveback_dex = (float(exit_dex) / peak_f - 1) * 100 if peak_f > 0 else None
+                            peak_dex = peak_f
+                            trough_dex = trough_f
                         self.emit(
                             {
                                 "kind": "leader_session_flat",
@@ -894,6 +972,15 @@ class Observer:
                                 "entryPriceUsd": sess.get("entryPriceUsd"),
                                 "exitPriceUsd": sess.get("exitPriceUsd") or fills.get("fillPriceUsd"),
                                 "pnlPctApprox": sess.get("pnlPctApprox"),
+                                "entryDexPriceUsd": entry_dex,
+                                "exitDexPriceUsd": exit_dex,
+                                "entryPriceSource": sess.get("entryPriceSource"),
+                                "pnlDexPct": pnl_dex,
+                                "mfeDexPct": mfe_dex,
+                                "maeDexPct": mae_dex,
+                                "givebackDexPct": giveback_dex,
+                                "peakDexPriceUsd": peak_dex,
+                                "troughDexPriceUsd": trough_dex,
                                 "heldSec": sess.get("heldSec"),
                                 "sizeUsdProceeds": sess.get("sizeUsdProceeds"),
                                 "entryClass": sess.get("entryClass"),
@@ -902,12 +989,40 @@ class Observer:
                                 "exitClass": cls,
                                 "exitGates": gates,
                                 "exitTurnDump": td,
-                                "mfePct": sess.get("mfePct"),
-                                "maePct": sess.get("maePct"),
+                                "mfePct": mfe_dex if mfe_dex is not None else sess.get("mfePct"),
+                                "maePct": mae_dex if mae_dex is not None else sess.get("maePct"),
                                 "buys": sess.get("buys"),
                                 "sells": sess.get("sells"),
                             }
                         )
+
+    def _ensure_dex_entry(self, bag: dict[str, Any], px: float) -> float | None:
+        """
+        Path math must use Dex (or fill when it agrees). Quote-leg fills are often
+        20–1000× off Dex — that poisoned MFE/MAE and blocked exit formula RE.
+        """
+        if not (px and px > 0):
+            return None
+        entry_dex = bag.get("entryDexPriceUsd")
+        if isinstance(entry_dex, (int, float)) and float(entry_dex) > 0:
+            return float(entry_dex)
+        fill = bag.get("entryPriceUsd")
+        if isinstance(fill, (int, float)) and float(fill) > 0:
+            ratio = px / float(fill)
+            if 1 / 20 < ratio < 20:
+                bag["entryDexPriceUsd"] = float(fill)
+                bag["entryPriceSource"] = "fill"
+            else:
+                bag["entryDexPriceUsd"] = float(px)
+                bag["entryPriceSource"] = "dex_rebase_first_mark"
+        else:
+            bag["entryDexPriceUsd"] = float(px)
+            bag["entryPriceSource"] = "dex_first_mark"
+        bag["peakDexPriceUsd"] = float(px)
+        bag["troughDexPriceUsd"] = float(px)
+        bag["mfePct"] = 0.0
+        bag["maePct"] = 0.0
+        return float(bag["entryDexPriceUsd"])
 
     def emit_bag_marks(self) -> None:
         if not self.log_marks:
@@ -922,7 +1037,7 @@ class Observer:
                 last_mark = int(bag.get("lastMarkAtMs") or 0)
                 if last_mark and now_ms - last_mark < gap_ms:
                     continue
-                entry = bag.get("entryPriceUsd")
+                entry_fill = bag.get("entryPriceUsd")
                 dex = fetch_dex(mint)
                 px = None
                 pc = None
@@ -933,12 +1048,23 @@ class Observer:
                         px = None
                     pc = dex.get("pc5m")
                 pnl = None
-                if isinstance(entry, (int, float)) and entry > 0 and px and px > 0:
-                    pnl = (px / float(entry) - 1) * 100
-                    mfe = float(bag.get("mfePct") or 0)
-                    mae = float(bag.get("maePct") or 0)
-                    bag["mfePct"] = max(mfe, pnl)
-                    bag["maePct"] = min(mae, pnl)
+                giveback_pct = None
+                bounce_pct = None
+                peak_px = bag.get("peakDexPriceUsd")
+                trough_px = bag.get("troughDexPriceUsd")
+                entry_dex = bag.get("entryDexPriceUsd")
+                if px and px > 0:
+                    entry_dex = self._ensure_dex_entry(bag, px)
+                    if entry_dex and entry_dex > 0:
+                        peak_px = max(float(bag.get("peakDexPriceUsd") or px), px)
+                        trough_px = min(float(bag.get("troughDexPriceUsd") or px), px)
+                        bag["peakDexPriceUsd"] = peak_px
+                        bag["troughDexPriceUsd"] = trough_px
+                        pnl = (px / entry_dex - 1) * 100
+                        bag["mfePct"] = (peak_px / entry_dex - 1) * 100
+                        bag["maePct"] = (trough_px / entry_dex - 1) * 100
+                        giveback_pct = (px / peak_px - 1) * 100 if peak_px > 0 else None
+                        bounce_pct = (px / trough_px - 1) * 100 if trough_px > 0 else None
                 held_sec = None
                 opened_bt = bag.get("openedBlockTime")
                 if opened_bt:
@@ -951,11 +1077,17 @@ class Observer:
                         "leader": leader,
                         "mint": mint,
                         "tokenUi": token_ui,
-                        "entryPriceUsd": entry,
+                        "entryPriceUsd": entry_fill,
+                        "entryDexPriceUsd": bag.get("entryDexPriceUsd"),
+                        "entryPriceSource": bag.get("entryPriceSource"),
                         "markPriceUsd": px,
+                        "peakDexPriceUsd": bag.get("peakDexPriceUsd"),
+                        "troughDexPriceUsd": bag.get("troughDexPriceUsd"),
                         "pnlPctApprox": pnl,
                         "mfePct": bag.get("mfePct"),
                         "maePct": bag.get("maePct"),
+                        "givebackPct": giveback_pct,
+                        "bounceFromTroughPct": bounce_pct,
                         "heldSec": held_sec,
                         "openedBlockTime": opened_bt,
                         "costUsd": bag.get("costUsd"),
@@ -982,7 +1114,7 @@ class Observer:
                 "logSells": self.log_sells,
                 "logMarks": self.log_marks,
                 "markMinGapSec": self.mark_min_gap_sec,
-                "version": "1.11.778",
+                "version": "1.11.780",
             }
         )
         print(
