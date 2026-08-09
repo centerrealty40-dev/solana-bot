@@ -12,6 +12,7 @@ import {
   priorityMintsFromCooldown,
   priorityMintsFromPriceRingGreen,
 } from './discover.js';
+import { evaluateStreamImpulseCandidates } from '../volgreen/stream-impulse.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
@@ -275,102 +276,128 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
 
-  const priority = priorityMintsFromCooldown(state.cooldownUntilMs, nowMs, {
-    postCooldownMs: 120_000,
-  });
-  const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
   const tapeMode = cfg.entryMode === 'awakening' || cfg.entryMode === 'green_tape';
-  // Mild-dip parallel-agent scheme adapted for tape:
-  // 1) force-enrich ring-green (already looks interesting locally)
-  // 2) Dex-probe a wider set, rank by vol5m, full-gate only the top N
-  const ringGreen =
-    cfg.entryMode === 'green_tape'
-      ? priorityMintsFromPriceRingGreen(cfg, mints, nowMs, { max: 60 })
-      : [];
-  const firstSeenForce =
-    tapeMode && cfg.forceEnrichFirstSeenPerMin > 0
-      ? mildDipHotMints.takeForceEnrichFirstSeen(nowMs, cfg.forceEnrichFirstSeenPerMin)
-      : [];
-  // Re-probe live spikes on already-known mints (goon-class) — was waiting 20–40s.
-  const spikeForce = tapeMode
-    ? mildDipHotMints.takeForceEnrichHotSpike(nowMs, 8, 12_000, 12_000)
-    : [];
-  const tripleOnly = tapeMode && cfg.entryMode === 'green_tape' && cfg.greenTape.tripleGreenOnly;
-  // Buy/Sell getTx-resolved — peek (not drain) so local 1m bars can form.
-  // triple_only: wider take (4→8) — was starving discovery (candidates≈0 most scans).
-  const buyForce = tapeMode
-    ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, tripleOnly ? 8 : 8)
-    : [];
-  const forceEnrich = tapeMode
-    ? [
-        ...new Set([
-          ...buyForce,
-          ...spikeForce,
-          ...firstSeenForce,
-          ...ringGreen.slice(0, 12),
-          ...priority.slice(0, 8),
-        ]),
-      ]
-    : priority;
-  const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
-  // triple_green: Gecko budget raised → allow larger probe again.
-  const probeMax = tripleOnly
-    ? Math.min(20, Math.max(cfg.probeEnrichMax, buyForce.length + 6))
-    : tapeMode
-      ? Math.min(
-          24,
-          Math.max(
-            cfg.probeEnrichMax,
-            cfg.probeEnrichMax +
-              Math.min(8, firstSeenForce.length + spikeForce.length + buyForce.length),
-          ),
-        )
-      : 80;
-  const enrichConcurrency = tripleOnly
-    ? Math.min(6, Math.max(3, cfg.enrichConcurrency))
-    : tapeMode
-      ? Math.min(12, Math.max(6, cfg.enrichConcurrency))
-      : cfg.enrichConcurrency;
-  const enrichStarted = Date.now();
-  const enrichPromise = enrichAndFilterCandidates(cfg, mints, {
-    nowMs,
-    maxEnrich: evalTopN,
-    probeMax,
-    enrichConcurrency,
-    forceEnrich,
-  });
-  const enrichBudgetMs = tapeMode ? cfg.enrichBudgetMs : 120_000;
-  // Do not discard in-flight enrich on timeout (empty race was wiping all candidates).
-  let enrichResult: Awaited<typeof enrichPromise> | null = null;
-  const enrichDone = enrichPromise.then((r) => {
-    enrichResult = r;
-    return r;
-  });
-  await Promise.race([enrichDone, sleep(enrichBudgetMs)]);
-  if (!enrichResult) {
-    bumpEnrichOverBudget();
-    console.warn(
-      `[mild-dip] enrich still running after ${enrichBudgetMs}ms entryMode=${cfg.entryMode} — awaiting finish`,
-    );
-    enrichResult = await enrichDone;
-  }
-  const candidates = enrichResult.candidates;
-  if (tapeMode) {
+  const streamImpulse =
+    cfg.entryMode === 'green_tape' && cfg.streamImpulseOnly === true;
+
+  let candidates: Awaited<ReturnType<typeof enrichAndFilterCandidates>>['candidates'];
+  let enrichResultSkips: Awaited<ReturnType<typeof enrichAndFilterCandidates>>['skips'] = [];
+
+  if (streamImpulse) {
+    // Stream → local 1m impulse → buy. No Dex/Gecko enrich.
+    const started = Date.now();
+    const buyForce = mildDipHotMints.takeForceEnrichBuyResolved(nowMs, 16);
+    const impulse = await evaluateStreamImpulseCandidates(cfg, { nowMs, evalMax: 24 });
+    candidates = impulse.candidates;
+    enrichResultSkips = impulse.skips;
     console.log(
-      `[mild-dip] ${cfg.entryMode} enrich done universe=${mints.length} ringGreen=${ringGreen.length} ` +
-        `firstSeen=${firstSeenForce.length} spike=${spikeForce.length} buyForce=${buyForce.length} ` +
-        `force=${forceEnrich.length} candidates=${candidates.length} skips=${enrichResult.skips.length} ` +
-        `ms=${Date.now() - enrichStarted} probeMax=${probeMax} conc=${enrichConcurrency} evalTopN=${evalTopN}`,
+      `[mild-dip] green_tape stream_impulse done buyForce=${buyForce.length} ` +
+        `candidates=${candidates.length} skips=${impulse.skips.length} ms=${Date.now() - started}`,
     );
-    if (cfg.journalEntrySkips && enrichResult.skips.length > 0) {
-      for (const skip of enrichResult.skips) {
+    if (cfg.journalEntrySkips && impulse.skips.length > 0) {
+      for (const skip of impulse.skips) {
         appendMildDipJournal(cfg.journalPath, {
-          kind: skip.entryMode === 'awakening' ? 'awaken_skip' : 'entry_skip',
+          kind: 'entry_skip',
           mint: skip.mint,
           entryMode: skip.entryMode,
           reasons: skip.reasons,
           metrics: skip.metrics ?? null,
         });
+      }
+    }
+  } else {
+    const priority = priorityMintsFromCooldown(state.cooldownUntilMs, nowMs, {
+      postCooldownMs: 120_000,
+    });
+    const mints = await collectCandidateMints(cfg, { priorityMints: priority, nowMs });
+    // Mild-dip parallel-agent scheme adapted for tape:
+    // 1) force-enrich ring-green (already looks interesting locally)
+    // 2) Dex-probe a wider set, rank by vol5m, full-gate only the top N
+    const ringGreen =
+      cfg.entryMode === 'green_tape'
+        ? priorityMintsFromPriceRingGreen(cfg, mints, nowMs, { max: 60 })
+        : [];
+    const firstSeenForce =
+      tapeMode && cfg.forceEnrichFirstSeenPerMin > 0
+        ? mildDipHotMints.takeForceEnrichFirstSeen(nowMs, cfg.forceEnrichFirstSeenPerMin)
+        : [];
+    const spikeForce = tapeMode
+      ? mildDipHotMints.takeForceEnrichHotSpike(nowMs, 8, 12_000, 12_000)
+      : [];
+    const tripleOnly = tapeMode && cfg.entryMode === 'green_tape' && cfg.greenTape.tripleGreenOnly;
+    const buyForce = tapeMode
+      ? mildDipHotMints.takeForceEnrichBuyResolved(nowMs, tripleOnly ? 8 : 8)
+      : [];
+    const forceEnrich = tapeMode
+      ? [
+          ...new Set([
+            ...buyForce,
+            ...spikeForce,
+            ...firstSeenForce,
+            ...ringGreen.slice(0, 12),
+            ...priority.slice(0, 8),
+          ]),
+        ]
+      : priority;
+    const evalTopN = tapeMode ? cfg.maxEnrichPerScan : 80;
+    const probeMax = tripleOnly
+      ? Math.min(20, Math.max(cfg.probeEnrichMax, buyForce.length + 6))
+      : tapeMode
+        ? Math.min(
+            24,
+            Math.max(
+              cfg.probeEnrichMax,
+              cfg.probeEnrichMax +
+                Math.min(8, firstSeenForce.length + spikeForce.length + buyForce.length),
+            ),
+          )
+        : 80;
+    const enrichConcurrency = tripleOnly
+      ? Math.min(6, Math.max(3, cfg.enrichConcurrency))
+      : tapeMode
+        ? Math.min(12, Math.max(6, cfg.enrichConcurrency))
+        : cfg.enrichConcurrency;
+    const enrichStarted = Date.now();
+    const enrichPromise = enrichAndFilterCandidates(cfg, mints, {
+      nowMs,
+      maxEnrich: evalTopN,
+      probeMax,
+      enrichConcurrency,
+      forceEnrich,
+    });
+    const enrichBudgetMs = tapeMode ? cfg.enrichBudgetMs : 120_000;
+    let enrichResult: Awaited<typeof enrichPromise> | null = null;
+    const enrichDone = enrichPromise.then((r) => {
+      enrichResult = r;
+      return r;
+    });
+    await Promise.race([enrichDone, sleep(enrichBudgetMs)]);
+    if (!enrichResult) {
+      bumpEnrichOverBudget();
+      console.warn(
+        `[mild-dip] enrich still running after ${enrichBudgetMs}ms entryMode=${cfg.entryMode} — awaiting finish`,
+      );
+      enrichResult = await enrichDone;
+    }
+    candidates = enrichResult.candidates;
+    enrichResultSkips = enrichResult.skips;
+    if (tapeMode) {
+      console.log(
+        `[mild-dip] ${cfg.entryMode} enrich done universe=${mints.length} ringGreen=${ringGreen.length} ` +
+          `firstSeen=${firstSeenForce.length} spike=${spikeForce.length} buyForce=${buyForce.length} ` +
+          `force=${forceEnrich.length} candidates=${candidates.length} skips=${enrichResult.skips.length} ` +
+          `ms=${Date.now() - enrichStarted} probeMax=${probeMax} conc=${enrichConcurrency} evalTopN=${evalTopN}`,
+      );
+      if (cfg.journalEntrySkips && enrichResultSkips.length > 0) {
+        for (const skip of enrichResultSkips) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: skip.entryMode === 'awakening' ? 'awaken_skip' : 'entry_skip',
+            mint: skip.mint,
+            entryMode: skip.entryMode,
+            reasons: skip.reasons,
+            metrics: skip.metrics ?? null,
+          });
+        }
       }
     }
   }
@@ -429,20 +456,32 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     let freshPx: number | null = c.priceUsd;
     const awakeningEntry = cfg.entryMode === 'awakening';
     const greenTapeEntry = cfg.entryMode === 'green_tape';
+    const streamImpulseEntry = greenTapeEntry && cfg.streamImpulseOnly === true;
     if (cfg.preBuyRevalidate) {
       const freshNow = Date.now();
-      const fresh = await fetchDexScreenerPairDetails(c.mint, {
-        bypassCache: true,
-        nowMs: freshNow,
-      });
-      freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
-      const freshPc = fresh?.priceChangeM5Pct ?? null;
-      if (freshPx != null) {
-        mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
+      let freshPc: number | null = null;
+      const tripleEntry =
+        greenTapeEntry &&
+        (c.entryPath === 'green_tape_triple' || c.entryPath === 'green_tape_impulse');
+
+      if (streamImpulseEntry) {
+        // No Dex — chase / short-red from stream price ring only.
+        const ringLast = mildDipPriceRing.lastPrice(c.mint, freshNow);
+        freshPx = ringLast && ringLast.priceUsd > 0 ? ringLast.priceUsd : null;
+        freshPc = mildDipPriceRing.changeFromOldestPct(c.mint, 300_000, freshNow);
+      } else {
+        const fresh = await fetchDexScreenerPairDetails(c.mint, {
+          bypassCache: true,
+          nowMs: freshNow,
+        });
+        freshPx = fresh?.priceUsd != null && fresh.priceUsd > 0 ? fresh.priceUsd : null;
+        freshPc = fresh?.priceChangeM5Pct ?? null;
+        if (freshPx != null) {
+          mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
+        }
       }
       // triple_green: the huge 1m candle IS the chase (F1Xd 2rgKQQ: matched
       // triple 3/10/63 then prebuy_chase=29%>12 killed the buy ~55s before leader).
-      const tripleEntry = greenTapeEntry && c.entryPath === 'green_tape_triple';
       const chaseCap = tripleEntry
         ? Math.max(cfg.maxChasePct, 50)
         : greenTapeEntry && cfg.greenTape.tripleGreenOnly
@@ -469,7 +508,11 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
           ? evaluateAwakeningPreBuy({
               signalPriceUsd: c.priceUsd,
               freshPriceUsd: freshPx,
-              freshPc5mPct: freshPc,
+              // Stream impulse: ring 5m may be null briefly — don't hard-fail on missing pc5m.
+              freshPc5mPct:
+                streamImpulseEntry && (freshPc == null || !Number.isFinite(freshPc))
+                  ? 0
+                  : freshPc,
               maxChasePct: chaseCap,
               minFreshPc5mPct: 0,
               shortRingPc,
@@ -498,8 +541,8 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
           `[mild-dip] SKIP prebuy ${c.symbol} mint=${c.mint.slice(0, 8)}… ${pre.reasons.join(',')}`,
         );
         // F1Xd: 120s cooldown after chase skip missed the leader window entirely.
-        // Triple: no cooldown — keep buyForce and retry next scan immediately.
-        if (tripleEntry) {
+        // Triple / stream impulse: no cooldown — keep buyForce and retry next scan.
+        if (tripleEntry || streamImpulseEntry) {
           mildDipHotMints.markBuyForce(c.mint, nowMs);
           delete state.cooldownUntilMs[c.mint];
         } else {
@@ -1136,6 +1179,7 @@ export async function runMildDipLoop(
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms cacheTtl=${cfg.markCacheTtlMs}ms ` +
       `markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
+      `streamImpulseOnly=${cfg.streamImpulseOnly ? 1 : 0} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0} ` +

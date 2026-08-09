@@ -8,6 +8,31 @@ import {
   type TripleGreenGates,
 } from '../../src/volgreen/triple-green.js';
 
+describe('buildOhlcv1mFromPriceSamples', () => {
+  it('stitches open to previous close for sparse ticks', () => {
+    const nowMs = 1_786_268_500_000;
+    const bars = buildOhlcv1mFromPriceSamples(
+      [
+        { tsMs: nowMs - 120_000, priceUsd: 1.0 },
+        { tsMs: nowMs - 60_000, priceUsd: 1.1 },
+        { tsMs: nowMs - 5_000, priceUsd: 1.4 },
+      ],
+      { nowMs },
+    );
+    expect(bars.length).toBe(3);
+    expect(bars[1]!.open).toBe(1.0);
+    expect(bars[1]!.close).toBe(1.1);
+    expect(bars[2]!.open).toBe(1.1);
+    expect(bars[2]!.close).toBe(1.4);
+    const fs = detectFirstStrongGreen(
+      bars,
+      { ...gates, firstStrongMinPc: 20, hugeMinVolUsd: 0 },
+      Math.floor(nowMs / 1000),
+    );
+    expect(fs.pass).toBe(true);
+  });
+});
+
 const gates: TripleGreenGates = {
   enabled: true,
   smallMinPc: 1,

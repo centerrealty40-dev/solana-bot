@@ -89,13 +89,18 @@ export function startMildDipHotMintStream(opts?: {
       rpcUrl,
       maxPerMin: resolveMax,
       concurrency: opts?.buyMintResolveConcurrency ?? 2,
-      onResolved: (mint, _sig, tsMs) => {
+      staleJobMs: 60_000,
+      onResolved: (mint, signature, tsMs) => {
+        // PumpSwap Buys omit mint in logs — seed local 1m bars from this tx.
+        if (opts?.priceSampler && signature) {
+          opts.priceSampler.enqueue(mint, signature, tsMs);
+        }
         opts?.onMint?.(mint, tsMs);
       },
     });
     console.log(
       `[mild-dip] buy-mint-resolve ON buyOnly newestFirst maxPerMin=${resolveMax} ` +
-        `conc=${opts?.buyMintResolveConcurrency ?? 2}`,
+        `conc=${opts?.buyMintResolveConcurrency ?? 2} priceSampleOnResolve=1`,
     );
   }
 

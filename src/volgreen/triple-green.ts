@@ -450,9 +450,19 @@ export function buildOhlcv1mFromPriceSamples(
     // Proxy vol so hugeMinVol can stay on when mixed with gecko later.
     b.volumeUsd = b.n * 80;
   }
-  return [...buckets.values()]
+  const ordered = [...buckets.values()]
     .map(({ n: _n, ...bar }) => bar)
     .sort((a, b) => a.ts - b.ts);
+  // Sparse stream samples often yield 1 tick/minute → open===close (flat).
+  // Stitch open to previous close so 1m % matches the price path leaders see.
+  for (let i = 1; i < ordered.length; i++) {
+    const prev = ordered[i - 1]!;
+    const cur = ordered[i]!;
+    cur.open = prev.close;
+    cur.high = Math.max(cur.high, cur.open, cur.close);
+    cur.low = Math.min(cur.low, cur.open, cur.close);
+  }
+  return ordered;
 }
 
 export async function evaluateTripleGreenEntry(args: {
@@ -514,6 +524,26 @@ export async function evaluateTripleGreenEntry(args: {
   // 2) Gecko fallback — optional + budgeted.
   const pair = args.pairAddress?.trim();
   if (!pair) {
+    // Stream-impulse path: no pair — surface local miss + last3 / first_strong detail.
+    if (args.localPriceSamples && args.localPriceSamples.length >= 2) {
+      const localBars = buildOhlcv1mFromPriceSamples(args.localPriceSamples, { nowMs });
+      if (localBars.length >= 2) {
+        const localGates = { ...args.gates, hugeMinVolUsd: 0 };
+        const classic = detectTripleGreen(localBars, localGates, nowSec);
+        const first = detectFirstStrongGreen(localBars, localGates, nowSec);
+        return {
+          pass: false,
+          reasons: [
+            ...(classic.reasons.length
+              ? classic.reasons
+              : [localMissReason ?? 'triple_pattern_not_found']),
+            ...(first.reasons[0] && first.reasons[0] !== 'first_strong_disabled'
+              ? [first.reasons[0]]
+              : []),
+          ],
+        };
+      }
+    }
     return {
       pass: false,
       reasons: [localMissReason ?? 'triple_missing_pair_and_local_bars'],

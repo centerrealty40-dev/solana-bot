@@ -48,6 +48,7 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
     ['VOL_GREEN_ALLOWED_DEX_IDS', 'MILD_DIP_ALLOWED_DEX_IDS'],
     ['VOL_GREEN_DISCOVER_SOURCES', 'MILD_DIP_DISCOVER_SOURCES'],
     ['VOL_GREEN_STREAM', 'MILD_DIP_STREAM'],
+    ['VOL_GREEN_STREAM_IMPULSE_ONLY', 'MILD_DIP_STREAM_IMPULSE_ONLY'],
     ['VOL_GREEN_MIN_FEE_SOL_RESERVE', 'MILD_DIP_MIN_FEE_SOL_RESERVE'],
     ['VOL_GREEN_MAX_ENRICH', 'MILD_DIP_MAX_ENRICH'],
     ['VOL_GREEN_ENRICH_BUDGET_MS', 'MILD_DIP_ENRICH_BUDGET_MS'],
@@ -111,29 +112,29 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', '5');
 
   setIfAbsent('MILD_DIP_ALLOWED_DEX_IDS', 'pumpswap,pumpfun,raydium');
-  // Compete: PumpSwap stream only (not full pump.fun firehose) + local 1m bars.
-  // No leader-follow (always late). Gecko is fallback OHLCV only.
-  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream,gecko,profiles');
+  // Compete: PumpSwap stream → local 1m impulse → buy. No Dex/Gecko enrich.
+  setIfAbsent('MILD_DIP_STREAM_IMPULSE_ONLY', '1');
+  setIfAbsent('MILD_DIP_DISCOVER_SOURCES', 'stream');
   setIfAbsent('MILD_DIP_STREAM', '1');
   setIfAbsent('MILD_DIP_STREAM_PROGRAM_IDS', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
   setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '1');
   setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '5');
   setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '500');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '30');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '3');
-  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '6');
-  // Highlight leader Buys → force our gates (not blind copy).
-  setIfAbsent('VOL_GREEN_LEADER_WATCH', '1');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '40');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '4');
+  setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '0');
+  // No leader-follow — stream impulse must win on its own.
+  setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');
   setIfAbsent(
     'VOL_GREEN_LEADER_WATCH_WALLETS',
     '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
   );
-  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '30');
-  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '5');
-  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '16');
-  setIfAbsent('MILD_DIP_MAX_ENRICH', '12');
-  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '18000');
-  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '3000');
+  setIfAbsent('MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN', '0');
+  setIfAbsent('MILD_DIP_ENRICH_CONCURRENCY', '1');
+  setIfAbsent('MILD_DIP_PROBE_ENRICH_MAX', '1');
+  setIfAbsent('MILD_DIP_MAX_ENRICH', '1');
+  setIfAbsent('MILD_DIP_ENRICH_BUDGET_MS', '3000');
+  setIfAbsent('MILD_DIP_SCAN_INTERVAL_MS', '1000');
   setIfAbsent('MILD_DIP_MAX_CHASE_PCT', '12');
   setIfAbsent('VOL_GREEN_MAX_CHASE_PCT', '12');
   setIfAbsent('LIVE_BUY_MAX_CHASE_PCT', '12');

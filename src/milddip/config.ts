@@ -72,6 +72,11 @@ const MildDipConfigSchema = z.object({
   greenTapeShortRedWindowMs: z.coerce.number().int().min(0).max(600_000).default(60_000),
   /** Hard wall-clock budget for one enrich pass (ms). */
   enrichBudgetMs: z.coerce.number().int().min(3_000).max(180_000).default(40_000),
+  /**
+   * green_tape: skip Dex/Gecko enrich entirely — stream → local 1m impulse → buy.
+   * Oscar mild_dip leaves this false.
+   */
+  streamImpulseOnly: z.boolean().default(false),
   /** Parallel Jupiter sells — sole consumer can push higher. */
   sellConcurrency: z.coerce.number().int().min(1).max(8).default(6),
   /** Journal entry_skip / awaken_skip for enriched fails (default on). */
@@ -394,6 +399,17 @@ export function loadMildDipConfig(): MildDipConfig {
     buyMintResolveConcurrency: process.env.MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY ?? 2,
     greenTapeShortRedWindowMs: process.env.MILD_DIP_GREEN_SHORT_RED_WINDOW_MS ?? 60_000,
     enrichBudgetMs: process.env.MILD_DIP_ENRICH_BUDGET_MS ?? 40_000,
+    streamImpulseOnly: (() => {
+      const v = (
+        process.env.MILD_DIP_STREAM_IMPULSE_ONLY ??
+        process.env.VOL_GREEN_STREAM_IMPULSE_ONLY ??
+        ''
+      )
+        .trim()
+        .toLowerCase();
+      if (!v) return false;
+      return v === '1' || v === 'true' || v === 'yes' || v === 'on';
+    })(),
     sellConcurrency: process.env.MILD_DIP_SELL_CONCURRENCY ?? 6,
     journalEntrySkips: (() => {
       const v = process.env.MILD_DIP_JOURNAL_ENTRY_SKIPS?.trim().toLowerCase();

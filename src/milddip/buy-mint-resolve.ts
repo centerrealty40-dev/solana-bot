@@ -20,7 +20,7 @@ const USDT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 const SKIP = new Set([WSOL, USDC, USDT]);
 
 /** Max age of a queued sig before we drop it (candle already gone). */
-const STALE_JOB_MS = 20_000;
+const STALE_JOB_MS = 60_000;
 
 export function logsIndicateBuyOrSell(logs: string[]): boolean {
   for (const line of logs) {
