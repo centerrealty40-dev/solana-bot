@@ -1,4 +1,23 @@
 # So
+## [1.11.785] — 2026-08-09
+
+**Тег:** `sa-1.11.785`
+
+### Ops: kill turn→dump SHALLOW OR — MAIN formula only
+
+The approved 60h leader fit is **one** curve from 8zkg
+(`dump ≈ -5.08 + 6.86·log1p(turn·100)`). 1.11.777 added a second OR-curve
+(`-8.83 + 4.23·log`) to catch ~7% scrapes that miss MAIN — that is not the
+live entry mandate. Turn it off.
+
+- `MILD_DIP_TURN_DUMP_SHALLOW_BRANCH=0`
+- MAIN gate + slacks unchanged (α=-5.08, β=6.86, shallow slack 10, deep 12)
+- h1-red / wait_dip / flat_micro stay off
+
+**Откат:** `MILD_DIP_TURN_DUMP_SHALLOW_BRANCH=1` + reload.
+
+---
+
 ## [1.11.784] — 2026-08-09
 
 **Тег:** `sa-1.11.784`
