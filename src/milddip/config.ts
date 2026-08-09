@@ -59,10 +59,11 @@ const MildDipConfigSchema = z.object({
    */
   markStreamMaxAgeMs: z.coerce.number().int().min(0).max(900_000).default(300_000),
   /**
-   * Deprecated for exits (ignored). Kept so old env files still load.
-   * Was: Dex warm cadence on open bags — that flooded the 120 RPM gate.
+   * Background only: when stream/seed ring age ≥ this gap, fire-and-forget
+   * Dex→ring for open bags (never blocks the exit mark pass). 0 = off.
+   * Default 8s — enough to see pumps without flooding the 120 RPM gate.
    */
-  markDexRefreshMs: z.coerce.number().int().min(0).max(300_000).default(0),
+  markDexRefreshMs: z.coerce.number().int().min(0).max(300_000).default(8_000),
   /**
    * Dex cache TTL for discovery/entry Dex calls (not exit marks).
    */
@@ -567,7 +568,7 @@ export function loadMildDipConfig(): MildDipConfig {
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
     markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
-    markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 0,
+    markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 8_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
     /** 1.11.736 — tighter journal so giveback gaps are visible (was 30s). */
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 5_000,

@@ -3059,7 +3059,8 @@ const PM2_APPS = [
          * Never await Dex on mark pass (that built the 20–60s gate queue).
          */
         MILD_DIP_MARK_STREAM_MAX_AGE_MS: '300000',
-        MILD_DIP_MARK_DEX_REFRESH_MS: '0',
+        // Background Dex→ring for open bags when stream quiet (0 = off).
+        MILD_DIP_MARK_DEX_REFRESH_MS: '8000',
         MILD_DIP_MARK_CACHE_TTL_MS: '20000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
         MILD_DIP_MARK_JOURNAL_MS: '5000',

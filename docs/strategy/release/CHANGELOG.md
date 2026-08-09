@@ -1,4 +1,22 @@
 # So
+## [1.11.771] — 2026-08-09
+
+**Тег:** `sa-1.11.771`
+
+### Fix: background Dex→ring refresh for open bags (EtxCL9)
+
+After stream-only marks (1.11.769), quiet PumpPortal left the ring frozen
+at the entry seed — EtxCL9 had 72 marks all at entry px, peak never moved,
+trail never armed, bag sat through mcap~260 with no sell.
+
+**Contract (unchanged):** exit mark pass never awaits Dex.
+**Add:** non-blocking Dex refresh into the ring when ring age ≥
+`MILD_DIP_MARK_DEX_REFRESH_MS` (default 8s, max 3 in flight). 0 = off.
+
+**Откат:** set `MILD_DIP_MARK_DEX_REFRESH_MS=0` + reload, or revert this commit.
+
+---
+
 ## [1.11.770] — 2026-08-09
 
 **Тег:** `sa-1.11.770`

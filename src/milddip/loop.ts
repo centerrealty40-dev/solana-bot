@@ -47,6 +47,7 @@ import {
 } from './leader-align.js';
 import { isRunnerPartialExit } from './sell-partial.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
+import { requestOpenMarkRefresh } from './open-mark-refresh.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
 import {
@@ -144,21 +145,37 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
 }
 
 /**
- * Open-book exit mark: price-ring only (stream swaps + entry fill seed).
- * Never awaits DexScreener — that gate queue was the markPass 20–60s bug.
+ * Open-book exit mark: read price-ring only (never await HTTP).
+ * Stream should feed the ring; `requestOpenMarkRefresh` tops it up in the
+ * background when swaps go quiet (EtxCL9 froze at entry through a mcap spike).
  */
 function markPriceUsd(
   mint: string,
   nowMs: number,
-  cfg: Pick<MildDipConfig, 'markStreamMaxAgeMs'>,
+  cfg: Pick<
+    MildDipConfig,
+    'markStreamMaxAgeMs' | 'markDexRefreshMs' | 'markCacheTtlMs' | 'entry'
+  >,
 ): { px: number | null; volume5mUsd: number | null; source: 'stream' | 'dex' | null } {
   const last = mildDipPriceRing.lastPrice(mint, nowMs);
+  const refreshGap = cfg.markDexRefreshMs;
+  const ringAge = last ? Math.max(0, nowMs - last.tsMs) : Number.POSITIVE_INFINITY;
+  // Kick background Dex→ring when enabled and stream/seed is stale. Never await.
+  if (refreshGap > 0 && !(ringAge < refreshGap)) {
+    requestOpenMarkRefresh({
+      mint,
+      nowMs,
+      minGapMs: refreshGap,
+      maxInFlight: 3,
+      allowedDexIds: cfg.entry.allowedDexIds,
+      cacheTtlMs: cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 15_000,
+    });
+  }
   const resolved = resolveExitMarkFromRing({
     last: last
       ? { priceUsd: last.priceUsd, tsMs: last.tsMs, source: last.source }
       : null,
     nowMs,
-    // 0 in config = accept any last print; else ring max age for exits.
     maxAgeMs: cfg.markStreamMaxAgeMs > 0 ? cfg.markStreamMaxAgeMs : 0,
   });
   return {
@@ -1724,7 +1741,7 @@ export async function runMildDipLoop(
       `/sample${Math.round(cfg.exit.neverArmVolFadeSampleMs / 1000)}s×${cfg.exit.neverArmVolFadeWeakWindows} ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms` +
-      `/ringOnly≤${cfg.markStreamMaxAgeMs}ms/noExitDex ` +
+      `/ring≤${cfg.markStreamMaxAgeMs}ms/bgDex@${cfg.markDexRefreshMs}ms ` +
       `cacheTtl=${cfg.markCacheTtlMs}ms markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
