@@ -852,6 +852,11 @@ class Observer:
                     )
                     self.emit(base)
                     qdelta = quote.get("quoteUsdDelta")
+                    spent = (
+                        abs(float(qdelta))
+                        if isinstance(qdelta, (int, float)) and abs(float(qdelta)) > 0
+                        else fills.get("sizeUsd")
+                    )
                     self.emit_trade(
                         {
                             "kind": "trade_fill",
@@ -863,13 +868,10 @@ class Observer:
                             "ok": True,
                             "signature": sig,
                             "sizeUsdIntent": fills.get("sizeUsd"),
-                            "quoteSpentUsd": (
-                                abs(float(qdelta))
-                                if isinstance(qdelta, (int, float)) and qdelta != 0
-                                else fills.get("sizeUsd")
-                            ),
+                            "quoteSpentUsd": spent,
                             "quoteReceivedUsd": None,
-                            "cashDeltaUsd": qdelta,
+                            # Buy always spends quote — force negative cash delta.
+                            "cashDeltaUsd": (-float(spent) if spent else None),
                             "fillPriceUsd": fills.get("fillPriceUsd"),
                             "cashSource": "observed_delta" if qdelta else "quote",
                             "source": "leader_observer",
@@ -940,6 +942,11 @@ class Observer:
                     )
                     self.emit(base)
                     qdelta = quote.get("quoteUsdDelta")
+                    received = (
+                        abs(float(qdelta))
+                        if isinstance(qdelta, (int, float)) and abs(float(qdelta)) > 0
+                        else fills.get("sizeUsd")
+                    )
                     self.emit_trade(
                         {
                             "kind": "trade_fill",
@@ -952,12 +959,9 @@ class Observer:
                             "signature": sig,
                             "sizeUsdIntent": fills.get("sizeUsd"),
                             "quoteSpentUsd": None,
-                            "quoteReceivedUsd": (
-                                float(qdelta)
-                                if isinstance(qdelta, (int, float)) and qdelta > 0
-                                else fills.get("sizeUsd")
-                            ),
-                            "cashDeltaUsd": qdelta,
+                            "quoteReceivedUsd": received,
+                            # Sell always receives quote — force positive cash delta.
+                            "cashDeltaUsd": (float(received) if received else None),
                             "fillPriceUsd": fills.get("fillPriceUsd"),
                             "markPnlPct": sess.get("pnlPctApprox"),
                             "cashPnlUsd": sess.get("cashPnlUsd"),
