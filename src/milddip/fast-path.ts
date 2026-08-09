@@ -13,6 +13,7 @@ import {
   mildStabilizeLaneAllowed,
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
+import { appendMildDipJournal } from './state.js';
 import { evaluateTurnDumpGate } from './turn-dump.js';
 
 export type StructuralCacheEntry = {
@@ -342,7 +343,23 @@ export async function evaluateFastPathCandidate(
       shallowSlackPct: cfg.turnDumpShallowSlackPct,
       deepSlackPct: cfg.turnDumpDeepSlackPct,
     });
-    if (!td.pass) return null;
+    if (!td.pass) {
+      // 1.11.774 — was silent null; journal so live misses are visible.
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_turn_dump_skip',
+        mint,
+        dipSource,
+        lane: 'fast',
+        trigger,
+        pc5m: metrics.priceChange5mPct,
+        dump: td.dump,
+        turn: td.turn,
+        pred: td.pred,
+        resid: td.resid,
+        reasons: td.reasons,
+      });
+      return null;
+    }
   }
 
   // Leader/stream triggers: require a real dip print (not green chase).

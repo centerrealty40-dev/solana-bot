@@ -1,4 +1,21 @@
 # So
+## [1.11.774] — 2026-08-09
+
+**Тег:** `sa-1.11.774`
+
+### Fix: turn→dump shallow slack 8→10 (slip buffer)
+
+Live miss: 8zkg bought `tpg7…pump` with dump 11.69% / turn 0.378 →
+pred 20.01, floor `pred−8` = 12.01 → rejected by **0.32 pp**
+(`resid −8.32`). Dex print at observe lag can sit slightly shallower than
+the leader's decision print — widen shallow slack to **10**.
+
+Also journal `mild_dip_turn_dump_skip` from fast-path (was silent `null`).
+
+**Откат:** `MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT=8`.
+
+---
+
 ## [1.11.773] — 2026-08-09
 
 **Тег:** `sa-1.11.773`

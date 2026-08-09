@@ -13,7 +13,7 @@ export type TurnDumpGateConfig = {
   enabled: boolean;
   alpha: number;
   beta: number;
-  /** Reject if dump < pred − this (pp). Default 8. */
+  /** Reject if dump < pred − this (pp). Default 10 (slip buffer). */
   shallowSlackPct: number;
   /** Reject if dump > pred + this (pp). 0 = off. Default 12. */
   deepSlackPct: number;

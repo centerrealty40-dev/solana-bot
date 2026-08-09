@@ -82,4 +82,21 @@ describe('turn-dump gate (8zkg formula)', () => {
     });
     expect(v.pass).toBe(true);
   });
+
+  it('live 8zkg tpg7 miss: slack 8 rejects, slack 10 (slip) passes', () => {
+    // turn≈0.378 → pred≈20.01; dump=11.69 → resid≈−8.32
+    const vol = 26_171.66;
+    const liq = 69_302.9;
+    const args = {
+      enabled: true,
+      pc5m: -11.69,
+      volume5mUsd: vol,
+      liquidityUsd: liq,
+      alpha: -5.08,
+      beta: 6.86,
+      deepSlackPct: 12,
+    } as const;
+    expect(evaluateTurnDumpGate({ ...args, shallowSlackPct: 8 }).pass).toBe(false);
+    expect(evaluateTurnDumpGate({ ...args, shallowSlackPct: 10 }).pass).toBe(true);
+  });
 });

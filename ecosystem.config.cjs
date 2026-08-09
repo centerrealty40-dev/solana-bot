@@ -2882,14 +2882,15 @@ const PM2_APPS = [
         MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',
         MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',
         /**
-         * 1.11.773 — 8zkg formula: dump ≈ -5.08 + 6.86·log1p(turn·100).
-         * Reject too-shallow (resid < −8) and too-deep (resid > +12).
+         * 1.11.773/774 — 8zkg formula: dump ≈ -5.08 + 6.86·log1p(turn·100).
+         * Shallow slack 10 (was 8): +~2pp for observe/fill slip — live miss
+         * tpg7… resid −8.32 under slack 8. Deep ceiling unchanged +12.
          * Forces wait-dip off when enabled.
          */
         MILD_DIP_TURN_DUMP_GATE: '1',
         MILD_DIP_TURN_DUMP_ALPHA: '-5.08',
         MILD_DIP_TURN_DUMP_BETA: '6.86',
-        MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT: '8',
+        MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT: '10',
         MILD_DIP_TURN_DUMP_DEEP_SLACK_PCT: '12',
         /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in

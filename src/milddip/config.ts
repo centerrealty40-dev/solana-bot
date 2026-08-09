@@ -235,8 +235,8 @@ const MildDipConfigSchema = z.object({
   turnDumpGateEnabled: z.boolean().default(false),
   turnDumpAlpha: z.coerce.number().default(-5.08),
   turnDumpBeta: z.coerce.number().default(6.86),
-  /** Reject when dump < pred − slack (pp). */
-  turnDumpShallowSlackPct: z.coerce.number().min(0).max(50).default(8),
+  /** Reject when dump < pred − slack (pp). 1.11.774 default 10 (slip). */
+  turnDumpShallowSlackPct: z.coerce.number().min(0).max(50).default(10),
   /** Reject when dump > pred + slack (pp). 0 = no deep ceiling. */
   turnDumpDeepSlackPct: z.coerce.number().min(0).max(80).default(12),
   /**
@@ -644,7 +644,7 @@ export function loadMildDipConfig(): MildDipConfig {
     turnDumpGateEnabled: envBool('MILD_DIP_TURN_DUMP_GATE', false),
     turnDumpAlpha: envNum('MILD_DIP_TURN_DUMP_ALPHA', -5.08),
     turnDumpBeta: envNum('MILD_DIP_TURN_DUMP_BETA', 6.86),
-    turnDumpShallowSlackPct: envNum('MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT', 8),
+    turnDumpShallowSlackPct: envNum('MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT', 10),
     turnDumpDeepSlackPct: envNum('MILD_DIP_TURN_DUMP_DEEP_SLACK_PCT', 12),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
