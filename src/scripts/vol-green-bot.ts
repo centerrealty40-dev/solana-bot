@@ -17,6 +17,7 @@ import {
   mildDipRuntimeMetrics,
 } from '../milddip/runtime-metrics.js';
 import { startOpsHeartbeat, writeOpsFatal } from '../core/ops-heartbeat.js';
+import { refreshSolPrice } from '../papertrader/pricing.js';
 import {
   bootstrapVolGreenEnv,
   VOL_GREEN_DEFAULT_WALLET_PUBKEY,
@@ -24,6 +25,9 @@ import {
 
 bootstrapVolGreenEnv();
 bumpProcessStart();
+void refreshSolPrice().then((ok) => {
+  console.log(`[vol-green-bot] solUsd refresh=${ok ? 1 : 0}`);
+});
 
 function appName(): string {
   const raw = process.env.MILD_DIP_APP_NAME?.trim() || process.env.VOL_GREEN_APP_NAME?.trim();

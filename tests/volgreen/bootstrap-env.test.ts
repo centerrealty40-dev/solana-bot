@@ -88,7 +88,7 @@ describe('bootstrapVolGreenEnv', () => {
     expect(process.env.MILD_DIP_STREAM).toBe('1');
     expect(process.env.MILD_DIP_STREAM_PRICE_SAMPLE).toBe('1');
     expect(process.env.MILD_DIP_STREAM_PROGRAM_IDS).toContain('pAMMBay');
-    expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN).toBe('40');
+    expect(process.env.MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN).toBe('80');
     expect(process.env.MILD_DIP_STREAM_IMPULSE_ONLY).toBe('1');
     expect(process.env.MILD_DIP_DISCOVER_SOURCES).toBe('stream');
     expect(process.env.VOL_GREEN_LEADER_WATCH).toBe('0');

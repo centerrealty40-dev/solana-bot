@@ -28,7 +28,13 @@ import {
 } from './runtime-metrics.js';
 import type { StreamPriceSampler } from './stream-price-sampler.js';
 
-export type MildDipStreamHandle = { stop: () => void };
+export type MildDipStreamHandle = {
+  stop: () => void;
+  stats: () => {
+    resolve: ReturnType<BuyMintResolver['stats']> | null;
+    priceSampler: ReturnType<StreamPriceSampler['stats']> | null;
+  };
+};
 
 export function resolveMildDipStreamWsUrl(env: NodeJS.ProcessEnv = process.env): string | null {
   const explicit = env.MILD_DIP_STREAM_WS_URL?.trim() || '';
@@ -140,6 +146,10 @@ export function startMildDipHotMintStream(opts?: {
       resolver?.stop();
       opts?.priceSampler?.stop();
     },
+    stats: () => ({
+      resolve: resolver?.stats() ?? null,
+      priceSampler: opts?.priceSampler?.stats() ?? null,
+    }),
   };
 }
 

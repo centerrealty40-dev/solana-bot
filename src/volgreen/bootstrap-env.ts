@@ -120,8 +120,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '1');
   setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '5');
   setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '500');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '40');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '80');
   setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '4');
+  setIfAbsent('MILD_DIP_MINT_PRICE_REFRESH', '1');
   setIfAbsent('MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN', '0');
   // No leader-follow — stream impulse must win on its own.
   setIfAbsent('VOL_GREEN_LEADER_WATCH', '0');

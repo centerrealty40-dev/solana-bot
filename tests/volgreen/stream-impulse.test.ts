@@ -20,6 +20,8 @@ const ENV_KEYS = [
   'MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC',
   'MILD_DIP_GREEN_TRIPLE_SMALL_MIN_PC',
   'MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC',
+  'MILD_DIP_MINT_PRICE_REFRESH',
+  'MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN',
 ];
 
 const saved: Record<string, string | undefined> = {};
@@ -31,6 +33,7 @@ beforeEach(() => {
   }
   process.env.MILD_DIP_RPC_URL = 'https://example.invalid';
   process.env.MILD_DIP_EXECUTION_MODE = 'paper';
+  process.env.MILD_DIP_MINT_PRICE_REFRESH = '0';
   bootstrapVolGreenEnv(process.env);
 });
 
@@ -67,12 +70,33 @@ describe('evaluateStreamImpulseCandidates', () => {
       nowMs,
       evalMax: 8,
       fetchImpl,
+      allowPriceRefresh: false,
     });
     expect(fetchCalls).toBe(0);
     expect(r.candidates.length).toBeGreaterThanOrEqual(1);
     expect(r.candidates[0]!.mint).toBe(MINT);
     expect(r.candidates[0]!.entryPath).toBe('green_tape_impulse');
     expect(r.candidates[0]!.dipSource).toBe('stream');
+  });
+
+  it('passes intrabar 60s impulse when completed bars are flat', async () => {
+    const cfg = loadMildDipConfig();
+    const nowMs = Date.now();
+    // Same minute ticks: +25% within 60s, but would be flat completed bars without stitch path.
+    mildDipPriceRing.note(MINT, 1.0, { tsMs: nowMs - 50_000, source: 'stream' });
+    mildDipPriceRing.note(MINT, 1.05, { tsMs: nowMs - 30_000, source: 'stream' });
+    mildDipPriceRing.note(MINT, 1.28, { tsMs: nowMs - 5_000, source: 'stream' });
+    mildDipHotMints.note(MINT, nowMs, 8);
+    mildDipHotMints.markBuyForce(MINT, nowMs);
+
+    const r = await evaluateStreamImpulseCandidates(cfg, {
+      nowMs,
+      evalMax: 8,
+      allowPriceRefresh: false,
+    });
+    expect(r.candidates.length).toBeGreaterThanOrEqual(1);
+    expect(r.candidates[0]!.entryPath).toBe('green_tape_impulse');
+    expect(r.candidates[0]!.entryScore).toBeGreaterThanOrEqual(20);
   });
 
   it('skips when samples insufficient and does not fetch', async () => {
@@ -92,6 +116,7 @@ describe('evaluateStreamImpulseCandidates', () => {
       nowMs,
       evalMax: 8,
       fetchImpl,
+      allowPriceRefresh: false,
     });
     expect(fetchCalls).toBe(0);
     const skip = r.skips.find((s) => s.mint === MINT2);

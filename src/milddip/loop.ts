@@ -48,7 +48,8 @@ import {
   bumpTickError,
 } from './runtime-metrics.js';
 import { parseLeaderWatchWallets, startLeaderWalletWatch } from './leader-watch.js';
-import { startMildDipHotMintStream } from './stream.js';
+import { mintPriceRefreshStats } from './mint-price-refresh.js';
+import { startMildDipHotMintStream, type MildDipStreamHandle } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -287,7 +288,11 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
     // Stream → local 1m impulse → buy. No Dex/Gecko enrich.
     const started = Date.now();
     const buyForce = mildDipHotMints.takeForceEnrichBuyResolved(nowMs, 16);
-    const impulse = await evaluateStreamImpulseCandidates(cfg, { nowMs, evalMax: 24 });
+    const impulse = await evaluateStreamImpulseCandidates(cfg, {
+      nowMs,
+      evalMax: 24,
+      rpcUrl: cfg.rpcUrl,
+    });
     candidates = impulse.candidates;
     enrichResultSkips = impulse.skips;
     console.log(
@@ -1135,7 +1140,7 @@ export async function runMildDipLoop(
     });
   }
 
-  let streamHandle: { stop: () => void } | null = null;
+  let streamHandle: MildDipStreamHandle | null = null;
   if (cfg.streamEnabled) {
     streamHandle = startMildDipHotMintStream({
       wsUrl: cfg.streamWsUrl || null,
@@ -1198,6 +1203,7 @@ export async function runMildDipLoop(
     await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
   }
 
+  let lastStreamStatsLog = 0;
   let lastScan = 0;
   let lastMark = 0;
 
@@ -1229,6 +1235,21 @@ export async function runMildDipLoop(
 
     stats.open = openCount(state);
     stats.hotMints = mildDipHotMints.size(nowMs);
+
+    if (streamHandle && nowMs - lastStreamStatsLog >= 30_000) {
+      lastStreamStatsLog = nowMs;
+      const st = streamHandle.stats();
+      const ps = st.priceSampler;
+      const rs = st.resolve;
+      const rf = mintPriceRefreshStats();
+      console.log(
+        `[mild-dip] streamPrice sampled=${ps?.sampled ?? 0} skipped=${ps?.skipped ?? 0} ` +
+          `queued=${ps?.queued ?? 0} | resolve resolved=${rs?.resolved ?? 0} ` +
+          `failed=${rs?.failed ?? 0} droppedStale=${rs?.droppedStale ?? 0} ` +
+          `droppedOverflow=${rs?.droppedOverflow ?? 0} queued=${rs?.queued ?? 0} | ` +
+          `mintRefresh ok=${rf.ok} fail=${rf.fail} skip=${rf.skip}`,
+      );
+    }
   };
 
   // Expose stats for heartbeat via closure property (compat) + module ref.
