@@ -1,55 +1,64 @@
-# Mild-dip 60h bottom/reversal oracle + grid
+# Mild-dip 60h: downhill grind = main bleed
 
-Window: **1780 buys / 345 mints / ~60h** journal marks.  
-Matched-cycle actual ≈ **−$108.54** (FIFO buy→sell legs).
+## The real problem
 
-## Verdict
+Matched book ≈ **−$109** on 1780 buys / 345 mints.
 
-Do **not** cut profitable branches. On this window:
+**58 “downhill grind” mints** (entries stair-step lower, net red): **−$279**.  
+Of that, **first cycle only −$21**; **rest 376 entries −$258**.
 
-| dipSource | n | pnl |
-|-----------|--:|----:|
-| stream | 203 | **+$21.49** |
-| mild_stabilize | 276 | **+$13.71** |
-| wait_dip | 319 | −$48.87 |
-| dex | 455 | −$33.64 |
-| dex+stream | 309 | −$29.96 |
-| h1_red_shallow | 191 | −$23.76 |
+If those rest entries never fired → book ≈ **+$150**.
 
-Losses are mostly **mid-hill entries** (bounce before the real low) and **shallow h1** (−3…−8%), not “stabilize is bad”.
+Pattern (DKx, 7Tw72W, EKppz9, Dz2iVS, DfmUxZ, …): one scrap/reversal prints, then we keep buying **continuation dumps** on the same falling hill. Impulses are skipped by design (dip-only); the bleed is **fake reversals mid-slope**.
 
-## DKxHTQ oracle
+## What we will NOT do
 
-6 cycles, actual ≈ **−$2.72**.
+- Ban rebuy for X minutes / mint cooldown theater  
+- Cut profitable branches (`mild_stabilize` +$14, `stream` +$21 on this window)  
+- Blind `dex pc5m ≤ −12` (net ~0)  
+- Hard `wait_dump ≤ −12` (cuts ~$280 winner PnL — too much collateral)
 
-| # | source | entry | actual | note |
-|---|--------|------:|-------:|------|
-| 1 | wait_dip | 5.23e-4 | +$0.31 | ok |
-| 2 | dex −21% | 4.53e-4 | −$1.50 | still falling |
-| 3 | mild_stabilize dump−10 / bounce+4.2 | 5.52e-4 | +$0.74 | shallow dump (new gate would skip) |
-| 4 | h1 pc5m=−4.25 | 3.98e-4 | −$2.31 | toxic shallow |
-| 5 | mild_stabilize dump−14.5 / bounce+7.4 | 3.19e-4 | +$2.64 | bounce>4 (new gate would skip; was a winner — tradeoff) |
-| 6 | h1 pc5m=−7.49 | 2.59e-4 | −$2.58 | toxic shallow |
+## What to ship (evidence only)
 
-- Early-trough oracle (buy MAE of first 3m): **+$3.17**
-- Perfect local scalper ceiling: **+$3.31** (3 trades)
+### A — already in PR #680 / 1.11.768 (do this)
 
-Ideal path = wait for **deeper dump + rising-tick turn**, skip h1 −3…−8.
+| Gate | Change | Why |
+|------|--------|-----|
+| `mild_stabilize` dump | `(−25, −12]` (was −8) | mid-hill −8…−12 stabilize lost |
+| `mild_stabilize` bounce | max **4%** (was 8) | chase bounce net-negative |
+| trough age | **25s** (was 15s) | don’t buy the wick print |
+| rising ticks | last **3** strictly up | turn confirm |
+| `h1_red_shallow` | pc5m `(−15, −8]` (was (−10, −3]) | −3…−8 bags (DKx/7Tw72) |
 
-## Grid (causal skip-filters on live buys)
+CF: **Δ ≈ +$50**, avoid-loss/win-cut ≈ **1.55**. Branches kept.
 
-Best **without deleting** stabilize/stream:
+### B — next (same idea, wider): turn required when ring knows
 
-1. **Ship (1.11.768):** stabilize dump≤−12 + bounce≤4 + h1 band (−15,−8] → **≈ +$50** vs actual  
-2. Heuristic turn_confirm + stabilize_tight + h1≤−10 → **≈ +$100** (more skips when ring known)  
-3. Blind “deepen all dex to −12” **hurts** (skips net-positive dex fills) — do not ship  
-4. Non-causal “delay if better” looked like +$400 — **look-ahead**, not shippable
+When price-ring has samples at decision time: **reject entry if last reclaim ticks are not rising** (same turn test), for `wait_dip` / `dex` / `h1` too — not only stabilize.
 
-## Shipped strategy (1.11.768)
+CF on top of A: **Δ ≈ +$85**. Still no time ban — only “no buy without a visible turn”.
 
-Keep all branches; tighten bottom detection:
+### C — not ready to ship
 
-- `mild_stabilize`: dump `(−25,−12]`, bounce `[1.5,4]`, trough age 25s, **3 rising ticks**
-- `h1_red_shallow`: pc5m `(−15,−8]`
+Session-high / lower-high filters help downhill rest but mark coverage at entry is sparse (chicken-egg: marks exist mainly while in a bag). Needs live ring on wait/watch mints before we trust it.
 
-Script: `scripts-tmp/milddip-bottom-oracle-grid-60h.py`
+## Downhill mint set (top by loss)
+
+| mint | n | pnl | entry decline |
+|------|--:|----:|--------------:|
+| DfmUxZ | 8 | −33.0 | −66% |
+| Dz2iVS | 13 | −22.7 | −40% |
+| EKppz9 | 8 | −20.4 | −35% |
+| JAX8ZB | 4 | −18.2 | −76% |
+| 4pGqQG | 7 | −17.8 | −56% |
+| EtxCL9 | 4 | −15.1 | −49% |
+| BSiKCM | 13 | −11.8 | −40% |
+| … | | | |
+| DKxHTQ | 6 | −2.7 | −50% |
+| **58 total** | | **−279** | |
+
+Full list: `artifacts/milddip-oracle60h/downhill.json`.
+
+## Strategy in one sentence
+
+Stay dip-only, but **only enter a reclaiming turn** (deeper dump + small bounce + rising ticks). Stop buying red candles that are just the next step down the hill.
