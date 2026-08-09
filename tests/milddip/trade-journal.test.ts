@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   allocateSellCost,
+  hydrateTradeLotsFromOpen,
   resetTradeLotsForTests,
   resolveBuyCash,
   resolveSellCash,
@@ -53,6 +54,31 @@ describe('trade-journal cash math', () => {
       remainingCostUsd: 6,
     });
     expect(allocateSellCost({ lotCostUsd: 10, fraction: 1 }).remainingCostUsd).toBe(0);
+  });
+
+  it('hydrates open bags so restart sells keep cost basis', () => {
+    const n = hydrateTradeLotsFromOpen(
+      { MintB: { sizeUsd: 10, openedAtMs: 500 } },
+      1_000,
+    );
+    expect(n).toBe(1);
+    const dir = mkdtempSync(join(tmpdir(), 'trades-h-'));
+    dirs.push(dir);
+    const path = join(dir, 'trades.jsonl');
+    const { fill } = writeUsSellFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintB',
+      ok: true,
+      sizeUsdIntent: 10,
+      fraction: 1,
+      usdcBefore: 50,
+      usdcAfter: 56,
+      nowMs: 2_000,
+      reason: 'hard_stop',
+    });
+    expect(fill.costBasisUsd).toBeCloseTo(10, 5);
+    expect(fill.cashPnlUsd).toBeCloseTo(-4, 5);
   });
 
   it('writes trade_fill + trade_roundtrip with cash PnL (not mark%)', () => {
