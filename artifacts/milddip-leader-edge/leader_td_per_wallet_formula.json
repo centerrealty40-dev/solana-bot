@@ -1,0 +1,55 @@
+{
+  "scope": "TD entries only (not green). Flat exit explain: fire within 180s of actual sell OR |pnl-exit| < 5pp. Marks ~65s.",
+  "note": "Two separate formulas — one per wallet. No unified scheme.",
+  "8zkgFGVZ": {
+    "n_td_sessions": 178,
+    "arm_gate_mfe_pct": 5,
+    "UP": {
+      "rule": "(pc5m >= 5 AND pnl >= +8% AND held >= 30s) OR (armed AND giveback >= 8%)",
+      "spec": ["pc_tp_trail", 5, 8, 5, 8],
+      "plain": "After MFE>=5%: take strength on pc5m>=5 with +8% OR trail giveback 8% from peak."
+    },
+    "DOWN": {
+      "rule": "never-arm: pnl <= -10% for 3 consecutive marks AND pc5m <= -5",
+      "spec": ["dur", 10, 3, -5, null, null],
+      "plain": "If never reached +5% MFE: durable deep red with weak 5m tape."
+    },
+    "full_explain": {
+      "hit": 118,
+      "n": 178,
+      "cover": 0.663,
+      "prec": 0.756,
+      "early": 38,
+      "win": "70/106",
+      "loss": "48/72"
+    }
+  },
+  "7BNaxx6K": {
+    "n_td_sessions": 87,
+    "arm_gate_mfe_pct": 5,
+    "UP": {
+      "rule": "(pc5m >= 8 AND pnl >= +10% AND held >= 30s) OR (armed AND giveback >= 12%)",
+      "spec": ["pc_tp_trail", 8, 10, 5, 12],
+      "plain": "After MFE>=5%: take stronger tape (pc5m>=8) at +10% OR wider trail giveback 12%."
+    },
+    "DOWN": {
+      "rule": "never-arm: after pnl <= -5%, sell when bounce_from_trough >= 8%",
+      "spec": ["reclaim", 5, 8],
+      "plain": "If never reached +5% MFE: scrape a weak reclaim after dipping -5% (failed bounce style)."
+    },
+    "full_explain": {
+      "hit": 39,
+      "n": 87,
+      "cover": 0.448,
+      "prec": 0.582,
+      "early": 28,
+      "win": "23/44",
+      "loss": "16/43"
+    },
+    "runner_up_DOWN": {
+      "rule": "FAILBNC: once bounce>=12% then pnl<=-8 (arm_gate 10 + UP pc8&tp10)",
+      "full_cover": 0.40,
+      "note": "Weaker cover than reclaim; same failed-bounce family."
+    }
+  }
+}
