@@ -22,6 +22,19 @@ export type LeaderSeedHit = {
   /** True when leader added to an existing bag. */
   isAdd?: boolean;
   class?: string;
+  /**
+   * 1.11.775 — Dex snapshot at observer time. Bot buys from this on leader
+   * wake instead of re-fetching DexScreener (miss EjD5…: formula ok, silent null).
+   */
+  priceUsd?: number;
+  pc5m?: number;
+  pc1h?: number;
+  vol5m?: number;
+  liq?: number;
+  mcap?: number;
+  ageHours?: number;
+  turnover5mLiq?: number;
+  dexId?: string;
 };
 
 export type LeaderSeedFile = {
@@ -184,6 +197,21 @@ export function upsertLeaderSeedMint(
   else if (prev?.isAdd != null) mergedHit.isAdd = prev.isAdd;
   if (hit.class) mergedHit.class = hit.class;
   else if (prev?.class) mergedHit.class = prev.class;
+  // Prefer fresher observer Dex snapshot on the new hit.
+  for (const k of [
+    'priceUsd',
+    'pc5m',
+    'pc1h',
+    'vol5m',
+    'liq',
+    'mcap',
+    'ageHours',
+    'turnover5mLiq',
+    'dexId',
+  ] as const) {
+    const v = hit[k] ?? prev?.[k];
+    if (v != null) (mergedHit as LeaderSeedHit)[k] = v as never;
+  }
   byMint.set(hit.mint, mergedHit);
   const merged = [...byMint.values()]
     .sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs)

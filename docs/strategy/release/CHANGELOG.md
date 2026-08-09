@@ -1,4 +1,23 @@
 # So
+## [1.11.775] — 2026-08-09
+
+**Тег:** `sa-1.11.775`
+
+### Fix: leader-seed carries Dex — buy from observer print
+
+Miss `EjD5…` / `5wQ2ur…`: turn→dump **passed** (dump 6.2 / pred 8.8),
+but bot never attempted — seed had only mint, fast-path re-fetched Dex and
+returned silent `null`. Stream alone does not replace the observer snapshot.
+
+- Observer writes `pc5m/vol/liq/mcap/…` into `leader-seed.json`
+- Leader wake uses that Dex print (≤120s) instead of a second DexScreener hop
+- Journal `mild_dip_fast_path_skip` on leader rejects (throttled)
+- Observer main band aligned to live `(−25, −2]`
+
+**Откат:** revert this commit (seed mint-only; silent fast-path nulls).
+
+---
+
 ## [1.11.774] — 2026-08-09
 
 **Тег:** `sa-1.11.774`

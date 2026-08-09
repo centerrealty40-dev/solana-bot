@@ -13,8 +13,48 @@ import {
   mildStabilizeLaneAllowed,
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
+import type { LeaderSeedHit } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
 import { evaluateTurnDumpGate } from './turn-dump.js';
+
+/** Fresh enough observer Dex to skip a second DexScreener round-trip. */
+const LEADER_SEED_DEX_MAX_AGE_MS = 120_000;
+
+function structuralFromLeaderSeed(
+  hit: LeaderSeedHit,
+  nowMs: number,
+): StructuralCacheEntry | null {
+  if (nowMs - hit.lastSeenAtMs > LEADER_SEED_DEX_MAX_AGE_MS) return null;
+  const priceUsd = hit.priceUsd;
+  const vol = hit.vol5m;
+  const liq = hit.liq;
+  const mcap = hit.mcap;
+  if (
+    priceUsd == null ||
+    !(priceUsd > 0) ||
+    vol == null ||
+    liq == null ||
+    mcap == null
+  ) {
+    return null;
+  }
+  return {
+    fetchedAtMs: hit.lastSeenAtMs,
+    priceUsd,
+    metrics: {
+      priceChange5mPct: hit.pc5m ?? null,
+      priceChange1hPct: hit.pc1h ?? null,
+      volume5mUsd: vol,
+      liquidityUsd: liq,
+      marketCapUsd: mcap,
+      pairAgeHours: hit.ageHours ?? null,
+      dexId: hit.dexId ?? null,
+      buys5m: null,
+      sells5m: null,
+      volume1hUsd: null,
+    },
+  };
+}
 
 export type StructuralCacheEntry = {
   fetchedAtMs: number;
@@ -26,6 +66,8 @@ const structuralCache = new Map<string, StructuralCacheEntry>();
 const lastFastAttemptMs = new Map<string, number>();
 /** Per-mint throttle for Dex probes when stream drawdown is not yet in band. */
 const lastHotDexProbeMs = new Map<string, number>();
+/** Rate-limit leader fast-path skip journals (wake is every 2s). */
+const lastLeaderSkipJournalMs = new Map<string, number>();
 let hotDexProbeWindowStartMs = 0;
 let hotDexProbeCount = 0;
 
@@ -34,6 +76,7 @@ export function resetFastPathStateForTests(): void {
   structuralCache.clear();
   lastFastAttemptMs.clear();
   lastHotDexProbeMs.clear();
+  lastLeaderSkipJournalMs.clear();
   hotDexProbeWindowStartMs = 0;
   hotDexProbeCount = 0;
 }
@@ -179,10 +222,31 @@ export async function evaluateFastPathCandidate(
   mint: string,
   nowMs: number,
   trigger: 'stream' | 'leader' | 'scan',
+  seedHit?: LeaderSeedHit | null,
 ): Promise<MildDipCandidate | null> {
-  if (!cfg.fastPathEnabled) return null;
-  if (!mint || mint.length < 32) return null;
-  if (cfg.deniedMints.includes(mint)) return null;
+  const skip = (reason: string, extra?: Record<string, unknown>): null => {
+    // Leader wakes must leave a trail — silent null was the EjD5… miss mode.
+    // Throttle: wake ticks every 2s; journal at most every 15s per mint.
+    if (trigger === 'leader' && reason !== 'min_gap') {
+      const prevJ = lastLeaderSkipJournalMs.get(mint) ?? 0;
+      if (nowMs - prevJ >= 15_000) {
+        lastLeaderSkipJournalMs.set(mint, nowMs);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_fast_path_skip',
+          mint,
+          lane: 'fast',
+          trigger,
+          reason,
+          ...extra,
+        });
+      }
+    }
+    return null;
+  };
+
+  if (!cfg.fastPathEnabled) return skip('fast_path_off');
+  if (!mint || mint.length < 32) return skip('bad_mint');
+  if (cfg.deniedMints.includes(mint)) return skip('denied_mint');
 
   const prevAttempt = lastFastAttemptMs.get(mint) ?? 0;
   if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return null;
@@ -210,10 +274,27 @@ export async function evaluateFastPathCandidate(
     }
   }
 
-  // Need Dex for structural (and for Dex/h1 timing when stream not yet in band).
-  const struct = await loadStructural(mint, cfg, nowMs);
-  if (!struct || !structuralOk(struct.metrics, cfg)) {
-    return null;
+  // 1.11.775 — leader wake: prefer observer Dex snapshot (same print he bought on).
+  let struct: StructuralCacheEntry | null =
+    trigger === 'leader' && seedHit ? structuralFromLeaderSeed(seedHit, nowMs) : null;
+  let structSource: 'leader_seed' | 'dex' = struct ? 'leader_seed' : 'dex';
+  if (!struct) {
+    struct = await loadStructural(mint, cfg, nowMs);
+    structSource = 'dex';
+  } else {
+    // Keep cache warm for follow-up ticks.
+    noteStructuralCache(mint, struct.priceUsd, struct.metrics, nowMs);
+  }
+  if (!struct) return skip('structural_fetch_null', { structSource });
+  if (!structuralOk(struct.metrics, cfg)) {
+    return skip('structural_fail', {
+      structSource,
+      vol5m: struct.metrics.volume5mUsd,
+      liq: struct.metrics.liquidityUsd,
+      mcap: struct.metrics.marketCapUsd,
+      ageH: struct.metrics.pairAgeHours,
+      pc5m: struct.metrics.priceChange5mPct,
+    });
   }
 
   const dexPc = struct.metrics.priceChange5mPct;
@@ -228,7 +309,7 @@ export async function evaluateFastPathCandidate(
       dexPc > cfg.knifeStabilizeMinDipPct &&
       dexPc <= cfg.knifeStabilizeMaxDipPct);
   if (cfg.knifeStabilizeEnabled && deepKnife && !streamInMain && !dexInMain) {
-    return null;
+    return skip('deep_knife_defer', { streamDd, dexPc });
   }
 
   let dipSource: MildDipCandidate['dipSource'] | null = null;
@@ -329,7 +410,14 @@ export async function evaluateFastPathCandidate(
     }
   }
 
-  if (!dipSource) return null;
+  if (!dipSource) {
+    return skip('no_dip_source', {
+      structSource,
+      streamDd,
+      dexPc,
+      pc1h: metrics.priceChange1hPct,
+    });
+  }
 
   // 1.11.773 — turn→dump: buy now if depth matches turnover; skip if too shallow.
   if (cfg.turnDumpGateEnabled) {
@@ -351,6 +439,7 @@ export async function evaluateFastPathCandidate(
         dipSource,
         lane: 'fast',
         trigger,
+        structSource,
         pc5m: metrics.priceChange5mPct,
         dump: td.dump,
         turn: td.turn,
@@ -371,7 +460,7 @@ export async function evaluateFastPathCandidate(
     ) {
       /* ok — shallow / bounce-confirm */
     } else if (!streamInMain && !dexInMain) {
-      return null;
+      return skip('not_in_main_band', { dipSource, streamDd, dexPc, structSource });
     }
   }
 
