@@ -111,14 +111,14 @@ export MILD_DIP_LEADER_TAPE_MIN_SPAN_MS=180000
 export MILD_DIP_LEADER_TAPE_MAX_G_MAX_PC=40
 export MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC=80
 export MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN=0
-# Leader discovery ON (highlight → our gates). Not copy-trading.
-export VOL_GREEN_LEADER_WATCH=1
+# Leaders are for offline pattern research only — do NOT follow/copy in live.
+export VOL_GREEN_LEADER_WATCH=0
 export VOL_GREEN_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
 export MILD_DIP_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
-export MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN=40
-# Entry only if leader also bought recently — don't be alone on junk (Fvav361).
-export VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT=1
-export MILD_DIP_REQUIRE_LEADER_HIGHLIGHT=1
+export MILD_DIP_LEADER_RESOLVE_MAX_PER_MIN=0
+# Independent entry — patterns from leaders are encoded in tape/poison gates, not copy.
+export VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT=0
+export MILD_DIP_REQUIRE_LEADER_HIGHLIGHT=0
 # Poison window: after nuke candle / absurd runup, ban mint 45m (don't buy soft tip later).
 export VOL_GREEN_POISON_TAPE=1
 export MILD_DIP_POISON_TAPE=1

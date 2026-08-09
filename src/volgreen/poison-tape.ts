@@ -186,12 +186,12 @@ export function __resetPoisonTapeForTests(): void {
 export function requireLeaderHighlightEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
+  // Default OFF — leaders teach patterns; live must not copy their wallets.
   const raw = (
     env.MILD_DIP_REQUIRE_LEADER_HIGHLIGHT ??
     env.VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT ??
-    '1'
+    '0'
   )
     .trim()
     .toLowerCase();
-  return !(raw === '0' || raw === 'false' || raw === 'no' || raw === 'off');
-}
+  return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'on';
