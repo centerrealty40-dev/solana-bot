@@ -1,4 +1,21 @@
 # So
+## [1.11.784] — 2026-08-09
+
+**Тег:** `sa-1.11.784`
+
+### Ops: kill h1-red-shallow — one dump formula only
+
+Mandate: live entry is the leader-fitted **turn→dump** path only.
+`MILD_DIP_H1_RED_SHALLOW_ENABLED` was still `1` and opened a second band
+(pc5m ∈ (−10, −3] when h1 ≤ −15) — not the turn→dump formula.
+
+- `MILD_DIP_H1_RED_SHALLOW_ENABLED=0`
+- wait_dip / flat_micro already off; turn→dump (+ mild/knife stabilize) stays
+
+**Откат:** `MILD_DIP_H1_RED_SHALLOW_ENABLED=1`.
+
+---
+
 ## [1.11.783] — 2026-08-09
 
 **Тег:** `sa-1.11.783`
