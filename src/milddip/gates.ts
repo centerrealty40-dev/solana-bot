@@ -127,9 +127,11 @@ export type MildDipExitGates = {
   cliffDumpPnlPct: number;
   /**
    * 1.11.747 — never-armed bounce reclaim: after post-entry trough ≤ −minDump%,
-   * if mark bounces ≥ bouncePct off that trough → full exit (`never_arm_bounce`).
+   * if mark bounces ≥ bouncePct off that trough → exit (`never_arm_bounce`).
    * Hard (not recover-deferred) — we sell INTO the bounce. 0 bouncePct = off.
    * 1.11.750 — also require trough age + still red vs entry (kill stream-wick churn).
+   * 1.11.759 — half-first: sell `neverArmBouncePartialFraction` at bouncePct,
+   * remainder at `neverArmBounce2Pct` (bigger reclaim).
    */
   neverArmBounceMinDumpPct: number;
   neverArmBouncePct: number;
@@ -140,6 +142,21 @@ export type MildDipExitGates = {
    * Blocks F1XdRe/AENK1Y-style near-flat stream-wick reclaim sells. 0 = off.
    */
   neverArmBounceRequireRedPct: number;
+  /**
+   * 1.11.759 — first bounce cut fraction (default 0.5). 0 or ≥1 = full bag on
+   * first bounce (legacy).
+   */
+  neverArmBouncePartialFraction: number;
+  /**
+   * 1.11.759 — second bounce cut for the runner (default 16). Must be > first
+   * bouncePct; when unset/too low, defaults to 2× first bounce.
+   */
+  neverArmBounce2Pct: number;
+  /**
+   * 1.11.759 — underwater `mfe_bank_sleeve`: sell this fraction first (default
+   * 0.5), hold runner for a bigger bounce reclaim. 0 = full sleeve (legacy).
+   */
+  mfeBankSleeveLossPartialFraction: number;
   /**
    * 1.11.747 — never-armed freefall floor: if still unarmed and pnl ≤ −this %
    * after min hold → full exit (`never_arm_freefall`). Covers endless dumps
@@ -741,12 +758,31 @@ export function evaluateMildDipPeakGiveback(args: {
       // After any bank: trail the remainder. Before bank1 but armed: protect
       // the full bag if the early spike already gave back sleeve width.
       if (mfeBankStage >= 1 || armed) {
-        return {
-          ...hold,
-          shouldExit: true,
-          fraction: 1,
-          reason: 'mfe_bank_sleeve',
-        };
+        const lossPartial =
+          gates.mfeBankSleeveLossPartialFraction > 0 &&
+          gates.mfeBankSleeveLossPartialFraction < 1
+            ? gates.mfeBankSleeveLossPartialFraction
+            : 0;
+        // EjD5Y9 / 4aWQZP…: full sleeve at −11% cut the bag into a later bounce.
+        // Underwater: half first; runner waits for bounce reclaim (below), not
+        // another continuous sleeve tick.
+        if (pnlPct < 0 && !scaleOutDone && lossPartial > 0) {
+          return {
+            ...hold,
+            shouldExit: true,
+            fraction: lossPartial,
+            reason: 'mfe_bank_sleeve',
+          };
+        }
+        if (!(pnlPct < 0 && scaleOutDone && lossPartial > 0)) {
+          return {
+            ...hold,
+            shouldExit: true,
+            fraction: 1,
+            reason: 'mfe_bank_sleeve',
+          };
+        }
+        // else: underwater runner after sleeve-loss partial — fall through to bounce
       }
     }
   } else if (!oneshotGrace) {
@@ -775,28 +811,65 @@ export function evaluateMildDipPeakGiveback(args: {
     }
   }
 
-  // Never-armed branch — must always have a finite exit (no infinite hold).
-  // Order: bounce reclaim (sell into bounce) → freefall floor (no bounce) →
-  // optional soft giveback → time-red → stale → dead → vol fade → max-hold.
+  // Bounce reclaim (sell into bounce) — never-arm first/second cut, and armed
+  // runner after underwater sleeve-loss partial (hope for a bigger reclaim).
   const givebackHit = fullGivebackHit;
-  if (!armed) {
-    const bounceNeed = gates.neverArmBouncePct > 0 ? gates.neverArmBouncePct : 0;
-    const bounceDumpNeed =
-      gates.neverArmBounceMinDumpPct > 0 ? gates.neverArmBounceMinDumpPct : 0;
-    const bounceTroughAge =
-      gates.neverArmBounceMinTroughAgeMs > 0 ? gates.neverArmBounceMinTroughAgeMs : 0;
-    const bounceRequireRed =
-      gates.neverArmBounceRequireRedPct > 0 ? gates.neverArmBounceRequireRedPct : 0;
+  const bounceNeed = gates.neverArmBouncePct > 0 ? gates.neverArmBouncePct : 0;
+  const bounceDumpNeed =
+    gates.neverArmBounceMinDumpPct > 0 ? gates.neverArmBounceMinDumpPct : 0;
+  const bounceTroughAge =
+    gates.neverArmBounceMinTroughAgeMs > 0 ? gates.neverArmBounceMinTroughAgeMs : 0;
+  const bounceRequireRed =
+    gates.neverArmBounceRequireRedPct > 0 ? gates.neverArmBounceRequireRedPct : 0;
+  const bouncePartialFrac =
+    gates.neverArmBouncePartialFraction > 0 && gates.neverArmBouncePartialFraction < 1
+      ? gates.neverArmBouncePartialFraction
+      : 0;
+  const bounce2Need =
+    gates.neverArmBounce2Pct > bounceNeed
+      ? gates.neverArmBounce2Pct
+      : bounceNeed > 0
+        ? bounceNeed * 2
+        : 0;
+  const bounceBaseOk =
+    bounceNeed > 0 &&
+    bounceDumpNeed > 0 &&
+    troughDumpPct <= -bounceDumpNeed + 1e-9 &&
+    troughAgeMs >= bounceTroughAge &&
+    (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9);
+
+  if (!armed && bounceBaseOk) {
+    if (!scaleOutDone && bounceOffTroughPct >= bounceNeed - 1e-9) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: bouncePartialFrac > 0 ? bouncePartialFrac : 1,
+        reason: 'never_arm_bounce',
+      };
+    }
     if (
-      bounceNeed > 0 &&
-      bounceDumpNeed > 0 &&
-      troughDumpPct <= -bounceDumpNeed + 1e-9 &&
-      bounceOffTroughPct >= bounceNeed - 1e-9 &&
-      troughAgeMs >= bounceTroughAge &&
-      (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9)
+      scaleOutDone &&
+      bounce2Need > 0 &&
+      bounceOffTroughPct >= bounce2Need - 1e-9
     ) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' };
     }
+  }
+  // Armed runner after underwater sleeve half: sell remainder on bounce reclaim.
+  if (
+    armed &&
+    scaleOutDone &&
+    pnlPct < 0 &&
+    bounceBaseOk &&
+    bounceOffTroughPct >= bounceNeed - 1e-9
+  ) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' };
+  }
+
+  // Never-armed branch — must always have a finite exit (no infinite hold).
+  // Order: freefall floor (no bounce) → optional soft giveback → time-red →
+  // stale → dead → vol fade → max-hold.
+  if (!armed) {
     const freefallPnl = gates.neverArmFreefallPnlPct > 0 ? gates.neverArmFreefallPnlPct : 0;
     const freefallMin = gates.neverArmFreefallMinMs > 0 ? gates.neverArmFreefallMinMs : 0;
     if (

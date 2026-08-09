@@ -2980,11 +2980,16 @@ const PM2_APPS = [
         /**
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
          * trough ≤ −8%, bounce ≥ 8%, trough age ≥ 60s, still ≤ −3% vs entry.
+         * 1.11.759 — half on first bounce (8%), runner on bigger bounce (16%).
+         * Underwater mfe_bank_sleeve also half-first; runner waits for bounce.
          */
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT: '8',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '8',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS: '60000',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT: '3',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION: '0.5',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_2_PCT: '16',
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '0',
