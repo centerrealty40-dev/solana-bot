@@ -1,0 +1,153 @@
+{
+  "actual": -108.54,
+  "n_cycles": 1780,
+  "results": [
+    {
+      "label": "BASELINE (all fills kept)",
+      "pnl": -108.54,
+      "delta": 0.0,
+      "kept": 1780,
+      "skipped": 0,
+      "skipped_pnl": 0,
+      "winners_cut": 0,
+      "losses_avoided": 0,
+      "by_source": {},
+      "reasons": {}
+    },
+    {
+      "label": "768 FULL (stab dump/bounce + trough25 + rise3 + h1)",
+      "pnl": -69.3,
+      "delta": 39.23,
+      "kept": 1361,
+      "skipped": 419,
+      "skipped_pnl": -39.23,
+      "winners_cut": 198.47,
+      "losses_avoided": 237.7,
+      "by_source": {
+        "h1_red_shallow": {
+          "n": 185,
+          "pnl": -23.0
+        },
+        "mild_stabilize": {
+          "n": 234,
+          "pnl": -16.24
+        }
+      },
+      "reasons": {
+        "h1_pc5m": 185,
+        "dump_band": 137,
+        "bounce_band": 125,
+        "no_rising_3": 92,
+        "trough_age": 46
+      }
+    },
+    {
+      "label": "768 stab+h1 only (no rise/age \u2014 attempt fields)",
+      "pnl": -76.81,
+      "delta": 31.73,
+      "kept": 1397,
+      "skipped": 383,
+      "skipped_pnl": -31.73,
+      "winners_cut": 192.46,
+      "losses_avoided": 224.18,
+      "by_source": {
+        "h1_red_shallow": {
+          "n": 185,
+          "pnl": -23.0
+        },
+        "mild_stabilize": {
+          "n": 198,
+          "pnl": -8.73
+        }
+      },
+      "reasons": {
+        "h1_pc5m": 185,
+        "dump_band": 137,
+        "bounce_band": 125
+      }
+    },
+    {
+      "label": "768 stab dump/bounce only",
+      "pnl": -99.81,
+      "delta": 8.73,
+      "kept": 1582,
+      "skipped": 198,
+      "skipped_pnl": -8.73,
+      "winners_cut": 104.45,
+      "losses_avoided": 113.17,
+      "by_source": {
+        "mild_stabilize": {
+          "n": 198,
+          "pnl": -8.73
+        }
+      },
+      "reasons": {
+        "dump_band": 137,
+        "bounce_band": 125
+      }
+    },
+    {
+      "label": "768 h1 only",
+      "pnl": -85.54,
+      "delta": 23.0,
+      "kept": 1595,
+      "skipped": 185,
+      "skipped_pnl": -23.0,
+      "winners_cut": 88.01,
+      "losses_avoided": 111.01,
+      "by_source": {
+        "h1_red_shallow": {
+          "n": 185,
+          "pnl": -23.0
+        }
+      },
+      "reasons": {
+        "h1_pc5m": 185
+      }
+    },
+    {
+      "label": "NEXT: 768 + rising3 whenever ring known",
+      "pnl": -46.67,
+      "delta": 61.86,
+      "kept": 1315,
+      "skipped": 465,
+      "skipped_pnl": -61.86,
+      "winners_cut": 293.19,
+      "losses_avoided": 355.05,
+      "by_source": {
+        "h1_red_shallow": {
+          "n": 185,
+          "pnl": -23.0
+        },
+        "mild_stabilize": {
+          "n": 234,
+          "pnl": -16.24
+        },
+        "dex": {
+          "n": 10,
+          "pnl": -15.66
+        },
+        "stream": {
+          "n": 9,
+          "pnl": 13.66
+        },
+        "dex+stream": {
+          "n": 9,
+          "pnl": -33.66
+        },
+        "wait_dip": {
+          "n": 18,
+          "pnl": 13.02
+        }
+      },
+      "reasons": {
+        "h1_pc5m": 185,
+        "dump_band": 137,
+        "bounce_band": 125,
+        "no_rising_3": 92,
+        "no_rising_3_any_source": 46,
+        "trough_age": 46
+      }
+    }
+  ]
+}
