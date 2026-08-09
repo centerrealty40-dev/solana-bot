@@ -125,7 +125,7 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '100');
   setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '5');
   setIfAbsent('MILD_DIP_MINT_PRICE_REFRESH', '1');
-  // Large PumpSwap buys (e.g. 8.8 SOL leader) → enter without waiting for 1m bars.
+  // Still mark fat stream buys for priority ranking — entry uses bars, not notional.
   setIfAbsent('MILD_DIP_VOLUME_IMPULSE_MIN_SOL', '2');
   // Reject late monotonic "scam ladder" grinds (gpR1-style).
   setIfAbsent('MILD_DIP_SCAM_LADDER', '1');
@@ -182,13 +182,23 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_PC', '10');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_HUGE_MIN_VOL_USD', '100');
   setIfAbsent('MILD_DIP_GREEN_TRIPLE_MAX_AGE_AFTER_HUGE_MS', '240000');
-  // Leader tape (60h 8zkg+7BNaxx): maxG1m≥8% + runup25≥10% on every stream entry.
+  // Leader-like tape: real 1m structure + maxG/runup band (not 1–2 tick fakes).
   setIfAbsent('MILD_DIP_LEADER_TAPE', '1');
   setIfAbsent('MILD_DIP_LEADER_TAPE_MAX_G_PC', '8');
   setIfAbsent('MILD_DIP_LEADER_TAPE_RUNUP_PC', '10');
   setIfAbsent('MILD_DIP_LEADER_TAPE_MAX_G_BARS', '5');
   setIfAbsent('MILD_DIP_LEADER_TAPE_RUNUP_MS', String(25 * 60_000));
-  // First-strong aligns with leader maxG (≥8%), not the old +20% tip chase.
+  setIfAbsent('MILD_DIP_LEADER_TAPE_MIN_BARS', '4');
+  setIfAbsent('MILD_DIP_LEADER_TAPE_MIN_SAMPLES', '8');
+  setIfAbsent('MILD_DIP_LEADER_TAPE_MIN_SPAN_MS', String(180_000));
+  setIfAbsent('MILD_DIP_LEADER_TAPE_MAX_G_MAX_PC', '40');
+  setIfAbsent('MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC', '80');
+  // Do NOT buy on fat SOL notional alone (rug magnet).
+  setIfAbsent('MILD_DIP_VOLUME_IMPULSE_ENTRY', '0');
+  // Trackable: at most 5 concurrent opens.
+  setIfAbsent('MILD_DIP_MAX_OPEN_POSITIONS', '5');
+  setIfAbsent('VOL_GREEN_MAX_OPEN_POSITIONS', '5');
+  // First-strong aligns with leader maxG (≥8%).
   setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MIN_PC', '8');
   setIfAbsent('MILD_DIP_GREEN_FIRST_STRONG_MAX_PRIOR_PC', '18');
   setIfAbsent('MILD_DIP_GREEN_MIN_MCAP_USD', '12000');

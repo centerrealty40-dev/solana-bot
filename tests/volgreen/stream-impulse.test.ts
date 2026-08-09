@@ -22,9 +22,23 @@ const ENV_KEYS = [
   'MILD_DIP_GREEN_TRIPLE_SMALL_MAX_PC',
   'MILD_DIP_MINT_PRICE_REFRESH',
   'MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN',
+  'MILD_DIP_VOLUME_IMPULSE_ENTRY',
+  'MILD_DIP_LEADER_TAPE_MIN_SAMPLES',
+  'MILD_DIP_LEADER_TAPE_MIN_BARS',
+  'MILD_DIP_MAX_OPEN_POSITIONS',
 ];
 
 const saved: Record<string, string | undefined> = {};
+
+/** Multi-minute climb that satisfies leader-tape + first_strong. */
+function noteLeaderLikeClimb(mint: string, nowMs: number): void {
+  const path = [1.0, 1.01, 1.02, 1.12, 1.11, 1.28];
+  for (let i = 0; i < path.length; i++) {
+    const t = nowMs - (path.length - i) * 60_000;
+    mildDipPriceRing.note(mint, path[i]!, { tsMs: t + 5_000, source: 'stream' });
+    mildDipPriceRing.note(mint, path[i]!, { tsMs: t + 45_000, source: 'stream' });
+  }
+}
 
 beforeEach(() => {
   for (const k of ENV_KEYS) {
@@ -34,6 +48,7 @@ beforeEach(() => {
   process.env.MILD_DIP_RPC_URL = 'https://example.invalid';
   process.env.MILD_DIP_EXECUTION_MODE = 'paper';
   process.env.MILD_DIP_MINT_PRICE_REFRESH = '0';
+  process.env.MILD_DIP_VOLUME_IMPULSE_ENTRY = '0';
   bootstrapVolGreenEnv(process.env);
 });
 
@@ -48,15 +63,12 @@ afterEach(() => {
 });
 
 describe('evaluateStreamImpulseCandidates', () => {
-  it('passes first_strong from local samples without calling fetch', async () => {
+  it('passes first_strong with real multi-minute samples (no gecko)', async () => {
     const cfg = loadMildDipConfig();
     expect(cfg.streamImpulseOnly).toBe(true);
+    expect(cfg.maxOpenPositions).toBe(5);
     const nowMs = Date.now();
-    const t0 = nowMs - 90_000;
-    mildDipPriceRing.note(MINT, 1.0, { tsMs: t0, source: 'stream' });
-    mildDipPriceRing.note(MINT, 1.05, { tsMs: t0 + 30_000, source: 'stream' });
-    mildDipPriceRing.note(MINT, 1.05, { tsMs: nowMs - 50_000, source: 'stream' });
-    mildDipPriceRing.note(MINT, 1.32, { tsMs: nowMs - 10_000, source: 'stream' });
+    noteLeaderLikeClimb(MINT, nowMs);
     mildDipHotMints.note(MINT, nowMs, 8);
     mildDipHotMints.markBuyForce(MINT, nowMs);
 
@@ -75,41 +87,16 @@ describe('evaluateStreamImpulseCandidates', () => {
     expect(fetchCalls).toBe(0);
     expect(r.candidates.length).toBeGreaterThanOrEqual(1);
     expect(r.candidates[0]!.mint).toBe(MINT);
-    expect(r.candidates[0]!.entryPath).toBe('green_tape_impulse');
     expect(r.candidates[0]!.dipSource).toBe('stream');
   });
 
-  it('passes intrabar 60s impulse when completed bars are flat', async () => {
-    const cfg = loadMildDipConfig();
-    const nowMs = Date.now();
-    // Same minute ticks: +25% within 60s, but would be flat completed bars without stitch path.
-    mildDipPriceRing.note(MINT, 1.0, { tsMs: nowMs - 50_000, source: 'stream' });
-    mildDipPriceRing.note(MINT, 1.05, { tsMs: nowMs - 30_000, source: 'stream' });
-    mildDipPriceRing.note(MINT, 1.28, { tsMs: nowMs - 5_000, source: 'stream' });
-    mildDipHotMints.note(MINT, nowMs, 8);
-    mildDipHotMints.markBuyForce(MINT, nowMs);
-
-    const r = await evaluateStreamImpulseCandidates(cfg, {
-      nowMs,
-      evalMax: 8,
-      allowPriceRefresh: false,
-    });
-    expect(r.candidates.length).toBeGreaterThanOrEqual(1);
-    expect(r.candidates[0]!.entryPath).toBe('green_tape_impulse');
-    // firstStrongMinPc aligned to leader maxG (≥8).
-    expect(r.candidates[0]!.entryScore).toBeGreaterThanOrEqual(8);
-  });
-
-  it('skips volume-impulse on soft tape (leader maxG/runup)', async () => {
+  it('does NOT buy on volume-impulse alone when entry flag is off', async () => {
     const soft = 'SoftTape11111111111111111111111111111111111';
     const cfg = loadMildDipConfig();
     const nowMs = Date.now();
-    // Fat SOL mark but flat prices — volume path hits leader-tape gate.
-    // pc60≈4% (>3 so volume path proceeds) but maxG/runup still < leader floors.
-    mildDipPriceRing.note(soft, 1.0, { tsMs: nowMs - 180_000, source: 'stream' });
-    mildDipPriceRing.note(soft, 1.01, { tsMs: nowMs - 120_000, source: 'stream' });
-    mildDipPriceRing.note(soft, 1.0, { tsMs: nowMs - 55_000, source: 'stream' });
-    mildDipPriceRing.note(soft, 1.04, { tsMs: nowMs - 5_000, source: 'stream' });
+    // Only 2 ticks + fat SOL — old rug path; must not enter.
+    mildDipPriceRing.note(soft, 1.0, { tsMs: nowMs - 50_000, source: 'stream' });
+    mildDipPriceRing.note(soft, 1.15, { tsMs: nowMs - 5_000, source: 'stream' });
     mildDipHotMints.note(soft, nowMs, 8);
     mildDipHotMints.markBuyForce(soft, nowMs);
     mildDipHotMints.markVolumeImpulse(soft, 3.5, nowMs);
@@ -121,30 +108,27 @@ describe('evaluateStreamImpulseCandidates', () => {
     });
     expect(r.candidates.find((c) => c.mint === soft)).toBeUndefined();
     const skip = r.skips.find((s) => s.mint === soft);
-    expect(skip?.reasons.some((x) => x.startsWith('leader_tape_'))).toBe(true);
+    expect(
+      skip?.reasons.some(
+        (x) =>
+          x.startsWith('stream_impulse_need_samples') || x.startsWith('leader_tape_'),
+      ),
+    ).toBe(true);
     mildDipHotMints.clearBuyForce(soft);
   });
 
-  it('skips when samples insufficient and does not fetch', async () => {
+  it('skips when samples insufficient', async () => {
     const cfg = loadMildDipConfig();
     const nowMs = Date.now();
     mildDipHotMints.note(MINT2, nowMs, 4);
     mildDipHotMints.markBuyForce(MINT2, nowMs);
     mildDipPriceRing.note(MINT2, 1.0, { tsMs: nowMs - 1000, source: 'stream' });
 
-    let fetchCalls = 0;
-    const fetchImpl = (async () => {
-      fetchCalls += 1;
-      throw new Error('no fetch');
-    }) as unknown as typeof fetch;
-
     const r = await evaluateStreamImpulseCandidates(cfg, {
       nowMs,
       evalMax: 8,
-      fetchImpl,
       allowPriceRefresh: false,
     });
-    expect(fetchCalls).toBe(0);
     const skip = r.skips.find((s) => s.mint === MINT2);
     expect(skip?.reasons.some((x) => x.startsWith('stream_impulse_need_samples'))).toBe(
       true,

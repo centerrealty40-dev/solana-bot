@@ -4,53 +4,67 @@ import {
   detectLeaderTape,
 } from '../../src/volgreen/leader-tape.js';
 
-describe('detectLeaderTape', () => {
-  it('passes when maxG≥8 and runup≥10 (soft latest bar OK)', () => {
-    const nowMs = 1_700_000_000_000;
-    const samples: Array<{ tsMs: number; priceUsd: number }> = [];
-    // Build ~6 minutes: climb then soft tip
-    let px = 1.0;
-    for (let i = 0; i < 6; i++) {
-      const t = nowMs - (6 - i) * 60_000;
-      if (i === 3) px = 1.12; // +12% bar
-      else if (i === 4) px = 1.11;
-      else if (i === 5) px = 1.115; // soft latest
-      else px = 1.0 + i * 0.01;
-      samples.push({ tsMs: t + 1_000, priceUsd: px });
-      samples.push({ tsMs: t + 40_000, priceUsd: px });
-    }
-    const gates = {
-      enabled: true,
-      maxGMinPc: 8,
-      maxGLookbackBars: 5,
-      runupMinPc: 10,
-      runupMs: 25 * 60_000,
-      lookbackMs: 40 * 60_000,
-      minBars: 2,
-    };
-    const v = detectLeaderTape(samples, gates, nowMs);
-    expect(v.pass).toBe(true);
-    expect(v.stats!.maxG1m).toBeGreaterThanOrEqual(8);
-    expect(v.stats!.runup25m).toBeGreaterThanOrEqual(10);
-  });
+function climbSamples(nowMs: number): Array<{ tsMs: number; priceUsd: number }> {
+  const samples: Array<{ tsMs: number; priceUsd: number }> = [];
+  // ~6 minutes, ≥8 samples, impulse bar ~+12%, runup ~12–15%, soft tip
+  const path = [1.0, 1.01, 1.02, 1.12, 1.11, 1.115];
+  for (let i = 0; i < path.length; i++) {
+    const t = nowMs - (path.length - i) * 60_000;
+    samples.push({ tsMs: t + 5_000, priceUsd: path[i]! });
+    samples.push({ tsMs: t + 45_000, priceUsd: path[i]! });
+  }
+  return samples;
+}
 
-  it('rejects flat tape without impulse', () => {
-    const nowMs = Date.now();
-    const samples = [
-      { tsMs: nowMs - 120_000, priceUsd: 1.0 },
-      { tsMs: nowMs - 90_000, priceUsd: 1.01 },
-      { tsMs: nowMs - 60_000, priceUsd: 1.015 },
-      { tsMs: nowMs - 30_000, priceUsd: 1.02 },
-      { tsMs: nowMs - 5_000, priceUsd: 1.025 },
-    ];
+describe('detectLeaderTape', () => {
+  it('passes when real multi-minute maxG/runup in band (soft tip OK)', () => {
+    const nowMs = 1_700_000_000_000;
     const gates = defaultLeaderTapeGates({
       MILD_DIP_LEADER_TAPE: '1',
       MILD_DIP_LEADER_TAPE_MAX_G_PC: '8',
       MILD_DIP_LEADER_TAPE_RUNUP_PC: '10',
+      MILD_DIP_LEADER_TAPE_MIN_BARS: '4',
+      MILD_DIP_LEADER_TAPE_MIN_SAMPLES: '8',
+      MILD_DIP_LEADER_TAPE_MIN_SPAN_MS: '180000',
+      MILD_DIP_LEADER_TAPE_MAX_G_MAX_PC: '40',
+      MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC: '80',
     });
+    const v = detectLeaderTape(climbSamples(nowMs), gates, nowMs);
+    expect(v.pass).toBe(true);
+    expect(v.stats!.maxG1m).toBeGreaterThanOrEqual(8);
+    expect(v.stats!.runup25m).toBeGreaterThanOrEqual(10);
+    expect(v.stats!.bars).toBeGreaterThanOrEqual(4);
+  });
+
+  it('rejects thin 2-tick fake impulse', () => {
+    const nowMs = Date.now();
+    const samples = [
+      { tsMs: nowMs - 50_000, priceUsd: 1.0 },
+      { tsMs: nowMs - 5_000, priceUsd: 1.2 },
+    ];
+    const gates = defaultLeaderTapeGates({ MILD_DIP_LEADER_TAPE: '1' });
     const v = detectLeaderTape(samples, gates, nowMs);
     expect(v.pass).toBe(false);
-    expect(v.reasons.some((r) => r.startsWith('leader_tape_'))).toBe(true);
+    expect(
+      v.reasons.some(
+        (r) => r.startsWith('leader_tape_need_samples') || r.startsWith('leader_tape_need_bars'),
+      ),
+    ).toBe(true);
+  });
+
+  it('rejects absurd maxG / runup (already exploded / stitch)', () => {
+    const nowMs = Date.now();
+    const samples: Array<{ tsMs: number; priceUsd: number }> = [];
+    for (let i = 0; i < 6; i++) {
+      const t = nowMs - (6 - i) * 60_000;
+      const px = i < 5 ? 1.0 : 20.0; // insane jump
+      samples.push({ tsMs: t + 1_000, priceUsd: px });
+      samples.push({ tsMs: t + 40_000, priceUsd: px });
+    }
+    const gates = defaultLeaderTapeGates({ MILD_DIP_LEADER_TAPE: '1' });
+    const v = detectLeaderTape(samples, gates, nowMs);
+    expect(v.pass).toBe(false);
+    expect(v.reasons.some((r) => r.includes('>') )).toBe(true);
   });
 
   it('can be disabled via env', () => {

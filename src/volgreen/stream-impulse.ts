@@ -155,6 +155,17 @@ export async function evaluateStreamImpulseCandidates(
 
   const scamGates = defaultScamLadderGates(process.env);
   const leaderTapeGates = defaultLeaderTapeGates(process.env);
+  // Naked volume-impulse ENTRY off by default — fat tape only prioritizes eval.
+  // Leaders do not buy "any ≥2 SOL print"; that path bought EmvB/Avow rugs.
+  const volumeEntryRaw = (
+    process.env.MILD_DIP_VOLUME_IMPULSE_ENTRY ??
+    process.env.VOL_GREEN_VOLUME_IMPULSE_ENTRY ??
+    '0'
+  )
+    .trim()
+    .toLowerCase();
+  const volumeImpulseEntry =
+    volumeEntryRaw === '1' || volumeEntryRaw === 'true' || volumeEntryRaw === 'yes';
 
   const pushOrSkipLadder = (
     mint: string,
@@ -230,13 +241,13 @@ export async function evaluateStreamImpulseCandidates(
       }
     }
 
-    // Large SOL buy from stream resolve — enter on notional, don't wait for 1m bars.
-    if (mildDipHotMints.isVolumeImpulse(mint, nowMs)) {
+    // Volume impulse: mark only (priority). Entry requires real 1m structure below.
+    if (!volumeImpulseEntry && mildDipHotMints.isVolumeImpulse(mint, nowMs)) {
+      // Fall through to bar paths — do not buy on notional alone.
+    } else if (volumeImpulseEntry && mildDipHotMints.isVolumeImpulse(mint, nowMs)) {
       const solN = mildDipHotMints.volumeImpulseSol(mint, nowMs);
       const last = mildDipPriceRing.lastPrice(mint, nowMs);
       const ringPc60 = mildDipPriceRing.changeFromOldestPct(mint, INTRABAR_MS, nowMs);
-      // Fat buy on a known-flat tape (gpR1: sol=3.6, pc5m=0.9) — skip.
-      // Thin history (pc60 null) still allowed; late ladder already blocked above.
       if (last && last.priceUsd > 0 && solN > 0 && ringPc60 != null && ringPc60 < 3) {
         skips.push({
           mint,
@@ -265,7 +276,18 @@ export async function evaluateStreamImpulseCandidates(
       }
     }
 
-    // Intrabar: strong move in last 60s even if completed 1m bars look flat/stale.
+    if (samples.length < leaderTapeGates.minSamples) {
+      skips.push({
+        mint,
+        entryMode: 'green_tape',
+        reasons: [
+          `stream_impulse_need_samples=${samples.length}<${leaderTapeGates.minSamples}`,
+        ],
+      });
+      continue;
+    }
+
+    // Intrabar only with enough history — never on 1–2 ticks (EmvB failure mode).
     if (firstStrongMin > 0) {
       const ringPc60 = mildDipPriceRing.changeFromOldestPct(mint, INTRABAR_MS, nowMs);
       if (ringPc60 != null && Number.isFinite(ringPc60) && ringPc60 >= firstStrongMin) {
@@ -283,15 +305,6 @@ export async function evaluateStreamImpulseCandidates(
         pushOrSkipLadder(mint, samples, cand);
         continue;
       }
-    }
-
-    if (samples.length < 2) {
-      skips.push({
-        mint,
-        entryMode: 'green_tape',
-        reasons: [`stream_impulse_need_samples=${samples.length}<2`],
-      });
-      continue;
     }
 
     const tg = await evaluateTripleGreenEntry({

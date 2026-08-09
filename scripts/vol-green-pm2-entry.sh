@@ -27,7 +27,9 @@ export VOL_GREEN_EXECUTION_MODE="${VOL_GREEN_EXECUTION_MODE:-live}"
 export VOL_GREEN_WALLET_SECRET="${VOL_GREEN_WALLET_SECRET:-$ROOT/data/live/copy-8zkg.keypair.json}"
 export VOL_GREEN_WALLET_PUBKEY="${VOL_GREEN_WALLET_PUBKEY:-FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX}"
 export VOL_GREEN_POSITION_USD="${VOL_GREEN_POSITION_USD:-5}"
-export VOL_GREEN_MAX_OPEN_POSITIONS="${VOL_GREEN_MAX_OPEN_POSITIONS:-0}"
+# Trackable concurrency — max 5 opens; free slot after each full exit.
+export VOL_GREEN_MAX_OPEN_POSITIONS=5
+export MILD_DIP_MAX_OPEN_POSITIONS=5
 export VOL_GREEN_JOURNAL_PATH="${VOL_GREEN_JOURNAL_PATH:-$ROOT/data/volgreen/journal.jsonl}"
 export VOL_GREEN_STATE_PATH="${VOL_GREEN_STATE_PATH:-$ROOT/data/volgreen/state.json}"
 export VOL_GREEN_HOT_MINTS_PATH="${VOL_GREEN_HOT_MINTS_PATH:-$ROOT/data/volgreen/hot-mints.json}"
@@ -80,8 +82,10 @@ export MILD_DIP_STREAM_PRICE_MIN_GAP_MS=500
 export MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN=100
 export MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY=5
 export MILD_DIP_MINT_PRICE_REFRESH=1
-# Large stream Buy (≥2 SOL) → volume impulse entry (one getTx: mint+price+size).
+# Mark fat stream buys for priority only — ENTRY on notional is OFF (rug magnet).
 export MILD_DIP_VOLUME_IMPULSE_MIN_SOL=2
+export MILD_DIP_VOLUME_IMPULSE_ENTRY=0
+export VOL_GREEN_VOLUME_IMPULSE_ENTRY=0
 # Scam ladder: late monotonic grind → never enter (see src/volgreen/scam-ladder.ts).
 export MILD_DIP_SCAM_LADDER=1
 export MILD_DIP_SCAM_LADDER_MIN_AGE_MIN=25
@@ -90,13 +94,18 @@ export MILD_DIP_SCAM_LADDER_MIN_CUM_PC=12
 export MILD_DIP_SCAM_LADDER_MAX_BAR_PC=10
 export MILD_DIP_PRICE_RING_TTL_MS=5400000
 export MILD_DIP_PRICE_RING_MAX_SAMPLES=360
-# Leader tape (60h forensics 8zkg+7BNaxx): maxG1m≥8 + runup25≥10 on every entry.
+# Leader-like tape: real 1m history + maxG/runup band (reject thin-ring fakes).
 export MILD_DIP_LEADER_TAPE=1
 export VOL_GREEN_LEADER_TAPE=1
 export MILD_DIP_LEADER_TAPE_MAX_G_PC=8
 export MILD_DIP_LEADER_TAPE_RUNUP_PC=10
 export MILD_DIP_LEADER_TAPE_MAX_G_BARS=5
 export MILD_DIP_LEADER_TAPE_RUNUP_MS=1500000
+export MILD_DIP_LEADER_TAPE_MIN_BARS=4
+export MILD_DIP_LEADER_TAPE_MIN_SAMPLES=8
+export MILD_DIP_LEADER_TAPE_MIN_SPAN_MS=180000
+export MILD_DIP_LEADER_TAPE_MAX_G_MAX_PC=40
+export MILD_DIP_LEADER_TAPE_RUNUP_MAX_PC=80
 export MILD_DIP_FORCE_ENRICH_FIRST_SEEN_PER_MIN=0
 export VOL_GREEN_LEADER_WATCH=0
 export VOL_GREEN_LEADER_WATCH_WALLETS=7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ
