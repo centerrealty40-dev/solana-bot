@@ -37,7 +37,6 @@ import { cooldownMsAfterExit } from './cooldown.js';
 import {
   leaderSeedHitByMint,
   readLeaderSeedHits,
-  readLeaderSeedMints,
   type LeaderSeedHit,
 } from './discover-extra.js';
 import {
@@ -547,6 +546,7 @@ async function tryFastPathForMint(
   mint: string,
   trigger: 'stream' | 'leader' | 'scan',
   nowMs: number,
+  seedHit?: LeaderSeedHit | null,
 ): Promise<boolean> {
   if (!cfg.fastPathEnabled) return false;
   if (buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
@@ -560,7 +560,13 @@ async function tryFastPathForMint(
   // Fire parked wait-dip first — must not require re-qualifying the main band.
   if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
 
-  const candidate = await evaluateFastPathCandidate(cfg, mint, nowMs, trigger);
+  const candidate = await evaluateFastPathCandidate(
+    cfg,
+    mint,
+    nowMs,
+    trigger,
+    trigger === 'leader' ? seedHit : null,
+  );
   if (!candidate) return false;
 
   // 1.11.753 — park signals; buy only after extra dump from signal.
@@ -646,15 +652,16 @@ async function wakeLeaderSeeds(
   if (!cfg.fastPathEnabled) return 0;
   const unlimited = cfg.maxOpenPositions <= 0;
   if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
-  const leaders = readLeaderSeedMints(cfg.leaderSeedPath, nowMs, {
+  // 1.11.775 — rich hits carry observer Dex; buy from that print.
+  const leaders = readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
     maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
     max: cfg.leaderSeedMax,
   });
   let n = 0;
-  for (const mint of leaders) {
+  for (const hit of leaders) {
     if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
-    if (state.open[mint]) continue;
-    await tryFastPathForMint(cfg, state, mint, 'leader', nowMs);
+    if (state.open[hit.mint]) continue;
+    await tryFastPathForMint(cfg, state, hit.mint, 'leader', nowMs, hit);
     n += 1;
   }
   return n;

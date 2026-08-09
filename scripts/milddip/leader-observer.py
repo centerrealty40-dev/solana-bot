@@ -176,8 +176,8 @@ def classify(pc: Any) -> str:
 
 def gate_fit(d: dict[str, Any] | None) -> dict[str, Any]:
     """
-    Compare Dex snapshot vs current live mild-dip entry stack (1.11.760).
-    Live main band: pc5m ∈ (−25, −8]; h1_red_shallow: h1≤−15 and pc5m ∈ (−10, −3].
+    Compare Dex snapshot vs current live mild-dip entry stack (1.11.775).
+    Live main band: pc5m ∈ (−25, −2]; h1_red_shallow: h1≤−15 and pc5m ∈ (−10, −3].
     """
     if not d or d.get("error"):
         return {
@@ -193,14 +193,12 @@ def gate_fit(d: dict[str, Any] | None) -> dict[str, Any]:
     liq = float(d.get("liq") or 0)
     mcap = float(d.get("mcap") or 0)
     age = d.get("ageHours")
-    turn = d.get("turnover5mLiq")
 
     structural = (
         vol >= 500
         and liq >= 10_000
         and mcap >= 50_000
         and (age is None or float(age) >= 0.5)
-        and not (turn is not None and float(turn) > 0.8)
     )
     try:
         pc_f = float(pc) if pc is not None else None
@@ -211,7 +209,7 @@ def gate_fit(d: dict[str, Any] | None) -> dict[str, Any]:
     except (TypeError, ValueError):
         h1_f = None
 
-    main = bool(structural and pc_f is not None and -25 < pc_f <= -8)
+    main = bool(structural and pc_f is not None and -25 < pc_f <= -2)
     h1s = bool(
         structural
         and h1_f is not None
@@ -420,6 +418,7 @@ class Observer:
         cls: str | None = None,
         block_time: int | None = None,
         is_add: bool | None = None,
+        dex: dict[str, Any] | None = None,
     ) -> None:
         """Atomic sidecar for mild-dip `leaders` discover source."""
         hits: list[dict[str, Any]] = []
@@ -460,6 +459,22 @@ class Observer:
             hit["blockTime"] = int(block_time)
         if is_add is not None:
             hit["isAdd"] = bool(is_add)
+        # 1.11.775 — pass observer Dex so mild-dip can buy without re-fetch.
+        if isinstance(dex, dict) and not dex.get("error"):
+            for src_key, dst_key in (
+                ("priceUsd", "priceUsd"),
+                ("pc5m", "pc5m"),
+                ("pc1h", "pc1h"),
+                ("vol5m", "vol5m"),
+                ("liq", "liq"),
+                ("mcap", "mcap"),
+                ("ageHours", "ageHours"),
+                ("turnover5mLiq", "turnover5mLiq"),
+                ("dexId", "dexId"),
+            ):
+                v = dex.get(src_key)
+                if v is not None:
+                    hit[dst_key] = v
         by_mint[mint] = hit
         merged = sorted(
             by_mint.values(),
@@ -749,6 +764,7 @@ class Observer:
                             cls=classify(pc),
                             block_time=block_time,
                             is_add=bool(bag_info.get("isAdd")),
+                            dex=dex if isinstance(dex, dict) else None,
                         )
                     except Exception as e:
                         self.emit(
