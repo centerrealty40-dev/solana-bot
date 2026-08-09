@@ -11,20 +11,23 @@ Env:
   LEADER_OBSERVER_RPC_URL   — required unless mild-dip-bot pm2 env is readable
   LEADER_OBSERVER_LEADERS   — comma wallets (default: 8zkg + 7BNax)
   LEADER_OBSERVER_OUT_DIR   — default data/milddip
-  LEADER_OBSERVER_POLL_SEC  — default 15
-  LEADER_OBSERVER_LOOKBACK_SEC — ignore older sigs (default 900)
+  LEADER_OBSERVER_POLL_SEC  — default 10
+  LEADER_OBSERVER_LOOKBACK_SEC — ignore older sigs (default 1800)
+  LEADER_OBSERVER_SIG_LIMIT — getSignaturesForAddress limit (default 80)
   LEADER_OBSERVER_MAX_HOURS — 0 = run forever (default 72)
   LEADER_OBSERVER_SEED_PATH — sidecar for mild-dip discover (default <out>/leader-seed.json)
   LEADER_OBSERVER_SEED_MAX  — max mints in sidecar (default 40)
   LEADER_OBSERVER_SEED_MAX_AGE_SEC — drop older seed hits (default 7200)
   LEADER_OBSERVER_LOG_SELLS — 1 (default) log leader_sell_observed
-  LEADER_OBSERVER_LOG_MARKS — 0 (default) optional bag marks each poll
+  LEADER_OBSERVER_LOG_MARKS — 1 (default) bag marks while open (exit-path tape)
+  LEADER_OBSERVER_MARK_MIN_GAP_SEC — min seconds between marks per bag (default 60)
 """
 
 from __future__ import annotations
 
 import datetime as dt
 import json
+import math
 import os
 import subprocess
 import time
@@ -172,6 +175,45 @@ def classify(pc: Any) -> str:
     if pc <= -5:
         return "mild_shallow"
     return "shallow"
+
+
+def turn_dump_snapshot(dex: dict[str, Any] | None) -> dict[str, Any] | None:
+    """
+    Attach MAIN + SHALLOW turn→dump preds at observe time (formula RE aid).
+    MAIN: -5.08+6.86·log1p(turn·100); SHALLOW: -8.83+4.23·log1p(turn·100).
+    """
+    if not isinstance(dex, dict) or dex.get("error"):
+        return None
+    try:
+        pc = float(dex["pc5m"]) if dex.get("pc5m") is not None else None
+        vol = float(dex.get("vol5m") or 0)
+        liq = float(dex.get("liq") or 0)
+    except (TypeError, ValueError):
+        return None
+    if pc is None or not (pc < 0) or not (liq > 0) or not (vol >= 0):
+        return None
+    turn = vol / liq
+    if not (turn > 0):
+        return None
+
+    dump = -pc
+    pred_main = -5.08 + 6.86 * math.log1p(turn * 100)
+    pred_shallow = -8.83 + 4.23 * math.log1p(turn * 100)
+    resid_main = dump - pred_main
+    resid_shallow = dump - pred_shallow
+    in_main = (pred_main - 10) <= dump <= (pred_main + 12)
+    in_shallow = (pred_shallow - 8) <= dump <= (pred_shallow + 8)
+    return {
+        "turn": turn,
+        "dump": dump,
+        "predMain": pred_main,
+        "residMain": resid_main,
+        "inMain": in_main,
+        "predShallow": pred_shallow,
+        "residShallow": resid_shallow,
+        "inShallow": in_shallow,
+        "branch": "main" if in_main else ("shallow" if in_shallow else None),
+    }
 
 
 def gate_fit(d: dict[str, Any] | None) -> dict[str, Any]:
@@ -337,15 +379,18 @@ class Observer:
         self.leaders = [x.strip() for x in raw.split(",") if x.strip()] or list(DEFAULT_LEADERS)
         self.out_dir = Path(os.environ.get("LEADER_OBSERVER_OUT_DIR", "data/milddip"))
         self.out_dir.mkdir(parents=True, exist_ok=True)
-        self.poll_sec = max(5, int(env_num("LEADER_OBSERVER_POLL_SEC", 15)))
-        self.lookback_sec = max(60, int(env_num("LEADER_OBSERVER_LOOKBACK_SEC", 900)))
+        # 1.11.778 — denser absolute tape for entry/exit formula RE.
+        self.poll_sec = max(5, int(env_num("LEADER_OBSERVER_POLL_SEC", 10)))
+        self.lookback_sec = max(60, int(env_num("LEADER_OBSERVER_LOOKBACK_SEC", 1800)))
+        self.sig_limit = max(20, min(100, int(env_num("LEADER_OBSERVER_SIG_LIMIT", 80))))
         self.max_hours = env_num("LEADER_OBSERVER_MAX_HOURS", 72)
         seed_env = os.environ.get("LEADER_OBSERVER_SEED_PATH", "").strip()
         self.seed_path = Path(seed_env) if seed_env else self.out_dir / "leader-seed.json"
         self.seed_max = max(1, int(env_num("LEADER_OBSERVER_SEED_MAX", 40)))
         self.seed_max_age_sec = max(60, int(env_num("LEADER_OBSERVER_SEED_MAX_AGE_SEC", 7200)))
         self.log_sells = env_bool("LEADER_OBSERVER_LOG_SELLS", True)
-        self.log_marks = env_bool("LEADER_OBSERVER_LOG_MARKS", False)
+        self.log_marks = env_bool("LEADER_OBSERVER_LOG_MARKS", True)
+        self.mark_min_gap_sec = max(15, int(env_num("LEADER_OBSERVER_MARK_MIN_GAP_SEC", 60)))
         self.state_path = self.out_dir / "leader-observer-state.json"
         self.seen: set[str] = set()
         # leader -> mint -> bag state
@@ -531,6 +576,9 @@ class Observer:
                 "lastBuyBlockTime": block_time,
                 "buys": 1,
                 "sells": 0,
+                "mfePct": 0.0,
+                "maePct": 0.0,
+                "lastMarkAtMs": 0,
             }
             self._set_bag(leader, mint, bag)
             return {"isNewBag": True, "isAdd": False, "bag": bag}
@@ -607,6 +655,13 @@ class Observer:
                 "openedSignature": prev.get("openedSignature"),
                 "openedBlockTime": opened_bt,
                 "sizeUsdProceeds": size_usd,
+                "entryClass": prev.get("entryClass"),
+                "entryGates": prev.get("entryGates"),
+                "entryTurnDump": prev.get("entryTurnDump"),
+                "mfePct": prev.get("mfePct"),
+                "maePct": prev.get("maePct"),
+                "buys": prev.get("buys"),
+                "sells": int(prev.get("sells") or 0) + 1,
             }
             self._set_bag(leader, mint, None)
             return {"isFlat": True, "isPartial": False, "bag": None, "session": session}
@@ -627,7 +682,9 @@ class Observer:
         }
 
     def observe_leader(self, leader: str) -> None:
-        sigs = rpc_call(self.rpc, "getSignaturesForAddress", [leader, {"limit": 40}]) or []
+        sigs = rpc_call(
+            self.rpc, "getSignaturesForAddress", [leader, {"limit": self.sig_limit}]
+        ) or []
         cutoff = time.time() - self.lookback_sec
         # Process oldest→newest so bag ledger is chronological within the poll batch.
         ordered = list(reversed(sigs))
@@ -695,8 +752,10 @@ class Observer:
                         dex_px = None
                 pc = (dex or {}).get("pc5m") if isinstance(dex, dict) else None
                 gates = gate_fit(dex if isinstance(dex, dict) else None)
+                td = turn_dump_snapshot(dex if isinstance(dex, dict) else None)
                 fills = fill_metrics(delta, quote, dex_px)
                 ts_ms = int(time.time() * 1000)
+                cls = classify(pc)
 
                 base = {
                     "leader": leader,
@@ -718,8 +777,9 @@ class Observer:
                     "fillPriceSource": fills.get("fillPriceSource"),
                     "dexPriceUsd": dex_px,
                     "dex": dex,
-                    "class": classify(pc),
+                    "class": cls,
                     "gates": gates,
+                    "turnDump": td,
                 }
 
                 if side == "buy":
@@ -732,14 +792,20 @@ class Observer:
                         block_time=block_time,
                         signature=sig,
                     )
+                    bag = bag_info.get("bag") or {}
+                    if bag_info["isNewBag"] and bag:
+                        bag["entryClass"] = cls
+                        bag["entryGates"] = gates
+                        bag["entryTurnDump"] = td
+                        self._set_bag(leader, mint, bag)
                     base.update(
                         {
                             "kind": "leader_buy_observed",
                             "isNewBag": bag_info["isNewBag"],
                             "isAdd": bag_info["isAdd"],
                             "bagTokenUi": post_ui,
-                            "bagEntryPriceUsd": (bag_info.get("bag") or {}).get("entryPriceUsd"),
-                            "bagCostUsd": (bag_info.get("bag") or {}).get("costUsd"),
+                            "bagEntryPriceUsd": bag.get("entryPriceUsd"),
+                            "bagCostUsd": bag.get("costUsd"),
                         }
                     )
                     self.emit(base)
@@ -755,7 +821,9 @@ class Observer:
                                 "entryPriceUsd": fills.get("fillPriceUsd"),
                                 "sizeUsd": fills.get("sizeUsd"),
                                 "tokenUi": post_ui,
-                                "class": classify(pc),
+                                "class": cls,
+                                "gates": gates,
+                                "turnDump": td,
                             }
                         )
                     try:
@@ -766,7 +834,7 @@ class Observer:
                             ts_ms,
                             fill_price_usd=fills.get("fillPriceUsd"),
                             size_usd=fills.get("sizeUsd"),
-                            cls=classify(pc),
+                            cls=cls,
                             block_time=block_time,
                             is_add=bool(bag_info.get("isAdd")),
                             dex=dex if isinstance(dex, dict) else None,
@@ -820,28 +888,55 @@ class Observer:
                                 "pnlPctApprox": sess.get("pnlPctApprox"),
                                 "heldSec": sess.get("heldSec"),
                                 "sizeUsdProceeds": sess.get("sizeUsdProceeds"),
+                                "entryClass": sess.get("entryClass"),
+                                "entryGates": sess.get("entryGates"),
+                                "entryTurnDump": sess.get("entryTurnDump"),
+                                "exitClass": cls,
+                                "exitGates": gates,
+                                "exitTurnDump": td,
+                                "mfePct": sess.get("mfePct"),
+                                "maePct": sess.get("maePct"),
+                                "buys": sess.get("buys"),
+                                "sells": sess.get("sells"),
                             }
                         )
 
     def emit_bag_marks(self) -> None:
         if not self.log_marks:
             return
+        now_ms = int(time.time() * 1000)
+        gap_ms = self.mark_min_gap_sec * 1000
         for leader, by_mint in list(self.bags.items()):
             for mint, bag in list(by_mint.items()):
                 token_ui = float(bag.get("tokenUi") or 0)
                 if token_ui <= FLAT_UI_EPS:
                     continue
+                last_mark = int(bag.get("lastMarkAtMs") or 0)
+                if last_mark and now_ms - last_mark < gap_ms:
+                    continue
                 entry = bag.get("entryPriceUsd")
                 dex = fetch_dex(mint)
                 px = None
+                pc = None
                 if isinstance(dex, dict) and not dex.get("error"):
                     try:
                         px = float(dex.get("priceUsd") or 0) or None
                     except (TypeError, ValueError):
                         px = None
+                    pc = dex.get("pc5m")
                 pnl = None
                 if isinstance(entry, (int, float)) and entry > 0 and px and px > 0:
                     pnl = (px / float(entry) - 1) * 100
+                    mfe = float(bag.get("mfePct") or 0)
+                    mae = float(bag.get("maePct") or 0)
+                    bag["mfePct"] = max(mfe, pnl)
+                    bag["maePct"] = min(mae, pnl)
+                held_sec = None
+                opened_bt = bag.get("openedBlockTime")
+                if opened_bt:
+                    held_sec = max(0, int(time.time()) - int(opened_bt))
+                bag["lastMarkAtMs"] = now_ms
+                self._set_bag(leader, mint, bag)
                 self.emit(
                     {
                         "kind": "leader_bag_mark",
@@ -851,8 +946,16 @@ class Observer:
                         "entryPriceUsd": entry,
                         "markPriceUsd": px,
                         "pnlPctApprox": pnl,
-                        "openedBlockTime": bag.get("openedBlockTime"),
+                        "mfePct": bag.get("mfePct"),
+                        "maePct": bag.get("maePct"),
+                        "heldSec": held_sec,
+                        "openedBlockTime": opened_bt,
                         "costUsd": bag.get("costUsd"),
+                        "class": classify(pc),
+                        "gates": gate_fit(dex if isinstance(dex, dict) else None),
+                        "turnDump": turn_dump_snapshot(dex if isinstance(dex, dict) else None),
+                        "dex": dex,
+                        "entryClass": bag.get("entryClass"),
                     }
                 )
 
@@ -866,16 +969,19 @@ class Observer:
                 "seedPath": str(self.seed_path),
                 "pollSec": self.poll_sec,
                 "lookbackSec": self.lookback_sec,
+                "sigLimit": self.sig_limit,
                 "maxHours": self.max_hours,
                 "logSells": self.log_sells,
                 "logMarks": self.log_marks,
-                "version": "1.11.760",
+                "markMinGapSec": self.mark_min_gap_sec,
+                "version": "1.11.778",
             }
         )
         print(
             f"[leader-observer] start leaders={len(self.leaders)} out={self.out_path} "
-            f"seed={self.seed_path} poll={self.poll_sec}s sells={int(self.log_sells)} "
-            f"marks={int(self.log_marks)} maxHours={self.max_hours}",
+            f"seed={self.seed_path} poll={self.poll_sec}s sigLimit={self.sig_limit} "
+            f"sells={int(self.log_sells)} marks={int(self.log_marks)} "
+            f"markGap={self.mark_min_gap_sec}s maxHours={self.max_hours}",
             flush=True,
         )
         while end is None or time.time() < end:
