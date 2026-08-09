@@ -122,9 +122,9 @@ export MILD_DIP_REQUIRE_LEADER_BOUGHT=1
 export VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT=0
 export MILD_DIP_REQUIRE_LEADER_HIGHLIGHT=0
 export VOL_GREEN_LEADER_MINTS_PATH="${VOL_GREEN_LEADER_MINTS_PATH:-$ROOT/data/volgreen/leader-mints.json}"
-# Don't chase already-vertical 5m prints (CXaS scam: entry pc5m 54%).
-export MILD_DIP_ENTRY_MAX_PC5M_PCT=40
-export VOL_GREEN_ENTRY_MAX_PC5M_PCT=40
+# No pc5m chase cap — high 5m% is not a scam signal (leaders also buy continuations).
+export MILD_DIP_ENTRY_MAX_PC5M_PCT=0
+export VOL_GREEN_ENTRY_MAX_PC5M_PCT=0
 # Poison window: ban after nuke/crash tape (tuned so memes still trade).
 export VOL_GREEN_POISON_TAPE=1
 export MILD_DIP_POISON_TAPE=1
