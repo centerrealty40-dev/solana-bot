@@ -396,7 +396,10 @@ export async function attemptMildDipEntry(args: {
       console.log(
         `[mild-dip] SKIP bounce ${c.symbol} mint=${c.mint.slice(0, 8)}… ${bounce.reasons.join(',')}`,
       );
-      state.cooldownUntilMs[c.mint] = nowMs + softCd;
+      // 1.11.781 — do NOT blind 60s. Bounce can clear in seconds as price
+      // dumps back to trough; a long softCd made us miss and only wake on
+      // the next leader buy (~24s late on 5EAUpz). Gate is the bounce check.
+      state.cooldownUntilMs[c.mint] = nowMs + Math.min(softCd, 1_500);
       return 'skip';
     }
   }

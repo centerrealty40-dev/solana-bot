@@ -1,4 +1,24 @@
 # So
+## [1.11.781] — 2026-08-09
+
+**Тег:** `sa-1.11.781`
+
+### Fix: stop following leaders by 24s after bounce skip
+
+`5EAUpz` (Vyfy…): we bought **24s after** 7BNax on the same −13% dump.
+Root cause: `cooldown_bounce` skip applied a **60s time cooldown**, so the
+mint went blind while price dumped back to trough — next wake was the
+leader-seed path (follower latency). Also stream wake only scanned hot
+swaps; post-exit / leader-touched mints dropped off the watch list.
+
+- Bounce skip softCd capped at **1.5s** (gate remains the bounce check)
+- Stream wake set = hot ∪ recent exits ∪ leader-seed mints
+- Journal stream fast-path skips (throttled) for forensics
+
+**Откат:** restore 60s softCd on bounce + hot-only stream wake.
+
+---
+
 ## [1.11.780] — 2026-08-09
 
 **Тег:** `sa-1.11.780`

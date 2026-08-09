@@ -552,6 +552,10 @@ async function tryFastPathForMint(
   if (buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
 
   if (state.open[mint]) return false;
+  // Leader/exit attention → stay on the stream watch list (own tape next).
+  if (trigger === 'leader' || trigger === 'stream') {
+    mildDipHotMints.note(mint, nowMs);
+  }
   if (onCooldown(state, mint, nowMs)) return false;
 
   const unlimited = cfg.maxOpenPositions <= 0;
@@ -668,7 +672,34 @@ async function wakeLeaderSeeds(
   return n;
 }
 
-/** 1.11.779 — re-check hot stream mints even while bags are open (not only onMint). */
+/**
+ * Mints we must evaluate on our own tape — not only after the next leader tx.
+ * 1.11.781: hot stream + recent exits + leader-touched seeds.
+ */
+function streamWakeMintList(cfg: MildDipConfig, state: MildDipState, nowMs: number): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const push = (mint: string | undefined | null) => {
+    if (!mint || mint.length < 32 || seen.has(mint)) return;
+    seen.add(mint);
+    out.push(mint);
+  };
+  for (const mint of mildDipHotMints.list(nowMs)) push(mint);
+  const lookback = Math.max(cfg.cooldownBounceLookbackMs, 600_000);
+  for (const [mint, ex] of Object.entries(state.lastExitByMint ?? {})) {
+    const at = ex?.atMs ?? 0;
+    if (at > 0 && nowMs - at <= lookback) push(mint);
+  }
+  for (const hit of readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+    maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
+    max: cfg.leaderSeedMax,
+  })) {
+    push(hit.mint);
+  }
+  return out.slice(0, 60);
+}
+
+/** 1.11.779/781 — re-check watch set even while bags are open (not only onMint). */
 async function wakeStreamHotMints(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -678,7 +709,7 @@ async function wakeStreamHotMints(
   const unlimited = cfg.maxOpenPositions <= 0;
   if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
   let n = 0;
-  for (const mint of mildDipHotMints.list(nowMs).slice(0, 40)) {
+  for (const mint of streamWakeMintList(cfg, state, nowMs)) {
     if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
     if (state.open[mint]) continue;
     await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
@@ -692,9 +723,9 @@ async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
 
-  // 1.11.779 — stream hot FIRST (own tape); leader-seed secondary attention.
+  // 1.11.779/781 — own-tape watch FIRST; leader-seed secondary attention.
   if (cfg.fastPathEnabled) {
-    for (const mint of mildDipHotMints.list(nowMs).slice(0, 40)) {
+    for (const mint of streamWakeMintList(cfg, state, nowMs)) {
       if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
       if (state.open[mint]) continue;
       await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);

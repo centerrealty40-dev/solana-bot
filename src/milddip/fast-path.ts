@@ -251,9 +251,9 @@ export async function evaluateFastPathCandidate(
   seedHit?: LeaderSeedHit | null,
 ): Promise<MildDipCandidate | null> {
   const skip = (reason: string, extra?: Record<string, unknown>): null => {
-    // Leader wakes must leave a trail — silent null was the EjD5… miss mode.
+    // Leave a trail for leader + stream wakes (silent null hid stream misses).
     // Throttle: wake ticks every 2s; journal at most every 15s per mint.
-    if (trigger === 'leader' && reason !== 'min_gap') {
+    if ((trigger === 'leader' || trigger === 'stream') && reason !== 'min_gap') {
       const prevJ = lastLeaderSkipJournalMs.get(mint) ?? 0;
       if (nowMs - prevJ >= 15_000) {
         lastLeaderSkipJournalMs.set(mint, nowMs);
