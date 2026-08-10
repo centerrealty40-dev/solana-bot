@@ -2881,17 +2881,19 @@ const PM2_APPS = [
          */
         MILD_DIP_WAIT_DIP: '1',
         MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1',
-        MILD_DIP_WAIT_DIP_PCT: '-12',
-        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
-        MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '2',
         /**
-         * 1.11.806 — 3→5. After a −12% wait the reclaim off the ready mark is
-         * usually 3–4%, so a 3% cap burned the seat we just waited 20m for.
-         * Live 20m: 22/35 chase rejects clear at 5, and only 23/35 at 15 — the
-         * rest are 37–60% rips we must not chase. Absolute price stays capped
-         * by the wait-dip ceiling (signal × 0.90).
+         * 1.11.808 — ask deeper, accept shallower. With wait −12 / overshoot 2
+         * the fill window was ready(0.88×signal) → ceiling(0.90×signal): a 2.3%
+         * reclaim killed it. Live 30m: 37 parked, 39 expired, ~0 filled, and
+         * ceiling rejects clustered at −8.63% against a −10% requirement.
+         * Now: park until −15%, still never pay above −10% off signal, so the
+         * fill window is ~5.9% wide. CF says −10…−15 all beat buying at signal.
          */
-        MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '5',
+        MILD_DIP_WAIT_DIP_PCT: '-15',
+        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
+        MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '5',
+        /** Ceiling is the binding guard; chase only blocks outright rips. */
+        MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '8',
         MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',
         /**
          * 1.11.789 — OR entry (MAIN then SHALLOW):
