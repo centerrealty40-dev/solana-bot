@@ -1,4 +1,27 @@
 # So
+## [1.11.804] — 2026-08-10
+
+**Тег:** `sa-1.11.804`
+
+### Fix: parked wait-dip seats could never fill (`wait_dip_prebuy_missing_price`)
+
+Через 2 минуты после выката 1.11.803 бот перестал покупать: `WAIT_DIP ready`
+печатался десятками раз на одну монету, а следом всегда шёл
+`SKIP prebuy … wait_dip_prebuy_missing_price`. За 15 минут — **33 из 36**
+prebuy-отказов по этой причине и **0** покупок.
+
+Причина: в `preBuyRevalidate` при `fetchDexScreenerPairDetails() == null`
+`freshPx` становился `null`, и любая prebuy-ветка отвечала «нет цены». Для
+обычного входа это стоило одного тика, для запаркованного wait-dip — всей
+позиции, потому что seat крутился до истечения `MAX_WATCH`.
+
+- Fallback на `price-ring` (та же лента, по которой сработал ready-чек)
+- `missing_price` теперь означает «цены нет нигде», а не «Dex моргнул»
+
+**Откат:** `git checkout sa-1.11.803 -- src/milddip/entry-attempt.ts` + reload.
+
+---
+
 ## [1.11.803] — 2026-08-10
 
 **Тег:** `sa-1.11.803`

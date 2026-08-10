@@ -175,6 +175,13 @@ export async function attemptMildDipEntry(args: {
       if (fresh?.volume5mUsd != null) entryVol5m = fresh.volume5mUsd;
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
+      } else {
+        // 1.11.804 — a null Dex refetch must not read as "no price": every
+        // prebuy branch then rejects (`*_prebuy_missing_price`) and the parked
+        // wait-dip seat loops until it expires. Ring mark is the same tape the
+        // ready check just used.
+        const ringPx = mildDipPriceRing.lastPrice(c.mint, freshNow);
+        if (ringPx && ringPx.priceUsd > 0) freshPx = ringPx.priceUsd;
       }
       if (fresh && freshPx != null) {
         const pairAgeHours =
