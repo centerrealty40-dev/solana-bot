@@ -30,6 +30,8 @@ export type MildDipOpenPosition = {
   mfeBankStage?: number;
   /** 5m Dex volume at entry — baseline for the activity-fade exit. */
   entryVolume5mUsd?: number | null;
+  /** Dex liquidity at entry — fallback baseline for exit → rebuy liq-drop. */
+  entryLiquidityUsd?: number | null;
   /**
    * Spaced Dex vol5m samples (≥5m apart) for sustained `never_arm_vol_fade`.
    * A single weak tick must not sell — need N consecutive weak windows.
@@ -47,6 +49,8 @@ export type MildDipLastExit = {
   priceUsd: number;
   atMs: number;
   pnlPct?: number;
+  /** Dex pool liquidity at (or near) exit — rebuy liq-drop baseline. */
+  liquidityUsd?: number | null;
 };
 
 export type MildDipState = {
@@ -175,10 +179,14 @@ function sanitizeLastExitByMint(raw: unknown): Record<string, MildDipLastExit> {
     const atMs = Number(o.atMs);
     if (!(priceUsd > 0) || !(atMs > 0)) continue;
     const pnlPct = Number(o.pnlPct);
+    const liquidityUsd = Number(o.liquidityUsd);
     out[mint] = {
       priceUsd,
       atMs,
       ...(Number.isFinite(pnlPct) ? { pnlPct } : {}),
+      ...(Number.isFinite(liquidityUsd) && liquidityUsd > 0
+        ? { liquidityUsd }
+        : {}),
     };
   }
   return out;

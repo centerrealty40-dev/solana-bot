@@ -94,6 +94,17 @@ const MildDipConfigSchema = z.object({
   rebuyBelowExitPct: z.coerce.number().min(0).max(50).default(10),
   /** How long the last-exit floor applies (ms). Default 15m. */
   rebuyBelowExitMaxAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
+  /**
+   * 1.11.797 — after a loss exit: skip rebuy when Dex liq is below the exit
+   * snapshot (draining pool / death spiral).
+   */
+  rebuyLiqDropEnabled: z.boolean().default(true),
+  /** Memory for exit-liq baseline (default 6h). 0 = no age cap. */
+  rebuyLiqDropMaxAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(21_600_000),
+  /** 0 = any decline blocks; >0 requires at least this % drop. */
+  rebuyLiqDropMinDropPct: z.coerce.number().min(0).max(90).default(0),
+  /** Only apply after losing full exits (pnlPct < 0). */
+  rebuyLiqDropOnlyAfterLoss: z.boolean().default(true),
   /** Allow entry when stream drawdown is in dip band even if Dex pc5m is flat. */
   streamDipEntryEnabled: z.boolean().default(true),
   /** Decode program-log signatures → stream price samples (RPC). */
@@ -766,6 +777,10 @@ export function loadMildDipConfig(): MildDipConfig {
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
     rebuyBelowExitPct: process.env.MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 10,
     rebuyBelowExitMaxAgeMs: process.env.MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS ?? 900_000,
+    rebuyLiqDropEnabled: envBool('MILD_DIP_REBUY_LIQ_DROP', true),
+    rebuyLiqDropMaxAgeMs: process.env.MILD_DIP_REBUY_LIQ_DROP_MAX_AGE_MS ?? 21_600_000,
+    rebuyLiqDropMinDropPct: process.env.MILD_DIP_REBUY_LIQ_DROP_MIN_DROP_PCT ?? 0,
+    rebuyLiqDropOnlyAfterLoss: envBool('MILD_DIP_REBUY_LIQ_DROP_ONLY_LOSS', true),
     cooldownBounceLookbackMs: process.env.MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS ?? 300_000,
     streamDipEntryEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM_DIP_ENTRY?.trim().toLowerCase();

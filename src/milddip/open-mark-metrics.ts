@@ -1,5 +1,5 @@
 /**
- * Last Dex open-mark metrics (pc5m / vol5m) written by background refresh.
+ * Last Dex open-mark metrics (pc5m / vol5m / liq) written by background refresh.
  * Exit path reads these without awaiting HTTP.
  */
 
@@ -7,6 +7,8 @@ export type MildDipOpenMarkMetrics = {
   tsMs: number;
   pc5mPct: number | null;
   volume5mUsd: number | null;
+  /** 1.11.797 — pool liquidity at last Dex refresh (rebuy liq-drop baseline). */
+  liquidityUsd: number | null;
 };
 
 const byMint = new Map<string, MildDipOpenMarkMetrics>();
@@ -20,6 +22,7 @@ export function noteOpenMarkMetrics(
     tsMs?: number;
     pc5mPct?: number | null;
     volume5mUsd?: number | null;
+    liquidityUsd?: number | null;
   },
 ): void {
   if (!mint || mint.length < 32) return;
@@ -30,7 +33,11 @@ export function noteOpenMarkMetrics(
     metrics.volume5mUsd != null && Number.isFinite(metrics.volume5mUsd) && metrics.volume5mUsd >= 0
       ? Number(metrics.volume5mUsd)
       : null;
-  byMint.set(mint, { tsMs, pc5mPct: pc, volume5mUsd: vol });
+  const liq =
+    metrics.liquidityUsd != null && Number.isFinite(metrics.liquidityUsd) && metrics.liquidityUsd > 0
+      ? Number(metrics.liquidityUsd)
+      : null;
+  byMint.set(mint, { tsMs, pc5mPct: pc, volume5mUsd: vol, liquidityUsd: liq });
 }
 
 export function readOpenMarkMetrics(

@@ -3114,6 +3114,11 @@ const PM2_APPS = [
         /** 1.11.757 — rebuy if ≥10% below last exit (was 20%; Sheep 09:15 miss). */
         MILD_DIP_REBUY_BELOW_EXIT_PCT: '10',
         MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
+        /** 1.11.797 — after loss exit: skip rebuy when Dex liq fell vs exit. */
+        MILD_DIP_REBUY_LIQ_DROP: '1',
+        MILD_DIP_REBUY_LIQ_DROP_MAX_AGE_MS: '21600000',
+        MILD_DIP_REBUY_LIQ_DROP_MIN_DROP_PCT: '0',
+        MILD_DIP_REBUY_LIQ_DROP_ONLY_LOSS: '1',
         MILD_DIP_FAST_PATH_MIN_GAP_MS: '2000',
         /** No soft-ban after impact/sim fail — retry next tick (Jupiter, not Helius). */
         MILD_DIP_FAST_PATH_SOFT_SKIP_MS: '0',

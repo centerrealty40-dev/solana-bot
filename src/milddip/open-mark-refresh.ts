@@ -72,6 +72,7 @@ export function requestOpenMarkRefresh(args: {
           tsMs: now,
           pc5mPct: details.priceChangeM5Pct,
           volume5mUsd: details.volume5mUsd,
+          liquidityUsd: details.liquidityUsd,
         });
       }
     })
