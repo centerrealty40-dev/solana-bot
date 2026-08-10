@@ -70,6 +70,15 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     expect(py).toContain('cashPnlReliable');
   });
 
+  it('1.11.811 backs off DexScreener and rejects absurd marks', () => {
+    expect(py).toContain('LEADER_OBSERVER_DEX_MIN_GAP_MS');
+    expect(py).toContain('_dex_backoff_until_ms');
+    expect(py).toContain('throttled_local');
+    expect(py).toContain('def plausible_mark');
+    expect(py).toContain('proceedsMissingLegs');
+    expect(py).toContain('pathReliable');
+  });
+
   it('ships 48h divergence + segment stats scripts', () => {
     const report = readFileSync(
       resolve('scripts/milddip/leader-divergence-48h.py'),
