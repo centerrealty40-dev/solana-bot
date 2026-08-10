@@ -369,12 +369,25 @@ export async function loadStructural(
   return null;
 }
 
-/** Stream ring required for stream-timed sources; Dex/TD formula paths may enter on Dex alone. */
+/**
+ * Stream ring required for stream-timed sources; Dex/TD formula paths may enter
+ * on Dex alone.
+ *
+ * 1.11.807 — `wait_dip` is exempt too. A parked seat is priced against its own
+ * signal anchor (ceiling + chase caps), so demanding a stream print on top just
+ * killed it: 886 `no_stream_price` rejects in 15m, one seat burning 363 ready
+ * ticks before expiring.
+ */
 export function requireStreamPriceForDipSource(
   dipSource: MildDipCandidate['dipSource'] | null | undefined,
 ): boolean {
   if (dipSource == null) return true;
-  return dipSource !== 'dex' && dipSource !== 'dex+stream' && dipSource !== 'turn_dump_knife';
+  return (
+    dipSource !== 'dex' &&
+    dipSource !== 'dex+stream' &&
+    dipSource !== 'turn_dump_knife' &&
+    dipSource !== 'wait_dip'
+  );
 }
 
 /**
