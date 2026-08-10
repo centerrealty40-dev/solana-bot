@@ -1,4 +1,29 @@
 # So
+## [1.11.794] — 2026-08-10
+
+**Тег:** `sa-1.11.794`
+
+### Fix: hard-stop limbo + time-red without pc5m
+
+Live bags were sitting hours at −30…−40% because:
+
+1. Staged hard-stop sold **half at −25%**, then the runner waited for
+   **cliff −50%** (`scaleOutDone` blocked another hard_stop).
+2. `never_arm_time_red` **fail-closed** when Dex pc5m was missing, so
+   held+pnl≤−15 alone never cut.
+
+Changes:
+
+- After hard-stop partial, if mark still ≤ −hardStop → **full** `hard_stop`
+- Live `MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION=0` (full cut at −25%)
+- time-red: missing pc5m → fail **open** (held+pnl); mild present pc5m
+  still blocks
+
+**Откат:** `MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION=0.5` + prior gates
+  behavior via `git checkout sa-1.11.793 -- src/milddip/gates.ts` + reload.
+
+---
+
 ## [1.11.793] — 2026-08-10
 
 **Тег:** `sa-1.11.793`

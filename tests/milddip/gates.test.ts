@@ -582,7 +582,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('hard_stop');
   });
 
-  it('1.11.791 — staged hard stop: half at −25%, runner waits until −50%', () => {
+  it('1.11.794 — staged hard stop: half at −25%, runner full-exits if still ≤ −25%', () => {
     const staged = {
       ...exitGates,
       hardStopPnlPct: 25,
@@ -605,7 +605,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(half.reason).toBe('hard_stop');
     expect(half.fraction).toBe(0.5);
 
-    const holdRunner = evaluateMildDipPeakGiveback({
+    // 1.11.794 — no limbo: runner still ≤ −hardStop → full hard_stop (not wait −50).
+    const killRunner = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 70,
       peakPriceUsd: 100,
@@ -614,7 +615,9 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       gates: staged,
       heldMs: 5_000,
     });
-    expect(holdRunner.shouldExit).toBe(false);
+    expect(killRunner.shouldExit).toBe(true);
+    expect(killRunner.reason).toBe('hard_stop');
+    expect(killRunner.fraction).toBe(1);
 
     const rest = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -1158,6 +1161,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     });
     expect(early.shouldExit).toBe(false);
 
+    // 1.11.794 — missing pc5m fail-open (held+pnl still cut).
     const noPc = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 80,
@@ -1168,8 +1172,10 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       pc5mPct: null,
       postEntryTroughPriceUsd: 80,
     });
-    expect(noPc.reason).not.toBe('never_arm_time_red');
+    expect(noPc.shouldExit).toBe(true);
+    expect(noPc.reason).toBe('never_arm_time_red');
 
+    // Present-but-mild pc5m still blocks (formula needs ≤ −5 when known).
     const mildPc = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 80,

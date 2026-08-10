@@ -136,9 +136,10 @@ export type MildDipExitGates = {
    */
   hardStopPnlPct: number;
   /**
-   * 1.11.791 — when ∈ (0,1): sell this fraction at `hardStopPnlPct`, keep
-   * runner until `cliffDumpPnlPct` (gap-down past cliff → full `cliff_dump`).
-   * 0 or ≥1 = legacy full hard_stop (hard before cliff).
+   * 1.11.791 / 1.11.794 — when ∈ (0,1): sell this fraction at `hardStopPnlPct`.
+   * If the runner is still ≤ −hardStop after that cut, full `hard_stop` (do not
+   * park bags in the −25…−50 limbo until cliff). Gap straight past cliff →
+   * full `cliff_dump`. 0 or ≥1 = legacy full hard_stop (hard before cliff).
    */
   hardStopPartialFraction: number;
   /**
@@ -190,8 +191,9 @@ export type MildDipExitGates = {
   neverArmTimeRedPnlPct: number;
   /**
    * Optional Dex pc5m gate for time-red. Positive percent N → require
-   * pc5m ≤ −N. **0** = no pc5m requirement (legacy time-red). When > 0 and
-   * pc5m is missing, time-red does not fire (fail closed — matches RE).
+   * pc5m ≤ −N when the metric is present. **0** = no pc5m requirement.
+   * 1.11.794 — when > 0 and pc5m is missing, time-red still fires on
+   * held+pnl (fail open) so dead marks cannot pin an underwater bag forever.
    */
   neverArmTimeRedMaxPc5mPct: number;
 };
@@ -728,18 +730,22 @@ export function evaluateMildDipPeakGiveback(args: {
       : 0;
 
   if (hardPartial > 0) {
-    // 1.11.791 — staged: half @ hardStop, remainder @ cliff.
-    // Gap straight through cliff → full cliff_dump (do not leave a half bag).
+    // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
+    // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
+    // full cliff_dump.
     if (cliff > 0 && pnlPct <= -cliff) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
-    if (hardStop > 0 && pnlPct <= -hardStop && !scaleOutDone) {
-      return {
-        ...hold,
-        shouldExit: true,
-        fraction: hardPartial,
-        reason: 'hard_stop',
-      };
+    if (hardStop > 0 && pnlPct <= -hardStop) {
+      if (!scaleOutDone) {
+        return {
+          ...hold,
+          shouldExit: true,
+          fraction: hardPartial,
+          reason: 'hard_stop',
+        };
+      }
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
   } else {
     // Legacy: full hard_stop before cliff (tighter floor wins first).
@@ -953,8 +959,8 @@ export function evaluateMildDipPeakGiveback(args: {
       if (timeRedPc > 0) {
         const pc =
           args.pc5mPct != null && Number.isFinite(args.pc5mPct) ? Number(args.pc5mPct) : null;
-        // Fail closed when the tape metric is missing — formula needs pc5m.
-        pcOk = pc != null && pc <= -timeRedPc + 1e-9;
+        // 1.11.794 — fail open when pc5m missing; when present require ≤ −N.
+        pcOk = pc == null || pc <= -timeRedPc + 1e-9;
       }
       if (pcOk) {
         return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
