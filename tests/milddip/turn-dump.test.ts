@@ -146,4 +146,45 @@ describe('turn-dump gate (8zkg formula)', () => {
     expect(v.pass).toBe(true);
     expect(v.branch).toBe('main');
   });
+
+  it('1.11.793 knife OR: dump≥30 & turn≥0.3 after MAIN|SHALLOW fail', () => {
+    // turn=0.5 → MAIN pred~26.6 ceil~38.6 — dump=40 is MAIN deep-reject;
+    // SHALLOW ±8 also fails; knife should pass.
+    const base = {
+      enabled: true,
+      pc5m: -40,
+      volume5mUsd: 50_000,
+      liquidityUsd: 100_000,
+      alpha: -5.08,
+      beta: 6.86,
+      shallowSlackPct: 10,
+      deepSlackPct: 12,
+      shallowBranchEnabled: true,
+      shallowAlpha: -8.83,
+      shallowBeta: 4.23,
+      shallowBandPct: 8,
+    } as const;
+    expect(evaluateTurnDumpGate({ ...base, knifeBranchEnabled: false }).pass).toBe(false);
+
+    const cold = evaluateTurnDumpGate({
+      ...base,
+      volume5mUsd: 10_000, // turn=0.1
+      knifeBranchEnabled: true,
+      knifeMinDumpPct: 30,
+      knifeMinTurn: 0.3,
+    });
+    expect(cold.pass).toBe(false);
+    expect(cold.reasons.some((r) => r.includes('turn_dump_knife_cold'))).toBe(true);
+
+    const hit = evaluateTurnDumpGate({
+      ...base,
+      knifeBranchEnabled: true,
+      knifeMinDumpPct: 30,
+      knifeMinTurn: 0.3,
+    });
+    expect(hit.pass).toBe(true);
+    expect(hit.branch).toBe('knife');
+    expect(hit.dump).toBeCloseTo(40);
+    expect(hit.turn).toBeCloseTo(0.5);
+  });
 });

@@ -2900,6 +2900,14 @@ const PM2_APPS = [
         MILD_DIP_TURN_DUMP_SHALLOW_BETA: '4.23',
         MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT: '8',
         /**
+         * 1.11.793 — same wallet OR after MAIN|SHALLOW fail:
+         * 7BNax knife style dump≥30% & turn=vol5m/liq≥0.30 → buy now
+         * (does not open a second wallet / lane).
+         */
+        MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '1',
+        MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '30',
+        MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN: '0.3',
+        /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
          * 1.11.730 with scale-in removal). Scale-in stays deleted.
          * Gates keep anti-green filters: dump ≤−8, last ≥2% below peak

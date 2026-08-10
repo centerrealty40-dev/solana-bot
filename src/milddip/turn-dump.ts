@@ -1,16 +1,17 @@
 /**
- * 8zkg turn→dump entry gate — OR live (1.11.789).
+ * Turn→dump entry gate — OR live (1.11.793).
  *
- * MAIN:    pred = -5.08 + 6.86·log1p(turn·100), band [pred−10, pred+12]
- * SHALLOW: pred = -8.83 + 4.23·log1p(turn·100), band [pred−8, pred+8]
+ * MAIN:    pred = -5.08 + 6.86·log1p(turn·100), band [pred−10, pred+12]  (8zkg)
+ * SHALLOW: pred = -8.83 + 4.23·log1p(turn·100), band [pred−8, pred+8]   (8zkg)
+ * KNIFE:   dump ≥ 30 AND turn ≥ 0.30                                   (7BNax OR)
  *
  * turn = vol5m / liq
  * dump = −pc5m  (positive depth %)
  *
- * Live: pass if MAIN or SHALLOW. Prefer MAIN when both pass.
+ * Live: pass if MAIN or SHALLOW or KNIFE. Prefer MAIN → SHALLOW → KNIFE.
  */
 
-export type TurnDumpBranch = 'main' | 'shallow';
+export type TurnDumpBranch = 'main' | 'shallow' | 'knife';
 
 export type TurnDumpGateConfig = {
   enabled: boolean;
@@ -26,11 +27,17 @@ export type TurnDumpGateConfig = {
   shallowBeta?: number;
   /** SHALLOW half-width ± this (pp). Default 8. */
   shallowBandPct?: number;
+  /** 1.11.793 — 7BNax-style deep+hot OR after MAIN|SHALLOW. */
+  knifeBranchEnabled?: boolean;
+  /** Positive dump depth % floor (default 30 ⇒ pc5m ≤ −30). */
+  knifeMinDumpPct?: number;
+  /** Min turnover vol5m/liq (default 0.30). */
+  knifeMinTurn?: number;
 };
 
 export type TurnDumpGateVerdict = {
   pass: boolean;
-  /** Which curve accepted the print (null when fail / gate off). */
+  /** Which curve/branch accepted the print (null when fail / gate off). */
   branch: TurnDumpBranch | null;
   dump: number | null;
   turn: number | null;
@@ -59,7 +66,7 @@ function evaluateBand(args: {
   beta: number;
   floorSlack: number;
   ceilSlack: number;
-  branch: TurnDumpBranch;
+  branch: Exclude<TurnDumpBranch, 'knife'>;
 }): { pass: boolean; pred: number; resid: number; reasons: string[] } {
   const pred = predictDumpDepthPct(args.turn, args.alpha, args.beta);
   const resid = args.dump - pred;
@@ -86,6 +93,41 @@ function evaluateBand(args: {
   return { pass: true, pred, resid, reasons };
 }
 
+export function evaluateTurnDumpKnife(args: {
+  dump: number;
+  turn: number;
+  minDumpPct: number;
+  minTurn: number;
+}): { pass: boolean; reasons: string[] } {
+  const minDump = args.minDumpPct > 0 ? args.minDumpPct : 0;
+  const minTurn = args.minTurn > 0 ? args.minTurn : 0;
+  if (!(minDump > 0) || !(minTurn > 0)) {
+    return { pass: false, reasons: ['turn_dump_knife_off'] };
+  }
+  if (args.dump + 1e-9 < minDump) {
+    return {
+      pass: false,
+      reasons: [
+        `turn_dump_knife_shallow dump=${args.dump.toFixed(2)}<min=${minDump} turn=${args.turn.toFixed(4)}`,
+      ],
+    };
+  }
+  if (args.turn + 1e-9 < minTurn) {
+    return {
+      pass: false,
+      reasons: [
+        `turn_dump_knife_cold turn=${args.turn.toFixed(4)}<min=${minTurn} dump=${args.dump.toFixed(2)}`,
+      ],
+    };
+  }
+  return {
+    pass: true,
+    reasons: [
+      `turn_dump_ok branch=knife dump=${args.dump.toFixed(2)}≥${minDump} turn=${args.turn.toFixed(4)}≥${minTurn}`,
+    ],
+  };
+}
+
 /**
  * `pc5m` is Dex/stream price-change % (negative on dump).
  * Uses the signed change as dump depth when red.
@@ -103,6 +145,9 @@ export function evaluateTurnDumpGate(args: {
   shallowAlpha?: number;
   shallowBeta?: number;
   shallowBandPct?: number;
+  knifeBranchEnabled?: boolean;
+  knifeMinDumpPct?: number;
+  knifeMinTurn?: number;
 }): TurnDumpGateVerdict {
   if (!args.enabled) {
     return {
@@ -154,6 +199,8 @@ export function evaluateTurnDumpGate(args: {
     };
   }
 
+  const reasons: string[] = [];
+
   const main = evaluateBand({
     dump,
     turn,
@@ -163,6 +210,7 @@ export function evaluateTurnDumpGate(args: {
     ceilSlack: args.deepSlackPct,
     branch: 'main',
   });
+  reasons.push(...main.reasons);
   if (main.pass) {
     return {
       pass: true,
@@ -171,9 +219,12 @@ export function evaluateTurnDumpGate(args: {
       turn,
       pred: main.pred,
       resid: main.resid,
-      reasons: main.reasons,
+      reasons,
     };
   }
+
+  let lastPred = main.pred;
+  let lastResid = main.resid;
 
   if (args.shallowBranchEnabled) {
     const band = Math.max(0, args.shallowBandPct ?? 8);
@@ -186,6 +237,9 @@ export function evaluateTurnDumpGate(args: {
       ceilSlack: band,
       branch: 'shallow',
     });
+    reasons.push(...shallow.reasons);
+    lastPred = shallow.pred;
+    lastResid = shallow.resid;
     if (shallow.pass) {
       return {
         pass: true,
@@ -194,18 +248,30 @@ export function evaluateTurnDumpGate(args: {
         turn,
         pred: shallow.pred,
         resid: shallow.resid,
-        reasons: [...main.reasons, ...shallow.reasons],
+        reasons,
       };
     }
-    return {
-      pass: false,
-      branch: null,
+  }
+
+  if (args.knifeBranchEnabled) {
+    const knife = evaluateTurnDumpKnife({
       dump,
       turn,
-      pred: shallow.pred,
-      resid: shallow.resid,
-      reasons: [...main.reasons, ...shallow.reasons],
-    };
+      minDumpPct: args.knifeMinDumpPct ?? 30,
+      minTurn: args.knifeMinTurn ?? 0.3,
+    });
+    reasons.push(...knife.reasons);
+    if (knife.pass) {
+      return {
+        pass: true,
+        branch: 'knife',
+        dump,
+        turn,
+        pred: lastPred,
+        resid: lastResid,
+        reasons,
+      };
+    }
   }
 
   return {
@@ -213,8 +279,8 @@ export function evaluateTurnDumpGate(args: {
     branch: null,
     dump,
     turn,
-    pred: main.pred,
-    resid: main.resid,
-    reasons: main.reasons,
+    pred: lastPred,
+    resid: lastResid,
+    reasons,
   };
 }

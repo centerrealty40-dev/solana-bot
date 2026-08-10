@@ -31,13 +31,9 @@ import {
 import { mildDipPriceRing } from './price-ring.js';
 import { evaluateTurnDumpGate } from './turn-dump.js';
 
-function turnDumpAllowsCandidate(
-  cfg: MildDipConfig,
-  metrics: MildDipCandidateMetrics,
-): boolean {
-  if (!cfg.turnDumpGateEnabled) return true;
-  return evaluateTurnDumpGate({
-    enabled: true,
+function turnDumpGateArgs(cfg: MildDipConfig, metrics: MildDipCandidateMetrics) {
+  return {
+    enabled: true as const,
     pc5m: metrics.priceChange5mPct,
     volume5mUsd: metrics.volume5mUsd,
     liquidityUsd: metrics.liquidityUsd,
@@ -49,7 +45,18 @@ function turnDumpAllowsCandidate(
     shallowAlpha: cfg.turnDumpShallowAlpha,
     shallowBeta: cfg.turnDumpShallowBeta,
     shallowBandPct: cfg.turnDumpShallowBandPct,
-  }).pass;
+    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
+    knifeMinTurn: cfg.turnDumpKnifeMinTurn,
+  };
+}
+
+function turnDumpAllowsCandidate(
+  cfg: MildDipConfig,
+  metrics: MildDipCandidateMetrics,
+): boolean {
+  if (!cfg.turnDumpGateEnabled) return true;
+  return evaluateTurnDumpGate(turnDumpGateArgs(cfg, metrics)).pass;
 }
 
 export type MildDipCandidate = {
@@ -66,7 +73,9 @@ export type MildDipCandidate = {
     | 'flat_micro_dip'
     | 'knife_stabilize'
     | 'mild_stabilize'
-    | 'wait_dip';
+    | 'wait_dip'
+    /** Instant 7BNax-style deep+hot OR (dump≥30 & turn≥0.3). */
+    | 'turn_dump_knife';
   /** Present when dipSource=knife_stabilize. */
   knifeMode?: 'bounce' | 'stabilize';
   knifeBouncePct?: number | null;
@@ -613,6 +622,47 @@ export async function enrichAndFilterCandidates(
               }
             : undefined,
         };
+      }
+
+      // 1.11.793 — 7BNax OR: deep+hot dump buys now (same wallet), skip wait.
+      if (cfg.turnDumpGateEnabled && cfg.turnDumpKnifeBranchEnabled && structuralOk) {
+        const streamPc =
+          stream.drawdownPct != null && Number.isFinite(stream.drawdownPct)
+            ? stream.drawdownPct
+            : null;
+        const dexPc = metrics.priceChange5mPct;
+        const deepest =
+          streamPc != null && dexPc != null
+            ? Math.min(streamPc, dexPc)
+            : streamPc != null
+              ? streamPc
+              : dexPc;
+        if (deepest != null && deepest < 0) {
+          const knifeMetrics = { ...metrics, priceChange5mPct: deepest };
+          const td = evaluateTurnDumpGate(turnDumpGateArgs(cfg, knifeMetrics));
+          if (td.pass && td.branch === 'knife') {
+            return {
+              kind: 'candidate',
+              candidate: {
+                mint,
+                symbol: mint.slice(0, 6),
+                priceUsd: details.priceUsd,
+                metrics: knifeMetrics,
+                dipSource: 'turn_dump_knife',
+              },
+              clearEvent: knifeWatchIn[mint]
+                ? {
+                    kind: 'mild_dip_knife_watch_clear',
+                    mint,
+                    reason: 'turn_dump_knife_pass',
+                    dipSource: 'turn_dump_knife',
+                    dump: td.dump,
+                    turn: td.turn,
+                  }
+                : undefined,
+            };
+          }
+        }
       }
 
       // Deep-knife wait branch (only when mild path did not pass).

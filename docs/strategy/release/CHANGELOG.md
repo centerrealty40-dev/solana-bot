@@ -1,4 +1,23 @@
 # So
+## [1.11.793] — 2026-08-10
+
+**Тег:** `sa-1.11.793`
+
+### Feat: turn→dump KNIFE OR (7BNax, same wallet)
+
+After MAIN|SHALLOW fail, buy on the same mild-dip wallet when:
+
+`dump ≥ 30% AND turn = vol5m/liq ≥ 0.30`
+
+- Instant seat (does not wait `knife_stabilize` bounce)
+- `dipSource=turn_dump_knife`, branch=`knife`
+- Env: `MILD_DIP_TURN_DUMP_KNIFE_BRANCH=1`,
+  `_MIN_DUMP_PCT=30`, `_MIN_TURN=0.3`
+
+**Откат:** `MILD_DIP_TURN_DUMP_KNIFE_BRANCH=0` + reload.
+
+---
+
 ## [1.11.792] — 2026-08-10
 
 **Тег:** `sa-1.11.792`
