@@ -28,8 +28,10 @@ export type MildDipCandidateMetrics = {
     hugeVol: number;
     hugeTs: number;
   } | null;
-  /** Which dual-leader formula unlocked entry: F8_8zkg | F7_7BNaxx. */
+  /** Which dual-leader formula unlocked entry: F8_8zkg | F7_7BNaxx | F_early. */
   leaderFormula?: string | null;
+  /** Impulse shape: tip | mid | intrabar (journal / RCA). */
+  impulseShape?: string | null;
 };
 
 export type MildDipEntryGates = {

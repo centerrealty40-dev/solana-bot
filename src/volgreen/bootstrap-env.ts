@@ -126,12 +126,17 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_STREAM', '1');
   setIfAbsent('MILD_DIP_STREAM_PROGRAM_IDS', 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
   setIfAbsent('MILD_DIP_STREAM_PRICE_SAMPLE', '1');
-  setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '5');
+  setIfAbsent('MILD_DIP_STREAM_PRICE_CONCURRENCY', '6');
   setIfAbsent('MILD_DIP_STREAM_PRICE_MIN_GAP_MS', '500');
-  // Resolve firehose headroom — old 100/min + queue48 → droppedOverflow death.
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '250');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '8');
-  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_QUEUE_MAX', '250');
+  // Resolve firehose headroom + priority lane.
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_MAX_PER_MIN', '400');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_CONCURRENCY', '12');
+  setIfAbsent('MILD_DIP_BUY_MINT_RESOLVE_QUEUE_MAX', '400');
+  setIfAbsent('VOL_GREEN_LEADER_FLEX', '1');
+  setIfAbsent('VOL_GREEN_INTRABAR_FAST', '1');
+  setIfAbsent('VOL_GREEN_INTRABAR_FAST_MIN_PC', '6');
+  setIfAbsent('VOL_GREEN_EARLY_TAPE', '1');
+  setIfAbsent('VOL_GREEN_EARLY_SKIP_REQUIRE_LEADER_BOUGHT', '1');
   setIfAbsent('MILD_DIP_MINT_PRICE_REFRESH', '1');
   // Still mark fat stream buys for priority ranking — entry uses bars, not notional.
   setIfAbsent('MILD_DIP_VOLUME_IMPULSE_MIN_SOL', '2');

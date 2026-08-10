@@ -1,10 +1,9 @@
 /**
- * Dual leader entry formulas (OR):
- *   F8 — 8zkg green-universe (Dex recall ~81.5%): milder tape, longer run-up.
- *   F7 — 7BNaxx green (Dex recall ~84% on pc5m≥2): faster/sharper, shorter run-up.
- *
- * Stream mode cannot see Dex liq/mcap; we encode the *shape* difference in
- * leader-tape thresholds + ring pc5m floor for F7. Entry if either profile passes.
+ * Dual/triple leader entry formulas (OR):
+ *   F8 — 8zkg: milder tape, longer run-up (maxG≥8 / runup≥10, ~3m history).
+ *   F7 — 7BNaxx: faster tape + ring pc5m≥2.
+ *   F_early — short history mid-impulse race (minSpan ~60s) so we are not
+ *             stuck waiting 180s while leaders already buy.
  */
 import {
   defaultLeaderTapeGates,
@@ -13,7 +12,7 @@ import {
   type LeaderTapeVerdict,
 } from './leader-tape.js';
 
-export type LeaderFormulaId = 'F8_8zkg' | 'F7_7BNaxx';
+export type LeaderFormulaId = 'F8_8zkg' | 'F7_7BNaxx' | 'F_early';
 
 export type DualLeaderTapeVerdict = LeaderTapeVerdict & {
   formula: LeaderFormulaId | null;
@@ -22,6 +21,11 @@ export type DualLeaderTapeVerdict = LeaderTapeVerdict & {
 function numEnv(env: NodeJS.ProcessEnv, k: string, d: number): number {
   const v = Number(env[k]?.trim());
   return Number.isFinite(v) ? v : d;
+}
+
+function envOn(env: NodeJS.ProcessEnv, key: string, defaultOn = true): boolean {
+  const raw = (env[key] ?? (defaultOn ? '1' : '0')).trim().toLowerCase();
+  return !(raw === '0' || raw === 'false' || raw === 'no' || raw === 'off');
 }
 
 /** 8zkg-style: maxG≥8 / runup≥10 over ~25m (current defaults). */
@@ -78,6 +82,30 @@ export function f7LeaderTapeGates(
   };
 }
 
+/** Early race tape: ~60s span, 2 bars — compete on forming impulse. */
+export function fEarlyLeaderTapeGates(
+  env: NodeJS.ProcessEnv = process.env,
+): LeaderTapeGates {
+  const base = defaultLeaderTapeGates(env);
+  return {
+    ...base,
+    maxGMinPc: numEnv(env, 'VOL_GREEN_FEARLY_MAX_G_PC', 8),
+    runupMinPc: numEnv(env, 'VOL_GREEN_FEARLY_RUNUP_PC', 4),
+    runupMs: Math.max(
+      60_000,
+      Math.floor(numEnv(env, 'VOL_GREEN_FEARLY_RUNUP_MS', 5 * 60_000)),
+    ),
+    minBars: Math.max(2, Math.floor(numEnv(env, 'VOL_GREEN_FEARLY_MIN_BARS', 2))),
+    minSamples: Math.max(4, Math.floor(numEnv(env, 'VOL_GREEN_FEARLY_MIN_SAMPLES', 4))),
+    minSpanMs: Math.max(
+      30_000,
+      Math.floor(numEnv(env, 'VOL_GREEN_FEARLY_MIN_SPAN_MS', 60_000)),
+    ),
+    maxGMaxPc: numEnv(env, 'VOL_GREEN_FEARLY_MAX_G_MAX_PC', 40),
+    runupMaxPc: numEnv(env, 'VOL_GREEN_FEARLY_RUNUP_MAX_PC', 80),
+  };
+}
+
 export function f7MinPc5m(env: NodeJS.ProcessEnv = process.env): number {
   return numEnv(env, 'VOL_GREEN_F7_MIN_PC5M_PC', 2);
 }
@@ -85,18 +113,16 @@ export function f7MinPc5m(env: NodeJS.ProcessEnv = process.env): number {
 export function dualLeaderFormulasEnabled(
   env: NodeJS.ProcessEnv = process.env,
 ): boolean {
-  const raw = (
-    env.VOL_GREEN_DUAL_LEADER_FORMULAS ??
-    env.MILD_DIP_DUAL_LEADER_FORMULAS ??
-    '1'
-  )
-    .trim()
-    .toLowerCase();
-  return !(raw === '0' || raw === 'false' || raw === 'no' || raw === 'off');
+  return envOn(env, 'VOL_GREEN_DUAL_LEADER_FORMULAS') || envOn(env, 'MILD_DIP_DUAL_LEADER_FORMULAS');
+}
+
+export function earlyTapeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return envOn(env, 'VOL_GREEN_EARLY_TAPE', true);
 }
 
 /**
- * Pass if F8 OR F7 matches. When dual formulas disabled, only F8 (= default tape).
+ * Pass if F8 OR F_early OR F7 matches.
+ * Order: F8 (strict) → F_early (race) → F7 (fast + pc5m≥2).
  */
 export function detectDualLeaderTape(
   samples: Array<{ tsMs: number; priceUsd: number }>,
@@ -121,6 +147,13 @@ export function detectDualLeaderTape(
     return { ...f8, formula: 'F8_8zkg' };
   }
 
+  if (earlyTapeEnabled(env)) {
+    const fe = detectLeaderTape(samples, fEarlyLeaderTapeGates(env), nowMs);
+    if (fe.pass) {
+      return { ...fe, formula: 'F_early' };
+    }
+  }
+
   const f7 = detectLeaderTape(samples, f7LeaderTapeGates(env), nowMs);
   const pcMin = f7MinPc5m(env);
   const pcOk = pc5m != null && Number.isFinite(pc5m) && pc5m >= pcMin;
@@ -128,8 +161,13 @@ export function detectDualLeaderTape(
     return { ...f7, formula: 'F7_7BNaxx' };
   }
 
+  const feGates = earlyTapeEnabled(env);
+  const feTry = feGates
+    ? detectLeaderTape(samples, fEarlyLeaderTapeGates(env), nowMs)
+    : null;
   const reasons = [
     ...f8.reasons.map((r) => `F8:${r}`),
+    ...(feTry && !feTry.pass ? feTry.reasons.map((r) => `F_early:${r}`) : []),
     ...(f7.pass && !pcOk
       ? [
           `F7:need_pc5m=${pc5m == null || !Number.isFinite(pc5m) ? 'null' : pc5m.toFixed(1)}<${pcMin}`,
@@ -140,6 +178,6 @@ export function detectDualLeaderTape(
     pass: false,
     formula: null,
     reasons: reasons.length ? reasons : ['dual_leader_tape_fail'],
-    stats: f7.stats ?? f8.stats,
+    stats: f7.stats ?? feTry?.stats ?? f8.stats,
   };
 }

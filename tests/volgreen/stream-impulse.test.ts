@@ -39,6 +39,12 @@ const ENV_KEYS = [
   'MILD_DIP_REQUIRE_LEADER_BOUGHT',
   'VOL_GREEN_ENTRY_MAX_PC5M_PCT',
   'MILD_DIP_ENTRY_MAX_PC5M_PCT',
+  'VOL_GREEN_LEADER_FLEX',
+  'VOL_GREEN_INTRABAR_FAST',
+  'VOL_GREEN_INTRABAR_FAST_MIN_PC',
+  'VOL_GREEN_EARLY_TAPE',
+  'VOL_GREEN_EARLY_SKIP_REQUIRE_LEADER_BOUGHT',
+  'VOL_GREEN_DUAL_LEADER_FORMULAS',
 ];
 
 const saved: Record<string, string | undefined> = {};
@@ -84,6 +90,12 @@ beforeEach(() => {
   process.env.MILD_DIP_REQUIRE_LEADER_BOUGHT = '0';
   process.env.VOL_GREEN_ENTRY_MAX_PC5M_PCT = '15';
   process.env.MILD_DIP_ENTRY_MAX_PC5M_PCT = '15';
+  process.env.VOL_GREEN_LEADER_FLEX = '1';
+  process.env.VOL_GREEN_INTRABAR_FAST = '1';
+  process.env.VOL_GREEN_INTRABAR_FAST_MIN_PC = '6';
+  process.env.VOL_GREEN_EARLY_TAPE = '1';
+  process.env.VOL_GREEN_EARLY_SKIP_REQUIRE_LEADER_BOUGHT = '1';
+  process.env.VOL_GREEN_DUAL_LEADER_FORMULAS = '1';
   process.env.MILD_DIP_LEADER_TAPE = '1';
   process.env.MILD_DIP_LEADER_TAPE_MIN_SAMPLES = '8';
   process.env.MILD_DIP_LEADER_TAPE_MIN_BARS = '4';
@@ -136,9 +148,11 @@ describe('evaluateStreamImpulseCandidates', () => {
     mildDipHotMints.clearBuyForce(mint);
   });
 
-  it('skips entry when leaders never bought the mint', async () => {
+  it('skips entry when leaders never bought — unless early-path exemption', async () => {
     process.env.VOL_GREEN_REQUIRE_LEADER_BOUGHT = '1';
     process.env.MILD_DIP_REQUIRE_LEADER_BOUGHT = '1';
+    // Early exemption OFF → allowlist still blocks even tip/intrabar.
+    process.env.VOL_GREEN_EARLY_SKIP_REQUIRE_LEADER_BOUGHT = '0';
     const mint = `NoLeader${Date.now()}111111111111111111111111`.slice(0, 44);
     const cfg = loadMildDipConfig();
     const nowMs = Date.now();

@@ -2,9 +2,8 @@
  * Resolve mint (+ price + SOL notional) when program logs show Instruction: Buy
  * but omit the mint (common on PumpSwap).
  *
- * One getTransaction per sig — economics extracted in the same call (no second
- * getTx via priceSampler). Cap getTx/min so we don't burn Helius on the firehose;
- * newest-first + short queue; overflow drops oldest.
+ * One getTransaction per sig. Newest-first within priority lanes; overflow drops
+ * lowest-priority oldest jobs first so impulse Buys are not buried under dust.
  */
 import { fetchParsedTransaction } from '../copytrader/rpc.js';
 import { getSolUsd } from '../papertrader/pricing.js';
@@ -39,12 +38,34 @@ export function needsBuyMintResolve(logs: string[], extractedMints: string[]): b
   return logsIndicateBuy(logs) && extractedMints.length === 0;
 }
 
+/**
+ * Heuristic priority from logs (higher = served first).
+ * Large SOL prints / clear Buy lines beat anonymous dust.
+ */
+export function resolvePriorityFromLogs(logs: string[]): number {
+  let pri = 1;
+  for (const line of logs) {
+    if (typeof line !== 'string') continue;
+    if (line.includes('Instruction: Buy')) pri = Math.max(pri, 2);
+    // Pump / AMM often log lamports; treat big numbers as likely size.
+    const m = line.match(/\b(\d{9,})\b/); // ≥1 SOL in lamports-ish
+    if (m) {
+      const n = Number(m[1]);
+      if (Number.isFinite(n) && n >= 2e9) pri = Math.max(pri, 5); // ≥2 SOL
+      else if (Number.isFinite(n) && n >= 5e8) pri = Math.max(pri, 3);
+    }
+  }
+  return pri;
+}
+
 export type BuyResolveResult = BuyEconomics & {
   tsMs: number;
 };
 
+type Job = { signature: string; tsMs: number; priority: number };
+
 export type BuyMintResolver = {
-  enqueue: (signature: string, tsMs?: number) => void;
+  enqueue: (signature: string, tsMs?: number, priority?: number) => void;
   stop: () => void;
   stats: () => {
     queued: number;
@@ -57,6 +78,7 @@ export type BuyMintResolver = {
     droppedOverflow: number;
     droppedStale: number;
     volumeMarks: number;
+    priorityServed: number;
   };
 };
 
@@ -74,18 +96,15 @@ export function createBuyMintResolver(args: {
   onResolved?: (result: BuyResolveResult) => void;
 }): BuyMintResolver {
   const maxPerMin = Math.max(0, args.maxPerMin ?? 30);
-  // PumpSwap Buy-without-mint firehose needs headroom; old caps (conc≤6, queue≤60)
-  // produced hundreds of thousands of droppedOverflow and blind discovery.
-  const concurrency = Math.max(1, Math.min(12, args.concurrency ?? 2));
+  const concurrency = Math.max(1, Math.min(16, args.concurrency ?? 2));
   const queueMax = Math.max(
     concurrency,
-    Math.min(400, args.queueMax ?? Math.min(Math.max(maxPerMin, 80), 250)),
+    Math.min(500, args.queueMax ?? Math.min(Math.max(maxPerMin, 80), 400)),
   );
   const staleJobMs = Math.max(5_000, args.staleJobMs ?? STALE_JOB_MS);
   const volumeMinSol = Math.max(0, args.volumeImpulseMinSol ?? 0);
   const seenSig = new Set<string>();
-  /** Newest at the end — we pop() for LIFO. */
-  const queue: Array<{ signature: string; tsMs: number }> = [];
+  const queue: Job[] = [];
   let inFlight = 0;
   let resolved = 0;
   let failed = 0;
@@ -95,19 +114,30 @@ export function createBuyMintResolver(args: {
   let droppedOverflow = 0;
   let droppedStale = 0;
   let volumeMarks = 0;
+  let priorityServed = 0;
   let stopped = false;
   let grantTs: number[] = [];
 
-  const takeNextFresh = (nowMs: number): { signature: string; tsMs: number } | null => {
-    while (queue.length > 0) {
-      const job = queue.pop()!;
-      if (nowMs - job.tsMs > staleJobMs) {
+  /** Pop highest priority, then newest. */
+  const takeNextFresh = (nowMs: number): Job | null => {
+    // Drop stale from anywhere (cheap scan; queue bounded).
+    for (let i = queue.length - 1; i >= 0; i--) {
+      if (nowMs - queue[i]!.tsMs > staleJobMs) {
+        queue.splice(i, 1);
         droppedStale += 1;
-        continue;
       }
-      return job;
     }
-    return null;
+    if (queue.length === 0) return null;
+    let bestI = 0;
+    for (let i = 1; i < queue.length; i++) {
+      const a = queue[i]!;
+      const b = queue[bestI]!;
+      if (a.priority > b.priority || (a.priority === b.priority && a.tsMs > b.tsMs)) {
+        bestI = i;
+      }
+    }
+    const [job] = queue.splice(bestI, 1);
+    return job ?? null;
   };
 
   const pump = (): void => {
@@ -120,6 +150,7 @@ export function createBuyMintResolver(args: {
       if (!job) break;
       grantTs.push(nowMs);
       inFlight += 1;
+      if (job.priority >= 3) priorityServed += 1;
       void (async () => {
         try {
           await resolveOne(job);
@@ -131,16 +162,16 @@ export function createBuyMintResolver(args: {
     }
   };
 
-  const resolveOne = async (job: { signature: string; tsMs: number }): Promise<void> => {
+  const resolveOne = async (job: Job): Promise<void> => {
     try {
       if (Date.now() - job.tsMs > staleJobMs) {
         droppedStale += 1;
         return;
       }
       let raw = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
-      // Brand-new WS sigs are often not indexed on the first poll — one short retry.
-      if (!raw && Date.now() - job.tsMs < staleJobMs) {
-        await new Promise((r) => setTimeout(r, 350));
+      // Only retry high-priority jobs — low pri retries burn the minute budget.
+      if (!raw && job.priority >= 3 && Date.now() - job.tsMs < staleJobMs) {
+        await new Promise((r) => setTimeout(r, 250));
         raw = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
       }
       if (!raw) {
@@ -158,7 +189,6 @@ export function createBuyMintResolver(args: {
       const ts = Date.now();
       mildDipHotMints.note(econ.mint, ts, 8);
       mildDipHotMints.markBuyForce(econ.mint, ts);
-      // Seed ring from THIS tx — no second getTx.
       mildDipPriceRing.note(econ.mint, econ.priceUsd, { tsMs: job.tsMs || ts, source: 'stream' });
       if (volumeMinSol > 0 && econ.solNotional >= volumeMinSol) {
         mildDipHotMints.markVolumeImpulse(econ.mint, econ.solNotional, ts);
@@ -173,7 +203,7 @@ export function createBuyMintResolver(args: {
   };
 
   return {
-    enqueue(signature, tsMs = Date.now()) {
+    enqueue(signature, tsMs = Date.now(), priority = 1) {
       if (stopped || maxPerMin <= 0) return;
       if (!signature || signature.length < 32) return;
       if (seenSig.has(signature)) {
@@ -184,9 +214,19 @@ export function createBuyMintResolver(args: {
         for (const s of [...seenSig].slice(0, 3_000)) seenSig.delete(s);
       }
       seenSig.add(signature);
-      queue.push({ signature, tsMs });
+      const pri = Math.max(0, Math.min(10, Math.floor(priority)));
+      queue.push({ signature, tsMs, priority: pri });
+      // Overflow: drop lowest priority, then oldest.
       while (queue.length > queueMax) {
-        queue.shift();
+        let worstI = 0;
+        for (let i = 1; i < queue.length; i++) {
+          const a = queue[i]!;
+          const b = queue[worstI]!;
+          if (a.priority < b.priority || (a.priority === b.priority && a.tsMs < b.tsMs)) {
+            worstI = i;
+          }
+        }
+        queue.splice(worstI, 1);
         droppedOverflow += 1;
       }
       pump();
@@ -206,6 +246,7 @@ export function createBuyMintResolver(args: {
       droppedOverflow,
       droppedStale,
       volumeMarks,
+      priorityServed,
     }),
   };
 }

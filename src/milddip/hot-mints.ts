@@ -157,6 +157,17 @@ export class MildDipHotMintBuffer {
   private volumeImpulseUntil = new Map<string, { until: number; solNotional: number }>();
 
   /** Mark mint for next-scan force enrich (Buy activity / getTx resolve). */
+  /** True while mint is in the buyForce pending window (~5m). */
+  isBuyForcePending(mint: string, nowMs = Date.now()): boolean {
+    const ts = this.buyForcePending.get(mint);
+    if (ts == null) return false;
+    if (nowMs - ts > 300_000) {
+      this.buyForcePending.delete(mint);
+      return false;
+    }
+    return true;
+  }
+
   markBuyForce(mint: string, nowMs = Date.now()): void {
     if (!mint || mint.length < 32) return;
     this.buyForcePending.set(mint, nowMs);

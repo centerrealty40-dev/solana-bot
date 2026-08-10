@@ -232,10 +232,10 @@ export function detectFirstStrongGreen(
 }
 
 /**
- * Leader-highlight flex: classic triple wants huge LAST, but leaders often buy
- * mid-impulse (BJWHLm / 2iY3hd: last3=1.2,82.4,14.4 — huge in the middle).
- * Accept when last3 has a huge green, latest is still green, and the impulse
- * bar is fresh.
+ * Mid-impulse flex: classic triple wants huge LAST, but leaders often buy
+ * on the huge bar while the tip consolidates / prints soft red
+ * (Y8ETVJ last3=-29.6,+47.1,-3.3). Accept huge in last3 when fresh; tip may
+ * be mild red if the impulse is not the latest bar.
  */
 export function detectLeaderImpulseGreen(
   bars: Ohlcv1m[],
@@ -255,17 +255,7 @@ export function detectLeaderImpulseGreen(
   }
   const maxAgeSec = Math.max(60, Math.floor(gates.maxAgeAfterHugeMs / 1000));
   const chgs = last3.map((b) => candleChgPct(b));
-  const latest = last3[2]!;
-  if (!isGreen(latest) || !(chgs[2]! > gates.smallMinPc)) {
-    return {
-      pass: false,
-      reasons: [
-        'leader_impulse_latest_not_green',
-        `last3_chg=${chgs.map((x) => x.toFixed(1)).join(',')}`,
-      ],
-    };
-  }
-  // Find the biggest green bar in last3 as the impulse.
+  // Find the biggest green bar in last3 as the impulse first (tip may be red).
   let bestIdx = -1;
   let bestChg = -Infinity;
   for (let i = 0; i < 3; i++) {
@@ -282,6 +272,29 @@ export function detectLeaderImpulseGreen(
       pass: false,
       reasons: [
         'leader_impulse_no_huge',
+        `last3_chg=${chgs.map((x) => x.toFixed(1)).join(',')}`,
+      ],
+    };
+  }
+  const tipChg = chgs[2]!;
+  const hugeIsTip = bestIdx === 2;
+  // Tip = impulse: must stay green. Mid-impulse: allow mild tip pullback.
+  const maxTipPullbackPc = Math.max(8, gates.smallMaxPc);
+  if (hugeIsTip) {
+    if (!isGreen(last3[2]!) || !(tipChg > gates.smallMinPc)) {
+      return {
+        pass: false,
+        reasons: [
+          'leader_impulse_latest_not_green',
+          `last3_chg=${chgs.map((x) => x.toFixed(1)).join(',')}`,
+        ],
+      };
+    }
+  } else if (tipChg < -maxTipPullbackPc) {
+    return {
+      pass: false,
+      reasons: [
+        `leader_impulse_tip_dump=${tipChg.toFixed(1)}<-${maxTipPullbackPc}`,
         `last3_chg=${chgs.map((x) => x.toFixed(1)).join(',')}`,
       ],
     };

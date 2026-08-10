@@ -1354,7 +1354,8 @@ export async function runMildDipLoop(
           `failed=${rsAny?.failed ?? 0} rpc=${rsAny?.failedRpc ?? 0} ` +
           `noEcon=${rsAny?.failedNoEcon ?? 0} volMarks=${rsAny?.volumeMarks ?? 0} ` +
           `droppedStale=${rsAny?.droppedStale ?? 0} ` +
-          `droppedOverflow=${rsAny?.droppedOverflow ?? 0} queued=${rsAny?.queued ?? 0} | ` +
+          `droppedOverflow=${rsAny?.droppedOverflow ?? 0} queued=${rsAny?.queued ?? 0} ` +
+          `priServed=${(rsAny as { priorityServed?: number } | null)?.priorityServed ?? 0} | ` +
           `mintRefresh ok=${rf.ok} fail=${rf.fail} skip=${rf.skip}`,
       );
       // Watchdog: do not stay silent when resolve is dropping the firehose.

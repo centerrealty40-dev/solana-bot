@@ -6,6 +6,7 @@
 import { fetchParsedTransaction } from '../copytrader/rpc.js';
 import { getSolUsd } from '../papertrader/pricing.js';
 import type { TxJsonParsed } from '../parser/rpc-http.js';
+import { mildDipHotMints } from './hot-mints.js';
 import { priceUsdFromParsedSwapTx } from './mint-price-refresh.js';
 import { mildDipPriceRing } from './price-ring.js';
 
@@ -20,9 +21,12 @@ export function createStreamPriceSampler(args: {
   shouldSample: (mint: string, nowMs: number) => boolean;
   /** Min gap between RPC price fetches per mint. */
   minGapMsPerMint?: number;
+  /** Faster gap for buyForce / hot race mints (default 500ms). */
+  minGapMsBuyForce?: number;
   concurrency?: number;
 }): StreamPriceSampler {
   const minGap = Math.max(500, args.minGapMsPerMint ?? 2_000);
+  const minGapForce = Math.max(250, args.minGapMsBuyForce ?? 500);
   const concurrency = Math.max(1, Math.min(8, args.concurrency ?? 3));
   const lastFetchAt = new Map<string, number>();
   const seenSig = new Set<string>();
@@ -59,7 +63,8 @@ export function createStreamPriceSampler(args: {
       return;
     }
     const last = lastFetchAt.get(job.mint) ?? 0;
-    if (nowMs - last < minGap) {
+    const gap = mildDipHotMints.isBuyForcePending(job.mint, nowMs) ? minGapForce : minGap;
+    if (nowMs - last < gap) {
       skipped += 1;
       return;
     }

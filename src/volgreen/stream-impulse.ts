@@ -1,6 +1,9 @@
 /**
  * Stream → local 1m impulse → buy candidates.
  * No Dex probe / Gecko OHLCV — price ring samples only (+ targeted chain refresh).
+ *
+ * Early race: mid-impulse flex (huge-in-middle, tip soft OK), intrabar_fast 20s,
+ * F_early tape (~60s). Early shapes skip require_leader_bought so we can lead.
  */
 import type {
   EnrichFilterResult,
@@ -17,8 +20,10 @@ import {
 import { mildDipPriceRing } from '../milddip/price-ring.js';
 import {
   detectDualLeaderTape,
+  earlyTapeEnabled,
   f7LeaderTapeGates,
   f8LeaderTapeGates,
+  fEarlyLeaderTapeGates,
 } from './leader-formulas.js';
 import {
   hasLeaderBought,
@@ -32,8 +37,15 @@ const LOOKBACK_MS = 60 * 60_000;
 const DEFAULT_EVAL_MAX = 24;
 /** Refresh when last ring sample older than this. */
 const STALE_SAMPLE_MS = 15_000;
-/** Intrabar impulse window (leader mid-minute). */
+/** Intrabar impulse window (1m). */
 const INTRABAR_MS = 60_000;
+/** Fast race window — catch forming green before bar close. */
+const INTRABAR_FAST_MS = 20_000;
+
+function envOn(key: string, defaultOn = true): boolean {
+  const raw = (process.env[key] ?? (defaultOn ? '1' : '0')).trim().toLowerCase();
+  return !(raw === '0' || raw === 'false' || raw === 'no' || raw === 'off');
+}
 
 function needsPriceRefresh(mint: string, nowMs: number): boolean {
   const n = mildDipPriceRing.sampleCount(mint, LOOKBACK_MS, nowMs);
@@ -53,6 +65,7 @@ function candidateFromPass(args: {
   small1: number;
   hugeVol: number;
   hugeTs: number;
+  impulseShape?: string;
 }): MildDipCandidate | null {
   const last = mildDipPriceRing.lastPrice(args.mint, args.nowMs);
   if (!last || !(last.priceUsd > 0)) return null;
@@ -76,6 +89,7 @@ function candidateFromPass(args: {
       sells5m: null,
       volume1hUsd: null,
       priceChange1hPct: null,
+      impulseShape: args.impulseShape ?? null,
       triplePattern: {
         small0: args.small0,
         small1: args.small1,
@@ -128,7 +142,6 @@ export async function evaluateStreamImpulseCandidates(
     .sort((a, b) => b.score - a.score)
     .slice(0, evalMax);
 
-  // Targeted chain price refresh for stale / thin rings (not Dex enrich).
   if (allowRefresh) {
     const need = ranked.filter((r) => needsPriceRefresh(r.mint, nowMs)).map((r) => r.mint);
     if (need.length > 0) {
@@ -161,10 +174,25 @@ export async function evaluateStreamImpulseCandidates(
   const scamGates = defaultScamLadderGates(process.env);
   const f8Gates = f8LeaderTapeGates(process.env);
   const f7Gates = f7LeaderTapeGates(process.env);
-  const minSamplesForEval = Math.min(f8Gates.minSamples, f7Gates.minSamples);
+  const fEarlyGates = fEarlyLeaderTapeGates(process.env);
+  const minSamplesForEval = Math.min(
+    f8Gates.minSamples,
+    f7Gates.minSamples,
+    earlyTapeEnabled() ? fEarlyGates.minSamples : f8Gates.minSamples,
+  );
   const requireLeaderBought = requireLeaderBoughtEnabled(process.env);
-  // Naked volume-impulse ENTRY off by default — fat tape only prioritizes eval.
-  // Leaders do not buy "any ≥2 SOL print"; that path bought EmvB/Avow rugs.
+  /** Early/mid/intrabar may enter without allowlist (plan phase 4A). */
+  const requireLeaderBoughtEarlyExempt = envOn(
+    'VOL_GREEN_EARLY_SKIP_REQUIRE_LEADER_BOUGHT',
+    true,
+  );
+  const leaderFlexAlways = envOn('VOL_GREEN_LEADER_FLEX', true);
+  const intrabarFastOn = envOn('VOL_GREEN_INTRABAR_FAST', true);
+  const intrabarFastMin = (() => {
+    const n = Number(process.env.VOL_GREEN_INTRABAR_FAST_MIN_PC?.trim());
+    return Number.isFinite(n) && n > 0 ? n : 6;
+  })();
+
   const volumeEntryRaw = (
     process.env.MILD_DIP_VOLUME_IMPULSE_ENTRY ??
     process.env.VOL_GREEN_VOLUME_IMPULSE_ENTRY ??
@@ -175,8 +203,6 @@ export async function evaluateStreamImpulseCandidates(
   const volumeImpulseEntry =
     volumeEntryRaw === '1' || volumeEntryRaw === 'true' || volumeEntryRaw === 'yes';
 
-  // Ban tip-chase: session RCA — pc5m 15–40% / 40%+ was the loss cluster.
-  // 0 = disabled. Default 15.
   const maxPc5mRaw = Number(
     (
       process.env.VOL_GREEN_ENTRY_MAX_PC5M_PCT ??
@@ -191,6 +217,7 @@ export async function evaluateStreamImpulseCandidates(
     mint: string,
     samples: Array<{ tsMs: number; priceUsd: number }>,
     cand: MildDipCandidate | null,
+    opts?: { earlyPath?: boolean },
   ): void => {
     if (!cand) {
       skips.push({
@@ -200,19 +227,7 @@ export async function evaluateStreamImpulseCandidates(
       });
       return;
     }
-    // Ban if neither watched leader has ever bought this mint.
-    if (requireLeaderBought && !hasLeaderBought(mint)) {
-      skips.push({
-        mint,
-        entryMode: 'green_tape',
-        reasons: ['require_leader_bought'],
-        metrics: {
-          priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
-        },
-      });
-      mildDipHotMints.clearBuyForce(mint);
-      return;
-    }
+    const earlyPath = opts?.earlyPath === true;
     const grind = detectMonotonicGrind(samples, scamGates, nowMs);
     if (grind.hit) {
       skips.push({
@@ -223,10 +238,8 @@ export async function evaluateStreamImpulseCandidates(
           priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
         },
       });
-      // Keep buyForce cleared by candidateFromPass — do not re-chase late grind.
       return;
     }
-    // Dual leader formulas OR: F8 (8zkg tape) | F7 (7BNaxx tape + pc5m≥2).
     const ringPc5m = mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs);
     if (
       maxEntryPc5mPct > 0 &&
@@ -273,13 +286,26 @@ export async function evaluateStreamImpulseCandidates(
     if (tape.formula) {
       cand.metrics.leaderFormula = tape.formula;
     }
+    // Allowlist: required for slow F8; early/mid/intrabar/F_early may race first-touch.
+    const skipAllowlist =
+      requireLeaderBoughtEarlyExempt &&
+      (earlyPath || tape.formula === 'F_early');
+    if (requireLeaderBought && !skipAllowlist && !hasLeaderBought(mint)) {
+      skips.push({
+        mint,
+        entryMode: 'green_tape',
+        reasons: ['require_leader_bought'],
+        metrics: { priceChange5mPct: ringPc5m },
+      });
+      mildDipHotMints.clearBuyForce(mint);
+      return;
+    }
     candidates.push(cand);
   };
 
   for (const { mint } of ranked) {
     const samples = mildDipPriceRing.listSamples(mint, LOOKBACK_MS, nowMs);
 
-    // Late scam ladder — block every entry path (volume / impulse / triple).
     if (samples.length >= 2) {
       const grindEarly = detectMonotonicGrind(samples, scamGates, nowMs);
       if (grindEarly.hit) {
@@ -296,9 +322,8 @@ export async function evaluateStreamImpulseCandidates(
       }
     }
 
-    // Volume impulse: mark only (priority). Entry requires real 1m structure below.
     if (!volumeImpulseEntry && mildDipHotMints.isVolumeImpulse(mint, nowMs)) {
-      // Fall through to bar paths — do not buy on notional alone.
+      // mark only
     } else if (volumeImpulseEntry && mildDipHotMints.isVolumeImpulse(mint, nowMs)) {
       const solN = mildDipHotMints.volumeImpulseSol(mint, nowMs);
       const last = mildDipPriceRing.lastPrice(mint, nowMs);
@@ -325,8 +350,9 @@ export async function evaluateStreamImpulseCandidates(
           small1: 0,
           hugeVol: solN * 150,
           hugeTs: Math.floor(nowMs / 1000),
+          impulseShape: 'volume',
         });
-        pushOrSkipLadder(mint, samples, cand);
+        pushOrSkipLadder(mint, samples, cand, { earlyPath: false });
         continue;
       }
     }
@@ -342,7 +368,36 @@ export async function evaluateStreamImpulseCandidates(
       continue;
     }
 
-    // Intrabar only with enough history — never on 1–2 ticks (EmvB failure mode).
+    // Fast intrabar (20s) — race forming green before 1m close.
+    if (intrabarFastOn && samples.length >= 4) {
+      const ringPcFast = mildDipPriceRing.changeFromOldestPct(
+        mint,
+        INTRABAR_FAST_MS,
+        nowMs,
+      );
+      if (
+        ringPcFast != null &&
+        Number.isFinite(ringPcFast) &&
+        ringPcFast >= intrabarFastMin
+      ) {
+        const cand = candidateFromPass({
+          mint,
+          nowMs,
+          entryPath: 'green_tape_impulse',
+          score: ringPcFast,
+          huge: +ringPcFast.toFixed(2),
+          small0: 0,
+          small1: 0,
+          hugeVol: 0,
+          hugeTs: Math.floor(nowMs / 1000),
+          impulseShape: 'intrabar',
+        });
+        pushOrSkipLadder(mint, samples, cand, { earlyPath: true });
+        continue;
+      }
+    }
+
+    // Classic 60s intrabar (first-strong threshold).
     if (firstStrongMin > 0) {
       const ringPc60 = mildDipPriceRing.changeFromOldestPct(mint, INTRABAR_MS, nowMs);
       if (ringPc60 != null && Number.isFinite(ringPc60) && ringPc60 >= firstStrongMin) {
@@ -356,11 +411,15 @@ export async function evaluateStreamImpulseCandidates(
           small1: 0,
           hugeVol: 0,
           hugeTs: Math.floor(nowMs / 1000),
+          impulseShape: 'tip',
         });
-        pushOrSkipLadder(mint, samples, cand);
+        pushOrSkipLadder(mint, samples, cand, { earlyPath: true });
         continue;
       }
     }
+
+    const flex =
+      leaderFlexAlways || mildDipHotMints.isLeaderHighlight(mint, nowMs);
 
     const tg = await evaluateTripleGreenEntry({
       pairAddress: null,
@@ -368,7 +427,7 @@ export async function evaluateStreamImpulseCandidates(
       localPriceSamples: samples,
       allowGeckoHttp: false,
       geckoPriority: false,
-      leaderFlex: mildDipHotMints.isLeaderHighlight(mint, nowMs),
+      leaderFlex: flex,
       gates,
       fetchImpl: opts?.fetchImpl,
     });
@@ -391,11 +450,17 @@ export async function evaluateStreamImpulseCandidates(
       tg.pattern.small1 === 0 &&
       firstStrongMin > 0 &&
       tg.pattern.huge >= firstStrongMin;
+    // Mid-impulse: flex pattern has two "small" legs and a huge (not firstStrong shape).
+    const midImpulse =
+      flex &&
+      tg.pattern != null &&
+      !firstStrong &&
+      tg.pattern.small1 !== 0;
 
     const cand = candidateFromPass({
       mint,
       nowMs,
-      entryPath: firstStrong ? 'green_tape_impulse' : 'green_tape_triple',
+      entryPath: firstStrong || midImpulse ? 'green_tape_impulse' : 'green_tape_triple',
       score:
         (tg.pattern?.huge ?? 0) + (tg.pattern?.small0 ?? 0) + (tg.pattern?.small1 ?? 0),
       huge: tg.pattern?.huge ?? 0,
@@ -403,8 +468,11 @@ export async function evaluateStreamImpulseCandidates(
       small1: tg.pattern?.small1 ?? 0,
       hugeVol: tg.pattern?.hugeVol ?? 0,
       hugeTs: tg.pattern?.hugeTs ?? Math.floor(nowMs / 1000),
+      impulseShape: midImpulse ? 'mid' : firstStrong ? 'tip' : 'triple',
     });
-    pushOrSkipLadder(mint, samples, cand);
+    pushOrSkipLadder(mint, samples, cand, {
+      earlyPath: midImpulse || firstStrong,
+    });
   }
 
   return { candidates, skips };

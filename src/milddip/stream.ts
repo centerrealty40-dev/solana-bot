@@ -15,6 +15,7 @@ import {
   createBuyMintResolver,
   logsIndicateBuyOrSell,
   needsBuyMintResolve,
+  resolvePriorityFromLogs,
   type BuyMintResolver,
 } from './buy-mint-resolve.js';
 import { mildDipHotMints } from './hot-mints.js';
@@ -138,7 +139,7 @@ export function startMildDipHotMintStream(opts?: {
         }
       }
       if (resolver && n.signature && needsBuyMintResolve(n.logs, mints)) {
-        resolver.enqueue(n.signature, tsMs);
+        resolver.enqueue(n.signature, tsMs, resolvePriorityFromLogs(n.logs));
       }
     },
     {

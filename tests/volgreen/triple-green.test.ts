@@ -170,6 +170,29 @@ describe('detectTripleGreen', () => {
     expect(flex.pattern?.huge).toBeGreaterThan(50);
   });
 
+  it('leader flex accepts mid-impulse when tip is soft red (Y8ETVJ-class)', () => {
+    const t0 = 1_786_300_000;
+    // last3 ≈ small green, huge +47%, tip −3%
+    const bars: Ohlcv1m[] = [
+      bar(t0 - 120, 1.0, 1.05, 200),
+      bar(t0 - 60, 1.05, 1.5435, 5000), // +47%
+      bar(t0, 1.5435, 1.497, 800), // −3%
+    ];
+    const first = detectFirstStrongGreen(
+      bars,
+      { ...gates, firstStrongMinPc: 8, hugeMinVolUsd: 0 },
+      t0 + 30,
+    );
+    expect(first.pass).toBe(false);
+    const flex = detectLeaderImpulseGreen(
+      bars,
+      { ...gates, hugeMinPc: 10, smallMaxPc: 18, hugeMinVolUsd: 0 },
+      t0 + 30,
+    );
+    expect(flex.pass).toBe(true);
+    expect(flex.pattern?.huge).toBeGreaterThan(40);
+  });
+
   it('rejects stale huge (older than maxAgeAfterHugeMs)', () => {
     const t0 = 1_786_175_100;
     const bars: Ohlcv1m[] = [
