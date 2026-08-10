@@ -485,10 +485,15 @@ def fill_metrics(
         size_from_dex = abs(token_delta) * dex_px
     size_usd = size_from_quote if size_from_quote else size_from_dex
     fill_px = fill_from_quote if fill_from_quote else (dex_px if dex_px and dex_px > 0 else None)
+    size_source = "quote" if size_from_quote else ("dex" if size_from_dex else None)
+    # 1.11.803 — tokenDelta×dexPrice on a stale pair invents proceeds (a $27 buy
+    # logged a $1148 sell). Flag it so PnL aggregates can drop the leg instead of
+    # silently treating a guess as a fill.
     return {
         "sizeUsd": size_usd,
         "fillPriceUsd": fill_px,
-        "sizeUsdSource": "quote" if size_from_quote else ("dex" if size_from_dex else None),
+        "sizeUsdSource": size_source,
+        "sizeUsdEstimated": size_source != "quote",
         "fillPriceSource": "quote" if fill_from_quote else ("dex" if fill_px else None),
     }
 
@@ -723,6 +728,7 @@ class Observer:
         size_usd: float | None,
         block_time: int | None,
         signature: str,
+        size_estimated: bool = False,
     ) -> dict[str, Any]:
         prev = self._bag(leader, mint)
         is_new = prev is None or float(prev.get("tokenUi") or 0) <= FLAT_UI_EPS
@@ -754,6 +760,8 @@ class Observer:
                 "lastDenseAtMs": 0,
                 "lastDexAtMs": 0,
                 "lastDex": None,
+                "costEstimatedLegs": 1 if size_estimated else 0,
+                "proceedsEstimatedLegs": 0,
             }
             self._set_bag(leader, mint, bag)
             return {"isNewBag": True, "isAdd": False, "bag": bag}
@@ -773,6 +781,8 @@ class Observer:
         bag["lastBuySignature"] = signature
         bag["lastBuyBlockTime"] = block_time
         bag["buys"] = int(bag.get("buys") or 0) + 1
+        if size_estimated:
+            bag["costEstimatedLegs"] = int(bag.get("costEstimatedLegs") or 0) + 1
         self._set_bag(leader, mint, bag)
         return {"isNewBag": False, "isAdd": add_tokens > 0, "bag": bag}
 
@@ -786,6 +796,7 @@ class Observer:
         fill_px: float | None,
         block_time: int | None,
         signature: str,
+        size_estimated: bool = False,
     ) -> dict[str, Any]:
         prev = self._bag(leader, mint) or {
             "tokenUi": token_ui - 0,  # unknown prior
@@ -819,6 +830,10 @@ class Observer:
         bag["sells"] = int(bag.get("sells") or 0) + 1
         proceeds = float(size_usd or 0)
         bag["totalProceedsUsd"] = float(prev.get("totalProceedsUsd") or 0) + proceeds
+        proceeds_est_legs = int(prev.get("proceedsEstimatedLegs") or 0) + (
+            1 if size_estimated else 0
+        )
+        bag["proceedsEstimatedLegs"] = proceeds_est_legs
         cost_basis = 0.0
         if prev_ui > 0 and sold > 0:
             # reduce cost pro-rata
@@ -875,6 +890,14 @@ class Observer:
                 "isTdEntry": entry_is_td(prev),
                 "buys": prev.get("buys"),
                 "sells": int(prev.get("sells") or 0) + 1,
+                # 1.11.803 — any leg priced off dex instead of the quote delta
+                # makes cash PnL a guess; downstream must exclude these.
+                "costEstimatedLegs": int(prev.get("costEstimatedLegs") or 0),
+                "proceedsEstimatedLegs": proceeds_est_legs,
+                "cashPnlReliable": (
+                    int(prev.get("costEstimatedLegs") or 0) == 0
+                    and proceeds_est_legs == 0
+                ),
             }
             self._set_bag(leader, mint, None)
             return {"isFlat": True, "isPartial": False, "bag": None, "session": session}
@@ -893,6 +916,7 @@ class Observer:
                 "sizeUsdProceeds": size_usd,
                 "costBasisUsd": cost_basis,
                 "cashPnlUsd": cash_pnl,
+                "proceedsEstimatedLegs": proceeds_est_legs,
             },
         }
 
@@ -989,6 +1013,7 @@ class Observer:
                     "sizeUsd": fills.get("sizeUsd"),
                     "fillPriceUsd": fills.get("fillPriceUsd"),
                     "sizeUsdSource": fills.get("sizeUsdSource"),
+                    "sizeUsdEstimated": fills.get("sizeUsdEstimated"),
                     "fillPriceSource": fills.get("fillPriceSource"),
                     "dexPriceUsd": dex_px,
                     "dex": dex,
@@ -1006,6 +1031,7 @@ class Observer:
                         size_usd=fills.get("sizeUsd"),
                         block_time=block_time,
                         signature=sig,
+                        size_estimated=bool(fills.get("sizeUsdEstimated")),
                     )
                     bag = bag_info.get("bag") or {}
                     if bag_info["isNewBag"] and bag:
@@ -1098,6 +1124,7 @@ class Observer:
                         fill_px=fills.get("fillPriceUsd"),
                         block_time=block_time,
                         signature=sig,
+                        size_estimated=bool(fills.get("sizeUsdEstimated")),
                     )
                     sess = bag_info.get("session") or {}
                     base.update(

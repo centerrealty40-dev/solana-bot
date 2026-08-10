@@ -2874,11 +2874,14 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
         /**
-         * 1.11.773 — wait-dip OFF. Replaced by turn→dump: enter immediately
-         * when dump depth matches turnover formula (no park for −7/−10% more).
+         * 1.11.803 — wait-dip back ON, now *alongside* turn→dump: the formula
+         * picks the mint, wait-dip picks the price. 8h CF on live buys: entering
+         * at signal books −$33; waiting for −12% more books +$13…+$78, and our
+         * fill on shared leader names was −20.2% MAE vs their −15.9%.
          */
-        MILD_DIP_WAIT_DIP: '0',
-        MILD_DIP_WAIT_DIP_PCT: '-10',
+        MILD_DIP_WAIT_DIP: '1',
+        MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1',
+        MILD_DIP_WAIT_DIP_PCT: '-12',
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
         MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '2',
         MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',

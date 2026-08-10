@@ -63,6 +63,13 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     expect(py).toContain('cashPnlUsd');
   });
 
+  it('1.11.803 flags dex-estimated legs so PnL can exclude guesses', () => {
+    expect(py).toContain('sizeUsdEstimated');
+    expect(py).toContain('proceedsEstimatedLegs');
+    expect(py).toContain('costEstimatedLegs');
+    expect(py).toContain('cashPnlReliable');
+  });
+
   it('ships 48h divergence + segment stats scripts', () => {
     const report = readFileSync(
       resolve('scripts/milddip/leader-divergence-48h.py'),
