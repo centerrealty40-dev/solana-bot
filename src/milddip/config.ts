@@ -107,6 +107,14 @@ const MildDipConfigSchema = z.object({
   rebuyLiqDropOnlyAfterLoss: z.boolean().default(true),
   /** Allow entry when stream drawdown is in dip band even if Dex pc5m is flat. */
   streamDipEntryEnabled: z.boolean().default(true),
+  /**
+   * 1.11.798 — refuse entry unless price-ring has a recent `source=stream`
+   * print (Helius swap decode). Blocks Dex-only green-candle fills when the
+   * stream price sampler is dead.
+   */
+  requireStreamPriceEntry: z.boolean().default(true),
+  /** Max age of the last stream ring print for entry (ms). */
+  requireStreamPriceMaxAgeMs: z.coerce.number().int().min(5_000).max(900_000).default(120_000),
   /** Decode program-log signatures → stream price samples (RPC). */
   streamPriceSampleEnabled: z.boolean().default(true),
   streamPriceMinGapMs: z.coerce.number().int().min(500).max(60_000).default(2_000),
@@ -787,6 +795,8 @@ export function loadMildDipConfig(): MildDipConfig {
       if (!v) return true;
       return v === '1' || v === 'true' || v === 'yes';
     })(),
+    requireStreamPriceEntry: envBool('MILD_DIP_REQUIRE_STREAM_PRICE', true),
+    requireStreamPriceMaxAgeMs: process.env.MILD_DIP_REQUIRE_STREAM_PRICE_MAX_AGE_MS ?? 120_000,
     streamPriceSampleEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM_PRICE_SAMPLE?.trim().toLowerCase();
       if (!v) return true;

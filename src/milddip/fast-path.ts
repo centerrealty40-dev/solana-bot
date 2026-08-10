@@ -298,6 +298,25 @@ export async function evaluateFastPathCandidate(
   if (!mint || mint.length < 32) return skip('bad_mint');
   if (cfg.deniedMints.includes(mint)) return skip('denied_mint');
 
+  // 1.11.798 — bot is stream-priced: no entry on Dex pc5m alone when the
+  // Helius swap→ring tape is silent (green-candle Dex fills).
+  if (cfg.requireStreamPriceEntry) {
+    const last = mildDipPriceRing.lastPrice(mint, nowMs);
+    const maxAge = cfg.requireStreamPriceMaxAgeMs;
+    const streamFresh =
+      last != null &&
+      last.source === 'stream' &&
+      last.priceUsd > 0 &&
+      (maxAge <= 0 || nowMs - last.tsMs <= maxAge);
+    if (!streamFresh) {
+      return skip('no_stream_price', {
+        lastSource: last?.source ?? null,
+        lastAgeMs: last ? Math.max(0, nowMs - last.tsMs) : null,
+        maxAgeMs: maxAge,
+      });
+    }
+  }
+
   const prevAttempt = lastFastAttemptMs.get(mint) ?? 0;
   if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return null;
 

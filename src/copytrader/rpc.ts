@@ -88,7 +88,14 @@ export async function fetchParsedTransaction(rpcUrl: string, signature: string):
   return rpcCall(
     rpcUrl,
     'getTransaction',
-    [signature, { encoding: 'jsonParsed', maxSupportedTransactionVersion: 0 }],
+    [
+      signature,
+      {
+        encoding: 'jsonParsed',
+        maxSupportedTransactionVersion: 0,
+        commitment: 'confirmed',
+      },
+    ],
     6,
   );
 }

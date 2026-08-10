@@ -1,4 +1,32 @@
 # So
+## [1.11.798] — 2026-08-10
+
+**Тег:** `sa-1.11.798`
+
+### Fix: stream *price* tape was dead — Dex-only green buys
+
+Two different “streams”:
+
+1. **Hot-mint** `logsSubscribe` — worked (wakes / fast-path trigger)
+2. **Price sampler** (getTransaction → ring `source=stream`) — **dead
+   since ~2026-08-09 20:00 UTC**. Ring became 100% Dex; buys used Dex
+   `pc5m` (`dipSource=dex`) and filled green reclaim candles.
+
+Changes:
+
+- Balance-route stream price fallback (no slot/blockTime required)
+- Relax allowlisted decode when RPC omits slot/bt
+- `getTransaction` with `commitment=confirmed`
+- **Require** recent ring `source=stream` for entry
+  (`MILD_DIP_REQUIRE_STREAM_PRICE=1`, max age 120s)
+- Journal `mild_dip_stream_price_stats` every 30s
+
+**Откат:** `MILD_DIP_REQUIRE_STREAM_PRICE=0` + prior sampler via
+  `git checkout sa-1.11.797 -- src/milddip/stream-price-sampler.ts
+  src/milddip/fast-path.ts src/copytrader/rpc.ts` + reload.
+
+---
+
 ## [1.11.797] — 2026-08-10
 
 **Тег:** `sa-1.11.797`

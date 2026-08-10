@@ -22,11 +22,19 @@ import {
   type OneshotDumpEvent,
 } from './oneshot-dump.js';
 import { mildDipPriceRing } from './price-ring.js';
+import { mintPriceUsdFromTxMeta } from './stream-mint-price.js';
 
 export type StreamPriceSampler = {
   enqueue: (mint: string, signature: string, tsMs?: number) => void;
   stop: () => void;
-  stats: () => { queued: number; inFlight: number; sampled: number; skipped: number };
+  stats: () => {
+    queued: number;
+    inFlight: number;
+    sampled: number;
+    skipped: number;
+    lastSampleAtMs: number | null;
+    lastSkipReason: string | null;
+  };
 };
 
 export function createStreamPriceSampler(args: {
@@ -56,6 +64,8 @@ export function createStreamPriceSampler(args: {
   let inFlight = 0;
   let sampled = 0;
   let skipped = 0;
+  let lastSampleAtMs: number | null = null;
+  let lastSkipReason: string | null = null;
   let stopped = false;
 
   const pump = (): void => {
@@ -82,12 +92,14 @@ export function createStreamPriceSampler(args: {
     const nowMs = Date.now();
     if (!args.shouldSample(job.mint, nowMs)) {
       skipped += 1;
+      lastSkipReason = 'should_sample_false';
       return;
     }
     const forced = args.forceFetch?.(job.mint) === true;
     const last = lastFetchAt.get(job.mint) ?? 0;
     if (!forced && nowMs - last < minGap) {
       skipped += 1;
+      lastSkipReason = 'min_gap';
       return;
     }
     lastFetchAt.set(job.mint, nowMs);
@@ -96,24 +108,46 @@ export function createStreamPriceSampler(args: {
     const tx = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
     if (!tx) {
       skipped += 1;
+      lastSkipReason = 'get_tx_null';
       return;
     }
 
     let noted = false;
     let priceHint = 0;
+    const ts = job.tsMs || nowMs;
+
     // Price decode needs SOL/USD; sell-balance classify does not.
     if (solUsd > 0) {
       const swaps = decodeAllowlistedDexSwapInserts(tx, PUMP_FUN_PROGRAM_ID, solUsd);
       for (const s of swaps) {
-        if (s.baseMint !== job.mint) continue;
-        if (!(s.priceUsd > 0)) continue;
-        mildDipPriceRing.note(job.mint, s.priceUsd, {
-          tsMs: job.tsMs || nowMs,
-          source: 'stream',
-        });
-        noted = true;
-        if (s.priceUsd > priceHint) priceHint = s.priceUsd;
+        if (!(s.priceUsd > 0) || !s.baseMint) continue;
+        // Note job mint and any other watched mint in this tx (extract can be noisy).
+        const mint = s.baseMint;
+        if (
+          mint !== job.mint &&
+          !args.shouldSample(mint, nowMs) &&
+          args.forceFetch?.(mint) !== true
+        ) {
+          continue;
+        }
+        mildDipPriceRing.note(mint, s.priceUsd, { tsMs: ts, source: 'stream' });
+        if (mint === job.mint) {
+          noted = true;
+          if (s.priceUsd > priceHint) priceHint = s.priceUsd;
+        }
       }
+
+      // 1.11.798 — balance-route fallback when SwapInsert decode misses.
+      if (!noted) {
+        const balPx = mintPriceUsdFromTxMeta(tx, job.mint, solUsd);
+        if (balPx != null && balPx > 0) {
+          mildDipPriceRing.note(job.mint, balPx, { tsMs: ts, source: 'stream' });
+          noted = true;
+          priceHint = balPx;
+        }
+      }
+    } else {
+      lastSkipReason = 'sol_usd_zero';
     }
 
     const ringPx = mildDipPriceRing.lastPrice(job.mint, nowMs)?.priceUsd ?? 0;
@@ -123,7 +157,7 @@ export function createStreamPriceSampler(args: {
     if (forced || args.sellTape || args.onSellPrints) {
       const prints = extractMintSellPrints(tx, job.mint, {
         priceUsd: px,
-        tsMs: job.tsMs || nowMs,
+        tsMs: ts,
         signature: job.signature,
         maxPostResidualFrac: args.maxPostResidualFrac ?? args.oneshot?.maxPostResidualFrac,
       });
@@ -143,15 +177,23 @@ export function createStreamPriceSampler(args: {
         },
         {
           priceUsd: px,
-          tsMs: job.tsMs || nowMs,
+          tsMs: ts,
           signature: job.signature,
         },
       );
       if (dump) args.onOneshotDump(dump);
     }
 
-    if (noted) sampled += 1;
-    else skipped += 1;
+    if (noted) {
+      sampled += 1;
+      lastSampleAtMs = nowMs;
+      lastSkipReason = null;
+    } else {
+      skipped += 1;
+      if (!lastSkipReason || lastSkipReason === 'sol_usd_zero') {
+        lastSkipReason = solUsd > 0 ? 'no_price_decode' : 'sol_usd_zero';
+      }
+    }
   };
 
   return {
@@ -184,6 +226,13 @@ export function createStreamPriceSampler(args: {
       stopped = true;
       queue.length = 0;
     },
-    stats: () => ({ queued: queue.length, inFlight, sampled, skipped }),
+    stats: () => ({
+      queued: queue.length,
+      inFlight,
+      sampled,
+      skipped,
+      lastSampleAtMs,
+      lastSkipReason,
+    }),
   };
 }
