@@ -12,7 +12,13 @@ import {
   discoverPgVolumeMints,
   readLeaderSeedMints,
 } from './discover-extra.js';
-import { noteStructuralCache } from './fast-path.js';
+import {
+  dumpRallyGateOk,
+  noteStructuralCache,
+  streamDipInBandOk,
+  streamDumpExtentPct,
+  streamDrawdownPct,
+} from './fast-path.js';
 import { mapPool } from './exit-engine.js';
 import {
   evaluateFlatMicroDip,
@@ -380,14 +386,21 @@ function streamDipInBand(
   mint: string,
   nowMs: number,
 ): { ok: boolean; drawdownPct: number | null } {
-  const dd = mildDipPriceRing.drawdownFromPeakPct(
-    mint,
-    cfg.cooldownBounceLookbackMs,
-    nowMs,
-  );
-  if (dd == null || !Number.isFinite(dd)) return { ok: false, drawdownPct: dd };
-  const ok = dd > cfg.entry.minDipPct && dd <= cfg.entry.maxDipPct;
-  return { ok, drawdownPct: dd };
+  const lookbackMs = cfg.cooldownBounceLookbackMs;
+  const dumpExtent = streamDumpExtentPct(mint, lookbackMs, nowMs);
+  const currentDd = streamDrawdownPct(mint, lookbackMs, nowMs);
+  const rally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
+  const drawdownPct = dumpExtent ?? currentDd;
+  const ok = streamDipInBandOk({
+    dumpExtentPct: dumpExtent,
+    currentDrawdownPct: currentDd,
+    rallyIntoPeakPct: rally,
+    minDipPct: cfg.entry.minDipPct,
+    maxDipPct: cfg.entry.maxDipPct,
+    dumpRallyGateMinPct: cfg.dumpRallyGateMinPct,
+    dumpRallyMinFrac: cfg.dumpRallyMinFrac,
+  });
+  return { ok, drawdownPct };
 }
 
 export type MildDipEnrichPassResult = {
@@ -511,12 +524,23 @@ export async function enrichAndFilterCandidates(
         stream.drawdownPct != null && Number.isFinite(stream.drawdownPct)
           ? stream.drawdownPct
           : null;
+      const flatMicroStreamRallyOk = dumpRallyGateOk({
+        dumpExtentPct: flatMicroStreamDd,
+        rallyIntoPeakPct: mildDipPriceRing.rallyIntoPeakPct(
+          mint,
+          cfg.cooldownBounceLookbackMs,
+          nowMs,
+        ),
+        minRallyPct: cfg.dumpRallyGateMinPct,
+        minDumpFracOfRally: cfg.dumpRallyMinFrac,
+      });
       const flatMicroDipPct =
         flatMicroPc5m != null &&
         flatMicroPc5m > cfg.flatMicroMinDipPct &&
         flatMicroPc5m <= cfg.flatMicroMaxDipPct
           ? flatMicroPc5m
           : flatMicroStreamDd != null &&
+              flatMicroStreamRallyOk &&
               flatMicroStreamDd > cfg.flatMicroMinDipPct &&
               flatMicroStreamDd <= cfg.flatMicroMaxDipPct
             ? flatMicroStreamDd
@@ -537,7 +561,11 @@ export async function enrichAndFilterCandidates(
       if (dexVerdict.pass && stream.ok) dipSource = 'dex+stream';
       else if (dexVerdict.pass) dipSource = 'dex';
       else if (cfg.streamDipEntryEnabled && stream.ok && structuralOk) {
-        // Same as fast-path (1.11.779): Dex confirm, or near-trough if Dex lags.
+        // Same as fast-path (1.11.779/790): Dex confirm, or near post-peak trough.
+        const dumpDeepEnough =
+          stream.drawdownPct != null &&
+          Number.isFinite(stream.drawdownPct) &&
+          stream.drawdownPct <= cfg.streamOnlyMaxDipPct;
         const dexPc = metrics.priceChange5mPct;
         const dexGreen =
           cfg.streamOnlyBlockDexGreen &&
@@ -545,19 +573,21 @@ export async function enrichAndFilterCandidates(
           Number.isFinite(dexPc) &&
           dexPc > 0;
         const dexConfirm =
+          dumpDeepEnough &&
           !dexGreen &&
           (!cfg.streamOnlyRequireDexDip ||
             (dexPc == null
               ? cfg.streamOnlyAllowMissingDex
               : Number.isFinite(dexPc) && dexPc <= cfg.streamOnlyDexMaxDipPct));
         let nearTrough = false;
-        if (!dexConfirm && !dexGreen && cfg.streamOnlyNearTroughEnabled) {
+        if (dumpDeepEnough && !dexConfirm && !dexGreen && cfg.streamOnlyNearTroughEnabled) {
           const last = mildDipPriceRing.lastPrice(mint, nowMs);
           const lastPx =
             last && last.priceUsd > 0 ? last.priceUsd : details.priceUsd;
+          // Post-peak trough — not pre-pump window min (1.11.790).
           const bounce =
             lastPx != null && lastPx > 0
-              ? mildDipPriceRing.bounceFromTroughPct(
+              ? mildDipPriceRing.bounceFromPostPeakTroughPct(
                   mint,
                   lastPx,
                   cfg.cooldownBounceLookbackMs,
@@ -626,6 +656,7 @@ export async function enrichAndFilterCandidates(
       });
       if (!knifeGates.enabled || !knifeStructuralOk) return null;
 
+      // Knife depth = mark vs peak (still falling), not dump-extent.
       const rawStreamDd = mildDipPriceRing.drawdownFromPeakPct(
         mint,
         cfg.cooldownBounceLookbackMs,

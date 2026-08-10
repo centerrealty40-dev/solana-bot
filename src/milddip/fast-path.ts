@@ -126,6 +126,7 @@ export function getStructuralCache(
   return hit;
 }
 
+/** Current mark vs swing peak (last/peak). Pump wick looks like a tiny dump here. */
 export function streamDrawdownPct(
   mint: string,
   lookbackMs: number,
@@ -133,6 +134,57 @@ export function streamDrawdownPct(
 ): number | null {
   const dd = mildDipPriceRing.drawdownFromPeakPct(mint, lookbackMs, nowMs);
   return dd != null && Number.isFinite(dd) ? dd : null;
+}
+
+/** True dump: peak → post-peak trough. */
+export function streamDumpExtentPct(
+  mint: string,
+  lookbackMs: number,
+  nowMs: number,
+): number | null {
+  const dd = mildDipPriceRing.dumpExtentFromPeakPct(mint, lookbackMs, nowMs);
+  return dd != null && Number.isFinite(dd) ? dd : null;
+}
+
+/**
+ * Reject micro-wicks after a pump: |dump| must cover ≥ frac of the rally into peak.
+ * Off when minRallyPct or minDumpFracOfRally is 0.
+ */
+export function dumpRallyGateOk(args: {
+  dumpExtentPct: number | null | undefined;
+  rallyIntoPeakPct: number | null | undefined;
+  minRallyPct: number;
+  minDumpFracOfRally: number;
+}): boolean {
+  if (!(args.minRallyPct > 0) || !(args.minDumpFracOfRally > 0)) return true;
+  const dump = args.dumpExtentPct;
+  if (dump == null || !Number.isFinite(dump)) return false;
+  const rally = args.rallyIntoPeakPct;
+  if (rally == null || !Number.isFinite(rally) || rally < args.minRallyPct) return true;
+  return Math.abs(dump) + 1e-9 >= rally * args.minDumpFracOfRally;
+}
+
+/**
+ * Stream qualifies as a real dip in band:
+ * dump extent + current drawdown both in (min,max], and not a pump-wick.
+ */
+export function streamDipInBandOk(args: {
+  dumpExtentPct: number | null;
+  currentDrawdownPct: number | null;
+  rallyIntoPeakPct: number | null;
+  minDipPct: number;
+  maxDipPct: number;
+  dumpRallyGateMinPct: number;
+  dumpRallyMinFrac: number;
+}): boolean {
+  if (!inDipBand(args.dumpExtentPct, args.minDipPct, args.maxDipPct)) return false;
+  if (!inDipBand(args.currentDrawdownPct, args.minDipPct, args.maxDipPct)) return false;
+  return dumpRallyGateOk({
+    dumpExtentPct: args.dumpExtentPct,
+    rallyIntoPeakPct: args.rallyIntoPeakPct,
+    minRallyPct: args.dumpRallyGateMinPct,
+    minDumpFracOfRally: args.dumpRallyMinFrac,
+  });
 }
 
 export function inDipBand(
@@ -277,8 +329,21 @@ export async function evaluateFastPathCandidate(
   const prevAttempt = lastFastAttemptMs.get(mint) ?? 0;
   if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return null;
 
-  const streamDd = streamDrawdownPct(mint, cfg.cooldownBounceLookbackMs, nowMs);
-  const streamInMain = inDipBand(streamDd, cfg.entry.minDipPct, cfg.entry.maxDipPct);
+  const lookbackMs = cfg.cooldownBounceLookbackMs;
+  const streamCurrentDd = streamDrawdownPct(mint, lookbackMs, nowMs);
+  const streamDump = streamDumpExtentPct(mint, lookbackMs, nowMs);
+  const streamRally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
+  // Journal / turn-dump prefer true dump extent; fall back to mark-vs-peak.
+  const streamDd = streamDump ?? streamCurrentDd;
+  const streamInMain = streamDipInBandOk({
+    dumpExtentPct: streamDump,
+    currentDrawdownPct: streamCurrentDd,
+    rallyIntoPeakPct: streamRally,
+    minDipPct: cfg.entry.minDipPct,
+    maxDipPct: cfg.entry.maxDipPct,
+    dumpRallyGateMinPct: cfg.dumpRallyGateMinPct,
+    dumpRallyMinFrac: cfg.dumpRallyMinFrac,
+  });
 
   // Stream trigger without local drawdown: still Dex-probe (throttled).
   // Previously we returned null without cache → only leader seeds discovered
@@ -327,15 +392,21 @@ export async function evaluateFastPathCandidate(
   const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, cfg.entry.maxDipPct);
 
   // Deep knife band — leave to knife-stabilize wait path (not instant blade catch).
+  // Use mark-vs-peak (still falling), not dump-extent (already printed).
   const deepKnife =
-    (streamDd != null &&
-      streamDd > cfg.knifeStabilizeMinDipPct &&
-      streamDd <= cfg.knifeStabilizeMaxDipPct) ||
+    (streamCurrentDd != null &&
+      streamCurrentDd > cfg.knifeStabilizeMinDipPct &&
+      streamCurrentDd <= cfg.knifeStabilizeMaxDipPct) ||
     (dexPc != null &&
       dexPc > cfg.knifeStabilizeMinDipPct &&
       dexPc <= cfg.knifeStabilizeMaxDipPct);
   if (cfg.knifeStabilizeEnabled && deepKnife && !streamInMain && !dexInMain) {
-    return skip('deep_knife_defer', { streamDd, dexPc });
+    return skip('deep_knife_defer', {
+      streamDd,
+      streamDump,
+      streamCurrentDd,
+      dexPc,
+    });
   }
 
   let dipSource: MildDipCandidate['dipSource'] | null = null;
@@ -344,14 +415,14 @@ export async function evaluateFastPathCandidate(
 
   if (streamInMain && dexInMain) {
     dipSource = 'dex+stream';
-    // Prefer deeper (more negative) for journaling.
+    // Prefer deeper (more negative) for journaling — dump extent vs Dex.
     const dip = Math.min(streamDd!, dexPc!);
     metrics = { ...metrics, priceChange5mPct: dip };
     const last = mildDipPriceRing.lastPrice(mint, nowMs);
     if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
   } else if (streamInMain && cfg.streamDipEntryEnabled) {
-    // Stream-only: deep ring dump; Dex confirm OR near-trough fallback (1.11.779).
-    if (streamDd == null || !(streamDd <= cfg.streamOnlyMaxDipPct)) {
+    // Stream-only: real dump extent; Dex confirm OR near post-peak trough (1.11.779/790).
+    if (streamDump == null || !(streamDump <= cfg.streamOnlyMaxDipPct)) {
       /* fall through — maybe Dex / h1 / flat_micro still qualify */
     } else {
       const dexConfirm = streamOnlyDexDipOk({
@@ -363,17 +434,13 @@ export async function evaluateFastPathCandidate(
       });
       const last = mildDipPriceRing.lastPrice(mint, nowMs);
       const lastPx = last && last.priceUsd > 0 ? last.priceUsd : priceUsd;
-      const bounce = mildDipPriceRing.bounceFromTroughPct(
+      const bounce = mildDipPriceRing.bounceFromPostPeakTroughPct(
         mint,
         lastPx,
-        cfg.cooldownBounceLookbackMs,
+        lookbackMs,
         nowMs,
       );
-      const samples = mildDipPriceRing.sampleCount(
-        mint,
-        cfg.cooldownBounceLookbackMs,
-        nowMs,
-      );
+      const samples = mildDipPriceRing.sampleCount(mint, lookbackMs, nowMs);
       const nearTrough = streamOnlyNearTroughOk({
         enabled: cfg.streamOnlyNearTroughEnabled,
         bounceFromTroughPct: bounce,
@@ -386,7 +453,7 @@ export async function evaluateFastPathCandidate(
         cfg.streamOnlyBlockDexGreen && dexPc != null && Number.isFinite(dexPc) && dexPc > 0;
       if ((dexConfirm || nearTrough) && !dexGreen) {
         dipSource = 'stream';
-        metrics = { ...metrics, priceChange5mPct: streamDd };
+        metrics = { ...metrics, priceChange5mPct: streamDump };
         if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
       }
     }
@@ -404,9 +471,18 @@ export async function evaluateFastPathCandidate(
     dipSource = 'h1_red_shallow';
   }
   if (!dipSource && cfg.flatMicroDipEnabled) {
-    const streamInFlat = inDipBand(streamDd, cfg.flatMicroMinDipPct, cfg.flatMicroMaxDipPct);
+    // Flat-micro: mark-vs-peak depth (tiny band); still block pump-wick via rally gate.
+    const streamFlatDumpOk =
+      inDipBand(streamDump, cfg.flatMicroMinDipPct, cfg.flatMicroMaxDipPct) &&
+      inDipBand(streamCurrentDd, cfg.flatMicroMinDipPct, cfg.flatMicroMaxDipPct) &&
+      dumpRallyGateOk({
+        dumpExtentPct: streamDump,
+        rallyIntoPeakPct: streamRally,
+        minRallyPct: cfg.dumpRallyGateMinPct,
+        minDumpFracOfRally: cfg.dumpRallyMinFrac,
+      });
     const dexInFlat = inDipBand(dexPc, cfg.flatMicroMinDipPct, cfg.flatMicroMaxDipPct);
-    const flatDip = dexInFlat ? dexPc : streamInFlat ? streamDd : dexPc;
+    const flatDip = dexInFlat ? dexPc : streamFlatDumpOk ? streamDump : dexPc;
     const flatOk = evaluateFlatMicroDip({
       priceChange5mPct: flatDip,
       priceChange1hPct: metrics.priceChange1hPct,
@@ -417,8 +493,8 @@ export async function evaluateFastPathCandidate(
     }).pass;
     if (flatOk) {
       dipSource = 'flat_micro_dip';
-      if (streamInFlat && !dexInFlat && streamDd != null) {
-        metrics = { ...metrics, priceChange5mPct: streamDd };
+      if (streamFlatDumpOk && !dexInFlat && streamDump != null) {
+        metrics = { ...metrics, priceChange5mPct: streamDump };
         const last = mildDipPriceRing.lastPrice(mint, nowMs);
         if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
       }
@@ -463,13 +539,16 @@ export async function evaluateFastPathCandidate(
     return skip('no_dip_source', {
       structSource,
       streamDd,
+      streamDump,
+      streamCurrentDd,
+      streamRally,
       dexPc,
       pc1h: metrics.priceChange1hPct,
     });
   }
 
   // 1.11.773 — turn→dump: buy now if depth matches turnover; skip if too shallow.
-  // 1.11.779 — prefer deeper stream ring dump vs lagging Dex pc5m for the gate.
+  // 1.11.779/790 — prefer deeper stream dump-extent vs lagging Dex pc5m for the gate.
   if (cfg.turnDumpGateEnabled) {
     const tdPc5m =
       streamDd != null &&
@@ -504,6 +583,9 @@ export async function evaluateFastPathCandidate(
         structSource,
         pc5m: tdPc5m,
         streamDd,
+        streamDump,
+        streamCurrentDd,
+        streamRally,
         dexPc,
         dump: td.dump,
         turn: td.turn,
@@ -525,7 +607,14 @@ export async function evaluateFastPathCandidate(
     ) {
       /* ok — shallow / bounce-confirm */
     } else if (!streamInMain && !dexInMain) {
-      return skip('not_in_main_band', { dipSource, streamDd, dexPc, structSource });
+      return skip('not_in_main_band', {
+        dipSource,
+        streamDd,
+        streamDump,
+        streamCurrentDd,
+        dexPc,
+        structSource,
+      });
     }
   }
 

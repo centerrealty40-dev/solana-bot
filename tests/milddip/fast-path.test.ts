@@ -1,8 +1,10 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   allowHotDexProbe,
+  dumpRallyGateOk,
   inDipBand,
   resetFastPathStateForTests,
+  streamDipInBandOk,
   streamOnlyDexDipOk,
   streamOnlyNearTroughOk,
   structuralOk,
@@ -121,6 +123,72 @@ describe('fast-path helpers', () => {
         blockDexGreen: true,
         dexPc5m: 2.5,
         dexMaxDipPct: -8,
+      }),
+    ).toBe(false);
+  });
+
+  it('1.11.790 dump rally gate rejects EjD5-class pump wick', () => {
+    // +40% into peak, −2.7% wick → need 16% dump at frac 0.4.
+    expect(
+      dumpRallyGateOk({
+        dumpExtentPct: -2.7,
+        rallyIntoPeakPct: 40,
+        minRallyPct: 12,
+        minDumpFracOfRally: 0.4,
+      }),
+    ).toBe(false);
+    expect(
+      dumpRallyGateOk({
+        dumpExtentPct: -18,
+        rallyIntoPeakPct: 40,
+        minRallyPct: 12,
+        minDumpFracOfRally: 0.4,
+      }),
+    ).toBe(true);
+    // Small rally → gate off.
+    expect(
+      dumpRallyGateOk({
+        dumpExtentPct: -3,
+        rallyIntoPeakPct: 8,
+        minRallyPct: 12,
+        minDumpFracOfRally: 0.4,
+      }),
+    ).toBe(true);
+  });
+
+  it('1.11.790 streamDipInBandOk needs dump extent + current dd + rally', () => {
+    expect(
+      streamDipInBandOk({
+        dumpExtentPct: -2.7,
+        currentDrawdownPct: -2.7,
+        rallyIntoPeakPct: 40,
+        minDipPct: -25,
+        maxDipPct: -2,
+        dumpRallyGateMinPct: 12,
+        dumpRallyMinFrac: 0.4,
+      }),
+    ).toBe(false);
+    expect(
+      streamDipInBandOk({
+        dumpExtentPct: -15,
+        currentDrawdownPct: -12,
+        rallyIntoPeakPct: 20,
+        minDipPct: -25,
+        maxDipPct: -2,
+        dumpRallyGateMinPct: 12,
+        dumpRallyMinFrac: 0.4,
+      }),
+    ).toBe(true);
+    // Reclaimed toward peak — current out of band.
+    expect(
+      streamDipInBandOk({
+        dumpExtentPct: -15,
+        currentDrawdownPct: -1,
+        rallyIntoPeakPct: 20,
+        minDipPct: -25,
+        maxDipPct: -2,
+        dumpRallyGateMinPct: 12,
+        dumpRallyMinFrac: 0.4,
       }),
     ).toBe(false);
   });

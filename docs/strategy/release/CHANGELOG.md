@@ -1,4 +1,25 @@
 # So
+## [1.11.790] — 2026-08-10
+
+**Тег:** `sa-1.11.790`
+
+### Fix: measure real dump (peak→post-peak trough), not pump wick
+
+Stream `drawdownFromPeakPct` was last vs rolling max — a −2–3% wick off a
+pump high counted as a dump and bought the top (EjD5 / stream-only).
+
+- Dump extent = peak → **trough after peak** (not window-min before pump)
+- Stream dip needs dump extent **and** mark still in band
+- Near-trough uses post-peak trough bounce
+- Rally gate: if rally into peak ≥12%, |dump| ≥ 40% of rally
+  (`MILD_DIP_DUMP_RALLY_GATE_MIN_PCT` / `MILD_DIP_DUMP_RALLY_MIN_FRAC`)
+- mild_stabilize dump uses the same post-peak trough
+
+**Откат:** `MILD_DIP_DUMP_RALLY_GATE_MIN_PCT=0` + revert ring/fast-path, or
+`git checkout sa-1.11.789 -- src/milddip/price-ring.ts src/milddip/fast-path.ts src/milddip/discover.ts src/milddip/mild-stabilize.ts src/milddip/config.ts ecosystem.config.cjs`.
+
+---
+
 ## [1.11.789] — 2026-08-09
 
 **Тег:** `sa-1.11.789`

@@ -93,8 +93,9 @@ export class MildDipPriceRing {
   }
 
   /**
-   * Drawdown from local peak → last sample, as % (negative or zero).
+   * Current drawdown: local peak → last sample, as % (negative or zero).
    * e.g. peak 100 → last 90 → −10.
+   * Not a dump extent — a pump wick also prints a few % here.
    */
   drawdownFromPeakPct(
     mint: string,
@@ -108,7 +109,91 @@ export class MildDipPriceRing {
     return (last.priceUsd / peak.priceUsd - 1) * 100;
   }
 
-  /** Bounce from trough → fresh price, as % (≥0 when above trough). */
+  /**
+   * Swing peak in lookback (latest max if several equal).
+   */
+  peakInWindow(
+    mint: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): MildDipPriceSample | null {
+    const samples = this.samplesInWindow(mint, windowMs, nowMs);
+    if (samples.length === 0) return null;
+    let best = samples[0]!;
+    for (const s of samples) {
+      if (s.priceUsd > best.priceUsd || (s.priceUsd === best.priceUsd && s.tsMs > best.tsMs)) {
+        best = s;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * Lowest print at/after the swing peak — the real dump trough.
+   * Window-min before the peak is the base of a pump, not a dump low.
+   */
+  troughAfterPeak(
+    mint: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): { peak: MildDipPriceSample; trough: MildDipPriceSample } | null {
+    const samples = this.samplesInWindow(mint, windowMs, nowMs);
+    if (samples.length === 0) return null;
+    let peak = samples[0]!;
+    for (const s of samples) {
+      if (s.priceUsd > peak.priceUsd || (s.priceUsd === peak.priceUsd && s.tsMs > peak.tsMs)) {
+        peak = s;
+      }
+    }
+    let trough = peak;
+    for (const s of samples) {
+      if (s.tsMs < peak.tsMs) continue;
+      if (s.priceUsd < trough.priceUsd) trough = s;
+    }
+    return { peak, trough };
+  }
+
+  /**
+   * True dump extent: peak → post-peak trough, as % (≤0).
+   * Pump making highs with a −2% wick → ≈−2. Still-climbing → 0.
+   */
+  dumpExtentFromPeakPct(
+    mint: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): number | null {
+    const pt = this.troughAfterPeak(mint, windowMs, nowMs);
+    if (!pt || !(pt.peak.priceUsd > 0)) return null;
+    return (pt.trough.priceUsd / pt.peak.priceUsd - 1) * 100;
+  }
+
+  /**
+   * Rally into the swing peak from the pre-peak base, as % (≥0).
+   * Used to reject micro-wicks after a pump (dump must cover a fraction of rally).
+   */
+  rallyIntoPeakPct(
+    mint: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): number | null {
+    const samples = this.samplesInWindow(mint, windowMs, nowMs);
+    if (samples.length === 0) return null;
+    let peak = samples[0]!;
+    for (const s of samples) {
+      if (s.priceUsd > peak.priceUsd || (s.priceUsd === peak.priceUsd && s.tsMs > peak.tsMs)) {
+        peak = s;
+      }
+    }
+    let base: MildDipPriceSample | null = null;
+    for (const s of samples) {
+      if (s.tsMs >= peak.tsMs) continue;
+      if (!base || s.priceUsd < base.priceUsd) base = s;
+    }
+    if (!base || !(base.priceUsd > 0) || !(peak.priceUsd > 0)) return 0;
+    return (peak.priceUsd / base.priceUsd - 1) * 100;
+  }
+
+  /** Bounce from window-min trough → fresh price, as % (≥0 when above trough). */
   bounceFromTroughPct(
     mint: string,
     freshPriceUsd: number,
@@ -118,6 +203,22 @@ export class MildDipPriceRing {
     const trough = this.minPrice(mint, windowMs, nowMs);
     if (!trough || !(trough.priceUsd > 0) || !(freshPriceUsd > 0)) return null;
     return (freshPriceUsd / trough.priceUsd - 1) * 100;
+  }
+
+  /**
+   * Bounce off the post-peak dump trough (not the pre-pump base).
+   * Stream near-trough must use this — otherwise a pump off an old low
+   * looks "far from trough" while a wick at the top looks "near trough".
+   */
+  bounceFromPostPeakTroughPct(
+    mint: string,
+    freshPriceUsd: number,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): number | null {
+    const pt = this.troughAfterPeak(mint, windowMs, nowMs);
+    if (!pt || !(pt.trough.priceUsd > 0) || !(freshPriceUsd > 0)) return null;
+    return (freshPriceUsd / pt.trough.priceUsd - 1) * 100;
   }
 
   sampleCount(mint: string, windowMs: number, nowMs = Date.now()): number {

@@ -29,6 +29,40 @@ describe('MildDipPriceRing', () => {
     const dd = ring.drawdownFromPeakPct(mint, 60_000, t0 + 20_000);
     expect(dd).toBeCloseTo(-10, 5);
   });
+
+  it('dumpExtent uses trough AFTER peak, not pre-pump base', () => {
+    const ring = new MildDipPriceRing({ maxSamplesPerMint: 60, ttlMs: 3_600_000 });
+    const mint = 'EjD5Y9DummyMintForPumpWickDumpExtentTestxxx1';
+    const t0 = 3_000_000;
+    // Pump: 1.0 → 1.4 peak, then −2.7% wick to 1.362.
+    ring.note(mint, 1.0, { tsMs: t0, source: 'stream' });
+    ring.note(mint, 1.2, { tsMs: t0 + 60_000, source: 'stream' });
+    ring.note(mint, 1.4, { tsMs: t0 + 120_000, source: 'stream' });
+    ring.note(mint, 1.362, { tsMs: t0 + 130_000, source: 'stream' });
+    const now = t0 + 130_000;
+    const extent = ring.dumpExtentFromPeakPct(mint, 600_000, now);
+    const current = ring.drawdownFromPeakPct(mint, 600_000, now);
+    const rally = ring.rallyIntoPeakPct(mint, 600_000, now);
+    // Window-min is 1.0 — old code would see −28.6% "dump". Real dump is wick only.
+    expect(extent).toBeCloseTo((1.362 / 1.4 - 1) * 100, 5);
+    expect(current).toBeCloseTo((1.362 / 1.4 - 1) * 100, 5);
+    expect(rally).toBeCloseTo(40, 5);
+    const bouncePost = ring.bounceFromPostPeakTroughPct(mint, 1.362, 600_000, now);
+    expect(bouncePost).toBeCloseTo(0, 5);
+    // Window-min bounce from 1.0 looks huge (false "far from trough").
+    const bounceWin = ring.bounceFromTroughPct(mint, 1.362, 600_000, now);
+    expect(bounceWin).toBeGreaterThan(30);
+  });
+
+  it('dumpExtent is 0 while still making highs', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'StillPumpingMintxxxxxxxxxxxxxxxxxxxxxxxxxx1';
+    const t0 = 4_000_000;
+    ring.note(mint, 1.0, { tsMs: t0, source: 'stream' });
+    ring.note(mint, 1.1, { tsMs: t0 + 10_000, source: 'stream' });
+    ring.note(mint, 1.2, { tsMs: t0 + 20_000, source: 'stream' });
+    expect(ring.dumpExtentFromPeakPct(mint, 60_000, t0 + 20_000)).toBeCloseTo(0, 5);
+  });
 });
 
 describe('evaluateCooldownBounce', () => {
