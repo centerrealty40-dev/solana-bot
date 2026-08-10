@@ -29,6 +29,7 @@ import {
   type KnifeStabilizeGates,
 } from './knife-stabilize.js';
 import {
+  dumpFromSignalPct,
   evaluateWaitDipReady,
   isRebuyBelowExitWindow,
   priorityMintsFromWaitDipWatch,
@@ -522,6 +523,13 @@ async function tryFireWaitDip(
       signalPriceUsd: watch.signalPriceUsd,
       waitDipPct: watch.waitDipPct,
       lastPriceUsd: px,
+      // 1.11.809 — deepest point reached tells "never got deep enough" apart
+      // from "got there and we failed to fill", which need opposite fixes.
+      troughPriceUsd: watch.troughPriceUsd,
+      troughDumpFromSignalPct: dumpFromSignalPct(
+        watch.troughPriceUsd,
+        watch.signalPriceUsd,
+      ),
       reasons: verdict.reasons,
       ageMs: nowMs - watch.detectedAtMs,
     });
