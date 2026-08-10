@@ -260,7 +260,22 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_WAIT_DIP: '1'");
     expect(eco).toContain("MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1'");
     expect(eco).toContain("MILD_DIP_WAIT_DIP_PCT: '-12'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '5'");
     expect(eco).toContain("MILD_DIP_TURN_DUMP_GATE: '1'");
+  });
+
+  it('1.11.806 chase cap 5 takes the normal reclaim, not a 37% rip', () => {
+    const mk = (fresh: number) =>
+      evaluateWaitDipPreBuy({
+        signalPriceUsd: 100,
+        readyMarkPriceUsd: 86,
+        freshPriceUsd: fresh,
+        waitDipPct: -12,
+        maxOvershootPct: 2,
+        maxChaseFromReadyPct: 5,
+      });
+    expect(mk(89.2).pass).toBe(true); // +3.7% off ready — the live median
+    expect(mk(117).pass).toBe(false); // +36% rip
   });
 
   it('1.11.805 null Dex refetch falls back ring → candidate mark', () => {

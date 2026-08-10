@@ -2884,7 +2884,14 @@ const PM2_APPS = [
         MILD_DIP_WAIT_DIP_PCT: '-12',
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
         MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '2',
-        MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '3',
+        /**
+         * 1.11.806 — 3→5. After a −12% wait the reclaim off the ready mark is
+         * usually 3–4%, so a 3% cap burned the seat we just waited 20m for.
+         * Live 20m: 22/35 chase rejects clear at 5, and only 23/35 at 15 — the
+         * rest are 37–60% rips we must not chase. Absolute price stays capped
+         * by the wait-dip ceiling (signal × 0.90).
+         */
+        MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '5',
         MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',
         /**
          * 1.11.789 — OR entry (MAIN then SHALLOW):
