@@ -784,6 +784,10 @@ function streamWakeMintList(cfg: MildDipConfig, state: MildDipState, nowMs: numb
   });
 }
 
+/** Single-flight: overlapping wakes each reserved Dex gate slots → multi-minute backlog. */
+let wakeStreamHotMintsInFlight = false;
+let tryEntriesInFlight = false;
+
 /** 1.11.779/781 — re-check watch set even while bags are open (not only onMint). */
 async function wakeStreamHotMints(
   cfg: MildDipConfig,
@@ -791,16 +795,22 @@ async function wakeStreamHotMints(
   nowMs: number,
 ): Promise<number> {
   if (!cfg.fastPathEnabled) return 0;
-  const unlimited = cfg.maxOpenPositions <= 0;
-  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
-  let n = 0;
-  for (const mint of streamWakeMintList(cfg, state, nowMs)) {
-    if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
-    if (state.open[mint]) continue;
-    await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
-    n += 1;
+  if (wakeStreamHotMintsInFlight) return 0;
+  wakeStreamHotMintsInFlight = true;
+  try {
+    const unlimited = cfg.maxOpenPositions <= 0;
+    if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
+    let n = 0;
+    for (const mint of streamWakeMintList(cfg, state, nowMs)) {
+      if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+      if (state.open[mint]) continue;
+      await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
+      n += 1;
+    }
+    return n;
+  } finally {
+    wakeStreamHotMintsInFlight = false;
   }
-  return n;
 }
 
 /**
@@ -879,6 +889,20 @@ async function wakeOwnTapeKnifeEnrich(
 }
 
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
+  if (tryEntriesInFlight) return;
+  tryEntriesInFlight = true;
+  try {
+    await tryEntriesBody(cfg, state, nowMs);
+  } finally {
+    tryEntriesInFlight = false;
+  }
+}
+
+async function tryEntriesBody(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;

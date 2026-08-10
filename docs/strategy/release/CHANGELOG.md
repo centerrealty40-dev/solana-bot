@@ -1,4 +1,28 @@
 # So
+## [1.11.796] — 2026-08-10
+
+**Тег:** `sa-1.11.796`
+
+### Fix: Dex gate backlog freezes buys (sells-only)
+
+After 1.11.795, buys still stalled: overlapping `wakeStreamHotMints` /
+`tryEntries` each reserved Dex RPM gate slots, pushing
+`dexscreener-api-gate.json` **~20+ minutes** ahead. Buy-path awaited the
+gate; exits/marks (`bypassGate`) kept selling. Live: reset gate → buys
+resumed immediately.
+
+Changes:
+
+- Clamp runaway gate backlog (default 30s,
+  `DEXSCREENER_GLOBAL_MAX_BACKLOG_MS`)
+- Single-flight `wakeStreamHotMints` + `tryEntries` so wakes do not pile
+  slot reservations
+
+**Откат:** `git checkout sa-1.11.795 -- src/papertrader/pricing/dexscreener-quote-cache.ts
+  src/milddip/loop.ts` + reload; manually reset gate file if needed.
+
+---
+
 ## [1.11.795] — 2026-08-10
 
 **Тег:** `sa-1.11.795`
