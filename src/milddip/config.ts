@@ -70,7 +70,10 @@ const MildDipConfigSchema = z.object({
    * Dex cache TTL for discovery/entry Dex calls (not exit marks).
    */
   markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(20_000),
-  /** Legacy parallel mark pool size (exit marks are sync ring reads now). */
+  /**
+   * 1.11.794 — max concurrent background Dex→ring refreshes for open bags
+   * (`requestOpenMarkRefresh`). Exit mark reads stay sync from the ring.
+   */
   markConcurrency: z.coerce.number().int().min(1).max(64).default(48),
   /** Parallel Dex enrich during candidate scan (still behind Dex gate). */
   enrichConcurrency: z.coerce.number().int().min(1).max(32).default(12),

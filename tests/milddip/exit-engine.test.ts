@@ -3,6 +3,7 @@ import {
   applyMarkDecisionToPosition,
   decideMarkExit,
   mapPool,
+  orderMintsForDexRefresh,
   orderMintsForMark,
 } from '../../src/milddip/exit-engine.js';
 import type { MildDipOpenPosition } from '../../src/milddip/state.js';
@@ -32,6 +33,25 @@ describe('orderMintsForMark', () => {
       d: pos({ mint: 'd', openedAtMs: 50, trailArmed: true }),
     };
     expect(orderMintsForMark(open)).toEqual(['d', 'b', 'a', 'c']);
+  });
+});
+
+describe('orderMintsForDexRefresh', () => {
+  it('puts missing/oldest ring age first (blind opens before fresh armed)', () => {
+    const ages: Record<string, number> = {
+      freshArmed: 1_000,
+      mid: 60_000,
+      blindNew: Number.POSITIVE_INFINITY,
+      oldBlind: Number.POSITIVE_INFINITY,
+    };
+    const ordered = orderMintsForDexRefresh({
+      mints: ['freshArmed', 'mid', 'blindNew', 'oldBlind'],
+      nowMs: 1_000_000,
+      ringAgeMs: (mint) => ages[mint] ?? 0,
+    });
+    expect(ordered.slice(0, 2).sort()).toEqual(['blindNew', 'oldBlind']);
+    expect(ordered[2]).toBe('mid');
+    expect(ordered[3]).toBe('freshArmed');
   });
 });
 

@@ -39,6 +39,7 @@ import {
 import {
   applyMarkDecisionToPosition,
   decideMarkExit,
+  orderMintsForDexRefresh,
   mapPool,
   orderMintsForMark,
   type MarkExitDecision,
@@ -217,6 +218,36 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
   };
 }
 
+/** Ring age for refresh priority — missing print = +∞ (refresh first). */
+function openMarkRingAgeMs(mint: string, nowMs: number): number {
+  const last = mildDipPriceRing.lastPrice(mint, nowMs);
+  return last ? Math.max(0, nowMs - last.tsMs) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Kick background Dex→ring for one mint. Never await.
+ * 1.11.794 — `maxInFlight` uses `markConcurrency` (live 48), not a hard-coded 3.
+ */
+function maybeRequestOpenMarkRefresh(
+  mint: string,
+  nowMs: number,
+  cfg: Pick<MildDipConfig, 'markDexRefreshMs' | 'markCacheTtlMs' | 'markConcurrency' | 'entry'>,
+): void {
+  const refreshGap = cfg.markDexRefreshMs;
+  if (!(refreshGap > 0)) return;
+  const ringAge = openMarkRingAgeMs(mint, nowMs);
+  if (ringAge < refreshGap) return;
+  const maxInFlight = Math.max(1, Math.min(64, cfg.markConcurrency || 48));
+  requestOpenMarkRefresh({
+    mint,
+    nowMs,
+    minGapMs: refreshGap,
+    maxInFlight,
+    allowedDexIds: cfg.entry.allowedDexIds,
+    cacheTtlMs: cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 15_000,
+  });
+}
+
 /**
  * Open-book exit mark: read price-ring only (never await HTTP).
  * Stream should feed the ring; `requestOpenMarkRefresh` tops it up in the
@@ -225,25 +256,9 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
 function markPriceUsd(
   mint: string,
   nowMs: number,
-  cfg: Pick<
-    MildDipConfig,
-    'markStreamMaxAgeMs' | 'markDexRefreshMs' | 'markCacheTtlMs' | 'entry'
-  >,
+  cfg: Pick<MildDipConfig, 'markStreamMaxAgeMs'>,
 ): { px: number | null; volume5mUsd: number | null; source: 'stream' | 'dex' | null } {
   const last = mildDipPriceRing.lastPrice(mint, nowMs);
-  const refreshGap = cfg.markDexRefreshMs;
-  const ringAge = last ? Math.max(0, nowMs - last.tsMs) : Number.POSITIVE_INFINITY;
-  // Kick background Dex→ring when enabled and stream/seed is stale. Never await.
-  if (refreshGap > 0 && !(ringAge < refreshGap)) {
-    requestOpenMarkRefresh({
-      mint,
-      nowMs,
-      minGapMs: refreshGap,
-      maxInFlight: 3,
-      allowedDexIds: cfg.entry.allowedDexIds,
-      cacheTtlMs: cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 15_000,
-    });
-  }
   const resolved = resolveExitMarkFromRing({
     last: last
       ? { priceUsd: last.priceUsd, tsMs: last.tsMs, source: last.source }
@@ -1446,7 +1461,17 @@ async function tryExits(
       : [];
 
   const markStarted = Date.now();
-  // Ring reads are sync — concurrency knob kept for API stability only.
+  // 1.11.794 — refresh blind/oldest first so armed bags cannot starve new opens
+  // of the Dex→ring slots (was hard-coded maxInFlight=3 in armed-first order).
+  const refreshOrder = orderMintsForDexRefresh({
+    mints: ordered,
+    nowMs,
+    ringAgeMs: openMarkRingAgeMs,
+  });
+  for (const mint of refreshOrder) {
+    maybeRequestOpenMarkRefresh(mint, nowMs, cfg);
+  }
+  // Exit decisions: armed-first; sync ring reads only.
   const markRows = ordered.map((mint) => {
     const { px, volume5mUsd, source } = markPriceUsd(mint, nowMs, cfg);
     const metrics = readOpenMarkMetrics(mint, nowMs);
@@ -2023,7 +2048,7 @@ export async function runMildDipLoop(
       `/sample${Math.round(cfg.exit.neverArmVolFadeSampleMs / 1000)}s×${cfg.exit.neverArmVolFadeWeakWindows} ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms` +
-      `/ring≤${cfg.markStreamMaxAgeMs}ms/bgDex@${cfg.markDexRefreshMs}ms ` +
+      `/ring≤${cfg.markStreamMaxAgeMs}ms/bgDex@${cfg.markDexRefreshMs}ms×${cfg.markConcurrency} ` +
       `cacheTtl=${cfg.markCacheTtlMs}ms markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +

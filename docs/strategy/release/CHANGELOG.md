@@ -3,14 +3,17 @@
 
 **Тег:** `sa-1.11.794`
 
-### Fix: hard-stop limbo + time-red without pc5m
+### Fix: hard-stop limbo + blind marks kill TP
 
-Live bags were sitting hours at −30…−40% because:
+Live bags were sitting hours at −30…−40% / missing take-profit because:
 
 1. Staged hard-stop sold **half at −25%**, then the runner waited for
    **cliff −50%** (`scaleOutDone` blocked another hard_stop).
 2. `never_arm_time_red` **fail-closed** when Dex pc5m was missing, so
    held+pnl≤−15 alone never cut.
+3. Exit marks: Dex→ring refresh hard-coded **`maxInFlight=3`** in
+   armed-first order → ~89% open mark-null → no arm / no `mfe_bank` TP.
+   (`MILD_DIP_MARK_CONCURRENCY=48` was never wired.)
 
 Changes:
 
@@ -18,9 +21,12 @@ Changes:
 - Live `MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION=0` (full cut at −25%)
 - time-red: missing pc5m → fail **open** (held+pnl); mild present pc5m
   still blocks
+- Wire refresh `maxInFlight` to `markConcurrency`; refresh **blind/oldest
+  first** (exit decisions stay armed-first)
 
-**Откат:** `MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION=0.5` + prior gates
-  behavior via `git checkout sa-1.11.793 -- src/milddip/gates.ts` + reload.
+**Откат:** `MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION=0.5` + prior gates /
+  loop mark refresh via `git checkout sa-1.11.793 -- src/milddip/gates.ts
+  src/milddip/loop.ts src/milddip/exit-engine.ts` + reload.
 
 ---
 
