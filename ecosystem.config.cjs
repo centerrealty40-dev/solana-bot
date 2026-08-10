@@ -3174,7 +3174,7 @@ const PM2_APPS = [
         /** Stream drawdown can satisfy dip band when Dex pc5m lags (liq/mcap still Dex). */
         MILD_DIP_STREAM_DIP_ENTRY: '1',
         MILD_DIP_STREAM_PRICE_SAMPLE: '1',
-        /** 1.11.798 — block Dex-only buys when stream price tape is dead. */
+        /** 1.11.798/799 — need recent stream print (any in window; Dex may be last). */
         MILD_DIP_REQUIRE_STREAM_PRICE: '1',
         MILD_DIP_REQUIRE_STREAM_PRICE_MAX_AGE_MS: '120000',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */

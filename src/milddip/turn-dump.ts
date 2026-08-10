@@ -129,6 +129,42 @@ export function evaluateTurnDumpKnife(args: {
 }
 
 /**
+ * 7BNax instant OR: deep dump + hot turnover.
+ *
+ * Must NOT depend on `evaluateTurnDumpGate(...).branch === 'knife'`.
+ * That branch only fires when main/shallow regression bands *fail*;
+ * high-turn dumps often classify as `main` first — and those are exactly
+ * the seats we want to buy now (EeqYr8 −35% / turn≈1.0 → deep_knife_defer).
+ */
+export function turnDumpKnifeOrOk(args: {
+  enabled: boolean;
+  knifeBranchEnabled: boolean;
+  pc5m: number | null | undefined;
+  volume5mUsd: number | null | undefined;
+  liquidityUsd: number | null | undefined;
+  minDumpPct: number;
+  minTurn: number;
+}): { ok: boolean; dump: number | null; turn: number | null } {
+  if (!args.enabled || !args.knifeBranchEnabled) {
+    return { ok: false, dump: null, turn: null };
+  }
+  const pc = args.pc5m;
+  if (pc == null || !Number.isFinite(pc) || !(pc < 0)) {
+    return { ok: false, dump: pc == null || !Number.isFinite(pc) ? null : -pc, turn: null };
+  }
+  const dump = -pc;
+  const turn = turnover5mLiq(args.volume5mUsd, args.liquidityUsd);
+  if (turn == null) return { ok: false, dump, turn: null };
+  const knife = evaluateTurnDumpKnife({
+    dump,
+    turn,
+    minDumpPct: args.minDumpPct,
+    minTurn: args.minTurn,
+  });
+  return { ok: knife.pass, dump, turn };
+}
+
+/**
  * `pc5m` is Dex/stream price-change % (negative on dump).
  * Uses the signed change as dump depth when red.
  */

@@ -92,6 +92,56 @@ export class MildDipPriceRing {
     return ring.samples[ring.samples.length - 1] ?? null;
   }
 
+  /** Most recent sample with `source`, optionally within maxAgeMs. */
+  lastPriceBySource(
+    mint: string,
+    source: MildDipPriceSource,
+    nowMs = Date.now(),
+    maxAgeMs = 0,
+  ): MildDipPriceSample | null {
+    this.pruneMint(mint, nowMs);
+    const ring = this.byMint.get(mint);
+    if (!ring || ring.samples.length === 0) return null;
+    for (let i = ring.samples.length - 1; i >= 0; i--) {
+      const s = ring.samples[i]!;
+      if (s.source !== source) continue;
+      if (maxAgeMs > 0 && nowMs - s.tsMs > maxAgeMs) return null;
+      return s;
+    }
+    return null;
+  }
+
+  /**
+   * Reject stream decode outliers (e.g. wrong decimals → $0.18 vs $7e-5).
+   * No recent reference ⇒ allow (cold mint).
+   */
+  isPlausiblePrice(
+    mint: string,
+    priceUsd: number,
+    opts?: { nowMs?: number; windowMs?: number; maxRatio?: number },
+  ): boolean {
+    if (!(priceUsd > 0) || !Number.isFinite(priceUsd)) return false;
+    const nowMs = opts?.nowMs ?? Date.now();
+    const windowMs = opts?.windowMs ?? 10 * 60_000;
+    const maxRatio = opts?.maxRatio ?? 20;
+    const samples = this.samplesInWindow(mint, windowMs, nowMs).filter(
+      (s) => s.priceUsd > 0 && Number.isFinite(s.priceUsd),
+    );
+    if (samples.length === 0) return true;
+    // Prefer dex refs; fall back to any recent sample.
+    const refs = samples.filter((s) => s.source === 'dex');
+    const use = refs.length > 0 ? refs : samples;
+    let lo = use[0]!.priceUsd;
+    let hi = use[0]!.priceUsd;
+    for (const s of use) {
+      if (s.priceUsd < lo) lo = s.priceUsd;
+      if (s.priceUsd > hi) hi = s.priceUsd;
+    }
+    const floor = lo / maxRatio;
+    const ceil = hi * maxRatio;
+    return priceUsd >= floor && priceUsd <= ceil;
+  }
+
   /**
    * Drawdown from local peak → last sample, as % (negative or zero).
    * e.g. peak 100 → last 90 → −10.

@@ -1,4 +1,32 @@
 # So
+## [1.11.799] — 2026-08-10
+
+**Тег:** `sa-1.11.799`
+
+### Fix: 7BNax hot deep dump deferred as knife (EeqYr8 / 5QT6…)
+
+Leaders bought `EeqYr8` at −35% / high turnover
+(`5QT6sGT3…`). We saw the same print (`streamDd≈−34`, `dexPc≈−35`)
+but `deep_knife_defer` → knife watch, no buy.
+
+Root cause: instant OR required `turnDump.branch === 'knife'`. Hot
+dumps pass the regression as **`main` first**, so knife branch never
+runs — and we parked the seat instead of buying.
+
+Also:
+
+- `requireStreamPrice` now accepts **any** recent `source=stream`
+  sample (Dex ticks were overwriting `last` → false `no_stream_price`)
+- Stream sampler rejects absurd prices vs recent ring (≥20× outlier,
+  e.g. bogus `$0.18` vs `$7e-5`)
+
+**Откат:** `git checkout sa-1.11.798 -- src/milddip/fast-path.ts
+  src/milddip/discover.ts src/milddip/entry-attempt.ts
+  src/milddip/turn-dump.ts src/milddip/price-ring.ts
+  src/milddip/stream-price-sampler.ts` + reload.
+
+---
+
 ## [1.11.798] — 2026-08-10
 
 **Тег:** `sa-1.11.798`
