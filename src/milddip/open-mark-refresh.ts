@@ -8,6 +8,7 @@
  * the 120 RPM gate queue.
  */
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
+import { noteOpenMarkMetrics } from './open-mark-metrics.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 const lastAttemptMs = new Map<string, number>();
@@ -58,11 +59,19 @@ export function requestOpenMarkRefresh(args: {
     bypassGate: true,
   })
     .then((details) => {
+      const now = Date.now();
       const px = details?.priceUsd;
       if (px != null && px > 0) {
         mildDipPriceRing.note(mint, px, {
-          tsMs: Date.now(),
+          tsMs: now,
           source: 'dex',
+        });
+      }
+      if (details) {
+        noteOpenMarkMetrics(mint, {
+          tsMs: now,
+          pc5mPct: details.priceChangeM5Pct,
+          volume5mUsd: details.volume5mUsd,
         });
       }
     })

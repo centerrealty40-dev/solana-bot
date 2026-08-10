@@ -83,6 +83,7 @@ const exitGates: MildDipExitGates = {
   neverArmFreefallMinMs: 60_000,
   neverArmTimeRedMinMs: 0,
   neverArmTimeRedPnlPct: 5,
+  neverArmTimeRedMaxPc5mPct: 0,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -1127,6 +1128,86 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       postEntryTroughPriceUsd: 97,
     });
     expect(v.reason).not.toBe('never_arm_time_red');
+  });
+
+  it('never_arm_time_red HELD+PC+SL: 5m + pnl≤−15 + pc5m≤−5 (7BNax DOWN)', () => {
+    const gatesHeldPcSl = {
+      ...exitGates,
+      hardStopPnlPct: 0,
+      cliffDumpPnlPct: 0,
+      neverArmFreefallPnlPct: 0,
+      neverArmStaleMinMs: 0,
+      neverArmDeadMinMs: 0,
+      neverArmVolFadeMinMs: 0,
+      neverArmMaxHoldMs: 0,
+      neverArmBouncePct: 0,
+      neverArmTimeRedMinMs: 300_000,
+      neverArmTimeRedPnlPct: 15,
+      neverArmTimeRedMaxPc5mPct: 5,
+    };
+
+    const early = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: gatesHeldPcSl,
+      heldMs: 200_000,
+      pc5mPct: -8,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(early.shouldExit).toBe(false);
+
+    const noPc = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: gatesHeldPcSl,
+      heldMs: 300_000,
+      pc5mPct: null,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(noPc.reason).not.toBe('never_arm_time_red');
+
+    const mildPc = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: gatesHeldPcSl,
+      heldMs: 300_000,
+      pc5mPct: -3,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(mildPc.reason).not.toBe('never_arm_time_red');
+
+    const hit = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: gatesHeldPcSl,
+      heldMs: 300_000,
+      pc5mPct: -5,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(hit.shouldExit).toBe(true);
+    expect(hit.reason).toBe('never_arm_time_red');
+    expect(hit.fraction).toBe(1);
+
+    // Armed trail must ignore this never-arm knife.
+    const armed = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 110,
+      armed: true,
+      gates: gatesHeldPcSl,
+      heldMs: 300_000,
+      pc5mPct: -20,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(armed.reason).not.toBe('never_arm_time_red');
   });
 });
 

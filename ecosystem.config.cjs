@@ -3013,12 +3013,17 @@ const PM2_APPS = [
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '0',
-        /** 1.11.791 — time-red OFF (no time stop). */
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '0',
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '0',
+        /**
+         * 1.11.792 — never-arm DOWN formula (7BNax ~44% cover):
+         * held ≥ 5m AND pnl ≤ −15% AND Dex pc5m ≤ −5%.
+         * Armed / MFE-bank trail unchanged. Missing pc5m → no fire.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '300000',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT: '5',
         /**
          * 1.11.791 — max-hold / underwater time ceiling OFF.
-         * Loss exits are staged −25%/−50% only; green armed trail may wait.
+         * Never-arm loss uses HELD+PC+SL; green armed trail may wait.
          */
         MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '0',
         /**
