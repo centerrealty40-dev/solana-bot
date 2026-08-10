@@ -1,4 +1,28 @@
 # So
+## [1.11.795] — 2026-08-10
+
+**Тег:** `sa-1.11.795`
+
+### Fix: buys frozen while open book (stream err + no scan)
+
+Live after 1.11.794: wallet OK, sells OK, **zero** `mild_dip_buy_attempt`.
+While `opens > 0`, entries only ran on stream `onMint` / hot-mint wake;
+main-loop scan was skipped. Stream then starved hot-mints because
+`logsSubscribe` notes with `err` were dropped before mint extract
+(failed pump txs still mention mints).
+
+Changes:
+
+- Stream: harvest mints / `onMint` even when `n.err`; skip priceSampler
+  only on err txs
+- Loop: with opens, fire-and-forget `tryEntries` every
+  `max(scanInterval, 15s)` so scan can buy without blocking marks
+
+**Откат:** `git checkout sa-1.11.794 -- src/milddip/stream.ts
+  src/milddip/loop.ts` + reload.
+
+---
+
 ## [1.11.794] — 2026-08-10
 
 **Тег:** `sa-1.11.794`

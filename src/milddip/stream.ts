@@ -62,12 +62,15 @@ export function startMildDipHotMintStream(opts?: {
 
   const client = new LogsWsClient(cfg, (n) => {
     const tsMs = Date.now();
-    if (n.err) return;
+    // 1.11.795 — still harvest mints from failed txs (mention logs). Skipping
+    // the whole notification on `err` starved hot-mints / fast-path while the
+    // open book was non-empty (buys only ran on stream when opens > 0).
     const mints = extractMintCandidatesFromLogs(n.logs);
     for (const mint of mints) {
       mildDipHotMints.note(mint, tsMs);
       opts?.onMint?.(mint, tsMs);
-      if (opts?.priceSampler && n.signature) {
+      // Price decode needs a successful swap meta — skip sampler on err txs.
+      if (!n.err && opts?.priceSampler && n.signature) {
         opts.priceSampler.enqueue(mint, n.signature, tsMs);
       }
     }

@@ -2213,21 +2213,43 @@ export async function runMildDipLoop(
     }
 
     /**
-     * While bags are open: never await tryEntries on this loop.
-     * Soft "scanWouldStealMark" heuristic failed live — after a fast stream
-     * mark pass, scan still ran and blocked the next mark for 10–15s.
-     * Stream onMint / own-tape wake own buys; slow enrich when flat.
+     * Entries:
+     * - Flat book: await full scan (boosts/profiles + fast-path).
+     * - 1.11.795 — with opens: fire-and-forget scan on a slower cadence so a
+     *   quiet/starved stream cannot freeze buys at "sells only". Never await
+     *   (marks keep the tick).
      */
-    if (opens === 0 && nowMs - lastScan >= cfg.scanIntervalMs) {
-      await tryEntries(cfg, state, nowMs);
-      lastScan = Date.now();
+    const scanGapMs =
+      opens === 0 ? cfg.scanIntervalMs : Math.max(cfg.scanIntervalMs, 15_000);
+    if (nowMs - lastScan >= scanGapMs) {
+      lastScan = nowMs;
       stats.lastScanAtMs = lastScan;
-      saveMildDipState(cfg.statePath, state);
-      try {
-        saveMildDipHotMints(cfg.hotMintsPath);
-        saveMildDipPriceRing(cfg.priceRingPath);
-      } catch (err) {
-        console.warn('[mild-dip] persist hot/price ring failed', err);
+      if (opens === 0) {
+        await tryEntries(cfg, state, nowMs);
+        saveMildDipState(cfg.statePath, state);
+        try {
+          saveMildDipHotMints(cfg.hotMintsPath);
+          saveMildDipPriceRing(cfg.priceRingPath);
+        } catch (err) {
+          console.warn('[mild-dip] persist hot/price ring failed', err);
+        }
+      } else {
+        void tryEntries(cfg, state, Date.now())
+          .then(() => {
+            saveMildDipState(cfg.statePath, state);
+            try {
+              saveMildDipHotMints(cfg.hotMintsPath);
+              saveMildDipPriceRing(cfg.priceRingPath);
+            } catch (err) {
+              console.warn('[mild-dip] persist hot/price ring failed', err);
+            }
+          })
+          .catch((err) => {
+            console.warn(
+              '[mild-dip] background tryEntries failed',
+              err instanceof Error ? err.message : err,
+            );
+          });
       }
     }
 
