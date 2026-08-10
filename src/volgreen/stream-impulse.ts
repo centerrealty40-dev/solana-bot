@@ -175,6 +175,18 @@ export async function evaluateStreamImpulseCandidates(
   const volumeImpulseEntry =
     volumeEntryRaw === '1' || volumeEntryRaw === 'true' || volumeEntryRaw === 'yes';
 
+  // Ban tip-chase: session RCA — pc5m 15–40% / 40%+ was the loss cluster.
+  // 0 = disabled. Default 15.
+  const maxPc5mRaw = Number(
+    (
+      process.env.VOL_GREEN_ENTRY_MAX_PC5M_PCT ??
+      process.env.MILD_DIP_ENTRY_MAX_PC5M_PCT ??
+      '15'
+    ).trim(),
+  );
+  const maxEntryPc5mPct =
+    Number.isFinite(maxPc5mRaw) && maxPc5mRaw > 0 ? maxPc5mRaw : 0;
+
   const pushOrSkipLadder = (
     mint: string,
     samples: Array<{ tsMs: number; priceUsd: number }>,
@@ -216,6 +228,21 @@ export async function evaluateStreamImpulseCandidates(
     }
     // Dual leader formulas OR: F8 (8zkg tape) | F7 (7BNaxx tape + pc5m≥2).
     const ringPc5m = mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs);
+    if (
+      maxEntryPc5mPct > 0 &&
+      ringPc5m != null &&
+      Number.isFinite(ringPc5m) &&
+      ringPc5m > maxEntryPc5mPct
+    ) {
+      skips.push({
+        mint,
+        entryMode: 'green_tape',
+        reasons: [`chase_pc5m=${ringPc5m.toFixed(1)}>${maxEntryPc5mPct}`],
+        metrics: { priceChange5mPct: ringPc5m },
+      });
+      mildDipHotMints.clearBuyForce(mint);
+      return;
+    }
     const tape = detectDualLeaderTape(samples, {
       nowMs,
       ringPc5mPct: ringPc5m,

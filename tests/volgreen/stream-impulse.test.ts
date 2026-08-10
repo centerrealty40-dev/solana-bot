@@ -37,21 +37,35 @@ const ENV_KEYS = [
   'MILD_DIP_REQUIRE_LEADER_HIGHLIGHT',
   'VOL_GREEN_REQUIRE_LEADER_BOUGHT',
   'MILD_DIP_REQUIRE_LEADER_BOUGHT',
+  'VOL_GREEN_ENTRY_MAX_PC5M_PCT',
+  'MILD_DIP_ENTRY_MAX_PC5M_PCT',
 ];
 
 const saved: Record<string, string | undefined> = {};
 
-/** Multi-minute climb that satisfies leader-tape + first_strong / intrabar. */
+/** Multi-minute climb that satisfies leader-tape + first_strong / intrabar, pc5m≤15. */
 function noteLeaderLikeClimb(mint: string, nowMs: number): void {
-  // Prior minutes soft; impulse inside the last 60s so first_strong/intrabar sees green tip.
-  const prior = [1.0, 1.02, 1.03, 1.04, 1.05];
+  // ~12% run-up, ~9% impulse bar — under chase_pc5m=15 cap.
+  const prior = [1.0, 1.01, 1.02, 1.03, 1.04];
   for (let i = 0; i < prior.length; i++) {
     const t = nowMs - (prior.length - i + 1) * 60_000;
     mildDipPriceRing.note(mint, prior[i]!, { tsMs: t + 5_000, source: 'stream' });
     mildDipPriceRing.note(mint, prior[i]!, { tsMs: t + 45_000, source: 'stream' });
   }
-  mildDipPriceRing.note(mint, 1.05, { tsMs: nowMs - 50_000, source: 'stream' });
-  mildDipPriceRing.note(mint, 1.22, { tsMs: nowMs - 5_000, source: 'stream' });
+  mildDipPriceRing.note(mint, 1.04, { tsMs: nowMs - 50_000, source: 'stream' });
+  mildDipPriceRing.note(mint, 1.135, { tsMs: nowMs - 5_000, source: 'stream' });
+}
+
+/** Same structure but already vertical (~25% / 5m) — must hit chase_pc5m. */
+function noteChasedClimb(mint: string, nowMs: number): void {
+  const prior = [1.0, 1.05, 1.1, 1.15, 1.18];
+  for (let i = 0; i < prior.length; i++) {
+    const t = nowMs - (prior.length - i + 1) * 60_000;
+    mildDipPriceRing.note(mint, prior[i]!, { tsMs: t + 5_000, source: 'stream' });
+    mildDipPriceRing.note(mint, prior[i]!, { tsMs: t + 45_000, source: 'stream' });
+  }
+  mildDipPriceRing.note(mint, 1.18, { tsMs: nowMs - 50_000, source: 'stream' });
+  mildDipPriceRing.note(mint, 1.28, { tsMs: nowMs - 5_000, source: 'stream' });
 }
 
 beforeEach(() => {
@@ -68,6 +82,8 @@ beforeEach(() => {
   process.env.MILD_DIP_REQUIRE_LEADER_HIGHLIGHT = '0';
   process.env.VOL_GREEN_REQUIRE_LEADER_BOUGHT = '0';
   process.env.MILD_DIP_REQUIRE_LEADER_BOUGHT = '0';
+  process.env.VOL_GREEN_ENTRY_MAX_PC5M_PCT = '15';
+  process.env.MILD_DIP_ENTRY_MAX_PC5M_PCT = '15';
   process.env.MILD_DIP_LEADER_TAPE = '1';
   process.env.MILD_DIP_LEADER_TAPE_MIN_SAMPLES = '8';
   process.env.MILD_DIP_LEADER_TAPE_MIN_BARS = '4';
@@ -165,6 +181,24 @@ describe('evaluateStreamImpulseCandidates', () => {
       ),
     ).toBe(true);
     mildDipHotMints.clearBuyForce(soft);
+  });
+
+  it('skips strongly chased candles (ring pc5m > 15)', async () => {
+    const mint = `ChaseTip${Date.now()}111111111111111111111111`.slice(0, 44);
+    const cfg = loadMildDipConfig();
+    const nowMs = Date.now();
+    noteChasedClimb(mint, nowMs);
+    mildDipHotMints.note(mint, nowMs, 8);
+    mildDipHotMints.markBuyForce(mint, nowMs);
+    const r = await evaluateStreamImpulseCandidates(cfg, {
+      nowMs,
+      evalMax: 8,
+      allowPriceRefresh: false,
+    });
+    expect(r.candidates.find((c) => c.mint === mint)).toBeUndefined();
+    const skip = r.skips.find((s) => s.mint === mint);
+    expect(skip?.reasons.some((x) => x.startsWith('chase_pc5m='))).toBe(true);
+    mildDipHotMints.clearBuyForce(mint);
   });
 
   it('skips when samples insufficient', async () => {

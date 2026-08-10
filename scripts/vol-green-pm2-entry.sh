@@ -129,9 +129,9 @@ export MILD_DIP_REQUIRE_LEADER_BOUGHT=1
 export VOL_GREEN_REQUIRE_LEADER_HIGHLIGHT=0
 export MILD_DIP_REQUIRE_LEADER_HIGHLIGHT=0
 export VOL_GREEN_LEADER_MINTS_PATH="${VOL_GREEN_LEADER_MINTS_PATH:-$ROOT/data/volgreen/leader-mints.json}"
-# No pc5m chase cap — high 5m% is not a scam signal (leaders also buy continuations).
-export MILD_DIP_ENTRY_MAX_PC5M_PCT=0
-export VOL_GREEN_ENTRY_MAX_PC5M_PCT=0
+# Ban strongly chased candles (session RCA: pc5m 15%+ was the loss cluster).
+export MILD_DIP_ENTRY_MAX_PC5M_PCT=15
+export VOL_GREEN_ENTRY_MAX_PC5M_PCT=15
 # Poison tape REMOVED — false bans on live leader mints (A13o runup artifact).
 export VOL_GREEN_POISON_TAPE=0
 export MILD_DIP_POISON_TAPE=0

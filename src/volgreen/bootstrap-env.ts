@@ -71,6 +71,9 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_EXECUTION_MODE', 'live');
   setIfAbsent('MILD_DIP_POSITION_USD', '1');
   setIfAbsent('VOL_GREEN_DUAL_LEADER_FORMULAS', '1');
+  // Tip-chase guard — ring pc5m above this → skip (0 = off).
+  setIfAbsent('VOL_GREEN_ENTRY_MAX_PC5M_PCT', '15');
+  setIfAbsent('MILD_DIP_ENTRY_MAX_PC5M_PCT', '15');
   setIfAbsent('MILD_DIP_WALLET_PUBKEY', FXQF);
   setIfAbsent(
     'MILD_DIP_WALLET_SECRET',
