@@ -137,6 +137,11 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('VOL_GREEN_INTRABAR_FAST_MIN_PC', '6');
   setIfAbsent('VOL_GREEN_EARLY_TAPE', '1');
   setIfAbsent('VOL_GREEN_EARLY_SKIP_REQUIRE_LEADER_BOUGHT', '1');
+  setIfAbsent('VOL_GREEN_OFF_PEAK_GUARD', '1');
+  setIfAbsent('VOL_GREEN_OFF_PEAK_DD_PCT', '5');
+  setIfAbsent('VOL_GREEN_EARLY_THIN_TAPE_GUARD', '1');
+  setIfAbsent('VOL_GREEN_EARLY_MIN_SAMPLES', '6');
+  setIfAbsent('VOL_GREEN_EARLY_MIN_SAMPLE_SPAN_MS', '60000');
   setIfAbsent('MILD_DIP_MINT_PRICE_REFRESH', '1');
   // Still mark fat stream buys for priority ranking — entry uses bars, not notional.
   setIfAbsent('MILD_DIP_VOLUME_IMPULSE_MIN_SOL', '2');

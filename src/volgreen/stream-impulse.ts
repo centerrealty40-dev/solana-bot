@@ -19,6 +19,16 @@ import {
 } from '../milddip/mint-price-refresh.js';
 import { mildDipPriceRing } from '../milddip/price-ring.js';
 import {
+  earlyMinSampleSpanMs,
+  earlyMinSamples,
+  earlySampleLookbackMs,
+  envOn as qualityEnvOn,
+  isImpulsePlayedOut,
+  isThinEarlyTape,
+  offPeakDdMaxPct,
+  offPeakLookbackMs,
+} from './entry-quality.js';
+import {
   detectDualLeaderTape,
   earlyTapeEnabled,
   f7LeaderTapeGates,
@@ -43,8 +53,7 @@ const INTRABAR_MS = 60_000;
 const INTRABAR_FAST_MS = 20_000;
 
 function envOn(key: string, defaultOn = true): boolean {
-  const raw = (process.env[key] ?? (defaultOn ? '1' : '0')).trim().toLowerCase();
-  return !(raw === '0' || raw === 'false' || raw === 'no' || raw === 'off');
+  return qualityEnvOn(process.env, key, defaultOn);
 }
 
 function needsPriceRefresh(mint: string, nowMs: number): boolean {
@@ -213,6 +222,15 @@ export async function evaluateStreamImpulseCandidates(
   const maxEntryPc5mPct =
     Number.isFinite(maxPc5mRaw) && maxPc5mRaw > 0 ? maxPc5mRaw : 0;
 
+  // Cliff RCA: skip when already off local peak / early path on thin tape.
+  const offPeakOn = envOn('VOL_GREEN_OFF_PEAK_GUARD', true);
+  const offPeakDd = offPeakDdMaxPct(process.env);
+  const offPeakLb = offPeakLookbackMs(process.env);
+  const thinEarlyOn = envOn('VOL_GREEN_EARLY_THIN_TAPE_GUARD', true);
+  const earlyMinN = earlyMinSamples(process.env);
+  const earlyMinSpan = earlyMinSampleSpanMs(process.env);
+  const earlySampleLb = earlySampleLookbackMs(process.env);
+
   const pushOrSkipLadder = (
     mint: string,
     samples: Array<{ tsMs: number; priceUsd: number }>,
@@ -256,6 +274,51 @@ export async function evaluateStreamImpulseCandidates(
       mildDipHotMints.clearBuyForce(mint);
       return;
     }
+
+    // Early path must have a real price tape — no 2–3 tick cliffs.
+    if (thinEarlyOn && earlyPath) {
+      const thin = isThinEarlyTape(samples, {
+        nowMs,
+        lookbackMs: earlySampleLb,
+        minSamples: earlyMinN,
+        minSpanMs: earlyMinSpan,
+      });
+      if (thin.hit) {
+        skips.push({
+          mint,
+          entryMode: 'green_tape',
+          reasons: [
+            `early_thin_tape:n=${thin.samples}<${earlyMinN}_or_span=${thin.spanMs}<${earlyMinSpan}`,
+          ],
+          metrics: { priceChange5mPct: ringPc5m },
+        });
+        mildDipHotMints.clearBuyForce(mint);
+        return;
+      }
+    }
+
+    // Impulse already played out — last price too far below recent peak.
+    if (offPeakOn) {
+      const played = isImpulsePlayedOut(samples, {
+        nowMs,
+        lookbackMs: offPeakLb,
+        maxDdPct: offPeakDd,
+        minSamples: 4,
+      });
+      if (played.hit && played.ddPct != null) {
+        skips.push({
+          mint,
+          entryMode: 'green_tape',
+          reasons: [
+            `impulse_played_out:dd=${played.ddPct.toFixed(1)}<-${offPeakDd}`,
+          ],
+          metrics: { priceChange5mPct: ringPc5m },
+        });
+        mildDipHotMints.clearBuyForce(mint);
+        return;
+      }
+    }
+
     const tape = detectDualLeaderTape(samples, {
       nowMs,
       ringPc5mPct: ringPc5m,
@@ -285,6 +348,27 @@ export async function evaluateStreamImpulseCandidates(
     }
     if (tape.formula) {
       cand.metrics.leaderFormula = tape.formula;
+    }
+    // F_early counts as early — apply thin-tape if we only got here via tape.
+    if (thinEarlyOn && tape.formula === 'F_early' && !earlyPath) {
+      const thin = isThinEarlyTape(samples, {
+        nowMs,
+        lookbackMs: earlySampleLb,
+        minSamples: earlyMinN,
+        minSpanMs: earlyMinSpan,
+      });
+      if (thin.hit) {
+        skips.push({
+          mint,
+          entryMode: 'green_tape',
+          reasons: [
+            `early_thin_tape:n=${thin.samples}<${earlyMinN}_or_span=${thin.spanMs}<${earlyMinSpan}`,
+          ],
+          metrics: { priceChange5mPct: ringPc5m },
+        });
+        mildDipHotMints.clearBuyForce(mint);
+        return;
+      }
     }
     // Allowlist: required for slow F8; early/mid/intrabar/F_early may race first-touch.
     const skipAllowlist =

@@ -45,6 +45,11 @@ const ENV_KEYS = [
   'VOL_GREEN_EARLY_TAPE',
   'VOL_GREEN_EARLY_SKIP_REQUIRE_LEADER_BOUGHT',
   'VOL_GREEN_DUAL_LEADER_FORMULAS',
+  'VOL_GREEN_OFF_PEAK_GUARD',
+  'VOL_GREEN_OFF_PEAK_DD_PCT',
+  'VOL_GREEN_EARLY_THIN_TAPE_GUARD',
+  'VOL_GREEN_EARLY_MIN_SAMPLES',
+  'VOL_GREEN_EARLY_MIN_SAMPLE_SPAN_MS',
 ];
 
 const saved: Record<string, string | undefined> = {};
@@ -96,6 +101,11 @@ beforeEach(() => {
   process.env.VOL_GREEN_EARLY_TAPE = '1';
   process.env.VOL_GREEN_EARLY_SKIP_REQUIRE_LEADER_BOUGHT = '1';
   process.env.VOL_GREEN_DUAL_LEADER_FORMULAS = '1';
+  process.env.VOL_GREEN_OFF_PEAK_GUARD = '1';
+  process.env.VOL_GREEN_OFF_PEAK_DD_PCT = '5';
+  process.env.VOL_GREEN_EARLY_THIN_TAPE_GUARD = '1';
+  process.env.VOL_GREEN_EARLY_MIN_SAMPLES = '6';
+  process.env.VOL_GREEN_EARLY_MIN_SAMPLE_SPAN_MS = '60000';
   process.env.MILD_DIP_LEADER_TAPE = '1';
   process.env.MILD_DIP_LEADER_TAPE_MIN_SAMPLES = '8';
   process.env.MILD_DIP_LEADER_TAPE_MIN_BARS = '4';
@@ -231,5 +241,53 @@ describe('evaluateStreamImpulseCandidates', () => {
     expect(skip?.reasons.some((x) => x.startsWith('stream_impulse_need_samples'))).toBe(
       true,
     );
+  });
+
+  it('skips early path on thin price tape', async () => {
+    const mint = `ThinTape${Date.now()}111111111111111111111111`.slice(0, 44);
+    const cfg = loadMildDipConfig();
+    const nowMs = Date.now();
+    // 4 samples, short span — enough for minSamplesForEval(4) but fails early_thin (need 6 / 60s)
+    for (let i = 0; i < 4; i++) {
+      mildDipPriceRing.note(mint, 1 + i * 0.03, {
+        tsMs: nowMs - (4 - i) * 8_000,
+        source: 'stream',
+      });
+    }
+    mildDipHotMints.note(mint, nowMs, 8);
+    mildDipHotMints.markBuyForce(mint, nowMs);
+    const r = await evaluateStreamImpulseCandidates(cfg, {
+      nowMs,
+      evalMax: 8,
+      allowPriceRefresh: false,
+    });
+    expect(r.candidates.find((c) => c.mint === mint)).toBeUndefined();
+    const skip = r.skips.find((s) => s.mint === mint);
+    expect(skip?.reasons.some((x) => x.startsWith('early_thin_tape:'))).toBe(true);
+    mildDipHotMints.clearBuyForce(mint);
+  });
+
+  it('skips when impulse already played out (off local peak)', async () => {
+    const mint = `OffPeak${Date.now()}1111111111111111111111111`.slice(0, 44);
+    const cfg = loadMildDipConfig();
+    const nowMs = Date.now();
+    // Climb to peak then dump >5% — dense enough for early tape
+    const path = [1.0, 1.02, 1.05, 1.1, 1.18, 1.2, 1.14, 1.12];
+    for (let i = 0; i < path.length; i++) {
+      const t = nowMs - (path.length - i) * 45_000;
+      mildDipPriceRing.note(mint, path[i]!, { tsMs: t + 5_000, source: 'stream' });
+      mildDipPriceRing.note(mint, path[i]!, { tsMs: t + 25_000, source: 'stream' });
+    }
+    mildDipHotMints.note(mint, nowMs, 8);
+    mildDipHotMints.markBuyForce(mint, nowMs);
+    const r = await evaluateStreamImpulseCandidates(cfg, {
+      nowMs,
+      evalMax: 8,
+      allowPriceRefresh: false,
+    });
+    expect(r.candidates.find((c) => c.mint === mint)).toBeUndefined();
+    const skip = r.skips.find((s) => s.mint === mint);
+    expect(skip?.reasons.some((x) => x.startsWith('impulse_played_out:'))).toBe(true);
+    mildDipHotMints.clearBuyForce(mint);
   });
 });

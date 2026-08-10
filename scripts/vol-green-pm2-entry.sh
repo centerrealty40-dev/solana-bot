@@ -143,6 +143,14 @@ export VOL_GREEN_LEADER_MINTS_PATH="${VOL_GREEN_LEADER_MINTS_PATH:-$ROOT/data/vo
 # Ban strongly chased candles (session RCA: pc5m 15%+ was the loss cluster).
 export MILD_DIP_ENTRY_MAX_PC5M_PCT=15
 export VOL_GREEN_ENTRY_MAX_PC5M_PCT=15
+# Cliff RCA: don't buy after impulse already faded / early path on thin tape.
+export VOL_GREEN_OFF_PEAK_GUARD=1
+export VOL_GREEN_OFF_PEAK_DD_PCT=5
+export VOL_GREEN_OFF_PEAK_LOOKBACK_MS=300000
+export VOL_GREEN_EARLY_THIN_TAPE_GUARD=1
+export VOL_GREEN_EARLY_MIN_SAMPLES=6
+export VOL_GREEN_EARLY_MIN_SAMPLE_SPAN_MS=60000
+export VOL_GREEN_EARLY_SAMPLE_LOOKBACK_MS=600000
 # Poison tape REMOVED — false bans on live leader mints (A13o runup artifact).
 export VOL_GREEN_POISON_TAPE=0
 export MILD_DIP_POISON_TAPE=0
