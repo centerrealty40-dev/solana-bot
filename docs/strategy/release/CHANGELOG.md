@@ -1,4 +1,29 @@
 # So
+## [1.11.802] — 2026-08-10
+
+**Тег:** `sa-1.11.802`
+
+### Fix: Dex/TD entry without stream ring + structural null retry
+
+Eligible leader TD buys were dying on our pre-trade locks while the
+turn→dump formula already matched Dex tape:
+
+- `no_stream_price` — hard `REQUIRE_STREAM_PRICE` before dipSource
+- `no_dip_source` — TD evaluated only after dipSource was set
+- `structural_fetch_null` — one Dex blip killed the mint
+
+Changes (no Enrich):
+
+- Stream ring required only for stream-timed sources; `dex` /
+  `dex+stream` / `turn_dump_knife` may enter on Dex + Jupiter quote
+- If turn→dump passes and dipSource unset → set `dex` / `turn_dump_knife`
+- Structural load: 1 retry + stale cache ≤30s before null
+
+**Откат:** `git checkout sa-1.11.801 -- src/milddip/fast-path.ts
+  src/milddip/entry-attempt.ts tests/milddip/fast-path.test.ts` + reload.
+
+---
+
 ## [1.11.801] — 2026-08-10
 
 **Тег:** `sa-1.11.801`

@@ -4,6 +4,7 @@ import {
   dumpH1PumpGateOk,
   dumpRallyGateOk,
   inDipBand,
+  requireStreamPriceForDipSource,
   resetFastPathStateForTests,
   streamDipInBandOk,
   streamOnlyDexDipOk,
@@ -294,5 +295,14 @@ describe('fast-path helpers', () => {
     expect(structuralOk(ok, cfg)).toBe(true);
     const huge = stubMetrics({ marketCapUsd: 400_000_000 });
     expect(structuralOk(huge, cfg)).toBe(false);
+  });
+
+  it('1.11.802 Dex/TD dipSources skip requireStreamPrice', () => {
+    expect(requireStreamPriceForDipSource('dex')).toBe(false);
+    expect(requireStreamPriceForDipSource('dex+stream')).toBe(false);
+    expect(requireStreamPriceForDipSource('turn_dump_knife')).toBe(false);
+    expect(requireStreamPriceForDipSource('stream')).toBe(true);
+    expect(requireStreamPriceForDipSource('mild_stabilize')).toBe(true);
+    expect(requireStreamPriceForDipSource(null)).toBe(true);
   });
 });
