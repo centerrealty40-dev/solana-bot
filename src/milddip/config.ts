@@ -308,6 +308,12 @@ const MildDipConfigSchema = z.object({
   /** Last must stay ≥ this % below local peak (0 = off). */
   mildStabilizeMinBelowPeakPct: z.coerce.number().min(0).max(50).default(2),
   /**
+   * 1.11.800 — refuse mild_stabilize when live Dex pc5m is greener than this
+   * (EjD5Y9: ring dump −8% + bounce while Dex m5 already green).
+   */
+  mildStabilizeRequireDexDip: z.boolean().default(true),
+  mildStabilizeDexMaxDipPct: z.coerce.number().max(0).default(-2),
+  /**
    * Autonomous red-hour shallow: when 1h ≤ h1Max and pc5m ∈ (min,max],
    * enter without the main mild band (own logic — not leader copy).
    */
@@ -740,6 +746,8 @@ export function loadMildDipConfig(): MildDipConfig {
     mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 8),
     mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 15_000),
     mildStabilizeMinBelowPeakPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT', 2),
+    mildStabilizeRequireDexDip: envBool('MILD_DIP_MILD_STABILIZE_REQUIRE_DEX_DIP', true),
+    mildStabilizeDexMaxDipPct: envNum('MILD_DIP_MILD_STABILIZE_DEX_MAX_DIP_PCT', -2),
     h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
     h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
