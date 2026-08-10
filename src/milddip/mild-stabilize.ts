@@ -89,9 +89,12 @@ export function evaluateMildStabilizeFromRing(
     };
   }
 
-  const peak = ring.maxPrice(mint, gates.lookbackMs, nowMs);
-  const trough = ring.minPrice(mint, gates.lookbackMs, nowMs);
+  // Dump = peak → trough AFTER peak. Window-min before the peak is the
+  // pump base — using it as "dump" buys tops (EjD5 / stream wick class).
+  const pt = ring.troughAfterPeak(mint, gates.lookbackMs, nowMs);
   const last = ring.lastPrice(mint, nowMs);
+  const peak = pt?.peak ?? null;
+  const trough = pt?.trough ?? null;
   if (!peak || !trough || !last || !(peak.priceUsd > 0) || !(trough.priceUsd > 0) || !(last.priceUsd > 0)) {
     return {
       pass: false,

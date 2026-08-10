@@ -1,8 +1,11 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   allowHotDexProbe,
+  dumpH1PumpGateOk,
+  dumpRallyGateOk,
   inDipBand,
   resetFastPathStateForTests,
+  streamDipInBandOk,
   streamOnlyDexDipOk,
   streamOnlyNearTroughOk,
   structuralOk,
@@ -121,6 +124,101 @@ describe('fast-path helpers', () => {
         blockDexGreen: true,
         dexPc5m: 2.5,
         dexMaxDipPct: -8,
+      }),
+    ).toBe(false);
+  });
+
+  it('1.11.801 H1 pump gate rejects D2zNEW 30→27 pullback', () => {
+    // H1 +46%, dump −10% off peak — not a dip.
+    expect(
+      dumpH1PumpGateOk({
+        priceChange1hPct: 46,
+        dumpExtentPct: -10,
+        h1PumpMinPct: 15,
+        minDumpPct: -15,
+      }),
+    ).toBe(false);
+    expect(
+      dumpH1PumpGateOk({
+        priceChange1hPct: 46,
+        dumpExtentPct: -18,
+        h1PumpMinPct: 15,
+        minDumpPct: -15,
+      }),
+    ).toBe(true);
+    // No H1 pump → gate off.
+    expect(
+      dumpH1PumpGateOk({
+        priceChange1hPct: 8,
+        dumpExtentPct: -5,
+        h1PumpMinPct: 15,
+        minDumpPct: -15,
+      }),
+    ).toBe(true);
+  });
+
+  it('1.11.790 dump rally gate rejects EjD5-class pump wick', () => {
+    // +40% into peak, −2.7% wick → need 16% dump at frac 0.4.
+    expect(
+      dumpRallyGateOk({
+        dumpExtentPct: -2.7,
+        rallyIntoPeakPct: 40,
+        minRallyPct: 12,
+        minDumpFracOfRally: 0.4,
+      }),
+    ).toBe(false);
+    expect(
+      dumpRallyGateOk({
+        dumpExtentPct: -18,
+        rallyIntoPeakPct: 40,
+        minRallyPct: 12,
+        minDumpFracOfRally: 0.4,
+      }),
+    ).toBe(true);
+    // Small rally → gate off.
+    expect(
+      dumpRallyGateOk({
+        dumpExtentPct: -3,
+        rallyIntoPeakPct: 8,
+        minRallyPct: 12,
+        minDumpFracOfRally: 0.4,
+      }),
+    ).toBe(true);
+  });
+
+  it('1.11.790 streamDipInBandOk needs dump extent + current dd + rally', () => {
+    expect(
+      streamDipInBandOk({
+        dumpExtentPct: -2.7,
+        currentDrawdownPct: -2.7,
+        rallyIntoPeakPct: 40,
+        minDipPct: -25,
+        maxDipPct: -2,
+        dumpRallyGateMinPct: 12,
+        dumpRallyMinFrac: 0.4,
+      }),
+    ).toBe(false);
+    expect(
+      streamDipInBandOk({
+        dumpExtentPct: -15,
+        currentDrawdownPct: -12,
+        rallyIntoPeakPct: 20,
+        minDipPct: -25,
+        maxDipPct: -2,
+        dumpRallyGateMinPct: 12,
+        dumpRallyMinFrac: 0.4,
+      }),
+    ).toBe(true);
+    // Reclaimed toward peak — current out of band.
+    expect(
+      streamDipInBandOk({
+        dumpExtentPct: -15,
+        currentDrawdownPct: -1,
+        rallyIntoPeakPct: 20,
+        minDipPct: -25,
+        maxDipPct: -2,
+        dumpRallyGateMinPct: 12,
+        dumpRallyMinFrac: 0.4,
       }),
     ).toBe(false);
   });

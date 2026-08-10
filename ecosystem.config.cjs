@@ -3142,6 +3142,19 @@ const PM2_APPS = [
         MILD_DIP_STREAM_ONLY_NEAR_TROUGH: '1',
         MILD_DIP_STREAM_ONLY_NEAR_TROUGH_MAX_BOUNCE_PCT: '3',
         MILD_DIP_STREAM_ONLY_MIN_SAMPLES: '3',
+        /**
+         * 1.11.790 — measure dump as peak→post-peak trough; reject pump wicks:
+         * if rally into peak ≥12%, |dump| must cover ≥40% of that rally.
+         * EjD5-class +30% pump / −2.7% wick → skip.
+         */
+        MILD_DIP_DUMP_RALLY_GATE_MIN_PCT: '12',
+        MILD_DIP_DUMP_RALLY_MIN_FRAC: '0.4',
+        /**
+         * 1.11.801 — D2zNEW / 3XeNADY: H1 +46% pump, buy −10% off peak.
+         * If Dex H1 ≥ +15%, dump must be ≤ −15% (not a shallow pullback).
+         */
+        MILD_DIP_DUMP_H1_PUMP_MIN_PCT: '15',
+        MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT: '-15',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
         /**
          * 1.11.713 — Dex-probe stream-hot mints even when local ring dd is

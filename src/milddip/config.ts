@@ -393,6 +393,21 @@ const MildDipConfigSchema = z.object({
   streamOnlyNearTroughMaxBouncePct: z.coerce.number().min(0).max(50).default(3),
   /** Min price-ring samples in lookback before near-trough / stream-only. */
   streamOnlyMinSamples: z.coerce.number().int().min(1).max(64).default(3),
+  /**
+   * 1.11.790 — reject pump-wick "dumps": when rally into the swing peak
+   * is ≥ this %, |dump extent| must be ≥ rally × dumpRallyMinFrac.
+   * 0 = off. Default 12 — EjD5-class +30% pump / −2.7% wick fails.
+   */
+  dumpRallyGateMinPct: z.coerce.number().min(0).max(200).default(12),
+  /** Fraction of pre-peak rally that post-peak dump must cover. 0 = off. */
+  dumpRallyMinFrac: z.coerce.number().min(0).max(2).default(0.4),
+  /**
+   * 1.11.801 — when Dex pc1h ≥ this (pump), require dump ≤ dumpH1PumpMinDumpPct.
+   * Catches D2zNEW-class 30→27 pulls when the ring missed the pump base. 0 = off.
+   */
+  dumpH1PumpMinPct: z.coerce.number().min(0).max(500).default(15),
+  /** Required dump depth (negative) while H1 is pumping. */
+  dumpH1PumpMinDumpPct: z.coerce.number().max(0).default(-15),
   /** Reuse structural Dex metrics this long (ms). */
   fastPathStructuralCacheMs: z.coerce.number().int().min(1_000).max(120_000).default(8_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
@@ -788,6 +803,10 @@ export function loadMildDipConfig(): MildDipConfig {
     streamOnlyNearTroughMaxBouncePct:
       process.env.MILD_DIP_STREAM_ONLY_NEAR_TROUGH_MAX_BOUNCE_PCT ?? 3,
     streamOnlyMinSamples: process.env.MILD_DIP_STREAM_ONLY_MIN_SAMPLES ?? 3,
+    dumpRallyGateMinPct: process.env.MILD_DIP_DUMP_RALLY_GATE_MIN_PCT ?? 12,
+    dumpRallyMinFrac: process.env.MILD_DIP_DUMP_RALLY_MIN_FRAC ?? 0.4,
+    dumpH1PumpMinPct: process.env.MILD_DIP_DUMP_H1_PUMP_MIN_PCT ?? 15,
+    dumpH1PumpMinDumpPct: process.env.MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT ?? -15,
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,

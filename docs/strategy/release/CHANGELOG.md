@@ -1,4 +1,28 @@
 # So
+## [1.11.801] — 2026-08-10
+
+**Тег:** `sa-1.11.801`
+
+### Fix: real dump measure + block H1 pump pullback buys (D2zNEW / 3XeNADY)
+
+`3XeNADY…` / `D2zNEW…`: H1 ~+46%, peak ~30 → buy at ~27 (−10% wick).
+That is a pump pullback, not a shallow dip. Live still used last/max peak.
+
+- Dump extent = peak → **trough after peak** (not pre-pump window min)
+- Stream needs dump extent **and** mark still in band + ring rally gate
+- Near-trough uses post-peak trough
+- **H1 pump chase gate:** if Dex `pc1h ≥ 15%`, require dump extent ≤ `−15%`
+  (`MILD_DIP_DUMP_H1_PUMP_MIN_PCT` / `MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT`)
+  — covers cases where the price-ring missed the pump base
+- Applies to stream / dex / dex+stream main-band seats (not knife-OR ≥30)
+
+**Откат:** `MILD_DIP_DUMP_H1_PUMP_MIN_PCT=0` + `MILD_DIP_DUMP_RALLY_GATE_MIN_PCT=0`
+  or `git checkout sa-1.11.800 -- src/milddip/price-ring.ts src/milddip/fast-path.ts
+  src/milddip/discover.ts src/milddip/mild-stabilize.ts src/milddip/config.ts
+  ecosystem.config.cjs`.
+
+---
+
 ## [1.11.800] — 2026-08-10
 
 **Тег:** `sa-1.11.800`
