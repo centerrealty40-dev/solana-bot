@@ -284,12 +284,14 @@ export async function evaluateStreamImpulseCandidates(
         minSpanMs: earlyMinSpan,
       });
       if (thin.hit) {
+        const why =
+          thin.samples < earlyMinN
+            ? `n=${thin.samples}<${earlyMinN}`
+            : `span=${thin.spanMs}<${earlyMinSpan}`;
         skips.push({
           mint,
           entryMode: 'green_tape',
-          reasons: [
-            `early_thin_tape:n=${thin.samples}<${earlyMinN}_or_span=${thin.spanMs}<${earlyMinSpan}`,
-          ],
+          reasons: [`early_thin_tape:${why}`],
           metrics: { priceChange5mPct: ringPc5m },
         });
         mildDipHotMints.clearBuyForce(mint);
@@ -358,12 +360,14 @@ export async function evaluateStreamImpulseCandidates(
         minSpanMs: earlyMinSpan,
       });
       if (thin.hit) {
+        const why =
+          thin.samples < earlyMinN
+            ? `n=${thin.samples}<${earlyMinN}`
+            : `span=${thin.spanMs}<${earlyMinSpan}`;
         skips.push({
           mint,
           entryMode: 'green_tape',
-          reasons: [
-            `early_thin_tape:n=${thin.samples}<${earlyMinN}_or_span=${thin.spanMs}<${earlyMinSpan}`,
-          ],
+          reasons: [`early_thin_tape:${why}`],
           metrics: { priceChange5mPct: ringPc5m },
         });
         mildDipHotMints.clearBuyForce(mint);
