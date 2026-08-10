@@ -124,7 +124,25 @@ def ui_amt(b: dict[str, Any] | None) -> float:
     return float(v or 0)
 
 
+# 1.11.811 — the observer called DexScreener outside the trading bot's rate
+# gate, so it starved mild-dip's own budget: 274 of 344 leader buys logged
+# `HTTP 429` and the bot saw `structural_fetch_null`. Space our calls out and
+# stand down entirely for a while after a 429.
+_DEX_MIN_GAP_MS = env_num("LEADER_OBSERVER_DEX_MIN_GAP_MS", 1200.0)
+_DEX_BACKOFF_MS = env_num("LEADER_OBSERVER_DEX_BACKOFF_MS", 60_000.0)
+_dex_last_call_ms = 0.0
+_dex_backoff_until_ms = 0.0
+
+
 def fetch_dex(mint: str) -> dict[str, Any] | None:
+    global _dex_last_call_ms, _dex_backoff_until_ms
+    now_ms = time.time() * 1000
+    if now_ms < _dex_backoff_until_ms:
+        return {"error": "throttled_local", "retryInMs": int(_dex_backoff_until_ms - now_ms)}
+    wait_ms = _DEX_MIN_GAP_MS - (now_ms - _dex_last_call_ms)
+    if wait_ms > 0:
+        time.sleep(min(wait_ms, _DEX_MIN_GAP_MS) / 1000.0)
+    _dex_last_call_ms = time.time() * 1000
     try:
         req = urllib.request.Request(
             f"https://api.dexscreener.com/latest/dex/tokens/{mint}",
@@ -165,7 +183,10 @@ def fetch_dex(mint: str) -> dict[str, Any] | None:
             "turnover5mLiq": turnover,
         }
     except Exception as e:
-        return {"error": str(e)}
+        msg = str(e)
+        if "429" in msg:
+            _dex_backoff_until_ms = time.time() * 1000 + _DEX_BACKOFF_MS
+        return {"error": msg}
 
 
 def fetch_jupiter_prices(mints: list[str], price_url: str) -> dict[str, float]:
@@ -222,6 +243,28 @@ def entry_is_td(bag: dict[str, Any]) -> bool:
     if isinstance(gates, dict) and gates.get("main") is True:
         return True
     return False
+
+
+MARK_OUTLIER_RATIO = env_num("LEADER_OBSERVER_MARK_MAX_RATIO", 20.0)
+
+
+def plausible_mark(px: float, bag: dict[str, Any], entry: float) -> bool:
+    """
+    1.11.811 — reject absurd marks before they poison mfe/giveback.
+
+    A single bogus Jupiter print (e.g. $0.0016 on a $0.000037 entry) wrote
+    `mfePct=4184` and `peakPriceUsd` 42× entry, which made 291 of 368 sessions
+    unusable for exit research. Compare against entry and the running peak.
+    """
+    if not (px > 0) or not (entry > 0):
+        return False
+    ratio = max(MARK_OUTLIER_RATIO, 2.0)
+    if px > entry * ratio or px < entry / ratio:
+        return False
+    peak = bag.get("peakPriceUsd")
+    if isinstance(peak, (int, float)) and float(peak) > 0 and px > float(peak) * ratio:
+        return False
+    return True
 
 
 def apply_path_metrics(bag: dict[str, Any], px: float, entry: float) -> dict[str, float]:
@@ -834,6 +877,12 @@ class Observer:
             1 if size_estimated else 0
         )
         bag["proceedsEstimatedLegs"] = proceeds_est_legs
+        # 1.11.811 — an unreadable sell leg used to write proceeds 0, i.e. a
+        # fake −100% session. 2634 of 4681 sell legs had no size at all.
+        proceeds_missing_legs = int(prev.get("proceedsMissingLegs") or 0) + (
+            0 if size_usd is not None else 1
+        )
+        bag["proceedsMissingLegs"] = proceeds_missing_legs
         cost_basis = 0.0
         if prev_ui > 0 and sold > 0:
             # reduce cost pro-rata
@@ -894,10 +943,13 @@ class Observer:
                 # makes cash PnL a guess; downstream must exclude these.
                 "costEstimatedLegs": int(prev.get("costEstimatedLegs") or 0),
                 "proceedsEstimatedLegs": proceeds_est_legs,
+                "proceedsMissingLegs": proceeds_missing_legs,
                 "cashPnlReliable": (
                     int(prev.get("costEstimatedLegs") or 0) == 0
                     and proceeds_est_legs == 0
+                    and proceeds_missing_legs == 0
                 ),
+                "pathReliable": abs(float(prev.get("mfePct") or 0)) <= 300,
             }
             self._set_bag(leader, mint, None)
             return {"isFlat": True, "isPartial": False, "bag": None, "session": session}
@@ -917,6 +969,7 @@ class Observer:
                 "costBasisUsd": cost_basis,
                 "cashPnlUsd": cash_pnl,
                 "proceedsEstimatedLegs": proceeds_est_legs,
+                "proceedsMissingLegs": proceeds_missing_legs,
             },
         }
 
@@ -1372,7 +1425,12 @@ class Observer:
                 except (TypeError, ValueError):
                     px = None
             path = None
-            if isinstance(entry, (int, float)) and entry > 0 and px and px > 0:
+            if (
+                isinstance(entry, (int, float))
+                and entry > 0
+                and px
+                and plausible_mark(float(px), bag, float(entry))
+            ):
                 path = apply_path_metrics(bag, px, float(entry))
             bag["lastMarkAtMs"] = now_ms
             self._set_bag(leader, mint, bag)
@@ -1426,7 +1484,12 @@ class Observer:
                     px = None
                     price_source = "none"
             path = None
-            if isinstance(entry, (int, float)) and float(entry) > 0 and px and px > 0:
+            if (
+                isinstance(entry, (int, float))
+                and float(entry) > 0
+                and px
+                and plausible_mark(float(px), bag, float(entry))
+            ):
                 path = apply_path_metrics(bag, float(px), float(entry))
             bag["lastDenseAtMs"] = now_ms
             self._set_bag(leader, mint, bag)
