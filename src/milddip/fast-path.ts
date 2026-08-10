@@ -15,7 +15,31 @@ import {
 import { mildDipPriceRing } from './price-ring.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
-import { evaluateTurnDumpGate } from './turn-dump.js';
+import { evaluateTurnDumpGate, turnover5mLiq } from './turn-dump.js';
+
+function turnDumpArgsFromCfg(
+  cfg: MildDipConfig,
+  pc5m: number | null | undefined,
+  metrics: MildDipCandidateMetrics,
+) {
+  return {
+    enabled: true as const,
+    pc5m,
+    volume5mUsd: metrics.volume5mUsd,
+    liquidityUsd: metrics.liquidityUsd,
+    alpha: cfg.turnDumpAlpha,
+    beta: cfg.turnDumpBeta,
+    shallowSlackPct: cfg.turnDumpShallowSlackPct,
+    deepSlackPct: cfg.turnDumpDeepSlackPct,
+    shallowBranchEnabled: cfg.turnDumpShallowBranchEnabled,
+    shallowAlpha: cfg.turnDumpShallowAlpha,
+    shallowBeta: cfg.turnDumpShallowBeta,
+    shallowBandPct: cfg.turnDumpShallowBandPct,
+    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
+    knifeMinTurn: cfg.turnDumpKnifeMinTurn,
+  };
+}
 
 /** Fresh enough observer Dex to skip a second DexScreener round-trip. */
 const LEADER_SEED_DEX_MAX_AGE_MS = 120_000;
@@ -326,7 +350,25 @@ export async function evaluateFastPathCandidate(
   const dexPc = struct.metrics.priceChange5mPct;
   const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, cfg.entry.maxDipPct);
 
-  // Deep knife band — leave to knife-stabilize wait path (not instant blade catch).
+  // 1.11.793 — 7BNax OR: deep+hot (dump≥30 & turn≥0.3) buys now on this wallet.
+  const deepestPc =
+    streamDd != null && dexPc != null
+      ? Math.min(streamDd, dexPc)
+      : streamDd != null
+        ? streamDd
+        : dexPc;
+  const turnNow = turnover5mLiq(struct.metrics.volume5mUsd, struct.metrics.liquidityUsd);
+  const knifeOrOk =
+    cfg.turnDumpGateEnabled &&
+    cfg.turnDumpKnifeBranchEnabled &&
+    deepestPc != null &&
+    deepestPc < 0 &&
+    turnNow != null &&
+    evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, deepestPc, struct.metrics)).branch ===
+      'knife';
+
+  // Deep knife band — leave to knife-stabilize wait path (not instant blade catch),
+  // unless the 7BNax knife OR already qualifies for an immediate seat.
   const deepKnife =
     (streamDd != null &&
       streamDd > cfg.knifeStabilizeMinDipPct &&
@@ -334,7 +376,7 @@ export async function evaluateFastPathCandidate(
     (dexPc != null &&
       dexPc > cfg.knifeStabilizeMinDipPct &&
       dexPc <= cfg.knifeStabilizeMaxDipPct);
-  if (cfg.knifeStabilizeEnabled && deepKnife && !streamInMain && !dexInMain) {
+  if (cfg.knifeStabilizeEnabled && deepKnife && !streamInMain && !dexInMain && !knifeOrOk) {
     return skip('deep_knife_defer', { streamDd, dexPc });
   }
 
@@ -459,6 +501,13 @@ export async function evaluateFastPathCandidate(
     }
   }
 
+  if (!dipSource && knifeOrOk && deepestPc != null) {
+    dipSource = 'turn_dump_knife';
+    metrics = { ...metrics, priceChange5mPct: deepestPc };
+    const last = mildDipPriceRing.lastPrice(mint, nowMs);
+    if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
+  }
+
   if (!dipSource) {
     return skip('no_dip_source', {
       structSource,
@@ -479,20 +528,7 @@ export async function evaluateFastPathCandidate(
         streamDd < metrics.priceChange5mPct)
         ? streamDd
         : metrics.priceChange5mPct;
-    const td = evaluateTurnDumpGate({
-      enabled: true,
-      pc5m: tdPc5m,
-      volume5mUsd: metrics.volume5mUsd,
-      liquidityUsd: metrics.liquidityUsd,
-      alpha: cfg.turnDumpAlpha,
-      beta: cfg.turnDumpBeta,
-      shallowSlackPct: cfg.turnDumpShallowSlackPct,
-      deepSlackPct: cfg.turnDumpDeepSlackPct,
-      shallowBranchEnabled: cfg.turnDumpShallowBranchEnabled,
-      shallowAlpha: cfg.turnDumpShallowAlpha,
-      shallowBeta: cfg.turnDumpShallowBeta,
-      shallowBandPct: cfg.turnDumpShallowBandPct,
-    });
+    const td = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5m, metrics));
     if (!td.pass) {
       // 1.11.774 — was silent null; journal so live misses are visible.
       appendMildDipJournal(cfg.journalPath, {
@@ -521,9 +557,10 @@ export async function evaluateFastPathCandidate(
     if (
       dipSource === 'h1_red_shallow' ||
       dipSource === 'flat_micro_dip' ||
-      dipSource === 'mild_stabilize'
+      dipSource === 'mild_stabilize' ||
+      dipSource === 'turn_dump_knife'
     ) {
-      /* ok — shallow / bounce-confirm */
+      /* ok — shallow / bounce-confirm / 7BNax knife OR */
     } else if (!streamInMain && !dexInMain) {
       return skip('not_in_main_band', { dipSource, streamDd, dexPc, structSource });
     }

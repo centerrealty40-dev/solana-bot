@@ -53,7 +53,13 @@ export type WaitDipReadyVerdict = {
 export function waitDipAppliesToSource(dipSource: string | null | undefined): boolean {
   if (!dipSource || dipSource === 'wait_dip') return false;
   if (dipSource === 'h1_red_shallow') return false;
-  if (dipSource === 'knife_stabilize' || dipSource === 'mild_stabilize') return false;
+  if (
+    dipSource === 'knife_stabilize' ||
+    dipSource === 'mild_stabilize' ||
+    dipSource === 'turn_dump_knife'
+  ) {
+    return false;
+  }
   return (
     dipSource === 'dex' ||
     dipSource === 'stream' ||

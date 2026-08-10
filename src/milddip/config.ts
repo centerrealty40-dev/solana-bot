@@ -260,6 +260,14 @@ const MildDipConfigSchema = z.object({
   turnDumpShallowBeta: z.coerce.number().default(4.23),
   turnDumpShallowBandPct: z.coerce.number().min(0).max(50).default(8),
   /**
+   * 1.11.793 — 7BNax OR after MAIN|SHALLOW: dump≥min AND turn≥minTurn.
+   * Same wallet / same bot — not a second lane.
+   */
+  turnDumpKnifeBranchEnabled: z.boolean().default(false),
+  /** Positive dump depth % (30 ⇒ pc5m ≤ −30). */
+  turnDumpKnifeMinDumpPct: z.coerce.number().min(0).max(90).default(30),
+  turnDumpKnifeMinTurn: z.coerce.number().min(0).max(10).default(0.3),
+  /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
    * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
    */
@@ -699,6 +707,9 @@ export function loadMildDipConfig(): MildDipConfig {
     turnDumpShallowAlpha: envNum('MILD_DIP_TURN_DUMP_SHALLOW_ALPHA', -8.83),
     turnDumpShallowBeta: envNum('MILD_DIP_TURN_DUMP_SHALLOW_BETA', 4.23),
     turnDumpShallowBandPct: envNum('MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT', 8),
+    turnDumpKnifeBranchEnabled: envBool('MILD_DIP_TURN_DUMP_KNIFE_BRANCH', false),
+    turnDumpKnifeMinDumpPct: envNum('MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT', 30),
+    turnDumpKnifeMinTurn: envNum('MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN', 0.3),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),

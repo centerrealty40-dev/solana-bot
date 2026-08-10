@@ -105,6 +105,7 @@ export async function attemptMildDipEntry(args: {
   let entryVol5m = c.metrics.volume5mUsd;
   let freshPx: number | null = c.priceUsd;
   const isKnife = c.dipSource === 'knife_stabilize';
+  const isTurnDumpKnife = c.dipSource === 'turn_dump_knife';
   const isWaitDip = c.dipSource === 'wait_dip';
   const isH1RedShallow = c.dipSource === 'h1_red_shallow';
   const isFlatMicro = c.dipSource === 'flat_micro_dip';
@@ -114,6 +115,8 @@ export async function attemptMildDipEntry(args: {
     pairAgeHours: c.metrics.pairAgeHours,
   };
   const softCd = opts.softSkipCooldownMs ?? Math.min(cfg.mintCooldownMs, 120_000);
+  const knifeMaxDip =
+    cfg.turnDumpKnifeMinDumpPct > 0 ? -cfg.turnDumpKnifeMinDumpPct : -30;
   const branchEntryGates = isH1RedShallow
     ? {
         minDipPct: cfg.h1RedShallowMinDipPct,
@@ -124,7 +127,13 @@ export async function attemptMildDipEntry(args: {
           minDipPct: cfg.flatMicroMinDipPct,
           maxDipPct: cfg.flatMicroMaxDipPct,
         }
-      : cfg.entry;
+      : isTurnDumpKnife
+        ? {
+            // Allow deep blade that MAIN/SHALLOW reject (pc5m ≤ −knifeMin).
+            minDipPct: Math.min(cfg.knifeStabilizeMinDipPct, -90),
+            maxDipPct: knifeMaxDip,
+          }
+        : cfg.entry;
 
   if (cfg.preBuyRevalidate) {
     const freshNow = Date.now();
@@ -309,6 +318,9 @@ export async function attemptMildDipEntry(args: {
       shallowAlpha: cfg.turnDumpShallowAlpha,
       shallowBeta: cfg.turnDumpShallowBeta,
       shallowBandPct: cfg.turnDumpShallowBandPct,
+      knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+      knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
+      knifeMinTurn: cfg.turnDumpKnifeMinTurn,
     });
     if (!td.pass) {
       appendMildDipJournal(cfg.journalPath, {
