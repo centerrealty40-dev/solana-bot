@@ -3014,11 +3014,12 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
         /**
-         * 1.11.791 — staged loss from entry:
-         * half at −25% (`hard_stop`), remainder at −50% (`cliff_dump`).
-         * Gap straight to −50% → full cliff_dump.
+         * 1.11.810 — 25 → 15 on the deep-entry profile. After a −20% wait-dip
+         * fill the bounce mean-reverts, so a −25% floor just pays for the whole
+         * round trip. Every top-10 config in the 3.8h grid on the new trades
+         * used hard 15.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
@@ -3034,6 +3035,19 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT: '3',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION: '0.5',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_2_PCT: '16',
+        /**
+         * 1.11.810 — bank earlier and finish sooner on the deep-entry profile.
+         * Free-form grid on 49 post-1.11.808 trades put `tp8 / sl15` on top and
+         * `trail35` near the bottom: after a −20% fill the pop mean-reverts, so
+         * the fat right tail we copied from the leaders is not there for us.
+         * Closest engine-expressible config: 40% at +6, remainder at +8.
+         * Was 8×0.4 → 15×0.4 → sleeve 12 (−$3.97 vs −$0.48 on that window).
+         */
+        MILD_DIP_EXIT_MFE_BANK1_PCT: '6',
+        MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
+        MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
+        MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '8',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
