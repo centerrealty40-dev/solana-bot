@@ -263,6 +263,34 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_TURN_DUMP_GATE: '1'");
   });
 
+  it('1.11.804 null Dex refetch falls back to the ring, not missing_price', () => {
+    const src = readFileSync(resolve('src/milddip/entry-attempt.ts'), 'utf8');
+    expect(src).toContain('const ringPx = mildDipPriceRing.lastPrice(c.mint, freshNow)');
+    expect(src).toContain('if (ringPx && ringPx.priceUsd > 0) freshPx = ringPx.priceUsd');
+  });
+
+  it('prebuy rejects only when no price exists at all', () => {
+    const missing = evaluateWaitDipPreBuy({
+      signalPriceUsd: 100,
+      readyMarkPriceUsd: 88,
+      freshPriceUsd: null,
+      waitDipPct: -12,
+      maxOvershootPct: 2,
+      maxChaseFromReadyPct: 3,
+    });
+    expect(missing.pass).toBe(false);
+    expect(missing.reasons).toContain('wait_dip_prebuy_missing_price');
+    const ok = evaluateWaitDipPreBuy({
+      signalPriceUsd: 100,
+      readyMarkPriceUsd: 88,
+      freshPriceUsd: 88,
+      waitDipPct: -12,
+      maxOvershootPct: 2,
+      maxChaseFromReadyPct: 3,
+    });
+    expect(ok.pass).toBe(true);
+  });
+
   it('knife / stabilize branches still buy at signal', () => {
     expect(waitDipAppliesToSource('turn_dump_knife')).toBe(false);
     expect(waitDipAppliesToSource('knife_stabilize')).toBe(false);
