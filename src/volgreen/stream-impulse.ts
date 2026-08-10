@@ -16,9 +16,10 @@ import {
 } from '../milddip/mint-price-refresh.js';
 import { mildDipPriceRing } from '../milddip/price-ring.js';
 import {
-  defaultLeaderTapeGates,
-  detectLeaderTape,
-} from './leader-tape.js';
+  detectDualLeaderTape,
+  f7LeaderTapeGates,
+  f8LeaderTapeGates,
+} from './leader-formulas.js';
 import {
   hasLeaderBought,
   requireLeaderBoughtEnabled,
@@ -158,7 +159,9 @@ export async function evaluateStreamImpulseCandidates(
   };
 
   const scamGates = defaultScamLadderGates(process.env);
-  const leaderTapeGates = defaultLeaderTapeGates(process.env);
+  const f8Gates = f8LeaderTapeGates(process.env);
+  const f7Gates = f7LeaderTapeGates(process.env);
+  const minSamplesForEval = Math.min(f8Gates.minSamples, f7Gates.minSamples);
   const requireLeaderBought = requireLeaderBoughtEnabled(process.env);
   // Naked volume-impulse ENTRY off by default — fat tape only prioritizes eval.
   // Leaders do not buy "any ≥2 SOL print"; that path bought EmvB/Avow rugs.
@@ -211,15 +214,19 @@ export async function evaluateStreamImpulseCandidates(
       // Keep buyForce cleared by candidateFromPass — do not re-chase late grind.
       return;
     }
-    // Leader tape (8zkg/7BNaxx): recent maxG≥8% + run-up≥10%. Soft buy-bar OK.
-    const tape = detectLeaderTape(samples, leaderTapeGates, nowMs);
+    // Dual leader formulas OR: F8 (8zkg tape) | F7 (7BNaxx tape + pc5m≥2).
+    const ringPc5m = mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs);
+    const tape = detectDualLeaderTape(samples, {
+      nowMs,
+      ringPc5mPct: ringPc5m,
+    });
     if (!tape.pass) {
       skips.push({
         mint,
         entryMode: 'green_tape',
         reasons: tape.reasons,
         metrics: {
-          priceChange5mPct: mildDipPriceRing.changeFromOldestPct(mint, 300_000, nowMs),
+          priceChange5mPct: ringPc5m,
           ...(tape.stats
             ? {
                 triplePattern: {
@@ -235,6 +242,9 @@ export async function evaluateStreamImpulseCandidates(
       });
       mildDipHotMints.clearBuyForce(mint);
       return;
+    }
+    if (tape.formula) {
+      cand.metrics.leaderFormula = tape.formula;
     }
     candidates.push(cand);
   };
@@ -294,12 +304,12 @@ export async function evaluateStreamImpulseCandidates(
       }
     }
 
-    if (samples.length < leaderTapeGates.minSamples) {
+    if (samples.length < minSamplesForEval) {
       skips.push({
         mint,
         entryMode: 'green_tape',
         reasons: [
-          `stream_impulse_need_samples=${samples.length}<${leaderTapeGates.minSamples}`,
+          `stream_impulse_need_samples=${samples.length}<${minSamplesForEval}`,
         ],
       });
       continue;

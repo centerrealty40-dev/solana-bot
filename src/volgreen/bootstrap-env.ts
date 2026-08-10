@@ -69,7 +69,8 @@ export function bootstrapVolGreenEnv(env: NodeJS.ProcessEnv = process.env): void
   setIfAbsent('MILD_DIP_ENTRY_MODE', env.VOL_GREEN_ENTRY_MODE?.trim() || 'green_tape');
   setIfAbsent('MILD_DIP_APP_NAME', env.VOL_GREEN_APP_NAME?.trim() || 'vol-green-bot');
   setIfAbsent('MILD_DIP_EXECUTION_MODE', 'live');
-  setIfAbsent('MILD_DIP_POSITION_USD', '5');
+  setIfAbsent('MILD_DIP_POSITION_USD', '1');
+  setIfAbsent('VOL_GREEN_DUAL_LEADER_FORMULAS', '1');
   setIfAbsent('MILD_DIP_WALLET_PUBKEY', FXQF);
   setIfAbsent(
     'MILD_DIP_WALLET_SECRET',
