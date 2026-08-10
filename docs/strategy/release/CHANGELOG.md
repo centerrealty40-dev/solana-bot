@@ -1,4 +1,23 @@
 # So
+## [1.11.807] — 2026-08-10
+
+**Тег:** `sa-1.11.807`
+
+### Fix: `no_stream_price` убивал запаркованные wait-dip seats
+
+За 15 минут: **1303** `wait_dip_ready` и **3** покупки, из них **0** по wait-dip.
+Виновник — **886** `mild_dip_no_stream_price_skip`. Пример `EY43xThsa2`:
+363 ready → 363 отказа → `wait_dip_expire`.
+
+Гейт `requireStreamPriceForDipSource` (1.11.802) освобождал `dex`,
+`dex+stream`, `turn_dump_knife`, но не `wait_dip`. Запаркованный seat уже
+привязан к своему сигналу (потолок + лимит догона), поэтому требовать сверху
+свежий stream-принт бессмысленно — это просто гарантированная смерть seat'а.
+
+**Откат:** `git checkout sa-1.11.806 -- src/milddip/fast-path.ts` + reload.
+
+---
+
 ## [1.11.806] — 2026-08-10
 
 **Тег:** `sa-1.11.806`

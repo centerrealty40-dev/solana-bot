@@ -297,10 +297,12 @@ describe('fast-path helpers', () => {
     expect(structuralOk(huge, cfg)).toBe(false);
   });
 
-  it('1.11.802 Dex/TD dipSources skip requireStreamPrice', () => {
+  it('1.11.802/807 Dex/TD/wait-dip sources skip requireStreamPrice', () => {
     expect(requireStreamPriceForDipSource('dex')).toBe(false);
     expect(requireStreamPriceForDipSource('dex+stream')).toBe(false);
     expect(requireStreamPriceForDipSource('turn_dump_knife')).toBe(false);
+    // Parked seat is anchored to its own signal (ceiling + chase caps).
+    expect(requireStreamPriceForDipSource('wait_dip')).toBe(false);
     expect(requireStreamPriceForDipSource('stream')).toBe(true);
     expect(requireStreamPriceForDipSource('mild_stabilize')).toBe(true);
     expect(requireStreamPriceForDipSource(null)).toBe(true);
