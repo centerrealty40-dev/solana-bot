@@ -10,6 +10,7 @@ import type { MildDipCandidate } from './discover.js';
 import { evaluateFlatMicroDip, type MildDipCandidateMetrics } from './gates.js';
 import {
   evaluateMildStabilizeFromRing,
+  mildStabilizeDexDipOk,
   mildStabilizeLaneAllowed,
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
@@ -506,15 +507,29 @@ export async function evaluateFastPathCandidate(
       minBelowPeakPct: cfg.mildStabilizeMinBelowPeakPct,
     });
     if (mild.pass) {
+      // 1.11.800 — do not accept bounce while Dex m5 is already green/flat.
+      // Also never overwrite Dex pc5m with ring dump (lied to turn-dump on EjD5Y9).
+      if (
+        !mildStabilizeDexDipOk({
+          requireDexDip: cfg.mildStabilizeRequireDexDip,
+          dexPc5m: dexPc,
+          dexMaxDipPct: cfg.mildStabilizeDexMaxDipPct,
+        })
+      ) {
+        return skip('mild_stabilize_dex_not_red', {
+          streamDd,
+          dexPc,
+          mildDump: mild.dumpPct,
+          mildBounce: mild.bouncePct,
+          dexMaxDipPct: cfg.mildStabilizeDexMaxDipPct,
+        });
+      }
       dipSource = 'mild_stabilize';
       mildDumpPct = mild.dumpPct;
       mildBouncePct = mild.bouncePct;
       mildTrough = mild.troughPriceUsd;
       mildTroughAtMs = mild.troughAtMs;
       if (mild.lastPriceUsd != null && mild.lastPriceUsd > 0) priceUsd = mild.lastPriceUsd;
-      if (mild.dumpPct != null) {
-        metrics = { ...metrics, priceChange5mPct: mild.dumpPct };
-      }
     }
   }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateMildStabilizeFromRing,
+  mildStabilizeDexDipOk,
   mildStabilizeLaneAllowed,
 } from '../../src/milddip/mild-stabilize.js';
 import { MildDipPriceRing } from '../../src/milddip/price-ring.js';
@@ -93,5 +94,28 @@ describe('mildStabilizeLaneAllowed', () => {
         hasOtherDipSource: true,
       }),
     ).toBe(false);
+  });
+});
+
+describe('mildStabilizeDexDipOk (1.11.800 EjD5Y9)', () => {
+  it('blocks green / flat Dex even when ring bounce looks fine', () => {
+    expect(
+      mildStabilizeDexDipOk({ requireDexDip: true, dexPc5m: 4.91, dexMaxDipPct: -2 }),
+    ).toBe(false);
+    expect(
+      mildStabilizeDexDipOk({ requireDexDip: true, dexPc5m: -0.5, dexMaxDipPct: -2 }),
+    ).toBe(false);
+    expect(
+      mildStabilizeDexDipOk({ requireDexDip: true, dexPc5m: null, dexMaxDipPct: -2 }),
+    ).toBe(false);
+  });
+
+  it('allows when Dex still dumping', () => {
+    expect(
+      mildStabilizeDexDipOk({ requireDexDip: true, dexPc5m: -8.4, dexMaxDipPct: -2 }),
+    ).toBe(true);
+    expect(
+      mildStabilizeDexDipOk({ requireDexDip: false, dexPc5m: 4.91, dexMaxDipPct: -2 }),
+    ).toBe(true);
   });
 });

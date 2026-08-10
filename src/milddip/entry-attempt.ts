@@ -208,13 +208,27 @@ export async function attemptMildDipEntry(args: {
             maxBouncePct: cfg.knifeStabilizeMaxBouncePct,
           })
         : isMildStabilize
-          ? evaluateKnifeStabilizePreBuy({
-              signalPriceUsd: c.priceUsd,
-              freshPriceUsd: freshPx,
-              troughPriceUsd: c.mildStabilizeTroughPriceUsd ?? null,
-              maxChasePct: opts.chasePct,
-              maxBouncePct: cfg.mildStabilizeMaxBouncePct,
-            })
+          ? (() => {
+              const bouncePre = evaluateKnifeStabilizePreBuy({
+                signalPriceUsd: c.priceUsd,
+                freshPriceUsd: freshPx,
+                troughPriceUsd: c.mildStabilizeTroughPriceUsd ?? null,
+                maxChasePct: opts.chasePct,
+                maxBouncePct: cfg.mildStabilizeMaxBouncePct,
+              });
+              const reasons = [...bouncePre.reasons];
+              if (cfg.mildStabilizeRequireDexDip) {
+                const pc = freshPc;
+                if (pc == null || !Number.isFinite(pc)) {
+                  reasons.push('mild_stabilize_prebuy_missing_dex_pc5m');
+                } else if (!(pc <= cfg.mildStabilizeDexMaxDipPct)) {
+                  reasons.push(
+                    `mild_stabilize_prebuy_dex_pc5m=${pc.toFixed(2)}>max=${cfg.mildStabilizeDexMaxDipPct}`,
+                  );
+                }
+              }
+              return { pass: reasons.length === 0, reasons };
+            })()
           : isWaitDip
             ? evaluateWaitDipPreBuy({
                 signalPriceUsd: c.waitDipSignalPriceUsd ?? c.priceUsd,

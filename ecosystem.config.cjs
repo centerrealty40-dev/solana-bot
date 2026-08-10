@@ -2915,13 +2915,17 @@ const PM2_APPS = [
          * knife_stabilize (−50,−20] wait+bounce — unchanged.
          */
         MILD_DIP_MILD_STABILIZE_ENABLED: '1',
-        MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '1',
+        /** 1.11.800 — off: EjD5Y9 green-candle reclaim via ring bounce. */
+        MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '0',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-8',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '8',
         MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '15000',
         MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT: '2',
+        /** Even if FRESH_ENTRY is re-enabled: Dex m5 must still be dumping. */
+        MILD_DIP_MILD_STABILIZE_REQUIRE_DEX_DIP: '1',
+        MILD_DIP_MILD_STABILIZE_DEX_MAX_DIP_PCT: '-2',
         /**
          * 1.11.784 — OFF. Single entry formula = turn→dump (+ mild/knife
          * stabilize on the same dump tape). h1-red-shallow was a second path

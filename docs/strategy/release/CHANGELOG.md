@@ -1,4 +1,26 @@
 # So
+## [1.11.800] — 2026-08-10
+
+**Тег:** `sa-1.11.800`
+
+### Fix: mild_stabilize green-candle buy (EjD5Y9 / 2Xm6…)
+
+Bought `EjD5Y9` on reclaim (`dipSource=mild_stabilize`, bounce +6.2%)
+while Dex m5 was already green. Path overwrote `pc5m` with ring dump
+(−8.4%) so turn-dump thought the tape was still red.
+
+Changes:
+
+- Live `MILD_DIP_MILD_STABILIZE_FRESH_ENTRY=0` (again)
+- Require live Dex pc5m ≤ `−2` for mild_stabilize (fast + prebuy)
+- Stop replacing Dex `pc5m` with synthetic ring dump
+
+**Откат:** `FRESH_ENTRY=1` + `REQUIRE_DEX_DIP=0` + prior fast-path via
+  `git checkout sa-1.11.799 -- src/milddip/fast-path.ts
+  src/milddip/entry-attempt.ts src/milddip/mild-stabilize.ts` + reload.
+
+---
+
 ## [1.11.799] — 2026-08-10
 
 **Тег:** `sa-1.11.799`
