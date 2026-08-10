@@ -1,4 +1,28 @@
 # So
+## [1.11.797] — 2026-08-10
+
+**Тег:** `sa-1.11.797`
+
+### Feat: skip rebuy when liquidity fell after a loss exit
+
+Entry already required absolute `minLiquidityUsd` ($5k), but did **not**
+compare liq vs the last sell. Death-spiral coins could sell −loss → dip
+rebuy → sell −loss while the pool drained.
+
+Changes:
+
+- Snapshot Dex liq into `lastExitByMint` on full exit (open-mark / entry)
+- Gate: after loss exit, if current liq &lt; exit liq → skip rebuy
+  (`mild_dip_rebuy_liq_drop_skip`), memory default 6h
+- Env: `MILD_DIP_REBUY_LIQ_DROP=1`,
+  `MILD_DIP_REBUY_LIQ_DROP_MAX_AGE_MS`,
+  `MILD_DIP_REBUY_LIQ_DROP_MIN_DROP_PCT` (0 = any decline),
+  `MILD_DIP_REBUY_LIQ_DROP_ONLY_LOSS=1`
+
+**Откат:** `MILD_DIP_REBUY_LIQ_DROP=0` + reload.
+
+---
+
 ## [1.11.796] — 2026-08-10
 
 **Тег:** `sa-1.11.796`

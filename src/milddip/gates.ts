@@ -349,6 +349,51 @@ export function evaluateMildDipPreBuy(args: {
 }
 
 /**
+ * After a full exit (esp. loss): refuse rebuy when Dex liquidity has fallen
+ * vs the last-exit snapshot. Stops “sell dump → dip rebuy → dump again” on
+ * draining pools. Missing liq on either side → fail open (no block).
+ */
+export function evaluateRebuyLiquidityDrop(args: {
+  currentLiquidityUsd: number | null | undefined;
+  lastExitLiquidityUsd: number | null | undefined;
+  lastExitAtMs: number | null | undefined;
+  lastExitPnlPct: number | null | undefined;
+  nowMs: number;
+  enabled: boolean;
+  /** Ignore exits older than this (ms). 0 = no age cap. */
+  maxAgeMs: number;
+  /** 0 = any decline blocks; e.g. 5 = need ≥5% drop to block. */
+  minDropPct: number;
+  /** When true, only apply after a losing exit (pnlPct < 0). */
+  onlyAfterLoss: boolean;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  if (!args.enabled) return { pass: true, reasons };
+  const lastLiq = args.lastExitLiquidityUsd;
+  const curLiq = args.currentLiquidityUsd;
+  const at = args.lastExitAtMs;
+  if (lastLiq == null || !(lastLiq > 0)) return { pass: true, reasons };
+  if (at == null || !(at > 0)) return { pass: true, reasons };
+  if (args.maxAgeMs > 0 && args.nowMs - at > args.maxAgeMs) return { pass: true, reasons };
+  if (args.onlyAfterLoss) {
+    const pnl = args.lastExitPnlPct;
+    if (pnl == null || !Number.isFinite(pnl) || !(pnl < 0)) return { pass: true, reasons };
+  }
+  if (curLiq == null || !(curLiq > 0)) return { pass: true, reasons };
+
+  const dropPct = (1 - curLiq / lastLiq) * 100;
+  const need = Math.max(0, args.minDropPct);
+  if (dropPct >= need && curLiq < lastLiq) {
+    reasons.push(
+      `rebuy_liq_drop=${dropPct.toFixed(1)}%` +
+        `_now=$${curLiq.toFixed(0)}<exit=$${lastLiq.toFixed(0)}` +
+        (need > 0 ? `_min=${need}` : ''),
+    );
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
+/**
  * After a full exit: refuse rebuy unless mark is at least `minBelowExitPct`
  * cheaper than the exit fill (stream mark OK — no Dex). Stops “sell → buy the
  * same green reclaim candle” without waiting on DexScreener.

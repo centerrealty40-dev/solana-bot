@@ -13,6 +13,7 @@ import {
   evaluateCooldownBounce,
   evaluateMildDipPreBuy,
   evaluateRebuyBelowExit,
+  evaluateRebuyLiquidityDrop,
   mildDipMicroSizeGatesForSource,
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
@@ -376,6 +377,41 @@ export async function attemptMildDipEntry(args: {
     }
   }
 
+  // 1.11.797 — after loss exit: skip if Dex liq fell vs exit snapshot.
+  if (cfg.rebuyLiqDropEnabled) {
+    const last = state.lastExitByMint?.[c.mint];
+    const curLiq = sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd;
+    const liqDrop = evaluateRebuyLiquidityDrop({
+      currentLiquidityUsd: curLiq,
+      lastExitLiquidityUsd: last?.liquidityUsd,
+      lastExitAtMs: last?.atMs,
+      lastExitPnlPct: last?.pnlPct,
+      nowMs,
+      enabled: cfg.rebuyLiqDropEnabled,
+      maxAgeMs: cfg.rebuyLiqDropMaxAgeMs,
+      minDropPct: cfg.rebuyLiqDropMinDropPct,
+      onlyAfterLoss: cfg.rebuyLiqDropOnlyAfterLoss,
+    });
+    if (!liqDrop.pass) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_rebuy_liq_drop_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        lane: opts.lane,
+        currentLiquidityUsd: curLiq ?? null,
+        lastExitLiquidityUsd: last?.liquidityUsd ?? null,
+        lastExitAtMs: last?.atMs ?? null,
+        lastExitPnlPct: last?.pnlPct ?? null,
+        reasons: liqDrop.reasons,
+      });
+      console.log(
+        `[mild-dip] SKIP rebuy-liq ${c.symbol} mint=${c.mint.slice(0, 8)}… ${liqDrop.reasons.join(',')}`,
+      );
+      state.cooldownUntilMs[c.mint] = nowMs + softCd;
+      return 'skip';
+    }
+  }
+
   if (!opts.skipBounce) {
     const bounceLookbackMs = Math.max(
       cfg.cooldownBounceLookbackMs,
@@ -477,6 +513,7 @@ export async function attemptMildDipEntry(args: {
     peakPriceUsd: entryPriceUsd,
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+    entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
   // Keep waitDipWatch until fill succeeds — quote-premium reject must retry.
@@ -701,6 +738,7 @@ export async function attemptMildDipEntry(args: {
     peakPriceUsd: fillPx,
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+    entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
   };
   // Seed exit mark ring so stream-only marks have a print before first swap decode.
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });

@@ -1127,10 +1127,20 @@ async function executeQueuedSell(args: {
   const noteLastExit = (exitPx: number): void => {
     if (!(exitPx > 0)) return;
     if (!state.lastExitByMint) state.lastExitByMint = {};
+    // Prefer live Dex open-mark liq; fall back to entry snapshot.
+    const markLiq = readOpenMarkMetrics(mint, nowMs, 300_000)?.liquidityUsd;
+    const entryLiq = state.open[mint]?.entryLiquidityUsd;
+    const liq =
+      markLiq != null && markLiq > 0
+        ? markLiq
+        : entryLiq != null && entryLiq > 0
+          ? entryLiq
+          : null;
     state.lastExitByMint[mint] = {
       priceUsd: exitPx,
       atMs: nowMs,
       pnlPct: +realizedPnl.toFixed(2),
+      ...(liq != null ? { liquidityUsd: liq } : {}),
     };
     // 1.11.783 — pin to hot buffer so stream wake / sampler keep the name.
     mildDipHotMints.note(mint, nowMs);
@@ -2101,6 +2111,12 @@ export async function runMildDipLoop(
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
       `/skipBounce=${cfg.fastPathSkipBounce ? 1 : 0}` +
       `/rebuyBelowExit=${cfg.rebuyBelowExitPct}%/${Math.round(cfg.rebuyBelowExitMaxAgeMs / 1000)}s` +
+      `/rebuyLiqDrop=${cfg.rebuyLiqDropEnabled ? 1 : 0}` +
+      (cfg.rebuyLiqDropEnabled
+        ? `/${Math.round(cfg.rebuyLiqDropMaxAgeMs / 3600_000)}h` +
+          `/≥${cfg.rebuyLiqDropMinDropPct}%` +
+          `/lossOnly=${cfg.rebuyLiqDropOnlyAfterLoss ? 1 : 0} `
+        : ' ') +
       `/hotDexProbe=${cfg.fastPathHotDexProbeEnabled ? 1 : 0}` +
       `@${cfg.fastPathHotDexProbeGapMs}ms≤${cfg.fastPathHotDexProbeMaxPerMin}/min ` +
       `/enrichMax=${cfg.enrichMax} ` +
