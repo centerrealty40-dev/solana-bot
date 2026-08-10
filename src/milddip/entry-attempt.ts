@@ -8,7 +8,7 @@ import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-
 import type { CopyTraderConfig } from '../copytrader/config.js';
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
-import { noteStructuralCache } from './fast-path.js';
+import { noteStructuralCache, requireStreamPriceForDipSource } from './fast-path.js';
 import {
   evaluateCooldownBounce,
   evaluateMildDipPreBuy,
@@ -83,8 +83,8 @@ export async function attemptMildDipEntry(args: {
   if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
 
-  // 1.11.798/799 — need a recent stream print (Dex may be the latest tick).
-  if (cfg.requireStreamPriceEntry) {
+  // 1.11.802 — stream ring only for stream-timed sources; Dex/TD may enter on Dex.
+  if (cfg.requireStreamPriceEntry && requireStreamPriceForDipSource(c.dipSource)) {
     const maxAge = cfg.requireStreamPriceMaxAgeMs;
     const stream = mildDipPriceRing.lastPriceBySource(c.mint, 'stream', nowMs, maxAge);
     if (!stream || !(stream.priceUsd > 0)) {
@@ -94,6 +94,7 @@ export async function attemptMildDipEntry(args: {
         mint: c.mint,
         symbol: c.symbol,
         lane: opts.lane,
+        dipSource: c.dipSource,
         lastSource: last?.source ?? null,
         lastAgeMs: last ? Math.max(0, nowMs - last.tsMs) : null,
         maxAgeMs: maxAge,

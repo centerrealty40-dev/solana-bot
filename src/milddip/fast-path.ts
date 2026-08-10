@@ -304,23 +304,17 @@ export function structuralOk(metrics: MildDipCandidateMetrics, cfg: MildDipConfi
   return true;
 }
 
-async function loadStructural(
+/** Stale structural reuse when live Dex blips null (not Enrich — same snapshot). */
+const STRUCTURAL_STALE_FALLBACK_MS = 30_000;
+const STRUCTURAL_FETCH_RETRIES = 2;
+const STRUCTURAL_RETRY_GAP_MS = 80;
+
+function structuralFromDexDetails(
   mint: string,
-  cfg: MildDipConfig,
+  details: NonNullable<Awaited<ReturnType<typeof fetchDexScreenerPairDetails>>>,
   nowMs: number,
-): Promise<StructuralCacheEntry | null> {
-  const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs);
-  if (cached) return cached;
-
-  const details = await fetchDexScreenerPairDetails(mint, {
-    nowMs,
-    bypassCache: false,
-    cacheTtlMs: Math.min(5_000, cfg.fastPathStructuralCacheMs),
-    allowedDexIds: cfg.entry.allowedDexIds,
-  });
-  if (!details || !(details.priceUsd != null && details.priceUsd > 0)) return null;
-
-  mildDipPriceRing.note(mint, details.priceUsd, { tsMs: nowMs, source: 'dex' });
+): StructuralCacheEntry {
+  mildDipPriceRing.note(mint, details.priceUsd!, { tsMs: nowMs, source: 'dex' });
   const pairAgeHours =
     details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
       ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
@@ -337,9 +331,50 @@ async function loadStructural(
     volume1hUsd: details.volume1hUsd,
     priceChange1hPct: details.priceChangeH1Pct,
   };
-  const entry = { fetchedAtMs: nowMs, priceUsd: details.priceUsd, metrics };
+  const entry = { fetchedAtMs: nowMs, priceUsd: details.priceUsd!, metrics };
   noteStructuralCache(mint, entry.priceUsd, metrics, nowMs);
   return entry;
+}
+
+/**
+ * Dex structural load: fresh cache → fetch with 1 retry → stale cache ≤30s.
+ * One null blip must not kill a TD-eligible mint (`structural_fetch_null` spam).
+ */
+export async function loadStructural(
+  mint: string,
+  cfg: MildDipConfig,
+  nowMs: number,
+): Promise<StructuralCacheEntry | null> {
+  const freshMs = cfg.fastPathStructuralCacheMs;
+  const cached = getStructuralCache(mint, nowMs, freshMs);
+  if (cached) return cached;
+
+  for (let attempt = 0; attempt < STRUCTURAL_FETCH_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise((r) => setTimeout(r, STRUCTURAL_RETRY_GAP_MS));
+    }
+    const details = await fetchDexScreenerPairDetails(mint, {
+      nowMs,
+      bypassCache: attempt > 0,
+      cacheTtlMs: Math.min(5_000, freshMs),
+      allowedDexIds: cfg.entry.allowedDexIds,
+    });
+    if (details && details.priceUsd != null && details.priceUsd > 0) {
+      return structuralFromDexDetails(mint, details, nowMs);
+    }
+  }
+
+  const stale = getStructuralCache(mint, nowMs, STRUCTURAL_STALE_FALLBACK_MS);
+  if (stale) return stale;
+  return null;
+}
+
+/** Stream ring required for stream-timed sources; Dex/TD formula paths may enter on Dex alone. */
+export function requireStreamPriceForDipSource(
+  dipSource: MildDipCandidate['dipSource'] | null | undefined,
+): boolean {
+  if (dipSource == null) return true;
+  return dipSource !== 'dex' && dipSource !== 'dex+stream' && dipSource !== 'turn_dump_knife';
 }
 
 /**
@@ -377,20 +412,8 @@ export async function evaluateFastPathCandidate(
   if (!mint || mint.length < 32) return skip('bad_mint');
   if (cfg.deniedMints.includes(mint)) return skip('denied_mint');
 
-  // 1.11.798/799 — bot is stream-priced: need a recent stream print in the
-  // ring (not "last tick is stream" — Dex notes often overwrite last).
-  if (cfg.requireStreamPriceEntry) {
-    const maxAge = cfg.requireStreamPriceMaxAgeMs;
-    const stream = mildDipPriceRing.lastPriceBySource(mint, 'stream', nowMs, maxAge);
-    if (!stream || !(stream.priceUsd > 0)) {
-      const last = mildDipPriceRing.lastPrice(mint, nowMs);
-      return skip('no_stream_price', {
-        lastSource: last?.source ?? null,
-        lastAgeMs: last ? Math.max(0, nowMs - last.tsMs) : null,
-        maxAgeMs: maxAge,
-      });
-    }
-  }
+  // 1.11.802 — do NOT hard-block here on stream ring. Dex/TD entries may
+  // proceed without a stream print; stream-timed sources still checked below.
 
   const prevAttempt = lastFastAttemptMs.get(mint) ?? 0;
   if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return null;
@@ -642,6 +665,28 @@ export async function evaluateFastPathCandidate(
     if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
   }
 
+  // 1.11.802 — TD pass ⇒ dipSource before no_dip_source (was dead when formula
+  // already matched Dex tape but classic main-band dipSource was unset).
+  let tdRescue = false;
+  const tdPc5mForGate =
+    streamDd != null &&
+    Number.isFinite(streamDd) &&
+    (metrics.priceChange5mPct == null ||
+      !Number.isFinite(metrics.priceChange5mPct) ||
+      streamDd < (metrics.priceChange5mPct as number))
+      ? streamDd
+      : (metrics.priceChange5mPct ?? dexPc);
+  if (!dipSource && cfg.turnDumpGateEnabled) {
+    const tdEarly = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5mForGate, metrics));
+    if (tdEarly.pass) {
+      tdRescue = true;
+      dipSource = tdEarly.branch === 'knife' ? 'turn_dump_knife' : 'dex';
+      if (tdPc5mForGate != null && Number.isFinite(tdPc5mForGate)) {
+        metrics = { ...metrics, priceChange5mPct: tdPc5mForGate };
+      }
+    }
+  }
+
   if (!dipSource) {
     return skip('no_dip_source', {
       structSource,
@@ -682,14 +727,7 @@ export async function evaluateFastPathCandidate(
   // 1.11.773 — turn→dump: buy now if depth matches turnover; skip if too shallow.
   // 1.11.779/790 — prefer deeper stream dump-extent vs lagging Dex pc5m for the gate.
   if (cfg.turnDumpGateEnabled) {
-    const tdPc5m =
-      streamDd != null &&
-      Number.isFinite(streamDd) &&
-      (metrics.priceChange5mPct == null ||
-        !Number.isFinite(metrics.priceChange5mPct) ||
-        streamDd < metrics.priceChange5mPct)
-        ? streamDd
-        : metrics.priceChange5mPct;
+    const tdPc5m = tdPc5mForGate;
     const td = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5m, metrics));
     if (!td.pass) {
       // 1.11.774 — was silent null; journal so live misses are visible.
@@ -717,15 +755,31 @@ export async function evaluateFastPathCandidate(
     }
   }
 
+  // 1.11.802 — stream ring only for stream-timed sources (Dex/TD may enter without it).
+  if (cfg.requireStreamPriceEntry && requireStreamPriceForDipSource(dipSource)) {
+    const maxAge = cfg.requireStreamPriceMaxAgeMs;
+    const stream = mildDipPriceRing.lastPriceBySource(mint, 'stream', nowMs, maxAge);
+    if (!stream || !(stream.priceUsd > 0)) {
+      const last = mildDipPriceRing.lastPrice(mint, nowMs);
+      return skip('no_stream_price', {
+        dipSource,
+        lastSource: last?.source ?? null,
+        lastAgeMs: last ? Math.max(0, nowMs - last.tsMs) : null,
+        maxAgeMs: maxAge,
+      });
+    }
+  }
+
   // Leader/stream triggers: require a real dip print (not green chase).
   if (trigger === 'leader' || trigger === 'stream') {
     if (
       dipSource === 'h1_red_shallow' ||
       dipSource === 'flat_micro_dip' ||
       dipSource === 'mild_stabilize' ||
-      dipSource === 'turn_dump_knife'
+      dipSource === 'turn_dump_knife' ||
+      tdRescue
     ) {
-      /* ok — shallow / bounce-confirm / 7BNax knife OR */
+      /* ok — shallow / bounce-confirm / 7BNax knife OR / TD-rescue dex */
     } else if (!streamInMain && !dexInMain) {
       return skip('not_in_main_band', {
         dipSource,
