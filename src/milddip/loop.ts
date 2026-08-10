@@ -277,6 +277,14 @@ function markPriceUsd(
 const lastMarkJournalMs = new Map<string, number>();
 
 /**
+ * mint → last `mild_dip_wait_dip_ready` journal ts (throttle, process-local).
+ * A parked seat re-reads ready on every tick; one seat logged 363 identical
+ * lines before expiring, which drowns the journal used for entry research.
+ */
+const lastWaitDipReadyJournalMs = new Map<string, number>();
+const WAIT_DIP_READY_JOURNAL_GAP_MS = 15_000;
+
+/**
  * Sample the mark path of an open position into the journal so trail widths can
  * be re-fitted offline on our own trades. Throttled per mint; peak moves and
  * exits are always recorded so the upper envelope is never lost.
@@ -534,22 +542,26 @@ async function tryFireWaitDip(
     waitDipOriginalSource: watch.originalDipSource,
     waitDipDumpFromSignalPct: verdict.dumpFromSignalPct,
   };
-  appendMildDipJournal(cfg.journalPath, {
-    kind: 'mild_dip_wait_dip_ready',
-    mint,
-    symbol: watch.symbol,
-    signalPriceUsd: watch.signalPriceUsd,
-    targetPriceUsd: verdict.targetPriceUsd,
-    markPriceUsd: px,
-    dumpFromSignalPct: verdict.dumpFromSignalPct,
-    originalDipSource: watch.originalDipSource,
-    waitMs: nowMs - watch.detectedAtMs,
-  });
-  console.log(
-    `[mild-dip] WAIT_DIP ready ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
-      `dump=${verdict.dumpFromSignalPct?.toFixed(1)}% from signal ` +
-      `(need ${cfg.waitDipPct}%) wait=${Math.round((nowMs - watch.detectedAtMs) / 1000)}s`,
-  );
+  const prevReadyJournal = lastWaitDipReadyJournalMs.get(mint) ?? 0;
+  if (nowMs - prevReadyJournal >= WAIT_DIP_READY_JOURNAL_GAP_MS) {
+    lastWaitDipReadyJournalMs.set(mint, nowMs);
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_wait_dip_ready',
+      mint,
+      symbol: watch.symbol,
+      signalPriceUsd: watch.signalPriceUsd,
+      targetPriceUsd: verdict.targetPriceUsd,
+      markPriceUsd: px,
+      dumpFromSignalPct: verdict.dumpFromSignalPct,
+      originalDipSource: watch.originalDipSource,
+      waitMs: nowMs - watch.detectedAtMs,
+    });
+    console.log(
+      `[mild-dip] WAIT_DIP ready ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
+        `dump=${verdict.dumpFromSignalPct?.toFixed(1)}% from signal ` +
+        `(need ${cfg.waitDipPct}%) wait=${Math.round((nowMs - watch.detectedAtMs) / 1000)}s`,
+    );
+  }
 
   // Signal-ceiling path: tight chase + fresh Dex; Jupiter premium vs ceiling.
   const chase = cfg.waitDipMaxChasePct;

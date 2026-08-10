@@ -259,23 +259,33 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_WAIT_DIP: '1'");
     expect(eco).toContain("MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1'");
-    expect(eco).toContain("MILD_DIP_WAIT_DIP_PCT: '-12'");
-    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '5'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_PCT: '-15'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '5'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '8'");
     expect(eco).toContain("MILD_DIP_TURN_DUMP_GATE: '1'");
   });
 
-  it('1.11.806 chase cap 5 takes the normal reclaim, not a 37% rip', () => {
+  it('1.11.808 ask −15%, still never pay above −10% off signal', () => {
     const mk = (fresh: number) =>
       evaluateWaitDipPreBuy({
         signalPriceUsd: 100,
-        readyMarkPriceUsd: 86,
+        readyMarkPriceUsd: 85, // ready fires at −15%
         freshPriceUsd: fresh,
-        waitDipPct: -12,
-        maxOvershootPct: 2,
-        maxChaseFromReadyPct: 5,
+        waitDipPct: -15,
+        maxOvershootPct: 5,
+        maxChaseFromReadyPct: 8,
       });
-    expect(mk(89.2).pass).toBe(true); // +3.7% off ready — the live median
-    expect(mk(117).pass).toBe(false); // +36% rip
+    // Fill window is ready 85 → ceiling 90, i.e. ~5.9% of reclaim is tolerated.
+    expect(mk(85).pass).toBe(true);
+    expect(mk(89.9).pass).toBe(true);
+    // −12/−2 used to reject exactly here (live rejects clustered at −8.63%).
+    expect(mk(91.4).pass).toBe(false);
+  });
+
+  it('throttles the ready journal so one seat cannot spam 363 lines', () => {
+    const src = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+    expect(src).toContain('lastWaitDipReadyJournalMs');
+    expect(src).toContain('WAIT_DIP_READY_JOURNAL_GAP_MS');
   });
 
   it('1.11.805 null Dex refetch falls back ring → candidate mark', () => {
