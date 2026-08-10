@@ -10,12 +10,37 @@ import type { MildDipCandidate } from './discover.js';
 import { evaluateFlatMicroDip, type MildDipCandidateMetrics } from './gates.js';
 import {
   evaluateMildStabilizeFromRing,
+  mildStabilizeDexDipOk,
   mildStabilizeLaneAllowed,
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
-import { evaluateTurnDumpGate } from './turn-dump.js';
+import { evaluateTurnDumpGate, turnDumpKnifeOrOk } from './turn-dump.js';
+
+function turnDumpArgsFromCfg(
+  cfg: MildDipConfig,
+  pc5m: number | null | undefined,
+  metrics: MildDipCandidateMetrics,
+) {
+  return {
+    enabled: true as const,
+    pc5m,
+    volume5mUsd: metrics.volume5mUsd,
+    liquidityUsd: metrics.liquidityUsd,
+    alpha: cfg.turnDumpAlpha,
+    beta: cfg.turnDumpBeta,
+    shallowSlackPct: cfg.turnDumpShallowSlackPct,
+    deepSlackPct: cfg.turnDumpDeepSlackPct,
+    shallowBranchEnabled: cfg.turnDumpShallowBranchEnabled,
+    shallowAlpha: cfg.turnDumpShallowAlpha,
+    shallowBeta: cfg.turnDumpShallowBeta,
+    shallowBandPct: cfg.turnDumpShallowBandPct,
+    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
+    knifeMinTurn: cfg.turnDumpKnifeMinTurn,
+  };
+}
 
 /** Fresh enough observer Dex to skip a second DexScreener round-trip. */
 const LEADER_SEED_DEX_MAX_AGE_MS = 120_000;
@@ -162,6 +187,32 @@ export function dumpRallyGateOk(args: {
   const rally = args.rallyIntoPeakPct;
   if (rally == null || !Number.isFinite(rally) || rally < args.minRallyPct) return true;
   return Math.abs(dump) + 1e-9 >= rally * args.minDumpFracOfRally;
+}
+
+/**
+ * 1.11.801 — D2zNEW / 3XeNADY: H1 +46%, peak 30 → buy 27 (−10%).
+ * Ring rally gate can miss when samples start mid-pump; Dex H1 still shows the pump.
+ * When pc1h ≥ h1PumpMinPct, dump must be ≤ minDumpPct (e.g. −15). 0 h1 = off.
+ */
+export function dumpH1PumpGateOk(args: {
+  priceChange1hPct: number | null | undefined;
+  dumpExtentPct: number | null | undefined;
+  /** Dex pc5m (or deepest) when ring dump extent is thin/missing. */
+  fallbackDumpPct?: number | null | undefined;
+  h1PumpMinPct: number;
+  minDumpPct: number;
+}): boolean {
+  if (!(args.h1PumpMinPct > 0) || !(args.minDumpPct < 0)) return true;
+  const h1 = args.priceChange1hPct;
+  if (h1 == null || !Number.isFinite(h1) || h1 < args.h1PumpMinPct) return true;
+  const dump =
+    args.dumpExtentPct != null && Number.isFinite(args.dumpExtentPct)
+      ? args.dumpExtentPct
+      : args.fallbackDumpPct != null && Number.isFinite(args.fallbackDumpPct)
+        ? args.fallbackDumpPct
+        : null;
+  if (dump == null || !Number.isFinite(dump)) return false;
+  return dump <= args.minDumpPct + 1e-9;
 }
 
 /**
@@ -326,6 +377,21 @@ export async function evaluateFastPathCandidate(
   if (!mint || mint.length < 32) return skip('bad_mint');
   if (cfg.deniedMints.includes(mint)) return skip('denied_mint');
 
+  // 1.11.798/799 — bot is stream-priced: need a recent stream print in the
+  // ring (not "last tick is stream" — Dex notes often overwrite last).
+  if (cfg.requireStreamPriceEntry) {
+    const maxAge = cfg.requireStreamPriceMaxAgeMs;
+    const stream = mildDipPriceRing.lastPriceBySource(mint, 'stream', nowMs, maxAge);
+    if (!stream || !(stream.priceUsd > 0)) {
+      const last = mildDipPriceRing.lastPrice(mint, nowMs);
+      return skip('no_stream_price', {
+        lastSource: last?.source ?? null,
+        lastAgeMs: last ? Math.max(0, nowMs - last.tsMs) : null,
+        maxAgeMs: maxAge,
+      });
+    }
+  }
+
   const prevAttempt = lastFastAttemptMs.get(mint) ?? 0;
   if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return null;
 
@@ -391,7 +457,27 @@ export async function evaluateFastPathCandidate(
   const dexPc = struct.metrics.priceChange5mPct;
   const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, cfg.entry.maxDipPct);
 
-  // Deep knife band — leave to knife-stabilize wait path (not instant blade catch).
+  // 1.11.793/799 — 7BNax OR: deep+hot (dump≥30 & turn≥0.3) buys now.
+  // Do not require TD branch==='knife' (hot dumps classify as main first).
+  const deepestPc =
+    streamDd != null && dexPc != null
+      ? Math.min(streamDd, dexPc)
+      : streamDd != null
+        ? streamDd
+        : dexPc;
+  const knifeOr = turnDumpKnifeOrOk({
+    enabled: cfg.turnDumpGateEnabled,
+    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    pc5m: deepestPc,
+    volume5mUsd: struct.metrics.volume5mUsd,
+    liquidityUsd: struct.metrics.liquidityUsd,
+    minDumpPct: cfg.turnDumpKnifeMinDumpPct,
+    minTurn: cfg.turnDumpKnifeMinTurn,
+  });
+  const knifeOrOk = knifeOr.ok;
+
+  // Deep knife band — leave to knife-stabilize wait path (not instant blade catch),
+  // unless the 7BNax knife OR already qualifies for an immediate seat.
   // Use mark-vs-peak (still falling), not dump-extent (already printed).
   const deepKnife =
     (streamCurrentDd != null &&
@@ -400,7 +486,7 @@ export async function evaluateFastPathCandidate(
     (dexPc != null &&
       dexPc > cfg.knifeStabilizeMinDipPct &&
       dexPc <= cfg.knifeStabilizeMaxDipPct);
-  if (cfg.knifeStabilizeEnabled && deepKnife && !streamInMain && !dexInMain) {
+  if (cfg.knifeStabilizeEnabled && deepKnife && !streamInMain && !dexInMain && !knifeOrOk) {
     return skip('deep_knife_defer', {
       streamDd,
       streamDump,
@@ -523,16 +609,37 @@ export async function evaluateFastPathCandidate(
       minBelowPeakPct: cfg.mildStabilizeMinBelowPeakPct,
     });
     if (mild.pass) {
+      // 1.11.800 — do not accept bounce while Dex m5 is already green/flat.
+      // Also never overwrite Dex pc5m with ring dump (lied to turn-dump on EjD5Y9).
+      if (
+        !mildStabilizeDexDipOk({
+          requireDexDip: cfg.mildStabilizeRequireDexDip,
+          dexPc5m: dexPc,
+          dexMaxDipPct: cfg.mildStabilizeDexMaxDipPct,
+        })
+      ) {
+        return skip('mild_stabilize_dex_not_red', {
+          streamDd,
+          dexPc,
+          mildDump: mild.dumpPct,
+          mildBounce: mild.bouncePct,
+          dexMaxDipPct: cfg.mildStabilizeDexMaxDipPct,
+        });
+      }
       dipSource = 'mild_stabilize';
       mildDumpPct = mild.dumpPct;
       mildBouncePct = mild.bouncePct;
       mildTrough = mild.troughPriceUsd;
       mildTroughAtMs = mild.troughAtMs;
       if (mild.lastPriceUsd != null && mild.lastPriceUsd > 0) priceUsd = mild.lastPriceUsd;
-      if (mild.dumpPct != null) {
-        metrics = { ...metrics, priceChange5mPct: mild.dumpPct };
-      }
     }
+  }
+
+  if (!dipSource && knifeOrOk && deepestPc != null) {
+    dipSource = 'turn_dump_knife';
+    metrics = { ...metrics, priceChange5mPct: deepestPc };
+    const last = mildDipPriceRing.lastPrice(mint, nowMs);
+    if (last && last.priceUsd > 0) priceUsd = last.priceUsd;
   }
 
   if (!dipSource) {
@@ -547,6 +654,31 @@ export async function evaluateFastPathCandidate(
     });
   }
 
+  // 1.11.801 — D2zNEW: H1 pump + −10% pullback is not a dip. Knife-OR (≥30) exempt.
+  if (
+    dipSource !== 'turn_dump_knife' &&
+    dipSource !== 'h1_red_shallow' &&
+    !dumpH1PumpGateOk({
+      priceChange1hPct: metrics.priceChange1hPct,
+      dumpExtentPct: streamDump ?? mildDumpPct,
+      fallbackDumpPct: deepestPc ?? dexPc,
+      h1PumpMinPct: cfg.dumpH1PumpMinPct,
+      minDumpPct: cfg.dumpH1PumpMinDumpPct,
+    })
+  ) {
+    return skip('h1_pump_chase', {
+      structSource,
+      streamDump,
+      streamCurrentDd,
+      streamRally,
+      dexPc,
+      pc1h: metrics.priceChange1hPct,
+      dipSource,
+      needDump: cfg.dumpH1PumpMinDumpPct,
+      h1Min: cfg.dumpH1PumpMinPct,
+    });
+  }
+
   // 1.11.773 — turn→dump: buy now if depth matches turnover; skip if too shallow.
   // 1.11.779/790 — prefer deeper stream dump-extent vs lagging Dex pc5m for the gate.
   if (cfg.turnDumpGateEnabled) {
@@ -558,20 +690,7 @@ export async function evaluateFastPathCandidate(
         streamDd < metrics.priceChange5mPct)
         ? streamDd
         : metrics.priceChange5mPct;
-    const td = evaluateTurnDumpGate({
-      enabled: true,
-      pc5m: tdPc5m,
-      volume5mUsd: metrics.volume5mUsd,
-      liquidityUsd: metrics.liquidityUsd,
-      alpha: cfg.turnDumpAlpha,
-      beta: cfg.turnDumpBeta,
-      shallowSlackPct: cfg.turnDumpShallowSlackPct,
-      deepSlackPct: cfg.turnDumpDeepSlackPct,
-      shallowBranchEnabled: cfg.turnDumpShallowBranchEnabled,
-      shallowAlpha: cfg.turnDumpShallowAlpha,
-      shallowBeta: cfg.turnDumpShallowBeta,
-      shallowBandPct: cfg.turnDumpShallowBandPct,
-    });
+    const td = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5m, metrics));
     if (!td.pass) {
       // 1.11.774 — was silent null; journal so live misses are visible.
       appendMildDipJournal(cfg.journalPath, {
@@ -603,9 +722,10 @@ export async function evaluateFastPathCandidate(
     if (
       dipSource === 'h1_red_shallow' ||
       dipSource === 'flat_micro_dip' ||
-      dipSource === 'mild_stabilize'
+      dipSource === 'mild_stabilize' ||
+      dipSource === 'turn_dump_knife'
     ) {
-      /* ok — shallow / bounce-confirm */
+      /* ok — shallow / bounce-confirm / 7BNax knife OR */
     } else if (!streamInMain && !dexInMain) {
       return skip('not_in_main_band', {
         dipSource,

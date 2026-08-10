@@ -130,11 +130,18 @@ export type MildDipExitGates = {
    */
   cliffDumpPnlPct: number;
   /**
-   * 1.11.765 — hard stop from entry: full exit when mark pnl ≤ −this %
-   * (live default 15). Fires before soft exits; never deferred by leader-align
-   * or oneshot dump grace. 0 = off. Distinct from cliff (catastrophic −50%).
+   * 1.11.765 / 1.11.791 — hard stop from entry when mark pnl ≤ −this %
+   * (live default 25). Fires before soft exits; never deferred by leader-align
+   * or oneshot dump grace. 0 = off. Distinct from cliff (second-stage −50%).
    */
   hardStopPnlPct: number;
+  /**
+   * 1.11.791 / 1.11.794 — when ∈ (0,1): sell this fraction at `hardStopPnlPct`.
+   * If the runner is still ≤ −hardStop after that cut, full `hard_stop` (do not
+   * park bags in the −25…−50 limbo until cliff). Gap straight past cliff →
+   * full `cliff_dump`. 0 or ≥1 = legacy full hard_stop (hard before cliff).
+   */
+  hardStopPartialFraction: number;
   /**
    * 1.11.747 — never-armed bounce reclaim: after post-entry trough ≤ −minDump%,
    * if mark bounces ≥ bouncePct off that trough → exit (`never_arm_bounce`).
@@ -177,11 +184,18 @@ export type MildDipExitGates = {
   /**
    * 1.11.755 — never-armed time-red cut: after this many ms unarmed, if mark
    * pnl ≤ −neverArmTimeRedPnlPct → full exit (`never_arm_time_red`).
-   * Live option-2: 15m / −5%. 0 min = off.
+   * Live (1.11.792): 5m / −15% / pc5m ≤ −5 (7BNax DOWN formula). 0 min = off.
    */
   neverArmTimeRedMinMs: number;
-  /** See neverArmTimeRedMinMs. Positive percent (e.g. 5 = exit at ≤ −5%). 0 = off. */
+  /** See neverArmTimeRedMinMs. Positive percent (e.g. 15 = exit at ≤ −15%). 0 = off. */
   neverArmTimeRedPnlPct: number;
+  /**
+   * Optional Dex pc5m gate for time-red. Positive percent N → require
+   * pc5m ≤ −N when the metric is present. **0** = no pc5m requirement.
+   * 1.11.794 — when > 0 and pc5m is missing, time-red still fires on
+   * held+pnl (fail open) so dead marks cannot pin an underwater bag forever.
+   */
+  neverArmTimeRedMaxPc5mPct: number;
 };
 
 /** One spaced Dex vol5m reading used by the sustained fade exit. */
@@ -331,6 +345,51 @@ export function evaluateMildDipPreBuy(args: {
     }
   }
 
+  return { pass: reasons.length === 0, reasons };
+}
+
+/**
+ * After a full exit (esp. loss): refuse rebuy when Dex liquidity has fallen
+ * vs the last-exit snapshot. Stops “sell dump → dip rebuy → dump again” on
+ * draining pools. Missing liq on either side → fail open (no block).
+ */
+export function evaluateRebuyLiquidityDrop(args: {
+  currentLiquidityUsd: number | null | undefined;
+  lastExitLiquidityUsd: number | null | undefined;
+  lastExitAtMs: number | null | undefined;
+  lastExitPnlPct: number | null | undefined;
+  nowMs: number;
+  enabled: boolean;
+  /** Ignore exits older than this (ms). 0 = no age cap. */
+  maxAgeMs: number;
+  /** 0 = any decline blocks; e.g. 5 = need ≥5% drop to block. */
+  minDropPct: number;
+  /** When true, only apply after a losing exit (pnlPct < 0). */
+  onlyAfterLoss: boolean;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  if (!args.enabled) return { pass: true, reasons };
+  const lastLiq = args.lastExitLiquidityUsd;
+  const curLiq = args.currentLiquidityUsd;
+  const at = args.lastExitAtMs;
+  if (lastLiq == null || !(lastLiq > 0)) return { pass: true, reasons };
+  if (at == null || !(at > 0)) return { pass: true, reasons };
+  if (args.maxAgeMs > 0 && args.nowMs - at > args.maxAgeMs) return { pass: true, reasons };
+  if (args.onlyAfterLoss) {
+    const pnl = args.lastExitPnlPct;
+    if (pnl == null || !Number.isFinite(pnl) || !(pnl < 0)) return { pass: true, reasons };
+  }
+  if (curLiq == null || !(curLiq > 0)) return { pass: true, reasons };
+
+  const dropPct = (1 - curLiq / lastLiq) * 100;
+  const need = Math.max(0, args.minDropPct);
+  if (dropPct >= need && curLiq < lastLiq) {
+    reasons.push(
+      `rebuy_liq_drop=${dropPct.toFixed(1)}%` +
+        `_now=$${curLiq.toFixed(0)}<exit=$${lastLiq.toFixed(0)}` +
+        (need > 0 ? `_min=${need}` : ''),
+    );
+  }
   return { pass: reasons.length === 0, reasons };
 }
 
@@ -587,6 +646,8 @@ export function evaluateMildDipPeakGiveback(args: {
   mfeBankStage?: number;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
+  /** Live Dex/stream pc5m % — required when neverArmTimeRedMaxPc5mPct > 0. */
+  pc5mPct?: number | null;
   /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
   volume5mUsd?: number | null;
   /** 5m volume captured at entry — the fade baseline. */
@@ -705,17 +766,40 @@ export function evaluateMildDipPeakGiveback(args: {
     postEntryTroughAtMs,
   };
 
-  // Hard stop from entry — fire before soft exits / grace / leader-align.
+  // Loss floors from entry — fire before soft exits / grace / leader-align.
   const hardStop = gates.hardStopPnlPct > 0 ? gates.hardStopPnlPct : 0;
-  if (hardStop > 0 && pnlPct <= -hardStop) {
-    return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
-  }
-
-  // Cliff LP-pull / instant rug — fire before trail patience / dead min-hold.
-  // Note: when hardStop ≤ cliff and both on, hard_stop wins first (tighter).
   const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
-  if (cliff > 0 && pnlPct <= -cliff) {
-    return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+  const hardPartial =
+    gates.hardStopPartialFraction > 0 && gates.hardStopPartialFraction < 1
+      ? gates.hardStopPartialFraction
+      : 0;
+
+  if (hardPartial > 0) {
+    // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
+    // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
+    // full cliff_dump.
+    if (cliff > 0 && pnlPct <= -cliff) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+    }
+    if (hardStop > 0 && pnlPct <= -hardStop) {
+      if (!scaleOutDone) {
+        return {
+          ...hold,
+          shouldExit: true,
+          fraction: hardPartial,
+          reason: 'hard_stop',
+        };
+      }
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
+    }
+  } else {
+    // Legacy: full hard_stop before cliff (tighter floor wins first).
+    if (hardStop > 0 && pnlPct <= -hardStop) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
+    }
+    if (cliff > 0 && pnlPct <= -cliff) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+    }
   }
 
   // 1.11.782 — hard hold ceiling for underwater armed bags (before soft trail /
@@ -913,13 +997,19 @@ export function evaluateMildDipPeakGiveback(args: {
     }
     const timeRedMin = gates.neverArmTimeRedMinMs > 0 ? gates.neverArmTimeRedMinMs : 0;
     const timeRedPnl = gates.neverArmTimeRedPnlPct > 0 ? gates.neverArmTimeRedPnlPct : 0;
-    if (
-      timeRedMin > 0 &&
-      timeRedPnl > 0 &&
-      heldMs >= timeRedMin &&
-      pnlPct <= -timeRedPnl + 1e-9
-    ) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
+    const timeRedPc =
+      gates.neverArmTimeRedMaxPc5mPct > 0 ? gates.neverArmTimeRedMaxPc5mPct : 0;
+    if (timeRedMin > 0 && timeRedPnl > 0 && heldMs >= timeRedMin && pnlPct <= -timeRedPnl + 1e-9) {
+      let pcOk = true;
+      if (timeRedPc > 0) {
+        const pc =
+          args.pc5mPct != null && Number.isFinite(args.pc5mPct) ? Number(args.pc5mPct) : null;
+        // 1.11.794 — fail open when pc5m missing; when present require ≤ −N.
+        pcOk = pc == null || pc <= -timeRedPc + 1e-9;
+      }
+      if (pcOk) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
+      }
     }
     const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
     const stalePnl = gates.neverArmStalePnlPct > 0 ? gates.neverArmStalePnlPct : 0;

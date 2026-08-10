@@ -39,6 +39,25 @@ export function orderMintsForMark(open: Record<string, MildDipOpenPosition>): st
 }
 
 /**
+ * 1.11.794 — background Dex→ring refresh order: blind / oldest ring age first.
+ * Exit decisions stay armed-first (`orderMintsForMark`); refresh must not let a
+ * handful of armed bags hog `maxInFlight` while new opens sit mark-null forever
+ * (no arm / no mfe_bank TP).
+ */
+export function orderMintsForDexRefresh(args: {
+  mints: string[];
+  nowMs: number;
+  ringAgeMs: (mint: string, nowMs: number) => number;
+}): string[] {
+  return [...args.mints].sort((a, b) => {
+    const aa = args.ringAgeMs(a, args.nowMs);
+    const ab = args.ringAgeMs(b, args.nowMs);
+    if (aa !== ab) return ab - aa; // older / missing first
+    return a.localeCompare(b);
+  });
+}
+
+/**
  * Apply one mark to a position snapshot. Returns null if mark unusable.
  * Does not mutate `pos` — caller merges fields.
  */
@@ -48,6 +67,8 @@ export function decideMarkExit(args: {
   markPriceUsd: number;
   gates: MildDipExitGates;
   nowMs?: number;
+  /** Live Dex pc5m % for never-arm HELD+PC+SL. */
+  pc5mPct?: number | null;
   /** Current 5m Dex volume — enables the activity-fade never-arm exit. */
   volume5mUsd?: number | null;
   /** Defer soft giveback exits while oneshot emptied-bag dump grace is active. */
@@ -75,6 +96,7 @@ export function decideMarkExit(args: {
     gates,
     heldMs,
     nowMs,
+    pc5mPct: args.pc5mPct ?? null,
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
     volFadeSamples: pos.volFadeSamples ?? null,

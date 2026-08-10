@@ -28,21 +28,21 @@ const MildDipConfigSchema = z.object({
   /** Cash-accurate fills + roundtrips (us + leaders). CF source of truth. */
   tradesPath: z.string().min(1),
   statePath: z.string().min(1),
-  /** 1.11.765 — flat $30 across base/thick/micro. */
-  positionUsd: z.coerce.number().positive().max(10_000).default(10),
+  /** 1.11.790 — flat $2 across base/thick/micro (live via env). */
+  positionUsd: z.coerce.number().positive().max(10_000).default(2),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
-   * 1.11.765 — same $30 as base (flat book).
+   * 1.11.790 — same $2 as base (flat book).
    */
-  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
+  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(2),
   thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
   thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
   /**
    * Micro-cap clip: mcap ∈ [min, max] → this size (knife_stabilize only).
-   * 1.11.765 — same $30 as base (flat book). 0 = off.
+   * 1.11.790 — same $2 as base (flat book). 0 = off.
    */
-  microPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
+  microPositionUsd: z.coerce.number().min(0).max(10_000).default(2),
   microMinMarketCapUsd: z.coerce.number().min(0).default(5_000),
   microMaxMarketCapUsd: z.coerce.number().min(0).default(50_000),
   /** 0 = unlimited — keep buying while USDC remains. */
@@ -70,7 +70,10 @@ const MildDipConfigSchema = z.object({
    * Dex cache TTL for discovery/entry Dex calls (not exit marks).
    */
   markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(20_000),
-  /** Legacy parallel mark pool size (exit marks are sync ring reads now). */
+  /**
+   * 1.11.794 — max concurrent background Dex→ring refreshes for open bags
+   * (`requestOpenMarkRefresh`). Exit mark reads stay sync from the ring.
+   */
   markConcurrency: z.coerce.number().int().min(1).max(64).default(48),
   /** Parallel Dex enrich during candidate scan (still behind Dex gate). */
   enrichConcurrency: z.coerce.number().int().min(1).max(32).default(12),
@@ -91,8 +94,27 @@ const MildDipConfigSchema = z.object({
   rebuyBelowExitPct: z.coerce.number().min(0).max(50).default(10),
   /** How long the last-exit floor applies (ms). Default 15m. */
   rebuyBelowExitMaxAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
+  /**
+   * 1.11.797 — after a loss exit: skip rebuy when Dex liq is below the exit
+   * snapshot (draining pool / death spiral).
+   */
+  rebuyLiqDropEnabled: z.boolean().default(true),
+  /** Memory for exit-liq baseline (default 6h). 0 = no age cap. */
+  rebuyLiqDropMaxAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(21_600_000),
+  /** 0 = any decline blocks; >0 requires at least this % drop. */
+  rebuyLiqDropMinDropPct: z.coerce.number().min(0).max(90).default(0),
+  /** Only apply after losing full exits (pnlPct < 0). */
+  rebuyLiqDropOnlyAfterLoss: z.boolean().default(true),
   /** Allow entry when stream drawdown is in dip band even if Dex pc5m is flat. */
   streamDipEntryEnabled: z.boolean().default(true),
+  /**
+   * 1.11.798 — refuse entry unless price-ring has a recent `source=stream`
+   * print (Helius swap decode). Blocks Dex-only green-candle fills when the
+   * stream price sampler is dead.
+   */
+  requireStreamPriceEntry: z.boolean().default(true),
+  /** Max age of the last stream ring print for entry (ms). */
+  requireStreamPriceMaxAgeMs: z.coerce.number().int().min(5_000).max(900_000).default(120_000),
   /** Decode program-log signatures → stream price samples (RPC). */
   streamPriceSampleEnabled: z.boolean().default(true),
   streamPriceMinGapMs: z.coerce.number().int().min(500).max(60_000).default(2_000),
@@ -260,6 +282,14 @@ const MildDipConfigSchema = z.object({
   turnDumpShallowBeta: z.coerce.number().default(4.23),
   turnDumpShallowBandPct: z.coerce.number().min(0).max(50).default(8),
   /**
+   * 1.11.793 — 7BNax OR after MAIN|SHALLOW: dump≥min AND turn≥minTurn.
+   * Same wallet / same bot — not a second lane.
+   */
+  turnDumpKnifeBranchEnabled: z.boolean().default(false),
+  /** Positive dump depth % (30 ⇒ pc5m ≤ −30). */
+  turnDumpKnifeMinDumpPct: z.coerce.number().min(0).max(90).default(30),
+  turnDumpKnifeMinTurn: z.coerce.number().min(0).max(10).default(0.3),
+  /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
    * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
    */
@@ -277,6 +307,12 @@ const MildDipConfigSchema = z.object({
   mildStabilizeTroughMinAgeMs: z.coerce.number().int().min(0).max(600_000).default(15_000),
   /** Last must stay ≥ this % below local peak (0 = off). */
   mildStabilizeMinBelowPeakPct: z.coerce.number().min(0).max(50).default(2),
+  /**
+   * 1.11.800 — refuse mild_stabilize when live Dex pc5m is greener than this
+   * (EjD5Y9: ring dump −8% + bounce while Dex m5 already green).
+   */
+  mildStabilizeRequireDexDip: z.boolean().default(true),
+  mildStabilizeDexMaxDipPct: z.coerce.number().max(0).default(-2),
   /**
    * Autonomous red-hour shallow: when 1h ≤ h1Max and pc5m ∈ (min,max],
    * enter without the main mild band (own logic — not leader copy).
@@ -365,6 +401,13 @@ const MildDipConfigSchema = z.object({
   dumpRallyGateMinPct: z.coerce.number().min(0).max(200).default(12),
   /** Fraction of pre-peak rally that post-peak dump must cover. 0 = off. */
   dumpRallyMinFrac: z.coerce.number().min(0).max(2).default(0.4),
+  /**
+   * 1.11.801 — when Dex pc1h ≥ this (pump), require dump ≤ dumpH1PumpMinDumpPct.
+   * Catches D2zNEW-class 30→27 pulls when the ring missed the pump base. 0 = off.
+   */
+  dumpH1PumpMinPct: z.coerce.number().min(0).max(500).default(15),
+  /** Required dump depth (negative) while H1 is pumping. */
+  dumpH1PumpMinDumpPct: z.coerce.number().max(0).default(-15),
   /** Reuse structural Dex metrics this long (ms). */
   fastPathStructuralCacheMs: z.coerce.number().int().min(1_000).max(120_000).default(8_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
@@ -437,9 +480,14 @@ const MildDipConfigSchema = z.object({
     /** Instant rug / LP-pull cut when pnl ≤ −this % (0=off). Default 50. */
     cliffDumpPnlPct: z.coerce.number().min(0).max(100).default(50),
     /**
-     * 1.11.765 — hard stop from entry when pnl ≤ −this % (0=off). Default 15.
+     * 1.11.791 — hard stop from entry when pnl ≤ −this % (0=off). Default 25.
      */
-    hardStopPnlPct: z.coerce.number().min(0).max(100).default(15),
+    hardStopPnlPct: z.coerce.number().min(0).max(100).default(25),
+    /**
+     * 1.11.791 — fraction sold at hard stop (0=full legacy; live 0.5 → half@-25,
+     * remainder at cliff −50).
+     */
+    hardStopPartialFraction: z.coerce.number().min(0).max(1).default(0.5),
     /**
      * 1.11.747 — never-arm bounce reclaim (sell into bounce off post-entry trough).
      * 0 bouncePct = off.
@@ -461,11 +509,13 @@ const MildDipConfigSchema = z.object({
     neverArmFreefallPnlPct: z.coerce.number().min(0).max(100).default(25),
     neverArmFreefallMinMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
     /**
-     * 1.11.755 — never-arm time-red: min hold then exit if still ≤ −pnl%.
-     * Live option-2 default 15m / −5%. 0 min = off.
+     * 1.11.792 — never-arm HELD+PC+SL (7BNax DOWN): 5m / −15% / pc5m ≤ −5.
+     * 0 min = off.
      */
-    neverArmTimeRedMinMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
-    neverArmTimeRedPnlPct: z.coerce.number().min(0).max(100).default(5),
+    neverArmTimeRedMinMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
+    neverArmTimeRedPnlPct: z.coerce.number().min(0).max(100).default(15),
+    /** Positive N → require pc5m ≤ −N. 0 = no pc5m gate. */
+    neverArmTimeRedMaxPc5mPct: z.coerce.number().min(0).max(100).default(5),
   }),
 });
 
@@ -572,8 +622,10 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
     /** 1.11.697 — LP-pull cliff: exit immediately at ≤ −50% mark pnl. */
     cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
-    /** 1.11.765 — hard stop from entry (60h CF pick −15%). 0 = off. */
-    hardStopPnlPct: envNum('MILD_DIP_EXIT_HARD_STOP_PNL_PCT', 15),
+    /** 1.11.791 — first loss stage (half). 0 = off. */
+    hardStopPnlPct: envNum('MILD_DIP_EXIT_HARD_STOP_PNL_PCT', 25),
+    /** 1.11.791 — sell this fraction at hard stop; 0 = full hard_stop. */
+    hardStopPartialFraction: envNum('MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION', 0.5),
     /**
      * 1.11.751 — never-arm bounce hardened vs stream-wick churn (F1XdRe/AENK1Y):
      * trough ≤ −8%, bounce ≥ 8%, trough age ≥ 60s, still red ≤ −3% vs entry.
@@ -597,11 +649,12 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmFreefallPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', 25),
     neverArmFreefallMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS', 60_000),
     /**
-     * 1.11.755 — option-2 never-arm: bounce + time-red 15m/−5%.
-     * Ecosystem zeros freefall/stale/dead/vol_fade/max_hold.
+     * 1.11.792 — never-arm DOWN formula: held≥5m & pnl≤−15% & pc5m≤−5%.
+     * Armed trail / MFE-bank unchanged. Ecosystem zeros freefall/stale/dead/vol_fade/max_hold.
      */
-    neverArmTimeRedMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS', 900_000),
-    neverArmTimeRedPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', 5),
+    neverArmTimeRedMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS', 300_000),
+    neverArmTimeRedPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', 15),
+    neverArmTimeRedMaxPc5mPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT', 5),
   };
 
   const raw = {
@@ -614,13 +667,13 @@ export function loadMildDipConfig(): MildDipConfig {
     tradesPath:
       process.env.MILD_DIP_TRADES_PATH?.trim() || path.join('data', 'milddip', 'trades.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
-    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 10,
-    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 10,
+    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 2,
+    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 2,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
     thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
     /** 1.11.765 — $30 live; knife_stabilize only (see mildDipMicroSizeGatesForSource). */
-    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 10,
+    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 2,
     microMinMarketCapUsd: process.env.MILD_DIP_MICRO_MIN_MCAP_USD ?? 5_000,
     microMaxMarketCapUsd: process.env.MILD_DIP_MICRO_MAX_MCAP_USD ?? 50_000,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
@@ -697,6 +750,9 @@ export function loadMildDipConfig(): MildDipConfig {
     turnDumpShallowAlpha: envNum('MILD_DIP_TURN_DUMP_SHALLOW_ALPHA', -8.83),
     turnDumpShallowBeta: envNum('MILD_DIP_TURN_DUMP_SHALLOW_BETA', 4.23),
     turnDumpShallowBandPct: envNum('MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT', 8),
+    turnDumpKnifeBranchEnabled: envBool('MILD_DIP_TURN_DUMP_KNIFE_BRANCH', false),
+    turnDumpKnifeMinDumpPct: envNum('MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT', 30),
+    turnDumpKnifeMinTurn: envNum('MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN', 0.3),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
@@ -705,6 +761,8 @@ export function loadMildDipConfig(): MildDipConfig {
     mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 8),
     mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 15_000),
     mildStabilizeMinBelowPeakPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT', 2),
+    mildStabilizeRequireDexDip: envBool('MILD_DIP_MILD_STABILIZE_REQUIRE_DEX_DIP', true),
+    mildStabilizeDexMaxDipPct: envNum('MILD_DIP_MILD_STABILIZE_DEX_MAX_DIP_PCT', -2),
     h1RedShallowEnabled: envBool('MILD_DIP_H1_RED_SHALLOW_ENABLED', false),
     h1RedShallowH1MaxPct: envNum('MILD_DIP_H1_RED_SHALLOW_H1_MAX_PCT', -15),
     h1RedShallowMinDipPct: envNum('MILD_DIP_H1_RED_SHALLOW_MIN_DIP_PCT', -10),
@@ -747,17 +805,25 @@ export function loadMildDipConfig(): MildDipConfig {
     streamOnlyMinSamples: process.env.MILD_DIP_STREAM_ONLY_MIN_SAMPLES ?? 3,
     dumpRallyGateMinPct: process.env.MILD_DIP_DUMP_RALLY_GATE_MIN_PCT ?? 12,
     dumpRallyMinFrac: process.env.MILD_DIP_DUMP_RALLY_MIN_FRAC ?? 0.4,
+    dumpH1PumpMinPct: process.env.MILD_DIP_DUMP_H1_PUMP_MIN_PCT ?? 15,
+    dumpH1PumpMinDumpPct: process.env.MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT ?? -15,
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
     rebuyBelowExitPct: process.env.MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 10,
     rebuyBelowExitMaxAgeMs: process.env.MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS ?? 900_000,
+    rebuyLiqDropEnabled: envBool('MILD_DIP_REBUY_LIQ_DROP', true),
+    rebuyLiqDropMaxAgeMs: process.env.MILD_DIP_REBUY_LIQ_DROP_MAX_AGE_MS ?? 21_600_000,
+    rebuyLiqDropMinDropPct: process.env.MILD_DIP_REBUY_LIQ_DROP_MIN_DROP_PCT ?? 0,
+    rebuyLiqDropOnlyAfterLoss: envBool('MILD_DIP_REBUY_LIQ_DROP_ONLY_LOSS', true),
     cooldownBounceLookbackMs: process.env.MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS ?? 300_000,
     streamDipEntryEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM_DIP_ENTRY?.trim().toLowerCase();
       if (!v) return true;
       return v === '1' || v === 'true' || v === 'yes';
     })(),
+    requireStreamPriceEntry: envBool('MILD_DIP_REQUIRE_STREAM_PRICE', true),
+    requireStreamPriceMaxAgeMs: process.env.MILD_DIP_REQUIRE_STREAM_PRICE_MAX_AGE_MS ?? 120_000,
     streamPriceSampleEnabled: (() => {
       const v = process.env.MILD_DIP_STREAM_PRICE_SAMPLE?.trim().toLowerCase();
       if (!v) return true;

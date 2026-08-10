@@ -2828,22 +2828,23 @@ const PM2_APPS = [
         /** 1.11.742 — base clip $10 (was $5). */
         /** 1.11.754 — flat $30 across base / thick / micro. */
         /** 1.11.763 — flat $5 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '10',
+        /** 1.11.790 — flat $2 across base / thick / micro. */
+        MILD_DIP_POSITION_USD: '2',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
-         * 1.11.763 — same $5 as base.
+         * 1.11.790 — same $2 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '10',
+        MILD_DIP_THICK_POSITION_USD: '2',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
         /**
          * 1.11.746 — micro band, knife_stabilize only.
          * 1.11.776 — floor aligned to global $5k (was $15k–$50k).
-         * Clip size flat $10 with base/thick (one economic tier).
+         * 1.11.790 — clip flat $2 with base/thick (one economic tier).
          */
-        MILD_DIP_MICRO_POSITION_USD: '10',
+        MILD_DIP_MICRO_POSITION_USD: '2',
         MILD_DIP_MICRO_MIN_MCAP_USD: '5000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -2899,6 +2900,14 @@ const PM2_APPS = [
         MILD_DIP_TURN_DUMP_SHALLOW_BETA: '4.23',
         MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT: '8',
         /**
+         * 1.11.793 — same wallet OR after MAIN|SHALLOW fail:
+         * 7BNax knife style dump≥30% & turn=vol5m/liq≥0.30 → buy now
+         * (does not open a second wallet / lane).
+         */
+        MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '1',
+        MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '30',
+        MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN: '0.3',
+        /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
          * 1.11.730 with scale-in removal). Scale-in stays deleted.
          * Gates keep anti-green filters: dump ≤−8, last ≥2% below peak
@@ -2906,13 +2915,17 @@ const PM2_APPS = [
          * knife_stabilize (−50,−20] wait+bounce — unchanged.
          */
         MILD_DIP_MILD_STABILIZE_ENABLED: '1',
-        MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '1',
+        /** 1.11.800 — off: EjD5Y9 green-candle reclaim via ring bounce. */
+        MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '0',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-8',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '8',
         MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '15000',
         MILD_DIP_MILD_STABILIZE_MIN_BELOW_PEAK_PCT: '2',
+        /** Even if FRESH_ENTRY is re-enabled: Dex m5 must still be dumping. */
+        MILD_DIP_MILD_STABILIZE_REQUIRE_DEX_DIP: '1',
+        MILD_DIP_MILD_STABILIZE_DEX_MAX_DIP_PCT: '-2',
         /**
          * 1.11.784 — OFF. Single entry formula = turn→dump (+ mild/knife
          * stabilize on the same dump tape). h1-red-shallow was a second path
@@ -2989,10 +3002,13 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
         /**
-         * 1.11.697 — LP-pull cliff: exit as soon as mark pnl ≤ −50%
-         * (36GuKd sat ~5m at −99% waiting for never_arm_dead 15m).
+         * 1.11.791 — staged loss from entry:
+         * half at −25% (`hard_stop`), remainder at −50% (`cliff_dump`).
+         * Gap straight to −50% → full cliff_dump.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
+        /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
+        MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         /**
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
@@ -3010,16 +3026,19 @@ const PM2_APPS = [
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '0',
-        /** 1.11.755 — time-red: 15m unarmed + pnl ≤ −5% → never_arm_time_red. */
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '5',
         /**
-         * 1.11.782 — hard ceiling 15m:
-         * - unarmed → always flatten (`never_arm_timeout`)
-         * - armed + pnl≤0 → flatten (`max_hold_underwater`)
-         * - armed + pnl>0 → keep waiting for TP / trail steps
+         * 1.11.792 — never-arm DOWN formula (7BNax ~44% cover):
+         * held ≥ 5m AND pnl ≤ −15% AND Dex pc5m ≤ −5%.
+         * Armed / MFE-bank trail unchanged. Missing pc5m → no fire.
          */
-        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '300000',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT: '5',
+        /**
+         * 1.11.791 — max-hold / underwater time ceiling OFF.
+         * Never-arm loss uses HELD+PC+SL; green armed trail may wait.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '0',
         /**
          * 1.11.734 — oneshot emptied-bag dump grace:
          * Stream sell that empties a wallet (post≈0) and ≥$500 → defer
@@ -3099,6 +3118,11 @@ const PM2_APPS = [
         /** 1.11.757 — rebuy if ≥10% below last exit (was 20%; Sheep 09:15 miss). */
         MILD_DIP_REBUY_BELOW_EXIT_PCT: '10',
         MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
+        /** 1.11.797 — after loss exit: skip rebuy when Dex liq fell vs exit. */
+        MILD_DIP_REBUY_LIQ_DROP: '1',
+        MILD_DIP_REBUY_LIQ_DROP_MAX_AGE_MS: '21600000',
+        MILD_DIP_REBUY_LIQ_DROP_MIN_DROP_PCT: '0',
+        MILD_DIP_REBUY_LIQ_DROP_ONLY_LOSS: '1',
         MILD_DIP_FAST_PATH_MIN_GAP_MS: '2000',
         /** No soft-ban after impact/sim fail — retry next tick (Jupiter, not Helius). */
         MILD_DIP_FAST_PATH_SOFT_SKIP_MS: '0',
@@ -3125,6 +3149,12 @@ const PM2_APPS = [
          */
         MILD_DIP_DUMP_RALLY_GATE_MIN_PCT: '12',
         MILD_DIP_DUMP_RALLY_MIN_FRAC: '0.4',
+        /**
+         * 1.11.801 — D2zNEW / 3XeNADY: H1 +46% pump, buy −10% off peak.
+         * If Dex H1 ≥ +15%, dump must be ≤ −15% (not a shallow pullback).
+         */
+        MILD_DIP_DUMP_H1_PUMP_MIN_PCT: '15',
+        MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT: '-15',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
         /**
          * 1.11.713 — Dex-probe stream-hot mints even when local ring dd is
@@ -3161,6 +3191,9 @@ const PM2_APPS = [
         /** Stream drawdown can satisfy dip band when Dex pc5m lags (liq/mcap still Dex). */
         MILD_DIP_STREAM_DIP_ENTRY: '1',
         MILD_DIP_STREAM_PRICE_SAMPLE: '1',
+        /** 1.11.798/799 — need recent stream print (any in window; Dex may be last). */
+        MILD_DIP_REQUIRE_STREAM_PRICE: '1',
+        MILD_DIP_REQUIRE_STREAM_PRICE_MAX_AGE_MS: '120000',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
         MILD_DIP_SLIPPAGE_BPS: '500',
         MILD_DIP_PREBUY_REVALIDATE: '1',
@@ -3213,6 +3246,8 @@ const PM2_APPS = [
      * session open/flat. Writes jsonl + leader-seed.json for discover `leaders`.
      * 1.11.778 — absolute tape: marks ON, denser poll/lookback/sigs, turnDump
      * + MFE/MAE on session flat for entry/exit formula RE.
+     * 1.11.790 — 1Hz dense exit tape (`leader-dense-YYYYMMDD.jsonl`) via Jupiter
+     * price + cached Dex features for overnight per-wallet exit formula RE.
      */
     {
       name: 'mild-dip-leader-observer',
@@ -3236,17 +3271,24 @@ const PM2_APPS = [
         LEADER_OBSERVER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
         LEADER_OBSERVER_SEED_MAX: '40',
         LEADER_OBSERVER_SEED_MAX_AGE_SEC: '7200',
-        /** 1.11.778 — denser absolute capture (was 15s / 900s / 40 sigs). */
-        LEADER_OBSERVER_POLL_SEC: '10',
+        /** 1.11.790 — sig poll every 5s; dense ticks every 1s while bags open. */
+        LEADER_OBSERVER_POLL_SEC: '5',
         LEADER_OBSERVER_LOOKBACK_SEC: '1800',
         LEADER_OBSERVER_SIG_LIMIT: '80',
         /** 0 = run until stopped (PM2 owns lifecycle). */
         LEADER_OBSERVER_MAX_HOURS: '0',
         /** 1.11.760 — log sells + session flat (was buy-only). */
         LEADER_OBSERVER_LOG_SELLS: '1',
-        /** 1.11.778 — mid-hold Dex path for exit formula / +/- segments. */
+        /** Slow Dex snapshot marks (features refresh). */
         LEADER_OBSERVER_LOG_MARKS: '1',
-        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '60',
+        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '15',
+        /** 1.11.790 — second-level exit tape for formula recovery. */
+        LEADER_OBSERVER_DENSE_TICKS: '1',
+        LEADER_OBSERVER_DENSE_GAP_SEC: '1',
+        LEADER_OBSERVER_DEX_REFRESH_SEC: '15',
+        /** 0 = dense-tick ALL open bags (wins + losses); set 1 to TD-only. */
+        LEADER_OBSERVER_DENSE_ONLY_TD: '0',
+        LEADER_OBSERVER_PRICE_URL: 'https://api.jup.ag/price/v3',
         /** 1.11.780 — match mild-dip leader-like structural floors. */
         LEADER_OBSERVER_MIN_MCAP_USD: '5000',
         LEADER_OBSERVER_MIN_LIQUIDITY_USD: '5000',
@@ -3257,6 +3299,7 @@ const PM2_APPS = [
         /** 1.11.712 — fix 7BNax typo (was missing `j`: …UYrAC… → …UYrjAC…). */
         LEADER_OBSERVER_LEADERS:
           '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+        ...PM2_JUPITER_KEY_ENV,
         ...LIVE_OSCAR_HELIUS_RPC_ENV,
         ...(HELIUS_RPC_URL_PM2
           ? {

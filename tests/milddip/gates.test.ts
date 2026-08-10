@@ -71,6 +71,7 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeWeakWindows: 3,
   cliffDumpPnlPct: 50,
   hardStopPnlPct: 15,
+  hardStopPartialFraction: 0,
   neverArmBounceMinDumpPct: 8,
   neverArmBouncePct: 8,
   neverArmBounceMinTroughAgeMs: 60_000,
@@ -82,6 +83,7 @@ const exitGates: MildDipExitGates = {
   neverArmFreefallMinMs: 60_000,
   neverArmTimeRedMinMs: 0,
   neverArmTimeRedPnlPct: 5,
+  neverArmTimeRedMaxPc5mPct: 0,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -580,6 +582,79 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('hard_stop');
   });
 
+  it('1.11.794 — staged hard stop: half at −25%, runner full-exits if still ≤ −25%', () => {
+    const staged = {
+      ...exitGates,
+      hardStopPnlPct: 25,
+      hardStopPartialFraction: 0.5,
+      cliffDumpPnlPct: 50,
+      neverArmFreefallPnlPct: 0,
+      neverArmBouncePct: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const half = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 75,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(half.shouldExit).toBe(true);
+    expect(half.reason).toBe('hard_stop');
+    expect(half.fraction).toBe(0.5);
+
+    // 1.11.794 — no limbo: runner still ≤ −hardStop → full hard_stop (not wait −50).
+    const killRunner = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 70,
+      peakPriceUsd: 100,
+      armed: false,
+      scaleOutDone: true,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(killRunner.shouldExit).toBe(true);
+    expect(killRunner.reason).toBe('hard_stop');
+    expect(killRunner.fraction).toBe(1);
+
+    const rest = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 50,
+      peakPriceUsd: 100,
+      armed: false,
+      scaleOutDone: true,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(rest.shouldExit).toBe(true);
+    expect(rest.reason).toBe('cliff_dump');
+    expect(rest.fraction).toBe(1);
+  });
+
+  it('1.11.791 — staged: gap to −50% full cliff_dump (no orphan half)', () => {
+    const staged = {
+      ...exitGates,
+      hardStopPnlPct: 25,
+      hardStopPartialFraction: 0.5,
+      cliffDumpPnlPct: 50,
+      neverArmFreefallPnlPct: 0,
+      neverArmBouncePct: 0,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 40,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('cliff_dump');
+    expect(v.fraction).toBe(1);
+  });
+
   it('cliff_dump exits immediately at ≤ −50% without waiting dead min-hold', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -965,6 +1040,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmVolFadeRatio: 0,
       cliffDumpPnlPct: 0,
       hardStopPnlPct: 0,
+      hardStopPartialFraction: 0,
       neverArmVolFadeFloorUsd: 0,
       neverArmVolFadeSampleMs: 0,
       neverArmVolFadeWeakWindows: 0,
@@ -1055,6 +1131,89 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       postEntryTroughPriceUsd: 97,
     });
     expect(v.reason).not.toBe('never_arm_time_red');
+  });
+
+  it('never_arm_time_red HELD+PC+SL: 5m + pnl≤−15 + pc5m≤−5 (7BNax DOWN)', () => {
+    const gatesHeldPcSl = {
+      ...exitGates,
+      hardStopPnlPct: 0,
+      cliffDumpPnlPct: 0,
+      neverArmFreefallPnlPct: 0,
+      neverArmStaleMinMs: 0,
+      neverArmDeadMinMs: 0,
+      neverArmVolFadeMinMs: 0,
+      neverArmMaxHoldMs: 0,
+      neverArmBouncePct: 0,
+      neverArmTimeRedMinMs: 300_000,
+      neverArmTimeRedPnlPct: 15,
+      neverArmTimeRedMaxPc5mPct: 5,
+    };
+
+    const early = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: gatesHeldPcSl,
+      heldMs: 200_000,
+      pc5mPct: -8,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(early.shouldExit).toBe(false);
+
+    // 1.11.794 — missing pc5m fail-open (held+pnl still cut).
+    const noPc = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: gatesHeldPcSl,
+      heldMs: 300_000,
+      pc5mPct: null,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(noPc.shouldExit).toBe(true);
+    expect(noPc.reason).toBe('never_arm_time_red');
+
+    // Present-but-mild pc5m still blocks (formula needs ≤ −5 when known).
+    const mildPc = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: gatesHeldPcSl,
+      heldMs: 300_000,
+      pc5mPct: -3,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(mildPc.reason).not.toBe('never_arm_time_red');
+
+    const hit = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: gatesHeldPcSl,
+      heldMs: 300_000,
+      pc5mPct: -5,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(hit.shouldExit).toBe(true);
+    expect(hit.reason).toBe('never_arm_time_red');
+    expect(hit.fraction).toBe(1);
+
+    // Armed trail must ignore this never-arm knife.
+    const armed = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 110,
+      armed: true,
+      gates: gatesHeldPcSl,
+      heldMs: 300_000,
+      pc5mPct: -20,
+      postEntryTroughPriceUsd: 80,
+    });
+    expect(armed.reason).not.toBe('never_arm_time_red');
   });
 });
 

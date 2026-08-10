@@ -432,11 +432,14 @@ export function decodeAllowlistedDexSwapInserts(
   const sig = tx.transaction?.signatures?.[0];
   if (!sig || typeof sig !== 'string') return [];
 
-  const slot = typeof tx.slot === 'number' && Number.isFinite(tx.slot) ? tx.slot : null;
-  if (slot === null) return [];
-
-  const bt = tx.blockTime;
-  if (typeof bt !== 'number' || !Number.isFinite(bt)) return [];
+  // 1.11.798 — some RPC payloads omit slot/blockTime; still price the swap
+  // (mild-dip stream sampler only needs priceUsd, not chain coords).
+  const slot =
+    typeof tx.slot === 'number' && Number.isFinite(tx.slot) ? tx.slot : 0;
+  const bt =
+    typeof tx.blockTime === 'number' && Number.isFinite(tx.blockTime)
+      ? tx.blockTime
+      : Math.floor(Date.now() / 1000);
 
   const ids = programIdsInvokedInTx(tx);
   const dexLabel = inferDex(ids);

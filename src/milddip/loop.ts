@@ -39,6 +39,7 @@ import {
 import {
   applyMarkDecisionToPosition,
   decideMarkExit,
+  orderMintsForDexRefresh,
   mapPool,
   orderMintsForMark,
   type MarkExitDecision,
@@ -57,6 +58,7 @@ import {
 } from './leader-align.js';
 import { isRunnerPartialExit } from './sell-partial.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
+import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
@@ -216,6 +218,36 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
   };
 }
 
+/** Ring age for refresh priority — missing print = +∞ (refresh first). */
+function openMarkRingAgeMs(mint: string, nowMs: number): number {
+  const last = mildDipPriceRing.lastPrice(mint, nowMs);
+  return last ? Math.max(0, nowMs - last.tsMs) : Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Kick background Dex→ring for one mint. Never await.
+ * 1.11.794 — `maxInFlight` uses `markConcurrency` (live 48), not a hard-coded 3.
+ */
+function maybeRequestOpenMarkRefresh(
+  mint: string,
+  nowMs: number,
+  cfg: Pick<MildDipConfig, 'markDexRefreshMs' | 'markCacheTtlMs' | 'markConcurrency' | 'entry'>,
+): void {
+  const refreshGap = cfg.markDexRefreshMs;
+  if (!(refreshGap > 0)) return;
+  const ringAge = openMarkRingAgeMs(mint, nowMs);
+  if (ringAge < refreshGap) return;
+  const maxInFlight = Math.max(1, Math.min(64, cfg.markConcurrency || 48));
+  requestOpenMarkRefresh({
+    mint,
+    nowMs,
+    minGapMs: refreshGap,
+    maxInFlight,
+    allowedDexIds: cfg.entry.allowedDexIds,
+    cacheTtlMs: cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 15_000,
+  });
+}
+
 /**
  * Open-book exit mark: read price-ring only (never await HTTP).
  * Stream should feed the ring; `requestOpenMarkRefresh` tops it up in the
@@ -224,25 +256,9 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
 function markPriceUsd(
   mint: string,
   nowMs: number,
-  cfg: Pick<
-    MildDipConfig,
-    'markStreamMaxAgeMs' | 'markDexRefreshMs' | 'markCacheTtlMs' | 'entry'
-  >,
+  cfg: Pick<MildDipConfig, 'markStreamMaxAgeMs'>,
 ): { px: number | null; volume5mUsd: number | null; source: 'stream' | 'dex' | null } {
   const last = mildDipPriceRing.lastPrice(mint, nowMs);
-  const refreshGap = cfg.markDexRefreshMs;
-  const ringAge = last ? Math.max(0, nowMs - last.tsMs) : Number.POSITIVE_INFINITY;
-  // Kick background Dex→ring when enabled and stream/seed is stale. Never await.
-  if (refreshGap > 0 && !(ringAge < refreshGap)) {
-    requestOpenMarkRefresh({
-      mint,
-      nowMs,
-      minGapMs: refreshGap,
-      maxInFlight: 3,
-      allowedDexIds: cfg.entry.allowedDexIds,
-      cacheTtlMs: cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 15_000,
-    });
-  }
   const resolved = resolveExitMarkFromRing({
     last: last
       ? { priceUsd: last.priceUsd, tsMs: last.tsMs, source: last.source }
@@ -768,6 +784,10 @@ function streamWakeMintList(cfg: MildDipConfig, state: MildDipState, nowMs: numb
   });
 }
 
+/** Single-flight: overlapping wakes each reserved Dex gate slots → multi-minute backlog. */
+let wakeStreamHotMintsInFlight = false;
+let tryEntriesInFlight = false;
+
 /** 1.11.779/781 — re-check watch set even while bags are open (not only onMint). */
 async function wakeStreamHotMints(
   cfg: MildDipConfig,
@@ -775,16 +795,22 @@ async function wakeStreamHotMints(
   nowMs: number,
 ): Promise<number> {
   if (!cfg.fastPathEnabled) return 0;
-  const unlimited = cfg.maxOpenPositions <= 0;
-  if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
-  let n = 0;
-  for (const mint of streamWakeMintList(cfg, state, nowMs)) {
-    if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
-    if (state.open[mint]) continue;
-    await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
-    n += 1;
+  if (wakeStreamHotMintsInFlight) return 0;
+  wakeStreamHotMintsInFlight = true;
+  try {
+    const unlimited = cfg.maxOpenPositions <= 0;
+    if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return 0;
+    let n = 0;
+    for (const mint of streamWakeMintList(cfg, state, nowMs)) {
+      if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+      if (state.open[mint]) continue;
+      await tryFastPathForMint(cfg, state, mint, 'stream', nowMs);
+      n += 1;
+    }
+    return n;
+  } finally {
+    wakeStreamHotMintsInFlight = false;
   }
-  return n;
 }
 
 /**
@@ -863,6 +889,20 @@ async function wakeOwnTapeKnifeEnrich(
 }
 
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
+  if (tryEntriesInFlight) return;
+  tryEntriesInFlight = true;
+  try {
+    await tryEntriesBody(cfg, state, nowMs);
+  } finally {
+    tryEntriesInFlight = false;
+  }
+}
+
+async function tryEntriesBody(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
@@ -1087,10 +1127,20 @@ async function executeQueuedSell(args: {
   const noteLastExit = (exitPx: number): void => {
     if (!(exitPx > 0)) return;
     if (!state.lastExitByMint) state.lastExitByMint = {};
+    // Prefer live Dex open-mark liq; fall back to entry snapshot.
+    const markLiq = readOpenMarkMetrics(mint, nowMs, 300_000)?.liquidityUsd;
+    const entryLiq = state.open[mint]?.entryLiquidityUsd;
+    const liq =
+      markLiq != null && markLiq > 0
+        ? markLiq
+        : entryLiq != null && entryLiq > 0
+          ? entryLiq
+          : null;
     state.lastExitByMint[mint] = {
       priceUsd: exitPx,
       atMs: nowMs,
       pnlPct: +realizedPnl.toFixed(2),
+      ...(liq != null ? { liquidityUsd: liq } : {}),
     };
     // 1.11.783 — pin to hot buffer so stream wake / sampler keep the name.
     mildDipHotMints.note(mint, nowMs);
@@ -1445,10 +1495,27 @@ async function tryExits(
       : [];
 
   const markStarted = Date.now();
-  // Ring reads are sync — concurrency knob kept for API stability only.
+  // 1.11.794 — refresh blind/oldest first so armed bags cannot starve new opens
+  // of the Dex→ring slots (was hard-coded maxInFlight=3 in armed-first order).
+  const refreshOrder = orderMintsForDexRefresh({
+    mints: ordered,
+    nowMs,
+    ringAgeMs: openMarkRingAgeMs,
+  });
+  for (const mint of refreshOrder) {
+    maybeRequestOpenMarkRefresh(mint, nowMs, cfg);
+  }
+  // Exit decisions: armed-first; sync ring reads only.
   const markRows = ordered.map((mint) => {
     const { px, volume5mUsd, source } = markPriceUsd(mint, nowMs, cfg);
-    return { mint, px, volume5mUsd, source };
+    const metrics = readOpenMarkMetrics(mint, nowMs);
+    return {
+      mint,
+      px,
+      volume5mUsd: metrics?.volume5mUsd ?? volume5mUsd,
+      pc5mPct: metrics?.pc5mPct ?? null,
+      source,
+    };
   });
   const markPassMs = Date.now() - markStarted;
   let markedOk = 0;
@@ -1459,7 +1526,7 @@ async function tryExits(
   }
 
   const toSell: MarkExitDecision[] = [];
-  for (const { mint, px, volume5mUsd, source } of markRows) {
+  for (const { mint, px, volume5mUsd, pc5mPct, source } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
 
@@ -1515,6 +1582,7 @@ async function tryExits(
       markPriceUsd: px,
       gates: cfg.exit,
       nowMs,
+      pc5mPct,
       volume5mUsd,
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
@@ -1981,7 +2049,11 @@ export async function runMildDipLoop(
           ` `
         : `partial=-${cfg.exit.partialGivebackPct}%×${cfg.exit.scaleOutFraction} ` +
           `fullGiveback=-${cfg.exit.givebackPct}% `) +
-      `hardStop=-${cfg.exit.hardStopPnlPct}% ` +
+      `hardStop=-${cfg.exit.hardStopPnlPct}%` +
+      (cfg.exit.hardStopPartialFraction > 0 && cfg.exit.hardStopPartialFraction < 1
+        ? `×${cfg.exit.hardStopPartialFraction}`
+        : '') +
+      ` ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
       `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}` +
       `/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%` +
@@ -1997,7 +2069,11 @@ export async function runMildDipLoop(
       `/${Math.round(cfg.exit.neverArmFreefallMinMs / 1000)}s ` +
       `neverArmTimeRed=${cfg.exit.neverArmTimeRedMinMs > 0 ? 1 : 0}` +
       `/${Math.round(cfg.exit.neverArmTimeRedMinMs / 1000)}s` +
-      `/pnl≤-${cfg.exit.neverArmTimeRedPnlPct}% ` +
+      `/pnl≤-${cfg.exit.neverArmTimeRedPnlPct}%` +
+      (cfg.exit.neverArmTimeRedMaxPc5mPct > 0
+        ? `/pc5m≤-${cfg.exit.neverArmTimeRedMaxPc5mPct}%`
+        : '') +
+      ` ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s` +
       `/mfe≤${cfg.exit.neverArmStaleMaxMfePct}%/pnl≤-${cfg.exit.neverArmStalePnlPct}% ` +
@@ -2006,7 +2082,7 @@ export async function runMildDipLoop(
       `/sample${Math.round(cfg.exit.neverArmVolFadeSampleMs / 1000)}s×${cfg.exit.neverArmVolFadeWeakWindows} ` +
       `neverArmMaxHold=${Math.round(cfg.exit.neverArmMaxHoldMs / 1000)}s ` +
       `scan=${cfg.scanIntervalMs}ms mark=${cfg.markIntervalMs}ms` +
-      `/ring≤${cfg.markStreamMaxAgeMs}ms/bgDex@${cfg.markDexRefreshMs}ms ` +
+      `/ring≤${cfg.markStreamMaxAgeMs}ms/bgDex@${cfg.markDexRefreshMs}ms×${cfg.markConcurrency} ` +
       `cacheTtl=${cfg.markCacheTtlMs}ms markConc=${cfg.markConcurrency} sellConc=${cfg.sellConcurrency} ` +
       `loadAlert=${cfg.loadAlertEnabled ? 1 : 0} ` +
       `stream=${stats.stream} streamPrice=${cfg.streamPriceSampleEnabled ? 1 : 0} ` +
@@ -2032,9 +2108,19 @@ export async function runMildDipLoop(
       ` ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0}` +
       `/reqDex=${cfg.streamOnlyRequireDexDip ? 1 : 0}≤${cfg.streamOnlyDexMaxDipPct} ` +
+      `/reqStreamPx=${cfg.requireStreamPriceEntry ? 1 : 0}` +
+      (cfg.requireStreamPriceEntry
+        ? `≤${Math.round(cfg.requireStreamPriceMaxAgeMs / 1000)}s `
+        : ' ') +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
       `/skipBounce=${cfg.fastPathSkipBounce ? 1 : 0}` +
       `/rebuyBelowExit=${cfg.rebuyBelowExitPct}%/${Math.round(cfg.rebuyBelowExitMaxAgeMs / 1000)}s` +
+      `/rebuyLiqDrop=${cfg.rebuyLiqDropEnabled ? 1 : 0}` +
+      (cfg.rebuyLiqDropEnabled
+        ? `/${Math.round(cfg.rebuyLiqDropMaxAgeMs / 3600_000)}h` +
+          `/≥${cfg.rebuyLiqDropMinDropPct}%` +
+          `/lossOnly=${cfg.rebuyLiqDropOnlyAfterLoss ? 1 : 0} `
+        : ' ') +
       `/hotDexProbe=${cfg.fastPathHotDexProbeEnabled ? 1 : 0}` +
       `@${cfg.fastPathHotDexProbeGapMs}ms≤${cfg.fastPathHotDexProbeMaxPerMin}/min ` +
       `/enrichMax=${cfg.enrichMax} ` +
@@ -2095,11 +2181,36 @@ export async function runMildDipLoop(
   let lastFeeTopupTickMs = 0;
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
+  let lastStreamPriceStatsMs = 0;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
     const opens = openCount(state);
+
+    // 1.11.798 — surface dead stream-price tape (hot-mint WS can look fine alone).
+    if (priceSampler && nowMs - lastStreamPriceStatsMs >= 30_000) {
+      lastStreamPriceStatsMs = nowMs;
+      const st = priceSampler.stats();
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_stream_price_stats',
+        queued: st.queued,
+        inFlight: st.inFlight,
+        sampled: st.sampled,
+        skipped: st.skipped,
+        lastSampleAtMs: st.lastSampleAtMs,
+        lastSkipReason: st.lastSkipReason,
+        ringStreamN: mildDipPriceRing
+          .watchedMints(nowMs)
+          .filter((m) => mildDipPriceRing.lastPrice(m, nowMs)?.source === 'stream').length,
+      });
+      if (st.sampled === 0 && st.skipped > 50) {
+        console.warn(
+          `[mild-dip] stream-price tape quiet sampled=0 skipped=${st.skipped} ` +
+            `lastSkip=${st.lastSkipReason ?? '?'} queued=${st.queued}`,
+        );
+      }
+    }
 
     // Open-book exits own the loop. Stream-first marks must not wait on scan/Dex.
     if (opens > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
@@ -2171,21 +2282,43 @@ export async function runMildDipLoop(
     }
 
     /**
-     * While bags are open: never await tryEntries on this loop.
-     * Soft "scanWouldStealMark" heuristic failed live — after a fast stream
-     * mark pass, scan still ran and blocked the next mark for 10–15s.
-     * Stream onMint / own-tape wake own buys; slow enrich when flat.
+     * Entries:
+     * - Flat book: await full scan (boosts/profiles + fast-path).
+     * - 1.11.795 — with opens: fire-and-forget scan on a slower cadence so a
+     *   quiet/starved stream cannot freeze buys at "sells only". Never await
+     *   (marks keep the tick).
      */
-    if (opens === 0 && nowMs - lastScan >= cfg.scanIntervalMs) {
-      await tryEntries(cfg, state, nowMs);
-      lastScan = Date.now();
+    const scanGapMs =
+      opens === 0 ? cfg.scanIntervalMs : Math.max(cfg.scanIntervalMs, 15_000);
+    if (nowMs - lastScan >= scanGapMs) {
+      lastScan = nowMs;
       stats.lastScanAtMs = lastScan;
-      saveMildDipState(cfg.statePath, state);
-      try {
-        saveMildDipHotMints(cfg.hotMintsPath);
-        saveMildDipPriceRing(cfg.priceRingPath);
-      } catch (err) {
-        console.warn('[mild-dip] persist hot/price ring failed', err);
+      if (opens === 0) {
+        await tryEntries(cfg, state, nowMs);
+        saveMildDipState(cfg.statePath, state);
+        try {
+          saveMildDipHotMints(cfg.hotMintsPath);
+          saveMildDipPriceRing(cfg.priceRingPath);
+        } catch (err) {
+          console.warn('[mild-dip] persist hot/price ring failed', err);
+        }
+      } else {
+        void tryEntries(cfg, state, Date.now())
+          .then(() => {
+            saveMildDipState(cfg.statePath, state);
+            try {
+              saveMildDipHotMints(cfg.hotMintsPath);
+              saveMildDipPriceRing(cfg.priceRingPath);
+            } catch (err) {
+              console.warn('[mild-dip] persist hot/price ring failed', err);
+            }
+          })
+          .catch((err) => {
+            console.warn(
+              '[mild-dip] background tryEntries failed',
+              err instanceof Error ? err.message : err,
+            );
+          });
       }
     }
 

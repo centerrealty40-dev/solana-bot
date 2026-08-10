@@ -63,6 +63,27 @@ describe('MildDipPriceRing', () => {
     ring.note(mint, 1.2, { tsMs: t0 + 20_000, source: 'stream' });
     expect(ring.dumpExtentFromPeakPct(mint, 60_000, t0 + 20_000)).toBeCloseTo(0, 5);
   });
+
+  it('lastPriceBySource finds stream under a newer dex tick', () => {
+    const ring = new MildDipPriceRing();
+    const mint = '7pQYyWKPtxMCzdWDPZKJ7xTnCzFB25SPxp8cM4xJpump';
+    const t0 = 5_000_000;
+    ring.note(mint, 0.00012, { tsMs: t0, source: 'stream' });
+    ring.note(mint, 0.00011, { tsMs: t0 + 5_000, source: 'dex' });
+    expect(ring.lastPrice(mint, t0 + 5_000)?.source).toBe('dex');
+    const stream = ring.lastPriceBySource(mint, 'stream', t0 + 5_000, 120_000);
+    expect(stream?.priceUsd).toBe(0.00012);
+    expect(ring.lastPriceBySource(mint, 'stream', t0 + 200_000, 120_000)).toBeNull();
+  });
+
+  it('isPlausiblePrice rejects 1000× decode outliers', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'EeqYr8QfLNEWfUEFEw71noCA85k73qtxGEaLsC9ipump';
+    const t0 = 6_000_000;
+    ring.note(mint, 7.22e-5, { tsMs: t0, source: 'dex' });
+    expect(ring.isPlausiblePrice(mint, 7.5e-5, { nowMs: t0 + 1_000 })).toBe(true);
+    expect(ring.isPlausiblePrice(mint, 0.1829, { nowMs: t0 + 1_000 })).toBe(false);
+  });
 });
 
 describe('evaluateCooldownBounce', () => {

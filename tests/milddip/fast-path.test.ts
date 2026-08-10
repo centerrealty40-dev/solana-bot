@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   allowHotDexProbe,
+  dumpH1PumpGateOk,
   dumpRallyGateOk,
   inDipBand,
   resetFastPathStateForTests,
@@ -125,6 +126,35 @@ describe('fast-path helpers', () => {
         dexMaxDipPct: -8,
       }),
     ).toBe(false);
+  });
+
+  it('1.11.801 H1 pump gate rejects D2zNEW 30→27 pullback', () => {
+    // H1 +46%, dump −10% off peak — not a dip.
+    expect(
+      dumpH1PumpGateOk({
+        priceChange1hPct: 46,
+        dumpExtentPct: -10,
+        h1PumpMinPct: 15,
+        minDumpPct: -15,
+      }),
+    ).toBe(false);
+    expect(
+      dumpH1PumpGateOk({
+        priceChange1hPct: 46,
+        dumpExtentPct: -18,
+        h1PumpMinPct: 15,
+        minDumpPct: -15,
+      }),
+    ).toBe(true);
+    // No H1 pump → gate off.
+    expect(
+      dumpH1PumpGateOk({
+        priceChange1hPct: 8,
+        dumpExtentPct: -5,
+        h1PumpMinPct: 15,
+        minDumpPct: -15,
+      }),
+    ).toBe(true);
   });
 
   it('1.11.790 dump rally gate rejects EjD5-class pump wick', () => {

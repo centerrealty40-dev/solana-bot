@@ -1,22 +1,270 @@
 # So
-## [1.11.790] — 2026-08-10
+## [1.11.801] — 2026-08-10
+
+**Тег:** `sa-1.11.801`
+
+### Fix: real dump measure + block H1 pump pullback buys (D2zNEW / 3XeNADY)
+
+`3XeNADY…` / `D2zNEW…`: H1 ~+46%, peak ~30 → buy at ~27 (−10% wick).
+That is a pump pullback, not a shallow dip. Live still used last/max peak.
+
+- Dump extent = peak → **trough after peak** (not pre-pump window min)
+- Stream needs dump extent **and** mark still in band + ring rally gate
+- Near-trough uses post-peak trough
+- **H1 pump chase gate:** if Dex `pc1h ≥ 15%`, require dump extent ≤ `−15%`
+  (`MILD_DIP_DUMP_H1_PUMP_MIN_PCT` / `MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT`)
+  — covers cases where the price-ring missed the pump base
+- Applies to stream / dex / dex+stream main-band seats (not knife-OR ≥30)
+
+**Откат:** `MILD_DIP_DUMP_H1_PUMP_MIN_PCT=0` + `MILD_DIP_DUMP_RALLY_GATE_MIN_PCT=0`
+  or `git checkout sa-1.11.800 -- src/milddip/price-ring.ts src/milddip/fast-path.ts
+  src/milddip/discover.ts src/milddip/mild-stabilize.ts src/milddip/config.ts
+  ecosystem.config.cjs`.
+
+---
+
+## [1.11.800] — 2026-08-10
+
+**Тег:** `sa-1.11.800`
+
+### Fix: mild_stabilize green-candle buy (EjD5Y9 / 2Xm6…)
+
+Bought `EjD5Y9` on reclaim (`dipSource=mild_stabilize`, bounce +6.2%)
+while Dex m5 was already green. Path overwrote `pc5m` with ring dump
+(−8.4%) so turn-dump thought the tape was still red.
+
+Changes:
+
+- Live `MILD_DIP_MILD_STABILIZE_FRESH_ENTRY=0` (again)
+- Require live Dex pc5m ≤ `−2` for mild_stabilize (fast + prebuy)
+- Stop replacing Dex `pc5m` with synthetic ring dump
+
+**Откат:** `FRESH_ENTRY=1` + `REQUIRE_DEX_DIP=0` + prior fast-path via
+  `git checkout sa-1.11.799 -- src/milddip/fast-path.ts
+  src/milddip/entry-attempt.ts src/milddip/mild-stabilize.ts` + reload.
+
+---
+
+## [1.11.799] — 2026-08-10
+
+**Тег:** `sa-1.11.799`
+
+### Fix: 7BNax hot deep dump deferred as knife (EeqYr8 / 5QT6…)
+
+Leaders bought `EeqYr8` at −35% / high turnover
+(`5QT6sGT3…`). We saw the same print (`streamDd≈−34`, `dexPc≈−35`)
+but `deep_knife_defer` → knife watch, no buy.
+
+Root cause: instant OR required `turnDump.branch === 'knife'`. Hot
+dumps pass the regression as **`main` first**, so knife branch never
+runs — and we parked the seat instead of buying.
+
+Also:
+
+- `requireStreamPrice` now accepts **any** recent `source=stream`
+  sample (Dex ticks were overwriting `last` → false `no_stream_price`)
+- Stream sampler rejects absurd prices vs recent ring (≥20× outlier,
+  e.g. bogus `$0.18` vs `$7e-5`)
+
+**Откат:** `git checkout sa-1.11.798 -- src/milddip/fast-path.ts
+  src/milddip/discover.ts src/milddip/entry-attempt.ts
+  src/milddip/turn-dump.ts src/milddip/price-ring.ts
+  src/milddip/stream-price-sampler.ts` + reload.
+
+---
+
+## [1.11.798] — 2026-08-10
+
+**Тег:** `sa-1.11.798`
+
+### Fix: stream *price* tape was dead — Dex-only green buys
+
+Two different “streams”:
+
+1. **Hot-mint** `logsSubscribe` — worked (wakes / fast-path trigger)
+2. **Price sampler** (getTransaction → ring `source=stream`) — **dead
+   since ~2026-08-09 20:00 UTC**. Ring became 100% Dex; buys used Dex
+   `pc5m` (`dipSource=dex`) and filled green reclaim candles.
+
+Changes:
+
+- Balance-route stream price fallback (no slot/blockTime required)
+- Relax allowlisted decode when RPC omits slot/bt
+- `getTransaction` with `commitment=confirmed`
+- **Require** recent ring `source=stream` for entry
+  (`MILD_DIP_REQUIRE_STREAM_PRICE=1`, max age 120s)
+- Journal `mild_dip_stream_price_stats` every 30s
+
+**Откат:** `MILD_DIP_REQUIRE_STREAM_PRICE=0` + prior sampler via
+  `git checkout sa-1.11.797 -- src/milddip/stream-price-sampler.ts
+  src/milddip/fast-path.ts src/copytrader/rpc.ts` + reload.
+
+---
+
+## [1.11.797] — 2026-08-10
+
+**Тег:** `sa-1.11.797`
+
+### Feat: skip rebuy when liquidity fell after a loss exit
+
+Entry already required absolute `minLiquidityUsd` ($5k), but did **not**
+compare liq vs the last sell. Death-spiral coins could sell −loss → dip
+rebuy → sell −loss while the pool drained.
+
+Changes:
+
+- Snapshot Dex liq into `lastExitByMint` on full exit (open-mark / entry)
+- Gate: after loss exit, if current liq &lt; exit liq → skip rebuy
+  (`mild_dip_rebuy_liq_drop_skip`), memory default 6h
+- Env: `MILD_DIP_REBUY_LIQ_DROP=1`,
+  `MILD_DIP_REBUY_LIQ_DROP_MAX_AGE_MS`,
+  `MILD_DIP_REBUY_LIQ_DROP_MIN_DROP_PCT` (0 = any decline),
+  `MILD_DIP_REBUY_LIQ_DROP_ONLY_LOSS=1`
+
+**Откат:** `MILD_DIP_REBUY_LIQ_DROP=0` + reload.
+
+---
+
+## [1.11.796] — 2026-08-10
+
+**Тег:** `sa-1.11.796`
+
+### Fix: Dex gate backlog freezes buys (sells-only)
+
+After 1.11.795, buys still stalled: overlapping `wakeStreamHotMints` /
+`tryEntries` each reserved Dex RPM gate slots, pushing
+`dexscreener-api-gate.json` **~20+ minutes** ahead. Buy-path awaited the
+gate; exits/marks (`bypassGate`) kept selling. Live: reset gate → buys
+resumed immediately.
+
+Changes:
+
+- Clamp runaway gate backlog (default 30s,
+  `DEXSCREENER_GLOBAL_MAX_BACKLOG_MS`)
+- Single-flight `wakeStreamHotMints` + `tryEntries` so wakes do not pile
+  slot reservations
+
+**Откат:** `git checkout sa-1.11.795 -- src/papertrader/pricing/dexscreener-quote-cache.ts
+  src/milddip/loop.ts` + reload; manually reset gate file if needed.
+
+---
+
+## [1.11.795] — 2026-08-10
+
+**Тег:** `sa-1.11.795`
+
+### Fix: buys frozen while open book (stream err + no scan)
+
+Live after 1.11.794: wallet OK, sells OK, **zero** `mild_dip_buy_attempt`.
+While `opens > 0`, entries only ran on stream `onMint` / hot-mint wake;
+main-loop scan was skipped. Stream then starved hot-mints because
+`logsSubscribe` notes with `err` were dropped before mint extract
+(failed pump txs still mention mints).
+
+Changes:
+
+- Stream: harvest mints / `onMint` even when `n.err`; skip priceSampler
+  only on err txs
+- Loop: with opens, fire-and-forget `tryEntries` every
+  `max(scanInterval, 15s)` so scan can buy without blocking marks
+
+**Откат:** `git checkout sa-1.11.794 -- src/milddip/stream.ts
+  src/milddip/loop.ts` + reload.
+
+---
+
+## [1.11.794] — 2026-08-10
+
+**Тег:** `sa-1.11.794`
+
+### Fix: hard-stop limbo + blind marks kill TP
+
+Live bags were sitting hours at −30…−40% / missing take-profit because:
+
+1. Staged hard-stop sold **half at −25%**, then the runner waited for
+   **cliff −50%** (`scaleOutDone` blocked another hard_stop).
+2. `never_arm_time_red` **fail-closed** when Dex pc5m was missing, so
+   held+pnl≤−15 alone never cut.
+3. Exit marks: Dex→ring refresh hard-coded **`maxInFlight=3`** in
+   armed-first order → ~89% open mark-null → no arm / no `mfe_bank` TP.
+   (`MILD_DIP_MARK_CONCURRENCY=48` was never wired.)
+
+Changes:
+
+- After hard-stop partial, if mark still ≤ −hardStop → **full** `hard_stop`
+- Live `MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION=0` (full cut at −25%)
+- time-red: missing pc5m → fail **open** (held+pnl); mild present pc5m
+  still blocks
+- Wire refresh `maxInFlight` to `markConcurrency`; refresh **blind/oldest
+  first** (exit decisions stay armed-first)
+
+**Откат:** `MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION=0.5` + prior gates /
+  loop mark refresh via `git checkout sa-1.11.793 -- src/milddip/gates.ts
+  src/milddip/loop.ts src/milddip/exit-engine.ts` + reload.
+
+---
+
+## [1.11.793] — 2026-08-10
+
+**Тег:** `sa-1.11.793`
+
+### Feat: turn→dump KNIFE OR (7BNax, same wallet)
+
+After MAIN|SHALLOW fail, buy on the same mild-dip wallet when:
+
+`dump ≥ 30% AND turn = vol5m/liq ≥ 0.30`
+
+- Instant seat (does not wait `knife_stabilize` bounce)
+- `dipSource=turn_dump_knife`, branch=`knife`
+- Env: `MILD_DIP_TURN_DUMP_KNIFE_BRANCH=1`,
+  `_MIN_DUMP_PCT=30`, `_MIN_TURN=0.3`
+
+**Откат:** `MILD_DIP_TURN_DUMP_KNIFE_BRANCH=0` + reload.
+
+---
+
+## [1.11.792] — 2026-08-10
+
+**Тег:** `sa-1.11.792`
+
+### Feat: never-arm HELD+PC+SL (7BNax DOWN ~44%)
+
+When trail never arms, exit on the researched combo:
+
+`held ≥ 5m AND pnl ≤ −15% AND Dex pc5m ≤ −5%`
+
+- Armed / MFE-bank trail unchanged
+- Clip stays **$2**
+- Missing pc5m → no fire (fail closed)
+- Env: `MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS=300000`,
+  `_PNL_PCT=15`, `_MAX_PC5M_PCT=5`
+- Open-mark Dex refresh caches pc5m for the exit path
+
+**Откат:** set the three TIME_RED envs to `0` + reload `mild-dip-bot`.
+
+---
+
+## [1.11.790] — 2026-08-09
 
 **Тег:** `sa-1.11.790`
 
-### Fix: measure real dump (peak→post-peak trough), not pump wick
+### Logger: 1Hz dense leader exit tape
 
-Stream `drawdownFromPeakPct` was last vs rolling max — a −2–3% wick off a
-pump high counted as a dump and bought the top (EjD5 / stream-only).
+`mild-dip-leader-observer` now writes second-level open-bag ticks for
+overnight exit-formula RE (previous ~65s Dex marks were too sparse).
 
-- Dump extent = peak → **trough after peak** (not window-min before pump)
-- Stream dip needs dump extent **and** mark still in band
-- Near-trough uses post-peak trough bounce
-- Rally gate: if rally into peak ≥12%, |dump| ≥ 40% of rally
-  (`MILD_DIP_DUMP_RALLY_GATE_MIN_PCT` / `MILD_DIP_DUMP_RALLY_MIN_FRAC`)
-- mild_stabilize dump uses the same post-peak trough
+- `leader-dense-YYYYMMDD.jsonl` ← `leader_bag_tick` @ 1s (Jupiter price)
+- Dex features refreshed every 15s (cached onto ticks)
+- Precomputed: `pnl/mfe/mae/giveback/bounce/ddFromPeak`, `armedMfe{5,8,10,12}`,
+  `durNeg{8,10,12,15,20,25}`, tape `pc5m/pc1h/vol/liq/turn`, `isTdEntry`
+- Slow `leader_bag_mark` kept at 15s with the same feature set
+- Fit helper: `scripts/milddip/leader-dense-exit-fit.py`
 
-**Откат:** `MILD_DIP_DUMP_RALLY_GATE_MIN_PCT=0` + revert ring/fast-path, or
-`git checkout sa-1.11.789 -- src/milddip/price-ring.ts src/milddip/fast-path.ts src/milddip/discover.ts src/milddip/mild-stabilize.ts src/milddip/config.ts ecosystem.config.cjs`.
+Env (PM2): `LEADER_OBSERVER_DENSE_TICKS=1`, `DENSE_GAP_SEC=1`,
+`DEX_REFRESH_SEC=15`, `POLL_SEC=5`, `MARK_MIN_GAP_SEC=15`.
+
+**Откат:** `LEADER_OBSERVER_DENSE_TICKS=0` + prior mark gap 60 / poll 10 +
+reload `mild-dip-leader-observer`.
 
 ---
 

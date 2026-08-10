@@ -21,6 +21,21 @@ export function mildStabilizeLaneAllowed(args: {
   return !args.hasOtherDipSource;
 }
 
+/**
+ * Live Dex must still print a dump — ring bounce alone is green-candle reclaim.
+ * Missing Dex fails closed when requireDexDip is on.
+ */
+export function mildStabilizeDexDipOk(args: {
+  requireDexDip: boolean;
+  dexPc5m: number | null | undefined;
+  dexMaxDipPct: number;
+}): boolean {
+  if (!args.requireDexDip) return true;
+  const pc = args.dexPc5m;
+  if (pc == null || !Number.isFinite(pc)) return false;
+  return pc <= args.dexMaxDipPct;
+}
+
 export type MildStabilizeGates = {
   enabled: boolean;
   /** Dump from peak must be > this (e.g. −25). */

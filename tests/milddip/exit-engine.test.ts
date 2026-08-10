@@ -3,6 +3,7 @@ import {
   applyMarkDecisionToPosition,
   decideMarkExit,
   mapPool,
+  orderMintsForDexRefresh,
   orderMintsForMark,
 } from '../../src/milddip/exit-engine.js';
 import type { MildDipOpenPosition } from '../../src/milddip/state.js';
@@ -35,6 +36,25 @@ describe('orderMintsForMark', () => {
   });
 });
 
+describe('orderMintsForDexRefresh', () => {
+  it('puts missing/oldest ring age first (blind opens before fresh armed)', () => {
+    const ages: Record<string, number> = {
+      freshArmed: 1_000,
+      mid: 60_000,
+      blindNew: Number.POSITIVE_INFINITY,
+      oldBlind: Number.POSITIVE_INFINITY,
+    };
+    const ordered = orderMintsForDexRefresh({
+      mints: ['freshArmed', 'mid', 'blindNew', 'oldBlind'],
+      nowMs: 1_000_000,
+      ringAgeMs: (mint) => ages[mint] ?? 0,
+    });
+    expect(ordered.slice(0, 2).sort()).toEqual(['blindNew', 'oldBlind']);
+    expect(ordered[2]).toBe('mid');
+    expect(ordered[3]).toBe('freshArmed');
+  });
+});
+
 describe('decideMarkExit / applyMarkDecisionToPosition', () => {
   const gates = {
     armPct: 5,
@@ -61,6 +81,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmVolFadeWeakWindows: 3,
     cliffDumpPnlPct: 50,
     hardStopPnlPct: 15,
+    hardStopPartialFraction: 0,
     neverArmBounceMinDumpPct: 8,
     neverArmBouncePct: 8,
     neverArmBounceMinTroughAgeMs: 60_000,
@@ -72,6 +93,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmFreefallMinMs: 60_000,
     neverArmTimeRedMinMs: 0,
     neverArmTimeRedPnlPct: 5,
+    neverArmTimeRedMaxPc5mPct: 0,
   };
 
   it('updates peak and arms without exiting', () => {

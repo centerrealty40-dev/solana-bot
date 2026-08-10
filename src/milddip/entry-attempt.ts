@@ -13,6 +13,7 @@ import {
   evaluateCooldownBounce,
   evaluateMildDipPreBuy,
   evaluateRebuyBelowExit,
+  evaluateRebuyLiquidityDrop,
   mildDipMicroSizeGatesForSource,
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
@@ -82,6 +83,25 @@ export async function attemptMildDipEntry(args: {
   if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
 
+  // 1.11.798/799 — need a recent stream print (Dex may be the latest tick).
+  if (cfg.requireStreamPriceEntry) {
+    const maxAge = cfg.requireStreamPriceMaxAgeMs;
+    const stream = mildDipPriceRing.lastPriceBySource(c.mint, 'stream', nowMs, maxAge);
+    if (!stream || !(stream.priceUsd > 0)) {
+      const last = mildDipPriceRing.lastPrice(c.mint, nowMs);
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_no_stream_price_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        lane: opts.lane,
+        lastSource: last?.source ?? null,
+        lastAgeMs: last ? Math.max(0, nowMs - last.tsMs) : null,
+        maxAgeMs: maxAge,
+      });
+      return 'skip';
+    }
+  }
+
   if (!opts.skipOnchainAdopt) {
     const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);
     const onchainRaw = onchain && /^\d+$/.test(onchain) ? BigInt(onchain) : 0n;
@@ -105,6 +125,7 @@ export async function attemptMildDipEntry(args: {
   let entryVol5m = c.metrics.volume5mUsd;
   let freshPx: number | null = c.priceUsd;
   const isKnife = c.dipSource === 'knife_stabilize';
+  const isTurnDumpKnife = c.dipSource === 'turn_dump_knife';
   const isWaitDip = c.dipSource === 'wait_dip';
   const isH1RedShallow = c.dipSource === 'h1_red_shallow';
   const isFlatMicro = c.dipSource === 'flat_micro_dip';
@@ -114,6 +135,8 @@ export async function attemptMildDipEntry(args: {
     pairAgeHours: c.metrics.pairAgeHours,
   };
   const softCd = opts.softSkipCooldownMs ?? Math.min(cfg.mintCooldownMs, 120_000);
+  const knifeMaxDip =
+    cfg.turnDumpKnifeMinDumpPct > 0 ? -cfg.turnDumpKnifeMinDumpPct : -30;
   const branchEntryGates = isH1RedShallow
     ? {
         minDipPct: cfg.h1RedShallowMinDipPct,
@@ -124,7 +147,13 @@ export async function attemptMildDipEntry(args: {
           minDipPct: cfg.flatMicroMinDipPct,
           maxDipPct: cfg.flatMicroMaxDipPct,
         }
-      : cfg.entry;
+      : isTurnDumpKnife
+        ? {
+            // Allow deep blade that MAIN/SHALLOW reject (pc5m ≤ −knifeMin).
+            minDipPct: Math.min(cfg.knifeStabilizeMinDipPct, -90),
+            maxDipPct: knifeMaxDip,
+          }
+        : cfg.entry;
 
   if (cfg.preBuyRevalidate) {
     const freshNow = Date.now();
@@ -179,13 +208,27 @@ export async function attemptMildDipEntry(args: {
             maxBouncePct: cfg.knifeStabilizeMaxBouncePct,
           })
         : isMildStabilize
-          ? evaluateKnifeStabilizePreBuy({
-              signalPriceUsd: c.priceUsd,
-              freshPriceUsd: freshPx,
-              troughPriceUsd: c.mildStabilizeTroughPriceUsd ?? null,
-              maxChasePct: opts.chasePct,
-              maxBouncePct: cfg.mildStabilizeMaxBouncePct,
-            })
+          ? (() => {
+              const bouncePre = evaluateKnifeStabilizePreBuy({
+                signalPriceUsd: c.priceUsd,
+                freshPriceUsd: freshPx,
+                troughPriceUsd: c.mildStabilizeTroughPriceUsd ?? null,
+                maxChasePct: opts.chasePct,
+                maxBouncePct: cfg.mildStabilizeMaxBouncePct,
+              });
+              const reasons = [...bouncePre.reasons];
+              if (cfg.mildStabilizeRequireDexDip) {
+                const pc = freshPc;
+                if (pc == null || !Number.isFinite(pc)) {
+                  reasons.push('mild_stabilize_prebuy_missing_dex_pc5m');
+                } else if (!(pc <= cfg.mildStabilizeDexMaxDipPct)) {
+                  reasons.push(
+                    `mild_stabilize_prebuy_dex_pc5m=${pc.toFixed(2)}>max=${cfg.mildStabilizeDexMaxDipPct}`,
+                  );
+                }
+              }
+              return { pass: reasons.length === 0, reasons };
+            })()
           : isWaitDip
             ? evaluateWaitDipPreBuy({
                 signalPriceUsd: c.waitDipSignalPriceUsd ?? c.priceUsd,
@@ -309,6 +352,9 @@ export async function attemptMildDipEntry(args: {
       shallowAlpha: cfg.turnDumpShallowAlpha,
       shallowBeta: cfg.turnDumpShallowBeta,
       shallowBandPct: cfg.turnDumpShallowBandPct,
+      knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+      knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
+      knifeMinTurn: cfg.turnDumpKnifeMinTurn,
     });
     if (!td.pass) {
       appendMildDipJournal(cfg.journalPath, {
@@ -358,6 +404,41 @@ export async function attemptMildDipEntry(args: {
       });
       console.log(
         `[mild-dip] SKIP rebuy-exit ${c.symbol} mint=${c.mint.slice(0, 8)}… ${rebuy.reasons.join(',')}`,
+      );
+      state.cooldownUntilMs[c.mint] = nowMs + softCd;
+      return 'skip';
+    }
+  }
+
+  // 1.11.797 — after loss exit: skip if Dex liq fell vs exit snapshot.
+  if (cfg.rebuyLiqDropEnabled) {
+    const last = state.lastExitByMint?.[c.mint];
+    const curLiq = sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd;
+    const liqDrop = evaluateRebuyLiquidityDrop({
+      currentLiquidityUsd: curLiq,
+      lastExitLiquidityUsd: last?.liquidityUsd,
+      lastExitAtMs: last?.atMs,
+      lastExitPnlPct: last?.pnlPct,
+      nowMs,
+      enabled: cfg.rebuyLiqDropEnabled,
+      maxAgeMs: cfg.rebuyLiqDropMaxAgeMs,
+      minDropPct: cfg.rebuyLiqDropMinDropPct,
+      onlyAfterLoss: cfg.rebuyLiqDropOnlyAfterLoss,
+    });
+    if (!liqDrop.pass) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_rebuy_liq_drop_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        lane: opts.lane,
+        currentLiquidityUsd: curLiq ?? null,
+        lastExitLiquidityUsd: last?.liquidityUsd ?? null,
+        lastExitAtMs: last?.atMs ?? null,
+        lastExitPnlPct: last?.pnlPct ?? null,
+        reasons: liqDrop.reasons,
+      });
+      console.log(
+        `[mild-dip] SKIP rebuy-liq ${c.symbol} mint=${c.mint.slice(0, 8)}… ${liqDrop.reasons.join(',')}`,
       );
       state.cooldownUntilMs[c.mint] = nowMs + softCd;
       return 'skip';
@@ -465,6 +546,7 @@ export async function attemptMildDipEntry(args: {
     peakPriceUsd: entryPriceUsd,
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+    entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
   // Keep waitDipWatch until fill succeeds — quote-premium reject must retry.
@@ -689,6 +771,7 @@ export async function attemptMildDipEntry(args: {
     peakPriceUsd: fillPx,
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
+    entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
   };
   // Seed exit mark ring so stream-only marks have a print before first swap decode.
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateTurnDumpGate,
   predictDumpDepthPct,
+  turnDumpKnifeOrOk,
   turnover5mLiq,
 } from '../../src/milddip/turn-dump.js';
 
@@ -145,5 +146,92 @@ describe('turn-dump gate (8zkg formula)', () => {
     });
     expect(v.pass).toBe(true);
     expect(v.branch).toBe('main');
+  });
+
+  it('1.11.793 knife OR: dump≥30 & turn≥0.3 after MAIN|SHALLOW fail', () => {
+    // turn=0.5 → MAIN pred~26.6 ceil~38.6 — dump=40 is MAIN deep-reject;
+    // SHALLOW ±8 also fails; knife should pass.
+    const base = {
+      enabled: true,
+      pc5m: -40,
+      volume5mUsd: 50_000,
+      liquidityUsd: 100_000,
+      alpha: -5.08,
+      beta: 6.86,
+      shallowSlackPct: 10,
+      deepSlackPct: 12,
+      shallowBranchEnabled: true,
+      shallowAlpha: -8.83,
+      shallowBeta: 4.23,
+      shallowBandPct: 8,
+    } as const;
+    expect(evaluateTurnDumpGate({ ...base, knifeBranchEnabled: false }).pass).toBe(false);
+
+    const cold = evaluateTurnDumpGate({
+      ...base,
+      volume5mUsd: 10_000, // turn=0.1
+      knifeBranchEnabled: true,
+      knifeMinDumpPct: 30,
+      knifeMinTurn: 0.3,
+    });
+    expect(cold.pass).toBe(false);
+    expect(cold.reasons.some((r) => r.includes('turn_dump_knife_cold'))).toBe(true);
+
+    const hit = evaluateTurnDumpGate({
+      ...base,
+      knifeBranchEnabled: true,
+      knifeMinDumpPct: 30,
+      knifeMinTurn: 0.3,
+    });
+    expect(hit.pass).toBe(true);
+    expect(hit.branch).toBe('knife');
+    expect(hit.dump).toBeCloseTo(40);
+    expect(hit.turn).toBeCloseTo(0.5);
+  });
+
+  it('1.11.799 knife OR fires on hot dump even when TD branch=main (EeqYr8)', () => {
+    // turn≈1.05, dump≈35 → regression classifies MAIN, not knife.
+    const td = evaluateTurnDumpGate({
+      enabled: true,
+      pc5m: -34.91,
+      volume5mUsd: 22_136,
+      liquidityUsd: 21_090,
+      alpha: -5.08,
+      beta: 6.86,
+      shallowSlackPct: 10,
+      deepSlackPct: 12,
+      shallowBranchEnabled: true,
+      shallowAlpha: -8.83,
+      shallowBeta: 4.23,
+      shallowBandPct: 8,
+      knifeBranchEnabled: true,
+      knifeMinDumpPct: 30,
+      knifeMinTurn: 0.3,
+    });
+    expect(td.pass).toBe(true);
+    expect(td.branch).toBe('main');
+    // Old bug: branch==='knife' alone → deep_knife_defer. Instant OR must still pass.
+    expect(
+      turnDumpKnifeOrOk({
+        enabled: true,
+        knifeBranchEnabled: true,
+        pc5m: -34.91,
+        volume5mUsd: 22_136,
+        liquidityUsd: 21_090,
+        minDumpPct: 30,
+        minTurn: 0.3,
+      }).ok,
+    ).toBe(true);
+    expect(
+      turnDumpKnifeOrOk({
+        enabled: true,
+        knifeBranchEnabled: true,
+        pc5m: -34.91,
+        volume5mUsd: 5_000,
+        liquidityUsd: 21_090,
+        minDumpPct: 30,
+        minTurn: 0.3,
+      }).ok,
+    ).toBe(false);
   });
 });
