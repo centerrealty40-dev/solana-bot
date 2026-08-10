@@ -2108,6 +2108,10 @@ export async function runMildDipLoop(
       ` ` +
       `streamDipEntry=${cfg.streamDipEntryEnabled ? 1 : 0}` +
       `/reqDex=${cfg.streamOnlyRequireDexDip ? 1 : 0}≤${cfg.streamOnlyDexMaxDipPct} ` +
+      `/reqStreamPx=${cfg.requireStreamPriceEntry ? 1 : 0}` +
+      (cfg.requireStreamPriceEntry
+        ? `≤${Math.round(cfg.requireStreamPriceMaxAgeMs / 1000)}s `
+        : ' ') +
       `fastPath=${cfg.fastPathEnabled ? 1 : 0}/chase${cfg.fastPathChasePct}` +
       `/skipBounce=${cfg.fastPathSkipBounce ? 1 : 0}` +
       `/rebuyBelowExit=${cfg.rebuyBelowExitPct}%/${Math.round(cfg.rebuyBelowExitMaxAgeMs / 1000)}s` +
@@ -2177,11 +2181,36 @@ export async function runMildDipLoop(
   let lastFeeTopupTickMs = 0;
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
+  let lastStreamPriceStatsMs = 0;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
     const opens = openCount(state);
+
+    // 1.11.798 — surface dead stream-price tape (hot-mint WS can look fine alone).
+    if (priceSampler && nowMs - lastStreamPriceStatsMs >= 30_000) {
+      lastStreamPriceStatsMs = nowMs;
+      const st = priceSampler.stats();
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_stream_price_stats',
+        queued: st.queued,
+        inFlight: st.inFlight,
+        sampled: st.sampled,
+        skipped: st.skipped,
+        lastSampleAtMs: st.lastSampleAtMs,
+        lastSkipReason: st.lastSkipReason,
+        ringStreamN: mildDipPriceRing
+          .watchedMints(nowMs)
+          .filter((m) => mildDipPriceRing.lastPrice(m, nowMs)?.source === 'stream').length,
+      });
+      if (st.sampled === 0 && st.skipped > 50) {
+        console.warn(
+          `[mild-dip] stream-price tape quiet sampled=0 skipped=${st.skipped} ` +
+            `lastSkip=${st.lastSkipReason ?? '?'} queued=${st.queued}`,
+        );
+      }
+    }
 
     // Open-book exits own the loop. Stream-first marks must not wait on scan/Dex.
     if (opens > 0 && nowMs - lastMark >= cfg.markIntervalMs) {

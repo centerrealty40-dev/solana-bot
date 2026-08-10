@@ -83,6 +83,29 @@ export async function attemptMildDipEntry(args: {
   if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
 
+  // 1.11.798 — slow lane same as fast-path: need a live stream price print.
+  if (cfg.requireStreamPriceEntry) {
+    const last = mildDipPriceRing.lastPrice(c.mint, nowMs);
+    const maxAge = cfg.requireStreamPriceMaxAgeMs;
+    const streamFresh =
+      last != null &&
+      last.source === 'stream' &&
+      last.priceUsd > 0 &&
+      (maxAge <= 0 || nowMs - last.tsMs <= maxAge);
+    if (!streamFresh) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_no_stream_price_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        lane: opts.lane,
+        lastSource: last?.source ?? null,
+        lastAgeMs: last ? Math.max(0, nowMs - last.tsMs) : null,
+        maxAgeMs: maxAge,
+      });
+      return 'skip';
+    }
+  }
+
   if (!opts.skipOnchainAdopt) {
     const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);
     const onchainRaw = onchain && /^\d+$/.test(onchain) ? BigInt(onchain) : 0n;
