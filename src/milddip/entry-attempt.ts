@@ -176,12 +176,14 @@ export async function attemptMildDipEntry(args: {
       if (freshPx != null) {
         mildDipPriceRing.note(c.mint, freshPx, { tsMs: freshNow, source: 'dex' });
       } else {
-        // 1.11.804 — a null Dex refetch must not read as "no price": every
+        // 1.11.804/805 — a null Dex refetch must not read as "no price": every
         // prebuy branch then rejects (`*_prebuy_missing_price`) and the parked
-        // wait-dip seat loops until it expires. Ring mark is the same tape the
-        // ready check just used.
+        // wait-dip seat loops until it expires. Fall back to the ring, then to
+        // the candidate mark the ready check just validated. Drift protection
+        // is not lost: the wait-dip ceiling still caps the fill price.
         const ringPx = mildDipPriceRing.lastPrice(c.mint, freshNow);
         if (ringPx && ringPx.priceUsd > 0) freshPx = ringPx.priceUsd;
+        else if (c.priceUsd > 0) freshPx = c.priceUsd;
       }
       if (fresh && freshPx != null) {
         const pairAgeHours =
