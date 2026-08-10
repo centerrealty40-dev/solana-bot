@@ -57,6 +57,7 @@ import {
 } from './leader-align.js';
 import { isRunnerPartialExit } from './sell-partial.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
+import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
@@ -1448,7 +1449,14 @@ async function tryExits(
   // Ring reads are sync — concurrency knob kept for API stability only.
   const markRows = ordered.map((mint) => {
     const { px, volume5mUsd, source } = markPriceUsd(mint, nowMs, cfg);
-    return { mint, px, volume5mUsd, source };
+    const metrics = readOpenMarkMetrics(mint, nowMs);
+    return {
+      mint,
+      px,
+      volume5mUsd: metrics?.volume5mUsd ?? volume5mUsd,
+      pc5mPct: metrics?.pc5mPct ?? null,
+      source,
+    };
   });
   const markPassMs = Date.now() - markStarted;
   let markedOk = 0;
@@ -1459,7 +1467,7 @@ async function tryExits(
   }
 
   const toSell: MarkExitDecision[] = [];
-  for (const { mint, px, volume5mUsd, source } of markRows) {
+  for (const { mint, px, volume5mUsd, pc5mPct, source } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
 
@@ -1515,6 +1523,7 @@ async function tryExits(
       markPriceUsd: px,
       gates: cfg.exit,
       nowMs,
+      pc5mPct,
       volume5mUsd,
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
@@ -2001,7 +2010,11 @@ export async function runMildDipLoop(
       `/${Math.round(cfg.exit.neverArmFreefallMinMs / 1000)}s ` +
       `neverArmTimeRed=${cfg.exit.neverArmTimeRedMinMs > 0 ? 1 : 0}` +
       `/${Math.round(cfg.exit.neverArmTimeRedMinMs / 1000)}s` +
-      `/pnl≤-${cfg.exit.neverArmTimeRedPnlPct}% ` +
+      `/pnl≤-${cfg.exit.neverArmTimeRedPnlPct}%` +
+      (cfg.exit.neverArmTimeRedMaxPc5mPct > 0
+        ? `/pc5m≤-${cfg.exit.neverArmTimeRedMaxPc5mPct}%`
+        : '') +
+      ` ` +
       `neverArmPatience=${Math.round(cfg.exit.neverArmPatienceMs / 1000)}s ` +
       `neverArmStale=${Math.round(cfg.exit.neverArmStaleMinMs / 1000)}s` +
       `/mfe≤${cfg.exit.neverArmStaleMaxMfePct}%/pnl≤-${cfg.exit.neverArmStalePnlPct}% ` +

@@ -1,4 +1,25 @@
 # So
+## [1.11.792] — 2026-08-10
+
+**Тег:** `sa-1.11.792`
+
+### Feat: never-arm HELD+PC+SL (7BNax DOWN ~44%)
+
+When trail never arms, exit on the researched combo:
+
+`held ≥ 5m AND pnl ≤ −15% AND Dex pc5m ≤ −5%`
+
+- Armed / MFE-bank trail unchanged
+- Clip stays **$2**
+- Missing pc5m → no fire (fail closed)
+- Env: `MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS=300000`,
+  `_PNL_PCT=15`, `_MAX_PC5M_PCT=5`
+- Open-mark Dex refresh caches pc5m for the exit path
+
+**Откат:** set the three TIME_RED envs to `0` + reload `mild-dip-bot`.
+
+---
+
 ## [1.11.790] — 2026-08-09
 
 **Тег:** `sa-1.11.790`

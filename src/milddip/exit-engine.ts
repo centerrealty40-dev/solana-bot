@@ -48,6 +48,8 @@ export function decideMarkExit(args: {
   markPriceUsd: number;
   gates: MildDipExitGates;
   nowMs?: number;
+  /** Live Dex pc5m % for never-arm HELD+PC+SL. */
+  pc5mPct?: number | null;
   /** Current 5m Dex volume — enables the activity-fade never-arm exit. */
   volume5mUsd?: number | null;
   /** Defer soft giveback exits while oneshot emptied-bag dump grace is active. */
@@ -75,6 +77,7 @@ export function decideMarkExit(args: {
     gates,
     heldMs,
     nowMs,
+    pc5mPct: args.pc5mPct ?? null,
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
     volFadeSamples: pos.volFadeSamples ?? null,

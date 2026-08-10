@@ -183,11 +183,17 @@ export type MildDipExitGates = {
   /**
    * 1.11.755 — never-armed time-red cut: after this many ms unarmed, if mark
    * pnl ≤ −neverArmTimeRedPnlPct → full exit (`never_arm_time_red`).
-   * Live option-2: 15m / −5%. 0 min = off.
+   * Live (1.11.792): 5m / −15% / pc5m ≤ −5 (7BNax DOWN formula). 0 min = off.
    */
   neverArmTimeRedMinMs: number;
-  /** See neverArmTimeRedMinMs. Positive percent (e.g. 5 = exit at ≤ −5%). 0 = off. */
+  /** See neverArmTimeRedMinMs. Positive percent (e.g. 15 = exit at ≤ −15%). 0 = off. */
   neverArmTimeRedPnlPct: number;
+  /**
+   * Optional Dex pc5m gate for time-red. Positive percent N → require
+   * pc5m ≤ −N. **0** = no pc5m requirement (legacy time-red). When > 0 and
+   * pc5m is missing, time-red does not fire (fail closed — matches RE).
+   */
+  neverArmTimeRedMaxPc5mPct: number;
 };
 
 /** One spaced Dex vol5m reading used by the sustained fade exit. */
@@ -593,6 +599,8 @@ export function evaluateMildDipPeakGiveback(args: {
   mfeBankStage?: number;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
+  /** Live Dex/stream pc5m % — required when neverArmTimeRedMaxPc5mPct > 0. */
+  pc5mPct?: number | null;
   /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
   volume5mUsd?: number | null;
   /** 5m volume captured at entry — the fade baseline. */
@@ -938,13 +946,19 @@ export function evaluateMildDipPeakGiveback(args: {
     }
     const timeRedMin = gates.neverArmTimeRedMinMs > 0 ? gates.neverArmTimeRedMinMs : 0;
     const timeRedPnl = gates.neverArmTimeRedPnlPct > 0 ? gates.neverArmTimeRedPnlPct : 0;
-    if (
-      timeRedMin > 0 &&
-      timeRedPnl > 0 &&
-      heldMs >= timeRedMin &&
-      pnlPct <= -timeRedPnl + 1e-9
-    ) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
+    const timeRedPc =
+      gates.neverArmTimeRedMaxPc5mPct > 0 ? gates.neverArmTimeRedMaxPc5mPct : 0;
+    if (timeRedMin > 0 && timeRedPnl > 0 && heldMs >= timeRedMin && pnlPct <= -timeRedPnl + 1e-9) {
+      let pcOk = true;
+      if (timeRedPc > 0) {
+        const pc =
+          args.pc5mPct != null && Number.isFinite(args.pc5mPct) ? Number(args.pc5mPct) : null;
+        // Fail closed when the tape metric is missing — formula needs pc5m.
+        pcOk = pc != null && pc <= -timeRedPc + 1e-9;
+      }
+      if (pcOk) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
+      }
     }
     const staleMin = gates.neverArmStaleMinMs > 0 ? gates.neverArmStaleMinMs : 0;
     const stalePnl = gates.neverArmStalePnlPct > 0 ? gates.neverArmStalePnlPct : 0;
