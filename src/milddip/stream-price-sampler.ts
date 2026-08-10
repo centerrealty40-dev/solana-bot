@@ -130,6 +130,16 @@ export function createStreamPriceSampler(args: {
         ) {
           continue;
         }
+        if (
+          !mildDipPriceRing.isPlausiblePrice(mint, s.priceUsd, {
+            nowMs: ts,
+            windowMs: 10 * 60_000,
+            maxRatio: 20,
+          })
+        ) {
+          if (mint === job.mint) lastSkipReason = 'price_outlier';
+          continue;
+        }
         mildDipPriceRing.note(mint, s.priceUsd, { tsMs: ts, source: 'stream' });
         if (mint === job.mint) {
           noted = true;
@@ -141,9 +151,19 @@ export function createStreamPriceSampler(args: {
       if (!noted) {
         const balPx = mintPriceUsdFromTxMeta(tx, job.mint, solUsd);
         if (balPx != null && balPx > 0) {
-          mildDipPriceRing.note(job.mint, balPx, { tsMs: ts, source: 'stream' });
-          noted = true;
-          priceHint = balPx;
+          if (
+            !mildDipPriceRing.isPlausiblePrice(job.mint, balPx, {
+              nowMs: ts,
+              windowMs: 10 * 60_000,
+              maxRatio: 20,
+            })
+          ) {
+            lastSkipReason = 'price_outlier';
+          } else {
+            mildDipPriceRing.note(job.mint, balPx, { tsMs: ts, source: 'stream' });
+            noted = true;
+            priceHint = balPx;
+          }
         }
       }
     } else {

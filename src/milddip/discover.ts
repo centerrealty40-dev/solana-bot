@@ -29,7 +29,7 @@ import {
   type KnifeWatchEntry,
 } from './knife-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
-import { evaluateTurnDumpGate } from './turn-dump.js';
+import { evaluateTurnDumpGate, turnDumpKnifeOrOk } from './turn-dump.js';
 
 function turnDumpGateArgs(cfg: MildDipConfig, metrics: MildDipCandidateMetrics) {
   return {
@@ -624,7 +624,8 @@ export async function enrichAndFilterCandidates(
         };
       }
 
-      // 1.11.793 — 7BNax OR: deep+hot dump buys now (same wallet), skip wait.
+      // 1.11.793/799 — 7BNax OR: deep+hot dump buys now (same wallet), skip wait.
+      // Hot dumps often TD-classify as `main`; still take the seat (dump≥30 & turn≥0.3).
       if (cfg.turnDumpGateEnabled && cfg.turnDumpKnifeBranchEnabled && structuralOk) {
         const streamPc =
           stream.drawdownPct != null && Number.isFinite(stream.drawdownPct)
@@ -639,8 +640,16 @@ export async function enrichAndFilterCandidates(
               : dexPc;
         if (deepest != null && deepest < 0) {
           const knifeMetrics = { ...metrics, priceChange5mPct: deepest };
-          const td = evaluateTurnDumpGate(turnDumpGateArgs(cfg, knifeMetrics));
-          if (td.pass && td.branch === 'knife') {
+          const knifeOr = turnDumpKnifeOrOk({
+            enabled: true,
+            knifeBranchEnabled: true,
+            pc5m: deepest,
+            volume5mUsd: knifeMetrics.volume5mUsd,
+            liquidityUsd: knifeMetrics.liquidityUsd,
+            minDumpPct: cfg.turnDumpKnifeMinDumpPct,
+            minTurn: cfg.turnDumpKnifeMinTurn,
+          });
+          if (knifeOr.ok) {
             return {
               kind: 'candidate',
               candidate: {
@@ -656,8 +665,8 @@ export async function enrichAndFilterCandidates(
                     mint,
                     reason: 'turn_dump_knife_pass',
                     dipSource: 'turn_dump_knife',
-                    dump: td.dump,
-                    turn: td.turn,
+                    dump: knifeOr.dump,
+                    turn: knifeOr.turn,
                   }
                 : undefined,
             };

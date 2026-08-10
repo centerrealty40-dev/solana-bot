@@ -83,16 +83,12 @@ export async function attemptMildDipEntry(args: {
   if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
 
-  // 1.11.798 — slow lane same as fast-path: need a live stream price print.
+  // 1.11.798/799 — need a recent stream print (Dex may be the latest tick).
   if (cfg.requireStreamPriceEntry) {
-    const last = mildDipPriceRing.lastPrice(c.mint, nowMs);
     const maxAge = cfg.requireStreamPriceMaxAgeMs;
-    const streamFresh =
-      last != null &&
-      last.source === 'stream' &&
-      last.priceUsd > 0 &&
-      (maxAge <= 0 || nowMs - last.tsMs <= maxAge);
-    if (!streamFresh) {
+    const stream = mildDipPriceRing.lastPriceBySource(c.mint, 'stream', nowMs, maxAge);
+    if (!stream || !(stream.priceUsd > 0)) {
+      const last = mildDipPriceRing.lastPrice(c.mint, nowMs);
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_no_stream_price_skip',
         mint: c.mint,

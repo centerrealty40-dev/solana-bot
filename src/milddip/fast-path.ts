@@ -15,7 +15,7 @@ import {
 import { mildDipPriceRing } from './price-ring.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
-import { evaluateTurnDumpGate, turnover5mLiq } from './turn-dump.js';
+import { evaluateTurnDumpGate, turnDumpKnifeOrOk } from './turn-dump.js';
 
 function turnDumpArgsFromCfg(
   cfg: MildDipConfig,
@@ -298,17 +298,13 @@ export async function evaluateFastPathCandidate(
   if (!mint || mint.length < 32) return skip('bad_mint');
   if (cfg.deniedMints.includes(mint)) return skip('denied_mint');
 
-  // 1.11.798 — bot is stream-priced: no entry on Dex pc5m alone when the
-  // Helius swap→ring tape is silent (green-candle Dex fills).
+  // 1.11.798/799 — bot is stream-priced: need a recent stream print in the
+  // ring (not "last tick is stream" — Dex notes often overwrite last).
   if (cfg.requireStreamPriceEntry) {
-    const last = mildDipPriceRing.lastPrice(mint, nowMs);
     const maxAge = cfg.requireStreamPriceMaxAgeMs;
-    const streamFresh =
-      last != null &&
-      last.source === 'stream' &&
-      last.priceUsd > 0 &&
-      (maxAge <= 0 || nowMs - last.tsMs <= maxAge);
-    if (!streamFresh) {
+    const stream = mildDipPriceRing.lastPriceBySource(mint, 'stream', nowMs, maxAge);
+    if (!stream || !(stream.priceUsd > 0)) {
+      const last = mildDipPriceRing.lastPrice(mint, nowMs);
       return skip('no_stream_price', {
         lastSource: last?.source ?? null,
         lastAgeMs: last ? Math.max(0, nowMs - last.tsMs) : null,
@@ -369,22 +365,24 @@ export async function evaluateFastPathCandidate(
   const dexPc = struct.metrics.priceChange5mPct;
   const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, cfg.entry.maxDipPct);
 
-  // 1.11.793 — 7BNax OR: deep+hot (dump≥30 & turn≥0.3) buys now on this wallet.
+  // 1.11.793/799 — 7BNax OR: deep+hot (dump≥30 & turn≥0.3) buys now.
+  // Do not require TD branch==='knife' (hot dumps classify as main first).
   const deepestPc =
     streamDd != null && dexPc != null
       ? Math.min(streamDd, dexPc)
       : streamDd != null
         ? streamDd
         : dexPc;
-  const turnNow = turnover5mLiq(struct.metrics.volume5mUsd, struct.metrics.liquidityUsd);
-  const knifeOrOk =
-    cfg.turnDumpGateEnabled &&
-    cfg.turnDumpKnifeBranchEnabled &&
-    deepestPc != null &&
-    deepestPc < 0 &&
-    turnNow != null &&
-    evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, deepestPc, struct.metrics)).branch ===
-      'knife';
+  const knifeOr = turnDumpKnifeOrOk({
+    enabled: cfg.turnDumpGateEnabled,
+    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    pc5m: deepestPc,
+    volume5mUsd: struct.metrics.volume5mUsd,
+    liquidityUsd: struct.metrics.liquidityUsd,
+    minDumpPct: cfg.turnDumpKnifeMinDumpPct,
+    minTurn: cfg.turnDumpKnifeMinTurn,
+  });
+  const knifeOrOk = knifeOr.ok;
 
   // Deep knife band — leave to knife-stabilize wait path (not instant blade catch),
   // unless the 7BNax knife OR already qualifies for an immediate seat.
