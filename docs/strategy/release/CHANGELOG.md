@@ -1,4 +1,40 @@
 # So
+## [1.11.803] — 2026-08-10
+
+**Тег:** `sa-1.11.803`
+
+### Feat: wait-dip under turn→dump + honest leader PnL + entry snapshot
+
+8h-аудит на живых сделках: **ни одно** exit-правило (≈1000 вариантов, включая
+нулевые комиссии) не выходит в плюс, а вход глубже — выходит. Наш филл на общих
+с лидерами именах хуже: fwd-30м MFE **+2.5%** / MAE **−20.2%** против их
+**+5.2%** / **−15.9%**.
+
+**Вход (главное).** Turn→dump больше не гасит wait-dip: формула выбирает монету,
+wait-dip выбирает цену.
+
+- `MILD_DIP_WAIT_DIP=1`, `MILD_DIP_WAIT_DIP_WITH_TURN_DUMP=1`, `PCT=-12`
+- 8h CF: вход по сигналу **−$33**, вход после −12% → **+$13…+$78**
+- `knife` / `stabilize` по-прежнему берут на сигнале (`waitDipAppliesToSource`)
+
+**Измерения.** Оба контура врали, поэтому исследования шли вслепую:
+
+- `leader-observer`: при отсутствии quote-ноги размер считался как
+  `tokenDelta × dexPrice`. На протухшей паре покупка $27 логировалась как
+  продажа $1148 — отсюда «медиана +928%». Теперь `sizeUsdEstimated` +
+  `costEstimatedLegs` / `proceedsEstimatedLegs` / `cashPnlReliable`.
+  По подтверждённым нотам TD-лидеров: ROI **+44…+123%**, winrate **0.29–0.44**
+  (редко и крупно), холд **~8–10 мин** против наших **43–75 мин**.
+- `mild_dip_buy_attempt.entrySnapshot`: pc5m/pc1h/vol/liq/mcap/age/dexId/
+  buys5m/sells5m/turn/dump/tdBranch/streamDump/bounce — без этого разбор
+  качества входа был невозможен.
+
+**Откат:** `MILD_DIP_WAIT_DIP=0` (остальное — только логи), либо
+`git checkout sa-1.11.802 -- src/milddip/config.ts src/milddip/entry-attempt.ts
+scripts/milddip/leader-observer.py ecosystem.config.cjs` + reload.
+
+---
+
 ## [1.11.802] — 2026-08-10
 
 **Тег:** `sa-1.11.802`

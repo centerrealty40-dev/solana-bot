@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   evaluateWaitDipPreBuy,
@@ -242,5 +244,30 @@ describe('waitDipMaxPriceUsd / evaluateWaitDipPreBuy', () => {
     });
     expect(bad.pass).toBe(false);
     expect(bad.reasons.some((r) => r.startsWith('wait_dip_chase_ready='))).toBe(true);
+  });
+});
+
+describe('1.11.803 wait-dip coexists with turn-dump', () => {
+  it('turn-dump gate no longer force-disables wait-dip when opted in', () => {
+    const src = readFileSync(resolve('src/milddip/config.ts'), 'utf8');
+    expect(src).toContain('waitDipWithTurnDump');
+    expect(src).toContain('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP');
+    expect(src).toContain('!parsed.data.waitDipWithTurnDump');
+  });
+
+  it('live env parks the formula-selected dip for another leg down', () => {
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_WAIT_DIP: '1'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_PCT: '-12'");
+    expect(eco).toContain("MILD_DIP_TURN_DUMP_GATE: '1'");
+  });
+
+  it('knife / stabilize branches still buy at signal', () => {
+    expect(waitDipAppliesToSource('turn_dump_knife')).toBe(false);
+    expect(waitDipAppliesToSource('knife_stabilize')).toBe(false);
+    expect(waitDipAppliesToSource('mild_stabilize')).toBe(false);
+    expect(waitDipAppliesToSource('dex')).toBe(true);
+    expect(waitDipAppliesToSource('dex+stream')).toBe(true);
   });
 });

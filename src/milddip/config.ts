@@ -252,6 +252,11 @@ const MildDipConfigSchema = z.object({
    * 0 waitDipPct = off shape.
    */
   waitDipEnabled: z.boolean().default(true),
+  /**
+   * 1.11.803 — allow wait-dip to run under the turn→dump gate (formula selects
+   * the mint, wait-dip selects the price). Off = legacy buy-at-signal.
+   */
+  waitDipWithTurnDump: z.boolean().default(false),
   waitDipPct: z.coerce.number().max(0).default(-10),
   waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
   /**
@@ -736,6 +741,7 @@ export function loadMildDipConfig(): MildDipConfig {
      * 1.11.773 — forced off when turn-dump gate is enabled.
      */
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
+    waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
     waitDipMaxOvershootPct: envNum('MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT', 2),
@@ -912,8 +918,15 @@ export function loadMildDipConfig(): MildDipConfig {
     );
   }
 
-  // 1.11.773 — turn-dump replaces park-and-wait: enter at signal when formula ok.
-  if (parsed.data.turnDumpGateEnabled && parsed.data.waitDipEnabled) {
+  // 1.11.773 — turn-dump replaced park-and-wait: enter at signal when formula ok.
+  // 1.11.803 — the two are complementary again: turn→dump picks the name, wait-dip
+  // picks the price. 8h CF: buying at signal books −$33, waiting −10…−15% more
+  // books +$13…+$78. Opt in explicitly so the old behaviour stays the default.
+  if (
+    parsed.data.turnDumpGateEnabled &&
+    parsed.data.waitDipEnabled &&
+    !parsed.data.waitDipWithTurnDump
+  ) {
     return { ...parsed.data, waitDipEnabled: false };
   }
 

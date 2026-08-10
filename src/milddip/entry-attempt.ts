@@ -8,7 +8,11 @@ import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-
 import type { CopyTraderConfig } from '../copytrader/config.js';
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
-import { noteStructuralCache, requireStreamPriceForDipSource } from './fast-path.js';
+import {
+  noteStructuralCache,
+  requireStreamPriceForDipSource,
+  streamDumpExtentPct,
+} from './fast-path.js';
 import {
   evaluateCooldownBounce,
   evaluateMildDipPreBuy,
@@ -339,6 +343,14 @@ export async function attemptMildDipEntry(args: {
   }
 
   // 1.11.773 — final turn→dump choke (fresh vol/liq/pc5m when available).
+  // 1.11.803 — keep the verdict for the entry snapshot even when it passes.
+  let tdSnapshot: {
+    dump: number | null;
+    turn: number | null;
+    pred: number | null;
+    resid: number | null;
+    branch: string | null;
+  } | null = null;
   if (cfg.turnDumpGateEnabled) {
     const td = evaluateTurnDumpGate({
       enabled: true,
@@ -357,6 +369,13 @@ export async function attemptMildDipEntry(args: {
       knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
       knifeMinTurn: cfg.turnDumpKnifeMinTurn,
     });
+    tdSnapshot = {
+      dump: td.dump,
+      turn: td.turn,
+      pred: td.pred,
+      resid: td.resid,
+      branch: td.branch,
+    };
     if (!td.pass) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_turn_dump_skip',
@@ -685,6 +704,32 @@ export async function attemptMildDipEntry(args: {
     lane: opts.lane,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
+    // 1.11.803 — full decision snapshot; without it post-hoc entry analysis
+    // cannot separate a good dip from a bad one.
+    entrySnapshot: {
+      pc5m: entryPc5m,
+      pc1h: c.metrics.priceChange1hPct ?? null,
+      vol5m: entryVol5m,
+      vol1h: c.metrics.volume1hUsd ?? null,
+      liq: sizeMetrics.liquidityUsd ?? null,
+      mcap: sizeMetrics.marketCapUsd ?? null,
+      ageHours: sizeMetrics.pairAgeHours ?? null,
+      dexId: c.metrics.dexId ?? null,
+      buys5m: c.metrics.buys5m ?? null,
+      sells5m: c.metrics.sells5m ?? null,
+      dipSource: c.dipSource,
+      turn: tdSnapshot?.turn ?? null,
+      dump: tdSnapshot?.dump ?? null,
+      tdBranch: tdSnapshot?.branch ?? null,
+      tdResid: tdSnapshot?.resid ?? null,
+      streamDumpPct: streamDumpExtentPct(c.mint, cfg.cooldownBounceLookbackMs, nowMs),
+      bounceFromTroughPct: mildDipPriceRing.bounceFromPostPeakTroughPct(
+        c.mint,
+        freshPx ?? entryPriceUsd,
+        cfg.cooldownBounceLookbackMs,
+        nowMs,
+      ),
+    },
     ok: buy.ok,
     reason: buy.reason ?? null,
     signature: buy.signature ?? null,
