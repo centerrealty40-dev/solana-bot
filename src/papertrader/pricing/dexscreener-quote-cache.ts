@@ -174,6 +174,44 @@ function gateMaxRpm(): number {
   return 42;
 }
 
+/** Cap runaway gate queues (overlapping wakes can push hours ahead). */
+function gateMaxBacklogMs(): number {
+  const raw = process.env.DEXSCREENER_GLOBAL_MAX_BACKLOG_MS?.trim();
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0) return Math.min(300_000, n);
+  }
+  return 30_000;
+}
+
+/**
+ * 1.11.796 — compute next grant; clamp stale/runaway `nextAllowedMs` so buy-path
+ * Dex slots cannot sleep for tens of minutes behind a flooded gate file.
+ */
+export function nextDexScreenerGrantAt(args: {
+  nowMs: number;
+  nextAllowedMs: number;
+  minGapMs: number;
+  maxBacklogMs: number;
+}): { grantAt: number; waitMs: number; nextAllowedMs: number; clamped: boolean } {
+  const now = args.nowMs;
+  const maxBacklog = Math.max(0, args.maxBacklogMs);
+  const minGap = Math.max(1, args.minGapMs);
+  let base = args.nextAllowedMs;
+  let clamped = false;
+  if (base - now > maxBacklog) {
+    base = now;
+    clamped = true;
+  }
+  const grantAt = Math.max(now, base);
+  return {
+    grantAt,
+    waitMs: Math.max(0, grantAt - now),
+    nextAllowedMs: grantAt + minGap,
+    clamped,
+  };
+}
+
 function readGateState(): { nextAllowedMs: number } {
   try {
     const raw = fs.readFileSync(gateStatePath(), 'utf8');
@@ -200,9 +238,14 @@ async function acquireDexScreenerSlot(): Promise<void> {
   await withFileLock(gateLockPath(), async () => {
     const now = Date.now();
     const state = readGateState();
-    const grantAt = Math.max(now, state.nextAllowedMs);
-    waitMs = Math.max(0, grantAt - now);
-    writeGateState(grantAt + minGapMs);
+    const grant = nextDexScreenerGrantAt({
+      nowMs: now,
+      nextAllowedMs: state.nextAllowedMs,
+      minGapMs,
+      maxBacklogMs: gateMaxBacklogMs(),
+    });
+    waitMs = grant.waitMs;
+    writeGateState(grant.nextAllowedMs);
   });
   if (waitMs > 0) await sleep(waitMs);
 }
