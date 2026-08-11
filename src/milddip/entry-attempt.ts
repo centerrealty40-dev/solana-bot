@@ -40,6 +40,33 @@ import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 
 const HOLDING_DUST_RAW = 1000n;
 
+/**
+ * 1.11.827 — probe buys on re-entry blocks.
+ *
+ * `rebuy_liq_drop` and `rebuy_below_exit` are the two biggest re-entry blockers
+ * (1385 and 762 hits in 3h), and we cannot measure what they cost: once a mint
+ * is refused we stop marking it, so there is no forward tape to score. A tiny
+ * real buy answers it with a real fill and real slippage instead of a guess.
+ *
+ * Rate-limited per hour and tagged `probe` in the journal so it never mixes
+ * into the main book's statistics.
+ */
+const probeStamps: number[] = [];
+
+function takeProbeSlot(cfg: MildDipConfig, nowMs: number): boolean {
+  if (!cfg.probeBlockedEnabled || !(cfg.probeBlockedUsd > 0)) return false;
+  const cutoff = nowMs - 3_600_000;
+  while (probeStamps.length > 0 && probeStamps[0]! < cutoff) probeStamps.shift();
+  if (probeStamps.length >= cfg.probeBlockedMaxPerHour) return false;
+  probeStamps.push(nowMs);
+  return true;
+}
+
+/** Test helper. */
+export function __resetProbeBudgetForTests(): void {
+  probeStamps.length = 0;
+}
+
 export type EntryAttemptOpts = {
   chasePct: number;
   skipBounce?: boolean;
@@ -81,6 +108,8 @@ export async function attemptMildDipEntry(args: {
   const { cfg, state, copyCfg, nowMs, buyInFlight, opts } = args;
   const c = args.candidate;
   const isMildStabilize = c.dipSource === 'mild_stabilize';
+  /** Set when a re-entry gate was overridden by a probe (tiny research buy). */
+  let probeReason: 'rebuy_below_exit' | 'rebuy_liq_drop' | null = null;
 
   if (buyInFlight.has(c.mint)) return 'skip';
   if (state.open[c.mint]) return 'skip';
@@ -431,11 +460,26 @@ export async function attemptMildDipEntry(args: {
         lastExitAtMs: last?.atMs ?? null,
         reasons: rebuy.reasons,
       });
-      console.log(
-        `[mild-dip] SKIP rebuy-exit ${c.symbol} mint=${c.mint.slice(0, 8)}… ${rebuy.reasons.join(',')}`,
-      );
-      state.cooldownUntilMs[c.mint] = nowMs + softCd;
-      return 'skip';
+      if (takeProbeSlot(cfg, nowMs)) {
+        probeReason = 'rebuy_below_exit';
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_probe_override',
+          mint: c.mint,
+          symbol: c.symbol,
+          blockedBy: 'rebuy_below_exit',
+          probeUsd: cfg.probeBlockedUsd,
+          reasons: rebuy.reasons,
+        });
+        console.log(
+          `[mild-dip] PROBE rebuy-exit ${c.symbol} mint=${c.mint.slice(0, 8)}… $${cfg.probeBlockedUsd}`,
+        );
+      } else {
+        console.log(
+          `[mild-dip] SKIP rebuy-exit ${c.symbol} mint=${c.mint.slice(0, 8)}… ${rebuy.reasons.join(',')}`,
+        );
+        state.cooldownUntilMs[c.mint] = nowMs + softCd;
+        return 'skip';
+      }
     }
   }
 
@@ -466,11 +510,26 @@ export async function attemptMildDipEntry(args: {
         lastExitPnlPct: last?.pnlPct ?? null,
         reasons: liqDrop.reasons,
       });
-      console.log(
-        `[mild-dip] SKIP rebuy-liq ${c.symbol} mint=${c.mint.slice(0, 8)}… ${liqDrop.reasons.join(',')}`,
-      );
-      state.cooldownUntilMs[c.mint] = nowMs + softCd;
-      return 'skip';
+      if (takeProbeSlot(cfg, nowMs)) {
+        probeReason = 'rebuy_liq_drop';
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_probe_override',
+          mint: c.mint,
+          symbol: c.symbol,
+          blockedBy: 'rebuy_liq_drop',
+          probeUsd: cfg.probeBlockedUsd,
+          reasons: liqDrop.reasons,
+        });
+        console.log(
+          `[mild-dip] PROBE rebuy-liq ${c.symbol} mint=${c.mint.slice(0, 8)}… $${cfg.probeBlockedUsd}`,
+        );
+      } else {
+        console.log(
+          `[mild-dip] SKIP rebuy-liq ${c.symbol} mint=${c.mint.slice(0, 8)}… ${liqDrop.reasons.join(',')}`,
+        );
+        state.cooldownUntilMs[c.mint] = nowMs + softCd;
+        return 'skip';
+      }
     }
   }
 
@@ -535,7 +594,8 @@ export async function attemptMildDipEntry(args: {
     ),
     metrics: sizeMetrics,
   });
-  const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wanted.sizeUsd);
+  const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, wanted.sizeUsd) : wanted.sizeUsd;
+  const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wantUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {
       appendMildDipJournal(cfg.journalPath, {
@@ -711,6 +771,7 @@ export async function attemptMildDipEntry(args: {
     waitDipFillDumpFromSignalPct: waitDipFillDump,
     waitDipMaxPriceUsd: waitDipCeilingPx,
     lane: opts.lane,
+    probe: probeReason,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
     // 1.11.803 — full decision snapshot; without it post-hoc entry analysis

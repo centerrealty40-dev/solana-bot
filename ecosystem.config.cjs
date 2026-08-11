@@ -3157,8 +3157,23 @@ const PM2_APPS = [
          */
         MILD_DIP_MARK_STREAM_MAX_AGE_MS: '300000',
         // Background Dex→ring for open bags when stream quiet (0 = off).
-        MILD_DIP_MARK_DEX_REFRESH_MS: '8000',
-        MILD_DIP_MARK_CACHE_TTL_MS: '20000',
+        /**
+         * 1.11.826 — 8000 → 2000 and TTL 20000 → 3000. The trail could not work
+         * at the old cadence: `6tfuqq` peaked at +22.95%, sleeve sits at −12%
+         * from peak so we should have left near +8%, and we left at −23.6% from
+         * peak — the whole round trip happened between two usable marks.
+         *
+         * CF over 91 trades confirmed the consequence: every wider ladder loses
+         * (bank +6/+15 −$8.74, runner+sleeve18 −$13.46, bank1-only −$15.68 vs
+         * −$7.34 live), i.e. we cannot sit in a name while the exit sees price
+         * once every 8–20s.
+         *
+         * Affordable only after 1.11.820: the whole open book is one batched
+         * request per 30 mints, so ~19 positions at 2s cost ~30 req/min of a
+         * 120 RPM budget instead of 19 separate calls per refresh.
+         */
+        MILD_DIP_MARK_DEX_REFRESH_MS: '2000',
+        MILD_DIP_MARK_CACHE_TTL_MS: '3000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
         MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',
@@ -3319,6 +3334,17 @@ const PM2_APPS = [
          * 212 distinct mints reached the gate in 3.7 min, 22 passed, 0 buys —
          * our discovery universe and the leader seed overlap by ~10%.
          */
+        /**
+         * 1.11.827 — probe buys instead of a synthetic forward tape.
+         * `rebuy_liq_drop` (1385/3h) and `rebuy_below_exit` (762/3h) are the
+         * top re-entry blockers and we cannot price them: once a mint is
+         * refused we stop marking it. Six $2 buys an hour ($12/h at risk)
+         * answer it with real fills and real slippage. Tagged `probe` in the
+         * journal so they never mix into the book's statistics.
+         */
+        MILD_DIP_PROBE_BLOCKED: '1',
+        MILD_DIP_PROBE_BLOCKED_USD: '2',
+        MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
         MILD_DIP_REQUIRE_LEADER_SEEN: '0',
         MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS: '7200000',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
