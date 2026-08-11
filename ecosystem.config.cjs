@@ -2829,22 +2829,25 @@ const PM2_APPS = [
         /** 1.11.754 — flat $30 across base / thick / micro. */
         /** 1.11.763 — flat $5 across base / thick / micro. */
         /** 1.11.790 — flat $2 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '2',
+        /** 1.11.812 — flat $10 across base / thick / micro. */
+        /** 1.11.813 — flat $2 across base / thick / micro. */
+        /** 1.11.814 — flat $10 across base / thick / micro. */
+        MILD_DIP_POSITION_USD: '10',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
-         * 1.11.790 — same $2 as base.
+         * 1.11.814 — same $10 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '2',
+        MILD_DIP_THICK_POSITION_USD: '10',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
         /**
          * 1.11.746 — micro band, knife_stabilize only.
          * 1.11.776 — floor aligned to global $5k (was $15k–$50k).
-         * 1.11.790 — clip flat $2 with base/thick (one economic tier).
+         * 1.11.814 — clip flat $10 with base/thick (one economic tier).
          */
-        MILD_DIP_MICRO_POSITION_USD: '2',
+        MILD_DIP_MICRO_POSITION_USD: '10',
         MILD_DIP_MICRO_MIN_MCAP_USD: '5000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -2978,7 +2981,7 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.5',
         /**
-         * 1.11.812 — cap at 72h. Pairs older than that are dead money on this
+         * 1.11.815 — cap at 72h. Pairs older than that are dead money on this
          * strategy: 20 trades, −$7.60, winrate 0.25, median MFE 1.1% — they
          * simply do not bounce. Cutting them is the only filter that turns
          * `ex_top3` positive (−$7.50 → +$0.09), i.e. it survives dropping the
@@ -3020,7 +3023,7 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
         /**
-         * 1.11.812 — back to 25. The 1.11.810 cut to 15 was fitted on 49 trades
+         * 1.11.815 — back to 25. The 1.11.810 cut to 15 was fitted on 49 trades
          * and is wrong on 183: median MAE of the trades that eventually WIN is
          * −19.3%, and 56% of them dip below −15% first. A −15% floor sells the
          * winners. Grid on the full sample: hard15 −$9.52, hard20 −$0.17,
@@ -3054,7 +3057,7 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
         MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
-        /** 1.11.812 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
+        /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '12',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */

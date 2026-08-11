@@ -1,7 +1,7 @@
 # So
-## [1.11.812] — 2026-08-11
+## [1.11.815] — 2026-08-11
 
-**Тег:** `sa-1.11.812`
+**Тег:** `sa-1.11.815`
 
 ### Fix: стоп −15 продавал победителей; отсечь пары старше 72ч
 
@@ -37,6 +37,54 @@
 Вместе: **−$9.52 → +$11.74** на тех же 9.5ч, winrate 0.52 → 0.63.
 
 **Откат:** `HARD_STOP=15`, `SLEEVE=8`, `MAX_PAIR_AGE_HOURS=0`.
+
+---
+
+## [1.11.814] — 2026-08-11
+
+**Тег:** `sa-1.11.814`
+
+### Ops: mild-dip clip flat $10
+
+Base / thick / micro → `$10` (was `$2`).
+
+- `MILD_DIP_POSITION_USD=10`
+- `MILD_DIP_THICK_POSITION_USD=10`
+- `MILD_DIP_MICRO_POSITION_USD=10`
+
+**Откат:** set all three to `2` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.813] — 2026-08-10
+
+**Тег:** `sa-1.11.813`
+
+### Ops: mild-dip clip flat $2
+
+Base / thick / micro → `$2` (was `$10`).
+
+- `MILD_DIP_POSITION_USD=2`
+- `MILD_DIP_THICK_POSITION_USD=2`
+- `MILD_DIP_MICRO_POSITION_USD=2`
+
+**Откат:** set all three to `10` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
+## [1.11.812] — 2026-08-10
+
+**Тег:** `sa-1.11.812`
+
+### Ops: mild-dip clip flat $10
+
+Base / thick / micro → `$10` (was `$2`).
+
+- `MILD_DIP_POSITION_USD=10`
+- `MILD_DIP_THICK_POSITION_USD=10`
+- `MILD_DIP_MICRO_POSITION_USD=10`
+
+**Откат:** set all three back to `2` + `pm2 reload ecosystem.config.cjs --update-env`.
 
 ---
 

@@ -282,7 +282,7 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(mk(91.4).pass).toBe(false);
   });
 
-  it('1.11.812 banked out by +8%, but the loss floor clears the noise band', () => {
+  it('1.11.815 banked out by +8%, but the loss floor clears the noise band', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK1_PCT: '6'");
     expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK2_PCT: '8'");
@@ -293,7 +293,7 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25'");
   });
 
-  it('1.11.812 skips pairs older than 72h', () => {
+  it('1.11.815 skips pairs older than 72h', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_MAX_PAIR_AGE_HOURS: '72'");
   });
