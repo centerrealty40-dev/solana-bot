@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { resolveExitMarkFromRing } from '../../src/milddip/exit-mark.js';
 
@@ -49,5 +51,16 @@ describe('resolveExitMarkFromRing', () => {
     expect(
       resolveExitMarkFromRing({ last: null, nowMs: now, maxAgeMs: 60_000 }).px,
     ).toBeNull();
+  });
+});
+
+describe('1.11.822 pre-entry sample is not a mark', () => {
+  it('loop drops ring samples older than openedAtMs', () => {
+    const src = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+    // 6tfuqq: filled at 0.00012981 while the ring still held 0.0001596 from 3s
+    // before the buy -> phantom +22.95% armed the trail and banked out flat.
+    expect(src).toContain('staleVsEntry');
+    expect(src).toContain('last.tsMs < openedAtMs');
+    expect(src).toContain('state.open[mint]?.openedAtMs');
   });
 });

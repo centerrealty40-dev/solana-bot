@@ -259,12 +259,22 @@ function markPriceUsd(
   mint: string,
   nowMs: number,
   cfg: Pick<MildDipConfig, 'markStreamMaxAgeMs'>,
+  /**
+   * 1.11.822 — a sample taken before we bought is not a mark on this position.
+   * `6tfuqq`: we filled at 0.00012981 while the ring still held the pre-dip
+   * 0.0001596 from 3s earlier, so the first mark printed a phantom +22.95%,
+   * armed the trail and ran the whole bank ladder out at the entry price.
+   */
+  openedAtMs?: number,
 ): { px: number | null; volume5mUsd: number | null; source: 'stream' | 'dex' | null } {
   const last = mildDipPriceRing.lastPrice(mint, nowMs);
+  const staleVsEntry =
+    last != null && openedAtMs != null && openedAtMs > 0 && last.tsMs < openedAtMs;
   const resolved = resolveExitMarkFromRing({
-    last: last
-      ? { priceUsd: last.priceUsd, tsMs: last.tsMs, source: last.source }
-      : null,
+    last:
+      last && !staleVsEntry
+        ? { priceUsd: last.priceUsd, tsMs: last.tsMs, source: last.source }
+        : null,
     nowMs,
     maxAgeMs: cfg.markStreamMaxAgeMs > 0 ? cfg.markStreamMaxAgeMs : 0,
   });
@@ -1567,7 +1577,12 @@ async function tryExits(
   }
   // Exit decisions: armed-first; sync ring reads only.
   const markRows = ordered.map((mint) => {
-    const { px, volume5mUsd, source } = markPriceUsd(mint, nowMs, cfg);
+    const { px, volume5mUsd, source } = markPriceUsd(
+      mint,
+      nowMs,
+      cfg,
+      state.open[mint]?.openedAtMs,
+    );
     const metrics = readOpenMarkMetrics(mint, nowMs);
     return {
       mint,
