@@ -1,7 +1,6 @@
-# So
-## [1.11.841] — 2026-08-11
+## [1.11.843] — 2026-08-11
 
-**Тег:** `sa-1.11.841`
+**Тег:** `sa-1.11.843`
 
 ### Fix: wait-dip покупал по устаревшей квалификации
 
@@ -34,7 +33,7 @@ $2 484 и mcap $2 620 против флоров $5 000 — то есть вдв�
 
 ### Fix: `dust_close` перестал отличать остаток от целой позиции
 
-Порог пыли равен $2, а живой клип с 1.11.839 тоже **$2**. Условие
+Порог пыли равен $2, а живой клип упал до **$2** (1.11.839), затем до **$1** (1.11.842). Условие
 `pos.sizeUsd <= dustUsd` стало выполняться для **любой** позиции, то есть правило
 превратилось в незапланированный max-hold на 30 минут для всего.
 
@@ -47,6 +46,32 @@ $2 484 и mcap $2 620 против флоров $5 000 — то есть вдв�
 снова только их и трогает.
 
 **Rollback:** revert коммита; ключей конфигурации не добавлено.
+
+
+## 1.11.842 — 2026-08-11
+
+### Changed
+- Live clip size set to **$1** flat across base/thick/micro (`MILD_DIP_POSITION_USD` / `MILD_DIP_THICK_POSITION_USD` / `MILD_DIP_MICRO_POSITION_USD` = `1`).
+
+### Why
+- Ops: minimal live notional while validating entries.
+
+# So
+## [1.11.841] — 2026-08-11
+
+**Тег:** `sa-1.11.841`
+
+### Ops: mild-dip clip flat $1
+
+Base / thick / micro → `$1` (was `$2`).
+
+- `MILD_DIP_POSITION_USD=1`
+- `MILD_DIP_THICK_POSITION_USD=1`
+- `MILD_DIP_MICRO_POSITION_USD=1`
+
+**Откат:** set all three to `2` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
 
 ## [1.11.840] — 2026-08-11
 
