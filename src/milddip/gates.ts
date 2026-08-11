@@ -135,6 +135,13 @@ export type MildDipExitGates = {
    */
   cliffDumpPnlPct: number;
   /**
+   * Close a remaining bag at or below this notional once held `dustCloseMinHoldMs`.
+   * Not a strategy gate: at $1–2 no price move changes the outcome, but the bag
+   * keeps consuming Dex marks. 0 = disabled.
+   */
+  dustCloseUsd: number;
+  dustCloseMinHoldMs: number;
+  /**
    * 1.11.765 / 1.11.791 — hard stop from entry when mark pnl ≤ −this %
    * (live default 25). Fires before soft exits; never deferred by leader-align
    * or oneshot dump grace. 0 = off. Distinct from cliff (second-stage −50%).
@@ -499,6 +506,8 @@ export type MildDipExitReason =
   | 'max_hold_underwater'
   | 'cliff_dump'
   | 'hard_stop'
+  /** 1.11.832 — bank/bounce remnant too small to manage; frees mark bandwidth. */
+  | 'dust_close'
   | null;
 
 /** True when MFE-bank ladder is configured and should own the armed exit path. */
