@@ -22,6 +22,8 @@ import {
   fastPathChasePct,
   getStructuralCache,
   streamDrawdownPct,
+  loadStructural,
+  structuralOk,
 } from './fast-path.js';
 import {
   isKnifeDipPct,
@@ -555,11 +557,42 @@ async function tryFireWaitDip(
     return false;
   }
 
+  /**
+   * A seat qualifies once and fires minutes later on `watch.metrics` — the
+   * snapshot from parking time. Live `EvCDdrb`-class case: the floors refused this
+   * mint ~10 times as it decayed (liq $19.1k → $13.1k, vol5m $4.4k → $181), then a
+   * seat parked at 19:15 fired at 19:22 with **liq $2 484 / mcap $2 620** against
+   * $5 000 floors, and it rugged. 6 of 156 filled buys in 4h violated a floor and
+   * all 6 came through this path.
+   */
+  const freshStruct = await loadStructural(mint, cfg, nowMs);
+  if (freshStruct && !structuralOk(freshStruct.metrics, cfg)) {
+    delete state.waitDipWatch![mint];
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_wait_dip_refloor_skip',
+      mint,
+      symbol: watch.symbol,
+      waitMs: nowMs - watch.detectedAtMs,
+      vol5m: freshStruct.metrics.volume5mUsd ?? null,
+      liq: freshStruct.metrics.liquidityUsd ?? null,
+      mcap: freshStruct.metrics.marketCapUsd ?? null,
+      ageH: freshStruct.metrics.pairAgeHours ?? null,
+      parkedLiq: watch.metrics?.liquidityUsd ?? null,
+      parkedVol5m: watch.metrics?.volume5mUsd ?? null,
+    });
+    console.log(
+      `[mild-dip] SKIP wait-dip refloor ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
+        `liq=${freshStruct.metrics.liquidityUsd} mcap=${freshStruct.metrics.marketCapUsd}`,
+    );
+    return false;
+  }
+
   const candidate: MildDipCandidate = {
     mint,
     symbol: watch.symbol,
     priceUsd: px,
-    metrics: watch.metrics,
+    // Fire on the fresh snapshot, not the one that qualified the seat.
+    metrics: freshStruct?.metrics ?? watch.metrics,
     dipSource: 'wait_dip',
     waitDipSignalPriceUsd: watch.signalPriceUsd,
     waitDipOriginalSource: watch.originalDipSource,
