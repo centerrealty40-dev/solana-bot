@@ -1108,7 +1108,15 @@ async function executeQueuedSell(args: {
   const isPartial = isRunnerPartialExit(fraction);
 
   const copyCfg = mildDipToCopyTraderConfig(cfg);
-  // Dedicated wallet: sell on-chain balance (omit stale quote tokenRaw → 6024).
+  /**
+   * The executor sells `min(tokenRawBase, on-chain ATA)`. A buy's quoted
+   * `outAmount` runs above the confirmed fill, so a fresh bag must size off the
+   * chain read alone. But once a leg has settled, `tokenRaw` is `before − sold`
+   * arithmetic and is the *safer* of the two: right after a partial the chain
+   * read still answers the pre-sell balance, and asking for that much is what
+   * produced the `Custom:6024` bursts (three failed bank_2 legs over 11s on
+   * `J7o48eA9q` before the node caught up).
+   */
   const sell = await executeCopySell({
     cfg: copyCfg,
     mint,
@@ -1119,6 +1127,7 @@ async function executeQueuedSell(args: {
     fraction,
     leaderSignature: `milddip_exit_${decision.reason}_${nowMs}`,
     sellDelayMs: 0,
+    ...(pos.tokenRawSettled && pos.tokenRaw ? { tokenRawBase: pos.tokenRaw } : {}),
   });
 
   appendMildDipJournal(cfg.journalPath, {
@@ -1250,7 +1259,10 @@ async function executeQueuedSell(args: {
       live.peakPriceUsd = decision.peakPriceUsd;
       live.trailArmed = decision.armed;
       if (settle.remainingRaw != null) {
+        // Either arithmetic (`before − sold`) or a read at/below it — both are
+        // safe caps for the next leg, unlike a buy quote's `outAmount`.
         live.tokenRaw = settle.remainingRaw.toString();
+        live.tokenRawSettled = true;
       }
       saveMildDipState(cfg.statePath, state);
       appendMildDipJournal(cfg.journalPath, {
@@ -1322,6 +1334,8 @@ async function executeQueuedSell(args: {
     if (!verdict.drop) {
       if (state.open[mint] && onchainRaw > HOLDING_DUST_RAW && raw) {
         state.open[mint]!.tokenRaw = raw;
+        // A bare chain read may itself be stale-high — do not let it cap a sell.
+        state.open[mint]!.tokenRawSettled = false;
         saveMildDipState(cfg.statePath, state);
       }
       appendMildDipJournal(cfg.journalPath, {
@@ -1521,6 +1535,9 @@ async function attemptLeaderAlignScaleIn(args: {
     const rem = await fetchMintBalanceRaw(copyCfg, mint);
     if (rem && /^\d+$/.test(rem) && BigInt(rem) > HOLDING_DUST_RAW) {
       live.tokenRaw = rem;
+      // Bag just grew — a pre-scale-in settled figure would cap the next sell
+      // below what we hold. Size off the chain read until a leg settles again.
+      live.tokenRawSettled = false;
     }
     saveMildDipState(cfg.statePath, state);
     appendMildDipJournal(cfg.journalPath, {
