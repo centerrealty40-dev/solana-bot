@@ -125,68 +125,117 @@ def ui_amt(b: dict[str, Any] | None) -> float:
 
 
 # 1.11.811 — the observer called DexScreener outside the trading bot's rate
-# gate, so it starved mild-dip's own budget: 274 of 344 leader buys logged
-# `HTTP 429` and the bot saw `structural_fetch_null`. Space our calls out and
-# stand down entirely for a while after a 429.
-_DEX_MIN_GAP_MS = env_num("LEADER_OBSERVER_DEX_MIN_GAP_MS", 1200.0)
-_DEX_BACKOFF_MS = env_num("LEADER_OBSERVER_DEX_BACKOFF_MS", 60_000.0)
+# gate and starved it: 274 of 344 leader buys logged `HTTP 429`.
+# 1.11.819 — the real waste was one HTTP call per mint. DexScreener accepts up
+# to 30 comma-separated addresses per request, so a poll over 60 open bags is
+# 2 calls, not 60. Add a short-lived per-mint cache on top (leaders add to the
+# same names repeatedly).
+_DEX_MIN_GAP_MS = env_num("LEADER_OBSERVER_DEX_MIN_GAP_MS", 400.0)
+_DEX_BACKOFF_MS = env_num("LEADER_OBSERVER_DEX_BACKOFF_MS", 30_000.0)
+_DEX_CACHE_MS = env_num("LEADER_OBSERVER_DEX_CACHE_MS", 20_000.0)
+_DEX_BATCH_MAX = int(env_num("LEADER_OBSERVER_DEX_BATCH_MAX", 30.0))
 _dex_last_call_ms = 0.0
 _dex_backoff_until_ms = 0.0
+_dex_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
+
+def _pair_to_dex(p: dict[str, Any]) -> dict[str, Any]:
+    liq = (p.get("liquidity") or {}).get("usd")
+    vol5m = (p.get("volume") or {}).get("m5")
+    created = p.get("pairCreatedAt")
+    age_h = None
+    if created:
+        age_h = max(0.0, (time.time() * 1000 - float(created)) / 3_600_000)
+    turnover = None
+    if liq and float(liq) > 0 and vol5m is not None:
+        turnover = float(vol5m) / float(liq)
+    return {
+        "dexId": p.get("dexId"),
+        "pairAddress": p.get("pairAddress"),
+        "priceUsd": float(p.get("priceUsd") or 0),
+        "pc5m": (p.get("priceChange") or {}).get("m5"),
+        "pc1h": (p.get("priceChange") or {}).get("h1"),
+        "vol5m": vol5m,
+        "vol1h": (p.get("volume") or {}).get("h1"),
+        "liq": liq,
+        "mcap": p.get("marketCap") or p.get("fdv"),
+        "buys5m": ((p.get("txns") or {}).get("m5") or {}).get("buys"),
+        "sells5m": ((p.get("txns") or {}).get("m5") or {}).get("sells"),
+        "pairCreatedAt": created,
+        "ageHours": age_h,
+        "turnover5mLiq": turnover,
+    }
+
+
+def _pick_pair(pairs: list[dict[str, Any]]) -> dict[str, Any] | None:
+    sol = [p for p in pairs if p.get("chainId") == "solana"]
+    if not sol:
+        return None
+    return next((x for x in sol if x.get("dexId") == "pumpswap"), sol[0])
+
+
+def fetch_dex_batch(mints: list[str]) -> dict[str, dict[str, Any] | None]:
+    """One HTTP call per ≤30 mints. Returns mint -> snapshot (or error dict)."""
+    global _dex_last_call_ms, _dex_backoff_until_ms
+    out: dict[str, dict[str, Any] | None] = {}
+    now_ms = time.time() * 1000
+    pending = []
+    for m in mints:
+        hit = _dex_cache.get(m)
+        if hit and now_ms - hit[0] < _DEX_CACHE_MS:
+            out[m] = hit[1]
+        elif m not in pending:
+            pending.append(m)
+    if not pending:
+        return out
+    if now_ms < _dex_backoff_until_ms:
+        for m in pending:
+            out[m] = {"error": "throttled_local", "retryInMs": int(_dex_backoff_until_ms - now_ms)}
+        return out
+
+    for i in range(0, len(pending), _DEX_BATCH_MAX):
+        chunk = pending[i : i + _DEX_BATCH_MAX]
+        gap = _DEX_MIN_GAP_MS - (time.time() * 1000 - _dex_last_call_ms)
+        if gap > 0:
+            time.sleep(min(gap, _DEX_MIN_GAP_MS) / 1000.0)
+        _dex_last_call_ms = time.time() * 1000
+        try:
+            req = urllib.request.Request(
+                "https://api.dexscreener.com/latest/dex/tokens/" + ",".join(chunk),
+                headers={
+                    "user-agent": "Mozilla/5.0 mild-dip-leader-observer",
+                    "accept": "application/json",
+                },
+            )
+            with urllib.request.urlopen(req, timeout=15) as r:
+                j = json.loads(r.read().decode())
+            by_mint: dict[str, list[dict[str, Any]]] = {}
+            for p in j.get("pairs") or []:
+                base = ((p.get("baseToken") or {}).get("address") or "").strip()
+                if base:
+                    by_mint.setdefault(base, []).append(p)
+            stamp = time.time() * 1000
+            for m in chunk:
+                pair = _pick_pair(by_mint.get(m) or [])
+                snap = _pair_to_dex(pair) if pair else None
+                _dex_cache[m] = (stamp, snap)
+                out[m] = snap
+        except Exception as e:
+            msg = str(e)
+            if "429" in msg:
+                _dex_backoff_until_ms = time.time() * 1000 + _DEX_BACKOFF_MS
+            for m in chunk:
+                out[m] = {"error": msg}
+    # keep the cache from growing without bound
+    if len(_dex_cache) > 4000:
+        cutoff = time.time() * 1000 - _DEX_CACHE_MS
+        for m in [k for k, v in _dex_cache.items() if v[0] < cutoff]:
+            _dex_cache.pop(m, None)
+    return out
 
 
 def fetch_dex(mint: str) -> dict[str, Any] | None:
-    global _dex_last_call_ms, _dex_backoff_until_ms
-    now_ms = time.time() * 1000
-    if now_ms < _dex_backoff_until_ms:
-        return {"error": "throttled_local", "retryInMs": int(_dex_backoff_until_ms - now_ms)}
-    wait_ms = _DEX_MIN_GAP_MS - (now_ms - _dex_last_call_ms)
-    if wait_ms > 0:
-        time.sleep(min(wait_ms, _DEX_MIN_GAP_MS) / 1000.0)
-    _dex_last_call_ms = time.time() * 1000
-    try:
-        req = urllib.request.Request(
-            f"https://api.dexscreener.com/latest/dex/tokens/{mint}",
-            headers={
-                "user-agent": "Mozilla/5.0 mild-dip-leader-observer",
-                "accept": "application/json",
-            },
-        )
-        with urllib.request.urlopen(req, timeout=12) as r:
-            j = json.loads(r.read().decode())
-        pairs = [p for p in (j.get("pairs") or []) if p.get("chainId") == "solana"]
-        p = next((x for x in pairs if x.get("dexId") == "pumpswap"), pairs[0] if pairs else None)
-        if not p:
-            return None
-        liq = (p.get("liquidity") or {}).get("usd")
-        vol5m = (p.get("volume") or {}).get("m5")
-        created = p.get("pairCreatedAt")
-        age_h = None
-        if created:
-            age_h = max(0.0, (time.time() * 1000 - float(created)) / 3_600_000)
-        turnover = None
-        if liq and float(liq) > 0 and vol5m is not None:
-            turnover = float(vol5m) / float(liq)
-        return {
-            "dexId": p.get("dexId"),
-            "pairAddress": p.get("pairAddress"),
-            "priceUsd": float(p.get("priceUsd") or 0),
-            "pc5m": (p.get("priceChange") or {}).get("m5"),
-            "pc1h": (p.get("priceChange") or {}).get("h1"),
-            "vol5m": vol5m,
-            "vol1h": (p.get("volume") or {}).get("h1"),
-            "liq": liq,
-            "mcap": p.get("marketCap") or p.get("fdv"),
-            "buys5m": ((p.get("txns") or {}).get("m5") or {}).get("buys"),
-            "sells5m": ((p.get("txns") or {}).get("m5") or {}).get("sells"),
-            "pairCreatedAt": created,
-            "ageHours": age_h,
-            "turnover5mLiq": turnover,
-        }
-    except Exception as e:
-        msg = str(e)
-        if "429" in msg:
-            _dex_backoff_until_ms = time.time() * 1000 + _DEX_BACKOFF_MS
-        return {"error": msg}
+    return fetch_dex_batch([mint]).get(mint)
 
 
 def fetch_jupiter_prices(mints: list[str], price_url: str) -> dict[str, float]:
@@ -1412,10 +1461,18 @@ class Observer:
             return
         now_ms = int(time.time() * 1000)
         gap_ms = self.mark_min_gap_sec * 1000
-        for leader, mint, bag in self._open_bags():
-            last_mark = int(bag.get("lastMarkAtMs") or 0)
-            if last_mark and now_ms - last_mark < gap_ms:
-                continue
+        due = [
+            (leader, mint, bag)
+            for leader, mint, bag in self._open_bags()
+            if not (
+                int(bag.get("lastMarkAtMs") or 0)
+                and now_ms - int(bag.get("lastMarkAtMs") or 0) < gap_ms
+            )
+        ]
+        # 1.11.819 — one batched call for the whole pass instead of one per bag.
+        if due:
+            fetch_dex_batch(sorted({mint for _l, mint, _b in due}))
+        for leader, mint, bag in due:
             entry = bag.get("entryPriceUsd")
             dex = self._refresh_dex_cache(mint, bag, now_ms, force=True)
             px = None
@@ -1468,6 +1525,20 @@ class Observer:
             return
         mints = sorted({mint for _, mint, _ in due})
         jup = fetch_jupiter_prices(mints, self.price_url)
+        # 1.11.819 — warm the batch cache once; the per-bag call below is a hit.
+        stale = [
+            m
+            for m in mints
+            if not (
+                (b := next((bg for _l, mt, bg in due if mt == m), None))
+                and isinstance(b.get("lastDex"), dict)
+                and not b["lastDex"].get("error")
+                and int(b.get("lastDexAtMs") or 0)
+                and now_ms - int(b.get("lastDexAtMs") or 0) < self.dex_refresh_sec * 1000
+            )
+        ]
+        if stale:
+            fetch_dex_batch(stale)
         for leader, mint, bag in due:
             entry = bag.get("entryPriceUsd")
             dex = self._refresh_dex_cache(mint, bag, now_ms, force=False)

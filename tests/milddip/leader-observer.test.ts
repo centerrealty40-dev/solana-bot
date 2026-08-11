@@ -79,6 +79,16 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     expect(py).toContain('pathReliable');
   });
 
+  it('1.11.819 batches DexScreener instead of one call per mint', () => {
+    // DexScreener takes up to 30 comma-separated addresses per request, so a
+    // pass over 60 open bags costs 2 calls, not 60.
+    expect(py).toContain('def fetch_dex_batch');
+    expect(py).toContain('",".join(chunk)');
+    expect(py).toContain('LEADER_OBSERVER_DEX_BATCH_MAX');
+    expect(py).toContain('LEADER_OBSERVER_DEX_CACHE_MS');
+    expect(py).toContain('_dex_cache');
+  });
+
   it('ships 48h divergence + segment stats scripts', () => {
     const report = readFileSync(
       resolve('scripts/milddip/leader-divergence-48h.py'),
