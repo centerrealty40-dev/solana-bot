@@ -2977,8 +2977,14 @@ const PM2_APPS = [
          * Closed-book age buckets: &lt;0.5h had worst med PnL / cliff&lt;−20% rate.
          */
         MILD_DIP_MIN_PAIR_AGE_HOURS: '0.5',
-        /** 0 = no max age — do not skip older pumps on mild dips. */
-        MILD_DIP_MAX_PAIR_AGE_HOURS: '0',
+        /**
+         * 1.11.812 — cap at 72h. Pairs older than that are dead money on this
+         * strategy: 20 trades, −$7.60, winrate 0.25, median MFE 1.1% — they
+         * simply do not bounce. Cutting them is the only filter that turns
+         * `ex_top3` positive (−$7.50 → +$0.09), i.e. it survives dropping the
+         * three best trades.
+         */
+        MILD_DIP_MAX_PAIR_AGE_HOURS: '72',
         /**
          * Venue allow-list for structural pair pick (1.11.729): Dex fetch now
          * selects among these dexIds first. Was: pick global max-liq (often
@@ -3014,12 +3020,13 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
         /**
-         * 1.11.810 — 25 → 15 on the deep-entry profile. After a −20% wait-dip
-         * fill the bounce mean-reverts, so a −25% floor just pays for the whole
-         * round trip. Every top-10 config in the 3.8h grid on the new trades
-         * used hard 15.
+         * 1.11.812 — back to 25. The 1.11.810 cut to 15 was fitted on 49 trades
+         * and is wrong on 183: median MAE of the trades that eventually WIN is
+         * −19.3%, and 56% of them dip below −15% first. A −15% floor sells the
+         * winners. Grid on the full sample: hard15 −$9.52, hard20 −$0.17,
+         * hard25 +$4.15, hard30 +$6.19.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
@@ -3047,7 +3054,8 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
         MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
-        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '8',
+        /** 1.11.812 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '12',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
