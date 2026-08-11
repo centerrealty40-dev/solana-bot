@@ -3331,13 +3331,14 @@ const PM2_APPS = [
       exec_mode: 'fork',
       instances: 1,
       /**
-       * 1.11.820 — OFF. Nothing in the trading path consumes it any more
-       * (`LEADER_SEED_ENTRY=0`, `LEADER_ALIGN=0`, `REQUIRE_LEADER_SEEN=0`), and
-       * it was the second consumer of the shared free DexScreener quota that
-       * mild-dip needs for entries. Start it manually for research:
-       * `pm2 start ecosystem.config.cjs --only mild-dip-leader-observer`.
+       * 1.11.820 — turned off because it was burning the shared DexScreener
+       * quota one request per mint.
+       * 1.11.823 — back on now that it batches 30 addresses per request
+       * (~2 calls per pass instead of 60). It is the only source that can
+       * answer how the leaders exit: how much drawdown they sit through, where
+       * they take profit, how wide their trail is.
        */
-      autostart: false,
+      autostart: true,
       autorestart: true,
       max_restarts: 50,
       restart_delay: 10_000,
@@ -3368,7 +3369,12 @@ const PM2_APPS = [
         LEADER_OBSERVER_DENSE_GAP_SEC: '1',
         LEADER_OBSERVER_DEX_REFRESH_SEC: '15',
         /** 0 = dense-tick ALL open bags (wins + losses); set 1 to TD-only. */
-        LEADER_OBSERVER_DENSE_ONLY_TD: '0',
+        /**
+         * 1.11.823 — dense 1Hz tape only for turn→dump bags. That is the line
+         * we are trying to copy, and it keeps the pass small enough that the
+         * observer cannot starve the entry path again.
+         */
+        LEADER_OBSERVER_DENSE_ONLY_TD: '1',
         LEADER_OBSERVER_PRICE_URL: 'https://api.jup.ag/price/v3',
         /** 1.11.780 — match mild-dip leader-like structural floors. */
         LEADER_OBSERVER_MIN_MCAP_USD: '5000',

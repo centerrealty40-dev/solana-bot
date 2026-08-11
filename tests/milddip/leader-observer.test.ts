@@ -19,9 +19,10 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     expect(eco).toContain('7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5');
   });
 
-  it('1.11.820 observer does not autostart — it competes for the Dex quota', () => {
+  it('1.11.823 observer runs again, batched, TD-only dense tape', () => {
     const block = eco.slice(eco.indexOf("name: 'mild-dip-leader-observer'"));
-    expect(block.slice(0, 1200)).toContain('autostart: false');
+    expect(block.slice(0, 1400)).toContain('autostart: true');
+    expect(eco).toContain("LEADER_OBSERVER_DENSE_ONLY_TD: '1'");
   });
 
   it('ecosystem enables 1Hz dense exit tape (1.11.790)', () => {
@@ -104,5 +105,21 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     const seg = readFileSync(resolve('scripts/milddip/leader-segment-stats.py'), 'utf8');
     expect(seg).toContain('entryClass');
     expect(seg).toContain('turnDump');
+  });
+});
+
+describe('1.11.823 leader exit profile tool', () => {
+  const tool = readFileSync(resolve('scripts/milddip/leader-exit-profile.py'), 'utf8');
+
+  it('answers drawdown / take-profit / trail on the turn-dump line', () => {
+    expect(tool).toContain('mae_of_winners_med');
+    expect(tool).toContain('exit_pnl_pct');
+    expect(tool).toContain('giveback_at_exit_pct');
+    expect(tool).toContain('capture_of_mfe_pct');
+  });
+
+  it('only counts sessions the observer can actually price', () => {
+    expect(tool).toContain('cashPnlReliable');
+    expect(tool).toContain('pathReliable');
   });
 });
