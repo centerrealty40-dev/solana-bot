@@ -210,8 +210,10 @@ class GreenObserver:
         self.discovery_every_sec = max(60, int(env_num("LEADER_GREEN_DISCOVERY_SEC", 300)))
         self.discovery_retry_sec = max(20, int(env_num("LEADER_GREEN_DISCOVERY_RETRY_SEC", 45)))
 
-        # Record the boundary too: a formula needs to know where leaders stop.
-        self.min_pc5m = env_num("LEADER_GREEN_MIN_PC5M", -2.0)
+        # Both leader branches are sampled: green candles and dips. A floor here
+        # silently excludes one of them, which is how the dip branch ended up with
+        # no negatives to learn from. Default records everything.
+        self.min_pc5m = env_num("LEADER_GREEN_MIN_PC5M", -100.0)
 
         self.path = self._path_for_today()
         self.dex_stamps: list[float] = []
