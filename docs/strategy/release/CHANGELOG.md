@@ -1,3 +1,11 @@
+## 1.11.842 — 2026-08-11
+
+### Changed
+- Live clip size set to **$1** flat across base/thick/micro (`MILD_DIP_POSITION_USD` / `MILD_DIP_THICK_POSITION_USD` / `MILD_DIP_MICRO_POSITION_USD` = `1`).
+
+### Why
+- Ops: minimal live notional while validating entries.
+
 # So
 ## [1.11.841] — 2026-08-11
 
