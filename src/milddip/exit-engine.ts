@@ -117,9 +117,17 @@ export function decideMarkExit(args: {
    */
   const dustUsd = gates.dustCloseUsd > 0 ? gates.dustCloseUsd : 0;
   const dustHold = gates.dustCloseMinHoldMs > 0 ? gates.dustCloseMinHoldMs : 0;
+  /**
+   * Only a *remnant* is dust. The rule was written for bank/bounce leftovers, and
+   * `pos.sizeUsd <= dustUsd` alone stopped distinguishing them once the live clip
+   * dropped to $2 against a $2 threshold — every whole position then qualified,
+   * turning this into an unintended 30-minute max-hold.
+   */
+  const isRemnant = pos.scaleOutDone === true || mfeBankStage >= 1;
   const dustClose =
     !verdict.shouldExit &&
     dustUsd > 0 &&
+    isRemnant &&
     Number.isFinite(pos.sizeUsd) &&
     pos.sizeUsd > 0 &&
     pos.sizeUsd <= dustUsd &&

@@ -498,10 +498,16 @@ describe('mapPool', () => {
 describe('dust close', () => {
   const dustGates = { ...gatesForDust, dustCloseUsd: 2, dustCloseMinHoldMs: 1_800_000 };
 
-  it('closes a crumb once past the min hold', () => {
+  it('closes a bank/bounce remnant once past the min hold', () => {
     const d = decideMarkExit({
       mint: 'crumb',
-      pos: pos({ mint: 'crumb', entryPriceUsd: 100, sizeUsd: 1.2, openedAtMs: 1_000_000 }),
+      pos: pos({
+        mint: 'crumb',
+        entryPriceUsd: 100,
+        sizeUsd: 1.2,
+        openedAtMs: 1_000_000,
+        scaleOutDone: true,
+      }),
       markPriceUsd: 99,
       gates: dustGates,
       nowMs: 2_800_000,
@@ -511,10 +517,16 @@ describe('dust close', () => {
     expect(d!.fraction).toBe(1);
   });
 
-  it('leaves a young crumb alone', () => {
+  it('leaves a young remnant alone', () => {
     const d = decideMarkExit({
       mint: 'young',
-      pos: pos({ mint: 'young', entryPriceUsd: 100, sizeUsd: 1.2, openedAtMs: 1_000_000 }),
+      pos: pos({
+        mint: 'young',
+        entryPriceUsd: 100,
+        sizeUsd: 1.2,
+        openedAtMs: 1_000_000,
+        scaleOutDone: true,
+      }),
       markPriceUsd: 99,
       gates: dustGates,
       nowMs: 1_600_000,
@@ -536,13 +548,32 @@ describe('dust close', () => {
   it('never overrides an exit the gates already chose', () => {
     const d = decideMarkExit({
       mint: 'stopped',
-      pos: pos({ mint: 'stopped', entryPriceUsd: 100, sizeUsd: 1.2, openedAtMs: 1_000_000 }),
+      pos: pos({
+        mint: 'stopped',
+        entryPriceUsd: 100,
+        sizeUsd: 1.2,
+        openedAtMs: 1_000_000,
+        scaleOutDone: true,
+      }),
       markPriceUsd: 60,
       gates: dustGates,
       nowMs: 2_800_000,
     });
     expect(d!.shouldExit).toBe(true);
     expect(d!.reason).toBe('hard_stop');
+  });
+
+  it('never dust-closes a whole position, only a remnant', () => {
+    // Live clip is $2 against a $2 threshold; without this the rule became an
+    // unintended 30-minute max-hold on every position.
+    const d = decideMarkExit({
+      mint: 'whole',
+      pos: pos({ mint: 'whole', entryPriceUsd: 100, sizeUsd: 2, openedAtMs: 1_000_000 }),
+      markPriceUsd: 99,
+      gates: dustGates,
+      nowMs: 2_800_000,
+    });
+    expect(d!.reason).not.toBe('dust_close');
   });
 
   it('is off by default (threshold 0)', () => {
