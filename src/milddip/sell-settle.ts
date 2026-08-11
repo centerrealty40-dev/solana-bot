@@ -24,15 +24,31 @@ export function parseTokenRaw(raw: string | null | undefined): bigint | null {
 }
 
 /**
+ * Fraction of the pre-sell balance that still counts as dust after a close.
+ *
+ * `HOLDING_DUST_RAW` alone is 1000 raw units — for a 6-decimal pump supply of
+ * ~2e11 raw that is 5e-9 of the bag, so any rounding leftover read as a runner
+ * and the exit engine kept firing sells at it.
+ */
+const RELATIVE_DUST_DIVISOR = 50n;
+
+/**
  * Decide whether the bag stays tracked after a successful sell send.
  * `remainingRaw` must be a fresh on-chain read when possible.
+ * `beforeRaw` (pre-sell balance) raises the dust floor to a relative one.
  */
 export function settleAfterSuccessfulSell(args: {
   fraction: number;
   remainingRaw: bigint | null;
+  beforeRaw?: bigint | null;
   dustRaw?: bigint;
 }): SellSettleVerdict {
-  const dust = args.dustRaw ?? HOLDING_DUST_RAW;
+  const absDust = args.dustRaw ?? HOLDING_DUST_RAW;
+  const relDust =
+    args.beforeRaw != null && args.beforeRaw > 0n
+      ? args.beforeRaw / RELATIVE_DUST_DIVISOR
+      : 0n;
+  const dust = relDust > absDust ? relDust : absDust;
   const rem = args.remainingRaw;
 
   if (rem == null) {

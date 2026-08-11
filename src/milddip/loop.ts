@@ -63,6 +63,7 @@ import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
 import { prefetchDexScreenerPairDetailsMany } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
+import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
 import {
   loadMildDipHotMints,
@@ -119,6 +120,9 @@ export type MildDipLoopStats = {
  * or concurrent mark pass cannot orphan / double-buy the bag.
  */
 const sellInFlight = new Set<string>();
+
+/** Post-sell balance re-reads while the RPC node still shows the pre-sell bag. */
+const SELL_SETTLE_REREADS = 3;
 
 /** In-flight buys — seat reserved in `state.open` before Jupiter send. */
 const buyInFlight = new Set<string>();
@@ -1202,19 +1206,37 @@ async function executeQueuedSell(args: {
 
   if (sell.ok) {
     const exitPx = sell.priceUsd || decision.markPriceUsd;
-    // Always settle against a fresh on-chain read. Never drop state while SPL
-    // remainder > dust — that is the root of unmanaged "orphan" bags.
-    let remStr = await fetchMintBalanceRaw(copyCfg, mint);
-    let rem = parseTokenRaw(remStr);
-    if (rem == null || rem <= HOLDING_DUST_RAW) {
-      await sleep(400);
-      remStr = await fetchMintBalanceRaw(copyCfg, mint);
-      rem = parseTokenRaw(remStr);
+    /**
+     * Settle against a fresh on-chain read, but never above what the executor
+     * proves is left. A read taken right after the send routinely still answers
+     * the pre-sell balance, and settling on it kept fully-closed bags tracked as
+     * runners — the exit engine then ground on a phantom bag for dozens of
+     * `Custom:6024` / `no_token_balance` legs while holding an open-book slot.
+     */
+    const beforeRaw = parseTokenRaw(sell.tokenRawBefore);
+    const soldRaw = parseTokenRaw(sell.tokenRawSold);
+    let verdict = resolveSellRemainder({
+      beforeRaw,
+      soldRaw,
+      observedRaw: parseTokenRaw(await fetchMintBalanceRaw(copyCfg, mint)),
+    });
+    for (let i = 0; verdict.stale && i < SELL_SETTLE_REREADS; i += 1) {
+      await sleep(450);
+      verdict = resolveSellRemainder({
+        beforeRaw,
+        soldRaw,
+        observedRaw: parseTokenRaw(await fetchMintBalanceRaw(copyCfg, mint)),
+      });
     }
-    // Hint from executor only if RPC still blank (do not trust as sole truth).
+    let rem = verdict.remainingRaw;
+    // Hint from executor only if we still have nothing to settle against.
     if (rem == null) rem = parseTokenRaw(sell.tokenRawRemaining);
 
-    const settle = settleAfterSuccessfulSell({ fraction, remainingRaw: rem });
+    const settle = settleAfterSuccessfulSell({
+      fraction,
+      remainingRaw: rem,
+      beforeRaw,
+    });
     if (settle.action === 'keep_runner' && state.open[mint]) {
       const live = state.open[mint]!;
       if (isPartial || settle.reason === 'remainder_above_dust') {
@@ -1241,6 +1263,9 @@ async function executeQueuedSell(args: {
         fraction,
         remainingRaw: settle.remainingRaw?.toString() ?? null,
         intendedPartial: isPartial,
+        remainderSource: verdict.reason,
+        tokenRawBefore: sell.tokenRawBefore ?? null,
+        tokenRawSold: sell.tokenRawSold ?? null,
       });
       console.log(
         `[mild-dip] SCALE-OUT ${pos.symbol} frac=${fraction} pnl=${realizedPnl.toFixed(1)}% ` +
@@ -1267,6 +1292,7 @@ async function executeQueuedSell(args: {
       exitReason: decision.reason,
       lastExitPriceUsd: exitPx,
       settleReason: settle.reason,
+      remainderSource: verdict.reason,
     });
     console.log(
       `[mild-dip] SELL ${pos.symbol} reason=${decision.reason} pnl=${realizedPnl.toFixed(1)}% ` +
