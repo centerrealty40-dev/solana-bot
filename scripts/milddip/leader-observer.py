@@ -55,6 +55,8 @@ WSOL = "So11111111111111111111111111111111111111112"
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 USDT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
 QUOTE_MINTS = {WSOL, USDC, USDT}
+# Quote delta below this share of the DEX-implied notional = not the counterparty.
+QUOTE_PLAUSIBLE_MIN_RATIO = 0.2
 
 # Dust bag after sell → treat as flat.
 FLAT_UI_EPS = 1e-6
@@ -631,6 +633,20 @@ def fill_metrics(
     size_from_dex = None
     if dex_px and dex_px > 0 and abs(token_delta) > 0:
         size_from_dex = abs(token_delta) * dex_px
+
+    # A quote delta far below the DEX-implied notional means the SOL/USDC leg was
+    # not the counterparty: token-for-token routes leave no quote movement at all,
+    # so what we captured is rent noise. Live: 97% of legs carrying both a quote
+    # fill price and a DEX price disagreed by more than 3x (median 43x), and only
+    # 3% of those ratios sat on a power of ten, so this is not a decimals bug.
+    # Worst cases were $0.20 of SOL noise against ~9.2M tokens, inventing a fill
+    # price 2822x below market. Such a leg is unusable rather than imprecise, so
+    # drop the quote basis and fall back to the DEX estimate, flagged estimated.
+    if size_from_quote and size_from_dex and size_from_dex > 0:
+        if size_from_quote < size_from_dex * QUOTE_PLAUSIBLE_MIN_RATIO:
+            size_from_quote = None
+            fill_from_quote = None
+
     size_usd = size_from_quote if size_from_quote else size_from_dex
     fill_px = fill_from_quote if fill_from_quote else (dex_px if dex_px and dex_px > 0 else None)
     size_source = "quote" if size_from_quote else ("dex" if size_from_dex else None)
