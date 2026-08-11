@@ -263,6 +263,14 @@ const MildDipConfigSchema = z.object({
    * +$9.82 (n=115, winrate 0.63); mints no leader ever touched booked −$7.46
    * (n=56, winrate 0.52). Off = trade the whole discovery universe.
    */
+  /**
+   * 1.11.827 — tiny real buys on re-entry blocks so we can price the rules.
+   * `rebuy_liq_drop` / `rebuy_below_exit` refuse ~2000 times per 3h and we have
+   * no forward tape on what we refused: marks stop for mints we do not hold.
+   */
+  probeBlockedEnabled: z.boolean().default(false),
+  probeBlockedUsd: z.coerce.number().min(0).max(50).default(2),
+  probeBlockedMaxPerHour: z.coerce.number().int().min(0).max(120).default(6),
   requireLeaderSeen: z.boolean().default(false),
   requireLeaderSeenMaxAgeMs: z.coerce
     .number()
@@ -762,6 +770,9 @@ export function loadMildDipConfig(): MildDipConfig {
      * Set MILD_DIP_WAIT_DIP=0 to restore immediate entries (all branches).
      * 1.11.773 — forced off when turn-dump gate is enabled.
      */
+    probeBlockedEnabled: envBool('MILD_DIP_PROBE_BLOCKED', false),
+    probeBlockedUsd: envNum('MILD_DIP_PROBE_BLOCKED_USD', 2),
+    probeBlockedMaxPerHour: envNum('MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR', 6),
     requireLeaderSeen: envBool('MILD_DIP_REQUIRE_LEADER_SEEN', false),
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
