@@ -3277,7 +3277,13 @@ const PM2_APPS = [
          * already in our log before our buy in 115 of 183 trades (median age
          * 29m), so this is a causal gate, not hindsight.
          */
-        MILD_DIP_REQUIRE_LEADER_SEEN: '1',
+        /**
+         * 1.11.818 — OFF. The 1.11.816 split was measured on trades we already
+         * made; applying it at the top of the funnel is a different thing. Live:
+         * 212 distinct mints reached the gate in 3.7 min, 22 passed, 0 buys —
+         * our discovery universe and the leader seed overlap by ~10%.
+         */
+        MILD_DIP_REQUIRE_LEADER_SEEN: '0',
         MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS: '7200000',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
