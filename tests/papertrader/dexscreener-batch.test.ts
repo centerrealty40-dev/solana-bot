@@ -1,0 +1,94 @@
+import { describe, expect, it, beforeEach } from 'vitest';
+import {
+  DEXSCREENER_BATCH_MAX,
+  __resetDexQuoteCacheForTests,
+  prefetchDexScreenerPairDetailsMany,
+} from '../../src/papertrader/pricing/dexscreener-quote-cache.js';
+
+function mint(i: number): string {
+  return `M${String(i).padStart(3, '0')}${'x'.repeat(38)}`;
+}
+
+function pairFor(address: string) {
+  return {
+    chainId: 'solana',
+    dexId: 'pumpswap',
+    pairAddress: `pair-${address.slice(0, 6)}`,
+    priceUsd: '0.00001',
+    baseToken: { address },
+    quoteToken: { address: 'So11111111111111111111111111111111111111112' },
+    liquidity: { usd: 20_000 },
+    volume: { m5: 1_000, h1: 20_000 },
+    marketCap: 50_000,
+    priceChange: { m5: -12, h1: -20 },
+    txns: { m5: { buys: 5, sells: 7 } },
+    pairCreatedAt: Date.now() - 7_200_000,
+  };
+}
+
+describe('1.11.820 DexScreener batch prefetch', () => {
+  beforeEach(() => {
+    __resetDexQuoteCacheForTests();
+    // Without this the cases share `data/dexscreener-quote-cache.json` and the
+    // second one sees the first one's writes as warm cache.
+    process.env.DEX_QUOTE_CACHE_ENABLED = '0';
+  });
+
+  it('spends one request per 30 mints, not one per mint', async () => {
+    const urls: string[] = [];
+    const mints = Array.from({ length: 65 }, (_, i) => mint(i));
+    const fetchImpl = (async (url: string) => {
+      urls.push(String(url));
+      const addrs = String(url).split('/tokens/')[1]!.split(',').map(decodeURIComponent);
+      return {
+        ok: true,
+        json: async () => ({ pairs: addrs.map(pairFor) }),
+      };
+    }) as never;
+
+    const calls = await prefetchDexScreenerPairDetailsMany(mints, {
+      fetchImpl,
+      nowMs: Date.now(),
+      bypassGate: true,
+    });
+
+    expect(DEXSCREENER_BATCH_MAX).toBe(30);
+    expect(calls).toBe(3); // 30 + 30 + 5
+    expect(urls).toHaveLength(3);
+    expect(urls[0]!.split(',').length).toBe(30);
+    expect(urls[2]!.split(',').length).toBe(5);
+  });
+
+  it('skips mints already warm in cache', async () => {
+    const now = Date.now();
+    const mints = [mint(1), mint(2)];
+    const fetchImpl = (async (url: string) => {
+      const addrs = String(url).split('/tokens/')[1]!.split(',').map(decodeURIComponent);
+      return { ok: true, json: async () => ({ pairs: addrs.map(pairFor) }) };
+    }) as never;
+
+    expect(await prefetchDexScreenerPairDetailsMany(mints, { fetchImpl, nowMs: now, bypassGate: true })).toBe(1);
+    // Second pass inside the TTL must not touch the network at all.
+    expect(
+      await prefetchDexScreenerPairDetailsMany(mints, {
+        fetchImpl,
+        nowMs: now + 1_000,
+        cacheTtlMs: 30_000,
+        bypassGate: true,
+      }),
+    ).toBe(0);
+  });
+
+  it('a failed chunk does not throw and leaves the rest usable', async () => {
+    const fetchImpl = (async () => {
+      throw new Error('network down');
+    }) as never;
+    await expect(
+      prefetchDexScreenerPairDetailsMany([mint(9)], {
+        fetchImpl,
+        nowMs: Date.now(),
+        bypassGate: true,
+      }),
+    ).resolves.toBe(1);
+  });
+});

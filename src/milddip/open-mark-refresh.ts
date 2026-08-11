@@ -51,11 +51,12 @@ export function requestOpenMarkRefresh(args: {
 
   // Self-rate-limited (gap + maxInFlight) — must not sit behind the discovery
   // Dex gate (EtxCL9: gate was ~11m ahead → refresh never landed, peak frozen).
+  // 1.11.820 — read the batch-warmed cache instead of forcing a fetch; the
+  // caller prefetches the whole open book in one request per 30 mints.
   void fetchDexScreenerPairDetails(mint, {
     nowMs: args.nowMs,
     allowedDexIds: args.allowedDexIds,
     cacheTtlMs: cacheTtl,
-    bypassCache: true,
     bypassGate: true,
   })
     .then((details) => {

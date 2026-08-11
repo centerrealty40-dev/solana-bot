@@ -3316,7 +3316,14 @@ const PM2_APPS = [
       interpreter: 'none',
       exec_mode: 'fork',
       instances: 1,
-      autostart: true,
+      /**
+       * 1.11.820 — OFF. Nothing in the trading path consumes it any more
+       * (`LEADER_SEED_ENTRY=0`, `LEADER_ALIGN=0`, `REQUIRE_LEADER_SEEN=0`), and
+       * it was the second consumer of the shared free DexScreener quota that
+       * mild-dip needs for entries. Start it manually for research:
+       * `pm2 start ecosystem.config.cjs --only mild-dip-leader-observer`.
+       */
+      autostart: false,
       autorestart: true,
       max_restarts: 50,
       restart_delay: 10_000,
