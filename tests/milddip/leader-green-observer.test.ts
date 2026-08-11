@@ -42,8 +42,12 @@ describe('leader green observer', () => {
     expect(Math.ceil(universe / 40) * 1.1).toBeLessThan(sampleSec);
   });
 
-  it('records the boundary, not only green rows', () => {
-    expect(Number(greenEnv('LEADER_GREEN_MIN_PC5M'))).toBeLessThanOrEqual(0);
+  it('records both leader branches — dips as well as green candles', () => {
+    // A floor here excludes one branch. The dip branch needs its own negatives:
+    // the turn/dump formula fits 80.7% of leader buys but its precision on our
+    // candidate stream is 6.9%, so the selector has to be learned, not assumed.
+    expect(Number(greenEnv('LEADER_GREEN_MIN_PC5M'))).toBeLessThanOrEqual(-45);
+    expect(py).toContain('env_num("LEADER_GREEN_MIN_PC5M", -100.0)');
   });
 
   it('emits momentum windows the single-snapshot corpus lacked', () => {

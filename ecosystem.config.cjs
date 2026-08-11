@@ -3572,8 +3572,16 @@ const PM2_APPS = [
         LEADER_GREEN_STRUCT_TTL_SEC: '600',
         LEADER_GREEN_DISCOVERY_SEC: '300',
         LEADER_GREEN_DISCOVERY_RETRY_SEC: '45',
-        /** Keep the boundary: a formula must know where leaders stop buying. */
-        LEADER_GREEN_MIN_PC5M: '-2',
+        /**
+         * 1.11.839 — was '-2', which recorded only the green branch and threw the
+         * dips away. Leaders run both, and the dip branch has the same missing
+         * piece: the turn/dump formula fits 80.7% of their buys but its precision
+         * on our own candidate stream is **6.9%** (23 of 335 signals were followed
+         * by a leader buy within 60s). So the formula is a filter, not a selector,
+         * and finding the selector needs dip candidates the leaders did *not* take.
+         * Off (-100) records the whole range, ~+45% rows.
+         */
+        LEADER_GREEN_MIN_PC5M: '-100',
         LEADER_GREEN_STATS_SEC: '300',
         ...PM2_JUPITER_KEY_ENV,
       },
