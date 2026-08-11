@@ -3505,6 +3505,59 @@ const PM2_APPS = [
           : {}),
       },
     },
+    {
+      name: 'mild-dip-leader-green',
+      cwd: root,
+      script: 'python3',
+      args: 'scripts/milddip/leader-green-observer.py',
+      interpreter: 'none',
+      exec_mode: 'fork',
+      instances: 1,
+      /**
+       * 1.11.836 — green is ~32% of leader buys and the existing observer cannot
+       * explain it: it only sees a mint *after* a leader bought, so every row in
+       * the green corpus is a positive. `leader-green-entry-formula.md` reaches
+       * ≥80% recall on both wallets and stalls at ~28% precision for exactly that
+       * reason. This process samples a universe on a cadence and records matched
+       * negatives — the same mints at the same timestamps that the leaders did
+       * *not* buy.
+       *
+       * Price comes from Jupiter (separate quota, measured 40 prices in 0.09s),
+       * because DexScreener is saturated: a single-mint probe on this host returns
+       * 429 three times in a row while the bot paces itself to a healthy 10
+       * marks/min. Structure (liq / mcap / age / vol5m) moves slowly, so it is
+       * rationed to 3 DexScreener requests per minute against the bot's ~30.
+       */
+      autostart: true,
+      autorestart: true,
+      max_restarts: 50,
+      restart_delay: 10_000,
+      merge_logs: true,
+      time: true,
+      env: {
+        NODE_ENV: 'production',
+        LEADER_GREEN_OUT_DIR: path.join(root, 'data/milddip'),
+        LEADER_GREEN_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
+        /** Jupiter price tape cadence — the fine-grained part of the signal. */
+        /**
+         * Jupiter without a key is free tier at 1 RPS. 320 mints is 8 batches of
+         * 40, paced ~1.1s apart, so a cycle spends ~9s of its 20s on prices.
+         */
+        LEADER_GREEN_SAMPLE_SEC: '20',
+        LEADER_GREEN_MAX_UNIVERSE: '320',
+        /** Seed mints are the matched control: leaders know them and passed. */
+        LEADER_GREEN_SEED_MAX_AGE_MS: '21600000',
+        /** Hard ceiling on our DexScreener share. Raising this starves the bot. */
+        LEADER_GREEN_MAX_DEX_REQ_PER_MIN: '3',
+        LEADER_GREEN_STRUCT_TTL_SEC: '600',
+        LEADER_GREEN_DISCOVERY_SEC: '300',
+        LEADER_GREEN_DISCOVERY_RETRY_SEC: '45',
+        /** Keep the boundary: a formula must know where leaders stop buying. */
+        LEADER_GREEN_MIN_PC5M: '-2',
+        LEADER_GREEN_STATS_SEC: '300',
+        ...PM2_JUPITER_KEY_ENV,
+      },
+    },
     /**
      * knife-catcher / awakening-catcher — Oscar VPS REMOVED (2026-07-16).
      * Live lanes only on LERA (`/opt/lera` PM2). Oscar shared VPS was running shadow copies via `.env`
