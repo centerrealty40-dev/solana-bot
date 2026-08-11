@@ -429,6 +429,10 @@ export async function executeLiveCopySell(args: {
     priceUsd: number;
     signature?: string;
     tokenRawRemaining?: string;
+    /** Balance this sell sized against — authoritative input for settlement. */
+    tokenRawBefore?: string;
+    /** Amount actually sent to Jupiter. */
+    tokenRawSold?: string;
     reason?: string;
   } & LiveCashFillFields
 > {
@@ -470,6 +474,8 @@ export async function executeLiveCopySell(args: {
   if (sellRaw <= 0n) {
     return { ok: false, priceUsd: 0, reason: 'sell_amount_zero' };
   }
+  /** Settlement truth: callers must not trust a post-sell RPC read above this. */
+  const rawFields = { tokenRawBefore: totalRaw.toString(), tokenRawSold: sellRaw.toString() };
 
   const maxAttempts = 1 + liveCfg.liveSellSimRetryAttempts;
   const slippageCap = 1 + liveCfg.liveSellSimSlippageRetryAttempts;
@@ -493,7 +499,7 @@ export async function executeLiveCopySell(args: {
         await sleep(liveCfg.liveSellSimRetryDelayMs);
         continue;
       }
-      return { ok: false, priceUsd: 0, reason: lastReason };
+      return { ok: false, priceUsd: 0, reason: lastReason, ...rawFields };
     }
     if (!prep.swapBuild.ok) {
       lastReason = prep.swapBuild.reason;
@@ -501,7 +507,7 @@ export async function executeLiveCopySell(args: {
         await sleep(liveCfg.liveSellSimRetryDelayMs);
         continue;
       }
-      return { ok: false, priceUsd: 0, reason: lastReason };
+      return { ok: false, priceUsd: 0, reason: lastReason, ...rawFields };
     }
 
     const { priceUsd: exitPriceUsd, proceedsUsd } = copySellQuotePriceUsd({
@@ -537,6 +543,7 @@ export async function executeLiveCopySell(args: {
         priceUsd: exitPriceUsd,
         signature: sent.signature,
         tokenRawRemaining: remaining,
+        ...rawFields,
         quoteReceivedUsd: proceedsUsd > 0 ? proceedsUsd : undefined,
         usdcBefore: beforeBal?.quoteUsd,
         usdcAfter: afterBal?.quoteUsd,
@@ -552,6 +559,7 @@ export async function executeLiveCopySell(args: {
         priceUsd: exitPriceUsd,
         signature: sent.signature,
         tokenRawRemaining: remaining,
+        ...rawFields,
         reason: lastReason,
         quoteReceivedUsd: proceedsUsd > 0 ? proceedsUsd : undefined,
         usdcBefore: beforeBal?.quoteUsd,
@@ -579,6 +587,7 @@ export async function executeLiveCopySell(args: {
       priceUsd: exitPriceUsd,
       signature: sent.signature,
       tokenRawRemaining: remaining,
+      ...rawFields,
       reason: lastReason,
       usdcBefore: beforeBal?.quoteUsd,
       feeSolBefore: beforeBal?.feeSol,

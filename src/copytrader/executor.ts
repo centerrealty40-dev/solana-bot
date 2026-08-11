@@ -33,6 +33,10 @@ export type SellExecutionResult = {
   signature?: string;
   pnlPct?: number;
   tokenRawRemaining?: string;
+  /** Balance the sell sized against (live only) — settlement truth. */
+  tokenRawBefore?: string;
+  /** Amount actually sent to Jupiter (live only). */
+  tokenRawSold?: string;
   reason?: string;
   /** Jupiter quote USDC received (sell). */
   quoteReceivedUsd?: number;
@@ -221,6 +225,8 @@ export async function executeCopySell(args: {
       pnlPct: livePnl,
       signature: live.signature,
       tokenRawRemaining: live.tokenRawRemaining,
+      tokenRawBefore: live.tokenRawBefore,
+      tokenRawSold: live.tokenRawSold,
       reason: live.reason,
       quoteReceivedUsd: live.quoteReceivedUsd,
       usdcBefore: live.usdcBefore,
