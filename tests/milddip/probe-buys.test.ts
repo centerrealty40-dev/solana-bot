@@ -14,7 +14,7 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
 
   it('a probe is clamped to the probe size, never the normal clip', () => {
     expect(src).toContain(
-      'const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, wanted.sizeUsd) : wanted.sizeUsd;',
+      'const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, knifeCapped) : knifeCapped;',
     );
   });
 

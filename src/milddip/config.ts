@@ -271,6 +271,15 @@ const MildDipConfigSchema = z.object({
   probeBlockedEnabled: z.boolean().default(false),
   probeBlockedUsd: z.coerce.number().min(0).max(50).default(2),
   probeBlockedMaxPerHour: z.coerce.number().int().min(0).max(120).default(6),
+  /**
+   * Rug risk is priced, not banned — see `rug-risk.ts`. Leaders take these names
+   * at $1–4 while their conviction clip is $10–27; we were flat-sizing both.
+   */
+  rugKnifeClipUsd: z.coerce.number().min(0).max(100).default(0),
+  rugKnifeDumpPct: z.coerce.number().min(-100).max(0).default(-45),
+  rugKnifeTurn: z.coerce.number().min(0).max(50).default(3),
+  /** pc5m at or below this is refused outright — the dump already happened. */
+  rugBlockDumpPct: z.coerce.number().min(-100).max(0).default(0),
   requireLeaderSeen: z.boolean().default(false),
   requireLeaderSeenMaxAgeMs: z.coerce
     .number()
@@ -773,6 +782,10 @@ export function loadMildDipConfig(): MildDipConfig {
     probeBlockedEnabled: envBool('MILD_DIP_PROBE_BLOCKED', false),
     probeBlockedUsd: envNum('MILD_DIP_PROBE_BLOCKED_USD', 2),
     probeBlockedMaxPerHour: envNum('MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR', 6),
+    rugKnifeClipUsd: envNum('MILD_DIP_RUG_KNIFE_CLIP_USD', 0),
+    rugKnifeDumpPct: envNum('MILD_DIP_RUG_KNIFE_DUMP_PCT', -45),
+    rugKnifeTurn: envNum('MILD_DIP_RUG_KNIFE_TURN', 3),
+    rugBlockDumpPct: envNum('MILD_DIP_RUG_BLOCK_DUMP_PCT', 0),
     requireLeaderSeen: envBool('MILD_DIP_REQUIRE_LEADER_SEEN', false),
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
