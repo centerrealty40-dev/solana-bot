@@ -104,15 +104,35 @@ export function decideMarkExit(args: {
     postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
   });
+  /**
+   * Dust close — operational, not strategic. Bank/bounce ladders leave $1–2
+   * remnants that no price move can make matter (±1.3% of $1.20 is ±$0.02), and
+   * they are not free: 8 such bags held 9–23h were burning 43% of all Dex marks
+   * (6h census: 22_407 of 51_655, the six largest consumers each ~3_540 marks
+   * for a $1–2 bag), starving the mark cadence the trail depends on. Gas to
+   * close is $0.011, ~1% of the crumb.
+   *
+   * Applied after the gate so peak / arm / trough / vol-fade bookkeeping still
+   * persists, and never over an exit the gates already chose.
+   */
+  const dustUsd = gates.dustCloseUsd > 0 ? gates.dustCloseUsd : 0;
+  const dustHold = gates.dustCloseMinHoldMs > 0 ? gates.dustCloseMinHoldMs : 0;
+  const dustClose =
+    !verdict.shouldExit &&
+    dustUsd > 0 &&
+    Number.isFinite(pos.sizeUsd) &&
+    pos.sizeUsd > 0 &&
+    pos.sizeUsd <= dustUsd &&
+    heldMs >= dustHold;
   return {
     mint,
     markPriceUsd,
     peakPriceUsd: verdict.peakPriceUsd,
     armed: verdict.armed,
     justArmed: verdict.justArmed,
-    shouldExit: verdict.shouldExit,
-    fraction: verdict.fraction,
-    reason: verdict.reason,
+    shouldExit: dustClose ? true : verdict.shouldExit,
+    fraction: dustClose ? 1 : verdict.fraction,
+    reason: dustClose ? 'dust_close' : verdict.reason,
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,

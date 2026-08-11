@@ -55,6 +55,48 @@ describe('orderMintsForDexRefresh', () => {
   });
 });
 
+const gatesForDust = {
+  armPct: 5,
+  partialGivebackPct: 3,
+  scaleOutFraction: 0.5,
+  givebackPct: 8,
+  mfeBankEnabled: false,
+  mfeBank1Pct: 8,
+  mfeBank1Fraction: 0.4,
+  mfeBank2Pct: 15,
+  mfeBank2Fraction: 0.4,
+  mfeBankSleeveGivebackPct: 12,
+  neverArmPatienceMs: 0,
+  neverArmMaxHoldMs: 5_400_000,
+  neverArmDeadMinMs: 1_800_000,
+  neverArmDeadPnlPct: 10,
+  neverArmStaleMinMs: 600_000,
+  neverArmStaleMaxMfePct: 2,
+  neverArmStalePnlPct: 5,
+  neverArmVolFadeMinMs: 900_000,
+  neverArmVolFadeRatio: 0.25,
+  neverArmVolFadeFloorUsd: 300,
+  neverArmVolFadeSampleMs: 300_000,
+  neverArmVolFadeWeakWindows: 3,
+  cliffDumpPnlPct: 50,
+  hardStopPnlPct: 15,
+  hardStopPartialFraction: 0,
+  neverArmBounceMinDumpPct: 8,
+  neverArmBouncePct: 8,
+  neverArmBounceMinTroughAgeMs: 60_000,
+  neverArmBounceRequireRedPct: 3,
+  neverArmBouncePartialFraction: 0.5,
+  neverArmBounce2Pct: 16,
+  mfeBankSleeveLossPartialFraction: 0.5,
+  neverArmFreefallPnlPct: 25,
+  neverArmFreefallMinMs: 60_000,
+  neverArmTimeRedMinMs: 0,
+  neverArmTimeRedPnlPct: 5,
+  neverArmTimeRedMaxPc5mPct: 0,
+  dustCloseUsd: 0,
+  dustCloseMinHoldMs: 1_800_000,
+};
+
 describe('decideMarkExit / applyMarkDecisionToPosition', () => {
   const gates = {
     armPct: 5,
@@ -94,6 +136,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmTimeRedMinMs: 0,
     neverArmTimeRedPnlPct: 5,
     neverArmTimeRedMaxPc5mPct: 0,
+    dustCloseUsd: 0,
+    dustCloseMinHoldMs: 1_800_000,
   };
 
   it('updates peak and arms without exiting', () => {
@@ -446,3 +490,70 @@ describe('mapPool', () => {
     expect(await mapPool([], 8, async (x) => x)).toEqual([]);
   });
 });
+
+/**
+ * 1.11.832 — a $1–2 remnant cannot produce a meaningful outcome (±1.3% of $1.20
+ * is ±$0.02) but 8 of them held 9–23h were pulling 43% of all Dex marks.
+ */
+describe('dust close', () => {
+  const dustGates = { ...gatesForDust, dustCloseUsd: 2, dustCloseMinHoldMs: 1_800_000 };
+
+  it('closes a crumb once past the min hold', () => {
+    const d = decideMarkExit({
+      mint: 'crumb',
+      pos: pos({ mint: 'crumb', entryPriceUsd: 100, sizeUsd: 1.2, openedAtMs: 1_000_000 }),
+      markPriceUsd: 99,
+      gates: dustGates,
+      nowMs: 2_800_000,
+    });
+    expect(d!.shouldExit).toBe(true);
+    expect(d!.reason).toBe('dust_close');
+    expect(d!.fraction).toBe(1);
+  });
+
+  it('leaves a young crumb alone', () => {
+    const d = decideMarkExit({
+      mint: 'young',
+      pos: pos({ mint: 'young', entryPriceUsd: 100, sizeUsd: 1.2, openedAtMs: 1_000_000 }),
+      markPriceUsd: 99,
+      gates: dustGates,
+      nowMs: 1_600_000,
+    });
+    expect(d!.shouldExit).toBe(false);
+  });
+
+  it('never dust-closes a position above the threshold', () => {
+    const d = decideMarkExit({
+      mint: 'real',
+      pos: pos({ mint: 'real', entryPriceUsd: 100, sizeUsd: 5, openedAtMs: 1_000_000 }),
+      markPriceUsd: 99,
+      gates: dustGates,
+      nowMs: 88_000_000,
+    });
+    expect(d!.reason).not.toBe('dust_close');
+  });
+
+  it('never overrides an exit the gates already chose', () => {
+    const d = decideMarkExit({
+      mint: 'stopped',
+      pos: pos({ mint: 'stopped', entryPriceUsd: 100, sizeUsd: 1.2, openedAtMs: 1_000_000 }),
+      markPriceUsd: 60,
+      gates: dustGates,
+      nowMs: 2_800_000,
+    });
+    expect(d!.shouldExit).toBe(true);
+    expect(d!.reason).toBe('hard_stop');
+  });
+
+  it('is off by default (threshold 0)', () => {
+    const d = decideMarkExit({
+      mint: 'off',
+      pos: pos({ mint: 'off', entryPriceUsd: 100, sizeUsd: 1.2, openedAtMs: 1_000_000 }),
+      markPriceUsd: 99,
+      gates: { ...gatesForDust, dustCloseUsd: 0 },
+      nowMs: 88_000_000,
+    });
+    expect(d!.reason).not.toBe('dust_close');
+  });
+});
+

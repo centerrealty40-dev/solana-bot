@@ -3029,11 +3029,32 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '10',
+        /**
+         * 1.11.832 — vol_fade stays OFF, and the measurement is why. Over 3034
+         * episodes, exiting on sustained fade has a **negative median** in every
+         * variant tried (−0.02 to −2.56 pct-of-clip) and hurts 47–76% of cases.
+         * The aggregate sign is noise: the same rule sums +32.9 at a 15m min-hold
+         * and −101.9 at 30m. A faded bag is not the mistake it looks like —
+         * `HBeaQ6Pn5` itself faded at −11.28% and realized +20.23% 95min later.
+         *
+         * What *is* wasteful is the leftovers: 8 bags of $1–2 held 9–23h were
+         * burning 43% of all Dex marks (22_407 of 51_655 over 6h). Those are
+         * closed by notional instead — see DUST_CLOSE below.
+         */
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_MIN_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_RATIO: '0.25',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_FLOOR_USD: '300',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS: '300000',
         MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS: '3',
+        /**
+         * Bank/bounce ladders leave $1–2 remnants that no move can make matter
+         * (±1.3% of $1.20 is ±$0.02) while each one keeps pulling ~3_540 Dex
+         * marks per 6h. Gas to close is $0.011, ~1% of the crumb. Threshold sits
+         * below a 40% bank remainder of the $5 clip ($3) so live runners are not
+         * touched; 30m min-hold is well past the 12.5m median hold.
+         */
+        MILD_DIP_EXIT_DUST_CLOSE_USD: '2',
+        MILD_DIP_EXIT_DUST_CLOSE_MIN_HOLD_MS: '1800000',
         /**
          * 1.11.815 — back to 25. The 1.11.810 cut to 15 was fitted on 49 trades
          * and is wrong on 183: median MAE of the trades that eventually WIN is

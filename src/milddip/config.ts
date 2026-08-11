@@ -522,6 +522,8 @@ const MildDipConfigSchema = z.object({
     neverArmVolFadeWeakWindows: z.coerce.number().int().min(0).max(48).default(3),
     /** Instant rug / LP-pull cut when pnl ≤ −this % (0=off). Default 50. */
     cliffDumpPnlPct: z.coerce.number().min(0).max(100).default(50),
+    dustCloseUsd: z.coerce.number().min(0).max(50).default(0),
+    dustCloseMinHoldMs: z.coerce.number().int().min(0).default(1_800_000),
     /**
      * 1.11.791 — hard stop from entry when pnl ≤ −this % (0=off). Default 25.
      */
@@ -666,6 +668,8 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
     /** 1.11.697 — LP-pull cliff: exit immediately at ≤ −50% mark pnl. */
     cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
+    dustCloseUsd: envNum('MILD_DIP_EXIT_DUST_CLOSE_USD', 0),
+    dustCloseMinHoldMs: envNum('MILD_DIP_EXIT_DUST_CLOSE_MIN_HOLD_MS', 1_800_000),
     /** 1.11.791 — first loss stage (half). 0 = off. */
     hardStopPnlPct: envNum('MILD_DIP_EXIT_HARD_STOP_PNL_PCT', 25),
     /** 1.11.791 — sell this fraction at hard stop; 0 = full hard_stop. */
