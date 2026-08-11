@@ -2864,7 +2864,16 @@ const PM2_APPS = [
          * low-turn scrapes (8zkg p50≈4% at turn<0.05). Depth quality is
          * enforced by MILD_DIP_TURN_DUMP_GATE, not a fixed −8 floor.
          */
-        MILD_DIP_MAX_DIP_PCT: '-2',
+        /**
+         * 1.11.825 — −2 → −8. The shallow band does not move: entries with
+         * pc5m ∈ (−8, 0] show median MFE **3.66%** and winrate 0.36.
+         * 3h window: 11 trades, −$2.24. The same bucket on the 183-trade window
+         * this morning booked −$2.97 — two independent samples, same answer.
+         * Deep entries are where the moves are: pc5m ≤ −25 → median MFE 54%.
+         * The turn→dump OR branches still admit shallow prints when the
+         * formula itself matches, so this only removes band-only seats.
+         */
+        MILD_DIP_MAX_DIP_PCT: '-8',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).
