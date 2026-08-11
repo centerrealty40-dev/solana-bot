@@ -28,21 +28,21 @@ const MildDipConfigSchema = z.object({
   /** Cash-accurate fills + roundtrips (us + leaders). CF source of truth. */
   tradesPath: z.string().min(1),
   statePath: z.string().min(1),
-  /** 1.11.820 — flat $2 across base/thick/micro (live via env). */
-  positionUsd: z.coerce.number().positive().max(10_000).default(2),
+  /** 1.11.825 — flat $10 across base/thick/micro (live via env). */
+  positionUsd: z.coerce.number().positive().max(10_000).default(10),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
-   * 1.11.820 — same $2 as base (flat book).
+   * 1.11.825 — same $10 as base (flat book).
    */
-  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(2),
+  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
   thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
   thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
   /**
    * Micro-cap clip: mcap ∈ [min, max] → this size (knife_stabilize only).
-   * 1.11.820 — same $2 as base (flat book). 0 = off.
+   * 1.11.825 — same $10 as base (flat book). 0 = off.
    */
-  microPositionUsd: z.coerce.number().min(0).max(10_000).default(2),
+  microPositionUsd: z.coerce.number().min(0).max(10_000).default(10),
   microMinMarketCapUsd: z.coerce.number().min(0).default(5_000),
   microMaxMarketCapUsd: z.coerce.number().min(0).default(50_000),
   /** 0 = unlimited — keep buying while USDC remains. */
