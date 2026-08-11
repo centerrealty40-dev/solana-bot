@@ -1,7 +1,7 @@
 # So
-## [1.11.839] — 2026-08-11
+## [1.11.840] — 2026-08-11
 
-**Тег:** `sa-1.11.839`
+**Тег:** `sa-1.11.840`
 
 ### Сэмплер теперь пишет и проливы, не только зелёные свечи
 
@@ -64,6 +64,22 @@
 всего минуса) и в потерях на исполнении, которые чинились в 1.11.829/831/838.
 
 **Rollback:** `LEADER_GREEN_MIN_PC5M=-2`.
+
+## [1.11.839] — 2026-08-11
+
+**Тег:** `sa-1.11.839`
+
+### Ops: mild-dip clip flat $2
+
+Base / thick / micro → `$2` (was `$5`).
+
+- `MILD_DIP_POSITION_USD=2`
+- `MILD_DIP_THICK_POSITION_USD=2`
+- `MILD_DIP_MICRO_POSITION_USD=2`
+
+**Откат:** set all three to `5` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
 
 ## [1.11.838] — 2026-08-11
 
