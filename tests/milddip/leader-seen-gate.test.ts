@@ -52,6 +52,12 @@ describe('1.11.816 leader-seen entry gate', () => {
     ).toBeGreaterThan(40);
   });
 
+  it('1.11.817 schema allows the seed size the gate needs', () => {
+    const cfg = readFileSync(resolve('src/milddip/config.ts'), 'utf8');
+    // 80 was a wake-hint ceiling; as a gate the seed must hold ~2h of flow.
+    expect(cfg).toMatch(/leaderSeedMax: z\.coerce\.number\(\)\.int\(\)\.min\(0\)\.max\(500\)/);
+  });
+
   it('live env turns the gate on with matching seed caps', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '1'");

@@ -224,7 +224,13 @@ const MildDipConfigSchema = z.object({
   /** Sidecar written by leader-observer (`leader_buy_observed` → seed). */
   leaderSeedPath: z.string().default(path.join('data', 'milddip', 'leader-seed.json')),
   leaderSeedMaxAgeMs: z.coerce.number().int().min(60_000).max(86_400_000).default(7_200_000),
-  leaderSeedMax: z.coerce.number().int().min(0).max(80).default(40),
+  /**
+   * 1.11.817 — ceiling 80 → 500. The seed stopped being a wake hint and became
+   * the entry gate (1.11.816), so it must hold a full 2h of leader flow
+   * (~36 bags/h/leader). Live env asked for 250 and the bot crash-looped on
+   * `leaderSeedMax: Number must be less than or equal to 80`.
+   */
+  leaderSeedMax: z.coerce.number().int().min(0).max(500).default(40),
   /** PumpSwap PG top-vol seed (freshness-gated; soft-fail). */
   pgVolumeMax: z.coerce.number().int().min(0).max(80).default(30),
   pgVolumeCacheMs: z.coerce.number().int().min(15_000).max(600_000).default(60_000),
