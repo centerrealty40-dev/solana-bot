@@ -1592,3 +1592,34 @@ describe('isRecoveringFromTrough', () => {
     ).toBe(false);
   });
 });
+
+describe('1.11.821 bank settle guard', () => {
+  const base = {
+    entryPriceUsd: 100,
+    markPriceUsd: 110,
+    peakPriceUsd: 110,
+    armed: true,
+    scaleOutDone: false,
+    mfeBankStage: 0,
+  };
+  const g = { ...exitGates, mfeBankEnabled: true, mfeBank1Pct: 6, mfeBank1Fraction: 0.4, mfeBank2Pct: 8, mfeBank2Fraction: 0.6, mfeBankMinHoldMs: 20_000 };
+
+  it('does not bank before the SPL balance can settle', () => {
+    const v = evaluateMildDipPeakGiveback({ ...base, gates: g, heldMs: 2_000 });
+    expect(v.reason).not.toBe('mfe_bank_1');
+  });
+
+  it('banks once the guard has passed', () => {
+    const v = evaluateMildDipPeakGiveback({ ...base, gates: g, heldMs: 25_000 });
+    expect(v.reason).toBe('mfe_bank_1');
+  });
+
+  it('guard off keeps the old immediate behaviour', () => {
+    const v = evaluateMildDipPeakGiveback({
+      ...base,
+      gates: { ...g, mfeBankMinHoldMs: 0 },
+      heldMs: 2_000,
+    });
+    expect(v.reason).toBe('mfe_bank_1');
+  });
+});

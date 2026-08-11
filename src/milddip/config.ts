@@ -466,6 +466,8 @@ const MildDipConfigSchema = z.object({
     mfeBank2Pct: z.coerce.number().min(0).max(500).default(15),
     mfeBank2Fraction: z.coerce.number().min(0).max(1).default(0.4),
     mfeBankSleeveGivebackPct: z.coerce.number().min(0).max(100).default(12),
+    /** 1.11.821 — min hold before the first bank (SPL settle race). 0 = off. */
+    mfeBankMinHoldMs: z.coerce.number().int().min(0).max(600_000).default(0),
     /**
      * 1.11.759 — underwater sleeve: sell this fraction first (0 = full legacy).
      */
@@ -617,6 +619,7 @@ export function loadMildDipConfig(): MildDipConfig {
     mfeBank2Pct: envNum('MILD_DIP_EXIT_MFE_BANK2_PCT', 15),
     mfeBank2Fraction: envNum('MILD_DIP_EXIT_MFE_BANK2_FRACTION', 0.4),
     mfeBankSleeveGivebackPct: envNum('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', 12),
+    mfeBankMinHoldMs: envNum('MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS', 0),
     mfeBankSleeveLossPartialFraction: envNum(
       'MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION',
       0.5,
