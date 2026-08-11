@@ -42,6 +42,13 @@ export type MildDipOpenPosition = {
    * Prevents spam scale-in when soft exits keep re-firing under a leader buy.
    */
   leaderAlignScaleInDone?: boolean;
+  /**
+   * `tokenRaw` came from a settled sell (`before − sold`), not from the buy
+   * quote. Only then may it cap the next sell: a buy's Jupiter `outAmount` runs
+   * a few % above the confirmed fill, which is what made us ask for more than we
+   * held in the first place.
+   */
+  tokenRawSettled?: boolean;
 };
 
 /** Last full exit — block rebuy near the same USD price (no Dex needed). */
