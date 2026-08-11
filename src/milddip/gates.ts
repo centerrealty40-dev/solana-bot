@@ -71,6 +71,11 @@ export type MildDipExitGates = {
    */
   mfeBankSleeveGivebackPct: number;
   /**
+   * 1.11.821 — do not bank in the first N ms after entry; the SPL balance is
+   * not settled yet and the sell just burns retries. 0 = off.
+   */
+  mfeBankMinHoldMs: number;
+  /**
    * After this many ms still unarmed, allow the same giveback% from the
    * (sub-arm) peak. Live default **0** — early never_arm_giveback was the grind loss.
    * 0 = disabled.
@@ -838,7 +843,15 @@ export function evaluateMildDipPeakGiveback(args: {
 
     // Bank into strength (not deferred by oneshot grace — this is take-profit).
     // One level per mark tick (same half-first discipline as classic scale-out).
-    if (mfeBankStage < 1 && mfePct >= lvl1 - 1e-9) {
+    //
+    // 1.11.821 — but not in the first seconds: the SPL balance is not readable
+    // yet, so the sell answers `no_token_balance` and retries. Live 12h: bank1
+    // fired under 10s after entry on 19% of positions, and 429 sell legs failed
+    // on `no_token_balance`. `6tfuqq` banked at +8% two seconds in, spent 30s
+    // retrying, and the name went on to +32%.
+    const bankMinHold = gates.mfeBankMinHoldMs > 0 ? gates.mfeBankMinHoldMs : 0;
+    const bankReady = bankMinHold <= 0 || heldMs >= bankMinHold;
+    if (bankReady && mfeBankStage < 1 && mfePct >= lvl1 - 1e-9) {
       return {
         ...hold,
         shouldExit: true,
@@ -851,7 +864,7 @@ export function evaluateMildDipPeakGiveback(args: {
         reason: 'mfe_bank_1',
       };
     }
-    if (mfeBankStage < 2 && f2 > 0 && lvl2 > 0 && mfePct >= lvl2 - 1e-9) {
+    if (bankReady && mfeBankStage < 2 && f2 > 0 && lvl2 > 0 && mfePct >= lvl2 - 1e-9) {
       return {
         ...hold,
         shouldExit: true,

@@ -3054,6 +3054,14 @@ const PM2_APPS = [
          * Closest engine-expressible config: 40% at +6, remainder at +8.
          * Was 8×0.4 → 15×0.4 → sleeve 12 (−$3.97 vs −$0.48 on that window).
          */
+        /**
+         * 1.11.821 — 20s settle guard before the first bank. `6tfuqq` banked at
+         * +8% two seconds after entry, got `no_token_balance` five times, spent
+         * 30s on retries and `Custom 6024`, exited near flat — and the name then
+         * ran to +32%. Live 12h: bank1 fired under 10s on 19% of positions and
+         * 429 sell legs failed on `no_token_balance`.
+         */
+        MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS: '20000',
         MILD_DIP_EXIT_MFE_BANK1_PCT: '6',
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
         MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
@@ -3159,7 +3167,13 @@ const PM2_APPS = [
         /** 1.11.797 — after loss exit: skip rebuy when Dex liq fell vs exit. */
         MILD_DIP_REBUY_LIQ_DROP: '1',
         MILD_DIP_REBUY_LIQ_DROP_MAX_AGE_MS: '21600000',
-        MILD_DIP_REBUY_LIQ_DROP_MIN_DROP_PCT: '0',
+        /**
+         * 1.11.821 — 0 → 25. Any liquidity dip vs our exit locked the mint out
+         * for 6h: 17 004 blocks across 56 mints in 12h, median drop 22.9%. That
+         * is normal pump-name noise, not a rug signal, and it is the single
+         * biggest reason we miss re-entries the leaders take.
+         */
+        MILD_DIP_REBUY_LIQ_DROP_MIN_DROP_PCT: '25',
         MILD_DIP_REBUY_LIQ_DROP_ONLY_LOSS: '1',
         MILD_DIP_FAST_PATH_MIN_GAP_MS: '2000',
         /** No soft-ban after impact/sim fail — retry next tick (Jupiter, not Helius). */
