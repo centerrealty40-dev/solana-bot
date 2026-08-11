@@ -673,6 +673,29 @@ async function tryFastPathForMint(
   // Fire parked wait-dip first — must not require re-qualifying the main band.
   if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
 
+  // 1.11.816 — names no leader has touched are the losing half of the book.
+  // Checked before the Dex round-trip so it also saves the rate budget.
+  if (cfg.requireLeaderSeen) {
+    const hit =
+      seedHit ??
+      leaderSeedHitByMint(
+        readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+          maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+          max: cfg.leaderSeedMax,
+        }),
+        mint,
+      );
+    if (!hit) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_not_leader_seen_skip',
+        mint,
+        trigger,
+        maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+      });
+      return false;
+    }
+  }
+
   const candidate = await evaluateFastPathCandidate(
     cfg,
     mint,

@@ -251,6 +251,19 @@ const MildDipConfigSchema = z.object({
    * 1.11.762 — default −10%; main-band only (stabilize buys immediate).
    * 0 waitDipPct = off shape.
    */
+  /**
+   * 1.11.816 — only enter mints a leader has touched recently.
+   * 9.5h live split: mints with a leader print already known to us booked
+   * +$9.82 (n=115, winrate 0.63); mints no leader ever touched booked −$7.46
+   * (n=56, winrate 0.52). Off = trade the whole discovery universe.
+   */
+  requireLeaderSeen: z.boolean().default(false),
+  requireLeaderSeenMaxAgeMs: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .max(24 * 3_600_000)
+    .default(7_200_000),
   waitDipEnabled: z.boolean().default(true),
   /**
    * 1.11.803 — allow wait-dip to run under the turn→dump gate (formula selects
@@ -740,6 +753,8 @@ export function loadMildDipConfig(): MildDipConfig {
      * Set MILD_DIP_WAIT_DIP=0 to restore immediate entries (all branches).
      * 1.11.773 — forced off when turn-dump gate is enabled.
      */
+    requireLeaderSeen: envBool('MILD_DIP_REQUIRE_LEADER_SEEN', false),
+    requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
