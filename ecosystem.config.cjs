@@ -3263,8 +3263,22 @@ const PM2_APPS = [
          */
         MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
         MILD_DIP_LEADER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
-        MILD_DIP_LEADER_SEED_MAX: '40',
+        /**
+         * 1.11.816 — 40 → 250. The seed is now an entry gate, not just a wake
+         * hint: leaders open ~36 bags/h, so 40 slots covered barely an hour of
+         * a 2h window and evicted names we were about to qualify.
+         */
+        MILD_DIP_LEADER_SEED_MAX: '250',
         MILD_DIP_LEADER_SEED_MAX_AGE_MS: '7200000',
+        /**
+         * 1.11.816 — trade only what a leader has touched in the last 2h.
+         * 9.5h live: leader-seen mints +$9.82 (n=115, winrate 0.63) vs mints
+         * no leader touched −$7.46 (n=56, winrate 0.52). The leader print was
+         * already in our log before our buy in 115 of 183 trades (median age
+         * 29m), so this is a causal gate, not hindsight.
+         */
+        MILD_DIP_REQUIRE_LEADER_SEEN: '1',
+        MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS: '7200000',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),
@@ -3307,7 +3321,8 @@ const PM2_APPS = [
         /** Dual-write canonical trade_fill / trade_roundtrip rows. */
         LEADER_OBSERVER_TRADES_PATH: path.join(root, 'data/milddip/trades.jsonl'),
         LEADER_OBSERVER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
-        LEADER_OBSERVER_SEED_MAX: '40',
+        /** 1.11.816 — must match MILD_DIP_LEADER_SEED_MAX; the seed is a gate now. */
+        LEADER_OBSERVER_SEED_MAX: '250',
         LEADER_OBSERVER_SEED_MAX_AGE_SEC: '7200',
         /** 1.11.790 — sig poll every 5s; dense ticks every 1s while bags open. */
         LEADER_OBSERVER_POLL_SEC: '5',
