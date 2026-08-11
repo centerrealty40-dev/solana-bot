@@ -3276,7 +3276,18 @@ const PM2_APPS = [
          * 1.11.782 — own universe only (no leaders in discover).
          * Observer seed file kept for research; entry path ignores it.
          */
-        MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles',
+        /**
+         * 1.11.824 — `leaders` added as an ORDERING source, not extra budget.
+         * `enrichMax` stays 12: the same twelve slots per pass now go first to
+         * names a leader touched in the last 2h instead of twelve arbitrary
+         * mints out of ~3800.
+         *
+         * Measured over 12h: of 220 mints the leaders opened we evaluated 203
+         * (92%) at some point, but on 53 of them we had no event at all in the
+         * ±15 min around their buy — the mint was in the universe, we were just
+         * looking elsewhere that minute. Ordering, not coverage.
+         */
+        MILD_DIP_DISCOVER_SOURCES: 'stream,boosts,profiles,leaders',
         MILD_DIP_LEADER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
         /**
          * 1.11.816 — 40 → 250. The seed is now an entry gate, not just a wake
