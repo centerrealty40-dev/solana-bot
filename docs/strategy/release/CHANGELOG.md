@@ -1,4 +1,20 @@
 # So
+## [1.11.828] — 2026-08-11
+
+**Тег:** `sa-1.11.828`
+
+### Ops: mild-dip clip flat $5
+
+Base / thick / micro → `$5` (was `$10`).
+
+- `MILD_DIP_POSITION_USD=5`
+- `MILD_DIP_THICK_POSITION_USD=5`
+- `MILD_DIP_MICRO_POSITION_USD=5`
+
+**Откат:** set all three to `10` + `pm2 reload ecosystem.config.cjs --update-env`.
+
+---
+
 ## [1.11.827] — 2026-08-11
 
 **Тег:** `sa-1.11.827`
