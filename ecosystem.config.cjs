@@ -3308,7 +3308,23 @@ const PM2_APPS = [
          */
         LIVE_BUY_MAX_PRICE_IMPACT_PCT: '3',
         LIVE_JUPITER_SWAP_PRIORITY_LEVEL: 'medium',
-        LIVE_JUPITER_PRIORITY_MAX_SOL: '0.00005',
+        /**
+         * 1.11.833 — 0.00005 → 0.00002 SOL. A leg was costing 0.000055 SOL
+         * ($0.011 at $200/SOL): 5_000 lamports of Solana base fee plus the full
+         * 50_000 priority cap, i.e. we paid the cap every time. Now 25_000
+         * total, ~$0.005.
+         *
+         * $0.001 per leg is not a tuning target — it is exactly the 5_000-lamport
+         * base fee, so reaching it means paying *no* priority fee at all. That
+         * trades gas for inclusion on a dumping coin, which is the opposite of
+         * what 1.11.829/831 just bought.
+         *
+         * Headroom is measured, not assumed: over 4357 live legs, inclusion-class
+         * failures (confirm_timeout / blockhash / send 429) were 30 = 0.69%, so we
+         * are nowhere near the cliff. Watch that rate after this change — if it
+         * climbs, this is the knob to put back.
+         */
+        LIVE_JUPITER_PRIORITY_MAX_SOL: '0.00002',
         MILD_DIP_MIN_FEE_SOL_RESERVE: '0.02',
         /**
          * 1.11.704 — if native SOL value < $5, Jupiter-swap $20 USDC→SOL.
