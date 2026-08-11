@@ -41,6 +41,14 @@ export type LiveCashFillFields = {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+/** Re-reads before trusting a zero token balance (node lag after a buy). */
+const SELL_BALANCE_REREADS = 3;
+const SELL_BALANCE_REREAD_GAP_MS = 350;
+
+function parseRaw(raw: string | null | undefined): bigint {
+  return raw && /^\d+$/.test(raw) ? BigInt(raw) : 0n;
+}
+
 function isRetryableSellPreSendError(reason: string): boolean {
   if (!reason) return false;
   if (reason.startsWith('confirm_timeout')) return false;
@@ -449,8 +457,21 @@ export async function executeLiveCopySell(args: {
    * the confirmed fill — using it raw → sim Custom:6024 InsufficientFunds and
    * the position gets stuck through time-stop retries.
    */
-  const onchainStr = await fetchMintBalanceRaw(cfg, mint);
-  const onchainRaw = onchainStr && /^\d+$/.test(onchainStr) ? BigInt(onchainStr) : 0n;
+  /**
+   * A zero balance read is not proof of an empty wallet. Right after a buy the
+   * node still answers the pre-buy state, and this early return turned that into
+   * a refused exit: live `k6BE8rs` decided to bank at **+14.36% MFE** 25s after
+   * entry, got `no_token_balance` four times over 11 seconds, and filled at
+   * **−2.83%**. Re-read briefly before believing it — the cost lands only on the
+   * failing path.
+   */
+  let onchainStr = await fetchMintBalanceRaw(cfg, mint);
+  let onchainRaw = parseRaw(onchainStr);
+  for (let i = 0; onchainRaw <= 0n && i < SELL_BALANCE_REREADS; i += 1) {
+    await sleep(SELL_BALANCE_REREAD_GAP_MS);
+    onchainStr = await fetchMintBalanceRaw(cfg, mint);
+    onchainRaw = parseRaw(onchainStr);
+  }
 
   let totalRaw = 0n;
   if (tokenRawBase) {
