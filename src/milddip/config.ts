@@ -451,6 +451,13 @@ const MildDipConfigSchema = z.object({
   dumpH1PumpMinDumpPct: z.coerce.number().max(0).default(-15),
   /** Reuse structural Dex metrics this long (ms). */
   fastPathStructuralCacheMs: z.coerce.number().int().min(1_000).max(120_000).default(8_000),
+  /**
+   * How long a structural snapshot may be reused when a live Dex fetch returns
+   * null. The floors it feeds — liquidity, market cap, pair age, 5m volume — do
+   * not move on an 8s scale, while `structural_fetch_null` was 27% of every
+   * fast-path skip because DexScreener is rate limited.
+   */
+  fastPathStructuralStaleMs: z.coerce.number().int().min(0).max(600_000).default(30_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
   enrichMax: z.coerce.number().int().min(5).max(80).default(12),
   entry: z.object({
@@ -866,6 +873,8 @@ export function loadMildDipConfig(): MildDipConfig {
     dumpH1PumpMinPct: process.env.MILD_DIP_DUMP_H1_PUMP_MIN_PCT ?? 15,
     dumpH1PumpMinDumpPct: process.env.MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT ?? -15,
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
+    fastPathStructuralStaleMs:
+      process.env.MILD_DIP_FAST_PATH_STRUCTURAL_STALE_MS ?? 30_000,
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
     rebuyBelowExitPct: process.env.MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 10,

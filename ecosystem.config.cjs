@@ -3256,6 +3256,25 @@ const PM2_APPS = [
         MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT: '-15',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
         /**
+         * 1.11.837 — stale structural reuse 30s → 120s.
+         *
+         * We are not blind to the universe: of 235 mints the leaders bought in a
+         * 12h window we had 221 (94%) in our own journal, and 11 of the 14 we
+         * missed were non-pump mints. What stops us is data, not coverage —
+         * `structural_fetch_null` is 27% of every fast-path skip (25_222 of
+         * 93_529) because DexScreener rate limits this host, and a 30s ceiling
+         * threw away snapshots whose fields (liq, mcap, pair age, vol5m) do not
+         * move on that scale.
+         *
+         * Limitation to watch: the snapshot also carries a price, so a stale
+         * reuse means the band check can run on a price up to 120s old. The
+         * pre-buy path refetches Dex and the price ring is fed by the stream, and
+         * `structAgeMs` is now journalled on every structural skip so we can
+         * check whether entries taken off older snapshots do worse. If they do,
+         * this is the knob to put back.
+         */
+        MILD_DIP_FAST_PATH_STRUCTURAL_STALE_MS: '120000',
+        /**
          * 1.11.713 — Dex-probe stream-hot mints even when local ring dd is
          * outside main band (throttled). Without this, Dex dumps only wake
          * via leader-seed (Agmu8X: 8zkg −31s, our fill on leader path).

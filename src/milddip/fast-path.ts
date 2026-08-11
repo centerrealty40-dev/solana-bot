@@ -304,7 +304,12 @@ export function structuralOk(metrics: MildDipCandidateMetrics, cfg: MildDipConfi
   return true;
 }
 
-/** Stale structural reuse when live Dex blips null (not Enrich — same snapshot). */
+/**
+ * Stale structural reuse when live Dex blips null (not Enrich — same snapshot).
+ * Window is configurable because `structural_fetch_null` accounted for 27% of all
+ * fast-path skips (25_222 of 93_529): DexScreener is rate limited on this host and
+ * a 30s ceiling threw away snapshots whose fields barely move.
+ */
 const STRUCTURAL_STALE_FALLBACK_MS = 30_000;
 const STRUCTURAL_FETCH_RETRIES = 2;
 const STRUCTURAL_RETRY_GAP_MS = 80;
@@ -364,7 +369,11 @@ export async function loadStructural(
     }
   }
 
-  const stale = getStructuralCache(mint, nowMs, STRUCTURAL_STALE_FALLBACK_MS);
+  const staleMs =
+    cfg.fastPathStructuralStaleMs > 0
+      ? cfg.fastPathStructuralStaleMs
+      : STRUCTURAL_STALE_FALLBACK_MS;
+  const stale = getStructuralCache(mint, nowMs, staleMs);
   if (stale) return stale;
   return null;
 }
@@ -479,9 +488,13 @@ export async function evaluateFastPathCandidate(
     noteStructuralCache(mint, struct.priceUsd, struct.metrics, nowMs);
   }
   if (!struct) return skip('structural_fetch_null', { structSource });
+  // Age of the snapshot the decision rests on — lets us check afterwards whether
+  // entries taken off a stale snapshot perform worse than fresh ones.
+  const structAgeMs = Math.max(0, nowMs - struct.fetchedAtMs);
   if (!structuralOk(struct.metrics, cfg)) {
     return skip('structural_fail', {
       structSource,
+      structAgeMs,
       vol5m: struct.metrics.volume5mUsd,
       liq: struct.metrics.liquidityUsd,
       mcap: struct.metrics.marketCapUsd,
