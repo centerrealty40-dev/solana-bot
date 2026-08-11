@@ -5,7 +5,10 @@
  * (even on gate fail / cooldown) so we remember the trough while waiting to rebuy.
  */
 import fs from 'node:fs';
-import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
+import {
+  fetchDexScreenerPairDetails,
+  prefetchDexScreenerPairDetailsMany,
+} from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { MildDipConfig } from './config.js';
 import {
   discoverGeckoTrendingMints,
@@ -477,6 +480,20 @@ export async function enrichAndFilterCandidates(
   }
 
   const denied = new Set(cfg.deniedMints.map((m) => m.trim()).filter(Boolean));
+
+  // 1.11.820 — one request per 30 mints instead of one per mint. The per-mint
+  // calls below then read the warmed cache, so an enrich pass costs 1–2 gate
+  // slots rather than `slice.length`.
+  if (!bypassCache) {
+    try {
+      await prefetchDexScreenerPairDetailsMany(
+        slice.filter((m) => !denied.has(m)),
+        { nowMs, cacheTtlMs, allowedDexIds: cfg.entry.allowedDexIds },
+      );
+    } catch {
+      /* warm-up is best effort; per-mint calls still work */
+    }
+  }
 
   const rows = await mapPool(slice, enrichConcurrency, async (mint): Promise<EnrichRow> => {
     try {

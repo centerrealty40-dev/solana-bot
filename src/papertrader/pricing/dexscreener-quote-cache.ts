@@ -451,6 +451,77 @@ export async function fetchDexScreenerPairDetails(
   return details;
 }
 
+/** DexScreener accepts up to 30 comma-separated addresses per request. */
+export const DEXSCREENER_BATCH_MAX = 30;
+
+/**
+ * 1.11.820 — warm the shared cache for a list of mints with one HTTP call per
+ * 30 addresses and one gate slot per call.
+ *
+ * The per-mint `fetchDexScreenerPairDetails` stays as-is; callers that already
+ * hold a list (discovery enrich, open-position mark refresh) prefetch first and
+ * then read cache. Before this, scanning 60 mints cost 60 requests and 60 gate
+ * slots against a 120 RPM budget shared with every other consumer, which is how
+ * `structural_fetch_null` became the top entry blocker.
+ *
+ * Returns the number of HTTP requests actually issued.
+ */
+export async function prefetchDexScreenerPairDetailsMany(
+  mints: readonly string[],
+  opts?: {
+    fetchImpl?: typeof import('undici').fetch;
+    cacheTtlMs?: number;
+    nowMs?: number;
+    allowedDexIds?: string[];
+    bypassGate?: boolean;
+  },
+): Promise<number> {
+  const nowMs = opts?.nowMs ?? Date.now();
+  const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
+  const wanted: string[] = [];
+  const seen = new Set<string>();
+  for (const m of mints) {
+    if (!m || seen.has(m)) continue;
+    seen.add(m);
+    const mem = inProcess.get(m);
+    if (mem && nowMs - mem.at < ttlMs) continue;
+    if (isDexQuoteCacheEnabled() && getCachedDexQuote(m, nowMs, ttlMs).hit) continue;
+    wanted.push(m);
+  }
+  if (wanted.length === 0) return 0;
+
+  const doFetch = opts?.fetchImpl ?? (await import('undici')).fetch;
+  let calls = 0;
+  for (let i = 0; i < wanted.length; i += DEXSCREENER_BATCH_MAX) {
+    const chunk = wanted.slice(i, i + DEXSCREENER_BATCH_MAX);
+    if (opts?.bypassGate !== true) await acquireDexScreenerSlot();
+    calls += 1;
+    const entries: Record<string, CacheEntry> = {};
+    for (const m of chunk) entries[m] = { miss: true, fetchedAtMs: nowMs };
+    try {
+      const res = await doFetch(
+        `https://api.dexscreener.com/latest/dex/tokens/${chunk.map(encodeURIComponent).join(',')}`,
+        { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(12_000) },
+      );
+      if (res.ok) {
+        const j = (await res.json()) as { pairs?: unknown[] };
+        const pairs = Array.isArray(j.pairs) ? j.pairs : [];
+        for (const m of chunk) {
+          const best = pickBestSolanaPair(pairs, m, undefined, opts?.allowedDexIds);
+          entries[m] = parsePairToCacheEntry(best, m, nowMs);
+        }
+      }
+    } catch {
+      /* leave the chunk as misses; callers fall back to their own retry */
+    }
+    if (isDexQuoteCacheEnabled()) await putCachedDexQuotes(entries, nowMs);
+    for (const m of chunk) {
+      inProcess.set(m, { at: nowMs, val: cacheEntryToSnapshot(entries[m]!) });
+    }
+  }
+  return calls;
+}
+
 /** Test-only — clears in-process L1 cache. */
 export function __resetDexQuoteCacheForTests(): void {
   inProcess.clear();

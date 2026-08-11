@@ -11,12 +11,17 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
   const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
   const py = readFileSync(resolve('scripts/milddip/leader-observer.py'), 'utf8');
 
-  it('ecosystem enables absolute sell + mark logging for both leaders', () => {
+  it('ecosystem keeps the observer defined for on-demand research runs', () => {
     expect(eco).toContain("LEADER_OBSERVER_LOG_SELLS: '1'");
     expect(eco).toContain("LEADER_OBSERVER_LOG_MARKS: '1'");
     expect(eco).toContain('mild-dip-leader-observer');
     expect(eco).toContain('8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ');
     expect(eco).toContain('7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5');
+  });
+
+  it('1.11.820 observer does not autostart — it competes for the Dex quota', () => {
+    const block = eco.slice(eco.indexOf("name: 'mild-dip-leader-observer'"));
+    expect(block.slice(0, 1200)).toContain('autostart: false');
   });
 
   it('ecosystem enables 1Hz dense exit tape (1.11.790)', () => {

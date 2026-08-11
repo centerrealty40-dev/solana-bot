@@ -61,6 +61,7 @@ import { isRunnerPartialExit } from './sell-partial.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
+import { prefetchDexScreenerPairDetailsMany } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
 import {
@@ -1545,6 +1546,22 @@ async function tryExits(
     nowMs,
     ringAgeMs: openMarkRingAgeMs,
   });
+  // 1.11.820 — warm the whole open book in one batched request before the
+  // per-mint refreshes; each of those then reads cache instead of hitting the
+  // API. With 30+ open bags this was the second-largest DexScreener consumer.
+  if (cfg.markDexRefreshMs > 0) {
+    const stale = refreshOrder.filter(
+      (m) => openMarkRingAgeMs(m, nowMs) >= cfg.markDexRefreshMs,
+    );
+    if (stale.length > 1) {
+      void prefetchDexScreenerPairDetailsMany(stale, {
+        nowMs,
+        allowedDexIds: cfg.entry.allowedDexIds,
+        cacheTtlMs: cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 15_000,
+        bypassGate: true,
+      }).catch(() => undefined);
+    }
+  }
   for (const mint of refreshOrder) {
     maybeRequestOpenMarkRefresh(mint, nowMs, cfg);
   }
