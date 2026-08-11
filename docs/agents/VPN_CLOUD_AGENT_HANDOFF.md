@@ -23,7 +23,7 @@
 | Secret name | Содержимое |
 |-------------|------------|
 | `BOTADMIN_SSH_KEY` | **Весь** приватный ключ `botadmin_187_auto` (текст файла, включая `BEGIN`/`END`) |
-| `VPN_SUB_URL` (опционально) | `https://187.124.133.200.nip.io:8443/hiddify.txt` |
+| `VPN_SUB_URL` (опционально) | `https://72.62.50.93.nip.io:8443/hiddify.txt` |
 
 На старте агент пишет ключ во временный файл и использует `-i`:
 
@@ -31,7 +31,7 @@
 mkdir -p ~/.ssh && chmod 700 ~/.ssh
 printenv BOTADMIN_SSH_KEY > ~/.ssh/botadmin_187_auto
 chmod 600 ~/.ssh/botadmin_187_auto
-ssh -i ~/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124.133.200 "hostname"
+ssh -i ~/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@72.62.50.93 "hostname"
 ```
 
 **Не коммить** ключ в Git. Только Secrets.
@@ -44,23 +44,26 @@ ssh -i ~/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124
 
 | # | Имя | IP | Роль | Каталог |
 |---|-----|-----|------|---------|
-| 1 | **VPN** | `187.124.133.200` | Hiddify / Amnezia Xray Reality | Docker `amnezia-xray`, подписки `/var/www/vpn-sub/`, ensure `/root/ensure-xray.sh` |
-| 2 | **Oscar** | `187.124.38.242` (TS `100.82.221.89`) | live-oscar, copy-trader, коллекторы | `/opt/solana-alpha`, user `salpha` |
-| 3 | **LERA** | `72.62.152.201` | live-lera | `/opt/lera`, user `lera` |
-| 4 | **Catchers** | тот же хост LERA | knife + awakening | `/opt/lera-catchers`, user `lera` |
+| 1 | **VPN (DE, primary)** | `72.62.50.93` | Hiddify / Amnezia Xray Reality (Xray-core **v26.3.27**) | Docker `amnezia-xray`, подписки `/var/www/vpn-sub/`, ensure `/root/ensure-xray.sh`, meta `/root/xray-client/connection.txt` |
+| 2 | **VPN (LT, legacy)** | `187.124.133.200` | Старый VPN; с ~2026-08 у клиентов timeout (DPI/маршрут). Не использовать как primary. | тот же стек |
+| 3 | **Oscar** | `187.124.38.242` (TS `100.82.221.89`) | live-oscar, copy-trader, коллекторы | `/opt/solana-alpha`, user `salpha` |
+| 4 | **LERA** | `72.62.152.201` | live-lera | `/opt/lera`, user `lera` |
+| 5 | **Catchers** | тот же хост LERA | knife + awakening | `/opt/lera-catchers`, user `lera` |
 
 ### SSH
 
 - User: **`root`**
-- Key: из secret `BOTADMIN_SSH_KEY` → файл `~/.ssh/botadmin_187_auto`
+- Key: из secret `BOTADMIN_SSH_KEY` → файл `~/.ssh/botadmin_187_auto` (comment `cente@DESKTOP-B53V0UU`)
 - Windows-десктоп путь (только локально): `c:/Users/cente/.ssh/botadmin_187_auto` — в cloud его нет.
 
-### VPN для людей (Hiddify / Happ)
+### VPN для людей (Hiddify / Happ) — **DE primary**
 
-- HTTPS sub: `https://187.124.133.200.nip.io:8443/hiddify.txt`
-- HTTP sub: `http://187.124.133.200:8080/hiddify.txt`
+- HTTPS sub: `https://72.62.50.93.nip.io:8443/hiddify.txt`
+- iOS sub: `https://72.62.50.93.nip.io:8443/ios.txt`
+- HTTP sub (fallback): `http://72.62.50.93:8080/hiddify.txt`
+- Reality SNI/dest: `www.google.com` (без fragment в подписке)
 - После `docker restart amnezia-xray` обязательно: `/root/ensure-xray.sh`
-- Проверка клиента: ifconfig.me → `187.124.133.200`
+- Проверка клиента: ifconfig.me → `72.62.50.93`
 
 Полная `vless://` строка **не хранится в Git** — бери из подписки на сервере или из secret.
 
@@ -73,20 +76,21 @@ ssh -i ~/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124
 3. Деплой Oscar tracked-кода: только Git **`origin/v2`** → `reset --hard` → `npm ci` → PM2 под `salpha`.
 4. Не `pm2 stop/delete/restart all` на Oscar.
 5. Деструктивные действия — только по явной задаче пользователя.
-6. Не печатать в ответ: `.env`, DSN, wallet keypair, полный SSH private key.
+6. Не печатать в ответ: `.env`, DSN, wallet keypair, полный SSH private key, root password VPS.
 
 Канон релиза: `docs/strategy/release/NORM_UNIFIED_RELEASE_AND_RUNTIME.md`.
 
 ---
 
-## Контекст из локальных чатов (кратко, 2026-06…2026-07)
+## Контекст из локальных чатов (кратко)
 
-- KVM-1 VPN = `187.124.133.200`; DCA-боты с него **удалены**, остался VPN-only.
-- Xray в Docker `amnezia-xray` часто «жив» контейнером, но процесс xray мёртв → чинит `ensure-xray.sh` + cron.
+- KVM-1 VPN LT = `187.124.133.200`; DCA-боты с него **удалены**, остался VPN-only; с 2026-08 массовый timeout с RU → заменён на DE `72.62.50.93`.
+- Xray в Docker `amnezia-xray` часто «жив» контейнером, но процесс xray мёртв → чинит `ensure-xray.sh` + cron `*/2`.
 - iOS Hiddify/Happ: HTTP sub часто запрещён → использовать **HTTPS** `:8443` (Caddy + cert).
 - Timeout на Windows часто из‑за **Happ + Hiddify одновременно** — один клиент.
 - ifconfig.me показывает домашний IP → туннель не поднят / не Global+TUN.
-- Германия: нужен **новый VPS в DE**, текущий IP «не переименовать».
+- iOS Happ: тяжёлый routing (geo+ads) → «лимит памяти туннеля 50 МБ» / NEAging — роутинг выключить или Lite-профиль.
+- Xray 26 `x25519` печатает `PrivateKey` / `Password (PublicKey)` (не старые `Private key` / `Public key`).
 
 Локальный файл на десктопе (не в cloud): `C:\Users\cente\Ideas\CURSOR_LAPTOP_HANDOFF.md`.
 
@@ -99,7 +103,7 @@ ssh -i ~/.ssh/botadmin_187_auto -o StrictHostKeyChecking=accept-new root@187.124
 
 Задача: работа с VPN-сервером и картой ботов по этому handoff.
 1) Возьми BOTADMIN_SSH_KEY из secrets, сохрани в ~/.ssh/botadmin_187_auto (chmod 600).
-2) Проверь SSH: root@187.124.133.200 (VPN) — xray + подписки.
+2) Проверь SSH: root@72.62.50.93 (VPN DE primary) — xray + подписки.
 3) При необходимости Oscar 187.124.38.242 / Tailscale 100.82.221.89 и LERA 72.62.152.201.
 4) Не коммить секреты. Не деструктив без явной просьбы.
 
