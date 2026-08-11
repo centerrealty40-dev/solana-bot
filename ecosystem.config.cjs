@@ -3346,6 +3346,30 @@ const PM2_APPS = [
         MILD_DIP_PROBE_BLOCKED: '1',
         MILD_DIP_PROBE_BLOCKED_USD: '2',
         MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
+        /**
+         * 1.11.829 — price rug risk instead of flat-sizing it. Over 774 closed
+         * positions, 41 collapsed to −70% or worse and no gate we run could see
+         * them coming: liquidity, mcap and liq/mcap are identical between the
+         * rugs and the rest. The leaders we shadow eat rugs at twice our rate
+         * (10.7% of their sessions vs 5.3%) and survive because they take these
+         * names at $1–4 while their conviction clip is $10–27. We averaged $6.10
+         * on a rug and $6.32 on everything else.
+         *
+         * Thresholds are the two slices that actually lose: pc5m below −45%
+         * (n=19 at −60…−45 → mean −34.7%, winrate 0.11) and turnover above 3.0
+         * (n=32 at 3…6 → −14.6%; n=9 above 6 → −28.4%). A −35% dump and a 1.5
+         * turnover are *not* losing slices and stay at full size.
+         *
+         * Refusing outright stays off: entries below −85% were 6 positions with
+         * zero rugs and 4 that reached +15%.
+         *
+         * Base clip is $5 since 1.11.828, so the knife tier is a 2.5x cut, not
+         * the 5x the $10-era census measured. Direction holds, size is smaller.
+         */
+        MILD_DIP_RUG_KNIFE_CLIP_USD: '2',
+        MILD_DIP_RUG_KNIFE_DUMP_PCT: '-45',
+        MILD_DIP_RUG_KNIFE_TURN: '3',
+        MILD_DIP_RUG_BLOCK_DUMP_PCT: '0',
         MILD_DIP_REQUIRE_LEADER_SEEN: '0',
         MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS: '7200000',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */

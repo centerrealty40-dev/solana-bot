@@ -22,6 +22,7 @@ import {
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
+import { assessRugRisk } from './rug-risk.js';
 import { mildDipPriceRing } from './price-ring.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
@@ -575,6 +576,39 @@ export async function attemptMildDipEntry(args: {
     }
   }
 
+  /**
+   * Rug risk is a sizing input. Our gates cannot see a rug coming (liq / mcap /
+   * liq-mcap are identical between the 41 collapses and the other 733 trades),
+   * but deep dump + hot turnover mark the class — and that is exactly what the
+   * leaders we shadow take at a $1–4 clip while we were flat-sizing it.
+   */
+  const rugRisk = assessRugRisk({
+    pc5mPct: entryPc5m,
+    volume5mUsd: entryVol5m,
+    liquidityUsd: sizeMetrics.liquidityUsd,
+    gates: {
+      knifeDumpPct: cfg.rugKnifeDumpPct,
+      knifeTurn: cfg.rugKnifeTurn,
+      blockDumpPct: cfg.rugBlockDumpPct,
+    },
+  });
+  if (rugRisk.tier === 'blocked') {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_rug_block_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      lane: opts.lane,
+      pc5m: entryPc5m ?? null,
+      turn: rugRisk.turn,
+      reasons: rugRisk.reasons,
+    });
+    console.log(
+      `[mild-dip] SKIP rug ${c.symbol} mint=${c.mint.slice(0, 8)}… ${rugRisk.reasons.join(',')}`,
+    );
+    state.cooldownUntilMs[c.mint] = nowMs + softCd;
+    return 'skip';
+  }
+
   const wanted = resolveMildDipWantedSizeUsd({
     basePositionUsd: cfg.positionUsd,
     thick: {
@@ -594,7 +628,11 @@ export async function attemptMildDipEntry(args: {
     ),
     metrics: sizeMetrics,
   });
-  const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, wanted.sizeUsd) : wanted.sizeUsd;
+  const knifeCapped =
+    rugRisk.tier === 'knife' && cfg.rugKnifeClipUsd > 0
+      ? Math.min(cfg.rugKnifeClipUsd, wanted.sizeUsd)
+      : wanted.sizeUsd;
+  const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, knifeCapped) : knifeCapped;
   const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wantUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {
@@ -792,6 +830,9 @@ export async function attemptMildDipEntry(args: {
       dump: tdSnapshot?.dump ?? null,
       tdBranch: tdSnapshot?.branch ?? null,
       tdResid: tdSnapshot?.resid ?? null,
+      rugTier: rugRisk.tier,
+      rugReasons: rugRisk.reasons,
+      rugTurn: rugRisk.turn,
       streamDumpPct: streamDumpExtentPct(c.mint, cfg.cooldownBounceLookbackMs, nowMs),
       bounceFromTroughPct: mildDipPriceRing.bounceFromPostPeakTroughPct(
         c.mint,
