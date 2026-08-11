@@ -518,13 +518,60 @@ def sol_usd_from_dex_cache(cache: dict[str, Any]) -> float | None:
     return None
 
 
+def native_sol_delta(leader: str, tx: dict[str, Any] | None) -> tuple[float | None, bool]:
+    """
+    Leader's native lamport delta, gross of the tx fee when the leader paid it.
+
+    This is the leg the observer used to miss entirely. `wrapAndUnwrapSol` swaps
+    receive WSOL into a temporary account and close it in the same transaction,
+    so the payout never appears in `postTokenBalances` — only in the native
+    balance. Verified on chain: four sells the observer logged with zero proceeds
+    had actually paid +1.1517, +1.2977, +4.6310 and +0.9675 SOL.
+    """
+    if not isinstance(tx, dict):
+        return None, False
+    meta = tx.get("meta") or {}
+    msg = (tx.get("transaction") or {}).get("message") or {}
+    keys = [k.get("pubkey") if isinstance(k, dict) else k for k in (msg.get("accountKeys") or [])]
+    try:
+        idx = keys.index(leader)
+    except ValueError:
+        return None, False
+    pre_l = meta.get("preBalances") or []
+    post_l = meta.get("postBalances") or []
+    if idx >= len(pre_l) or idx >= len(post_l):
+        return None, False
+    try:
+        delta = (int(post_l[idx]) - int(pre_l[idx])) / 1e9
+    except (TypeError, ValueError):
+        return None, False
+    is_payer = idx == 0
+    if is_payer:
+        # Fee is not part of the swap — add it back for a gross fill amount.
+        try:
+            delta += int(meta.get("fee") or 0) / 1e9
+        except (TypeError, ValueError):
+            pass
+    return delta, is_payer
+
+
 def quote_leg_deltas(
     leader: str,
     pre: list[dict[str, Any]],
     post: list[dict[str, Any]],
     sol_usd: float | None,
+    tx: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Sum SOL/USDC/USDT ui deltas for the leader across the tx."""
+    """
+    Sum the leader's SOL/USDC/USDT movement across the tx.
+
+    SOL is counted as `native + WSOL-SPL`, which is correct for every routing
+    shape: a wrap moves native → WSOL (nets ~0), an unwrap moves WSOL → native,
+    and a payout straight to native shows up only in the native leg. Residual
+    noise is ATA rent (~0.00204 SOL per account created or closed) — immaterial
+    against the $200–900 fills seen here, and both components are reported so a
+    consumer can judge for itself.
+    """
     keys: dict[tuple[Any, str], list[Any]] = {}
     for b in pre:
         if b.get("owner") == leader and b.get("mint") in QUOTE_MINTS:
@@ -546,11 +593,20 @@ def quote_leg_deltas(
         elif mint == USDT:
             usdt_d += d
 
+    sol_spl_d = sol_d
+    native_d, is_payer = native_sol_delta(leader, tx)
+    if native_d is not None:
+        sol_d += native_d
+
     quote_usd = usdc_d + usdt_d
     if sol_usd and sol_usd > 0 and abs(sol_d) > 0:
         quote_usd += sol_d * sol_usd
     return {
         "quoteSolDelta": sol_d if abs(sol_d) > 0 else 0.0,
+        "quoteSolSplDelta": sol_spl_d if abs(sol_spl_d) > 0 else 0.0,
+        "quoteSolNativeDelta": native_d,
+        "quoteSolNativeReadable": native_d is not None,
+        "quoteFeePayer": is_payer,
         "quoteUsdcDelta": usdc_d if abs(usdc_d) > 0 else 0.0,
         "quoteUsdtDelta": usdt_d if abs(usdt_d) > 0 else 0.0,
         "quoteUsdDelta": quote_usd if abs(quote_usd) > 0 else 0.0,
@@ -1060,7 +1116,7 @@ class Observer:
             if block_time:
                 observe_lag_ms = max(0, int(time.time() * 1000) - int(block_time) * 1000)
 
-            quote = quote_leg_deltas(leader, pre, post, sol_usd)
+            quote = quote_leg_deltas(leader, pre, post, sol_usd, tx)
 
             keys: dict[tuple[Any, str], list[Any]] = {}
             for b in pre:
@@ -1110,6 +1166,9 @@ class Observer:
                     "tokenPreUi": pre_ui,
                     "tokenPostUi": post_ui,
                     "quoteSolDelta": quote.get("quoteSolDelta"),
+                    "quoteSolNativeDelta": quote.get("quoteSolNativeDelta"),
+                    "quoteSolSplDelta": quote.get("quoteSolSplDelta"),
+                    "quoteSolNativeReadable": quote.get("quoteSolNativeReadable"),
                     "quoteUsdcDelta": quote.get("quoteUsdcDelta"),
                     "quoteUsdDelta": quote.get("quoteUsdDelta"),
                     "sizeUsd": fills.get("sizeUsd"),
