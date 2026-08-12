@@ -3419,14 +3419,21 @@ const PM2_APPS = [
         MILD_DIP_MARK_CONCURRENCY: '48',
         MILD_DIP_ENRICH_CONCURRENCY: '6',
         /**
-         * 1.11.863 — 60, was 12, and the code no longer clamps it back to 12.
-         * At 30 mints per DexScreener request the batch path can carry 3_600
-         * mints a minute against a 120 RPM ceiling; we were scanning 35, which
-         * is why we held a record within ±5s of a leader buy only 13.4% of
-         * the time. 60 per pass at a 3s cadence is ~40 requests a minute, a
-         * third of the budget.
+         * 1.11.871 — 20. 1.11.863 took this to 60 on the argument that the
+         * batch path can carry 3_600 mints a minute against a 120 RPM ceiling.
+         * Measured five hours later, that was wrong in practice:
+         *
+         *   before (12): 37.9 scans/min, 411 mints, 1.6% null, revisit 82.0s
+         *   after  (60): 50.4 scans/min, 572 mints, 35.5% null, revisit 94.1s
+         *
+         * The extra slots went into the tail of the candidate list, which
+         * DexScreener has no data for, so a third of every pass came back
+         * empty and the revisit gap on the names that matter got *worse*.
+         * 20 keeps the throttle fix (3s cadence instead of a 15s floor with
+         * opens, which is the change that actually mattered) without spending
+         * the budget on mints the API cannot answer for.
          */
-        MILD_DIP_ENRICH_MAX: '60',
+        MILD_DIP_ENRICH_MAX: '20',
         /** Scan floor while positions are open; was hard-coded to 15s. */
         MILD_DIP_SCAN_INTERVAL_WITH_OPENS_MS: '3000',
         MILD_DIP_SELL_CONCURRENCY: '6',
