@@ -3071,7 +3071,7 @@ const PM2_APPS = [
          * own bag marks, where giveback at exit is a constant ~30% of peak for
          * any peak above 15% (−29.4% / −29.9% / −33.6% across buckets).
          */
-        MILD_DIP_EXIT_GIVEBACK_PCT: '30',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '12',
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
@@ -3189,7 +3189,7 @@ const PM2_APPS = [
          * −3.47% (+25%×50%) or +0.66% (+50%×50%) — the rungs cut the only tail
          * that pays. Both ladders off; a single full exit on the trail below.
          */
-        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
+        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
         MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
