@@ -16,12 +16,15 @@ export type MildDipOpenPosition = {
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
   /**
-   * 1.11.848 — first Dex mark seen after the fill, when it sits above the fill.
-   * The mark and our execution do not share a scale, so MFE / arm / giveback are
-   * measured from this instead of `entryPriceUsd`. Absent when the first mark
-   * came in at or below the fill, which is the ordinary case.
+   * 1.11.848 — the Dex price the entry decision was made on.
+   *
+   * Marks and fills do not share a scale: a stale or different-pool snapshot can
+   * sit well above what Jupiter gave us, and measuring the gap as gain reads a
+   * motionless price as instant profit. MFE / arm / giveback measure from this
+   * so that only movement inside the mark series counts. `entryPriceUsd` keeps
+   * serving P&L, where the money actually is.
    */
-  mfeBasisPriceUsd?: number;
+  entryMarkPriceUsd?: number;
   /** Running low-water mark from entry (never-arm bounce / freefall). */
   postEntryTroughUsd?: number;
   /** When postEntryTroughUsd was last deepened. */

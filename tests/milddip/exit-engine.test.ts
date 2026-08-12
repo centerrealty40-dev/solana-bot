@@ -146,6 +146,16 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     // armed, fired bank1 and sold at 7.279e-05.
     const FILL = 7.683396193886784e-5;
     const STALE_MARK = 8.492e-5;
+    // entry-attempt seeds peakPriceUsd with the fill and records the Dex price
+    // the entry was decided on.
+    const fresh = (
+      mint: string,
+      entryPriceUsd: number,
+      entryMarkPriceUsd?: number,
+    ): MildDipOpenPosition => ({
+      ...pos({ mint, entryPriceUsd, peakPriceUsd: entryPriceUsd, openedAtMs: 1_000_000 }),
+      entryMarkPriceUsd,
+    });
     const bankGates = {
       ...gates,
       mfeBankEnabled: true,
@@ -156,7 +166,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     };
 
     it('does not arm or bank when the price has not moved', () => {
-      const p = pos({ mint: 'eub', entryPriceUsd: FILL, openedAtMs: 1_000_000 });
+      const p = fresh('eub', FILL, STALE_MARK);
       const d = decideMarkExit({
         mint: 'eub',
         pos: p,
@@ -172,7 +182,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
 
     it('measures a later gain from the mark series, not the fill', () => {
-      const p = pos({ mint: 'eub2', entryPriceUsd: FILL, openedAtMs: 1_000_000 });
+      const p = fresh('eub2', FILL, STALE_MARK);
       const first = decideMarkExit({
         mint: 'eub2',
         pos: p,
@@ -181,7 +191,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         nowMs: 1_040_000,
       })!;
       applyMarkDecisionToPosition(p, first);
-      expect(p.mfeBasisPriceUsd).toBeCloseTo(STALE_MARK, 12);
+      expect(first.mfeBasisPriceUsd).toBeCloseTo(STALE_MARK, 12);
 
       const up = decideMarkExit({
         mint: 'eub2',
@@ -196,7 +206,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
 
     it('leaves the fill as the basis when the first mark comes in below it', () => {
-      const p = pos({ mint: 'eub3', entryPriceUsd: FILL, openedAtMs: 1_000_000 });
+      const p = fresh('eub3', FILL, FILL * 0.97);
       const d = decideMarkExit({
         mint: 'eub3',
         pos: p,
@@ -205,13 +215,13 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         nowMs: 1_040_000,
       })!;
       applyMarkDecisionToPosition(p, d);
-      expect(p.mfeBasisPriceUsd).toBeUndefined();
+      expect(d.mfeBasisPriceUsd).toBeNull();
       expect(d.mfePct).toBeCloseTo(0, 6);
       expect(d.pnlPct).toBeCloseTo(-3, 1);
     });
 
-    it('does not let a later spike raise the basis and erase a real gain', () => {
-      const p = pos({ mint: 'eub4', entryPriceUsd: 100, openedAtMs: 1_000_000 });
+    it('still counts a genuine move when the entry mark matched the fill', () => {
+      const p = fresh('eub4', 100);
       const flat = decideMarkExit({
         mint: 'eub4',
         pos: p,

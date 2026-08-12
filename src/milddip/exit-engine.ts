@@ -89,17 +89,15 @@ export function decideMarkExit(args: {
       ? 1
       : 0;
   /**
-   * First mark after the fill becomes the movement baseline when it sits above
-   * the fill — the two prices come from different sources and a stale Dex
-   * snapshot otherwise reads as instant profit. Latched once, so a later spike
-   * cannot move the baseline up and erase a real gain.
+   * The Dex price the entry decision was made on is the movement baseline. Only
+   * used when it sits above the fill, which is the case that misreads a
+   * motionless price as profit; buying above the mark needs no correction
+   * because it understates MFE, and the stop already answers for it.
    */
   const mfeBasisPriceUsd =
-    pos.mfeBasisPriceUsd != null && pos.mfeBasisPriceUsd > 0
-      ? pos.mfeBasisPriceUsd
-      : pos.peakPriceUsd == null && markPriceUsd > pos.entryPriceUsd
-        ? markPriceUsd
-        : null;
+    pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > pos.entryPriceUsd
+      ? pos.entryMarkPriceUsd
+      : null;
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
     mfeBasisPriceUsd,
@@ -172,9 +170,6 @@ export function applyMarkDecisionToPosition(
   decision: MarkExitDecision,
 ): void {
   pos.peakPriceUsd = decision.peakPriceUsd;
-  if (decision.mfeBasisPriceUsd != null && decision.mfeBasisPriceUsd > 0) {
-    pos.mfeBasisPriceUsd = decision.mfeBasisPriceUsd;
-  }
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;
   if (decision.postEntryTroughPriceUsd > 0) {
