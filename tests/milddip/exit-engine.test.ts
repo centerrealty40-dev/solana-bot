@@ -244,6 +244,22 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d.shouldExit).toBe(false);
     });
 
+    it('ignores an entry mark that is nowhere near the fill', () => {
+      // 7rMnp9 carried 9.87e-06 against a 1.646e-03 fill: MFE read 17821%,
+      // which walks every ladder rung in one tick and empties the bag.
+      const p = fresh('7rmnp9', 1.645989403945407e-3, 9.87e-6);
+      const d = decideMarkExit({
+        mint: '7rmnp9',
+        pos: p,
+        markPriceUsd: 1.7481963175183285e-3,
+        gates: { ...bankGates, tpGridStepPct: 8, tpGridSellFraction: 0.5 },
+        nowMs: 1_040_000,
+      })!;
+      expect(d.entryMarketPriceUsd).toBeNull();
+      expect(d.mfePct).toBeLessThan(20);
+      expect(d.pnlPct).toBeCloseTo(6.21, 1);
+    });
+
     it('still stops out on a real 25% fall measured from the entry mark', () => {
       const MARK = FILL * 0.97;
       const p = fresh('eub3c', FILL, MARK);

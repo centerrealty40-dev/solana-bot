@@ -7,6 +7,26 @@ import { evaluateMildDipPeakGiveback, type MildDipExitReason } from './gates.js'
 import type { MildDipOpenPosition } from './state.js';
 import { decideGreenExit, type GreenExitGates } from './green-lane.js';
 
+/** How far the mark taken at entry may sit from the fill and still be a basis. */
+const ENTRY_MARK_MAX_GAP_FRAC = 0.25;
+
+/**
+ * The basis every threshold measures from: the mark taken beside the fill, when
+ * it is a comparable observation of the same token.
+ *
+ * A stored mark far from the fill is bad data, not an execution cost. 7rMnp9
+ * carried 9.87e-06 against a 1.646e-03 fill and read MFE 17821%, which walks
+ * the whole ladder in one tick and empties the bag. The band admits any real
+ * gap (chase caps 4%, slippage 200bps, sample up to 30s old) and rejects that.
+ * Outside it the fill serves, as it did before 1.11.873.
+ */
+export function resolveEntryMarkBasis(pos: MildDipOpenPosition): number | null {
+  const raw = pos.entryMarkPriceUsd;
+  if (raw == null || !Number.isFinite(raw) || !(raw > 0)) return null;
+  if (!(pos.entryPriceUsd > 0)) return null;
+  return Math.abs(raw / pos.entryPriceUsd - 1) <= ENTRY_MARK_MAX_GAP_FRAC ? raw : null;
+}
+
 export type MarkExitDecision = {
   mint: string;
   markPriceUsd: number;
@@ -99,9 +119,7 @@ export function decideMarkExit(args: {
   if (pos.lane === 'green' && args.greenGates) {
     const heldMsGreen = Math.max(0, (args.nowMs ?? Date.now()) - (pos.openedAtMs || 0));
     const basis =
-      pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > 0
-        ? pos.entryMarkPriceUsd
-        : pos.entryPriceUsd;
+      resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
     const pnl = (markPriceUsd / basis - 1) * 100;
     const g = decideGreenExit(pnl, heldMsGreen, args.greenGates);
     return {
@@ -124,12 +142,7 @@ export function decideMarkExit(args: {
       postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     };
   }
-  /**
-   * Bags opened before 1.11.873 seeded the peak with the fill, which reads an
-   * entry overpay as a gain already given back. An untouched seed carries no
-   * information, so the entry mark replaces it.
-   */
-  const entryMarketPriceUsd = pos.entryMarkPriceUsd ?? null;
+  const entryMarketPriceUsd = resolveEntryMarkBasis(pos);
   const peakStored =
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
   const peakPrev =
