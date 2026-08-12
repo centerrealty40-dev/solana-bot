@@ -3212,6 +3212,15 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '25',
         MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT: '8',
+        /**
+         * 1.11.874 — a soft exit asks the entry gate first. GCa9TZ went out on
+         * breakeven_stop at −10.48% and the entry side bought it back 98s later
+         * 7.7% lower, where the ladder banked two rungs: we paid a round trip to
+         * swap the bag for itself. Budget bounds the claim; risk exits and the
+         * profit ladder are never deferred.
+         */
+        MILD_DIP_EXIT_DEFER_WOULD_BUY: '1',
+        MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS: '600000',
         MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8',
         /**
          * 1.11.873 — the floor is a mark-basis level, so breaking even in money

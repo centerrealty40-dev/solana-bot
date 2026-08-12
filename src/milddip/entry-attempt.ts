@@ -717,6 +717,8 @@ export async function attemptMildDipEntry(args: {
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
+    entryMarketCapUsd: c.metrics.marketCapUsd ?? null,
+    entryPairAgeHours: c.metrics.pairAgeHours ?? null,
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
   // Keep waitDipWatch until fill succeeds — quote-premium reject must retry.
@@ -974,6 +976,8 @@ export async function attemptMildDipEntry(args: {
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
+    entryMarketCapUsd: c.metrics.marketCapUsd ?? null,
+    entryPairAgeHours: c.metrics.pairAgeHours ?? null,
   };
   // Seed exit mark ring so stream-only marks have a print before first swap decode.
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });

@@ -47,6 +47,7 @@ import {
   orderMintsForMark,
   type MarkExitDecision,
 } from './exit-engine.js';
+import { shouldDeferSoftExit } from './exit-defer.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
@@ -1460,6 +1461,8 @@ const RECOVER_DEFER_REASONS = new Set([
 const lastDumpClassifyJournalMs = new Map<string, number>();
 /** mint → last recover_defer journal ts (throttle). */
 const lastRecoverDeferJournalMs = new Map<string, number>();
+/** mint → last exit_defer_would_buy journal ts (throttle). */
+const lastExitDeferJournalMs = new Map<string, number>();
 /** mint → last leader_align_defer journal ts (throttle). */
 const lastLeaderAlignJournalMs = new Map<string, number>();
 
@@ -1785,6 +1788,76 @@ async function tryExits(
     }
 
     if (decision.shouldExit && decision.reason) {
+      /**
+       * 1.11.874 — would the entry side buy this right now? Then do not sell it
+       * to buy it back. GCa9TZ went out on `breakeven_stop` at −10.48% and the
+       * entry gate took it again ninety-eight seconds later, 7.7% lower, where
+       * the ladder banked two rungs. One brain, not two hands.
+       */
+      if (cfg.exitDeferWouldBuyEnabled) {
+        const om = readOpenMarkMetrics(mint, nowMs);
+        const held = Math.max(0, nowMs - pos.openedAtMs);
+        const deferVerdict = shouldDeferSoftExit({
+          reason: decision.reason,
+          gates: {
+            enabled: true,
+            maxTotalMs: cfg.exitDeferWouldBuyMaxMs,
+          },
+          entryGates: cfg.entry,
+          metrics: om
+            ? {
+                pc5mPct: om.pc5mPct,
+                volume5mUsd: om.volume5mUsd,
+                liquidityUsd: om.liquidityUsd,
+                ageMs: Math.max(0, nowMs - om.tsMs),
+              }
+            : null,
+          carried: {
+            marketCapUsd: pos.entryMarketCapUsd ?? null,
+            pairAgeHours: pos.entryPairAgeHours ?? null,
+          },
+          priceRatioSinceEntry:
+            pos.entryPriceUsd > 0 ? decision.markPriceUsd / pos.entryPriceUsd : null,
+          heldMs: held,
+          deferredMsSoFar: pos.exitDeferredMs ?? 0,
+        });
+        if (deferVerdict.defer) {
+          const sinceLast =
+            pos.exitDeferredAtMs != null ? Math.max(0, nowMs - pos.exitDeferredAtMs) : 0;
+          // Only count time actually spent deferring, not the gaps between marks.
+          pos.exitDeferredMs =
+            (pos.exitDeferredMs ?? 0) + Math.min(sinceLast, cfg.markDexRefreshMs * 4);
+          pos.exitDeferredAtMs = nowMs;
+          const lastJ = lastExitDeferJournalMs.get(mint) ?? 0;
+          if (nowMs - lastJ >= 5_000) {
+            lastExitDeferJournalMs.set(mint, nowMs);
+            appendMildDipJournal(cfg.journalPath, {
+              kind: 'exit_defer_would_buy',
+              mint,
+              symbol: pos.symbol,
+              wouldReason: decision.reason,
+              pnlPct: +decision.pnlPct.toFixed(2),
+              pnlPctVsFill: +decision.pnlPctVsFill.toFixed(2),
+              mfePct: +decision.mfePct.toFixed(2),
+              markPx: decision.markPriceUsd,
+              entryPx: pos.entryPriceUsd,
+              pc5m: om?.pc5mPct ?? null,
+              vol5m: om?.volume5mUsd ?? null,
+              liq: om?.liquidityUsd ?? null,
+              deferredMs: pos.exitDeferredMs,
+              budgetMs: cfg.exitDeferWouldBuyMaxMs,
+            });
+            console.log(
+              `[mild-dip] EXIT_DEFER_WOULD_BUY ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+                `held ${decision.reason} pnl=${decision.pnlPct.toFixed(1)}% ` +
+                `pc5m=${om?.pc5mPct?.toFixed(1) ?? '?'}% spent=${Math.round((pos.exitDeferredMs ?? 0) / 1000)}s`,
+            );
+          }
+          continue;
+        }
+        pos.exitDeferredAtMs = nowMs;
+      }
+
       // 1.11.761 — leader just bought this mint while a soft exit is firing:
       // hold the sell and optionally average-in once (narrow; not a −5% scale-in).
       if (cfg.leaderAlignEnabled) {

@@ -63,6 +63,17 @@ export type MildDipOpenPosition = {
   /** Dex liquidity at entry — fallback baseline for exit → rebuy liq-drop. */
   entryLiquidityUsd?: number | null;
   /**
+   * 1.11.874 — carried so the exit path can ask the entry gate whether it would
+   * open this position now. Market cap is scaled by the price move since entry,
+   * pair age grows with the hold; neither is re-read on the mark path.
+   */
+  entryMarketCapUsd?: number | null;
+  entryPairAgeHours?: number | null;
+  /** Cumulative ms this bag has held a soft exit because the gate still passes. */
+  exitDeferredMs?: number;
+  /** Wall clock of the last such deferral, for accumulating the budget. */
+  exitDeferredAtMs?: number;
+  /**
    * Spaced Dex vol5m samples (≥5m apart) for sustained `never_arm_vol_fade`.
    * A single weak tick must not sell — need N consecutive weak windows.
    */

@@ -150,6 +150,14 @@ const MildDipConfigSchema = z.object({
    * ≥ minBouncePct off the ring trough in lookback. cliff/timeout still fire.
    */
   /** 1.11.749 default off — was blocking trail giveback on green-vs-trough. */
+  /**
+   * 1.11.874 — hold a soft exit while the entry gate would still open the bag.
+   * Selling a name the entry side likes only to buy it back costs a full round
+   * trip; GCa9TZ was sold at −10.48% and rebought 98s later, 7.7% lower.
+   */
+  exitDeferWouldBuyEnabled: z.boolean().default(false),
+  /** Cumulative ms one bag may hold a soft exit this way. */
+  exitDeferWouldBuyMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(600_000),
   recoverDeferEnabled: z.boolean().default(false),
   recoverDeferLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(300_000),
   recoverDeferMinBouncePct: z.coerce.number().min(0).max(50).default(3),
@@ -990,6 +998,8 @@ export function loadMildDipConfig(): MildDipConfig {
     dumpClassifyWhaleShare: process.env.MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE ?? 0.6,
     /** 1.11.744 — defer soft exits while reclaiming off local trough. */
     /** 1.11.749 — default off; dump_classify owns soft-giveback gating. */
+    exitDeferWouldBuyEnabled: envBool('MILD_DIP_EXIT_DEFER_WOULD_BUY', false),
+    exitDeferWouldBuyMaxMs: process.env.MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS ?? 600_000,
     recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),
     recoverDeferLookbackMs: process.env.MILD_DIP_RECOVER_DEFER_LOOKBACK_MS ?? 300_000,
     recoverDeferMinBouncePct: process.env.MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT ?? 3,
