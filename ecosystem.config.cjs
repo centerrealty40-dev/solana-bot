@@ -3844,8 +3844,13 @@ const PM2_APPS = [
        * 429 three times in a row while the bot paces itself to a healthy 10
        * marks/min. Structure (liq / mcap / age / vol5m) moves slowly, so it is
        * rationed to 3 DexScreener requests per minute against the bot's ~30.
+       *
+       * 1.11.876 — off. The lane it was built to justify never opened a position
+       * (zero `green_momentum` buys in 7098 attempts), so its corpus is paying a
+       * share of a saturated DexScreener quota for a strategy that does not
+       * trade. Start it again when green is something we intend to run.
        */
-      autostart: true,
+      autostart: false,
       autorestart: true,
       max_restarts: 50,
       restart_delay: 10_000,
