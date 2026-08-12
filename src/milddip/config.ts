@@ -460,6 +460,27 @@ const MildDipConfigSchema = z.object({
   fastPathStructuralStaleMs: z.coerce.number().int().min(0).max(600_000).default(30_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
   enrichMax: z.coerce.number().int().min(5).max(80).default(12),
+  green: z.object({
+      /**
+       * 1.11.859 — green lane. Momentum entries with their own exit; see
+       * `src/milddip/green-lane.ts` for how every number below was measured.
+       * Off by default: it is a different trade from the dip lane.
+       */
+      greenEnabled: z.boolean().default(false),
+      greenPositionUsd: z.coerce.number().min(0).max(10_000).default(1),
+      greenMinTurnover5mLiq: z.coerce.number().min(0).max(100).default(0.4),
+      greenMinVolume5mUsd: z.coerce.number().min(0).default(8_000),
+      greenMinVolume1hUsd: z.coerce.number().min(0).default(60_000),
+      greenMinPc5mPct: z.coerce.number().min(0).max(1000).default(14),
+      greenMinPc1hPct: z.coerce.number().min(-100).max(1000).default(20),
+      greenMinBuys5m: z.coerce.number().min(0).max(100_000).default(43),
+      greenMaxBuyShare5m: z.coerce.number().min(0).max(1).default(0.85),
+      greenMinLiquidityUsd: z.coerce.number().min(0).default(6_000),
+      greenMaxRet1mPct: z.coerce.number().min(-100).max(100).default(0),
+      greenTakeProfitPct: z.coerce.number().min(0).max(1000).default(30),
+      greenStopPct: z.coerce.number().min(0).max(100).default(6),
+      greenMaxHoldMs: z.coerce.number().min(0).default(600_000),
+  }),
   entry: z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
@@ -598,6 +619,23 @@ export function loadMildDipConfig(): MildDipConfig {
         .map((s) => s.trim().toLowerCase())
         .filter(Boolean)
     : [];
+
+  const green = {
+    enabled: envBool('MILD_DIP_GREEN_ENABLED', false),
+    positionUsd: envNum('MILD_DIP_GREEN_POSITION_USD', 1),
+    minTurnover5mLiq: envNum('MILD_DIP_GREEN_MIN_TURNOVER', 0.4),
+    minVolume5mUsd: envNum('MILD_DIP_GREEN_MIN_VOL5M_USD', 8_000),
+    minVolume1hUsd: envNum('MILD_DIP_GREEN_MIN_VOL1H_USD', 60_000),
+    minPc5mPct: envNum('MILD_DIP_GREEN_MIN_PC5M_PCT', 14),
+    minPc1hPct: envNum('MILD_DIP_GREEN_MIN_PC1H_PCT', 20),
+    minBuys5m: envNum('MILD_DIP_GREEN_MIN_BUYS5M', 43),
+    maxBuyShare5m: envNum('MILD_DIP_GREEN_MAX_BUY_SHARE', 0.85),
+    minLiquidityUsd: envNum('MILD_DIP_GREEN_MIN_LIQUIDITY_USD', 6_000),
+    maxRet1mPct: envNum('MILD_DIP_GREEN_MAX_RET1M_PCT', 0),
+    takeProfitPct: envNum('MILD_DIP_GREEN_TP_PCT', 30),
+    stopPct: envNum('MILD_DIP_GREEN_STOP_PCT', 6),
+    maxHoldMs: envNum('MILD_DIP_GREEN_MAX_HOLD_MS', 600_000),
+  };
 
   const entry: MildDipEntryGates = {
     /** 1.11.702 — wider knife floor (default −25 ⇒ pc5m > −25%). */
@@ -951,6 +989,7 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:
       process.env.MILD_DIP_PRICE_RING_PATH?.trim() || path.join('data', 'milddip', 'price-ring.json'),
+    green,
     entry,
     exit,
   };
