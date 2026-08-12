@@ -91,6 +91,12 @@ export type MildDipExitGates = {
    * quarantined until a second mark confirms the level. 0 = off.
    */
   markJumpConfirmPct: number;
+  /**
+   * 1.11.855 — once MFE has reached `breakevenArmPct`, close the whole bag if
+   * P&L falls to `breakevenFloorPct`. 0 = off.
+   */
+  breakevenArmPct: number;
+  breakevenFloorPct: number;
   /** Fraction of the *remaining* bag sold at each rung (Oscar half8: 0.5). */
   tpGridSellFraction: number;
   /**
@@ -542,6 +548,8 @@ export type MildDipExitReason =
   | 'max_hold_underwater'
   | 'cliff_dump'
   | 'hard_stop'
+  /** 1.11.855 — was meaningfully green, came back to the floor. */
+  | 'breakeven_stop'
   /** 1.11.832 — bank/bounce remnant too small to manage; frees mark bandwidth. */
   | 'dust_close'
   | null;
@@ -876,6 +884,26 @@ export function evaluateMildDipPeakGiveback(args: {
     if (cliff > 0 && pnlPct <= -cliff) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
+  }
+
+  /**
+   * 1.11.855 — once a bag has been meaningfully green, the trail may not hand
+   * it back as a loss.
+   *
+   * A proportional trail on a small peak is arithmetically bound to exit under
+   * water: a +13.5% peak with a 30% giveback lands at 1.135 × 0.70 = −20.5%,
+   * which is exactly how 2iKmjMW3 went from +13.5% to −25.53%. The leaders'
+   * peaks are far higher (median +28.75% on winners), so the same trail leaves
+   * them green; ours do not have that room.
+   *
+   * Measured on 355 leader paths: adding this floor moves the median outcome
+   * from −5.44% to 0.00% and costs 1.4 points of mean (+14.92 → +13.53). Of
+   * their positions that armed at +8% and later traded back through zero, only
+   * 5.4% went on to finish above +100%, so the tail barely notices.
+   */
+  const beArm = gates.breakevenArmPct > 0 ? gates.breakevenArmPct : 0;
+  if (beArm > 0 && mfePct >= beArm && pnlPct <= gates.breakevenFloorPct + 1e-9) {
+    return { ...hold, shouldExit: true, fraction: 1, reason: 'breakeven_stop' };
   }
 
   // 1.11.782 — hard hold ceiling for underwater armed bags (before soft trail /

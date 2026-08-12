@@ -3118,6 +3118,16 @@ const PM2_APPS = [
          * hard25 +$4.15, hard30 +$6.19.
          */
         MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
+        /**
+         * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
+         * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
+         * arithmetic; 2iKmjMW3 went +13.5% → −25.53% that way. On 355 leader
+         * paths the floor moves the median from −5.44% to 0.00% for 1.4 points
+         * of mean, and only 5.4% of their armed-then-underwater positions ever
+         * finished above +100%.
+         */
+        MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8',
+        MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
