@@ -3204,6 +3204,12 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
         MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
+        /**
+         * 1.11.861 — the ladder stops instead of running forever. When the next
+         * rung would leave under 20% of the original, it closes the bag: +8%
+         * takes half, +16% half again, +24% takes the last quarter whole.
+         */
+        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.2',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',

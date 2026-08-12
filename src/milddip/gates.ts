@@ -100,6 +100,19 @@ export type MildDipExitGates = {
   /** Fraction of the *remaining* bag sold at each rung (Oscar half8: 0.5). */
   tpGridSellFraction: number;
   /**
+   * 1.11.861 — the ladder is no longer unbounded. When the next rung would
+   * leave less than this fraction of the original bag, that rung closes the
+   * position instead of shaving it again.
+   *
+   * At a half-remainder step and a 0.20 floor the ladder is three rungs: +8%
+   * takes half, +16% takes half of what is left, and +24% closes the last
+   * quarter rather than trimming it to an eighth. That matches where the
+   * leaders actually bank — 42.9% of their closes on the clean day landed in
+   * 0..+25% and only 8.4% above it — and it stops the tail of the ladder from
+   * managing crumbs the trail would handle anyway. 0 = unbounded.
+   */
+  tpGridMinRemainderFraction: number;
+  /**
    * 1.11.821 — do not bank in the first N ms after entry; the SPL balance is
    * not settled yet and the sell just burns retries. 0 = off.
    */
@@ -961,10 +974,17 @@ export function evaluateMildDipPeakGiveback(args: {
     const gainPct = mfeBasis > 0 && markPriceUsd > 0 ? (markPriceUsd / mfeBasis - 1) * 100 : 0;
     const maxK = Math.floor((gainPct + 1e-9) / gridStep);
     if (gridReady && maxK > rungsDone) {
+      // Remaining share of the original bag, exactly, because every rung takes
+      // the same fraction of what is left.
+      const remainingBefore = Math.pow(1 - gridFrac, rungsDone);
+      const remainingAfter = remainingBefore * (1 - gridFrac);
+      const floor =
+        gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
+      const closeOut = floor > 0 && remainingAfter < floor - 1e-9;
       return {
         ...hold,
         shouldExit: true,
-        fraction: gridFrac,
+        fraction: closeOut ? 1 : gridFrac,
         reason: 'tp_grid',
         tpRungIndex: rungsDone + 1,
       };

@@ -269,7 +269,39 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d?.tpRungIndex).toBe(1);
     });
 
+    it('closes the bag on the rung that would leave under 20% (1.11.861)', () => {
+      // Half-remainder steps: 1.00 -> 0.50 -> 0.25, and the next would be
+      // 0.125, under the 0.20 floor, so rung 3 takes the whole remainder.
+      const g = { ...grid, tpGridMinRemainderFraction: 0.2 };
+      const r1 = decideMarkExit({ mint: 'f1', pos: bag('f1', 0), markPriceUsd: 108, gates: g, nowMs: 1_060_000 });
+      expect(r1?.fraction).toBe(0.5);
+      const r2 = decideMarkExit({ mint: 'f2', pos: bag('f2', 1), markPriceUsd: 116, gates: g, nowMs: 1_060_000 });
+      expect(r2?.fraction).toBe(0.5);
+      const r3 = decideMarkExit({ mint: 'f3', pos: bag('f3', 2), markPriceUsd: 124, gates: g, nowMs: 1_060_000 });
+      expect(r3?.reason).toBe('tp_grid');
+      expect(r3?.fraction).toBe(1);
+      expect(r3?.tpRungIndex).toBe(3);
+    });
+
+    it('a floor of 0 leaves the ladder unbounded', () => {
+      const g = { ...grid, tpGridMinRemainderFraction: 0 };
+      const d = decideMarkExit({ mint: 'f0', pos: bag('f0', 2), markPriceUsd: 124, gates: g, nowMs: 1_060_000 });
+      expect(d?.fraction).toBe(0.5);
+    });
+
+    it('a tighter step still stops at the same share of the bag', () => {
+      // 0.25 per rung: 1.00 -> .75 -> .5625 -> .4219 -> .3164 -> .2373 -> .178,
+      // so the sixth rung is the one that would breach 0.20.
+      const g = { ...grid, tpGridSellFraction: 0.25, tpGridMinRemainderFraction: 0.2 };
+      const fifth = decideMarkExit({ mint: 'q5', pos: bag('q5', 4), markPriceUsd: 148, gates: g, nowMs: 1_060_000 });
+      expect(fifth?.fraction).toBe(0.25);
+      const sixth = decideMarkExit({ mint: 'q6', pos: bag('q6', 5), markPriceUsd: 156, gates: g, nowMs: 1_060_000 });
+      expect(sixth?.fraction).toBe(1);
+    });
+
     it('keeps paying on every further +8% with no upper rung', () => {
+      // With the floor off, the ladder still has no ceiling.
+      const g = { ...grid, tpGridMinRemainderFraction: 0 };
       for (const [rungsDone, price, rung] of [
         [1, 116, 2],
         [2, 124, 3],
@@ -277,7 +309,13 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         [11, 196, 12],
         [40, 428, 41],
       ] as const) {
-        const d = at(bag(`g${rung}`, rungsDone), price);
+        const d = decideMarkExit({
+          mint: `g${rung}`,
+          pos: bag(`g${rung}`, rungsDone),
+          markPriceUsd: price,
+          gates: g,
+          nowMs: 1_060_000,
+        });
         expect(d?.reason).toBe('tp_grid');
         expect(d?.tpRungIndex).toBe(rung);
         expect(d?.fraction).toBe(0.5);

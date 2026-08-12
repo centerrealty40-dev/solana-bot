@@ -519,6 +519,8 @@ const MildDipConfigSchema = z.object({
     breakevenArmPct: z.coerce.number().min(0).max(500).default(0),
     breakevenFloorPct: z.coerce.number().min(-100).max(100).default(0),
     tpGridSellFraction: z.coerce.number().min(0).max(1).default(0.5),
+    /** 1.11.861 — close out rather than leave less than this of the original. */
+    tpGridMinRemainderFraction: z.coerce.number().min(0).max(1).default(0.2),
     /** 1.11.821 — min hold before the first bank (SPL settle race). 0 = off. */
     mfeBankMinHoldMs: z.coerce.number().int().min(0).max(600_000).default(0),
     /**
@@ -698,6 +700,7 @@ export function loadMildDipConfig(): MildDipConfig {
     breakevenArmPct: envNum('MILD_DIP_EXIT_BREAKEVEN_ARM_PCT', 0),
     breakevenFloorPct: envNum('MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT', 0),
     tpGridSellFraction: envNum('MILD_DIP_EXIT_TP_GRID_SELL_FRACTION', 0.5),
+    tpGridMinRemainderFraction: envNum('MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER', 0.2),
     mfeBankMinHoldMs: envNum('MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS', 0),
     mfeBankSleeveLossPartialFraction: envNum(
       'MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION',
