@@ -76,7 +76,14 @@ export async function fetchWalletSignatures(
   const raw = await rpcCall<SignatureRow[]>(
     rpcUrl,
     'getSignaturesForAddress',
-    [wallet, { limit }],
+    /**
+     * `commitment` is not optional here. Without it the endpoint answers at
+     * finalized, and finalized lags on this provider: measured 2026-08-12, the
+     * default returned a newest signature of 03:46:42 while `confirmed` returned
+     * 08:59:47 for the same wallet — a **313 minute** blind spot on every wallet
+     * we follow.
+     */
+    [wallet, { limit, commitment: 'confirmed' }],
     5,
   );
   if (raw === null) return { rows: [], rpcFailed: true };

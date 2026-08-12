@@ -1124,7 +1124,15 @@ class Observer:
 
     def observe_leader(self, leader: str) -> None:
         sigs = rpc_call(
-            self.rpc, "getSignaturesForAddress", [leader, {"limit": self.sig_limit}]
+            self.rpc,
+            "getSignaturesForAddress",
+            # `commitment` is not optional here. Without it this endpoint answers
+            # at finalized, and on this node finalized lags: measured 2026-08-12,
+            # default/finalized returned a newest signature of 03:46:42 while
+            # `confirmed` returned 08:59:47 — the leader feed was **313 minutes**
+            # behind, so every leader-derived signal (seed, leader-seen gate, the
+            # whole observer dataset) was reading a five-hour-old wallet.
+            [leader, {"limit": self.sig_limit, "commitment": "confirmed"}],
         ) or []
         cutoff = time.time() - self.lookback_sec
         # Process oldest→newest so bag ledger is chronological within the poll batch.
