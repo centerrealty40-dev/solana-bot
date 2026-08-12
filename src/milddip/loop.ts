@@ -2125,8 +2125,25 @@ export async function runMildDipLoop(
       minGapMsPerMint: cfg.streamPriceMinGapMs,
       concurrency: cfg.streamPriceConcurrency,
       shouldSample: (mint, t) => shouldSampleStreamPrice(state, mint, t, sampleWatchMs),
-      // Always force-fetch open bags so exit marks stay stream-fed.
-      forceFetch: (mint) => Boolean(state.open[mint]),
+      /**
+       * Force-fetch open bags so exit marks stay stream-fed — except green
+       * ones, which pay for themselves out of the free Dex tape.
+       *
+       * Every forced sample is a `getTransaction` on the paid RPC, and a green
+       * bag sits on a deliberately hot name: the lane requires 43+ buys per
+       * five minutes, so ten minutes of forced sampling is ~150 calls. Against
+       * a measured 41_986 stream `getTransaction` calls a day, a hundred green
+       * bags would have added about a third.
+       *
+       * It buys nothing. The green exit grid (+30% / −6% / 10 min) was fitted
+       * on a tape whose median gap is 26.8s, while our Dex marks on open bags
+       * run at a median 6.1s — four times finer than the resolution the rule
+       * was designed against.
+       */
+      forceFetch: (mint) => {
+        const open = state.open[mint];
+        return Boolean(open) && open?.lane !== 'green';
+      },
       sellTape: dumpSellTape,
       maxPostResidualFrac: cfg.oneshotDumpMaxPostResidualFrac,
       oneshot:
