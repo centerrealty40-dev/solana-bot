@@ -3263,7 +3263,27 @@ const PM2_APPS = [
          */
         MILD_DIP_GREEN_ENABLED: '1',
         MILD_DIP_GREEN_POSITION_USD: '1',
-        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1',
+        /**
+         * 1.11.867 — 0.05h (3 min), was 1h. Measured on the sampler with the
+         * green exit (+30% / −6% / 10 min):
+         *
+         *   no floor : 153 signals, mean +3.39, sum +512
+         *   0.05h    : 150 signals, mean +3.34, sum +494
+         *   1h       :  60 signals, mean +2.75, sum +162
+         *   2h       :  37 signals, mean +1.75, sum  +63
+         *
+         * Per-trade quality does not move with age; the floor only throws
+         * signals away. Coins under an hour on their own: 93 signals, mean
+         * +3.54, 25.8% reach +30% and 73.1% stop at −6% — which is exactly
+         * 0.258 × 30 − 0.731 × 6.
+         *
+         * The dip lane's 6h floor does not transfer here: it was fitted where
+         * the exit rides a −25% stop, while this lane is out in ten minutes at
+         * −6%. Three minutes is kept only so the pair has a readable snapshot —
+         * Cmgg6FUi was 88 seconds old when a leader took it and the observer's
+         * whole dex object came back empty.
+         */
+        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.05',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
