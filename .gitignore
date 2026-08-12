@@ -111,6 +111,10 @@ scripts-tmp/run-bot-*.sh
 scripts-tmp/run-swaps-diag.sh
 scripts-tmp/vps-dip-bot-bootstrap-run.sh
 scripts-tmp/__pycache__/
+# Byte-compiled Python, anywhere. The path-specific rule above matched a grep and
+# hid the fact that scripts/milddip/__pycache__ was still tracked.
+__pycache__/
+*.pyc
 scripts-tmp/_hl_*.py
 scripts-tmp/_list_wallet_spl.py
 scripts-tmp/_recent_closes.py
