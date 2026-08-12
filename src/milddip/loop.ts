@@ -336,6 +336,9 @@ function maybeJournalMark(
     entryVol5m: pos.entryVolume5mUsd ?? null,
     newPeak,
     source,
+    // 1.11.852 — held back pending confirmation. pnl/mfe are not computed for
+    // these, so offline analysis must drop them rather than read zeros.
+    quarantined: decision.markQuarantined === true,
   });
 }
 

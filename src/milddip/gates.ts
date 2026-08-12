@@ -86,6 +86,11 @@ export type MildDipExitGates = {
    * 0 = off, and the mfe-bank ladder owns the armed path as before.
    */
   tpGridStepPct: number;
+  /**
+   * 1.11.852 — a mark that moves more than this % from the last accepted one is
+   * quarantined until a second mark confirms the level. 0 = off.
+   */
+  markJumpConfirmPct: number;
   /** Fraction of the *remaining* bag sold at each rung (Oscar half8: 0.5). */
   tpGridSellFraction: number;
   /**
