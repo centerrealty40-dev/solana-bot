@@ -2914,9 +2914,33 @@ const PM2_APPS = [
          * Now: park until −15%, still never pay above −10% off signal, so the
          * fill window is ~5.9% wide. CF says −10…−15 all beat buying at signal.
          */
-        MILD_DIP_WAIT_DIP_PCT: '-15',
+        /**
+         * 1.11.866 — −5, was −15. The seat was waiting for a fall the market
+         * almost never delivers, and getting filled only when it did.
+         *
+         * 24h: 1997 seats parked, 1348 expired unfilled. On those, the deepest
+         * the price got from the signal had a median of −2.87% and 32% never
+         * fell at all; a −15% target would have caught 4.9% of them, −5%
+         * catches 38.7%. And the ones we refused mostly went up: 61.4% ended
+         * above the signal price, 24.9% more than 10% above.
+         *
+         * The seats that did fill came in at a median −20.83% from signal,
+         * deeper than the target — we were being filled by collapses only,
+         * which is why wait_dip carries the worst P&L of any source
+         * (−$0.311 per position against −$0.168 for a direct dex entry).
+         *
+         * With overshoot at 5% the fill ceiling sits at 0.9975 × signal, so we
+         * still never pay above the price that qualified the seat.
+         */
+        MILD_DIP_WAIT_DIP_PCT: '-5',
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
-        MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '5',
+        /**
+         * 3, not 5: with a −5% target an overshoot of 5 sums to zero and
+         * `waitDipMaxPriceUsd` collapses the ceiling back onto the target,
+         * leaving no room for any reclaim at all. At 3 the window runs from
+         * ready at −5% to a ceiling at −2%.
+         */
+        MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '3',
         /** Ceiling is the binding guard; chase only blocks outright rips. */
         MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '8',
         MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT: '1',

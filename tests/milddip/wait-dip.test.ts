@@ -259,27 +259,30 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_WAIT_DIP: '1'");
     expect(eco).toContain("MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1'");
-    expect(eco).toContain("MILD_DIP_WAIT_DIP_PCT: '-15'");
-    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '5'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_PCT: '-5'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '3'");
     expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_CHASE_PCT: '8'");
     expect(eco).toContain("MILD_DIP_TURN_DUMP_GATE: '1'");
   });
 
-  it('1.11.808 ask −15%, still never pay above −10% off signal', () => {
+  it('1.11.866 ask −5%, and never pay above the price that qualified it', () => {
+    // 1348 expired seats in 24h: the deepest the price got from the signal had
+    // a median of −2.87%, 32% never fell at all, and 61.4% ended above the
+    // signal. A −15% ask caught 4.9% of them; −5% catches 38.7%.
     const mk = (fresh: number) =>
       evaluateWaitDipPreBuy({
         signalPriceUsd: 100,
-        readyMarkPriceUsd: 85, // ready fires at −15%
+        readyMarkPriceUsd: 95, // ready fires at −5%
         freshPriceUsd: fresh,
-        waitDipPct: -15,
-        maxOvershootPct: 5,
+        waitDipPct: -5,
+        maxOvershootPct: 3,
         maxChaseFromReadyPct: 8,
       });
-    // Fill window is ready 85 → ceiling 90, i.e. ~5.9% of reclaim is tolerated.
-    expect(mk(85).pass).toBe(true);
-    expect(mk(89.9).pass).toBe(true);
-    // −12/−2 used to reject exactly here (live rejects clustered at −8.63%).
-    expect(mk(91.4).pass).toBe(false);
+    expect(mk(95).pass).toBe(true);
+    // Ceiling is signal × (1 − 0.05 + 0.03) = 98, so a small reclaim still
+    // fills and we never pay the signal price itself.
+    expect(mk(97.9).pass).toBe(true);
+    expect(mk(98.2).pass).toBe(false);
   });
 
   it('1.11.856 banks in the range the leaders actually bank in', () => {
