@@ -3093,7 +3093,7 @@ const PM2_APPS = [
          * winners. Grid on the full sample: hard15 −$9.52, hard20 −$0.17,
          * hard25 +$4.15, hard30 +$6.19.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
