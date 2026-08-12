@@ -3030,7 +3030,18 @@ const PM2_APPS = [
          * `ex_top3` positive (−$7.50 → +$0.09), i.e. it survives dropping the
          * three best trades.
          */
-        MILD_DIP_MAX_PAIR_AGE_HOURS: '72',
+        /**
+         * 1.11.853 — 30 days, was 72 hours. The ceiling was rejecting a third of
+         * everything the leaders buy: of 725 leader-bought mints whose age we
+         * measured, 32.7% are older than 72h, and 113 of those clear every other
+         * floor — 15.6% of their universe refused on age alone. MsGDybWR sat at
+         * 1028h with $166k liquidity and $271k of 5m volume and was skipped 136
+         * times while two leaders traded it in $870–1125 clips. Meanwhile the
+         * median age of what we look at and they do not is 7.2h: we were fishing
+         * fresh launches while they trade established names. 720h covers 96% of
+         * their universe; liquidity and volume floors still carry liveness.
+         */
+        MILD_DIP_MAX_PAIR_AGE_HOURS: '720',
         /**
          * Venue allow-list for structural pair pick (1.11.729): Dex fetch now
          * selects among these dexIds first. Was: pick global max-liq (often
