@@ -930,7 +930,8 @@ async function wakeOwnTapeKnifeEnrich(
 
   const enrichPass = await enrichAndFilterCandidates(cfg, forceEnrich, {
     nowMs,
-    maxEnrich: Math.min(cfg.enrichMax, 12),
+    // Was hard-capped at 12 regardless of config; the cap is the config now.
+    maxEnrich: cfg.enrichMax,
     enrichConcurrency: Math.min(cfg.enrichConcurrency, 4),
     bypassCache: false,
     cacheTtlMs: 3_000,
@@ -2472,8 +2473,24 @@ export async function runMildDipLoop(
      *   quiet/starved stream cannot freeze buys at "sells only". Never await
      *   (marks keep the tick).
      */
+    /**
+     * 1.11.863 — the floor with opens is now configurable and defaults to the
+     * plain scan interval.
+     *
+     * A hard 15s floor cost us the moments that matter. Measured over 6h: the
+     * gap between scan looks at one mint had a median of 128s and a p90 of
+     * 28 minutes, and we held a record within ±5s of a leader buy only 13.4%
+     * of the time. Since we almost always hold something, the slow branch was
+     * the normal branch.
+     *
+     * It was not a budget problem. At 30 mints per DexScreener request and a
+     * 120 RPM ceiling the batch path can carry 3_600 mints a minute; we were
+     * scanning 35.
+     */
     const scanGapMs =
-      opens === 0 ? cfg.scanIntervalMs : Math.max(cfg.scanIntervalMs, 15_000);
+      opens === 0
+        ? cfg.scanIntervalMs
+        : Math.max(cfg.scanIntervalMs, cfg.scanIntervalWithOpensMs);
     if (nowMs - lastScan >= scanGapMs) {
       lastScan = nowMs;
       stats.lastScanAtMs = lastScan;

@@ -458,8 +458,13 @@ const MildDipConfigSchema = z.object({
    * fast-path skip because DexScreener is rate limited.
    */
   fastPathStructuralStaleMs: z.coerce.number().int().min(0).max(600_000).default(30_000),
+  /**
+   * 1.11.863 — scan floor while positions are open. Was a hard-coded 15_000.
+   * 0 falls back to `scanIntervalMs`.
+   */
+  scanIntervalWithOpensMs: z.coerce.number().int().min(0).max(120_000).default(3_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
-  enrichMax: z.coerce.number().int().min(5).max(80).default(12),
+  enrichMax: z.coerce.number().int().min(5).max(400).default(12),
   /**
    * 1.11.859 — green lane. Momentum entries with their own exit; see
    * `src/milddip/green-lane.ts` for how every number below was measured.
@@ -933,6 +938,7 @@ export function loadMildDipConfig(): MildDipConfig {
     fastPathStructuralStaleMs:
       process.env.MILD_DIP_FAST_PATH_STRUCTURAL_STALE_MS ?? 30_000,
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
+    scanIntervalWithOpensMs: process.env.MILD_DIP_SCAN_INTERVAL_WITH_OPENS_MS ?? 3000,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
     rebuyBelowExitPct: process.env.MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 10,
     rebuyBelowExitMaxAgeMs: process.env.MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS ?? 900_000,
