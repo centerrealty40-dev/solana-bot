@@ -3310,7 +3310,17 @@ const PM2_APPS = [
         MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',
         MILD_DIP_ENRICH_CONCURRENCY: '6',
-        MILD_DIP_ENRICH_MAX: '12',
+        /**
+         * 1.11.863 — 60, was 12, and the code no longer clamps it back to 12.
+         * At 30 mints per DexScreener request the batch path can carry 3_600
+         * mints a minute against a 120 RPM ceiling; we were scanning 35, which
+         * is why we held a record within ±5s of a leader buy only 13.4% of
+         * the time. 60 per pass at a 3s cadence is ~40 requests a minute, a
+         * third of the budget.
+         */
+        MILD_DIP_ENRICH_MAX: '60',
+        /** Scan floor while positions are open; was hard-coded to 15s. */
+        MILD_DIP_SCAN_INTERVAL_WITH_OPENS_MS: '3000',
         MILD_DIP_SELL_CONCURRENCY: '6',
         /** Stream/leader fast-path — skip Dex enrich batch. */
         MILD_DIP_FAST_PATH: '1',
@@ -3363,7 +3373,14 @@ const PM2_APPS = [
          * If Dex H1 ≥ +15%, dump must be ≤ −15% (not a shallow pullback).
          */
         MILD_DIP_DUMP_H1_PUMP_MIN_PCT: '15',
-        MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT: '-15',
+        /**
+         * 1.11.863 — −8, was −15. On a coin up 15%+ on the hour we demanded a
+         * −15% dip. Of 1666 leader buys already inside our −25..0 band, 503 sit
+         * on such coins and their median dip there is −9.85%, so the old
+         * requirement refused 22.9% of every in-band buy they made. −8 recovers
+         * 10.8% of them and still keeps us off a shallow pullback in a pump.
+         */
+        MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT: '-8',
         MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS: '8000',
         /**
          * 1.11.837 — stale structural reuse 30s → 120s.
