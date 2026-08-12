@@ -9,6 +9,8 @@ import type { MildDipOpenPosition } from './state.js';
 export type MarkExitDecision = {
   mint: string;
   markPriceUsd: number;
+  /** Movement baseline once latched; null while the fill still serves. */
+  mfeBasisPriceUsd: number | null;
   peakPriceUsd: number;
   armed: boolean;
   justArmed: boolean;
@@ -86,8 +88,21 @@ export function decideMarkExit(args: {
     : pos.scaleOutDone === true
       ? 1
       : 0;
+  /**
+   * First mark after the fill becomes the movement baseline when it sits above
+   * the fill — the two prices come from different sources and a stale Dex
+   * snapshot otherwise reads as instant profit. Latched once, so a later spike
+   * cannot move the baseline up and erase a real gain.
+   */
+  const mfeBasisPriceUsd =
+    pos.mfeBasisPriceUsd != null && pos.mfeBasisPriceUsd > 0
+      ? pos.mfeBasisPriceUsd
+      : pos.peakPriceUsd == null && markPriceUsd > pos.entryPriceUsd
+        ? markPriceUsd
+        : null;
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
+    mfeBasisPriceUsd,
     markPriceUsd,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
@@ -135,6 +150,7 @@ export function decideMarkExit(args: {
   return {
     mint,
     markPriceUsd,
+    mfeBasisPriceUsd,
     peakPriceUsd: verdict.peakPriceUsd,
     armed: verdict.armed,
     justArmed: verdict.justArmed,
@@ -156,6 +172,9 @@ export function applyMarkDecisionToPosition(
   decision: MarkExitDecision,
 ): void {
   pos.peakPriceUsd = decision.peakPriceUsd;
+  if (decision.mfeBasisPriceUsd != null && decision.mfeBasisPriceUsd > 0) {
+    pos.mfeBasisPriceUsd = decision.mfeBasisPriceUsd;
+  }
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;
   if (decision.postEntryTroughPriceUsd > 0) {

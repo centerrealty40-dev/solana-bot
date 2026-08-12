@@ -15,6 +15,13 @@ export type MildDipOpenPosition = {
   buySignature: string | null;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
+  /**
+   * 1.11.848 — first Dex mark seen after the fill, when it sits above the fill.
+   * The mark and our execution do not share a scale, so MFE / arm / giveback are
+   * measured from this instead of `entryPriceUsd`. Absent when the first mark
+   * came in at or below the fill, which is the ordinary case.
+   */
+  mfeBasisPriceUsd?: number;
   /** Running low-water mark from entry (never-arm bounce / freefall). */
   postEntryTroughUsd?: number;
   /** When postEntryTroughUsd was last deepened. */
