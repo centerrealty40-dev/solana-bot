@@ -3309,7 +3309,13 @@ const PM2_APPS = [
          * the ten-minute ceiling bounds the exposure that floor guards against.
          * At 1h we keep 39% of signals, roughly 57 a day.
          */
-        MILD_DIP_GREEN_ENABLED: '1',
+        /**
+         * 1.11.876 — off. Zero `green_momentum` buys across 7098 buy attempts
+         * since it shipped, so it has produced no trades and no data, while its
+         * lane still spends the shared DexScreener budget the dip lane is short
+         * of (`structural_fetch_null` is a standing top-two skip).
+         */
+        MILD_DIP_GREEN_ENABLED: '0',
         MILD_DIP_GREEN_POSITION_USD: '1',
         /**
          * 1.11.867 — 0.05h (3 min), was 1h. Measured on the sampler with the

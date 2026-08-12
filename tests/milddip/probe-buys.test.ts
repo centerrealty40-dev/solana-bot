@@ -29,7 +29,18 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
     expect(src).toContain('function takeProbeSlot');
     expect(src).toContain('probeStamps.length >= cfg.probeBlockedMaxPerHour');
     // Budget is consumed only when a probe is actually taken.
-    expect(src).toContain('if (takeProbeSlot(cfg, nowMs))');
+    expect(src).toContain('&& takeProbeSlot(cfg, nowMs))');
+  });
+
+  it('never probes around a block that follows a losing exit (1.11.876)', () => {
+    // PrkyDd was cut at -15.13% on never_arm_time_red and the probe bought it
+    // back 140s later, 1.06% lower, at pc5m -13.27%: same bag, same fall, two
+    // more legs of fees. After a losing exit the block has nothing left to
+    // price - we just held that tape and it answered.
+    expect(src).toContain('const lastExitWasLoss = last?.pnlPct != null && last.pnlPct < 0');
+    expect(src).toContain('if (!lastExitWasLoss && takeProbeSlot(cfg, nowMs))');
+    expect(src).toContain('const liqLastExitWasLoss = last?.pnlPct != null && last.pnlPct < 0');
+    expect(src).toContain('if (!liqLastExitWasLoss && takeProbeSlot(cfg, nowMs))');
   });
 
   it('blocking still happens when the budget is spent', () => {

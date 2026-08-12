@@ -468,7 +468,21 @@ export async function attemptMildDipEntry(args: {
         lastExitAtMs: last?.atMs ?? null,
         reasons: rebuy.reasons,
       });
-      if (takeProbeSlot(cfg, nowMs)) {
+      /**
+       * 1.11.876 — a probe never argues with a loss we just took.
+       *
+       * PrkyDd was cut at −15.13% on `never_arm_time_red` — held, never armed,
+       * tape still dumping — and 140 seconds later this probe bought it back
+       * 1.06% lower at pc5m −13.27%: the same bag, the same fall, two more legs
+       * of fees. The gate had refused it correctly and the probe walked around
+       * its own gate.
+       *
+       * The probe exists to price what the re-entry blocks cost, and after a
+       * losing exit there is nothing left to price: we just held that tape and
+       * it answered. Blocks after a profitable or stale exit still get probed.
+       */
+      const lastExitWasLoss = last?.pnlPct != null && last.pnlPct < 0;
+      if (!lastExitWasLoss && takeProbeSlot(cfg, nowMs)) {
         probeReason = 'rebuy_below_exit';
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_probe_override',
@@ -518,7 +532,10 @@ export async function attemptMildDipEntry(args: {
         lastExitPnlPct: last?.pnlPct ?? null,
         reasons: liqDrop.reasons,
       });
-      if (takeProbeSlot(cfg, nowMs)) {
+      // Same rule (1.11.876). With `onlyAfterLoss` on, every liq-drop block is
+      // already a losing exit, so the probe overrode the gate every single time.
+      const liqLastExitWasLoss = last?.pnlPct != null && last.pnlPct < 0;
+      if (!liqLastExitWasLoss && takeProbeSlot(cfg, nowMs)) {
         probeReason = 'rebuy_liq_drop';
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_probe_override',

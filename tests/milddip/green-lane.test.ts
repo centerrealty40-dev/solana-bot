@@ -283,9 +283,12 @@ describe('the green lane keeps its own age floor (1.11.865)', () => {
     expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.001 }, g).pass).toBe(true);
   });
 
-  it('live env runs the lane at a $1 clip', () => {
+  it('live env keeps the lane off (1.11.876)', () => {
+    // Zero green_momentum buys across 7098 attempts, so the lane produced no
+    // trades and no data while spending the shared DexScreener budget. The
+    // parameters stay put for when there is budget to test it again.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '1'");
+    expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '0'");
     expect(eco).toContain("MILD_DIP_GREEN_POSITION_USD: '1'");
     expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.05'");
   });
