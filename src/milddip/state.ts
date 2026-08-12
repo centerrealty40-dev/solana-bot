@@ -31,6 +31,12 @@ export type MildDipOpenPosition = {
    */
   tpRungsDone?: number;
   /**
+   * 1.11.860 — which lane opened this bag. `green` is a momentum entry and is
+   * managed by `decideGreenExit`, not by the dip ladder: the tape says those
+   * names are done within minutes either way, so a trail would only donate.
+   */
+  lane?: 'dip' | 'green';
+  /**
    * 1.11.852 — last mark accepted for this bag, and a quarantined one awaiting
    * confirmation. A single stream print collapsed 5.6420e-04 to 3.2402e-04
    * (−42.57% in one tick) on a bag sitting at +21.75%, fired the −25% stop and
