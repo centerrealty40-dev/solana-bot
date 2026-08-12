@@ -47,3 +47,24 @@ describe('mild-dip liquidity floor', () => {
     expect(botEnv('MILD_DIP_MIN_MCAP_USD')).toBe('5000');
   });
 });
+
+describe('1.11.864 the pair-age floor carries most of the risk control', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  function botEnv(key: string): string | null {
+    const anchor = eco.indexOf("MILD_DIP_POSITION_USD: '");
+    const m = eco.slice(anchor).match(new RegExp(`${key}: '([^']*)'`));
+    return m ? m[1] : null;
+  }
+
+  it('admits nothing younger than six hours', () => {
+    // 513 closed positions joined to the entry snapshot, counted in cash:
+    // coins under 2h old carry 84.9% of the whole loss and under 6h, 91.6%.
+    // A 6h floor keeps 211 of 513 and turns -$138.54 into -$11.43.
+    expect(Number(botEnv('MILD_DIP_MIN_PAIR_AGE_HOURS'))).toBe(6);
+  });
+
+  it('still reaches the mature names the leaders trade', () => {
+    // The other end stays wide: 32.7% of leader buys sit above 72h.
+    expect(Number(botEnv('MILD_DIP_MAX_PAIR_AGE_HOURS'))).toBe(720);
+  });
+});
