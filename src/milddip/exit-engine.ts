@@ -5,6 +5,7 @@
 import type { MildDipExitGates, MildDipVolFadeSample } from './gates.js';
 import { evaluateMildDipPeakGiveback, type MildDipExitReason } from './gates.js';
 import type { MildDipOpenPosition } from './state.js';
+import { decideGreenExit, type GreenExitGates } from './green-lane.js';
 
 export type MarkExitDecision = {
   mint: string;
@@ -79,9 +80,40 @@ export function decideMarkExit(args: {
   volume5mUsd?: number | null;
   /** Defer soft giveback exits while oneshot emptied-bag dump grace is active. */
   oneshotDumpGraceActive?: boolean;
+  /** Required for `lane === 'green'` bags; ignored otherwise. */
+  greenGates?: GreenExitGates;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
+
+  /**
+   * Green bags answer to their own rule. Fixed target, tight stop, short
+   * ceiling — measured on the forward tape, where a +6/−15 dip-shaped exit
+   * returns −2.20 against +4.91 for +30/−6 over ten minutes.
+   */
+  if (pos.lane === 'green' && args.greenGates) {
+    const heldMsGreen = Math.max(0, (args.nowMs ?? Date.now()) - (pos.openedAtMs || 0));
+    const pnl = (markPriceUsd / pos.entryPriceUsd - 1) * 100;
+    const g = decideGreenExit(pnl, heldMsGreen, args.greenGates);
+    return {
+      mint,
+      markPriceUsd,
+      mfeBasisPriceUsd: null,
+      peakPriceUsd: Math.max(pos.peakPriceUsd ?? pos.entryPriceUsd, markPriceUsd),
+      armed: false,
+      justArmed: false,
+      shouldExit: g.shouldExit,
+      fraction: g.shouldExit ? 1 : 0,
+      reason: g.reason,
+      tpRungIndex: null,
+      mfePct: 0,
+      givebackPct: 0,
+      pnlPct: pnl,
+      volFadeSamples: [...(pos.volFadeSamples ?? [])],
+      postEntryTroughPriceUsd: Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd),
+      postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+    };
+  }
   const peakPrev =
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
 

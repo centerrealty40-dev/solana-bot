@@ -460,26 +460,26 @@ const MildDipConfigSchema = z.object({
   fastPathStructuralStaleMs: z.coerce.number().int().min(0).max(600_000).default(30_000),
   /** Background enrich size (slow lane). Keep small — fast-path owns entries. */
   enrichMax: z.coerce.number().int().min(5).max(80).default(12),
+  /**
+   * 1.11.859 — green lane. Momentum entries with their own exit; see
+   * `src/milddip/green-lane.ts` for how every number below was measured.
+   * Off by default: it is a different trade from the dip lane.
+   */
   green: z.object({
-      /**
-       * 1.11.859 — green lane. Momentum entries with their own exit; see
-       * `src/milddip/green-lane.ts` for how every number below was measured.
-       * Off by default: it is a different trade from the dip lane.
-       */
-      greenEnabled: z.boolean().default(false),
-      greenPositionUsd: z.coerce.number().min(0).max(10_000).default(1),
-      greenMinTurnover5mLiq: z.coerce.number().min(0).max(100).default(0.4),
-      greenMinVolume5mUsd: z.coerce.number().min(0).default(8_000),
-      greenMinVolume1hUsd: z.coerce.number().min(0).default(60_000),
-      greenMinPc5mPct: z.coerce.number().min(0).max(1000).default(14),
-      greenMinPc1hPct: z.coerce.number().min(-100).max(1000).default(20),
-      greenMinBuys5m: z.coerce.number().min(0).max(100_000).default(43),
-      greenMaxBuyShare5m: z.coerce.number().min(0).max(1).default(0.85),
-      greenMinLiquidityUsd: z.coerce.number().min(0).default(6_000),
-      greenMaxRet1mPct: z.coerce.number().min(-100).max(100).default(0),
-      greenTakeProfitPct: z.coerce.number().min(0).max(1000).default(30),
-      greenStopPct: z.coerce.number().min(0).max(100).default(6),
-      greenMaxHoldMs: z.coerce.number().min(0).default(600_000),
+    enabled: z.boolean().default(false),
+    positionUsd: z.coerce.number().min(0).max(10_000).default(1),
+    minTurnover5mLiq: z.coerce.number().min(0).max(100).default(0.4),
+    minVolume5mUsd: z.coerce.number().min(0).default(8_000),
+    minVolume1hUsd: z.coerce.number().min(0).default(60_000),
+    minPc5mPct: z.coerce.number().min(0).max(1000).default(14),
+    minPc1hPct: z.coerce.number().min(-100).max(1000).default(20),
+    minBuys5m: z.coerce.number().min(0).max(100_000).default(43),
+    maxBuyShare5m: z.coerce.number().min(0).max(1).default(0.85),
+    minLiquidityUsd: z.coerce.number().min(0).default(6_000),
+    maxRet1mPct: z.coerce.number().min(-100).max(100).default(0),
+    takeProfitPct: z.coerce.number().min(0).max(1000).default(30),
+    stopPct: z.coerce.number().min(0).max(100).default(6),
+    maxHoldMs: z.coerce.number().min(0).default(600_000),
   }),
   entry: z.object({
     minDipPct: z.number(),

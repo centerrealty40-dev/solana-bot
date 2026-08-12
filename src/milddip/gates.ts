@@ -552,6 +552,10 @@ export type MildDipExitReason =
   | 'breakeven_stop'
   /** 1.11.832 — bank/bounce remnant too small to manage; frees mark bandwidth. */
   | 'dust_close'
+  /** 1.11.860 — green lane: fixed target, tight stop, short ceiling. */
+  | 'green_tp'
+  | 'green_stop'
+  | 'green_max_hold'
   | null;
 
 /** True when MFE-bank ladder is configured and should own the armed exit path. */

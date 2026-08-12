@@ -1748,6 +1748,11 @@ async function tryExits(
       volume5mUsd,
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
+      greenGates: {
+        takeProfitPct: cfg.green.takeProfitPct,
+        stopPct: cfg.green.stopPct,
+        maxHoldMs: cfg.green.maxHoldMs,
+      },
     });
     if (!decision) continue;
 

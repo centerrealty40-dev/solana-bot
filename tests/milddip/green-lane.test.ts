@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest';
+import { decideMarkExit } from '../../src/milddip/exit-engine.js';
+import type { MildDipOpenPosition } from '../../src/milddip/state.js';
 import {
   decideGreenExit,
   evaluateGreenLane,
@@ -140,5 +142,94 @@ describe('decideGreenExit', () => {
     // −15% is comfortably inside the dip lane's −25% stop and would be held
     // there; here it is already out.
     expect(decideGreenExit(-15, 30_000, g).shouldExit).toBe(true);
+  });
+});
+
+describe('a green bag is managed by the green rule, not the dip ladder', () => {
+  const greenGates: GreenExitGates = { takeProfitPct: 30, stopPct: 6, maxHoldMs: 600_000 };
+  // Dip gates that would hold a −15% bag: the stop is −25% and the ladder has
+  // not been reached. Only the lane flag decides which rule runs.
+  const dipGates = {
+    armPct: 5,
+    partialGivebackPct: 0,
+    scaleOutFraction: 0.5,
+    givebackPct: 12,
+    mfeBankEnabled: true,
+    mfeBank1Pct: 0,
+    mfeBank1Fraction: 0.4,
+    mfeBank2Pct: 0,
+    mfeBank2Fraction: 0.6,
+    mfeBankSleeveGivebackPct: 12,
+    tpGridStepPct: 8,
+    tpGridSellFraction: 0.5,
+    markJumpConfirmPct: 25,
+    breakevenArmPct: 8,
+    breakevenFloorPct: 0,
+    mfeBankMinHoldMs: 0,
+    neverArmPatienceMs: 0,
+    neverArmMaxHoldMs: 0,
+    neverArmDeadMinMs: 0,
+    neverArmDeadPnlPct: 0,
+    neverArmStaleMinMs: 0,
+    neverArmStaleMaxMfePct: 2,
+    neverArmStalePnlPct: 0,
+    neverArmVolFadeMinMs: 0,
+    neverArmVolFadeRatio: 0.25,
+    neverArmVolFadeFloorUsd: 300,
+    neverArmVolFadeSampleMs: 300_000,
+    neverArmVolFadeWeakWindows: 3,
+    cliffDumpPnlPct: 50,
+    hardStopPnlPct: 25,
+    hardStopPartialFraction: 0,
+    neverArmBounceMinDumpPct: 8,
+    neverArmBouncePct: 8,
+    neverArmBounceMinTroughAgeMs: 60_000,
+    neverArmBounceRequireRedPct: 0,
+    neverArmBounceMinPnlPct: 0,
+    neverArmBouncePartialFraction: 0.5,
+    neverArmBounce2Pct: 16,
+    mfeBankSleeveLossPartialFraction: 0.5,
+    neverArmFreefallPnlPct: 0,
+    neverArmFreefallMinMs: 0,
+    neverArmTimeRedMinMs: 0,
+    neverArmTimeRedPnlPct: 0,
+    neverArmTimeRedMaxPc5mPct: 0,
+    dustCloseUsd: 0,
+    dustCloseMinHoldMs: 0,
+  };
+  const bag = (lane: 'dip' | 'green'): MildDipOpenPosition => ({
+    mint: 'g',
+    symbol: 'G',
+    entryPriceUsd: 100,
+    sizeUsd: 1,
+    tokenRaw: '1',
+    openedAtMs: 1_000_000,
+    entryPc5mPct: 20,
+    buySignature: null,
+    peakPriceUsd: 100,
+    lane,
+  });
+  const at = (lane: 'dip' | 'green', px: number, nowMs = 1_060_000) =>
+    decideMarkExit({ mint: 'g', pos: bag(lane), markPriceUsd: px, gates: dipGates, nowMs, greenGates });
+
+  it('cuts a green bag at −6% where the dip lane would still hold', () => {
+    expect(at('green', 93).reason).toBe('green_stop');
+    expect(at('dip', 93)?.shouldExit).toBe(false);
+  });
+
+  it('takes the green target whole, with no ladder rung', () => {
+    const d = at('green', 131);
+    expect(d?.reason).toBe('green_tp');
+    expect(d?.fraction).toBe(1);
+    // The dip lane would have banked half on the +8% rung instead.
+    expect(at('dip', 131)?.reason).toBe('tp_grid');
+  });
+
+  it('lets a green bag go at the ten-minute ceiling', () => {
+    expect(at('green', 103, 1_000_000 + 600_001).reason).toBe('green_max_hold');
+  });
+
+  it('holds a green bag between the stop and the target', () => {
+    expect(at('green', 112)?.shouldExit).toBe(false);
   });
 });
