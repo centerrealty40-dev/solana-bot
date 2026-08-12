@@ -58,10 +58,42 @@ describe('shouldDeferSoftExit', () => {
     expect(v.defer).toBe(false);
   });
 
-  it('never defers a risk exit', () => {
-    for (const reason of ['hard_stop', 'cliff_dump', 'never_arm_time_red'] as const) {
+  it('never defers a floor', () => {
+    for (const reason of ['hard_stop', 'cliff_dump', 'never_arm_freefall'] as const) {
       expect(shouldDeferSoftExit({ ...base, reason }).defer).toBe(false);
     }
+  });
+
+  it('holds a time cut the entry gate would still buy (1.11.877)', () => {
+    // PrkyDd: cut at -15.13% on never_arm_time_red with the tape still falling,
+    // rebought 140s later 1.06% lower. Selling and re-entering at the same price
+    // is strictly worse than holding, so the cut only paid the fee.
+    for (const reason of [
+      'never_arm_time_red',
+      'never_arm_timeout',
+      'max_hold_underwater',
+    ] as const) {
+      expect(shouldDeferSoftExit({ ...base, reason }).defer).toBe(true);
+    }
+  });
+
+  it('a time cut still fires once the budget is spent', () => {
+    const v = shouldDeferSoftExit({
+      ...base,
+      reason: 'never_arm_time_red',
+      deferredMsSoFar: 600_000,
+    });
+    expect(v.defer).toBe(false);
+    expect(v.reasons).toContain('defer_budget_spent');
+  });
+
+  it('a time cut still fires when the entry gate has gone', () => {
+    const v = shouldDeferSoftExit({
+      ...base,
+      reason: 'never_arm_time_red',
+      metrics: { ...base.metrics, liquidityUsd: 4_000 },
+    });
+    expect(v.defer).toBe(false);
   });
 
   it('never defers a profit exit', () => {

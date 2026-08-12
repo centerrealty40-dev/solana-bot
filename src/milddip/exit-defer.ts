@@ -13,16 +13,26 @@
  * is held: nothing about the name has stopped qualifying, and selling only to
  * buy it back is a fee.
  *
- * Risk exits are never deferred — `hard_stop`, `cliff_dump` and the timeouts
- * answer to something the entry gate cannot see. Profit exits are never
- * deferred either: `tp_grid` and the banks are the point.
+ * 1.11.877 — the time cuts ask too. Keeping `never_arm_time_red` out of this on
+ * the grounds that it is a "risk" exit is what let PrkyDd through: cut at
+ * −15.13% with the tape still falling, back in 140 seconds later 1.06% lower.
+ * Selling and re-entering at the same price is strictly worse than holding —
+ * same exposure, same price, two extra legs of cost — so whenever we would
+ * re-enter, the cut achieved nothing but the fee. What makes those exits safe is
+ * not firing them early, it is the budget below and the hard floor underneath.
+ *
+ * Only the true floors stay out: `hard_stop` and `cliff_dump` answer to a hole
+ * the entry gate cannot see, and their coherence is enforced on the other side —
+ * a mint cut there is barred from re-entry by `rebuy_below_exit`, which since
+ * 1.11.876 no probe walks around. Profit exits are never deferred either:
+ * `tp_grid` and the banks are the point.
  */
 import { evaluateMildDipEntry, type MildDipEntryGates } from './gates.js';
 import type { MildDipExitReason } from './gates.js';
 
 /**
- * Soft exits: the bag faded, nothing broke. These are the ones that were
- * followed by an immediate rebuy of the same mint.
+ * Every exit that is a judgement rather than a floor. The bag faded, or ran out
+ * of patience — nothing broke that the entry gate cannot see for itself.
  */
 export const WOULD_BUY_DEFER_REASONS: ReadonlySet<string> = new Set([
   'peak_giveback',
@@ -33,6 +43,20 @@ export const WOULD_BUY_DEFER_REASONS: ReadonlySet<string> = new Set([
   'never_arm_dead',
   'never_arm_vol_fade',
   'breakeven_stop',
+  // 1.11.877 — time cuts included: these are the ones that churned.
+  'never_arm_time_red',
+  'never_arm_timeout',
+  'max_hold_underwater',
+]);
+
+/**
+ * The floors. Always sold; their coherence is enforced on the entry side, where
+ * `rebuy_below_exit` bars the mint and (since 1.11.876) no probe walks round it.
+ */
+export const NEVER_DEFER_REASONS: ReadonlySet<string> = new Set([
+  'hard_stop',
+  'cliff_dump',
+  'never_arm_freefall',
 ]);
 
 export type ExitDeferGates = {
@@ -91,8 +115,11 @@ export function shouldDeferSoftExit(args: {
 }): ExitDeferVerdict {
   const { gates, reason } = args;
   if (!gates.enabled) return { defer: false, reasons: ['disabled'] };
-  if (!reason || !WOULD_BUY_DEFER_REASONS.has(reason)) {
-    return { defer: false, reasons: ['reason_not_soft'] };
+  if (!reason || NEVER_DEFER_REASONS.has(reason)) {
+    return { defer: false, reasons: ['reason_is_a_floor'] };
+  }
+  if (!WOULD_BUY_DEFER_REASONS.has(reason)) {
+    return { defer: false, reasons: ['reason_not_deferrable'] };
   }
   if (gates.maxTotalMs > 0 && args.deferredMsSoFar >= gates.maxTotalMs) {
     return { defer: false, reasons: ['defer_budget_spent'] };
