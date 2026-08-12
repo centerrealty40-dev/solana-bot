@@ -233,3 +233,28 @@ describe('a green bag is managed by the green rule, not the dip ladder', () => {
     expect(at('green', 112)?.shouldExit).toBe(false);
   });
 });
+
+describe('the green lane costs nothing extra on the paid RPC', () => {
+  /**
+   * `forceFetch` decides which open bags get a stream sample, and every sample
+   * is a getTransaction on Helius. Green bags are excluded: the exit was fitted
+   * on a 26.8s tape and our free Dex marks run at 6.1s, so the paid stream buys
+   * no resolution the rule can use.
+   */
+  const forceFetch = (open: Record<string, { lane?: 'dip' | 'green' }>) => (mint: string) => {
+    const o = open[mint];
+    return Boolean(o) && o?.lane !== 'green';
+  };
+
+  it('samples dip bags and skips green ones', () => {
+    const f = forceFetch({ d: { lane: 'dip' }, g: { lane: 'green' }, legacy: {} });
+    expect(f('d')).toBe(true);
+    expect(f('g')).toBe(false);
+    // A bag opened before the lane field existed is a dip bag.
+    expect(f('legacy')).toBe(true);
+  });
+
+  it('does not sample a mint we do not hold', () => {
+    expect(forceFetch({})('nothing')).toBe(false);
+  });
+});
