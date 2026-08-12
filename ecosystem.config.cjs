@@ -3111,7 +3111,16 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT: '8',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '8',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS: '60000',
-        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT: '3',
+        /**
+         * 1.11.851 — the bounce may no longer sell while we are still red.
+         * REQUIRE_RED demanded the opposite (>=3% in the red), so the rule could
+         * not wait for the bounce to repay the dip: 6SyrTP dumped to −21.8%,
+         * reclaimed 16% off the trough, sold half at −7.42%, and was above entry
+         * twenty seconds later. Now it sells into a bounce only at breakeven or
+         * better; below that the −25% stop and time-red own the bag.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT: '0',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_PNL_PCT: '0',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION: '0.5',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_2_PCT: '16',
         /**

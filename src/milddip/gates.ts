@@ -190,6 +190,17 @@ export type MildDipExitGates = {
    */
   neverArmBounceRequireRedPct: number;
   /**
+   * 1.11.851 — floor on P&L before a bounce may sell.
+   *
+   * `neverArmBounceRequireRedPct` is the opposite gate: it *demands* the bag be
+   * at least N% red, so the rule was structurally forbidden from waiting for the
+   * bounce to carry us back. 6SyrTP dumped to −21.8%, reclaimed 16% off the
+   * trough, and the rule sold half at −7.42%; twenty seconds later the price was
+   * above entry. Set to 0 to sell into a bounce only once it has repaid the dip.
+   * −1000 = off.
+   */
+  neverArmBounceMinPnlPct: number;
+  /**
    * 1.11.759 — first bounce cut fraction (default 0.5). 0 or ≥1 = full bag on
    * first bounce (legacy).
    */
@@ -1043,6 +1054,10 @@ export function evaluateMildDipPeakGiveback(args: {
     gates.neverArmBounceMinTroughAgeMs > 0 ? gates.neverArmBounceMinTroughAgeMs : 0;
   const bounceRequireRed =
     gates.neverArmBounceRequireRedPct > 0 ? gates.neverArmBounceRequireRedPct : 0;
+  // Absent means off, so callers predating the floor keep their behaviour.
+  const bounceMinPnl = Number.isFinite(gates.neverArmBounceMinPnlPct)
+    ? Number(gates.neverArmBounceMinPnlPct)
+    : -1000;
   const bouncePartialFrac =
     gates.neverArmBouncePartialFraction > 0 && gates.neverArmBouncePartialFraction < 1
       ? gates.neverArmBouncePartialFraction
@@ -1058,7 +1073,8 @@ export function evaluateMildDipPeakGiveback(args: {
     bounceDumpNeed > 0 &&
     troughDumpPct <= -bounceDumpNeed + 1e-9 &&
     troughAgeMs >= bounceTroughAge &&
-    (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9);
+    (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9) &&
+    pnlPct >= bounceMinPnl - 1e-9;
 
   if (!armed && bounceBaseOk) {
     if (!scaleOutDone && bounceOffTroughPct >= bounceNeed - 1e-9) {

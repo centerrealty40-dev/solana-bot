@@ -556,6 +556,8 @@ const MildDipConfigSchema = z.object({
       .max(3_600_000)
       .default(60_000),
     neverArmBounceRequireRedPct: z.coerce.number().min(0).max(100).default(3),
+    /** 1.11.851 — bounce may only sell at or above this P&L. −1000 = off. */
+    neverArmBounceMinPnlPct: z.coerce.number().min(-1000).max(100).default(-1000),
     /** 1.11.759 — first bounce cut (0.5); 0 = full on first bounce. */
     neverArmBouncePartialFraction: z.coerce.number().min(0).max(1).default(0.5),
     /** 1.11.759 — second bounce for runner (default 16). */
@@ -701,6 +703,7 @@ export function loadMildDipConfig(): MildDipConfig {
       'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT',
       3,
     ),
+    neverArmBounceMinPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_PNL_PCT', -1000),
     neverArmBouncePartialFraction: envNum(
       'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION',
       0.5,

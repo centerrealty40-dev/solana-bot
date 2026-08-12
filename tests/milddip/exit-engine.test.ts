@@ -393,6 +393,44 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
+  describe('never sell into a red bounce (6SyrTP, 1.11.851)', () => {
+    // Entry 4.8871e-05, trough 3.8207e-05 (−21.8%), reclaim to 4.4354e-05.
+    // The old gate demanded >=3% red, so it sold half at −7.42%; twenty seconds
+    // later the mark was 4.9161e-05, above entry.
+    const ENTRY = 4.8871e-5;
+    const TROUGH = 3.8207e-5;
+    const bounced = { ...gates, neverArmBounceRequireRedPct: 0, neverArmBounceMinPnlPct: 0 };
+    const old = { ...gates, neverArmBounceRequireRedPct: 3, neverArmBounceMinPnlPct: -1000 };
+    const bag = (mint: string): MildDipOpenPosition => ({
+      ...pos({ mint, entryPriceUsd: ENTRY, peakPriceUsd: ENTRY, openedAtMs: 1_000_000 }),
+      postEntryTroughUsd: TROUGH,
+      postEntryTroughAtMs: 1_000_000,
+    });
+    const at = (g: typeof gates, mint: string, price: number) =>
+      decideMarkExit({ mint, pos: bag(mint), markPriceUsd: price, gates: g, nowMs: 1_130_000 });
+
+    it('the old gate sold the reclaim while still 7% down', () => {
+      const d = at(old, 'b_old', 4.5244e-5);
+      expect(d?.reason).toBe('never_arm_bounce');
+      expect(d?.pnlPct).toBeLessThan(-5);
+    });
+
+    it('now it holds through that same reclaim', () => {
+      expect(at(bounced, 'b_new', 4.5244e-5)?.shouldExit).toBe(false);
+    });
+
+    it('and sells once the bounce has repaid the dip', () => {
+      const d = at(bounced, 'b_green', 4.9611e-5);
+      expect(d?.reason).toBe('never_arm_bounce');
+      expect(d?.pnlPct).toBeGreaterThan(0);
+    });
+
+    it('leaves the −25% stop in charge below that', () => {
+      const d = at(bounced, 'b_stop', ENTRY * 0.7);
+      expect(d?.reason).toBe('hard_stop');
+    });
+  });
+
   it('updates peak and arms without exiting', () => {
     const p = pos({
       mint: 'm1',
