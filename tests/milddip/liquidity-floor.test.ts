@@ -25,24 +25,25 @@ describe('mild-dip liquidity floor', () => {
     return m ? m[1] : null;
   }
 
-  it('is raised to $15k on the trading lane', () => {
-    expect(Number(botEnv('MILD_DIP_MIN_LIQUIDITY_USD'))).toBe(15_000);
+  it('sits inside the range the leaders trade, at $6k', () => {
+    // 1288 leader buys with our own metrics within ten minutes: a $15k floor
+    // blocked 65.9% of them, the largest single blocker by far. Their median
+    // liquidity at entry is $11,344, p25 $6,726.
+    expect(Number(botEnv('MILD_DIP_MIN_LIQUIDITY_USD'))).toBe(6_000);
   });
 
-  it('stays inside the range the sample actually covers', () => {
+  it('does not go below the p10 of their entries', () => {
     const floor = Number(botEnv('MILD_DIP_MIN_LIQUIDITY_USD'));
-    // Below $10k the mean was negative in every split; above $25k the sample
-    // thins out to 76 bags and the relationship inverts.
-    expect(floor).toBeGreaterThanOrEqual(12_000);
-    expect(floor).toBeLessThanOrEqual(25_000);
+    expect(floor).toBeGreaterThanOrEqual(4_300);
+    expect(floor).toBeLessThanOrEqual(12_000);
   });
 
   it('leaves the observer lane untouched — it fits gates, it does not trade', () => {
     expect(eco).toContain("LEADER_OBSERVER_MIN_LIQUIDITY_USD: '5000'");
   });
 
-  it('keeps the volume and mcap floors where they were', () => {
-    expect(botEnv('MILD_DIP_MIN_VOLUME_5M_USD')).toBe('300');
+  it('keeps the mcap floor and carries the widened volume floor', () => {
+    expect(botEnv('MILD_DIP_MIN_VOLUME_5M_USD')).toBe('150');
     expect(botEnv('MILD_DIP_MIN_MCAP_USD')).toBe('5000');
   });
 });
