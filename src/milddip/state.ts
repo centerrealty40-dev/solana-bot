@@ -25,6 +25,11 @@ export type MildDipOpenPosition = {
    * serving P&L, where the money actually is.
    */
   entryMarkPriceUsd?: number;
+  /**
+   * 1.11.849 — rungs of the unbounded TP ladder already filled. Unlike
+   * `mfeBankStage` this is not capped: rung 9 is +72% MFE at an 8% step.
+   */
+  tpRungsDone?: number;
   /** Running low-water mark from entry (never-arm bounce / freefall). */
   postEntryTroughUsd?: number;
   /** When postEntryTroughUsd was last deepened. */

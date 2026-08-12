@@ -71,6 +71,24 @@ export type MildDipExitGates = {
    */
   mfeBankSleeveGivebackPct: number;
   /**
+   * 1.11.849 — Live Oscar's unbounded take-profit ladder, ported to mild-dip.
+   *
+   * Rung `k` fires at MFE ≥ k × `tpGridStepPct` and sells `tpGridSellFraction`
+   * of what is *left*, so the bag is never emptied by the ladder and a name that
+   * keeps climbing keeps paying. The two-rung bank it replaces sold 40% at +6%
+   * and the last 60% at +8%, which capped every winner near +7% while losers ran
+   * to the −25% stop.
+   *
+   * Oscar reference: `PAPER_TP_GRID_STEP_PNL` with an uncapped `maxK` loop
+   * (`tp-grid-effective.ts:42`) and `WAVE_B_FLAT_TP_HALF8_RUNNER` = +8% × 50%
+   * (`exit-policy-wave-b.ts:74`).
+   *
+   * 0 = off, and the mfe-bank ladder owns the armed path as before.
+   */
+  tpGridStepPct: number;
+  /** Fraction of the *remaining* bag sold at each rung (Oscar half8: 0.5). */
+  tpGridSellFraction: number;
+  /**
    * 1.11.821 — do not bank in the first N ms after entry; the SPL balance is
    * not settled yet and the sell just burns retries. 0 = off.
    */
@@ -493,6 +511,8 @@ export type MildDipExitReason =
   | 'peak_giveback_partial'
   | 'mfe_bank_1'
   | 'mfe_bank_2'
+  /** 1.11.849 — rung of the unbounded Oscar-style ladder. */
+  | 'tp_grid'
   | 'mfe_bank_sleeve'
   | 'never_arm_giveback'
   | 'never_arm_bounce'
@@ -697,6 +717,8 @@ export function evaluateMildDipPeakGiveback(args: {
    * and MFE banks (sell into strength) still fire.
    */
   oneshotDumpGraceActive?: boolean;
+  /** 1.11.849 — rungs of the unbounded ladder already filled on this bag. */
+  tpRungsDone?: number | null;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -707,6 +729,8 @@ export function evaluateMildDipPeakGiveback(args: {
   /** 1 = full / remainder; (0,1) = scale-out; 0 = no sell. */
   fraction: number;
   reason: MildDipExitReason;
+  /** Rung index this decision fills; null unless the reason is `tp_grid`. */
+  tpRungIndex: number | null;
   pnlPct: number;
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry trough (caller persists). */
@@ -795,6 +819,7 @@ export function evaluateMildDipPeakGiveback(args: {
     shouldExit: false as const,
     fraction: 0,
     reason: null as MildDipExitReason,
+    tpRungIndex: null as number | null,
     pnlPct,
     volFadeSamples,
     postEntryTroughPriceUsd,
@@ -859,8 +884,48 @@ export function evaluateMildDipPeakGiveback(args: {
     !scaleOutDone &&
     givebackPct <= -partialPct + 1e-9;
 
-  const bankOn = isMfeBankEnabled(gates);
-  if (bankOn) {
+  /**
+   * Unbounded ladder (Oscar half8_runner). Owns the take-profit path when on,
+   * and the sleeve below still trails whatever is left — the ladder never
+   * empties the bag, so a name that keeps climbing keeps paying.
+   */
+  const gridStep = gates.tpGridStepPct > 0 ? gates.tpGridStepPct : 0;
+  const rungsDone =
+    args.tpRungsDone != null && Number.isFinite(args.tpRungsDone)
+      ? Math.max(0, Math.floor(Number(args.tpRungsDone)))
+      : 0;
+  if (gridStep > 0) {
+    const gridFrac =
+      gates.tpGridSellFraction > 0 && gates.tpGridSellFraction < 1
+        ? gates.tpGridSellFraction
+        : 0.5;
+    const gridMinHold = gates.mfeBankMinHoldMs > 0 ? gates.mfeBankMinHoldMs : 0;
+    const gridReady = gridMinHold <= 0 || heldMs >= gridMinHold;
+    /**
+     * Rungs answer to the *current* price, as Oscar's do (`pnlFrac = xAvg − 1`,
+     * `tracker.ts:5541`), not to the peak. Measuring from the peak would leave
+     * every rung under a spent high still owed, and the ladder would dribble the
+     * bag out on the way down at prices the peak never represented.
+     *
+     * No upper rung. One rung per tick, as with the bank ladder, so a gap up
+     * does not fire several sells at once.
+     */
+    const gainPct = mfeBasis > 0 && markPriceUsd > 0 ? (markPriceUsd / mfeBasis - 1) * 100 : 0;
+    const maxK = Math.floor((gainPct + 1e-9) / gridStep);
+    if (gridReady && maxK > rungsDone) {
+      return {
+        ...hold,
+        shouldExit: true,
+        fraction: gridFrac,
+        reason: 'tp_grid',
+        tpRungIndex: rungsDone + 1,
+      };
+    }
+  }
+
+  const bankOn = gridStep <= 0 && isMfeBankEnabled(gates);
+  // The sleeve trails the remainder for both ladders, so the block is shared.
+  if (bankOn || gridStep > 0) {
     const f1 = gates.mfeBank1Fraction;
     const f2 =
       gates.mfeBank2Fraction > 0 && gates.mfeBank2Fraction < 1 - f1 + 1e-9
@@ -881,7 +946,7 @@ export function evaluateMildDipPeakGiveback(args: {
     // retrying, and the name went on to +32%.
     const bankMinHold = gates.mfeBankMinHoldMs > 0 ? gates.mfeBankMinHoldMs : 0;
     const bankReady = bankMinHold <= 0 || heldMs >= bankMinHold;
-    if (bankReady && mfeBankStage < 1 && mfePct >= lvl1 - 1e-9) {
+    if (bankOn && bankReady && mfeBankStage < 1 && mfePct >= lvl1 - 1e-9) {
       return {
         ...hold,
         shouldExit: true,
@@ -894,7 +959,7 @@ export function evaluateMildDipPeakGiveback(args: {
         reason: 'mfe_bank_1',
       };
     }
-    if (bankReady && mfeBankStage < 2 && f2 > 0 && lvl2 > 0 && mfePct >= lvl2 - 1e-9) {
+    if (bankOn && bankReady && mfeBankStage < 2 && f2 > 0 && lvl2 > 0 && mfePct >= lvl2 - 1e-9) {
       return {
         ...hold,
         shouldExit: true,
@@ -910,9 +975,11 @@ export function evaluateMildDipPeakGiveback(args: {
 
     // Wide sleeve / pre-bank armed giveback — soft, grace-deferred.
     if (!oneshotGrace && sleeveGb > 0 && givebackPct <= -sleeveGb + 1e-9) {
-      // After any bank: trail the remainder. Before bank1 but armed: protect
-      // the full bag if the early spike already gave back sleeve width.
-      if (mfeBankStage >= 1 || armed) {
+      // After any profit taken: trail the remainder. Before the first rung but
+      // armed: protect the full bag if the early spike already gave back sleeve
+      // width.
+      const tookProfit = gridStep > 0 ? rungsDone >= 1 : mfeBankStage >= 1;
+      if (tookProfit || armed) {
         const lossPartial =
           gates.mfeBankSleeveLossPartialFraction > 0 &&
           gates.mfeBankSleeveLossPartialFraction < 1

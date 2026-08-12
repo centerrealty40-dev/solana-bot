@@ -3131,6 +3131,15 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
         /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '12',
+        /**
+         * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):
+         * half the remainder at every +8%, no top rung. Replaces bank1 +6%/40% +
+         * bank2 +8%/60%, which emptied the bag by +8% and capped every winner
+         * near +7% while losers ran to the −25% stop. Loss exits untouched.
+         * 0 = back to the two-rung bank.
+         */
+        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
+        MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
