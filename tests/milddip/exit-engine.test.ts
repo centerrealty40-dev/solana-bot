@@ -648,6 +648,47 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
+  describe('MFE is never negative (1.11.869)', () => {
+    // A wait_dip seat parks on a signal and fills ~15% below it. Feeding that
+    // signal in as the movement basis opened bags at MFE −11%, so they could
+    // neither arm nor reach a rung until price climbed all the way back —
+    // AENK1YJ9 and Ggec8Zysy both sat for minutes doing nothing.
+    const g = { ...gates, mfeBank1Pct: 0, tpGridStepPct: 8, partialGivebackPct: 0, armPct: 5 };
+    const bag = (): MildDipOpenPosition => ({
+      ...pos({
+        mint: 'wd',
+        entryPriceUsd: 6.4317e-5,
+        peakPriceUsd: 6.4317e-5,
+        openedAtMs: 1_000_000,
+      }),
+      // Twenty-minute-old signal, 11.6% above the fill.
+      entryMarkPriceUsd: 7.18e-5,
+    });
+
+    it('reads zero, not −11%, when the basis sits above the peak', () => {
+      const d = decideMarkExit({
+        mint: 'wd',
+        pos: bag(),
+        markPriceUsd: 6.229e-5,
+        gates: g,
+        nowMs: 1_060_000,
+      });
+      expect(d?.mfePct).toBe(0);
+    });
+
+    it('a real gain still counts from the higher basis', () => {
+      const d = decideMarkExit({
+        mint: 'wd',
+        pos: bag(),
+        markPriceUsd: 7.18e-5 * 1.09,
+        gates: g,
+        nowMs: 1_060_000,
+      });
+      expect(d?.mfePct).toBeCloseTo(9, 1);
+      expect(d?.reason).toBe('tp_grid');
+    });
+  });
+
   it('updates peak and arms without exiting', () => {
     const p = pos({
       mint: 'm1',
