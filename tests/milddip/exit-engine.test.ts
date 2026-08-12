@@ -304,6 +304,48 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d.shouldExit).toBe(false);
     });
 
+    it('the bounce floor will not sell below our fill (7ZgRjHSn, 1.11.881)', () => {
+      // Filled 7.0630e-05 with the mark at 6.9050e-05. A min-pnl floor of 0 on
+      // the loss basis cleared at 6.9050e-05 - which is -2.24% of our money -
+      // and the half went out at -2.38%.
+      const FILL_B = 7.062982e-5;
+      const MARK_B = 6.905e-5;
+      const bounceGates = {
+        ...gates,
+        neverArmBounceMinDumpPct: 8,
+        neverArmBouncePct: 8,
+        neverArmBouncePartialFraction: 0.5,
+        neverArmBounceMinPnlPct: 0,
+        neverArmBounceRequireRedPct: 0,
+        neverArmBounceMinTroughAgeMs: 0,
+      };
+      const p = fresh('7zgrjh', FILL_B, MARK_B);
+      // Dumped well below, then reclaimed to just above the entry mark.
+      p.postEntryTroughUsd = MARK_B * 0.85;
+      p.postEntryTroughAtMs = 1_000_000;
+      const d = decideMarkExit({
+        mint: '7zgrjh',
+        pos: p,
+        markPriceUsd: MARK_B,
+        gates: bounceGates,
+        nowMs: 1_700_000,
+      })!;
+      expect(d.gainPct).toBeCloseTo(-2.24, 1);
+      expect(d.shouldExit).toBe(false);
+
+      // At our fill it may take the half.
+      const ok = decideMarkExit({
+        mint: '7zgrjh',
+        pos: p,
+        markPriceUsd: FILL_B,
+        gates: bounceGates,
+        nowMs: 1_700_000,
+      })!;
+      expect(ok.gainPct).toBeCloseTo(0, 6);
+      expect(ok.shouldExit).toBe(true);
+      expect(ok.reason).toBe('never_arm_bounce');
+    });
+
     it('still stops out on a real 25% fall measured from the entry mark', () => {
       const MARK = FILL * 0.97;
       const p = fresh('eub3c', FILL, MARK);

@@ -995,7 +995,8 @@ export function evaluateMildDipPeakGiveback(args: {
   // peak_giveback_partial). Past this age only green armed runners may wait
   // for TP / trail steps. Unarmed timeout stays in the never-arm branch below.
   const maxHoldCeil = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
-  if (armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && pnlPct <= 0) {
+  // "Underwater" is money, so it reads the gain basis (1.11.881).
+  if (armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && gainPct <= 0) {
     return { ...hold, shouldExit: true, fraction: 1, reason: 'max_hold_underwater' };
   }
 
@@ -1123,7 +1124,7 @@ export function evaluateMildDipPeakGiveback(args: {
         // EjD5Y9 / 4aWQZP…: full sleeve at −11% cut the bag into a later bounce.
         // Underwater: half first; runner waits for bounce reclaim (below), not
         // another continuous sleeve tick.
-        if (pnlPct < 0 && !scaleOutDone && lossPartial > 0) {
+        if (gainPct < 0 && !scaleOutDone && lossPartial > 0) {
           return {
             ...hold,
             shouldExit: true,
@@ -1131,7 +1132,7 @@ export function evaluateMildDipPeakGiveback(args: {
             reason: 'mfe_bank_sleeve',
           };
         }
-        if (!(pnlPct < 0 && scaleOutDone && lossPartial > 0)) {
+        if (!(gainPct < 0 && scaleOutDone && lossPartial > 0)) {
           return {
             ...hold,
             shouldExit: true,
@@ -1197,8 +1198,16 @@ export function evaluateMildDipPeakGiveback(args: {
     bounceDumpNeed > 0 &&
     troughDumpPct <= -bounceDumpNeed + 1e-9 &&
     troughAgeMs >= bounceTroughAge &&
-    (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9) &&
-    pnlPct >= bounceMinPnl - 1e-9;
+    /**
+     * 1.11.881 — both halves are money, so both read the gain basis.
+     *
+     * `bounceMinPnl` says "do not sell while we are losing", and on the loss
+     * basis that sentence is not true: 7ZgRjHSn filled at 7.0630e-05 with the
+     * mark at 6.9050e-05, so a floor of 0 cleared at 6.9050e-05 — which is
+     * −2.24% of our money. It sold at −2.38%.
+     */
+    (bounceRequireRed <= 0 || gainPct <= -bounceRequireRed + 1e-9) &&
+    gainPct >= bounceMinPnl - 1e-9;
 
   if (!armed && bounceBaseOk) {
     if (!scaleOutDone && bounceOffTroughPct >= bounceNeed - 1e-9) {
