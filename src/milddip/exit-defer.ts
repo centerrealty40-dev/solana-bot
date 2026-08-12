@@ -60,6 +60,26 @@ export const NEVER_DEFER_REASONS: ReadonlySet<string> = new Set([
   'never_arm_freefall',
 ]);
 
+/**
+ * 1.11.883 — exits taken *because* there is money on the table. Their whole
+ * purpose fails if the fill lands under our cost, so they carry a price floor
+ * into the executor and abandon the sell when the real quote cannot clear it.
+ *
+ * Everything else — the stops, the time cuts, dust — is getting out for reasons
+ * that do not care what the fill is, and must never be blocked by a floor.
+ */
+export const MONEY_MOTIVATED_EXIT_REASONS: ReadonlySet<string> = new Set([
+  'tp_grid',
+  'mfe_bank_1',
+  'mfe_bank_2',
+  'mfe_bank_sleeve',
+  'never_arm_bounce',
+  'breakeven_stop',
+  'peak_giveback',
+  'peak_giveback_partial',
+  'never_arm_giveback',
+]);
+
 export type ExitDeferGates = {
   enabled: boolean;
   /**

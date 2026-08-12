@@ -47,7 +47,7 @@ import {
   orderMintsForMark,
   type MarkExitDecision,
 } from './exit-engine.js';
-import { shouldDeferSoftExit } from './exit-defer.js';
+import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
@@ -1194,6 +1194,22 @@ async function executeQueuedSell(args: {
    * produced the `Custom:6024` bursts (three failed bank_2 legs over 11s on
    * `J7o48eA9q` before the node caught up).
    */
+  /**
+   * 1.11.883 — a sell taken because there is money on the table must not fill
+   * under our cost. The mark that decided it is a mid; the quote in the executor
+   * is the price we can get, and over 2009 sells those differed by a median
+   * 0.99% (p25 −3.59%). 8PecVcC took the bounce half at −3.26% with MFE 0.12%,
+   * twice. Cost is the gain basis: the fill, or the mark beside it when that sat
+   * higher. Stops and time cuts pass no floor — they are leaving regardless.
+   */
+  const costPriceUsd = Math.max(
+    pos.entryPriceUsd,
+    pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > 0 ? pos.entryMarkPriceUsd : 0,
+  );
+  const minExitPriceUsd =
+    MONEY_MOTIVATED_EXIT_REASONS.has(decision.reason) && costPriceUsd > 0
+      ? costPriceUsd
+      : undefined;
   const sell = await executeCopySell({
     cfg: copyCfg,
     mint,
@@ -1204,6 +1220,7 @@ async function executeQueuedSell(args: {
     fraction,
     leaderSignature: `milddip_exit_${decision.reason}_${nowMs}`,
     sellDelayMs: 0,
+    ...(minExitPriceUsd != null ? { minExitPriceUsd } : {}),
     ...(pos.tokenRawSettled && pos.tokenRaw ? { tokenRawBase: pos.tokenRaw } : {}),
   });
 
