@@ -1,0 +1,5588 @@
+{
+  "window": {
+    "cutTs": 1786071201133,
+    "nowTs": 1786287201133,
+    "buys": 1780,
+    "sells": 2644,
+    "attempts": 2503,
+    "uniqueMints": 345,
+    "approxPnlUsd": -316.37,
+    "byMint": {
+      "6uqQKeiKc1DLj9UQDbfomKukV3e5tLVZYadBAGAgpump": {
+        "buys": 11,
+        "sells": 17,
+        "pnlUsd": -0.68,
+        "inUsd": 60.0
+      },
+      "HDgkikLfWm4CuFVXVrfja8cApnHyWgEcx4ULFEsNpump": {
+        "buys": 8,
+        "sells": 15,
+        "pnlUsd": 1.87,
+        "inUsd": 40.0
+      },
+      "AA3VLt3muGJiXedDaMnkcst3pfjrg1JBxgHVSdSbpump": {
+        "buys": 41,
+        "sells": 60,
+        "pnlUsd": -4.31,
+        "inUsd": 317.51
+      },
+      "6gTwUQGMFq2GMNYgvb4ejjDqCBoN7Gs87jToemYopump": {
+        "buys": 9,
+        "sells": 14,
+        "pnlUsd": 0.26,
+        "inUsd": 45.0
+      },
+      "AaNUVAt87ZxYdzcSXakFNKvXs4FwKm5KZBjTx5wupump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": -0.37,
+        "inUsd": 15.0
+      },
+      "8T6rjb3eFjcj4gpJ2oztFg6fceqYfgrRmifPiBx5pump": {
+        "buys": 3,
+        "sells": 6,
+        "pnlUsd": 0.98,
+        "inUsd": 15.0
+      },
+      "ERPtViqckt1zqpS2abUx67CgLcP54CkhBPYz3yRUpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.18,
+        "inUsd": 5.0
+      },
+      "5FUTTMiN9KqZkPsk4q9Kpp6kmweRKTrJrdhhv5DKpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.05,
+        "inUsd": 5.0
+      },
+      "52onynupVEfZRpxmahVAdY4XiFUiPzXK3YJkK4rkpump": {
+        "buys": 6,
+        "sells": 13,
+        "pnlUsd": 1.14,
+        "inUsd": 30.0
+      },
+      "4jEbdEWatK6ubnK915keqyu9T9EVmN7P87Vg7LpKpump": {
+        "buys": 6,
+        "sells": 8,
+        "pnlUsd": -2.92,
+        "inUsd": 30.0
+      },
+      "Gs2LiwnYtHPNmRqwzMChKKcdZQfDsvm782dwzuqQpump": {
+        "buys": 24,
+        "sells": 33,
+        "pnlUsd": 0.46,
+        "inUsd": 125.0
+      },
+      "14doqPq3fLzx6kB4JRRnCMDPPLeGmGXd6QY5ZGXqpump": {
+        "buys": 19,
+        "sells": 27,
+        "pnlUsd": -3.47,
+        "inUsd": 105.12
+      },
+      "77rUTY78vqn1MAaWMFW2dFQ9fHNr2WubS8e6P3nhpump": {
+        "buys": 9,
+        "sells": 10,
+        "pnlUsd": -1.39,
+        "inUsd": 44.66
+      },
+      "5tynJZYuv9r3LA5ingBgnNYn5PXtUcYEpbYhaA4upump": {
+        "buys": 6,
+        "sells": 12,
+        "pnlUsd": 2.74,
+        "inUsd": 30.0
+      },
+      "szCDnaEsNX5LbNu6xoGqpy4jQYmcgopWwkwogTTpump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": -2.35,
+        "inUsd": 15.0
+      },
+      "3SCBYq9kQ5GEgfwzFnvdZy5e1prG1DXwExDYh2n2pump": {
+        "buys": 4,
+        "sells": 4,
+        "pnlUsd": -2.02,
+        "inUsd": 20.0
+      },
+      "DHKfiAzT1uhMXdLZyHzbPU1TmVX7jgR4rkeYcQq3pump": {
+        "buys": 3,
+        "sells": 6,
+        "pnlUsd": 0.21,
+        "inUsd": 15.0
+      },
+      "B7wGz1pcn3FR8EimxZf2yLWFKg9KSLumqrTX6MaYpump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": -0.23,
+        "inUsd": 15.0
+      },
+      "H83D7mvT1sWuQCUJZzJDVLuCwB6e2fRk3a8VGwj5pump": {
+        "buys": 6,
+        "sells": 9,
+        "pnlUsd": -3.59,
+        "inUsd": 30.0
+      },
+      "vKMkWJhhRfG7Yh82AqESD3PxTraZNZueTsnKRtspump": {
+        "buys": 5,
+        "sells": 10,
+        "pnlUsd": -0.05,
+        "inUsd": 25.0
+      },
+      "8HykgZKXNpMhfxQtDPb7AayRKJonZaQ8Mw1Xo3xmpump": {
+        "buys": 12,
+        "sells": 15,
+        "pnlUsd": -1.2,
+        "inUsd": 65.0
+      },
+      "GvvEvvh9D3zyKhWNRhVWsaB1o8UYHt7mYRrpCmjopump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 2.33,
+        "inUsd": 5.0
+      },
+      "3c32HTEvDVQC71irgNwQ6HX69Kw387V1aWBn76ugpump": {
+        "buys": 46,
+        "sells": 58,
+        "pnlUsd": -4.42,
+        "inUsd": 303.75
+      },
+      "2F1Kg37Fsjg53fwUKGeTjPjSMeUmPbRqFArNksBapump": {
+        "buys": 7,
+        "sells": 12,
+        "pnlUsd": 0.33,
+        "inUsd": 35.0
+      },
+      "AwvwgWt7gZ9seYtzcK8LLSS8hCTfyQnRpAWN135Vpump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": 2.61,
+        "inUsd": 10.0
+      },
+      "3S5mGWH54YAtjoWNHEEA6rhCC6vFTzpFVzAGiwyepump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.18,
+        "inUsd": 5.0
+      },
+      "24Kko3VWwMKtkB9CVct2ZAZgJzb2R2iNrYxCpTYFpump": {
+        "buys": 5,
+        "sells": 11,
+        "pnlUsd": 3.48,
+        "inUsd": 64.94
+      },
+      "DZchfuc2Jom3m6zovzFNTREH4Tm4zx6mAavHCDLbpump": {
+        "buys": 6,
+        "sells": 7,
+        "pnlUsd": -2.78,
+        "inUsd": 45.0
+      },
+      "EygStH4gHv1h4E8w4raYv6NGsrDiij3nbfCc26iTpump": {
+        "buys": 4,
+        "sells": 7,
+        "pnlUsd": 0.86,
+        "inUsd": 30.759999999999998
+      },
+      "Am8iBffqgaedfdK5XhtorbcRrKzwH9nyL3ySikQfpump": {
+        "buys": 6,
+        "sells": 9,
+        "pnlUsd": 2.76,
+        "inUsd": 55.0
+      },
+      "68GYUJW31GSJwLz44HGGQYaGXpG5iiWwYGiWxZ6apump": {
+        "buys": 37,
+        "sells": 51,
+        "pnlUsd": 0.98,
+        "inUsd": 225.0
+      },
+      "3c7uGViL2KZoFcuktqF8e9FZJpdS3595Ry2q4u5ypump": {
+        "buys": 4,
+        "sells": 8,
+        "pnlUsd": 1.06,
+        "inUsd": 20.0
+      },
+      "74q9g2GxfG2JgNBz2mdLFFETYPDXBsVYr2F3RHZbpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.32,
+        "inUsd": 10.0
+      },
+      "FZ7cGUFj3bryP7cTJbRVtsbJKReP3DHn9QvnXF9jpump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -0.49,
+        "inUsd": 10.0
+      },
+      "9gtczc83Potty656ZsJWPHKxMugaGvQtnoNHAcZCpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.36,
+        "inUsd": 5.0
+      },
+      "2sQ7wuUtRWNir3CEu9HWfLDSut4AszDrcZXLobzJpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.21,
+        "inUsd": 5.0
+      },
+      "BwWAFDX9QdaHQGTmLFWN2NFAiJnCnD2JaaZpihFbpump": {
+        "buys": 5,
+        "sells": 5,
+        "pnlUsd": -1.79,
+        "inUsd": 50.0
+      },
+      "5zEZ8jtdTYsh2LhoB72dpPTakGNUvXPPEE8CCkqRpump": {
+        "buys": 4,
+        "sells": 7,
+        "pnlUsd": -0.39,
+        "inUsd": 20.0
+      },
+      "kMKX8hBaj3BTRBbeYix9c16EieBP5dih8DTSSwCpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.24,
+        "inUsd": 5.0
+      },
+      "2YxEmTED9G5ZpxwfBHuVzPVQ4TfMYTAjMo5Tx1WApump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -0.53,
+        "inUsd": 10.0
+      },
+      "BskTzLF97H8gwppQsUthepCWXpRMbSygnVHRmNw9pump": {
+        "buys": 3,
+        "sells": 3,
+        "pnlUsd": -1.11,
+        "inUsd": 15.0
+      },
+      "DNpJdjDGpZzKj8Raue2LD53v6ZrVGpNVHEZmbpA3pump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": -0.46,
+        "inUsd": 15.0
+      },
+      "6ZHyei7C4yZrJvsQeBHRDGD7HXpA28sWsTuY2rnUpump": {
+        "buys": 14,
+        "sells": 19,
+        "pnlUsd": 6.21,
+        "inUsd": 85.0
+      },
+      "8tRixAM6xbzUXoU4VTDW5CrxfXC35nV43NPv8G9Tpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.59,
+        "inUsd": 10.0
+      },
+      "76yPcGUMzHeMvWw1SBcmx4H2ve4SyKCCAE158ZD8pump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -1.84,
+        "inUsd": 10.0
+      },
+      "BBhTbMvpQMgsoMdhHC4RQaw66aDGFr4QuHZxKdmxpump": {
+        "buys": 4,
+        "sells": 5,
+        "pnlUsd": -0.11,
+        "inUsd": 20.0
+      },
+      "9KbgSh6XZaHiDBQE26tGTDuJuUZmVyvJGGabrE7fpump": {
+        "buys": 1,
+        "sells": 0,
+        "pnlUsd": 0.0,
+        "inUsd": 5.0
+      },
+      "EpkUue8SvNBiYW1XKPPBPKm5tPAL1mqwKqab9KwApump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.16,
+        "inUsd": 10.0
+      },
+      "7WmG1z9ysDhAWY7vCGkbhAG3zCaVUzzZrEAUj1hjpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.16,
+        "inUsd": 10.0
+      },
+      "89gZQFtEe3RJctXghdbEmht8SV2vQvcN4DNyjmappump": {
+        "buys": 6,
+        "sells": 5,
+        "pnlUsd": -1.6,
+        "inUsd": 48.09
+      },
+      "5PuBwTf2Jj9bNJwe8ziJuZSgT1wiisEkgYonuh4Apump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": -1.85,
+        "inUsd": 15.0
+      },
+      "F2SD9jTbiAWyZ9Ss7kvFCr95o4TdfjsHSQRGSJ4Xpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.26,
+        "inUsd": 5.0
+      },
+      "FwugNg7wHbQ53dv7Wr2DWPNcaCxEtqk7o87S3Svzpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -2.53,
+        "inUsd": 5.0
+      },
+      "Aq2idw7BeJX2WfNek6jGnp1z2s79CpFYZXo2zCF1pump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": 2.32,
+        "inUsd": 10.0
+      },
+      "EmcRQ5zAkyCp1JW6S81zBBJaTK5D2UJ3JYDaNC9Cpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.68,
+        "inUsd": 10.0
+      },
+      "CMNDT7PK5gHY8ZknhzEC2Q7UMDs2b7LT6c1eX7Kepump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 1.92,
+        "inUsd": 5.0
+      },
+      "G3aQy6aJpZJeVzByqLTq5Atk7ZRhw2v7XBvtGVfipump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": -0.77,
+        "inUsd": 5.0
+      },
+      "5DYZsk9U2mrqn7ypNbWcEAzcvBnGes3ZYFtRe24Lpump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": -0.99,
+        "inUsd": 15.0
+      },
+      "4ZETTdyBqqJZegJ2YKzuFqCcasDFFdTJ68xfA2F8pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.27,
+        "inUsd": 5.0
+      },
+      "Br1JxELQYP34YdRW4gbEPLasHEtyz8eCmT2FvmnYpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.53,
+        "inUsd": 5.0
+      },
+      "7K4jGRV7PY1EymiY3jx75JSfi1jjzG7Gh5XHqF2Upump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -0.88,
+        "inUsd": 10.0
+      },
+      "7zz1pFtqveHRsxbb6Bpgbi9EHmorFqm5pDDfuYwJpump": {
+        "buys": 4,
+        "sells": 8,
+        "pnlUsd": 2.24,
+        "inUsd": 20.0
+      },
+      "8goERtSRyTf1DPNQZcrb9Q2uriqCi6Ui6UqtaH1Fpump": {
+        "buys": 15,
+        "sells": 22,
+        "pnlUsd": -0.82,
+        "inUsd": 75.0
+      },
+      "GJqCjtgEwqdFWVRsDs8JXKFoTeRVZeHs1RL4ccvrpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.14,
+        "inUsd": 5.0
+      },
+      "C1rBBXwHPRHeBDhbwSrdGy9EMR9E1AntVg6dabKGpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.43,
+        "inUsd": 5.0
+      },
+      "DgwLa53Xr8VbGGadB5MP9X469kBk36k6XfEccNnSpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": 0.34,
+        "inUsd": 10.0
+      },
+      "AZVALD2uLnvV19QQpbkeSk7ZiU7mDAVpbSBdMknupump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 0.06,
+        "inUsd": 5.0
+      },
+      "89LQmLpgxM53SMaNCeX1KuNjUQCTqdqvyt1rzmR1pump": {
+        "buys": 5,
+        "sells": 9,
+        "pnlUsd": -0.61,
+        "inUsd": 25.0
+      },
+      "GKaYkXHF6n5mKQ9htxWjN1SaXw7nTXQT4Y8S8vMYpump": {
+        "buys": 11,
+        "sells": 17,
+        "pnlUsd": 1.19,
+        "inUsd": 59.09
+      },
+      "4Jdwem6D8NyzBS4QkznGfFscjA4uGgJyV4gCX1Njpump": {
+        "buys": 5,
+        "sells": 8,
+        "pnlUsd": -0.16,
+        "inUsd": 22.66
+      },
+      "DxnPojFH2FfeEqwq6DhBhEFEyvrgbeTNZ3tSUW3rpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -0.64,
+        "inUsd": 5.0
+      },
+      "FSMzGYJNbT3z8TDcXfp1xQrFJjRcbHarVFGMBT37dpdx": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -4.48,
+        "inUsd": 5.0
+      },
+      "7C17GMDWxy2wCggRXEKKeTY21B84mT9vv9c6b1vTpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.02,
+        "inUsd": 10.0
+      },
+      "cgY5g4QNqUd8DoouygrJ6ydARsoGi6NFRBi7Uajpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.74,
+        "inUsd": 5.0
+      },
+      "EnA53NmMzfsAs7p44dATdvT55HHUACxpEbC9AKY3pump": {
+        "buys": 26,
+        "sells": 31,
+        "pnlUsd": -1.32,
+        "inUsd": 132.73
+      },
+      "DecBThKjPiZyiaQ8Yvr2t6u9Jky9mF2shqXry7m5pump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": 0.36,
+        "inUsd": 10.0
+      },
+      "73W3hcoQDRSsLVLT9JcrKwkoCD7ag7UerWLd1PWZpump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -4.15,
+        "inUsd": 10.0
+      },
+      "2ZP5S3p6UoxNPzTs2Gw1LiCrZoBhDpvjisTdjC2vpump": {
+        "buys": 3,
+        "sells": 6,
+        "pnlUsd": 0.13,
+        "inUsd": 15.0
+      },
+      "FLq6s9GwF1TQ8xZLz7EmDJnDMKPoMUXaEayHbtZUpump": {
+        "buys": 24,
+        "sells": 32,
+        "pnlUsd": -2.94,
+        "inUsd": 129.69
+      },
+      "8gL6cRbgB1xa5wmm3k6rv61DU7wGgYFqDgX7zaVnpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.26,
+        "inUsd": 5.0
+      },
+      "9gTCi7fUc72xiYAUu8Tts8Gtoh54Q6YuN6V4683wqeHF": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.93,
+        "inUsd": 10.0
+      },
+      "7rMnp9EJd61SvNn8LGc7SAJeQxM36oeECKmP2a7opump": {
+        "buys": 11,
+        "sells": 16,
+        "pnlUsd": -0.73,
+        "inUsd": 110.95
+      },
+      "U5cWTiLbzWXWktD1E12youDeRfugbw4qKTsV3hF2mhd": {
+        "buys": 1,
+        "sells": 0,
+        "pnlUsd": 0.0,
+        "inUsd": 5.0
+      },
+      "DLtW3nX7tqMvY4CKCUGpwZ8S6ZanQC4Azw66p1Xqpump": {
+        "buys": 5,
+        "sells": 8,
+        "pnlUsd": -0.79,
+        "inUsd": 25.0
+      },
+      "89RAitwPJBEfLK4Gcg5iv7AjFABHWNvoD5rkvRkvpump": {
+        "buys": 4,
+        "sells": 5,
+        "pnlUsd": -1.3,
+        "inUsd": 25.0
+      },
+      "4R3QTEwaELKFkVCKqszxUugSxNMU2A8pub69daUjpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 0.48,
+        "inUsd": 5.0
+      },
+      "4zEh89StirBvyHgiphKHNYAi8Fa6FVzVZjNUffcQpump": {
+        "buys": 16,
+        "sells": 17,
+        "pnlUsd": -3.0,
+        "inUsd": 77.8
+      },
+      "B6kWn7NHF79LweJHn323nP6hAp2viHhV9DjVrNqzpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.57,
+        "inUsd": 5.0
+      },
+      "Gv2i54czMSYbkygCKhLRYc59JNVtfrofFwd9mPqZpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.08,
+        "inUsd": 5.0
+      },
+      "76vPMYvU7Gv1h1GsuY45XxcuF19JKfkYgKdmwe7Ypump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": 0.04,
+        "inUsd": 15.0
+      },
+      "DhaLZtprNqwpUYqhrTrtnCGSuxsdnk489UqSrZj3pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.05,
+        "inUsd": 5.0
+      },
+      "9rhzpq2bA5uWvPHBouMNz94oJroCjm4aDHQ5dw2KQkpk": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.05,
+        "inUsd": 5.0
+      },
+      "gAshQBpVGDRAtL9y6C5fJvVkA5cMWVR6c58w4XWpump": {
+        "buys": 6,
+        "sells": 13,
+        "pnlUsd": 15.82,
+        "inUsd": 86.59
+      },
+      "745a6Rb51P2MDig8nxWfctxsz7PQvodeqa1WTSRwpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 2.05,
+        "inUsd": 5.0
+      },
+      "FeMbDoX7R1Psc4GEcvJdsbNbZA3bfztcyDCatJVJpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.23,
+        "inUsd": 15.0
+      },
+      "9nXkTPZETP9hrntNYgxQSeDzwbhrExhFqKJPb5Z6pump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": 0.98,
+        "inUsd": 15.0
+      },
+      "Ch7pPPyLh3kht1Lwfg8567Zth2yWcfakZgsmuzrifY37": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": -2.34,
+        "inUsd": 10.0
+      },
+      "8kzojNtviuzBWdb1C6ikc4fdPatTgYnnubBFbrvGpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 2.14,
+        "inUsd": 5.0
+      },
+      "2qyejm9SjVF4pVTxT5rzRmnrWmeqscU7X7RkVHtQpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.67,
+        "inUsd": 5.0
+      },
+      "31Uu7V9LioM1AGpEq8aetQqBS9ydRqqHY2zFUvpU74dR": {
+        "buys": 1,
+        "sells": 0,
+        "pnlUsd": 0.0,
+        "inUsd": 5.0
+      },
+      "DUxbHHy34XSoo6cjeeiiTMUu12UyoNWbvvMUWcvjpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 5.66,
+        "inUsd": 5.0
+      },
+      "7V6Sk63y8Rr1MvcN5mYNp61wgFhy4EeQg5gUASk9pump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.3,
+        "inUsd": 10.0
+      },
+      "4EwThF8mX2qtLSpB65onrQMs2458zuuHHjPieNLPpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": 0.11,
+        "inUsd": 10.0
+      },
+      "6fEaYuzirTMXFnFo7dGKHJs8wWVFPdh1bfZL9oRPpump": {
+        "buys": 7,
+        "sells": 9,
+        "pnlUsd": -7.03,
+        "inUsd": 115.0
+      },
+      "4kPwzg16LNk6sicnz2UU51sxs3GG2zmSyPAcdQbcpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -5.0,
+        "inUsd": 5.0
+      },
+      "4FqqLmDcRTeFBJkGUemYwhsUuSPCdUPS6TWqDaLCpump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -0.15,
+        "inUsd": 7.07
+      },
+      "Agmu8Xgn7rU4zFv4DMPrEBhYDdPsmiEG5hCiYyvSpump": {
+        "buys": 12,
+        "sells": 17,
+        "pnlUsd": 0.37,
+        "inUsd": 70.0
+      },
+      "9zhm31VfoFserX2Rr1efS5p47Wc8GUyGZbrorgWDpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": 2.36,
+        "inUsd": 10.0
+      },
+      "8Byg9wi43TNzgJpYta6UXxPz3LPe8v6ZwvmWWoWQpump": {
+        "buys": 5,
+        "sells": 5,
+        "pnlUsd": -1.69,
+        "inUsd": 40.0
+      },
+      "44eFuquSFU8aC6Nn3LWmNapFn8f5WzwxrYEnJXjspump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.03,
+        "inUsd": 5.0
+      },
+      "HBrfYZgeLKdSvBBGnGkvAK4563pq8oBGpgNFAaespump": {
+        "buys": 6,
+        "sells": 8,
+        "pnlUsd": 0.19,
+        "inUsd": 53.13
+      },
+      "F6Tbmw6bosL5nEopb1UeykhocaWiXMdkcHsVGbvypump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.63,
+        "inUsd": 5.0
+      },
+      "21rKrtBzibPAZHAHQRzGiGDSh7XimCKB2a8VgsjZpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.2,
+        "inUsd": 10.0
+      },
+      "mNzssXQ9hU1ASJ1CVuu4JjrFBrfeVdR2JzirKS3pump": {
+        "buys": 7,
+        "sells": 10,
+        "pnlUsd": -9.24,
+        "inUsd": 160.0
+      },
+      "DkSJKm11B4PKLZWGx7EuXAxacGEjpMeUkk68oRxepump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.08,
+        "inUsd": 5.0
+      },
+      "42cXQvAAr7hcPBPWAS4ocVtDyeJ4Fa6gRR2uG4gppump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 0.11,
+        "inUsd": 10.0
+      },
+      "H2yHLoC24dM5v1Vjh2Poqx7fZ9mp8EfR2MYseXScpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.22,
+        "inUsd": 10.0
+      },
+      "3m5WmiAs3TewbB9S96jpwuGfodTnn4PVM8a1ytVQpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": 0.58,
+        "inUsd": 10.0
+      },
+      "CMjdAEAPmnAiqjpLsPq3eoNmSZMfZwMktwL8mom6pump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.09,
+        "inUsd": 5.0
+      },
+      "HuZ2yj2H4crjHt43PieWS5iSQ5p2G6BFnEHvMFaUpump": {
+        "buys": 16,
+        "sells": 17,
+        "pnlUsd": -5.67,
+        "inUsd": 150.0
+      },
+      "3XEe11RMNqNTka33ik2yEmr3siUWmFQWSESP9Ejepump": {
+        "buys": 4,
+        "sells": 6,
+        "pnlUsd": 0.09,
+        "inUsd": 40.0
+      },
+      "2ABbnf3EzGfiMa3PE2bseAWwRD4jAE4KgE8YjSTxpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.04,
+        "inUsd": 5.0
+      },
+      "2u3ufZ5defxwPXMixvvQpSs68PDNzHTdE52t9Crspump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.05,
+        "inUsd": 10.0
+      },
+      "22oWMe4xmvS5TogkbMLKALnUhgXxB2KYB8TRG9YRpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.28,
+        "inUsd": 5.0
+      },
+      "CgnQ8a1u99Gk7qoySMd2wrGPMPm9bdcSJNhqMEkYpump": {
+        "buys": 9,
+        "sells": 11,
+        "pnlUsd": -2.96,
+        "inUsd": 57.17
+      },
+      "DTiLUGhzmtP3wZC6tXRXtxYPUxztvnQMxAW54ZtKpump": {
+        "buys": 4,
+        "sells": 6,
+        "pnlUsd": 0.07,
+        "inUsd": 22.09
+      },
+      "E2BLSv4tXo7qA4Pr3nkJqxyn6743peC7x8E9D5s8pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.05,
+        "inUsd": 5.0
+      },
+      "BDdzUjksj1J4bSnMveQ5tV9Up8A9c6YS1tHrxNw3pump": {
+        "buys": 6,
+        "sells": 9,
+        "pnlUsd": -0.27,
+        "inUsd": 61.59
+      },
+      "4kLGtsRthjapD7xdnZ5WzzZiTdZfuScmDm6X1fX1pump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": -2.49,
+        "inUsd": 15.0
+      },
+      "BzMNYpPqRsdzRAnZ3r7FrPHJzeQfFMSar9agV41Tpump": {
+        "buys": 12,
+        "sells": 16,
+        "pnlUsd": -9.33,
+        "inUsd": 60.0
+      },
+      "YBPUY1zz2QV1vk9X81YekCJC7MNbVxcscQxBiE2pump": {
+        "buys": 14,
+        "sells": 19,
+        "pnlUsd": -3.0,
+        "inUsd": 67.51
+      },
+      "HYMQdBEnaDfU1yjj45zMaEQqjyLBzCfxt55djQGEpump": {
+        "buys": 6,
+        "sells": 8,
+        "pnlUsd": -4.1,
+        "inUsd": 30.0
+      },
+      "9FPgr2XStXpUbhVGKH12agq5dggmWwFRFcXu4QGKpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.35,
+        "inUsd": 5.0
+      },
+      "DyKoCHKYn69hd2nW1rjRfScYdGz1YK4YahoN3ak8pump": {
+        "buys": 4,
+        "sells": 8,
+        "pnlUsd": 0.91,
+        "inUsd": 25.0
+      },
+      "9uNefL6BciwknzLCkJ8BbXyf6CEuhrYeF7biyngHpump": {
+        "buys": 4,
+        "sells": 5,
+        "pnlUsd": -1.87,
+        "inUsd": 20.0
+      },
+      "HHkEX3Acy7bxqPQKnfFRYgPpnxwd859hVa5iXuGqpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.48,
+        "inUsd": 5.0
+      },
+      "Fvvj98QtaA3RjVgeQn79NokiMaLgBRje1Q9bXetwpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.55,
+        "inUsd": 5.0
+      },
+      "3kvTbEoFYAvJbezM6bkJ8fDEQQN28hiL17wgifa6pump": {
+        "buys": 7,
+        "sells": 10,
+        "pnlUsd": 3.6,
+        "inUsd": 35.0
+      },
+      "9jVRLpzqYQBBhVejgtvCrBnivng62fjWrHxePh79pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.14,
+        "inUsd": 5.0
+      },
+      "3DrBHMJ1rnWp7mMRNmNbWbp4zNiHkM483GqXSzRPpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.09,
+        "inUsd": 5.0
+      },
+      "3taE4SdY29sa3fnwyWqfshudJ95gMb9LoFTy5Uuppump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": 0.05,
+        "inUsd": 10.0
+      },
+      "6pioT4Wv2WkJKaCXPH9B6JXXU4yEwm8whmwtZWDUpump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": 0.04,
+        "inUsd": 10.0
+      },
+      "2YxBvZ4BwYtoLdzf7pDAAQ6kExX94q5nz8RrLaPHpump": {
+        "buys": 8,
+        "sells": 10,
+        "pnlUsd": -0.87,
+        "inUsd": 40.0
+      },
+      "D6j8LoE5QQuFjQT8d9td2qktYZxNW4S5KvQx2iBRpump": {
+        "buys": 8,
+        "sells": 12,
+        "pnlUsd": 1.68,
+        "inUsd": 40.0
+      },
+      "7hmVkPXmVagxoptAEpx4jBzZVHwGLdFj6c1y42qxpump": {
+        "buys": 16,
+        "sells": 25,
+        "pnlUsd": 9.55,
+        "inUsd": 129.57
+      },
+      "5tbKMipeRkK8JeAWfXKfsWWdXKgLo7XKf38ZDQtzpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.64,
+        "inUsd": 5.0
+      },
+      "1qQgc7MijFdoEUeDfvdsgL1JrsQkY4ric2ptM5Zpump": {
+        "buys": 13,
+        "sells": 12,
+        "pnlUsd": -3.02,
+        "inUsd": 65.0
+      },
+      "5A9PvTNnHcBUrk1ujkQVQx4gSBkAkBqbGU2yGa3pump": {
+        "buys": 4,
+        "sells": 5,
+        "pnlUsd": -2.16,
+        "inUsd": 20.0
+      },
+      "6f8ZQhxqfigdv7UszZ1rirbV7Sgv83s3rxv1N2Zopump": {
+        "buys": 8,
+        "sells": 15,
+        "pnlUsd": 1.58,
+        "inUsd": 89.6
+      },
+      "7U3io2T7S9ce2hpyLCejHBDQV5Q4UEDAPeshxSm2pump": {
+        "buys": 28,
+        "sells": 27,
+        "pnlUsd": -10.34,
+        "inUsd": 136.39000000000001
+      },
+      "9pv39fsTSPcDwj4GCnDMoBG7qjSs1YzbhwGonvs8pump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -1.15,
+        "inUsd": 10.0
+      },
+      "Ai66LHZG9MCzg1WKdawwqduVAXpNDUuV8M3uyq5ppump": {
+        "buys": 7,
+        "sells": 11,
+        "pnlUsd": 2.11,
+        "inUsd": 86.29
+      },
+      "GGkmPdY5ifsYj6RKsxH1mFSJWXvhFHsdWP1Pf1eSpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -3.86,
+        "inUsd": 5.0
+      },
+      "Ge87EtsjwRQbHaqQmKRno69RFTwh9bfSsm99XNxTpump": {
+        "buys": 18,
+        "sells": 32,
+        "pnlUsd": 5.67,
+        "inUsd": 190.08999999999997
+      },
+      "J8PSdNP3QewKq2Z1JJJFDMaqF7KcaiJhR7gbr5KZpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.41,
+        "inUsd": 10.0
+      },
+      "HUNHmLNkfeunV5H1bb6rcAS8eQ5kbrCFo9HFxzqcpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.02,
+        "inUsd": 5.0
+      },
+      "2jrPeHZ9wt2pBTxPEuyNzDtJRTQDEbWhSoXYWsLHpump": {
+        "buys": 14,
+        "sells": 21,
+        "pnlUsd": 3.68,
+        "inUsd": 75.0
+      },
+      "5sd8bKraewJNHFg72scxxYXNeLCASVct1gxqi3Xipump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -0.13,
+        "inUsd": 10.0
+      },
+      "WTLwm2eufW5HFQneMSnMhVnLnuydsoY7ZGkhKFjpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.66,
+        "inUsd": 5.0
+      },
+      "3UGJHrLqzbX4g7GdAWAn5XkhVApT4WHxAewntuWJpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 0.19,
+        "inUsd": 5.0
+      },
+      "G7biqxzVp1xsxevqCCkCiYnweikDMKmK3q8LPHKNc1ip": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.07,
+        "inUsd": 5.0
+      },
+      "GsyjVZkKeSowzvpks9gJrznnyHTF21A4cu9TiGBCpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.03,
+        "inUsd": 5.0
+      },
+      "7EQ6KNS13aynsgxGFWDh648siGZrxuH335T1WGGhpump": {
+        "buys": 7,
+        "sells": 10,
+        "pnlUsd": -0.59,
+        "inUsd": 34.66
+      },
+      "BiTt2dobZm7YpNPGJjBqJcCUpUwFxYAFHfMBBazopump": {
+        "buys": 3,
+        "sells": 3,
+        "pnlUsd": -1.49,
+        "inUsd": 15.0
+      },
+      "EVY4xJ3ytMHa77sjgs2uVj7fgXj1ha98QSQxPadApump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": -0.96,
+        "inUsd": 25.14
+      },
+      "ENcwYGVhRsEqKpH4SzRH4mcYSGc9Cb6s4WJGS9ojpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.3,
+        "inUsd": 5.0
+      },
+      "Cg1hswfyVfnFaKHSEVyNdFWEj1bmnZoA8ZnWLVbApump": {
+        "buys": 6,
+        "sells": 5,
+        "pnlUsd": -3.15,
+        "inUsd": 30.0
+      },
+      "4FgenX5T9uDm7ZcHv47ASzYfih17fVkvG3ixt28fpump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": -1.36,
+        "inUsd": 15.0
+      },
+      "BJWHLmtbabbby7LstVRvo4Q39oER9C1TrzR3gpTHpump": {
+        "buys": 36,
+        "sells": 43,
+        "pnlUsd": 4.43,
+        "inUsd": 205.0
+      },
+      "ELSeK1UMoSoh7tJJv6dQi84RohETHoZU17GUpFEFpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.8,
+        "inUsd": 5.0
+      },
+      "Gymbmn9wwMKe4NnmVceyyfpncp9arbwPfSdBsyY9pump": {
+        "buys": 16,
+        "sells": 21,
+        "pnlUsd": 4.88,
+        "inUsd": 167.16
+      },
+      "EWkxWDjmVU9ren399TLaiYoss1bBwFeKDBAHb1Dapump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -1.97,
+        "inUsd": 10.0
+      },
+      "9Y2X83LWBaK5hsXJptUy7zQJdMGfJajhiUhCWNqqpump": {
+        "buys": 4,
+        "sells": 4,
+        "pnlUsd": -0.88,
+        "inUsd": 20.0
+      },
+      "8rWNVQoFyhWgKfBQGo1o7va5imP9rYT9jNroDqN4pump": {
+        "buys": 3,
+        "sells": 3,
+        "pnlUsd": 0.14,
+        "inUsd": 45.0
+      },
+      "HeC2xWqGT9gPfdvaMuqxPo2bUQ1XgY5wRtnrwTEHpump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -0.73,
+        "inUsd": 20.0
+      },
+      "EeSHyt1ahSvm91CSa8ASqvenmxxQn2WU5VeNhdmepump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.1,
+        "inUsd": 5.0
+      },
+      "GfyVVfTSm1YTiuBH6EDAstGY3u9eoBF2HDQoRJaspump": {
+        "buys": 2,
+        "sells": 1,
+        "pnlUsd": -0.29,
+        "inUsd": 15.0
+      },
+      "54EwFzxvcPPDr171tMxP2Bm6xkWTdBgBkuvNs8Lypump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.91,
+        "inUsd": 5.0
+      },
+      "BPjiqnko1sooBvhrTnDxV4bKf7V5Qws9MbYRWDw8pump": {
+        "buys": 26,
+        "sells": 32,
+        "pnlUsd": -17.2,
+        "inUsd": 189.17
+      },
+      "2kcdBw85q4qMVCjUkEynTnZ3bGbBeCqZRDRNLpeWpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.38,
+        "inUsd": 10.0
+      },
+      "cvEcJqiUUsPoHMivyoekZycc83bxTWFvda1UdJipump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -4.28,
+        "inUsd": 5.0
+      },
+      "3mvnzMeGeJy53HmtjByhP8wab4CX3hcQJ8TaGYktpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.42,
+        "inUsd": 5.0
+      },
+      "1385xVFsevDh4q7bTU9iPwM9nRwu8UQizufrS46zpump": {
+        "buys": 12,
+        "sells": 8,
+        "pnlUsd": -6.37,
+        "inUsd": 60.0
+      },
+      "FiNd8X5hPz8XAg9REmHAhftXHVEkYPn2UpDS6Fg4pump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 1.03,
+        "inUsd": 5.0
+      },
+      "BCdwQBAn8dYB5YjTsoB6TdHAWokxv28k2oZUodERpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.03,
+        "inUsd": 10.0
+      },
+      "CF7JzBmY5sbGWbFw27Rfpja5BqpZVJ9pY1G4vXjJpump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -0.86,
+        "inUsd": 14.63
+      },
+      "E6cBb6fy1GBkwYQq2vVLz3JVQ74qYUzYxi4XArHwpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -0.91,
+        "inUsd": 5.0
+      },
+      "CrJPSvj625TnPdWS42aG5ybMcHeFvnNqq5AExVespump": {
+        "buys": 3,
+        "sells": 6,
+        "pnlUsd": 0.68,
+        "inUsd": 16.93
+      },
+      "8wxkvAfEns76yBzu4MnbV7VnXWjg3iDPA9uwAQ6cpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 0.15,
+        "inUsd": 10.0
+      },
+      "9tWD7CuW2g59fgMUnggo4cZqB6XHEZrHtBaa8q7dpump": {
+        "buys": 5,
+        "sells": 8,
+        "pnlUsd": -2.1,
+        "inUsd": 94.78999999999999
+      },
+      "AKsiofzfj1U2YZRweks8qtuzk484MtaeYGiVhxXxpump": {
+        "buys": 21,
+        "sells": 22,
+        "pnlUsd": -3.89,
+        "inUsd": 103.66
+      },
+      "8mGByxG4X7YnQeGHaP9B7uheKjt9TzL3WS5wAJYkpump": {
+        "buys": 40,
+        "sells": 56,
+        "pnlUsd": -4.99,
+        "inUsd": 326.16999999999996
+      },
+      "H78WENHosTWPFuQvtm8swi83ipTqANJi921iG51Apump": {
+        "buys": 7,
+        "sells": 7,
+        "pnlUsd": -0.96,
+        "inUsd": 31.32
+      },
+      "6oGuFDbEeaSzTcvrmmd2MqfNYwHKXFoN7regcR22pump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": -0.23,
+        "inUsd": 21.75
+      },
+      "GKpJRgEF9uNkxEWDNapfSFRY3kD7JvPFcjq8hnRLpump": {
+        "buys": 2,
+        "sells": 1,
+        "pnlUsd": -5.16,
+        "inUsd": 10.0
+      },
+      "5eC8ABCTS8vQ4RVaow2gBLYxCTYePDRBTWmb496Xpump": {
+        "buys": 4,
+        "sells": 2,
+        "pnlUsd": -1.72,
+        "inUsd": 20.0
+      },
+      "6dX5M8DY6VTFtVRX5yzWn9RE4MkJTyoAVbAodk6cpump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": 3.33,
+        "inUsd": 50.0
+      },
+      "Gihvutvj8wvAFLrazDgoHewwfy75ozjv3bGGdr87pump": {
+        "buys": 9,
+        "sells": 8,
+        "pnlUsd": -0.04,
+        "inUsd": 45.0
+      },
+      "DLGRpmkMGr7J4KD1xR5x2XjaGeQH64PLFQkyxNNSpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 0.29,
+        "inUsd": 10.0
+      },
+      "HWzUC1x4WAyHjvKM9XtAxmd9PwNwjySgt4PXDN7opump": {
+        "buys": 6,
+        "sells": 10,
+        "pnlUsd": -0.14,
+        "inUsd": 27.37
+      },
+      "Hs3nMmASFVUC2TZQFwpC8k83LoENit62HJuvryBNpump": {
+        "buys": 5,
+        "sells": 6,
+        "pnlUsd": -3.35,
+        "inUsd": 25.0
+      },
+      "E8TYqR58QyLvZLQb3pdNcZTXwWU2p9Ug5uocPfjUpump": {
+        "buys": 21,
+        "sells": 22,
+        "pnlUsd": 1.2,
+        "inUsd": 107.14
+      },
+      "9p84TE2ZwH8PXU7QMvj8ieK3TWodZPdCjpE8Q2uMpump": {
+        "buys": 37,
+        "sells": 52,
+        "pnlUsd": -1.4,
+        "inUsd": 311.39
+      },
+      "2d2GZdehy2YGrj1MJ3y3yhXjficMa2J3GtncxkTQpump": {
+        "buys": 4,
+        "sells": 5,
+        "pnlUsd": -0.2,
+        "inUsd": 20.0
+      },
+      "HgD7ueF5YYRM679TxZRjWNk7s2f1QXbEFjQR4tm4pump": {
+        "buys": 9,
+        "sells": 11,
+        "pnlUsd": -1.78,
+        "inUsd": 45.0
+      },
+      "FyGLEhdrtiiEy2GTngQDtG8puX3waEcw495vMnvVpump": {
+        "buys": 9,
+        "sells": 10,
+        "pnlUsd": 1.81,
+        "inUsd": 40.760000000000005
+      },
+      "7GNxS75MyVaWWwJqi68grjR4Sad1dCeSLkAzGgjHpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.08,
+        "inUsd": 5.0
+      },
+      "BV5wremjY266bvEptiHLCEnTGEh2wZnMQgBQnSqXpump": {
+        "buys": 4,
+        "sells": 6,
+        "pnlUsd": 0.41,
+        "inUsd": 24.95
+      },
+      "6Z6qeAuA45G8RrxG7hjZVdPHn1rNHtedJy9WAXg9pump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.22,
+        "inUsd": 5.0
+      },
+      "7x625ySohTvGL9hmFm6tBssCQ5xTUsH1RYM5L1xipump": {
+        "buys": 12,
+        "sells": 10,
+        "pnlUsd": -9.98,
+        "inUsd": 60.0
+      },
+      "9Pfync3ejPC9eHqVzq3nYQJAhyhjqpnB9UsaSfLxpump": {
+        "buys": 4,
+        "sells": 6,
+        "pnlUsd": -3.12,
+        "inUsd": 52.92
+      },
+      "FAN4aPBXLi6zv8CvmH2pvewa1tbrwwcf94rdTYMZpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -0.2,
+        "inUsd": 5.0
+      },
+      "3SBzx3h9xhwzkgvayj2gekwVRyHUZsTpFSMCaKiXpump": {
+        "buys": 3,
+        "sells": 3,
+        "pnlUsd": -0.59,
+        "inUsd": 15.0
+      },
+      "JBKWfCwhW91RvkZb1S9HL8x59YuBbnVFxgwpkx8cpump": {
+        "buys": 14,
+        "sells": 19,
+        "pnlUsd": -3.45,
+        "inUsd": 67.17
+      },
+      "4ko5tSr5o3H4v1sFtjTSd9MPUW7yx5AFCpkNPoL6pump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": 0.73,
+        "inUsd": 14.34
+      },
+      "5WMztsyRSFveo3z2oDVPBNFi3GWaiWAfcVC1XDMKpump": {
+        "buys": 7,
+        "sells": 10,
+        "pnlUsd": -2.31,
+        "inUsd": 35.0
+      },
+      "AENK1YJ9978xp19xQLKat6eNmndf7Jg2FxFfKiwvpump": {
+        "buys": 30,
+        "sells": 54,
+        "pnlUsd": 5.34,
+        "inUsd": 481.96999999999997
+      },
+      "qnpt7cUHugitC3wosUuDh4iRFWX97CqAtHEMb2mpump": {
+        "buys": 2,
+        "sells": 1,
+        "pnlUsd": -1.41,
+        "inUsd": 10.0
+      },
+      "4fSWEw2wbYEUCcMtitzmeGUfqinoafXxkhqZrA9Gpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.86,
+        "inUsd": 10.0
+      },
+      "MAUKik8JvQ6Zbcpv4naMyfYFbWd9v18N9uLvzVCpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -0.92,
+        "inUsd": 5.0
+      },
+      "4LTdTtcPK9UE2QHeLoLp69PZvHP3AZJ6zozUnkHEpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -4.83,
+        "inUsd": 5.0
+      },
+      "7rSpKgASuXN5hfw3jsKNZN6ysNCR1Eixb2PD2Nd9pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 0.12,
+        "inUsd": 5.0
+      },
+      "7Lbe787dJ4bxpPiEWLb9R9VnQsMiET6Gbacxedm3pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.31,
+        "inUsd": 10.0
+      },
+      "2qE4vpAj5zv3WDCUdsxkdDwLboqC3PZk9caa3DjApump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": 0.99,
+        "inUsd": 10.0
+      },
+      "CFPkPq1eYPR8GLzEo59wUbbMioX4bshaTQiSGzTSpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.82,
+        "inUsd": 10.0
+      },
+      "46amR3aeQE7MJ9QDrgNRqBP3FcsJ9QNYV71L2vVSpump": {
+        "buys": 40,
+        "sells": 68,
+        "pnlUsd": 0.54,
+        "inUsd": 591.8199999999999
+      },
+      "MsGDybWRSNdNXkdDZhEksgzugT5CbVWUG2wkhwgpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.19,
+        "inUsd": 10.0
+      },
+      "7xDokUjDMi4KZWUFJokw6KKaM8pCHipDqPp6M446pump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.05,
+        "inUsd": 3.07
+      },
+      "B7Yt9TBjNSv3UwGfPQmJfgc5exSzf5Rq2ePVNux3pump": {
+        "buys": 10,
+        "sells": 16,
+        "pnlUsd": 0.71,
+        "inUsd": 48.17999999999999
+      },
+      "3t7sE6tF7oTSaPZLkSdmGyCVVMDAh6Q9taJddF2Hpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.11,
+        "inUsd": 5.0
+      },
+      "FMqh9mqR6drPZqqW6wPqLHxX4rqNDWGhYLaMfoaJpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 2.08,
+        "inUsd": 10.0
+      },
+      "4nj1oFAtUchBWf3u8pSLiGVZPkRmpnSLmKpxJWnGpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.1,
+        "inUsd": 5.0
+      },
+      "63zfjPfH4uaX3TQZoD35WqUrqiuCQQWndMTxQHsJpump": {
+        "buys": 10,
+        "sells": 16,
+        "pnlUsd": 0.74,
+        "inUsd": 112.02
+      },
+      "DcdNm2UXWUwKfYbdT7Fc7jAHsgN9qMeqRcx12do4pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.13,
+        "inUsd": 5.0
+      },
+      "FnezYruxKeGBPEA9FxK1eNYZcRmfz7ZYQRExa5fypump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": -1.0,
+        "inUsd": 10.0
+      },
+      "F1XdReoHL3GweeCG4sgoZGAdsUNt8sda8n5EE2TNpump": {
+        "buys": 17,
+        "sells": 27,
+        "pnlUsd": 2.52,
+        "inUsd": 146.18
+      },
+      "Etn5sZVyKfYY3tqLqctEA4sqKW5Psy221wKNo7K6pump": {
+        "buys": 8,
+        "sells": 13,
+        "pnlUsd": 1.19,
+        "inUsd": 46.730000000000004
+      },
+      "6j8jLQ38Gb88Zbq1nSrszZWp6jBebcRnnaQFerKCpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.54,
+        "inUsd": 5.0
+      },
+      "YzrX5ACNemBRPgj5xyWhL9XBDayv7D428GSC1aBpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.53,
+        "inUsd": 2.86
+      },
+      "6HQzrGnZcUftTQTfwFkTrAHFZ8xfLaeq5jk4uSKgpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 2.83,
+        "inUsd": 5.0
+      },
+      "DDVhKspGKyjVH7c5XYBB4bQrAxCBoTxSoCpBXUcapump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.19,
+        "inUsd": 3.51
+      },
+      "5vkZWaSoJBvauaX25GALth38AtJ4qMeyZt9b9kmDpump": {
+        "buys": 8,
+        "sells": 14,
+        "pnlUsd": -6.43,
+        "inUsd": 52.239999999999995
+      },
+      "EjD5Y9NVhXmtEqU7wYvAyZvDWZFQeEuHXFatJmTbpump": {
+        "buys": 21,
+        "sells": 35,
+        "pnlUsd": -7.48,
+        "inUsd": 370.17
+      },
+      "HSf6w34nAHiQ2uTPsFH3gSjae7rvbEmgoBEQm2uzpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 1.37,
+        "inUsd": 10.0
+      },
+      "CzNMjTW6kQQNMSYksrc1reqEseey3ReQm8yro6jCpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -0.11,
+        "inUsd": 2.62
+      },
+      "9CcoWrWhbfhK54opzHEuv3u281b3eKyDcafAtS6apump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.69,
+        "inUsd": 5.0
+      },
+      "HHrJPaNEhfsPmjCCsdDHkkcvaxYrAZvDS8JgPwDHpump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": -0.49,
+        "inUsd": 8.08
+      },
+      "7XdCaKpqLmKE2K7yr9xaeWB1H2CVZ1oGwxB6hmd9pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.24,
+        "inUsd": 20.0
+      },
+      "WgL9zKzdQ57R3qTVd4wgg8iXq79zBCD4rBJX31dpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.45,
+        "inUsd": 5.0
+      },
+      "4SS6ikszgkEZ9G8aWrRu5xR7ipBbZM1yH8PgkG6rpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -1.23,
+        "inUsd": 10.0
+      },
+      "2Cn914VFmRasAJyhEQrjuxXoLqTR6b66Cx6vcDWwpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": 0.62,
+        "inUsd": 10.0
+      },
+      "3f9LEP4RNM1yq5VnCD1LYMvq7FZis5tfGqyZMsiRpump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": 3.23,
+        "inUsd": 38.78
+      },
+      "A13oRB9FFaiUjfi6LdCg6p9ka1u8SfGkUFs4SKvPpump": {
+        "buys": 18,
+        "sells": 31,
+        "pnlUsd": 1.68,
+        "inUsd": 273.7
+      },
+      "8vi8Grtvq3EXunrT3EsRFmKVc8XqgfhCrPF3BPVqpump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": -2.23,
+        "inUsd": 17.92
+      },
+      "7Tw72WbSmYEqJme8ZaFGnW9Ss7Y8eJNUYkzFrgWQpump": {
+        "buys": 5,
+        "sells": 5,
+        "pnlUsd": -4.9,
+        "inUsd": 68.22
+      },
+      "ACBAYroh2xzPgu3XhLnRrzXKewYX416DqzBfTTUVpump": {
+        "buys": 3,
+        "sells": 6,
+        "pnlUsd": 4.2,
+        "inUsd": 20.54
+      },
+      "BVxz4g44d7z2CV5ZERPsvxY3QznPmof1Ddpascjipump": {
+        "buys": 6,
+        "sells": 10,
+        "pnlUsd": -0.39,
+        "inUsd": 27.77
+      },
+      "HfgV3Y9WUMuK7kyQmw3sCYByUBdWDkJPXsoKhJg7pump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": 1.23,
+        "inUsd": 21.6
+      },
+      "FC6WBsiqnoq5KqjcXA5mawtshXkTDFPjY3DevsNppump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.83,
+        "inUsd": 7.88
+      },
+      "H74CYmXgMkYHYuSRsZt6RJb4NYp2u72Vw8BS5huApump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.51,
+        "inUsd": 6.21
+      },
+      "FCaPNUJbWfECeeCeA3tvqkGUQ1BFPuon71KphJM5pump": {
+        "buys": 3,
+        "sells": 6,
+        "pnlUsd": 4.05,
+        "inUsd": 28.240000000000002
+      },
+      "vvRpg4mfTALSVCCacdQSE8rvbn7dUsUhcWKD5KQpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -0.28,
+        "inUsd": 3.32
+      },
+      "EeB76LHyVZPMRvTpLcxJqqfSz4gg9f9XgsUmFybcpump": {
+        "buys": 23,
+        "sells": 43,
+        "pnlUsd": 6.02,
+        "inUsd": 482.12
+      },
+      "GvUCjmWSXA5hrTh9smmNA1AU55YCtP9mDLQcrKA1pump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -11.97,
+        "inUsd": 46.34
+      },
+      "3BtjGxurkvMVe6sosa93dw4WQ2j9e2cWKDu8nXbxpump": {
+        "buys": 3,
+        "sells": 9,
+        "pnlUsd": 14.07,
+        "inUsd": 21.28
+      },
+      "QE2h38jHGbPu5f5C8whu12LWqyrWr7kisRSsH1hpump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": 0.49,
+        "inUsd": 8.86
+      },
+      "CdAH7BSRD7qNeZFA2Rbm4KATL45ko793hPxxAixUpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.26,
+        "inUsd": 4.08
+      },
+      "5mPVUc7pDVZnJx28vrZFwYQcsMqqWsoW3QWdNTmZpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": 0.07,
+        "inUsd": 2.8
+      },
+      "FEJdyNUQeroXwQNqTZGQbjfjdXcVgeeXDCKpAtVdpump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -1.52,
+        "inUsd": 10.86
+      },
+      "39jq7BGb4UMNS57V8UH67b24QjroSmvyLnvFWkT5pump": {
+        "buys": 15,
+        "sells": 26,
+        "pnlUsd": 5.72,
+        "inUsd": 316.37
+      },
+      "A6W8TTasbGD5mG894fxUzWtPJXMJy1PqXy82rpxKpump": {
+        "buys": 3,
+        "sells": 6,
+        "pnlUsd": -2.2,
+        "inUsd": 50.0
+      },
+      "B1oEzGes1QxVZoxR3abiwAyL4jcPRF2s2ok5Yerrpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -0.08,
+        "inUsd": 3.41
+      },
+      "BjMRQ5vksXw8eAsXPe7VuLv9FMA5XmP6QQ9znco1pump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 17.66,
+        "inUsd": 10.0
+      },
+      "5cJKd23rMu5Z3vwceaZL4Dn1HKfevNxQuJnqDidpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -3.42,
+        "inUsd": 10.0
+      },
+      "57miZy94FL6iS3foTX6hJWp51aET8MAoZGT4zYuupump": {
+        "buys": 4,
+        "sells": 9,
+        "pnlUsd": 0.94,
+        "inUsd": 30.39
+      },
+      "DUYw2p3NC6zDdsSrazV4JdDFKtRk2K4mw764EWs2pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.01,
+        "inUsd": 10.0
+      },
+      "5bFr13NaTohiybnVTtJb5bVskSKXZqjZomMw8LG7pump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": -0.51,
+        "inUsd": 30.0
+      },
+      "G5dyx7UfnX6TeHqrPVAM7qNMXznAsvjtbsbTCNbRpump": {
+        "buys": 6,
+        "sells": 13,
+        "pnlUsd": 7.36,
+        "inUsd": 97.85
+      },
+      "DfmUxZaGKH46tY2YgL5YLbQXg5FKup6Ftf666Ea5pump": {
+        "buys": 8,
+        "sells": 18,
+        "pnlUsd": -28.05,
+        "inUsd": 172.15
+      },
+      "FKAgTQJYgaLDRH3Fa78DeA69B9CdfFQ67oepzaK1pump": {
+        "buys": 16,
+        "sells": 31,
+        "pnlUsd": -3.92,
+        "inUsd": 380.0
+      },
+      "2iWzuWZGLZf3B2jD4GF3hiQb8MN65eWQoL8JEfQYpump": {
+        "buys": 3,
+        "sells": 3,
+        "pnlUsd": -7.82,
+        "inUsd": 30.0
+      },
+      "2ktsWkw54sDR7E8pwuo4bLkwN3gRCbrYKbrt1gxGpump": {
+        "buys": 4,
+        "sells": 8,
+        "pnlUsd": 1.18,
+        "inUsd": 40.0
+      },
+      "Ay9iZTxaxrriSMYnnqZLTRoXQXEv2Q1qPmpWYEXtpump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": -3.25,
+        "inUsd": 20.0
+      },
+      "C1Muxy2B9LfgdMzQJezSKiAywJXhg4KKQwEK82Y6pump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 2.16,
+        "inUsd": 10.0
+      },
+      "HBeaQ6Pn5n29iqzkffnXbC9ugWEdEJXUmdn6pGzbpump": {
+        "buys": 6,
+        "sells": 13,
+        "pnlUsd": 5.57,
+        "inUsd": 140.0
+      },
+      "4z7secBe41i5Svtotp4k2FsjMVV6xykEVnrD4kdFpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -0.45,
+        "inUsd": 10.0
+      },
+      "BE94Wq2qdXnSsXqsik8HCtbc8VQZztMkUZR3QvbBpump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": -6.16,
+        "inUsd": 60.0
+      },
+      "CkTFDNGUtw58dBDEnMD9RW3tjTVKaoVXctcXdq8Gpump": {
+        "buys": 1,
+        "sells": 0,
+        "pnlUsd": 0.0,
+        "inUsd": 30.0
+      },
+      "4pGqQGUtyYG438QnYy7uZPCJKJTABsLgq2SuZAZhpump": {
+        "buys": 7,
+        "sells": 13,
+        "pnlUsd": -16.96,
+        "inUsd": 210.0
+      },
+      "E3kzJJfKgjw4gHqMPfbSy2T4ybeKWt7gei826dBfpump": {
+        "buys": 2,
+        "sells": 2,
+        "pnlUsd": -7.35,
+        "inUsd": 60.0
+      },
+      "6J4fmDstZ9vQoFU9PxmyGgwx5VEcLSeVjdxNrU9Xpump": {
+        "buys": 9,
+        "sells": 20,
+        "pnlUsd": 2.62,
+        "inUsd": 270.0
+      },
+      "Ag7GJGCkamJNBmN6PgcbgHm1vd2okJZ5yVs95UEnpump": {
+        "buys": 9,
+        "sells": 17,
+        "pnlUsd": 20.75,
+        "inUsd": 270.0
+      },
+      "GJEwwS4qMNgRqruqrZ1cMRecs1mtj5iNwinztR6pump": {
+        "buys": 5,
+        "sells": 8,
+        "pnlUsd": -2.69,
+        "inUsd": 150.0
+      },
+      "7j8Z9q3QSiCXhK9STddcFocEy1RZHxSHockMicKUpump": {
+        "buys": 4,
+        "sells": 9,
+        "pnlUsd": 4.62,
+        "inUsd": 100.0
+      },
+      "9zwhS3b1oYuUEqWNpu2SPkEH24JMVWFEVQvHuYXZpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -2.66,
+        "inUsd": 30.0
+      },
+      "Hn6Kdxs6cJrXDLvArAief8ueTgdZLkRacLPPUZo2pump": {
+        "buys": 14,
+        "sells": 25,
+        "pnlUsd": -10.43,
+        "inUsd": 420.0
+      },
+      "37BQqh2pvVxXkHdzk7RW49J8dWx78JuZDJJgKtvspump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -2.56,
+        "inUsd": 30.0
+      },
+      "EavU1XbHSwmjP1QtXELKMz6ZS4kR1Xzvi7VeyWdBpump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": 2.08,
+        "inUsd": 60.0
+      },
+      "tpg7sWJPSKijHqPqtpHY2BWBEUq1RwGxmJpD8Tppump": {
+        "buys": 17,
+        "sells": 32,
+        "pnlUsd": -20.41,
+        "inUsd": 470.0
+      },
+      "C3RfugybjxYDsJDYtooFf5WU5p5Mrhc6Q1xR2QGJpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -6.35,
+        "inUsd": 30.0
+      },
+      "Hp51xYU4DXp1xdAVi7sar9xsCS9ypp3yT7ZyLxhtpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -4.24,
+        "inUsd": 30.0
+      },
+      "BCFffeVdfad5gCpuVXrnq5WAAuGLpxakM3z3zfB1pump": {
+        "buys": 2,
+        "sells": 3,
+        "pnlUsd": -9.29,
+        "inUsd": 60.0
+      },
+      "CFASPx9Fp95FQdxydtDxFWgL8g5PavDgcNaamZmdpump": {
+        "buys": 3,
+        "sells": 5,
+        "pnlUsd": -5.33,
+        "inUsd": 90.0
+      },
+      "BRrc4qh3t1wpE97FETgea1DEefu8A95Cu3g9vcN5pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.96,
+        "inUsd": 30.0
+      },
+      "9XwtS1dGSWAPpuc5FtgShpLZmZkgXT77fjRuvNZTpump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 2.55,
+        "inUsd": 30.0
+      },
+      "Ca1QXeUhSSYevbPrmJBfDvb1qwBgzJJ73L4HUDQ3pump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 2.69,
+        "inUsd": 30.0
+      },
+      "B6B7qn4qe7fwdUjR52asa2LpBc7YADUQmXBmqn4Dpump": {
+        "buys": 4,
+        "sells": 10,
+        "pnlUsd": 7.05,
+        "inUsd": 120.0
+      },
+      "49bLnNyA5XpSR2XMQRtdLcdfdbWZ37N8f38cPK1apump": {
+        "buys": 3,
+        "sells": 4,
+        "pnlUsd": -10.11,
+        "inUsd": 90.0
+      },
+      "7z5KZpYj7BEnGKGCY3kDkaX32ueBSNp8QjvFq8Lxpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.19,
+        "inUsd": 30.0
+      },
+      "6tfeeBCfQvJTduz3JqE4w2f9rTMNMkgrDKaqfkqRpump": {
+        "buys": 8,
+        "sells": 18,
+        "pnlUsd": 16.59,
+        "inUsd": 240.0
+      },
+      "JAX8ZBaNeoFY7bb4XYqEM9MGJefYZQXdQG1fGv5Upump": {
+        "buys": 4,
+        "sells": 7,
+        "pnlUsd": -16.77,
+        "inUsd": 120.0
+      },
+      "9TBXfVTYBk7fLaKrQQtTSAtETg3s9rKmmJUEPe4Ypump": {
+        "buys": 2,
+        "sells": 1,
+        "pnlUsd": -29.48,
+        "inUsd": 60.0
+      },
+      "53pcRNiptyEEZUu5tZwisRBzjgNk9i5hvJSuSADXpump": {
+        "buys": 7,
+        "sells": 11,
+        "pnlUsd": -7.17,
+        "inUsd": 190.0
+      },
+      "BSiKCMF226drwGrFCgej2Ztthemxc8NTEGcUae1Lpump": {
+        "buys": 13,
+        "sells": 23,
+        "pnlUsd": -14.16,
+        "inUsd": 390.0
+      },
+      "4htjg3BekscJQsqjXvtCZZqJTnkNJnNvGE647V4opump": {
+        "buys": 3,
+        "sells": 3,
+        "pnlUsd": -7.31,
+        "inUsd": 70.0
+      },
+      "FnxbbrbfbdDzgUMjTJc64gxoq4XsxHNsf2tj5W5Npump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -3.4,
+        "inUsd": 30.0
+      },
+      "Dz2iVSLXFp7dXowD1nybWyCXuUcpV7cBZu68YPV5pump": {
+        "buys": 13,
+        "sells": 25,
+        "pnlUsd": -19.22,
+        "inUsd": 330.0
+      },
+      "8zB3BBW8x5YYDKtfkMEEyYWLLwaWYLAveTU66uEUpump": {
+        "buys": 5,
+        "sells": 11,
+        "pnlUsd": -3.84,
+        "inUsd": 150.0
+      },
+      "C461GvZvmYSPptAwniQumszzyBDm2BjyUi6oesmbpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -3.74,
+        "inUsd": 30.0
+      },
+      "6vDuKS8Di41bsFxUYSx9mCpQp1noPZ8PnXfsQjrepump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 2.3,
+        "inUsd": 30.0
+      },
+      "FRurQLB9kGxLsNLAcM7LgyHYRHxwy4g44BpzsmHakadu": {
+        "buys": 4,
+        "sells": 5,
+        "pnlUsd": 7.62,
+        "inUsd": 120.0
+      },
+      "CbY1i2rZ76yTdGPUgWK4xpfKe1vYn7kMYEKZitjtpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.36,
+        "inUsd": 30.0
+      },
+      "JAf1anqXngez7CwhoJuhhD7oQobBP5NEeEnDwC35pump": {
+        "buys": 13,
+        "sells": 28,
+        "pnlUsd": 13.95,
+        "inUsd": 350.0
+      },
+      "96X4zg5T4NFWzTVFXHsadvYbxbzFX2Rqt3GXUv92pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -1.66,
+        "inUsd": 30.0
+      },
+      "FPfi9q1AixdUeWQVPFHJMJQ7a43S78dm6UZ4fzN4pump": {
+        "buys": 11,
+        "sells": 22,
+        "pnlUsd": -2.58,
+        "inUsd": 265.0
+      },
+      "BBPqpzNs81a2RU4WTmPRshVmK74EjVZjhezJQdBNpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -6.3,
+        "inUsd": 30.0
+      },
+      "DLhxygJUkW4E5kJw5n4CxdhZArkrvsAWW4GGC9srpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -9.45,
+        "inUsd": 30.0
+      },
+      "9S3HuR5VKJXEUKHrDpqxNWhkw9WL4iqoXyGN3JpGpump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 13.42,
+        "inUsd": 30.0
+      },
+      "EKppz9JRQDVLhye12yc4T4P9ue7N6A4vVEB4uyvxpump": {
+        "buys": 8,
+        "sells": 14,
+        "pnlUsd": -15.85,
+        "inUsd": 200.0
+      },
+      "6rQ7AUNfsKopHvQiiscKK1PjPcYb3Pi2y9Y61gETpump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 3.93,
+        "inUsd": 30.0
+      },
+      "GZudMdxm6GpBPt76ERCBdXYLD4rXTQohbFSWE9Swpump": {
+        "buys": 1,
+        "sells": 2,
+        "pnlUsd": -0.13,
+        "inUsd": 30.0
+      },
+      "2aQKC1xiKpEyAWvzSDrULnYLVuybWyx7qrsnpP8hpump": {
+        "buys": 4,
+        "sells": 6,
+        "pnlUsd": -6.39,
+        "inUsd": 100.0
+      },
+      "78Dkc1XxEa5VDqyNs3657gkuoGnp2ApgqHjx11Zf4vhr": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 6.28,
+        "inUsd": 30.0
+      },
+      "5CKuyx8kqzwHVZKoRMstBih9wteTv4XoSBq48j7Zpump": {
+        "buys": 3,
+        "sells": 8,
+        "pnlUsd": 11.33,
+        "inUsd": 90.0
+      },
+      "3fqify4QnaKFsvmFVqmLMUHaRKdiPki6w2H3GyDmpump": {
+        "buys": 7,
+        "sells": 14,
+        "pnlUsd": 6.04,
+        "inUsd": 125.0
+      },
+      "AZ8Yd2PttzKRxZv7CTxZpg7LmN7FdjkzmnG35Dgepump": {
+        "buys": 4,
+        "sells": 7,
+        "pnlUsd": 10.86,
+        "inUsd": 80.0
+      },
+      "EHuJuRhEi8vZiajJGm4w1o2aA1vftwSZajaWfcQwpump": {
+        "buys": 2,
+        "sells": 4,
+        "pnlUsd": -16.85,
+        "inUsd": 35.0
+      },
+      "DKxHTQCvDKUke1WpsHgbfueuRiTMqdzXrWeFHPvzpump": {
+        "buys": 6,
+        "sells": 13,
+        "pnlUsd": -3.91,
+        "inUsd": 50.0
+      },
+      "3APmL2adpfnmd1MeCcMySXQqHLViNubMS3CmwBY1pump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -4.85,
+        "inUsd": 5.0
+      },
+      "BwE8vpbfLD4JusJs7sxGMYCaE79fPRwwHMcyu9eqpump": {
+        "buys": 1,
+        "sells": 0,
+        "pnlUsd": 0.0,
+        "inUsd": 30.0
+      },
+      "EtxCL9DfuQ1ZJcydWY3Mqd5B1XjhZhRKTUdAxpjSpump": {
+        "buys": 4,
+        "sells": 3,
+        "pnlUsd": -15.08,
+        "inUsd": 60.0
+      },
+      "6FKjiXaMaqSvWYN4gEgkqwzpzYD1BD5NiLHx3xcZpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -9.48,
+        "inUsd": 10.0
+      },
+      "Xqfwj8PrgpjksqgnopR9DwDuNZAXrqVHDbdcQ34pump": {
+        "buys": 1,
+        "sells": 3,
+        "pnlUsd": 1.72,
+        "inUsd": 10.0
+      },
+      "7bDwjEzTaKnSAdmJjicqNrcxrBhr4bEMeujFuHLdpump": {
+        "buys": 1,
+        "sells": 1,
+        "pnlUsd": -4.26,
+        "inUsd": 10.0
+      },
+      "25JUPL6ksapY1iCLWkFcSaXaA6Ar3W7JDCdPjeSApump": {
+        "buys": 1,
+        "sells": 0,
+        "pnlUsd": 0.0,
+        "inUsd": 10.0
+      },
+      "8GjpHHrRxKxg5vx6RimG3ZkFmLL9918YU6a7Tnscpump": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": -1.3,
+        "inUsd": 0.0
+      },
+      "E6y5A572LZKqghJWtyNvdGcjiy29szsD1jopc67spump": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": -0.9,
+        "inUsd": 0.0
+      },
+      "EHd8Cu3fzBjWt2Ph1VRJhVL8cQDM61M2P4fJNaHtpump": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": -0.22,
+        "inUsd": 0.0
+      },
+      "7A8tFfGPe3UtESw1ahTerMA95wDTnUvjX73xewzipump": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": -1.73,
+        "inUsd": 0.0
+      },
+      "739dnZEG4yaBWFsY8L8ZwrfhGG6dhtCSercW8Umspump": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": -0.1,
+        "inUsd": 0.0
+      },
+      "GWEZteKyLr7iuKdXVdebFVCiEpTbhGydjkjn6ns7rHSs": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "Ate9q6j5TGWjYARM1r6e2MvmtRPvmr8TrUtsirCrcwqz": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "4Q2TwMX6omTLWt2pUxtJCAXo9ojpheavjARoSYKmg1ec": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "6uLfzzjR8QimdwdPu89wghHZrF9N3G3iW2AjkogUaSJH": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "H42ZXKPqngJon2p1APmC2pQbeLHRbhMPczfpWeNUKxDZ": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "9h9t8fJpMK5AeumxiNLRotc9x8MyAJtVZ4Kbx9fcUvBt": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "9pVdoa15RiqnTydt2GjJpa24xijXfcnHaY5TdPzzdYd3": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "A6KkhGCjANaH39xDhcf6vo557xXmCXaQHFVu56bwNsWv": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "2jgW7L8tQAFoutpbSK21VTKPNqV2pxnbQYNr2KAHBXSi": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "94NxR6v5mYTi878kaNV5YVvDAwKcCvwKaUnftcCSo3SZ": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "EyHXawJ4DojMKiJAUf9dEkWEYetKX2itd1AVotZNXoeQ": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "Ac385z2Qw9DFDUcwE5QMz5dbcAW6RDZw3UCubwDErUki": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "2hApwogiokzmJY8cmvCwRUBaG9k3MrT9AHmMatArduZL": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      },
+      "Axvobhg9gBbJZ7vdquEF1e1bN5ksx1Jqwnu8Fx9en8Fz": {
+        "buys": 0,
+        "sells": 1,
+        "pnlUsd": 0.0,
+        "inUsd": 0.0
+      }
+    }
+  },
+  "actualTotalPnlUsd": -108.54,
+  "nCycles": 1780,
+  "bySourceActual": {
+    "?": {
+      "n": 1,
+      "pnl": -0.15
+    },
+    "dex": {
+      "n": 455,
+      "pnl": -33.64
+    },
+    "dex+stream": {
+      "n": 309,
+      "pnl": -29.96
+    },
+    "flat_micro_dip": {
+      "n": 16,
+      "pnl": -1.12
+    },
+    "h1_red_shallow": {
+      "n": 191,
+      "pnl": -23.76
+    },
+    "knife_stabilize": {
+      "n": 10,
+      "pnl": -6.24
+    },
+    "mild_stabilize": {
+      "n": 276,
+      "pnl": 13.71
+    },
+    "stream": {
+      "n": 203,
+      "pnl": 21.49
+    },
+    "wait_dip": {
+      "n": 319,
+      "pnl": -48.87
+    }
+  },
+  "simReplayAllUsd": -359.84,
+  "oracleEarlyTroughAllUsd": 859.68,
+  "dk": {
+    "marks": 131,
+    "spanH": 1.64,
+    "actualPnlUsd": -2.72,
+    "simReplayUsd": -1.0,
+    "oracleEarlyTroughUsd": 3.17,
+    "perfectScalper": {
+      "trades": [
+        {
+          "entryTs": 1786281348397,
+          "exitTs": 1786281461369,
+          "entryPx": 0.0003347,
+          "exitPx": 0.0003479468162869164,
+          "pnlPct": 2.96,
+          "pnlUsd": 0.3
+        },
+        {
+          "entryTs": 1786285202413,
+          "exitTs": 1786285389912,
+          "entryPx": 0.000303,
+          "exitPx": 0.0003889,
+          "pnlPct": 27.35,
+          "pnlUsd": 2.73
+        },
+        {
+          "entryTs": 1786285998312,
+          "exitTs": 1786286674396,
+          "entryPx": 0.00024087177376854474,
+          "exitPx": 0.0002501,
+          "pnlPct": 2.83,
+          "pnlUsd": 0.28
+        }
+      ],
+      "pnlUsd": 3.31,
+      "n": 3
+    },
+    "cycles": [
+      {
+        "ts": 1786280876429,
+        "dipSource": "wait_dip",
+        "entryPx": 0.0005230226147420938,
+        "sizeUsd": 5.0,
+        "actualPnlUsd": 0.306,
+        "pc5m": -14.86,
+        "stabDump": null,
+        "stabBounce": null,
+        "feat": {
+          "dump": null,
+          "bounce": null,
+          "trough_age": null,
+          "below_peak": null,
+          "turn": null,
+          "last": null,
+          "peak": null,
+          "trough": null
+        },
+        "sim": {
+          "pnlPct": 11.993,
+          "reason": "mfe_bank_sleeve",
+          "heldMs": 204965,
+          "mfePct": 22.44,
+          "maePct": 0.0
+        },
+        "oracleEarlyTrough": {
+          "pnlPct": 11.993,
+          "reason": "mfe_bank_sleeve",
+          "heldMs": 204965,
+          "mfePct": 22.44,
+          "maePct": 0.0,
+          "troughPx": 0.0005230226147420938,
+          "savedPct": 0.0
+        },
+        "delay30s": null
+      },
+      {
+        "ts": 1786281195914,
+        "dipSource": "dex",
+        "entryPx": 0.00045316635262348696,
+        "sizeUsd": 5.0,
+        "actualPnlUsd": -1.504,
+        "pc5m": -21.32,
+        "stabDump": null,
+        "stabBounce": null,
+        "feat": {
+          "dump": -29.236984287400535,
+          "bounce": 0.0,
+          "trough_age": 0.0,
+          "below_peak": -29.236984287400535,
+          "turn": 0.0,
+          "last": 0.00045316635262348696,
+          "peak": 0.0006404,
+          "trough": 0.00045316635262348696
+        },
+        "sim": {
+          "pnlPct": -27.142,
+          "reason": "hard_stop",
+          "heldMs": 152483,
+          "mfePct": 2.52,
+          "maePct": -26.14
+        },
+        "oracleEarlyTrough": {
+          "pnlPct": 11.838,
+          "reason": "mfe_bank_sleeve",
+          "heldMs": 112972,
+          "mfePct": 18.58,
+          "maePct": 0.0,
+          "troughPx": 0.0003347,
+          "savedPct": 35.39
+        },
+        "delay30s": null
+      },
+      {
+        "ts": 1786283407970,
+        "dipSource": "mild_stabilize",
+        "entryPx": 0.0005516775187609274,
+        "sizeUsd": 10.0,
+        "actualPnlUsd": 0.738,
+        "pc5m": -10.145655449522861,
+        "stabDump": -10.145655449522861,
+        "stabBounce": 4.248183342649536,
+        "feat": {
+          "dump": null,
+          "bounce": null,
+          "trough_age": null,
+          "below_peak": null,
+          "turn": null,
+          "last": null,
+          "peak": null,
+          "trough": null
+        },
+        "sim": {
+          "pnlPct": 12.365,
+          "reason": "mfe_bank_sleeve",
+          "heldMs": 162633,
+          "mfePct": 17.97,
+          "maePct": 0.0
+        },
+        "oracleEarlyTrough": {
+          "pnlPct": 12.365,
+          "reason": "mfe_bank_sleeve",
+          "heldMs": 162633,
+          "mfePct": 17.97,
+          "maePct": 0.0,
+          "troughPx": 0.0005516775187609274,
+          "savedPct": 0.0
+        },
+        "delay30s": null
+      },
+      {
+        "ts": 1786284063113,
+        "dipSource": "h1_red_shallow",
+        "entryPx": 0.0003978810878475974,
+        "sizeUsd": 10.0,
+        "actualPnlUsd": -2.313,
+        "pc5m": -4.25,
+        "stabDump": null,
+        "stabBounce": null,
+        "feat": {
+          "dump": -8.596120411762598,
+          "bounce": 0.0,
+          "trough_age": 0.0,
+          "below_peak": -8.596120411762598,
+          "turn": 0.0,
+          "last": 0.0003978810878475974,
+          "peak": 0.0004353,
+          "trough": 0.0003978810878475974
+        },
+        "sim": {
+          "pnlPct": -21.504,
+          "reason": "hard_stop",
+          "heldMs": 377282,
+          "mfePct": 3.85,
+          "maePct": -20.5
+        },
+        "oracleEarlyTrough": {
+          "pnlPct": -21.327,
+          "reason": "hard_stop",
+          "heldMs": 211501,
+          "mfePct": 4.08,
+          "maePct": -20.33,
+          "troughPx": 0.000397,
+          "savedPct": 0.22
+        },
+        "delay30s": null
+      },
+      {
+        "ts": 1786285085866,
+        "dipSource": "mild_stabilize",
+        "entryPx": 0.00031854784812640295,
+        "sizeUsd": 10.0,
+        "actualPnlUsd": 2.636,
+        "pc5m": -14.524103831891221,
+        "stabDump": -14.524103831891221,
+        "stabBounce": 7.375271149674623,
+        "feat": {
+          "dump": null,
+          "bounce": null,
+          "trough_age": null,
+          "below_peak": null,
+          "turn": null,
+          "last": null,
+          "peak": null,
+          "trough": null
+        },
+        "sim": {
+          "pnlPct": 22.856,
+          "reason": "mfe_bank_sleeve",
+          "heldMs": 430531,
+          "mfePct": 35.87,
+          "maePct": -4.88
+        },
+        "oracleEarlyTrough": {
+          "pnlPct": 29.211,
+          "reason": "mfe_bank_sleeve",
+          "heldMs": 313984,
+          "mfePct": 42.84,
+          "maePct": 0.0,
+          "troughPx": 0.000303,
+          "savedPct": 5.13
+        },
+        "delay30s": null
+      },
+      {
+        "ts": 1786286170873,
+        "dipSource": "h1_red_shallow",
+        "entryPx": 0.00025921188333471274,
+        "sizeUsd": 10.0,
+        "actualPnlUsd": -2.58,
+        "pc5m": -7.49,
+        "stabDump": null,
+        "stabBounce": null,
+        "feat": {
+          "dump": -13.168070018549127,
+          "bounce": 7.614055096298311,
+          "trough_age": 172561.0,
+          "below_peak": -6.556639028582289,
+          "turn": 1.0,
+          "last": 0.00025921188333471274,
+          "peak": 0.0002774,
+          "trough": 0.00024087177376854474
+        },
+        "sim": {
+          "pnlPct": -16.166,
+          "reason": "hard_stop",
+          "heldMs": 580145,
+          "mfePct": 6.13,
+          "maePct": -15.17
+        },
+        "oracleEarlyTrough": {
+          "pnlPct": -0.458,
+          "reason": "mfe_bank_sleeve",
+          "heldMs": 428525,
+          "mfePct": 11.29,
+          "maePct": -6.03,
+          "troughPx": 0.0002472,
+          "savedPct": 4.86
+        },
+        "delay30s": null
+      }
+    ]
+  },
+  "delayCf": {
+    "15000": {
+      "pnlUsd": -79.77,
+      "deltaVsActual": 28.77,
+      "nUpgraded": 17
+    },
+    "30000": {
+      "pnlUsd": -11.88,
+      "deltaVsActual": 96.67,
+      "nUpgraded": 55
+    },
+    "60000": {
+      "pnlUsd": 79.53,
+      "deltaVsActual": 188.07,
+      "nUpgraded": 102
+    },
+    "120000": {
+      "pnlUsd": 292.8,
+      "deltaVsActual": 401.34,
+      "nUpgraded": 238
+    }
+  },
+  "baseline": {
+    "pnlUsd": -108.54,
+    "deltaVsActual": 0.0,
+    "kept": 1780,
+    "skipped": 0,
+    "bySource": {
+      "dex+stream": {
+        "n": 309,
+        "pnl": -29.96
+      },
+      "stream": {
+        "n": 203,
+        "pnl": 21.49
+      },
+      "dex": {
+        "n": 455,
+        "pnl": -33.64
+      },
+      "h1_red_shallow": {
+        "n": 191,
+        "pnl": -23.76
+      },
+      "knife_stabilize": {
+        "n": 10,
+        "pnl": -6.24
+      },
+      "flat_micro_dip": {
+        "n": 16,
+        "pnl": -1.12
+      },
+      "mild_stabilize": {
+        "n": 276,
+        "pnl": 13.71
+      },
+      "?": {
+        "n": 1,
+        "pnl": -0.15
+      },
+      "wait_dip": {
+        "n": 319,
+        "pnl": -48.87
+      }
+    }
+  },
+  "heuristicsTop": [
+    {
+      "pnlUsd": -8.04,
+      "deltaVsActual": 100.51,
+      "kept": 1314,
+      "skipped": 466,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 6,
+          "pnl": 0.62
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 47,
+          "pnl": 52.7
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "turn_confirm+stabilize_tight+h1<=-10"
+    },
+    {
+      "pnlUsd": -56.92,
+      "deltaVsActual": 51.62,
+      "kept": 1411,
+      "skipped": 369,
+      "bySource": {
+        "dex+stream": {
+          "n": 309,
+          "pnl": -29.96
+        },
+        "stream": {
+          "n": 203,
+          "pnl": 21.49
+        },
+        "dex": {
+          "n": 455,
+          "pnl": -33.64
+        },
+        "h1_red_shallow": {
+          "n": 6,
+          "pnl": 0.62
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 92,
+          "pnl": 40.95
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "stabilize_tight+h1_pc5m<=-10"
+    },
+    {
+      "pnlUsd": -57.2,
+      "deltaVsActual": 51.34,
+      "kept": 1012,
+      "skipped": 768,
+      "bySource": {
+        "dex+stream": {
+          "n": 216,
+          "pnl": -12.67
+        },
+        "stream": {
+          "n": 122,
+          "pnl": 18.55
+        },
+        "dex": {
+          "n": 230,
+          "pnl": -48.27
+        },
+        "h1_red_shallow": {
+          "n": 6,
+          "pnl": 0.62
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 92,
+          "pnl": 40.95
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "stabilize_tight+h1_pc5m<=-10+dex<=-12"
+    },
+    {
+      "pnlUsd": -58.4,
+      "deltaVsActual": 50.14,
+      "kept": 1627,
+      "skipped": 153,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 182,
+          "pnl": -25.93
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 184,
+          "pnl": 28.88
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "require_turn_if_known"
+    },
+    {
+      "pnlUsd": -81.3,
+      "deltaVsActual": 27.25,
+      "kept": 1596,
+      "skipped": 184,
+      "bySource": {
+        "dex+stream": {
+          "n": 309,
+          "pnl": -29.96
+        },
+        "stream": {
+          "n": 203,
+          "pnl": 21.49
+        },
+        "dex": {
+          "n": 455,
+          "pnl": -33.64
+        },
+        "h1_red_shallow": {
+          "n": 191,
+          "pnl": -23.76
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 92,
+          "pnl": 40.95
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "stabilize_dump<=-12_bounce<=4"
+    },
+    {
+      "pnlUsd": -84.17,
+      "deltaVsActual": 24.38,
+      "kept": 1595,
+      "skipped": 185,
+      "bySource": {
+        "dex+stream": {
+          "n": 309,
+          "pnl": -29.96
+        },
+        "stream": {
+          "n": 203,
+          "pnl": 21.49
+        },
+        "dex": {
+          "n": 455,
+          "pnl": -33.64
+        },
+        "h1_red_shallow": {
+          "n": 6,
+          "pnl": 0.62
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 276,
+          "pnl": 13.71
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "h1_skip_pc5m>-10"
+    },
+    {
+      "pnlUsd": -84.82,
+      "deltaVsActual": 23.72,
+      "kept": 1596,
+      "skipped": 184,
+      "bySource": {
+        "dex+stream": {
+          "n": 309,
+          "pnl": -29.96
+        },
+        "stream": {
+          "n": 203,
+          "pnl": 21.49
+        },
+        "dex": {
+          "n": 455,
+          "pnl": -33.64
+        },
+        "h1_red_shallow": {
+          "n": 7,
+          "pnl": -0.03
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 276,
+          "pnl": 13.71
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "h1_skip_pc5m>-8"
+    },
+    {
+      "pnlUsd": -86.33,
+      "deltaVsActual": 22.22,
+      "kept": 1655,
+      "skipped": 125,
+      "bySource": {
+        "dex+stream": {
+          "n": 309,
+          "pnl": -29.96
+        },
+        "stream": {
+          "n": 203,
+          "pnl": 21.49
+        },
+        "dex": {
+          "n": 455,
+          "pnl": -33.64
+        },
+        "h1_red_shallow": {
+          "n": 191,
+          "pnl": -23.76
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 151,
+          "pnl": 35.92
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "stabilize_bounce<=4"
+    },
+    {
+      "pnlUsd": -91.57,
+      "deltaVsActual": 16.97,
+      "kept": 1602,
+      "skipped": 178,
+      "bySource": {
+        "dex+stream": {
+          "n": 309,
+          "pnl": -29.96
+        },
+        "stream": {
+          "n": 203,
+          "pnl": 21.49
+        },
+        "dex": {
+          "n": 455,
+          "pnl": -33.64
+        },
+        "h1_red_shallow": {
+          "n": 191,
+          "pnl": -23.76
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 98,
+          "pnl": 30.68
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "stabilize_bounce<=3"
+    },
+    {
+      "pnlUsd": -92.63,
+      "deltaVsActual": 15.91,
+      "kept": 1680,
+      "skipped": 100,
+      "bySource": {
+        "dex+stream": {
+          "n": 309,
+          "pnl": -29.96
+        },
+        "stream": {
+          "n": 203,
+          "pnl": 21.49
+        },
+        "dex": {
+          "n": 455,
+          "pnl": -33.64
+        },
+        "h1_red_shallow": {
+          "n": 191,
+          "pnl": -23.76
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 176,
+          "pnl": 29.62
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "stabilize_dump<=-12"
+    },
+    {
+      "pnlUsd": -106.08,
+      "deltaVsActual": 2.46,
+      "kept": 1674,
+      "skipped": 106,
+      "bySource": {
+        "dex+stream": {
+          "n": 306,
+          "pnl": -24.34
+        },
+        "stream": {
+          "n": 202,
+          "pnl": 20.22
+        },
+        "dex": {
+          "n": 453,
+          "pnl": -29.58
+        },
+        "h1_red_shallow": {
+          "n": 184,
+          "pnl": -22.85
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 186,
+          "pnl": 4.31
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 316,
+          "pnl": -46.32
+        }
+      },
+      "name": "any_dump_feat<=-12_if_known"
+    },
+    {
+      "pnlUsd": -108.54,
+      "deltaVsActual": 0.0,
+      "kept": 1780,
+      "skipped": 0,
+      "bySource": {
+        "dex+stream": {
+          "n": 309,
+          "pnl": -29.96
+        },
+        "stream": {
+          "n": 203,
+          "pnl": 21.49
+        },
+        "dex": {
+          "n": 455,
+          "pnl": -33.64
+        },
+        "h1_red_shallow": {
+          "n": 191,
+          "pnl": -23.76
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 276,
+          "pnl": 13.71
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "all"
+    },
+    {
+      "pnlUsd": -108.82,
+      "deltaVsActual": -0.28,
+      "kept": 1381,
+      "skipped": 399,
+      "bySource": {
+        "dex+stream": {
+          "n": 216,
+          "pnl": -12.67
+        },
+        "stream": {
+          "n": 122,
+          "pnl": 18.55
+        },
+        "dex": {
+          "n": 230,
+          "pnl": -48.27
+        },
+        "h1_red_shallow": {
+          "n": 191,
+          "pnl": -23.76
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 276,
+          "pnl": 13.71
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 319,
+          "pnl": -48.87
+        }
+      },
+      "name": "dex_pc5m<=-12"
+    },
+    {
+      "pnlUsd": -120.11,
+      "deltaVsActual": -11.57,
+      "kept": 1721,
+      "skipped": 59,
+      "bySource": {
+        "dex+stream": {
+          "n": 308,
+          "pnl": -29.63
+        },
+        "stream": {
+          "n": 198,
+          "pnl": 18.38
+        },
+        "dex": {
+          "n": 454,
+          "pnl": -35.26
+        },
+        "h1_red_shallow": {
+          "n": 190,
+          "pnl": -21.18
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 226,
+          "pnl": 11.37
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 318,
+          "pnl": -56.27
+        }
+      },
+      "name": "any_bounce_feat<=5_if_known"
+    }
+  ],
+  "gridTop": [
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel2_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel2_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 2,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel2_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel2_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 2,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel3_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel3_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 3,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel3_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel3_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 3,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel5_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel5_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 5,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel5_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel5_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 5,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel2_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel2_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 2,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel2_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel2_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 2,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel3_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel3_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 3,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel3_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel3_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 3,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel5_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel5_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 5,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel5_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel5_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 5,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel2_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel2_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 2,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel2_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel2_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 2,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel3_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel3_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 3,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel3_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel3_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 3,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel5_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel5_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 5,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel5_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel5_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 5,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age45s_bel2_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age45s_bel2_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 45000,
+        "min_below_peak": 2,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age45s_bel2_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age45s_bel2_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 45000,
+        "min_below_peak": 2,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age45s_bel3_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age45s_bel3_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 45000,
+        "min_below_peak": 3,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age45s_bel3_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age45s_bel3_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 45000,
+        "min_below_peak": 3,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age45s_bel5_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age45s_bel5_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 45000,
+        "min_below_peak": 5,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age45s_bel5_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age45s_bel5_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 45000,
+        "min_below_peak": 5,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.14,
+      "deltaVsActual": 37.4,
+      "kept": 1579,
+      "skipped": 201,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 137,
+          "pnl": 13.56
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-35,-12]_b[1.5,5]_age10s_bel2_turn1_hl0",
+      "filt": {
+        "name": "dump(-35,-12]_b[1.5,5]_age10s_bel2_turn1_hl0",
+        "min_dump": -35,
+        "max_dump": -12,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 2,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    }
+  ],
+  "gridTopLiquid40pct": [
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel2_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel2_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 2,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel2_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel2_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 2,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel3_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel3_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 3,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel3_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel3_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 3,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel5_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel5_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 5,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age10s_bel5_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age10s_bel5_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 10000,
+        "min_below_peak": 5,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel2_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel2_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 2,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel2_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel2_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 2,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel3_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel3_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 3,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel3_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel3_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 3,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel5_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel5_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 5,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age20s_bel5_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age20s_bel5_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 20000,
+        "min_below_peak": 5,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel2_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel2_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 2,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel2_turn1_hl1",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel2_turn1_hl1",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 2,
+        "require_higher_low": true,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    },
+    {
+      "pnlUsd": -71.13,
+      "deltaVsActual": 37.42,
+      "kept": 1580,
+      "skipped": 200,
+      "bySource": {
+        "dex+stream": {
+          "n": 297,
+          "pnl": 1.85
+        },
+        "stream": {
+          "n": 192,
+          "pnl": 6.8
+        },
+        "dex": {
+          "n": 445,
+          "pnl": -17.98
+        },
+        "h1_red_shallow": {
+          "n": 181,
+          "pnl": -23.35
+        },
+        "knife_stabilize": {
+          "n": 10,
+          "pnl": -6.24
+        },
+        "flat_micro_dip": {
+          "n": 16,
+          "pnl": -1.12
+        },
+        "mild_stabilize": {
+          "n": 138,
+          "pnl": 13.57
+        },
+        "?": {
+          "n": 1,
+          "pnl": -0.15
+        },
+        "wait_dip": {
+          "n": 300,
+          "pnl": -44.5
+        }
+      },
+      "name": "dump(-30,-10]_b[1.5,5]_age30s_bel3_turn1_hl0",
+      "filt": {
+        "name": "dump(-30,-10]_b[1.5,5]_age30s_bel3_turn1_hl0",
+        "min_dump": -30,
+        "max_dump": -10,
+        "min_bounce": 1.5,
+        "max_bounce": 5,
+        "trough_min_age_ms": 30000,
+        "min_below_peak": 3,
+        "require_higher_low": false,
+        "require_turn": true,
+        "lookback_ms": 300000
+      }
+    }
+  ],
+  "note": "Grid uses causal ring features at buy time when marks exist in lookback; missing features \u2192 keep trade (no silent branch cut). Oracle/perfect scalper is non-causal ceiling.",
+  "causalFollowup": {
+    "causalWaitTurnTop": [
+      {
+        "pnl": -99.75,
+        "delta": 8.79,
+        "name": "skip_w120_b1.5",
+        "delayed": 51,
+        "skipped": 706,
+        "kept": 1023
+      },
+      {
+        "pnl": -99.9,
+        "delta": 8.64,
+        "name": "skip_w120_b3.0",
+        "delayed": 47,
+        "skipped": 710,
+        "kept": 1023
+      },
+      {
+        "pnl": -99.9,
+        "delta": 8.64,
+        "name": "skip_w120_b2.5",
+        "delayed": 47,
+        "skipped": 710,
+        "kept": 1023
+      },
+      {
+        "pnl": -100.57,
+        "delta": 7.98,
+        "name": "skip_w120_b2.0",
+        "delayed": 50,
+        "skipped": 707,
+        "kept": 1023
+      },
+      {
+        "pnl": -106.15,
+        "delta": 2.39,
+        "name": "skip_w30_b3.0",
+        "delayed": 0,
+        "skipped": 171,
+        "kept": 1609
+      },
+      {
+        "pnl": -106.15,
+        "delta": 2.39,
+        "name": "skip_w30_b2.5",
+        "delayed": 0,
+        "skipped": 171,
+        "kept": 1609
+      },
+      {
+        "pnl": -106.15,
+        "delta": 2.39,
+        "name": "skip_w30_b2.0",
+        "delayed": 0,
+        "skipped": 171,
+        "kept": 1609
+      },
+      {
+        "pnl": -106.15,
+        "delta": 2.39,
+        "name": "skip_w30_b1.5",
+        "delayed": 0,
+        "skipped": 171,
+        "kept": 1609
+      },
+      {
+        "pnl": -108.54,
+        "delta": 0.0,
+        "name": "fb_w30_b3.0",
+        "delayed": 0,
+        "skipped": 171,
+        "kept": 1609
+      },
+      {
+        "pnl": -108.54,
+        "delta": 0.0,
+        "name": "fb_w30_b2.5",
+        "delayed": 0,
+        "skipped": 171,
+        "kept": 1609
+      },
+      {
+        "pnl": -108.54,
+        "delta": 0.0,
+        "name": "fb_w30_b2.0",
+        "delayed": 0,
+        "skipped": 171,
+        "kept": 1609
+      },
+      {
+        "pnl": -108.54,
+        "delta": 0.0,
+        "name": "fb_w30_b1.5",
+        "delayed": 0,
+        "skipped": 171,
+        "kept": 1609
+      }
+    ],
+    "recommended": {
+      "summary": "Do not cut mild_stabilize/stream. Tighten h1/dex/wait bottom confirm; prefer causal wait-for-turn on losing sources.",
+      "best_skip_filter": "turn_confirm+stabilize_dump<=-12_bounce<=4+h1_pc5m<=-10 (~+$100 vs actual)",
+      "best_timing": "causal wait-for-turn 60-120s on non-winner sources; see top rows"
+    }
+  }
+}

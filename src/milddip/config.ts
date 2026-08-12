@@ -534,7 +534,7 @@ const MildDipConfigSchema = z.object({
     /**
      * 1.11.791 — hard stop from entry when pnl ≤ −this % (0=off). Default 25.
      */
-    hardStopPnlPct: z.coerce.number().min(0).max(100).default(25),
+    hardStopPnlPct: z.coerce.number().min(0).max(100).default(15),
     /**
      * 1.11.791 — fraction sold at hard stop (0=full legacy; live 0.5 → half@-25,
      * remainder at cliff −50).
@@ -678,7 +678,7 @@ export function loadMildDipConfig(): MildDipConfig {
     dustCloseUsd: envNum('MILD_DIP_EXIT_DUST_CLOSE_USD', 0),
     dustCloseMinHoldMs: envNum('MILD_DIP_EXIT_DUST_CLOSE_MIN_HOLD_MS', 1_800_000),
     /** 1.11.791 — first loss stage (half). 0 = off. */
-    hardStopPnlPct: envNum('MILD_DIP_EXIT_HARD_STOP_PNL_PCT', 25),
+    hardStopPnlPct: envNum('MILD_DIP_EXIT_HARD_STOP_PNL_PCT', 15),
     /** 1.11.791 — sell this fraction at hard stop; 0 = full hard_stop. */
     hardStopPartialFraction: envNum('MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION', 0.5),
     /**
