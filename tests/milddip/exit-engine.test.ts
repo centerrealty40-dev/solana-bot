@@ -241,6 +241,113 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
+  describe('unbounded TP ladder, Oscar half8_runner (1.11.849)', () => {
+    const grid = {
+      ...gates,
+      mfeBankEnabled: true,
+      mfeBank1Pct: 6,
+      mfeBank1Fraction: 0.4,
+      mfeBank2Pct: 8,
+      mfeBank2Fraction: 0.6,
+      tpGridStepPct: 8,
+      tpGridSellFraction: 0.5,
+      mfeBankSleeveGivebackPct: 12,
+      hardStopPnlPct: 25,
+      mfeBankMinHoldMs: 20_000,
+    };
+    const bag = (mint: string, rungsDone?: number): MildDipOpenPosition => ({
+      ...pos({ mint, entryPriceUsd: 100, peakPriceUsd: 100, openedAtMs: 1_000_000 }),
+      tpRungsDone: rungsDone,
+    });
+    const at = (p: MildDipOpenPosition, price: number, heldMs = 60_000) =>
+      decideMarkExit({ mint: p.mint, pos: p, markPriceUsd: price, gates: grid, nowMs: 1_000_000 + heldMs });
+
+    it('takes half the remainder at the first +8% and leaves the bag alive', () => {
+      const d = at(bag('g1'), 108);
+      expect(d?.reason).toBe('tp_grid');
+      expect(d?.fraction).toBe(0.5);
+      expect(d?.tpRungIndex).toBe(1);
+    });
+
+    it('keeps paying on every further +8% with no upper rung', () => {
+      for (const [rungsDone, price, rung] of [
+        [1, 116, 2],
+        [2, 124, 3],
+        [5, 148, 6],
+        [11, 196, 12],
+        [40, 428, 41],
+      ] as const) {
+        const d = at(bag(`g${rung}`, rungsDone), price);
+        expect(d?.reason).toBe('tp_grid');
+        expect(d?.tpRungIndex).toBe(rung);
+        expect(d?.fraction).toBe(0.5);
+      }
+    });
+
+    it('fires one rung per tick when the price gaps through several', () => {
+      const d = at(bag('g_gap'), 140); // +40% supports rung 5
+      expect(d?.tpRungIndex).toBe(1);
+    });
+
+    it('owes no rung the current price does not support, even after a high peak', () => {
+      const p = bag('g_spent', 1);
+      p.peakPriceUsd = 200; // MFE +100%, but the price has come back to +9%
+      const d = decideMarkExit({
+        mint: 'g_spent',
+        pos: p,
+        markPriceUsd: 109,
+        gates: { ...grid, mfeBankSleeveGivebackPct: 0 },
+        nowMs: 1_060_000,
+      });
+      expect(d?.shouldExit).toBe(false);
+    });
+
+    it('holds between rungs', () => {
+      expect(at(bag('g_mid', 1), 112)?.shouldExit).toBe(false);
+    });
+
+    it('respects the settle grace before the first rung', () => {
+      expect(at(bag('g_early'), 108, 5_000)?.shouldExit).toBe(false);
+    });
+
+    it('trails the remainder from the peak once the rungs are caught up', () => {
+      const p = bag('g_trail', 3);
+      p.peakPriceUsd = 150;
+      const d = decideMarkExit({
+        mint: 'g_trail',
+        pos: p,
+        markPriceUsd: 150 * 0.87,
+        gates: grid,
+        nowMs: 1_060_000,
+      });
+      expect(d?.reason).toBe('mfe_bank_sleeve');
+      expect(d?.fraction).toBe(1);
+    });
+
+    it('leaves the loss exits exactly as they were', () => {
+      const stop = at(bag('g_stop'), 74);
+      expect(stop?.reason).toBe('hard_stop');
+      expect(stop?.fraction).toBe(1);
+      // The −25% floor is checked before the −50% cliff, so a −51% mark is
+      // still a hard_stop; both are full exits and neither is touched here.
+      const deep = at(bag('g_deep'), 49);
+      expect(deep?.reason).toBe('hard_stop');
+      expect(deep?.fraction).toBe(1);
+    });
+
+    it('falls back to the two-rung bank when the grid is off', () => {
+      const off = { ...grid, tpGridStepPct: 0 };
+      const d = decideMarkExit({
+        mint: 'g_off',
+        pos: bag('g_off'),
+        markPriceUsd: 108,
+        gates: off,
+        nowMs: 1_060_000,
+      });
+      expect(d?.reason).toBe('mfe_bank_1');
+    });
+  });
+
   it('updates peak and arms without exiting', () => {
     const p = pos({
       mint: 'm1',

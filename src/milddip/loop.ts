@@ -1286,6 +1286,9 @@ async function executeQueuedSell(args: {
       }
       if (decision.reason === 'mfe_bank_1') live.mfeBankStage = 1;
       else if (decision.reason === 'mfe_bank_2') live.mfeBankStage = 2;
+      else if (decision.reason === 'tp_grid' && decision.tpRungIndex != null) {
+        live.tpRungsDone = decision.tpRungIndex;
+      }
       if (isPartial) {
         live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
       }
@@ -1714,6 +1717,7 @@ async function tryExits(
             pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > pos.entryPriceUsd
               ? pos.entryMarkPriceUsd
               : null,
+          tpRungIndex: null,
           peakPriceUsd: syn,
           armed: pos.trailArmed === true,
           justArmed: false,

@@ -18,6 +18,8 @@ export type MarkExitDecision = {
   /** 1 = full close; (0,1) = scale-out leave runner. */
   fraction: number;
   reason: MildDipExitReason;
+  /** Rung filled by this decision; null unless `reason` is `tp_grid`. */
+  tpRungIndex: number | null;
   mfePct: number;
   givebackPct: number;
   pnlPct: number;
@@ -116,6 +118,7 @@ export function decideMarkExit(args: {
     postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
     postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
+    tpRungsDone: pos.tpRungsDone ?? 0,
   });
   /**
    * Dust close — operational, not strategic. Bank/bounce ladders leave $1–2
@@ -155,6 +158,7 @@ export function decideMarkExit(args: {
     shouldExit: dustClose ? true : verdict.shouldExit,
     fraction: dustClose ? 1 : verdict.fraction,
     reason: dustClose ? 'dust_close' : verdict.reason,
+    tpRungIndex: dustClose ? null : verdict.tpRungIndex,
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
