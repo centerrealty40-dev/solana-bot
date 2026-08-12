@@ -3439,7 +3439,7 @@ const PM2_APPS = [
         MILD_DIP_SELL_CONCURRENCY: '6',
         /** Stream/leader fast-path — skip Dex enrich batch. */
         MILD_DIP_FAST_PATH: '1',
-        MILD_DIP_FAST_PATH_CHASE_PCT: '12',
+        MILD_DIP_FAST_PATH_CHASE_PCT: '4',
         /** Keep bounce guard on fast-path — reclaim candles are not dumps. */
         MILD_DIP_FAST_PATH_SKIP_BOUNCE: '0',
         /** After full exit: rebuy only if mark ≥20% below exit (15m memory). */
@@ -3556,10 +3556,31 @@ const PM2_APPS = [
         MILD_DIP_REQUIRE_STREAM_PRICE: '1',
         MILD_DIP_REQUIRE_STREAM_PRICE_MAX_AGE_MS: '120000',
         /** Memecoin clips move fast — 150bps sim-fails with Jupiter 6001/0x1771. */
-        MILD_DIP_SLIPPAGE_BPS: '500',
+        /**
+         * 1.11.872 — 200 bps, was 500. We were telling Jupiter a fill 5% worse
+         * than quoted was acceptable, and it took us up on it.
+         *
+         * Measured over 472 buys against the Dex mark standing a median 1.02s
+         * before the fill: median overpay +1.81%, p75 +4.15%, p90 +7.5%, and
+         * 70.8% of buys paid above the mark. That is not staleness, it is spread
+         * plus the allowances below.
+         *
+         * The overpay predicts the outcome. Over 297 closed bags:
+         *   entry 2–4% over:  54 bags, $/bag  +0.002
+         *   entry 4–8% over:  46 bags, $/bag  −0.609, win 0.283
+         *   entry  >8% over:  38 bags, $/bag  −0.406
+         * Capping at 4% keeps 71.7% of bags and takes the total from −$76.79
+         * to −$33.34.
+         *
+         * 259KArDP is the case in plain sight: mark 5.6020e-05, our fill
+         * 5.7911e-05, so the bag read −3.27% four seconds in while the price
+         * stood still for six minutes.
+         */
+        MILD_DIP_SLIPPAGE_BPS: '200',
         MILD_DIP_PREBUY_REVALIDATE: '1',
         /** Latency-tolerant chase (4% killed every liquid dump). */
-        MILD_DIP_MAX_CHASE_PCT: '10',
+        /** Chase allowance cut with it: 4%, matching the measured cap. */
+        MILD_DIP_MAX_CHASE_PCT: '4',
         LIVE_BUY_MAX_CHASE_PCT: '10',
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',

@@ -96,3 +96,25 @@ describe('1.11.870 a 5m volume ceiling keeps us out of the event', () => {
     expect(eco).toContain("MILD_DIP_GREEN_MIN_VOL5M_USD");
   });
 });
+
+describe('1.11.872 entry overpay is capped', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  function botEnv(key: string): string | null {
+    const anchor = eco.indexOf("MILD_DIP_POSITION_USD: '");
+    const m = eco.slice(anchor).match(new RegExp(`${key}: '([^']*)'`));
+    return m ? m[1] : null;
+  }
+
+  it('slippage tolerance is 200 bps, not 500', () => {
+    // 472 buys against the Dex mark a median 1.02s before the fill: median
+    // overpay +1.81%, p90 +7.5%, and 70.8% paid above the mark. Over 297 closed
+    // bags the 4-8% overpay band ran -0.609 per bag at a 0.283 win rate.
+    expect(Number(botEnv('MILD_DIP_SLIPPAGE_BPS'))).toBe(200);
+  });
+
+  it('both chase allowances match the measured 4% cap', () => {
+    // Capping at 4% keeps 71.7% of bags and takes -$76.79 to -$33.34.
+    expect(Number(botEnv('MILD_DIP_MAX_CHASE_PCT'))).toBe(4);
+    expect(Number(botEnv('MILD_DIP_FAST_PATH_CHASE_PCT'))).toBe(4);
+  });
+});
