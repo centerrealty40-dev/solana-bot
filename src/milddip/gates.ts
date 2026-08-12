@@ -29,6 +29,12 @@ export type MildDipEntryGates = {
   /** Inclusive upper bound for 5m change, percent (default 0). */
   maxDipPct: number;
   minVolume5mUsd: number;
+  /**
+   * 1.11.870 — upper bound at entry. A name doing more than this in five
+   * minutes is inside an event: over 499 closed bags, the 19% above $40k
+   * carried 42% of the whole loss at a 0.298 win rate. 0 = off.
+   */
+  maxVolume5mUsd: number;
   minLiquidityUsd: number;
   minMarketCapUsd: number;
   maxMarketCapUsd: number;

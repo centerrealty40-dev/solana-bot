@@ -293,6 +293,7 @@ export function streamOnlyNearTroughOk(args: {
 export function structuralOk(metrics: MildDipCandidateMetrics, cfg: MildDipConfig): boolean {
   const g = cfg.entry;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
+  if (g.maxVolume5mUsd > 0 && metrics.volume5mUsd > g.maxVolume5mUsd) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
   if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
