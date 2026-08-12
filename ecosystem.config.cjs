@@ -3180,6 +3180,16 @@ const PM2_APPS = [
          * of mean, and only 5.4% of their armed-then-underwater positions ever
          * finished above +100%.
          */
+        /**
+         * 1.11.868 — a stream print is held to 8% where a Dex one gets 25%.
+         * Reversion does not scale with jump size (10–15% at every band) but it
+         * does scale with source: 46.1% of stream prints jumping 5–10% reverted
+         * on the next mark. CX2v7JSH came in at +23.56% off the stream, cleared
+         * the 25% guard, armed the trail and fired a ladder rung on a coin that
+         * had not moved.
+         */
+        MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '25',
+        MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT: '8',
         MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8',
         MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */

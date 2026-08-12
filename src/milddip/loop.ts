@@ -1749,6 +1749,7 @@ async function tryExits(
       volume5mUsd,
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
+      markSource: source,
       greenGates: {
         takeProfitPct: cfg.green.takeProfitPct,
         stopPct: cfg.green.stopPct,

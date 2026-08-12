@@ -532,6 +532,69 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       const d = mark(p, STEADY * 1.09)!;
       expect(d.markQuarantined).toBeFalsy();
     });
+
+    it('holds a stream print to a tighter guard than a Dex one (1.11.868)', () => {
+      // CX2v7JSH: a single stream print +23.56% above the previous mark cleared
+      // the 25% guard, armed the trail and fired a ladder rung on a coin that
+      // had not moved. Of stream prints jumping 5-10% in one tick, 46.1%
+      // reverted on the next mark.
+      const g = { ...gates, markJumpConfirmPct: 25, markJumpConfirmStreamPct: 8 };
+      const p = pos({
+        mint: 'src',
+        entryPriceUsd: 100,
+        peakPriceUsd: 100,
+        openedAtMs: 1_000_000,
+      });
+      const seed = decideMarkExit({
+        mint: 'src',
+        pos: p,
+        markPriceUsd: 100,
+        gates: g,
+        nowMs: 1_010_000,
+        markSource: 'dex',
+      })!;
+      applyMarkDecisionToPosition(p, seed);
+
+      const viaStream = decideMarkExit({
+        mint: 'src',
+        pos: p,
+        markPriceUsd: 123.56,
+        gates: g,
+        nowMs: 1_020_000,
+        markSource: 'stream',
+      })!;
+      expect(viaStream.markQuarantined).toBe(true);
+      expect(viaStream.mfePct).toBe(0);
+
+      // The very same number off the Dex feed is inside its 25% guard.
+      const viaDex = decideMarkExit({
+        mint: 'src',
+        pos: p,
+        markPriceUsd: 123.56,
+        gates: g,
+        nowMs: 1_020_000,
+        markSource: 'dex',
+      })!;
+      expect(viaDex.markQuarantined).toBeFalsy();
+    });
+
+    it('a modest stream move still passes', () => {
+      const g = { ...gates, markJumpConfirmPct: 25, markJumpConfirmStreamPct: 8 };
+      const p = pos({ mint: 'src2', entryPriceUsd: 100, peakPriceUsd: 100, openedAtMs: 1_000_000 });
+      applyMarkDecisionToPosition(
+        p,
+        decideMarkExit({ mint: 'src2', pos: p, markPriceUsd: 100, gates: g, nowMs: 1_010_000, markSource: 'dex' })!,
+      );
+      const d = decideMarkExit({
+        mint: 'src2',
+        pos: p,
+        markPriceUsd: 106,
+        gates: g,
+        nowMs: 1_020_000,
+        markSource: 'stream',
+      })!;
+      expect(d.markQuarantined).toBeFalsy();
+    });
   });
 
   describe('a bag that was green does not come back as a loss (1.11.855)', () => {

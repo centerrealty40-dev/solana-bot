@@ -521,6 +521,8 @@ const MildDipConfigSchema = z.object({
     tpGridStepPct: z.coerce.number().min(0).max(500).default(0),
     /** 1.11.852 — confirm single-tick jumps larger than this % before acting. */
     markJumpConfirmPct: z.coerce.number().min(0).max(100).default(25),
+    /** 1.11.868 — tighter guard for stream prints; 0 = use markJumpConfirmPct. */
+    markJumpConfirmStreamPct: z.coerce.number().min(0).max(100).default(8),
     /** 1.11.855 — breakeven floor once the bag has been green. 0 = off. */
     breakevenArmPct: z.coerce.number().min(0).max(500).default(0),
     breakevenFloorPct: z.coerce.number().min(-100).max(100).default(0),
@@ -704,6 +706,7 @@ export function loadMildDipConfig(): MildDipConfig {
     mfeBankSleeveGivebackPct: envNum('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', 12),
     tpGridStepPct: envNum('MILD_DIP_EXIT_TP_GRID_STEP_PCT', 0),
     markJumpConfirmPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT', 25),
+    markJumpConfirmStreamPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT', 8),
     breakevenArmPct: envNum('MILD_DIP_EXIT_BREAKEVEN_ARM_PCT', 0),
     breakevenFloorPct: envNum('MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT', 0),
     tpGridSellFraction: envNum('MILD_DIP_EXIT_TP_GRID_SELL_FRACTION', 0.5),
