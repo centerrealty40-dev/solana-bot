@@ -297,9 +297,14 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25'");
   });
 
-  it('1.11.815 skips pairs older than 72h', () => {
+  it('1.11.853 admits pairs up to 30 days, not 3', () => {
+    // 32.7% of leader-bought mints are older than 72h, and 113 of those clear
+    // every other floor: 15.6% of their universe was refused on age alone.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_MAX_PAIR_AGE_HOURS: '72'");
+    expect(eco).toContain("MILD_DIP_MAX_PAIR_AGE_HOURS: '720'");
+    // Liveness now rests on these two, so they must stay in place.
+    expect(eco).toContain("MILD_DIP_MIN_VOLUME_5M_USD: '300'");
+    expect(eco).toContain("MILD_DIP_MIN_LIQUIDITY_USD: '15000'");
   });
 
   it('throttles the ready journal so one seat cannot spam 363 lines', () => {
