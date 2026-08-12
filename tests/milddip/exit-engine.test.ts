@@ -177,8 +177,10 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d?.mfePct).toBeCloseTo(0, 6);
       expect(d?.armed).toBe(false);
       expect(d?.shouldExit).toBe(false);
-      // P&L still answers to the fill, so the stop keeps its real basis.
-      expect(d?.pnlPct).toBeCloseTo(10.52, 1);
+      // Every threshold reads the mark series, so a motionless price is 0%.
+      expect(d?.pnlPct).toBeCloseTo(0, 6);
+      // Real money still reported against the fill.
+      expect(d?.pnlPctVsFill).toBeCloseTo(10.52, 1);
     });
 
     it('measures a later gain from the mark series, not the fill', () => {
@@ -191,7 +193,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         nowMs: 1_040_000,
       })!;
       applyMarkDecisionToPosition(p, first);
-      expect(first.mfeBasisPriceUsd).toBeCloseTo(STALE_MARK, 12);
+      expect(first.entryMarketPriceUsd).toBeCloseTo(STALE_MARK, 12);
 
       const up = decideMarkExit({
         mint: 'eub2',
@@ -205,19 +207,55 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(up?.reason).toBe('mfe_bank_1');
     });
 
-    it('leaves the fill as the basis when the first mark comes in below it', () => {
-      const p = fresh('eub3', FILL, FILL * 0.97);
+    it('does not read an entry overpay as a loss on a motionless price', () => {
+      // We paid 3% over the mark. The price then does not move at all; the loss
+      // floors used to see −3% and could fire on it (never_arm_time_red), and
+      // breakeven_stop only needed a 2% tick to call it a peak worth banking.
+      const MARK = FILL * 0.97;
+      const p = fresh('eub3', FILL, MARK);
       const d = decideMarkExit({
         mint: 'eub3',
         pos: p,
-        markPriceUsd: FILL * 0.97,
+        markPriceUsd: MARK,
         gates: bankGates,
         nowMs: 1_040_000,
       })!;
       applyMarkDecisionToPosition(p, d);
-      expect(d.mfeBasisPriceUsd).toBeNull();
+      expect(d.entryMarketPriceUsd).toBeCloseTo(MARK, 12);
       expect(d.mfePct).toBeCloseTo(0, 6);
-      expect(d.pnlPct).toBeCloseTo(-3, 1);
+      expect(d.pnlPct).toBeCloseTo(0, 6);
+      expect(d.pnlPctVsFill).toBeCloseTo(-3, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('does not bank a 2% tick after an overpay as breakeven profit', () => {
+      const MARK = FILL * 0.97;
+      const beGates = { ...bankGates, breakevenArmPct: 2, breakevenFloorPct: 0 };
+      const p = fresh('eub3b', FILL, MARK);
+      const d = decideMarkExit({
+        mint: 'eub3b',
+        pos: p,
+        markPriceUsd: MARK * 1.02,
+        gates: beGates,
+        nowMs: 1_040_000,
+      })!;
+      expect(d.mfePct).toBeCloseTo(2, 1);
+      expect(d.pnlPct).toBeCloseTo(2, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('still stops out on a real 25% fall measured from the entry mark', () => {
+      const MARK = FILL * 0.97;
+      const p = fresh('eub3c', FILL, MARK);
+      const d = decideMarkExit({
+        mint: 'eub3c',
+        pos: p,
+        markPriceUsd: MARK * 0.74,
+        gates: { ...bankGates, hardStopPnlPct: 25 },
+        nowMs: 1_040_000,
+      })!;
+      expect(d.shouldExit).toBe(true);
+      expect(d.reason).toBe('hard_stop');
     });
 
     it('still counts a genuine move when the entry mark matched the fill', () => {

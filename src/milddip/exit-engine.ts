@@ -10,8 +10,8 @@ import { decideGreenExit, type GreenExitGates } from './green-lane.js';
 export type MarkExitDecision = {
   mint: string;
   markPriceUsd: number;
-  /** Movement baseline once latched; null while the fill still serves. */
-  mfeBasisPriceUsd: number | null;
+  /** Mark taken at entry: the basis for every threshold. Null → fill basis. */
+  entryMarketPriceUsd: number | null;
   peakPriceUsd: number;
   armed: boolean;
   justArmed: boolean;
@@ -25,7 +25,10 @@ export type MarkExitDecision = {
   markQuarantined?: boolean;
   mfePct: number;
   givebackPct: number;
+  /** Move since the mark at entry — what the thresholds compared. */
   pnlPct: number;
+  /** Move since the fill — real money, for logging only. */
+  pnlPctVsFill: number;
   /** Updated spaced vol5m ring — caller persists onto the open position. */
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry low-water mark. */
@@ -95,12 +98,16 @@ export function decideMarkExit(args: {
    */
   if (pos.lane === 'green' && args.greenGates) {
     const heldMsGreen = Math.max(0, (args.nowMs ?? Date.now()) - (pos.openedAtMs || 0));
-    const pnl = (markPriceUsd / pos.entryPriceUsd - 1) * 100;
+    const basis =
+      pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > 0
+        ? pos.entryMarkPriceUsd
+        : pos.entryPriceUsd;
+    const pnl = (markPriceUsd / basis - 1) * 100;
     const g = decideGreenExit(pnl, heldMsGreen, args.greenGates);
     return {
       mint,
       markPriceUsd,
-      mfeBasisPriceUsd: null,
+      entryMarketPriceUsd: null,
       peakPriceUsd: Math.max(pos.peakPriceUsd ?? pos.entryPriceUsd, markPriceUsd),
       armed: false,
       justArmed: false,
@@ -111,13 +118,24 @@ export function decideMarkExit(args: {
       mfePct: 0,
       givebackPct: 0,
       pnlPct: pnl,
+      pnlPctVsFill: pnl,
       volFadeSamples: [...(pos.volFadeSamples ?? [])],
       postEntryTroughPriceUsd: Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd),
       postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     };
   }
-  const peakPrev =
+  /**
+   * Bags opened before 1.11.873 seeded the peak with the fill, which reads an
+   * entry overpay as a gain already given back. An untouched seed carries no
+   * information, so the entry mark replaces it.
+   */
+  const entryMarketPriceUsd = pos.entryMarkPriceUsd ?? null;
+  const peakStored =
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
+  const peakPrev =
+    entryMarketPriceUsd != null && entryMarketPriceUsd > 0 && peakStored === pos.entryPriceUsd
+      ? entryMarketPriceUsd
+      : peakStored;
 
   /**
    * A violent single-tick move has to be seen twice before it decides anything.
@@ -151,7 +169,7 @@ export function decideMarkExit(args: {
         return {
           mint,
           markPriceUsd,
-          mfeBasisPriceUsd: null,
+          entryMarketPriceUsd: null,
           peakPriceUsd: peakPrev,
           armed: pos.trailArmed === true,
           justArmed: false,
@@ -162,6 +180,7 @@ export function decideMarkExit(args: {
           mfePct: 0,
           givebackPct: 0,
           pnlPct: 0,
+          pnlPctVsFill: 0,
           volFadeSamples: [...(pos.volFadeSamples ?? [])],
           postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
           postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
@@ -178,19 +197,9 @@ export function decideMarkExit(args: {
     : pos.scaleOutDone === true
       ? 1
       : 0;
-  /**
-   * The Dex price the entry decision was made on is the movement baseline. Only
-   * used when it sits above the fill, which is the case that misreads a
-   * motionless price as profit; buying above the mark needs no correction
-   * because it understates MFE, and the stop already answers for it.
-   */
-  const mfeBasisPriceUsd =
-    pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > pos.entryPriceUsd
-      ? pos.entryMarkPriceUsd
-      : null;
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
-    mfeBasisPriceUsd,
+    entryMarketPriceUsd,
     markPriceUsd,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
@@ -239,7 +248,7 @@ export function decideMarkExit(args: {
   return {
     mint,
     markPriceUsd,
-    mfeBasisPriceUsd,
+    entryMarketPriceUsd,
     peakPriceUsd: verdict.peakPriceUsd,
     armed: verdict.armed,
     justArmed: verdict.justArmed,
@@ -250,6 +259,7 @@ export function decideMarkExit(args: {
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
+    pnlPctVsFill: verdict.pnlPctVsFill,
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,

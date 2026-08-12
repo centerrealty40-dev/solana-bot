@@ -726,19 +726,22 @@ export function sustainedVolFade(
 export function evaluateMildDipPeakGiveback(args: {
   entryPriceUsd: number;
   /**
-   * 1.11.848 — baseline for *movement* (arm, MFE bank levels, giveback).
+   * 1.11.873 — the mark standing next to the fill; basis for *every* threshold.
    *
-   * The Dex mark and our fill do not share a scale: a stale or different-pool
-   * snapshot can sit well above the price Jupiter actually gave us. EUB1eZ
-   * filled at 7.683e-05 while the mark held 8.492e-05 — unchanged from before
-   * the buy and for twelve seconds after — so the position read +10.52% with
-   * the price motionless, armed the trail, fired bank1 and sold into a loss.
+   * Our fill and the Dex mark are not the same quantity. We pay the ask plus
+   * price impact and fees; the mark is the pool mid. On a motionless coin a 3%
+   * entry overpay therefore reads as a permanent −3%, and thresholds that mixed
+   * the two bases fired on that alone: `breakeven_stop` asked for MFE (mark
+   * basis) ≥ arm and P&L (fill basis) ≤ floor, which any 2% market tick
+   * satisfies at once — buy, "profit", sell, lose. `never_arm_time_red` had the
+   * same read on a flat coin.
    *
-   * Movement is only meaningful within one series, so MFE is measured from the
-   * first post-entry mark when that sits above the fill. `pnlPct` keeps the
-   * fill basis: the stop must answer for real money.
+   * Keeping mark against mark-at-entry puts arm, ladder, trail and the loss
+   * floors in one series, so each one measures a price move and nothing else.
+   * Entry overpay is a sunk execution cost, answered at the entry gate
+   * (slippage/chase caps), not by the exit engine.
    */
-  mfeBasisPriceUsd?: number | null;
+  entryMarketPriceUsd?: number | null;
   markPriceUsd: number;
   peakPriceUsd: number;
   armed: boolean;
@@ -789,7 +792,10 @@ export function evaluateMildDipPeakGiveback(args: {
   reason: MildDipExitReason;
   /** Rung index this decision fills; null unless the reason is `tp_grid`. */
   tpRungIndex: number | null;
+  /** Move since the mark at entry — the basis every threshold above uses. */
   pnlPct: number;
+  /** Move since the fill: real money, for logging and P&L only. */
+  pnlPctVsFill: number;
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry trough (caller persists). */
   postEntryTroughPriceUsd: number;
@@ -843,12 +849,16 @@ export function evaluateMildDipPeakGiveback(args: {
   );
   const postEntryTroughAtMs = markDeepensTrough ? nowMs : troughAtPrev;
   const troughAgeMs = Math.max(0, nowMs - postEntryTroughAtMs);
-  // Movement is measured inside the mark series; P&L keeps the fill basis.
-  const mfeBasis =
-    args.mfeBasisPriceUsd != null &&
-    Number.isFinite(args.mfeBasisPriceUsd) &&
-    args.mfeBasisPriceUsd > entryPriceUsd
-      ? Number(args.mfeBasisPriceUsd)
+  /**
+   * One basis for movement, P&L and the loss floors: the mark series the exit
+   * engine actually reads. Falls back to the fill when no concurrent mark was
+   * captured at entry.
+   */
+  const basisPriceUsd =
+    args.entryMarketPriceUsd != null &&
+    Number.isFinite(args.entryMarketPriceUsd) &&
+    Number(args.entryMarketPriceUsd) > 0
+      ? Number(args.entryMarketPriceUsd)
       : entryPriceUsd;
   /**
    * Never below zero. MFE is the best the bag has been; a negative reading only
@@ -857,13 +867,16 @@ export function evaluateMildDipPeakGiveback(args: {
    * `wait_dip` bag opened at MFE −11% and could not reach a rung until the
    * price climbed all the way back.
    */
-  const mfePct = Math.max(0, mfeFromEntryPct(peakPriceUsd, mfeBasis) ?? 0);
+  const mfePct = Math.max(0, mfeFromEntryPct(peakPriceUsd, basisPriceUsd) ?? 0);
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =
-    entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;
+    basisPriceUsd > 0 && markPriceUsd > 0 ? (markPriceUsd / basisPriceUsd - 1) * 100 : 0;
+  /** Money P&L against the fill — reported, never a threshold input. */
+  const pnlPctVsFill =
+    entryPriceUsd > 0 && markPriceUsd > 0 ? (markPriceUsd / entryPriceUsd - 1) * 100 : 0;
   const troughDumpPct =
-    entryPriceUsd > 0 && postEntryTroughPriceUsd > 0
-      ? ((postEntryTroughPriceUsd / entryPriceUsd - 1) * 100)
+    basisPriceUsd > 0 && postEntryTroughPriceUsd > 0
+      ? (postEntryTroughPriceUsd / basisPriceUsd - 1) * 100
       : 0;
   const bounceOffTroughPct =
     bounceFromTroughPct(markPriceUsd, postEntryTroughPriceUsd) ?? 0;
@@ -886,6 +899,7 @@ export function evaluateMildDipPeakGiveback(args: {
     reason: null as MildDipExitReason,
     tpRungIndex: null as number | null,
     pnlPct,
+    pnlPctVsFill,
     volFadeSamples,
     postEntryTroughPriceUsd,
     postEntryTroughAtMs,
@@ -995,8 +1009,7 @@ export function evaluateMildDipPeakGiveback(args: {
      * No upper rung. One rung per tick, as with the bank ladder, so a gap up
      * does not fire several sells at once.
      */
-    const gainPct = mfeBasis > 0 && markPriceUsd > 0 ? (markPriceUsd / mfeBasis - 1) * 100 : 0;
-    const maxK = Math.floor((gainPct + 1e-9) / gridStep);
+    const maxK = Math.floor((pnlPct + 1e-9) / gridStep);
     if (gridReady && maxK > rungsDone) {
       // Remaining share of the original bag, exactly, because every rung takes
       // the same fraction of what is left.

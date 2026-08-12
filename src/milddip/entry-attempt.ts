@@ -709,7 +709,9 @@ export async function attemptMildDipEntry(args: {
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,
     buySignature: null,
-    peakPriceUsd: entryPriceUsd,
+    // The peak lives in the mark series, like MFE; seeding it with the fill
+    // would book the entry overpay as a gain already given back.
+    peakPriceUsd: entryMarkPriceUsd ?? entryPriceUsd,
     entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
     trailArmed: false,
@@ -966,7 +968,7 @@ export async function attemptMildDipEntry(args: {
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,
     buySignature: buy.signature ?? null,
-    peakPriceUsd: fillPx,
+    peakPriceUsd: entryMarkPriceUsd ?? fillPx,
     entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
     trailArmed: false,

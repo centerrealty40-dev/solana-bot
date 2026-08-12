@@ -325,12 +325,16 @@ function maybeJournalMark(
     mint: pos.mint,
     symbol: pos.symbol,
     entryPx: pos.entryPriceUsd,
+    /** Mark beside the fill: the basis `pnlPct` / `mfePct` are measured from. */
+    entryMarkPx: decision.entryMarketPriceUsd,
     px: decision.markPriceUsd,
     peakPx: decision.peakPriceUsd,
     armed: decision.armed,
     mfePct: +decision.mfePct.toFixed(2),
     givebackPct: +decision.givebackPct.toFixed(2),
     pnlPct: +decision.pnlPct.toFixed(2),
+    /** Real money against the fill; differs from `pnlPct` by the entry overpay. */
+    pnlPctVsFill: +decision.pnlPctVsFill.toFixed(2),
     heldSec: Math.round(Math.max(0, nowMs - pos.openedAtMs) / 1000),
     vol5m: volume5mUsd,
     entryVol5m: pos.entryVolume5mUsd ?? null,
@@ -1717,10 +1721,7 @@ async function tryExits(
         toSell.push({
           mint,
           markPriceUsd: syn,
-          mfeBasisPriceUsd:
-            pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > pos.entryPriceUsd
-              ? pos.entryMarkPriceUsd
-              : null,
+          entryMarketPriceUsd: pos.entryMarkPriceUsd ?? null,
           tpRungIndex: null,
           peakPriceUsd: syn,
           armed: pos.trailArmed === true,
@@ -1731,6 +1732,7 @@ async function tryExits(
           mfePct: 0,
           givebackPct: 0,
           pnlPct: 0,
+          pnlPctVsFill: 0,
           volFadeSamples: pos.volFadeSamples ?? [],
           postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
           postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
