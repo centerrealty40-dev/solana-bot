@@ -334,6 +334,7 @@ function maybeJournalMark(
     mfePct: +decision.mfePct.toFixed(2),
     givebackPct: +decision.givebackPct.toFixed(2),
     pnlPct: +decision.pnlPct.toFixed(2),
+    gainPct: +decision.gainPct.toFixed(2),
     /** Real money against the fill; differs from `pnlPct` by the entry overpay. */
     pnlPctVsFill: +decision.pnlPctVsFill.toFixed(2),
     heldSec: Math.round(Math.max(0, nowMs - pos.openedAtMs) / 1000),
@@ -1771,6 +1772,7 @@ async function tryExits(
           mfePct: 0,
           givebackPct: 0,
           pnlPct: 0,
+          gainPct: 0,
           pnlPctVsFill: 0,
           volFadeSamples: pos.volFadeSamples ?? [],
           postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,

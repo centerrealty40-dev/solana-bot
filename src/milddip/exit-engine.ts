@@ -45,8 +45,10 @@ export type MarkExitDecision = {
   markQuarantined?: boolean;
   mfePct: number;
   givebackPct: number;
-  /** Move since the mark at entry — what the thresholds compared. */
+  /** Move on the loss basis — what the stops compared. */
   pnlPct: number;
+  /** Gain on the profit basis — what the ladder and banks compared. */
+  gainPct: number;
   /** Move since the fill — real money, for logging only. */
   pnlPctVsFill: number;
   /** Updated spaced vol5m ring — caller persists onto the open position. */
@@ -136,6 +138,7 @@ export function decideMarkExit(args: {
       mfePct: 0,
       givebackPct: 0,
       pnlPct: pnl,
+      gainPct: pnl,
       pnlPctVsFill: pnl,
       volFadeSamples: [...(pos.volFadeSamples ?? [])],
       postEntryTroughPriceUsd: Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd),
@@ -193,6 +196,7 @@ export function decideMarkExit(args: {
           mfePct: 0,
           givebackPct: 0,
           pnlPct: 0,
+          gainPct: 0,
           pnlPctVsFill: 0,
           volFadeSamples: [...(pos.volFadeSamples ?? [])],
           postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
@@ -272,6 +276,7 @@ export function decideMarkExit(args: {
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
+    gainPct: verdict.gainPct,
     pnlPctVsFill: verdict.pnlPctVsFill,
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,

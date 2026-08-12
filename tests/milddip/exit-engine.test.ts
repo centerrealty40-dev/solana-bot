@@ -177,9 +177,11 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d?.mfePct).toBeCloseTo(0, 6);
       expect(d?.armed).toBe(false);
       expect(d?.shouldExit).toBe(false);
-      // Every threshold reads the mark series, so a motionless price is 0%.
-      expect(d?.pnlPct).toBeCloseTo(0, 6);
-      // Real money still reported against the fill.
+      // Nothing to bank: the gain basis is the mark, so a motionless price is 0%.
+      expect(d?.gainPct).toBeCloseTo(0, 6);
+      // The loss basis is the fill here, which reads the gap as a paper gain -
+      // harmless, because no floor fires on a positive number (1.11.878).
+      expect(d?.pnlPct).toBeCloseTo(10.52, 1);
       expect(d?.pnlPctVsFill).toBeCloseTo(10.52, 1);
     });
 
@@ -239,7 +241,11 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         gates: beGates,
         nowMs: 1_040_000,
       })!;
-      expect(d.mfePct).toBeCloseTo(2, 1);
+      // On the money basis a 2% tick after a 3% overpay is not a gain at all,
+      // so there is no peak to arm the breakeven against.
+      expect(d.mfePct).toBeCloseTo(0, 6);
+      expect(d.gainPct).toBeCloseTo(-1.06, 1);
+      // And on the loss basis the price genuinely rose 2%, so nothing cuts.
       expect(d.pnlPct).toBeCloseTo(2, 1);
       expect(d.shouldExit).toBe(false);
     });
@@ -258,6 +264,44 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d.entryMarketPriceUsd).toBeNull();
       expect(d.mfePct).toBeLessThan(20);
       expect(d.pnlPct).toBeCloseTo(6.21, 1);
+    });
+
+    it('does not bank a gain the fill never had (5nZMRL, 1.11.878)', () => {
+      // wait_dip: the ring recorded the trough the seat waited for (2.1971e-04)
+      // and Jupiter filled us 8.2% above it (2.3773e-04). On the mark basis MFE
+      // opened at +8.2%, the +8% rung fired at once and sold at -1.59%.
+      const FILL_WD = 2.3773371159100862e-4;
+      const RING_TROUGH = 2.1971e-4;
+      const p = fresh('5nzmrl', FILL_WD, RING_TROUGH);
+      const d = decideMarkExit({
+        mint: '5nzmrl',
+        pos: p,
+        markPriceUsd: 2.419e-4,
+        gates: { ...bankGates, tpGridStepPct: 8, tpGridSellFraction: 0.5, armPct: 5 },
+        nowMs: 1_040_000,
+      })!;
+      // Peak over fill is +1.75%, and that is all the money there is.
+      expect(d.gainPct).toBeCloseTo(1.75, 1);
+      expect(d.mfePct).toBeCloseTo(1.75, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('the chase gap is still not a loss (1.11.878)', () => {
+      // Same bag, price back at the ring trough: our money is -8.2% but the mark
+      // series has not fallen at all, so no floor may fire on it.
+      const FILL_WD = 2.3773371159100862e-4;
+      const RING_TROUGH = 2.1971e-4;
+      const p = fresh('5nzmrl2', FILL_WD, RING_TROUGH);
+      const d = decideMarkExit({
+        mint: '5nzmrl2',
+        pos: p,
+        markPriceUsd: RING_TROUGH,
+        gates: { ...bankGates, hardStopPnlPct: 8 },
+        nowMs: 1_040_000,
+      })!;
+      expect(d.pnlPct).toBeCloseTo(0, 6);
+      expect(d.pnlPctVsFill).toBeCloseTo(-7.58, 1);
+      expect(d.shouldExit).toBe(false);
     });
 
     it('still stops out on a real 25% fall measured from the entry mark', () => {
