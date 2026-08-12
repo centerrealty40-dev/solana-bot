@@ -348,6 +348,51 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
+  describe('the leader model: no ladder, one full exit on a 30% trail (1.11.850)', () => {
+    // Both ladders off, no partial scale-out, trail 30% below the peak.
+    const leader = {
+      ...gates,
+      mfeBankEnabled: true,
+      mfeBank1Pct: 0,
+      tpGridStepPct: 0,
+      partialGivebackPct: 0,
+      givebackPct: 30,
+      armPct: 5,
+      hardStopPnlPct: 25,
+    };
+    const bag = (mint: string, peak?: number, armed?: boolean): MildDipOpenPosition =>
+      pos({ mint, entryPriceUsd: 100, peakPriceUsd: peak ?? 100, trailArmed: armed, openedAtMs: 1_000_000 });
+    const at = (p: MildDipOpenPosition, price: number) =>
+      decideMarkExit({ mint: p.mint, pos: p, markPriceUsd: price, gates: leader, nowMs: 1_120_000 });
+
+    it('takes nothing on the way up, however far it runs', () => {
+      for (const px of [108, 125, 160, 240, 600, 1200]) {
+        const d = at(bag('l_up', px - 1, true), px);
+        expect(d?.shouldExit).toBe(false);
+      }
+    });
+
+    it('closes the whole bag once it gives back 30% of the peak', () => {
+      const d = at(bag('l_trail', 600, true), 600 * 0.69);
+      expect(d?.reason).toBe('peak_giveback');
+      expect(d?.fraction).toBe(1);
+    });
+
+    it('holds while the giveback is still inside the trail', () => {
+      expect(at(bag('l_hold', 600, true), 600 * 0.75)?.shouldExit).toBe(false);
+    });
+
+    it('does not arm below +5%, so the trail cannot fire early', () => {
+      expect(at(bag('l_unarmed', 104), 104 * 0.69)?.reason).not.toBe('peak_giveback');
+    });
+
+    it('still stops the loss at −25%', () => {
+      const d = at(bag('l_stop'), 74);
+      expect(d?.reason).toBe('hard_stop');
+      expect(d?.fraction).toBe(1);
+    });
+  });
+
   it('updates peak and arms without exiting', () => {
     const p = pos({
       mint: 'm1',

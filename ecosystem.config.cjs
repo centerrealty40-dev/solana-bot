@@ -3045,9 +3045,14 @@ const PM2_APPS = [
          * runner full-exits only after scaleOutDone + another −8% hit.
          */
         MILD_DIP_EXIT_ARM_PCT: '5',
-        MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '3',
+        MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '0',
         MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0.5',
-        MILD_DIP_EXIT_GIVEBACK_PCT: '8',
+        /**
+         * Trail width: full exit 30% below the peak. Measured off the leaders'
+         * own bag marks, where giveback at exit is a constant ~30% of peak for
+         * any peak above 15% (−29.4% / −29.9% / −33.6% across buckets).
+         */
+        MILD_DIP_EXIT_GIVEBACK_PCT: '30',
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
@@ -3125,7 +3130,7 @@ const PM2_APPS = [
          * 429 sell legs failed on `no_token_balance`.
          */
         MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS: '20000',
-        MILD_DIP_EXIT_MFE_BANK1_PCT: '6',
+        MILD_DIP_EXIT_MFE_BANK1_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
         MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
@@ -3138,7 +3143,15 @@ const PM2_APPS = [
          * near +7% while losers ran to the −25% stop. Loss exits untouched.
          * 0 = back to the two-rung bank.
          */
-        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
+        /**
+         * 1.11.850 — no take-profit ladder at all, which is what the leaders do.
+         * 342 of their reconstructed positions: median −3.36%, mean +108.65%, and
+         * 13 trades over +500% carry 99.8% of the profit. Replaying their own
+         * outcomes through a ladder turns that mean into −8.17% (+8%×50%),
+         * −3.47% (+25%×50%) or +0.66% (+50%×50%) — the rungs cut the only tail
+         * that pays. Both ladders off; a single full exit on the trail below.
+         */
+        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
         MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
