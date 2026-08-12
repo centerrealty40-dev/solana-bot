@@ -3037,7 +3037,24 @@ const PM2_APPS = [
          * 1.11.724 — skip pairs younger than 30m (was 0.25h / 15m).
          * Closed-book age buckets: &lt;0.5h had worst med PnL / cliff&lt;−20% rate.
          */
-        MILD_DIP_MIN_PAIR_AGE_HOURS: '0.2',
+        /**
+         * 1.11.864 — 6 hours, was 0.2. Measured on 513 closed positions joined
+         * to the entry snapshot logged at buy time, counting cash:
+         *
+         *   age 0–0.5h : 270 positions, −$115.00, mean −10.71%, win 0.359
+         *   age 24–168h:  78 positions,   −$0.89, mean  −1.42%, win 0.423
+         *   age >168h  : 101 positions,   −$2.51, mean  −3.61%, win 0.366
+         *
+         * Coins under two hours old carry 84.9% of our entire loss; under six
+         * hours, 91.6%. Nothing else comes close — the next largest cut is
+         * pc5m < −30 at 41.2%, and it overlaps heavily with youth.
+         *
+         * A 6h floor keeps 211 of 513 positions and turns −$138.54 into
+         * −$11.43. This reverses 1.11.858, which lowered the floor to 0.2h to
+         * match the leaders' coverage: they do trade launches (age p25 0.39h),
+         * we lose money on them.
+         */
+        MILD_DIP_MIN_PAIR_AGE_HOURS: '6',
         /**
          * 1.11.815 — cap at 72h. Pairs older than that are dead money on this
          * strategy: 20 trades, −$7.60, winrate 0.25, median MFE 1.1% — they
