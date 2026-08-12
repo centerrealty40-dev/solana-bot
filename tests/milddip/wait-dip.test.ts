@@ -282,18 +282,16 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(mk(91.4).pass).toBe(false);
   });
 
-  it('1.11.850 takes no profit on the way up; one full exit on a 30% trail', () => {
+  it('1.11.856 banks in the range the leaders actually bank in', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    // Both ladders off. 342 reconstructed leader positions: 13 trades over
-    // +500% carry 99.8% of the profit, and replaying their own outcomes through
-    // a ladder turns a +108.65% mean into −8.17% at +8%×50%.
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0'");
-    expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK1_PCT: '0'");
-    expect(eco).toContain("MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '0'");
-    // Trail width from the leaders' own bag marks: giveback at exit is a
-    // constant ~30% of peak for any peak above 15%.
-    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '30'");
-    // Winners' median MAE is −19%: a stop tighter than that sells them.
+    // 08-12, the only day whose SOL accounting is clean: 219 closed leader
+    // positions, 42.9% of them landing in 0..+25%. A 30% trail put only 16%
+    // there and let a +25% peak decay with nothing firing (236wfN8D).
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5'");
+    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '12'");
+    // Floors unchanged.
+    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8'");
     expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25'");
   });
 
