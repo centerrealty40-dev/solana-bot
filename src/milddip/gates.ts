@@ -844,7 +844,14 @@ export function evaluateMildDipPeakGiveback(args: {
     args.mfeBasisPriceUsd > entryPriceUsd
       ? Number(args.mfeBasisPriceUsd)
       : entryPriceUsd;
-  const mfePct = mfeFromEntryPct(peakPriceUsd, mfeBasis) ?? 0;
+  /**
+   * Never below zero. MFE is the best the bag has been; a negative reading only
+   * means the basis sits above the peak, which is a basis fault, not a price
+   * move. It used to leak straight into the ladder and the arm check: a
+   * `wait_dip` bag opened at MFE −11% and could not reach a rung until the
+   * price climbed all the way back.
+   */
+  const mfePct = Math.max(0, mfeFromEntryPct(peakPriceUsd, mfeBasis) ?? 0);
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =
     entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;

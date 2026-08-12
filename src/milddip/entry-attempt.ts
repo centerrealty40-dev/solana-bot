@@ -24,6 +24,13 @@ import {
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
 import { assessRugRisk } from './rug-risk.js';
 import { mildDipPriceRing } from './price-ring.js';
+
+/**
+ * How fresh a ring sample must be to serve as the movement baseline. Dex marks
+ * on an open bag run at a median 6.1s, so 30s is several marks of slack while
+ * still excluding a stale `wait_dip` signal.
+ */
+const ENTRY_MARK_MAX_AGE_MS = 30_000;
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
   dumpFromSignalPct,
@@ -638,6 +645,28 @@ export async function attemptMildDipEntry(args: {
    * lane's, and the rug-risk and probe caps still apply on top.
    */
   const isGreen = c.dipSource === 'green_momentum';
+  /**
+   * Movement baseline for the exit engine: the Dex mark standing next to the
+   * fill, not the price that first qualified the candidate.
+   *
+   * 1.11.848 used `c.priceUsd`, which is the signal price. For a `wait_dip`
+   * entry that signal is up to twenty minutes old and sits ~15% above the fill
+   * by construction — the whole point of the seat is to buy below it. The bag
+   * then opened with MFE already at −11%, so it could neither arm the trail nor
+   * reach a ladder rung until the price climbed all the way back, and it simply
+   * sat there (AENK1YJ9, Ggec8Zysy).
+   *
+   * A ring sample within this window is concurrent with the fill and is the
+   * comparison the basis was meant to make. Anything older is dropped, which
+   * leaves the fill price as the basis — the pre-1.11.848 behaviour.
+   */
+  const entryMarkSample = mildDipPriceRing.lastPrice(c.mint, nowMs);
+  const entryMarkPriceUsd =
+    entryMarkSample &&
+    entryMarkSample.priceUsd > 0 &&
+    nowMs - entryMarkSample.tsMs <= ENTRY_MARK_MAX_AGE_MS
+      ? entryMarkSample.priceUsd
+      : undefined;
   const laneCapped =
     isGreen && cfg.green.positionUsd > 0
       ? Math.min(cfg.green.positionUsd, knifeCapped)
@@ -681,7 +710,7 @@ export async function attemptMildDipEntry(args: {
     entryPc5mPct: entryPc5m,
     buySignature: null,
     peakPriceUsd: entryPriceUsd,
-    entryMarkPriceUsd: c.priceUsd > 0 ? c.priceUsd : undefined,
+    entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
@@ -938,7 +967,7 @@ export async function attemptMildDipEntry(args: {
     entryPc5mPct: entryPc5m,
     buySignature: buy.signature ?? null,
     peakPriceUsd: fillPx,
-    entryMarkPriceUsd: c.priceUsd > 0 ? c.priceUsd : undefined,
+    entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
