@@ -301,8 +301,8 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_MAX_PAIR_AGE_HOURS: '720'");
     // Liveness now rests on these two, so they must stay in place.
-    expect(eco).toContain("MILD_DIP_MIN_VOLUME_5M_USD: '300'");
-    expect(eco).toContain("MILD_DIP_MIN_LIQUIDITY_USD: '15000'");
+    expect(eco).toContain("MILD_DIP_MIN_VOLUME_5M_USD: '150'");
+    expect(eco).toContain("MILD_DIP_MIN_LIQUIDITY_USD: '6000'");
   });
 
   it('throttles the ready journal so one seat cannot spam 363 lines', () => {

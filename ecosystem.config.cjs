@@ -2884,7 +2884,7 @@ const PM2_APPS = [
          * 27.8% land inside −25…−8; 13.7% sit in −8…−3, which we were refusing.
          * Green entries (35.6% of theirs) stay out of scope for now.
          */
-        MILD_DIP_MAX_DIP_PCT: '-3',
+        MILD_DIP_MAX_DIP_PCT: '0',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).
@@ -2989,7 +2989,7 @@ const PM2_APPS = [
          * ~82% all / ~91% dump-band. Timing stays independent (turn→dump /
          * stream-first), not pure copy.
          */
-        MILD_DIP_MIN_VOLUME_5M_USD: '300',
+        MILD_DIP_MIN_VOLUME_5M_USD: '150',
         /**
          * 1.11.844 — liquidity floor $5k → $15k, the one change the overnight
          * analysis supports on its own.
@@ -3019,7 +3019,14 @@ const PM2_APPS = [
          * and 48% of the skipped ones were winners (best skipped: +81%, +65%,
          * +51%). Revisit once there is more than one regime in the sample.
          */
-        MILD_DIP_MIN_LIQUIDITY_USD: '15000',
+        /**
+         * 1.11.858 — $6k, was $15k. Against 1288 leader buys for which we hold
+         * our own metrics within ten minutes, the liquidity floor alone blocked
+         * 65.9% of them — by far the largest single blocker. Their median
+         * liquidity at entry is $11,344 and p25 is $6,726, i.e. our floor sat
+         * above the middle of the range they trade in.
+         */
+        MILD_DIP_MIN_LIQUIDITY_USD: '6000',
         /**
          * 1.11.776 — global entry floor $5k (was $50k). One clip tier ($10);
          * turn→dump gate still selects depth. Knife/micro floor matches.
@@ -3030,7 +3037,7 @@ const PM2_APPS = [
          * 1.11.724 — skip pairs younger than 30m (was 0.25h / 15m).
          * Closed-book age buckets: &lt;0.5h had worst med PnL / cliff&lt;−20% rate.
          */
-        MILD_DIP_MIN_PAIR_AGE_HOURS: '0.5',
+        MILD_DIP_MIN_PAIR_AGE_HOURS: '0.2',
         /**
          * 1.11.815 — cap at 72h. Pairs older than that are dead money on this
          * strategy: 20 trades, −$7.60, winrate 0.25, median MFE 1.1% — they
