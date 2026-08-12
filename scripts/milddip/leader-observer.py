@@ -55,6 +55,8 @@ WSOL = "So11111111111111111111111111111111111111112"
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 USDT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
 QUOTE_MINTS = {WSOL, USDC, USDT}
+# Backstop cap on remembered signatures; the real bound is age (see _save_state).
+SEEN_SIGNATURE_CAP = 20_000
 # Quote delta below this share of the DEX-implied notional = not the counterparty.
 QUOTE_PLAUSIBLE_MIN_RATIO = 0.2
 
@@ -690,7 +692,10 @@ class Observer:
             or "https://api.jup.ag/price/v3"
         )
         self.state_path = self.out_dir / "leader-observer-state.json"
-        self.seen: set[str] = set()
+        # signature -> blockTime (sec). A set truncated by slicing dropped recent
+        # signatures at random, so the same tx was re-processed on every poll for
+        # the whole lookback window — see `_save_state`.
+        self.seen: dict[str, int] = {}
         # leader -> mint -> bag state
         self.bags: dict[str, dict[str, dict[str, Any]]] = {}
         self._sol_cache: dict[str, Any] = {}
@@ -727,17 +732,40 @@ class Observer:
         try:
             raw = json.loads(self.state_path.read_text())
             sigs = raw.get("seenSignatures") or []
-            self.seen = {str(s) for s in sigs if s}
+            if isinstance(sigs, dict):
+                self.seen = {str(k): int(v or 0) for k, v in sigs.items() if k}
+            else:
+                # Legacy list form: no timestamps, so age them out on first prune.
+                self.seen = {str(x): 0 for x in sigs if x}
             bags = raw.get("bags") or {}
             if isinstance(bags, dict):
                 self.bags = bags  # type: ignore[assignment]
         except Exception:
-            self.seen = set()
+            self.seen = {}
             self.bags = {}
 
     def _save_state(self) -> None:
-        sigs = list(self.seen)[-5000:]
-        self.seen = set(sigs)
+        """
+        Prune seen signatures by age, not by slicing.
+
+        `list(a_set)[-5000:]` keeps an arbitrary 5000 — sets have no order — so
+        recent signatures were dropped at random and the poller re-processed them
+        on every pass until they fell out of the 1800s lookback. Measured on
+        2026-08-12: **45 006 emitted legs from 924 distinct transactions**, one
+        signature re-emitted 348 times over 29.7 minutes at a 5.1s cadence (the
+        poll interval). 98% of the observer's reported USD volume was that echo,
+        which inflated leader turnover roughly 48x.
+
+        A signature older than the lookback can never come back, so age is the
+        correct bound. The count cap stays as a backstop, applied newest-first.
+        """
+        horizon = max(int(self.lookback_sec) * 3, 7_200)
+        floor_bt = int(time.time()) - horizon
+        kept = {sig: bt for sig, bt in self.seen.items() if bt >= floor_bt}
+        if len(kept) > SEEN_SIGNATURE_CAP:
+            newest = sorted(kept.items(), key=lambda kv: kv[1], reverse=True)
+            kept = dict(newest[:SEEN_SIGNATURE_CAP])
+        self.seen = kept
         # Bound bag ledger: drop flats older than 48h
         cutoff = int(time.time()) - 172_800
         slim: dict[str, dict[str, dict[str, Any]]] = {}
@@ -758,7 +786,7 @@ class Observer:
         tmp.write_text(
             json.dumps(
                 {
-                    "seenSignatures": sigs,
+                    "seenSignatures": self.seen,
                     "bags": self.bags,
                     "updatedAt": utc_iso(),
                 }
@@ -1106,11 +1134,13 @@ class Observer:
             sig = s.get("signature")
             if not sig or sig in self.seen:
                 continue
-            bt = s.get("blockTime") or 0
+            bt = int(s.get("blockTime") or 0)
+            # Remember with its blockTime so pruning can be age-based.
+            stamp = bt if bt > 0 else int(time.time())
             if bt and bt < cutoff:
-                self.seen.add(sig)
+                self.seen[sig] = stamp
                 continue
-            self.seen.add(sig)
+            self.seen[sig] = stamp
             tx = rpc_call(
                 self.rpc,
                 "getTransaction",
