@@ -26,6 +26,17 @@ describe('exit spacing after a sell', () => {
     expect(loop).toContain('if (!pos || sellInFlight.has(mint)) continue;');
   });
 
+  it('a single-tick spike cannot reach a ladder rung (1.11.880)', () => {
+    // 7ZgRjHSn: marks 6.7779e-05, 6.7779e-05, 7.6591e-05 (+13%), 6.956e-05. The
+    // spike read gain +8.44%, fired the +8% rung into a fill at the real price
+    // and polluted the peak. The Dex confirm threshold now sits under a move
+    // that size, so it waits one 2000ms tick instead.
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '10'");
+    expect(eco).toContain("MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
+  });
+
   it('defaults to a window several mark cycles wide', () => {
     // Marks run at 2000ms live, so 10s is five readings after the sell.
     const config = readFileSync(resolve('src/milddip/config.ts'), 'utf8');

@@ -3210,7 +3210,15 @@ const PM2_APPS = [
          * the 25% guard, armed the trail and fired a ladder rung on a coin that
          * had not moved.
          */
-        MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '25',
+        /**
+         * 1.11.880 — 25% was far too wide for a 2000ms mark cadence. 7ZgRjHSn
+         * took three marks at 6.7779e-05, one at 7.6591e-05 (+13%) and the next
+         * back at 6.956e-05: the spike passed unconfirmed, read gain +8.44%,
+         * fired the +8% rung into a fill at the real price (−4.45%) and left the
+         * peak polluted, which then armed breakeven for the remainder. One tick
+         * of confirmation costs two seconds; the phantom cost the position.
+         */
+        MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '10',
         MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT: '8',
         /**
          * 1.11.874 — a soft exit asks the entry gate first. GCa9TZ went out on
