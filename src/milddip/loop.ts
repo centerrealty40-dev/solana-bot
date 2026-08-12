@@ -848,7 +848,21 @@ async function wakeLeaderSeeds(
   state: MildDipState,
   nowMs: number,
 ): Promise<number> {
-  // 1.11.782 — disabled: leader-seed entry is copytrading. Own stream only.
+  /**
+   * 1.11.875 — the seed is attention, not a buy signal.
+   *
+   * This lane was switched off in 1.11.782 as "copytrading", but it does not
+   * buy anything: it hands the mint to `tryFastPathForMint`, which runs our own
+   * structural and dip gates and rejects most of them. With it off, a mint only
+   * reaches us through stream / boosts / profiles, so a name two leaders were
+   * trading (49nkLrXi) had a seed entry and not one journal row — never looked
+   * at, never skipped, simply absent.
+   *
+   * Bounded because the seed holds up to `leaderSeedMax` mints and this runs
+   * every scan: a per-cycle slice, and a per-mint re-look interval so the same
+   * seed does not spend the Dex budget every three seconds. One batched Dex
+   * request warms the slice before the gates read it.
+   */
   if (!cfg.leaderSeedEntryEnabled) return 0;
   if (!cfg.fastPathEnabled) return 0;
   const unlimited = cfg.maxOpenPositions <= 0;
@@ -857,12 +871,32 @@ async function wakeLeaderSeeds(
     maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
     max: cfg.leaderSeedMax,
   });
+  const perCycle = cfg.leaderSeedWakeMax > 0 ? cfg.leaderSeedWakeMax : 12;
+  const relookMs = cfg.leaderSeedRelookMs;
+  const due = leaders.filter((hit) => {
+    if (state.open[hit.mint]) return false;
+    if (onCooldown(state, hit.mint, nowMs)) return false;
+    const last = leaderSeedLookedAtMs.get(hit.mint) ?? 0;
+    return relookMs <= 0 || nowMs - last >= relookMs;
+  });
+  // Freshest leader activity first: the dip they just took is the live one, and
+  // its observer snapshot is the one still inside `LEADER_SEED_DEX_MAX_AGE_MS`,
+  // so the structural gate reads it instead of spending a Dex slot.
+  due.sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs);
+  const slice = due.slice(0, perCycle);
+  if (slice.length === 0) return 0;
   let n = 0;
-  for (const hit of leaders) {
+  for (const hit of slice) {
     if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
     if (state.open[hit.mint]) continue;
+    leaderSeedLookedAtMs.set(hit.mint, nowMs);
     await tryFastPathForMint(cfg, state, hit.mint, 'leader', nowMs, hit);
     n += 1;
+  }
+  if (leaderSeedLookedAtMs.size > 4_000) {
+    for (const [mint, ts] of leaderSeedLookedAtMs) {
+      if (nowMs - ts > cfg.leaderSeedMaxAgeMs) leaderSeedLookedAtMs.delete(mint);
+    }
   }
   return n;
 }
@@ -1461,6 +1495,8 @@ const RECOVER_DEFER_REASONS = new Set([
 const lastDumpClassifyJournalMs = new Map<string, number>();
 /** mint → last recover_defer journal ts (throttle). */
 const lastRecoverDeferJournalMs = new Map<string, number>();
+/** mint → last time the leader-seed lane looked at it (Dex budget guard). */
+const leaderSeedLookedAtMs = new Map<string, number>();
 /** mint → last exit_defer_would_buy journal ts (throttle). */
 const lastExitDeferJournalMs = new Map<string, number>();
 /** mint → last leader_align_defer journal ts (throttle). */

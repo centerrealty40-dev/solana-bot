@@ -155,6 +155,14 @@ const MildDipConfigSchema = z.object({
    * Selling a name the entry side likes only to buy it back costs a full round
    * trip; GCa9TZ was sold at −10.48% and rebought 98s later, 7.7% lower.
    */
+  /**
+   * 1.11.875 — how many seeded mints the leader lane looks at per scan, and how
+   * long before it looks again. The seed can hold `leaderSeedMax` names and the
+   * lane runs every scan interval, so both bounds are what keep it from
+   * re-checking the same 250 mints every three seconds.
+   */
+  leaderSeedWakeMax: z.coerce.number().int().min(0).max(250).default(12),
+  leaderSeedRelookMs: z.coerce.number().int().min(0).max(3_600_000).default(60_000),
   exitDeferWouldBuyEnabled: z.boolean().default(false),
   /** Cumulative ms one bag may hold a soft exit this way. */
   exitDeferWouldBuyMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(600_000),
@@ -998,6 +1006,8 @@ export function loadMildDipConfig(): MildDipConfig {
     dumpClassifyWhaleShare: process.env.MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE ?? 0.6,
     /** 1.11.744 — defer soft exits while reclaiming off local trough. */
     /** 1.11.749 — default off; dump_classify owns soft-giveback gating. */
+    leaderSeedWakeMax: process.env.MILD_DIP_LEADER_SEED_WAKE_MAX ?? 12,
+    leaderSeedRelookMs: process.env.MILD_DIP_LEADER_SEED_RELOOK_MS ?? 60_000,
     exitDeferWouldBuyEnabled: envBool('MILD_DIP_EXIT_DEFER_WOULD_BUY', false),
     exitDeferWouldBuyMaxMs: process.env.MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS ?? 600_000,
     recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),

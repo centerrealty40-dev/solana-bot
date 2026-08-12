@@ -3382,7 +3382,20 @@ const PM2_APPS = [
          * 1.11.782 — NOT copytrading. Leader-seed does not open buys; align/
          * scale-in OFF. Observer may still log leaders for research only.
          */
-        MILD_DIP_LEADER_SEED_ENTRY: '0',
+        /**
+         * 1.11.875 — the seed is attention, not a buy signal: the lane hands the
+         * mint to our own structural + dip gates, which reject most of them. With
+         * it off a name only reached us through stream / boosts / profiles, so
+         * 49nkLrXi — traded by two leaders, sitting in our seed — had not one
+         * journal row: never looked at, never skipped, simply absent.
+         *
+         * The observer snapshot serves the structural gate while it is fresh, so
+         * the lane costs no Dex slots; the two bounds below stop it re-checking
+         * the whole seed every scan.
+         */
+        MILD_DIP_LEADER_SEED_ENTRY: '1',
+        MILD_DIP_LEADER_SEED_WAKE_MAX: '12',
+        MILD_DIP_LEADER_SEED_RELOOK_MS: '60000',
         /**
          * 1.11.783 — after our exit keep mint on stream/knife wake 2h
          * (was ~10m via bounce lookback → 23e4CN knife at +61m invisible).
