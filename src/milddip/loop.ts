@@ -1710,7 +1710,10 @@ async function tryExits(
         toSell.push({
           mint,
           markPriceUsd: syn,
-          mfeBasisPriceUsd: pos.mfeBasisPriceUsd ?? null,
+          mfeBasisPriceUsd:
+            pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > pos.entryPriceUsd
+              ? pos.entryMarkPriceUsd
+              : null,
           peakPriceUsd: syn,
           armed: pos.trailArmed === true,
           justArmed: false,
