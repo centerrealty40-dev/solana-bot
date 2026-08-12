@@ -30,6 +30,15 @@ export type MildDipOpenPosition = {
    * `mfeBankStage` this is not capped: rung 9 is +72% MFE at an 8% step.
    */
   tpRungsDone?: number;
+  /**
+   * 1.11.852 — last mark accepted for this bag, and a quarantined one awaiting
+   * confirmation. A single stream print collapsed 5.6420e-04 to 3.2402e-04
+   * (−42.57% in one tick) on a bag sitting at +21.75%, fired the −25% stop and
+   * closed it while the name kept climbing. A move that large has to be seen
+   * twice before it decides anything.
+   */
+  lastMarkPriceUsd?: number;
+  pendingMarkPriceUsd?: number;
   /** Running low-water mark from entry (never-arm bounce / freefall). */
   postEntryTroughUsd?: number;
   /** When postEntryTroughUsd was last deepened. */

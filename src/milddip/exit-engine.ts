@@ -20,6 +20,8 @@ export type MarkExitDecision = {
   reason: MildDipExitReason;
   /** Rung filled by this decision; null unless `reason` is `tp_grid`. */
   tpRungIndex: number | null;
+  /** 1.11.852 — mark held back pending confirmation; nothing was decided. */
+  markQuarantined?: boolean;
   mfePct: number;
   givebackPct: number;
   pnlPct: number;
@@ -82,6 +84,51 @@ export function decideMarkExit(args: {
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
   const peakPrev =
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
+
+  /**
+   * A violent single-tick move has to be seen twice before it decides anything.
+   * One stream print took 5.6420e-04 to 3.2402e-04 — −42.57% between adjacent
+   * marks, every neighbour steady at +21% — and the −25% stop closed the whole
+   * bag on it. The fill came back at the real 5.6545e-04, so the money was
+   * fine; the position was not, and the name kept climbing.
+   *
+   * A genuine collapse costs one extra tick before we act on it. A phantom
+   * costs the position.
+   */
+  const jumpLimit = gates.markJumpConfirmPct > 0 ? gates.markJumpConfirmPct : 0;
+  const lastMark = pos.lastMarkPriceUsd;
+  if (jumpLimit > 0 && lastMark != null && lastMark > 0) {
+    const jumpPct = Math.abs(markPriceUsd / lastMark - 1) * 100;
+    if (jumpPct > jumpLimit) {
+      const pendingPx = pos.pendingMarkPriceUsd;
+      const confirms =
+        pendingPx != null &&
+        pendingPx > 0 &&
+        Math.abs(markPriceUsd / pendingPx - 1) * 100 <= jumpLimit;
+      if (!confirms) {
+        // Hold everything as it was; only remember what we saw.
+        return {
+          mint,
+          markPriceUsd,
+          mfeBasisPriceUsd: null,
+          peakPriceUsd: peakPrev,
+          armed: pos.trailArmed === true,
+          justArmed: false,
+          shouldExit: false,
+          fraction: 0,
+          reason: null,
+          tpRungIndex: null,
+          mfePct: 0,
+          givebackPct: 0,
+          pnlPct: 0,
+          volFadeSamples: [...(pos.volFadeSamples ?? [])],
+          postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+          postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+          markQuarantined: true,
+        };
+      }
+    }
+  }
   const nowMs = args.nowMs ?? Date.now();
   const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
   const stageRaw = Number(pos.mfeBankStage);
@@ -173,6 +220,14 @@ export function applyMarkDecisionToPosition(
   pos: MildDipOpenPosition,
   decision: MarkExitDecision,
 ): void {
+  if (decision.markQuarantined) {
+    // Remember the outlier so a second print at the same level can confirm it,
+    // and leave every other field, including lastMarkPriceUsd, untouched.
+    pos.pendingMarkPriceUsd = decision.markPriceUsd;
+    return;
+  }
+  pos.lastMarkPriceUsd = decision.markPriceUsd;
+  pos.pendingMarkPriceUsd = undefined;
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;

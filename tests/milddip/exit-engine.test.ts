@@ -431,6 +431,71 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
+  describe('a single-tick collapse must be confirmed (1.11.852)', () => {
+    // Live: 5.6420e-04 -> 3.2402e-04 in one stream print, -42.57%, on a bag at
+    // +21.75%. The -25% stop closed the whole position; the name kept climbing.
+    const ENTRY = 4.6342e-4;
+    const STEADY = 5.642e-4;
+    const PHANTOM = 3.2402e-4;
+    const g = { ...gates, markJumpConfirmPct: 25, hardStopPnlPct: 25 };
+    const held = (): MildDipOpenPosition =>
+      pos({
+        mint: 'jump',
+        entryPriceUsd: ENTRY,
+        peakPriceUsd: 5.695e-4,
+        trailArmed: true,
+        openedAtMs: 1_000_000,
+      });
+    const mark = (p: MildDipOpenPosition, px: number) =>
+      decideMarkExit({ mint: 'jump', pos: p, markPriceUsd: px, gates: g, nowMs: 1_400_000 });
+
+    it('does not stop out on the phantom print', () => {
+      const p = held();
+      applyMarkDecisionToPosition(p, mark(p, STEADY)!);
+      const d = mark(p, PHANTOM)!;
+      expect(d.markQuarantined).toBe(true);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('keeps peak, arm and last mark untouched while quarantined', () => {
+      const p = held();
+      applyMarkDecisionToPosition(p, mark(p, STEADY)!);
+      const peakBefore = p.peakPriceUsd;
+      applyMarkDecisionToPosition(p, mark(p, PHANTOM)!);
+      expect(p.peakPriceUsd).toBe(peakBefore);
+      expect(p.trailArmed).toBe(true);
+      expect(p.lastMarkPriceUsd).toBeCloseTo(STEADY, 12);
+      expect(p.pendingMarkPriceUsd).toBeCloseTo(PHANTOM, 12);
+    });
+
+    it('carries on normally when the next print is back at the real level', () => {
+      const p = held();
+      applyMarkDecisionToPosition(p, mark(p, STEADY)!);
+      applyMarkDecisionToPosition(p, mark(p, PHANTOM)!);
+      const back = mark(p, 5.6545e-4)!;
+      expect(back.markQuarantined).toBeFalsy();
+      expect(back.shouldExit).toBe(false);
+      expect(back.pnlPct).toBeGreaterThan(20);
+    });
+
+    it('still stops out when a second print confirms the collapse', () => {
+      const p = held();
+      applyMarkDecisionToPosition(p, mark(p, STEADY)!);
+      applyMarkDecisionToPosition(p, mark(p, PHANTOM)!);
+      const again = mark(p, PHANTOM * 1.01)!;
+      expect(again.markQuarantined).toBeFalsy();
+      expect(again.reason).toBe('hard_stop');
+      expect(again.fraction).toBe(1);
+    });
+
+    it('leaves ordinary moves alone', () => {
+      const p = held();
+      applyMarkDecisionToPosition(p, mark(p, STEADY)!);
+      const d = mark(p, STEADY * 1.09)!;
+      expect(d.markQuarantined).toBeFalsy();
+    });
+  });
+
   it('updates peak and arms without exiting', () => {
     const p = pos({
       mint: 'm1',

@@ -492,6 +492,8 @@ const MildDipConfigSchema = z.object({
     mfeBankSleeveGivebackPct: z.coerce.number().min(0).max(100).default(12),
     /** 1.11.849 — Oscar-style unbounded TP ladder. 0 = off (mfe-bank owns exits). */
     tpGridStepPct: z.coerce.number().min(0).max(500).default(0),
+    /** 1.11.852 — confirm single-tick jumps larger than this % before acting. */
+    markJumpConfirmPct: z.coerce.number().min(0).max(100).default(25),
     tpGridSellFraction: z.coerce.number().min(0).max(1).default(0.5),
     /** 1.11.821 — min hold before the first bank (SPL settle race). 0 = off. */
     mfeBankMinHoldMs: z.coerce.number().int().min(0).max(600_000).default(0),
@@ -651,6 +653,7 @@ export function loadMildDipConfig(): MildDipConfig {
     mfeBank2Fraction: envNum('MILD_DIP_EXIT_MFE_BANK2_FRACTION', 0.4),
     mfeBankSleeveGivebackPct: envNum('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', 12),
     tpGridStepPct: envNum('MILD_DIP_EXIT_TP_GRID_STEP_PCT', 0),
+    markJumpConfirmPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT', 25),
     tpGridSellFraction: envNum('MILD_DIP_EXIT_TP_GRID_SELL_FRACTION', 0.5),
     mfeBankMinHoldMs: envNum('MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS', 0),
     mfeBankSleeveLossPartialFraction: envNum(
