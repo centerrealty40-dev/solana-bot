@@ -29,6 +29,7 @@
  */
 import { evaluateMildDipEntry, type MildDipEntryGates } from './gates.js';
 import type { MildDipExitReason } from './gates.js';
+import { OPEN_MARK_METRICS_MAX_AGE_MS } from './open-mark-metrics.js';
 
 /**
  * Every exit that is a judgement rather than a floor. The bag faded, or ran out
@@ -90,7 +91,15 @@ export type ExitDeferCarriedEntryMetrics = {
   pairAgeHours: number | null;
 };
 
-const METRICS_MAX_AGE_MS = 60_000;
+/**
+ * 1.11.877 — the same window the never-arm exits already trust.
+ *
+ * A tighter one here was its own two-brains bug: `never_arm_time_red` fires on a
+ * `pc5m` reading up to `OPEN_MARK_METRICS_MAX_AGE_MS` old, so refusing to *hold*
+ * on that same reading let the sell win every argument the data was too stale to
+ * settle. Good enough to sell is good enough to keep.
+ */
+const METRICS_MAX_AGE_MS = OPEN_MARK_METRICS_MAX_AGE_MS;
 
 /**
  * Would the entry gate open this position right now?

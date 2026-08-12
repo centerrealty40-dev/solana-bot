@@ -1892,6 +1892,24 @@ async function tryExits(
           continue;
         }
         pos.exitDeferredAtMs = nowMs;
+        /**
+         * Why we are selling anyway. Without this the check was a blind spot:
+         * four deferrable exits fired with no deferral and no record of what
+         * declined them, which is how a mismatched staleness window hid.
+         */
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'exit_defer_declined',
+          mint,
+          symbol: pos.symbol,
+          wouldReason: decision.reason,
+          declinedBy: deferVerdict.reasons.slice(0, 4).join(',') || null,
+          pnlPct: +decision.pnlPct.toFixed(2),
+          pc5m: readOpenMarkMetrics(mint, nowMs)?.pc5mPct ?? null,
+          metricsAgeMs: (() => {
+            const om = readOpenMarkMetrics(mint, nowMs, 0);
+            return om ? Math.max(0, nowMs - om.tsMs) : null;
+          })(),
+        });
       }
 
       // 1.11.761 — leader just bought this mint while a soft exit is firing:

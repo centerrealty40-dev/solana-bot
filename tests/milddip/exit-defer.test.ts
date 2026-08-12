@@ -109,9 +109,18 @@ describe('shouldDeferSoftExit', () => {
   });
 
   it('will not claim the gate passes on stale metrics', () => {
+    // The window matches the one the never-arm exits already fire on, so a
+    // reading good enough to sell on is good enough to keep on (1.11.877).
+    const fresh = shouldDeferSoftExit({
+      ...base,
+      reason: 'never_arm_time_red',
+      metrics: { ...base.metrics, ageMs: 120_000 },
+    });
+    expect(fresh.defer).toBe(true);
+
     const v = shouldDeferSoftExit({
       ...base,
-      metrics: { ...base.metrics, ageMs: 120_000 },
+      metrics: { ...base.metrics, ageMs: 180_000 },
     });
     expect(v.defer).toBe(false);
     expect(v.reasons.join(' ')).toContain('metrics_stale');
