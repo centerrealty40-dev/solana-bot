@@ -2837,13 +2837,13 @@ const PM2_APPS = [
         /** 1.11.828 — flat $5 across base / thick / micro. */
         /** 1.11.839 — flat $2 across base / thick / micro. */
         /** 1.11.841 — flat $1 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '1',
+        MILD_DIP_POSITION_USD: '3',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          * 1.11.841 — same $1 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '1',
+        MILD_DIP_THICK_POSITION_USD: '3',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
@@ -2852,7 +2852,7 @@ const PM2_APPS = [
          * 1.11.776 — floor aligned to global $5k (was $15k–$50k).
          * 1.11.841 — clip flat $1 with base/thick (one economic tier).
          */
-        MILD_DIP_MICRO_POSITION_USD: '1',
+        MILD_DIP_MICRO_POSITION_USD: '3',
         MILD_DIP_MICRO_MIN_MCAP_USD: '5000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -3108,7 +3108,13 @@ const PM2_APPS = [
          * below a 40% bank remainder of the $5 clip ($3) so live runners are not
          * touched; 30m min-hold is well past the 12.5m median hold.
          */
-        MILD_DIP_EXIT_DUST_CLOSE_USD: '2',
+        /**
+         * 1.11.857 — $0.60, was $2. With a $3 clip and a ladder halving the
+         * remainder, the first rung leaves $1.50 and the second $0.75; a $2
+         * threshold would have swept every runner as dust half an hour in.
+         * $0.60 only catches what is left after three rungs.
+         */
+        MILD_DIP_EXIT_DUST_CLOSE_USD: '0.6',
         MILD_DIP_EXIT_DUST_CLOSE_MIN_HOLD_MS: '1800000',
         /**
          * 1.11.815 — back to 25. The 1.11.810 cut to 15 was fitted on 49 trades
