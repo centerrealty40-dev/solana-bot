@@ -3015,6 +3015,28 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_VOLUME_5M_USD: '150',
         /**
+         * 1.11.870 — ceiling at $40k of 5m volume. Over 499 fully closed bags
+         * joined to the entry snapshot, counted in cash:
+         *
+         *   $0–2k    112 bags  −$12.94   win 0.393
+         *   $2–6k    112 bags  −$23.90   win 0.384
+         *   $6–15k    89 bags  −$20.02   win 0.416
+         *   $15–40k   92 bags  −$29.82   win 0.370
+         *   >$40k     94 bags  −$61.72   win 0.298
+         *
+         * Nineteen percent of the bags carry 42% of the loss. The split shows
+         * up again in the bags that reach a deep-loss exit: their 5m volume at
+         * entry has a median of $19,361 against $6,702 for everything else,
+         * while liquidity, mcap and pc5m are indistinguishable between the two.
+         * A name doing more than $40k in five minutes is inside an event and we
+         * are on the wrong side of it.
+         *
+         * The ceiling keeps 81% of bags and removes $61.71 of the loss. The
+         * green lane is unaffected: it is evaluated before these floors and
+         * wants hot names by design.
+         */
+        MILD_DIP_MAX_VOLUME_5M_USD: '40000',
+        /**
          * 1.11.844 — liquidity floor $5k → $15k, the one change the overnight
          * analysis supports on its own.
          *
@@ -3294,6 +3316,8 @@ const PM2_APPS = [
          * whole dex object came back empty.
          */
         MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.05',
+        /** Green wants hot names; the dip lane's $40k ceiling does not apply. */
+        MILD_DIP_GREEN_MIN_VOL5M_USD: '8000',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',

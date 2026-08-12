@@ -904,6 +904,7 @@ function structuralGatesPass(
       ? opts.minMarketCapUsd
       : g.minMarketCapUsd;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
+  if (g.maxVolume5mUsd > 0 && metrics.volume5mUsd > g.maxVolume5mUsd) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
   if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= minMcap)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;

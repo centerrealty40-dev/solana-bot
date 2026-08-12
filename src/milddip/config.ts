@@ -491,6 +491,12 @@ const MildDipConfigSchema = z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
     minVolume5mUsd: z.number(),
+    /**
+     * 1.11.870 — upper bound on 5m volume at entry. 0 = off.
+     * A name doing this much in five minutes is inside an event, and we are on
+     * the wrong side of it: see the ceiling note in `ecosystem.config.cjs`.
+     */
+    maxVolume5mUsd: z.number(),
     minLiquidityUsd: z.number(),
     minMarketCapUsd: z.number(),
     maxMarketCapUsd: z.number(),
@@ -655,6 +661,7 @@ export function loadMildDipConfig(): MildDipConfig {
     maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -8),
     /** 1.11.735 — default $500 (was $1500). Dex 5m volume floor before buy. */
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 300),
+    maxVolume5mUsd: envNum('MILD_DIP_MAX_VOLUME_5M_USD', 0),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 5_000),
     /**

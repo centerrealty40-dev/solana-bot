@@ -68,3 +68,31 @@ describe('1.11.864 the pair-age floor carries most of the risk control', () => {
     expect(Number(botEnv('MILD_DIP_MAX_PAIR_AGE_HOURS'))).toBe(720);
   });
 });
+
+describe('1.11.870 a 5m volume ceiling keeps us out of the event', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  function botEnv(key: string): string | null {
+    const anchor = eco.indexOf("MILD_DIP_POSITION_USD: '");
+    const m = eco.slice(anchor).match(new RegExp(`${key}: '([^']*)'`));
+    return m ? m[1] : null;
+  }
+
+  it('caps entry volume at $40k', () => {
+    // 499 fully closed bags: the 94 entered above $40k of 5m volume carried
+    // -$61.72 of a -$148.39 total at a 0.298 win rate, while every other
+    // bucket sat between -$12.94 and -$29.82.
+    expect(Number(botEnv('MILD_DIP_MAX_VOLUME_5M_USD'))).toBe(40_000);
+  });
+
+  it('the floor and the ceiling leave a working band', () => {
+    const lo = Number(botEnv('MILD_DIP_MIN_VOLUME_5M_USD'));
+    const hi = Number(botEnv('MILD_DIP_MAX_VOLUME_5M_USD'));
+    expect(lo).toBeGreaterThan(0);
+    expect(hi).toBeGreaterThan(lo * 100);
+  });
+
+  it('the green lane is not bound by it — it wants hot names', () => {
+    // Green is evaluated before these floors and asks for vol5m >= 8000.
+    expect(eco).toContain("MILD_DIP_GREEN_MIN_VOL5M_USD");
+  });
+});
