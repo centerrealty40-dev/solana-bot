@@ -55,6 +55,13 @@ export type GreenLaneGates = {
   maxBuyShare5m: number;
   minLiquidityUsd: number;
   /**
+   * Own floor, separate from the dip lane's. Green signals are young — median
+   * pair age 0.67h against the dip lane's 6h floor, which would keep only 18%
+   * of them — and the lane's ten-minute ceiling bounds the exposure that floor
+   * was protecting against.
+   */
+  minPairAgeHours: number;
+  /**
    * Require the last minute to be flat or down — they buy the pullback inside
    * the green move. Only applied when a 1-minute return is available; the Dex
    * snapshot does not carry one, so this stays optional rather than blocking
@@ -71,6 +78,7 @@ export type GreenLaneInput = {
   liquidityUsd: number | null | undefined;
   buys5m: number | null | undefined;
   sells5m: number | null | undefined;
+  pairAgeHours: number | null | undefined;
   /** Optional; skipped when absent. */
   ret1mPct?: number | null;
 };
@@ -133,6 +141,10 @@ export function evaluateGreenLane(
     fail.push(`vol1h=${vol1h ?? 'null'}`);
   }
   if (liq == null || liq < gates.minLiquidityUsd) fail.push(`liq=${liq ?? 'null'}`);
+  const ageH = num(input.pairAgeHours);
+  if (gates.minPairAgeHours > 0 && (ageH == null || ageH < gates.minPairAgeHours)) {
+    fail.push(`ageH=${ageH == null ? 'null' : ageH.toFixed(2)}`);
+  }
   if (gates.minBuys5m > 0 && (buys == null || buys < gates.minBuys5m)) {
     fail.push(`buys5m=${buys ?? 'null'}`);
   }

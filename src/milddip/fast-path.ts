@@ -5,6 +5,7 @@
  * (or cache hit) for structural gates + stream drawdown for timing.
  */
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
+import { evaluateGreenLane } from './green-lane.js';
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
 import { evaluateFlatMicroDip, type MildDipCandidateMetrics } from './gates.js';
@@ -395,7 +396,9 @@ export function requireStreamPriceForDipSource(
     dipSource !== 'dex' &&
     dipSource !== 'dex+stream' &&
     dipSource !== 'turn_dump_knife' &&
-    dipSource !== 'wait_dip'
+    dipSource !== 'wait_dip' &&
+    // Green is decided entirely off the Dex snapshot; a stream print adds nothing.
+    dipSource !== 'green_momentum'
   );
 }
 
@@ -491,6 +494,50 @@ export async function evaluateFastPathCandidate(
   // Age of the snapshot the decision rests on — lets us check afterwards whether
   // entries taken off a stale snapshot perform worse than fresh ones.
   const structAgeMs = Math.max(0, nowMs - struct.fetchedAtMs);
+  /**
+   * Green lane, evaluated before the dip floors because it is a different
+   * trade with its own floors, its own clip and its own exit. A momentum name
+   * is younger and hotter than anything the dip lane wants, so running it
+   * through `structuralOk` would reject it on the 6h age floor that was fitted
+   * on dip P&L.
+   */
+  if (cfg.green.enabled) {
+    const g = evaluateGreenLane(
+      {
+        pc5mPct: struct.metrics.priceChange5mPct,
+        pc1hPct: struct.metrics.priceChange1hPct,
+        volume5mUsd: struct.metrics.volume5mUsd,
+        volume1hUsd: struct.metrics.volume1hUsd,
+        liquidityUsd: struct.metrics.liquidityUsd,
+        buys5m: struct.metrics.buys5m,
+        sells5m: struct.metrics.sells5m,
+        pairAgeHours: struct.metrics.pairAgeHours,
+      },
+      {
+        enabled: true,
+        minTurnover5mLiq: cfg.green.minTurnover5mLiq,
+        minVolume5mUsd: cfg.green.minVolume5mUsd,
+        minVolume1hUsd: cfg.green.minVolume1hUsd,
+        minPc5mPct: cfg.green.minPc5mPct,
+        minPc1hPct: cfg.green.minPc1hPct,
+        minBuys5m: cfg.green.minBuys5m,
+        maxBuyShare5m: cfg.green.maxBuyShare5m,
+        minLiquidityUsd: cfg.green.minLiquidityUsd,
+        minPairAgeHours: cfg.green.minPairAgeHours,
+        maxRet1mPct: cfg.green.maxRet1mPct,
+      },
+    );
+    if (g.pass) {
+      return {
+        mint,
+        symbol: mint.slice(0, 6),
+        priceUsd: struct.priceUsd,
+        metrics: struct.metrics,
+        dipSource: 'green_momentum',
+      };
+    }
+  }
+
   if (!structuralOk(struct.metrics, cfg)) {
     return skip('structural_fail', {
       structSource,
