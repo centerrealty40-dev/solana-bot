@@ -496,6 +496,57 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
+  describe('a bag that was green does not come back as a loss (1.11.855)', () => {
+    // 2iKmjMW3: entry 1.1357e-04, peak 1.2890e-04 (+13.5%), trail fired 33%
+    // below the peak and realised −25.53%.
+    const ENTRY = 1.1357e-4;
+    const PEAK = 1.289e-4;
+    // Live shape: no ladder, no partial scale-out, single exit on a 30% trail.
+    const be = {
+      ...gates,
+      breakevenArmPct: 8,
+      breakevenFloorPct: 0,
+      givebackPct: 30,
+      partialGivebackPct: 0,
+      mfeBank1Pct: 0,
+      tpGridStepPct: 0,
+      hardStopPnlPct: 25,
+    };
+    const bag = (peak: number, armed = true): MildDipOpenPosition =>
+      pos({ mint: 'be', entryPriceUsd: ENTRY, peakPriceUsd: peak, trailArmed: armed, openedAtMs: 1_000_000 });
+    const at = (p: MildDipOpenPosition, px: number, g = be) =>
+      decideMarkExit({ mint: 'be', pos: p, markPriceUsd: px, gates: g, nowMs: 1_400_000 });
+
+    it('closes at breakeven instead of riding the trail to −25%', () => {
+      const d = at(bag(PEAK), ENTRY * 0.999);
+      expect(d?.reason).toBe('breakeven_stop');
+      expect(d?.fraction).toBe(1);
+    });
+
+    it('leaves a green bag alone', () => {
+      expect(at(bag(PEAK), ENTRY * 1.05)?.shouldExit).toBe(false);
+    });
+
+    it('does not apply before the bag was meaningfully green', () => {
+      // MFE only +4%: the floor is not armed, so the old behaviour stands.
+      const d = at(bag(ENTRY * 1.04), ENTRY * 0.999);
+      expect(d?.reason).not.toBe('breakeven_stop');
+    });
+
+    it('still lets a real runner run', () => {
+      expect(at(bag(ENTRY * 4), ENTRY * 3.2)?.shouldExit).toBe(false);
+    });
+
+    it('the −25% stop still owns anything deeper', () => {
+      expect(at(bag(ENTRY * 1.02, false), ENTRY * 0.7)?.reason).toBe('hard_stop');
+    });
+
+    it('off by default', () => {
+      const d = at(bag(PEAK), ENTRY * 0.999, { ...be, breakevenArmPct: 0 });
+      expect(d?.reason).not.toBe('breakeven_stop');
+    });
+  });
+
   it('updates peak and arms without exiting', () => {
     const p = pos({
       mint: 'm1',
