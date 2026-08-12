@@ -109,6 +109,11 @@ export type MildDipExitGates = {
    */
   markJumpConfirmStreamPct: number;
   /**
+   * 1.11.882 — measured gap between the mark and what a sell actually fills at,
+   * taken off the gain side so a money threshold clears on a price we can get.
+   */
+  markSellHaircutPct: number;
+  /**
    * 1.11.855 — once MFE has reached `breakevenArmPct`, close the whole bag if
    * P&L falls to `breakevenFloorPct`. 0 = off.
    */
@@ -884,17 +889,38 @@ export function evaluateMildDipPeakGiveback(args: {
   const gainBasisPriceUsd = Math.max(entryPriceUsd, entryMarkBasis);
   const lossBasisPriceUsd = Math.min(entryPriceUsd, entryMarkBasis);
   /**
+   * 1.11.882 — the mark is a mid; we sell into the bid.
+   *
+   * Over 2009 live sells the fill landed a median 0.99% below the mark that
+   * decided it, p25 −3.59%, with half of them more than 1% below. So every
+   * money threshold measured on the raw mark was optimistic by about a percent,
+   * which is the whole of the "sold 1% under what we paid" complaint: the rung,
+   * the bounce floor and breakeven all cleared on a price we could not get.
+   *
+   * Oscar compares an achievable sell price against what it paid
+   * (`xAvg = marketSell / ot.avgEntry`, `tracker.ts:2545`). A quote per mark
+   * would cost a Jupiter call per tick, so the measured haircut stands in for
+   * it. Applied to the gain only: taking a percent off the loss floors would
+   * invent stops.
+   */
+  const sellHaircut =
+    gates.markSellHaircutPct > 0 ? Math.min(gates.markSellHaircutPct, 10) / 100 : 0;
+  const sellableMarkPriceUsd = markPriceUsd > 0 ? markPriceUsd * (1 - sellHaircut) : markPriceUsd;
+  /**
    * Never below zero. MFE is the best the bag has been; a negative reading only
    * means the basis sits above the peak, which is a basis fault, not a price
    * move. It used to leak straight into the ladder and the arm check: a
    * `wait_dip` bag opened at MFE −11% and could not reach a rung until the
    * price climbed all the way back.
    */
-  const mfePct = Math.max(0, mfeFromEntryPct(peakPriceUsd, gainBasisPriceUsd) ?? 0);
+  const mfePct = Math.max(
+    0,
+    mfeFromEntryPct(peakPriceUsd * (1 - sellHaircut), gainBasisPriceUsd) ?? 0,
+  );
   /** What the ladder rungs answer to: the gain standing right now, in money. */
   const gainPct =
-    gainBasisPriceUsd > 0 && markPriceUsd > 0
-      ? (markPriceUsd / gainBasisPriceUsd - 1) * 100
+    gainBasisPriceUsd > 0 && sellableMarkPriceUsd > 0
+      ? (sellableMarkPriceUsd / gainBasisPriceUsd - 1) * 100
       : 0;
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =

@@ -3237,7 +3237,19 @@ const PM2_APPS = [
          * sell side. Held at that measured cost so the exit lands where its name
          * says it does.
          */
-        MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '3.5',
+        /**
+         * 1.11.882 — back to 0. The 3.5% stood in for a round trip we now measure
+         * properly: the gain basis already answers for entry overpay and the sell
+         * haircut answers for the exit, so 0 is literally breakeven in money.
+         */
+        MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0',
+        /**
+         * Measured over 2009 live sells: the fill lands a median 0.99% below the
+         * mark that decided it (p25 −3.59%, half of them past 1%). The mark is a
+         * mid and we sell into the bid, so a money threshold has to clear on a
+         * price we can actually get.
+         */
+        MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT: '1',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',

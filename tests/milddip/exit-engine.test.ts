@@ -346,6 +346,48 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(ok.reason).toBe('never_arm_bounce');
     });
 
+    it('a money threshold clears on a price we can actually get (1.11.882)', () => {
+      // The fill lands a median 0.99% below the deciding mark over 2009 sells,
+      // so the gain takes that haircut: an 8% rung needs 9% on the mark.
+      const hair = { ...bankGates, tpGridStepPct: 8, tpGridSellFraction: 0.5, markSellHaircutPct: 1 };
+      const p = fresh('haircut', 100, 100);
+      const justUnder = decideMarkExit({
+        mint: 'haircut',
+        pos: p,
+        markPriceUsd: 108,
+        gates: hair,
+        nowMs: 1_040_000,
+      })!;
+      expect(justUnder.gainPct).toBeCloseTo(6.92, 1);
+      expect(justUnder.shouldExit).toBe(false);
+
+      const over = decideMarkExit({
+        mint: 'haircut',
+        pos: p,
+        markPriceUsd: 109.1,
+        gates: hair,
+        nowMs: 1_040_000,
+      })!;
+      expect(over.gainPct).toBeGreaterThanOrEqual(8);
+      expect(over.shouldExit).toBe(true);
+      expect(over.reason).toBe('tp_grid');
+    });
+
+    it('the haircut never reaches the loss floors (1.11.882)', () => {
+      // Taking a percent off the stop would invent it.
+      const hair = { ...bankGates, hardStopPnlPct: 25, markSellHaircutPct: 1 };
+      const p = fresh('haircut2', 100, 100);
+      const d = decideMarkExit({
+        mint: 'haircut2',
+        pos: p,
+        markPriceUsd: 75.5,
+        gates: hair,
+        nowMs: 1_040_000,
+      })!;
+      expect(d.pnlPct).toBeCloseTo(-24.5, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
     it('still stops out on a real 25% fall measured from the entry mark', () => {
       const MARK = FILL * 0.97;
       const p = fresh('eub3c', FILL, MARK);
