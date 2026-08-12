@@ -23,7 +23,7 @@ const gates: GreenLaneGates = {
   minBuys5m: 43,
   maxBuyShare5m: 0.85,
   minLiquidityUsd: 6_000,
-  minPairAgeHours: 1,
+  minPairAgeHours: 0.05,
   maxRet1mPct: 0,
 };
 
@@ -265,11 +265,12 @@ describe('the green lane costs nothing extra on the paid RPC', () => {
 });
 
 describe('the green lane keeps its own age floor (1.11.865)', () => {
-  it('turns away a launch younger than the floor', () => {
-    // The dip lane's own cash says coins under two hours carry 84.9% of its
-    // loss; green gets a lighter floor because it is out in ten minutes, but
-    // not none.
-    expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.4 }, gates).pass).toBe(false);
+  it('admits a launch, and only waits for a readable snapshot', () => {
+    // Age does not move per-trade quality here: mean +3.39 with no floor
+    // against +2.75 at 1h, while the signal count falls 153 -> 60. The floor
+    // exists only so the pair has a snapshot at all.
+    expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.02 }, gates).pass).toBe(false);
+    expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.4 }, gates).pass).toBe(true);
     expect(evaluateGreenLane({ ...ok, pairAgeHours: 1.2 }, gates).pass).toBe(true);
   });
 
@@ -279,13 +280,13 @@ describe('the green lane keeps its own age floor (1.11.865)', () => {
 
   it('the floor can be lifted entirely', () => {
     const g = { ...gates, minPairAgeHours: 0 };
-    expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.1 }, g).pass).toBe(true);
+    expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.001 }, g).pass).toBe(true);
   });
 
   it('live env runs the lane at a $1 clip', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '1'");
     expect(eco).toContain("MILD_DIP_GREEN_POSITION_USD: '1'");
-    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1'");
+    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.05'");
   });
 });
