@@ -82,6 +82,8 @@ export function decideMarkExit(args: {
   oneshotDumpGraceActive?: boolean;
   /** Required for `lane === 'green'` bags; ignored otherwise. */
   greenGates?: GreenExitGates;
+  /** Which feed produced this mark; stream prints are held to a tighter jump guard. */
+  markSource?: 'stream' | 'dex' | null;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
@@ -127,7 +129,14 @@ export function decideMarkExit(args: {
    * A genuine collapse costs one extra tick before we act on it. A phantom
    * costs the position.
    */
-  const jumpLimit = gates.markJumpConfirmPct > 0 ? gates.markJumpConfirmPct : 0;
+  const streamLimit =
+    gates.markJumpConfirmStreamPct > 0 ? gates.markJumpConfirmStreamPct : 0;
+  const jumpLimit =
+    args.markSource === 'stream' && streamLimit > 0
+      ? streamLimit
+      : gates.markJumpConfirmPct > 0
+        ? gates.markJumpConfirmPct
+        : 0;
   const lastMark = pos.lastMarkPriceUsd;
   if (jumpLimit > 0 && lastMark != null && lastMark > 0) {
     const jumpPct = Math.abs(markPriceUsd / lastMark - 1) * 100;

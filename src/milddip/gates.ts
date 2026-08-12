@@ -92,6 +92,17 @@ export type MildDipExitGates = {
    */
   markJumpConfirmPct: number;
   /**
+   * 1.11.868 — the same guard for a print that came off the stream, where it
+   * has to be tighter. Reversion does not scale with jump size (10–15% at every
+   * band), but it does scale with source: of stream prints jumping 5–10% in one
+   * tick, 46.1% reverted on the next mark, against 37.0% at 10–15% and 26.5% at
+   * 15–20%. And among upward jumps of 20–25% the stream share is 31.2%, the
+   * highest of any band — CX2v7JSH was one of them at +23.56%, just under the
+   * 25% guard, and it armed the trail and fired a ladder rung on a coin that
+   * had not moved. 0 falls back to `markJumpConfirmPct`.
+   */
+  markJumpConfirmStreamPct: number;
+  /**
    * 1.11.855 — once MFE has reached `breakevenArmPct`, close the whole bag if
    * P&L falls to `breakevenFloorPct`. 0 = off.
    */
