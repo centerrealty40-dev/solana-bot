@@ -3213,7 +3213,14 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '25',
         MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT: '8',
         MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8',
-        MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0',
+        /**
+         * 1.11.873 — the floor is a mark-basis level, so breaking even in money
+         * means clearing the round trip. Seven `breakeven_stop` exits at a floor
+         * of 0 realised −3.58% on average: entry overpay (median 1.80%) plus the
+         * sell side. Held at that measured cost so the exit lands where its name
+         * says it does.
+         */
+        MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '3.5',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
