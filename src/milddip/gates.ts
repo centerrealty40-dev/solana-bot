@@ -647,6 +647,20 @@ export function sustainedVolFade(
  */
 export function evaluateMildDipPeakGiveback(args: {
   entryPriceUsd: number;
+  /**
+   * 1.11.848 — baseline for *movement* (arm, MFE bank levels, giveback).
+   *
+   * The Dex mark and our fill do not share a scale: a stale or different-pool
+   * snapshot can sit well above the price Jupiter actually gave us. EUB1eZ
+   * filled at 7.683e-05 while the mark held 8.492e-05 — unchanged from before
+   * the buy and for twelve seconds after — so the position read +10.52% with
+   * the price motionless, armed the trail, fired bank1 and sold into a loss.
+   *
+   * Movement is only meaningful within one series, so MFE is measured from the
+   * first post-entry mark when that sits above the fill. `pnlPct` keeps the
+   * fill basis: the stop must answer for real money.
+   */
+  mfeBasisPriceUsd?: number | null;
   markPriceUsd: number;
   peakPriceUsd: number;
   armed: boolean;
@@ -747,7 +761,14 @@ export function evaluateMildDipPeakGiveback(args: {
   );
   const postEntryTroughAtMs = markDeepensTrough ? nowMs : troughAtPrev;
   const troughAgeMs = Math.max(0, nowMs - postEntryTroughAtMs);
-  const mfePct = mfeFromEntryPct(peakPriceUsd, entryPriceUsd) ?? 0;
+  // Movement is measured inside the mark series; P&L keeps the fill basis.
+  const mfeBasis =
+    args.mfeBasisPriceUsd != null &&
+    Number.isFinite(args.mfeBasisPriceUsd) &&
+    args.mfeBasisPriceUsd > entryPriceUsd
+      ? Number(args.mfeBasisPriceUsd)
+      : entryPriceUsd;
+  const mfePct = mfeFromEntryPct(peakPriceUsd, mfeBasis) ?? 0;
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =
     entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;
