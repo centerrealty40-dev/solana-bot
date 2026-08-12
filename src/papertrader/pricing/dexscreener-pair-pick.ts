@@ -109,8 +109,12 @@ export function pickBestSolanaPairForMint(
     ? solana.filter((p) => (p.quoteToken?.address ?? '') === mint)
     : [];
 
+  // A response that carries no pair for `mint` is a miss, never a licence to
+  // price it off someone else's pool. Batch requests ask for 30 addresses at
+  // once, so `pairs` is full of other tokens; falling back to `solana` handed
+  // every absent mint the same highest-liquidity stranger.
   let pool: PairRow[] = asBase.length > 0 ? asBase : asQuoteOnly;
-  if (pool.length === 0) pool = solana;
+  if (pool.length === 0) return null;
 
   const dexNeedle = opts?.preferredDex?.trim().toLowerCase();
   if (dexNeedle) {

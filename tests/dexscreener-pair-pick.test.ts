@@ -100,6 +100,44 @@ describe('pickBestSolanaPairForMint', () => {
   });
 });
 
+describe('batch responses must not price a mint off another token', () => {
+  const wanted = 'WaNTeD1111111111111111111111111111111111111';
+  const other = 'OTHeR22222222222222222222222222222222222222';
+  const stranger = {
+    chainId: 'solana',
+    dexId: 'raydium',
+    baseToken: { address: other, symbol: 'OTHER' },
+    quoteToken: { address: SOL, symbol: 'SOL' },
+    priceUsd: '0.001545',
+    liquidity: { usd: 900_000 },
+  };
+
+  it('returns null when the batch carries no pair for the mint', () => {
+    expect(pickBestSolanaPairForMint([stranger], wanted)).toBeNull();
+  });
+
+  it('still resolves the mints that are present in the same response', () => {
+    const mine = {
+      chainId: 'solana',
+      dexId: 'pumpswap',
+      baseToken: { address: wanted, symbol: 'WANTED' },
+      quoteToken: { address: SOL, symbol: 'SOL' },
+      priceUsd: '0.0000172',
+      liquidity: { usd: 21_000 },
+    };
+    const picked = pickBestSolanaPairForMint([stranger, mine], wanted);
+    expect((picked as { baseToken?: { address?: string } } | null)?.baseToken?.address).toBe(wanted);
+    expect(pickBestSolanaPairForMint([stranger, mine], other)).not.toBeNull();
+  });
+
+  it('does not hand two absent mints the same stranger price', () => {
+    const a = pickBestSolanaPairForMint([stranger], 'AAAa111111111111111111111111111111111111111');
+    const b = pickBestSolanaPairForMint([stranger], 'BBBb222222222222222222222222222222222222222');
+    expect(a).toBeNull();
+    expect(b).toBeNull();
+  });
+});
+
 describe('isUsdPriceOutlierVsAnchor', () => {
   it('flags Ge87 Dex $138 vs leader $0.028', () => {
     expect(isUsdPriceOutlierVsAnchor(138.4, 0.028318, 2)).toBe(true);
