@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import type { MildDipOpenPosition } from '../../src/milddip/state.js';
@@ -21,6 +23,7 @@ const gates: GreenLaneGates = {
   minBuys5m: 43,
   maxBuyShare5m: 0.85,
   minLiquidityUsd: 6_000,
+  minPairAgeHours: 1,
   maxRet1mPct: 0,
 };
 
@@ -33,6 +36,7 @@ const ok: GreenLaneInput = {
   liquidityUsd: 20_000,
   buys5m: 60,
   sells5m: 50,
+  pairAgeHours: 3,
   ret1mPct: -0.5,
 };
 
@@ -101,6 +105,7 @@ describe('evaluateGreenLane', () => {
       liquidityUsd: 20_000,
       buys5m: 50,
       sells5m: 60,
+      pairAgeHours: 3,
     };
     expect(evaluateGreenLane(dip, gates).pass).toBe(false);
   });
@@ -256,5 +261,31 @@ describe('the green lane costs nothing extra on the paid RPC', () => {
 
   it('does not sample a mint we do not hold', () => {
     expect(forceFetch({})('nothing')).toBe(false);
+  });
+});
+
+describe('the green lane keeps its own age floor (1.11.865)', () => {
+  it('turns away a launch younger than the floor', () => {
+    // The dip lane's own cash says coins under two hours carry 84.9% of its
+    // loss; green gets a lighter floor because it is out in ten minutes, but
+    // not none.
+    expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.4 }, gates).pass).toBe(false);
+    expect(evaluateGreenLane({ ...ok, pairAgeHours: 1.2 }, gates).pass).toBe(true);
+  });
+
+  it('a missing age is a fail', () => {
+    expect(evaluateGreenLane({ ...ok, pairAgeHours: null }, gates).pass).toBe(false);
+  });
+
+  it('the floor can be lifted entirely', () => {
+    const g = { ...gates, minPairAgeHours: 0 };
+    expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.1 }, g).pass).toBe(true);
+  });
+
+  it('live env runs the lane at a $1 clip', () => {
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '1'");
+    expect(eco).toContain("MILD_DIP_GREEN_POSITION_USD: '1'");
+    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1'");
   });
 });

@@ -632,7 +632,17 @@ export async function attemptMildDipEntry(args: {
     rugRisk.tier === 'knife' && cfg.rugKnifeClipUsd > 0
       ? Math.min(cfg.rugKnifeClipUsd, wanted.sizeUsd)
       : wanted.sizeUsd;
-  const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, knifeCapped) : knifeCapped;
+  /**
+   * The green lane sizes itself. It is an unproven trade with a −6% stop and a
+   * ten-minute ceiling, so it runs at its own small clip rather than the dip
+   * lane's, and the rug-risk and probe caps still apply on top.
+   */
+  const isGreen = c.dipSource === 'green_momentum';
+  const laneCapped =
+    isGreen && cfg.green.positionUsd > 0
+      ? Math.min(cfg.green.positionUsd, knifeCapped)
+      : knifeCapped;
+  const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, laneCapped) : laneCapped;
   const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wantUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {
@@ -672,6 +682,7 @@ export async function attemptMildDipEntry(args: {
     buySignature: null,
     peakPriceUsd: entryPriceUsd,
     entryMarkPriceUsd: c.priceUsd > 0 ? c.priceUsd : undefined,
+    lane: isGreen ? 'green' : 'dip',
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
@@ -928,6 +939,7 @@ export async function attemptMildDipEntry(args: {
     buySignature: buy.signature ?? null,
     peakPriceUsd: fillPx,
     entryMarkPriceUsd: c.priceUsd > 0 ? c.priceUsd : undefined,
+    lane: isGreen ? 'green' : 'dip',
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,

@@ -3227,6 +3227,19 @@ const PM2_APPS = [
          * takes half, +16% half again, +24% takes the last quarter whole.
          */
         MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.2',
+        /**
+         * 1.11.865 — green lane on, at its own $1 clip. Momentum entries with
+         * their own floors and their own exit (+30% / −6% / 10 min); see
+         * `src/milddip/green-lane.ts` for how each number was measured.
+         *
+         * Its age floor is 1h, not the dip lane's 6h: green signals run at a
+         * median pair age of 0.67h, so a 6h floor would keep 18% of them, and
+         * the ten-minute ceiling bounds the exposure that floor guards against.
+         * At 1h we keep 39% of signals, roughly 57 a day.
+         */
+        MILD_DIP_GREEN_ENABLED: '1',
+        MILD_DIP_GREEN_POSITION_USD: '1',
+        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1',
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',

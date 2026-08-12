@@ -13,9 +13,12 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
   });
 
   it('a probe is clamped to the probe size, never the normal clip', () => {
+    // 1.11.865 — the green lane caps first, then the probe caps on top, so the
+    // probe is still the floor of the two.
     expect(src).toContain(
-      'const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, knifeCapped) : knifeCapped;',
+      'const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, laneCapped) : laneCapped;',
     );
+    expect(src).toContain('Math.min(cfg.green.positionUsd, knifeCapped)');
   });
 
   it('fills are tagged so they never mix into book statistics', () => {

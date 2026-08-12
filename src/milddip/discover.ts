@@ -85,7 +85,9 @@ export type MildDipCandidate = {
     | 'mild_stabilize'
     | 'wait_dip'
     /** Instant 7BNax-style deep+hot OR (dump≥30 & turn≥0.3). */
-    | 'turn_dump_knife';
+    | 'turn_dump_knife'
+    /** 1.11.865 — green lane: momentum entry, own clip and own exit. */
+    | 'green_momentum';
   /** Present when dipSource=knife_stabilize. */
   knifeMode?: 'bounce' | 'stabilize';
   knifeBouncePct?: number | null;
