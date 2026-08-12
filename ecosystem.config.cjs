@@ -2876,7 +2876,15 @@ const PM2_APPS = [
          * The turn→dump OR branches still admit shallow prints when the
          * formula itself matches, so this only removes band-only seats.
          */
-        MILD_DIP_MAX_DIP_PCT: '-8',
+        /**
+         * 1.11.854 — back to −3, was −8. The band was tightened in 1.11.825 on
+         * an MFE study computed from our mark tape, and that tape turned out to
+         * be poisoned (1.11.847 cross-mint prices, 1.11.848 stale-mark basis),
+         * so the reason no longer stands. Against 3288 deduped leader buys only
+         * 27.8% land inside −25…−8; 13.7% sit in −8…−3, which we were refusing.
+         * Green entries (35.6% of theirs) stay out of scope for now.
+         */
+        MILD_DIP_MAX_DIP_PCT: '-3',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).
