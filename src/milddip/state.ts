@@ -69,6 +69,13 @@ export type MildDipOpenPosition = {
    */
   entryMarketCapUsd?: number | null;
   entryPairAgeHours?: number | null;
+  /**
+   * 1.11.879 — when this bag last sold. A partial changes the size on chain and
+   * the balance read lags, so the next decision has to wait for data that
+   * postdates the sell; two `never_arm_bounce` legs fired 4.1s apart on 33Grh5V
+   * / 2HJmyTW, the second on a reading from before the first.
+   */
+  lastSellAtMs?: number;
   /** Cumulative ms this bag has held a soft exit because the gate still passes. */
   exitDeferredMs?: number;
   /** Wall clock of the last such deferral, for accumulating the budget. */

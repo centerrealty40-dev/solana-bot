@@ -163,6 +163,12 @@ const MildDipConfigSchema = z.object({
    */
   leaderSeedWakeMax: z.coerce.number().int().min(0).max(250).default(12),
   leaderSeedRelookMs: z.coerce.number().int().min(0).max(3_600_000).default(60_000),
+  /**
+   * 1.11.879 — minimum gap between two sells on one mint. `sellInFlight` only
+   * covers the transaction itself, so the next mark tick could decide again on
+   * data older than the sell that just landed.
+   */
+  exitMinSpacingMs: z.coerce.number().int().min(0).max(600_000).default(10_000),
   exitDeferWouldBuyEnabled: z.boolean().default(false),
   /** Cumulative ms one bag may hold a soft exit this way. */
   exitDeferWouldBuyMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(600_000),
@@ -1008,6 +1014,7 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 1.11.749 — default off; dump_classify owns soft-giveback gating. */
     leaderSeedWakeMax: process.env.MILD_DIP_LEADER_SEED_WAKE_MAX ?? 12,
     leaderSeedRelookMs: process.env.MILD_DIP_LEADER_SEED_RELOOK_MS ?? 60_000,
+    exitMinSpacingMs: process.env.MILD_DIP_EXIT_MIN_SPACING_MS ?? 10_000,
     exitDeferWouldBuyEnabled: envBool('MILD_DIP_EXIT_DEFER_WOULD_BUY', false),
     exitDeferWouldBuyMaxMs: process.env.MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS ?? 600_000,
     recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),

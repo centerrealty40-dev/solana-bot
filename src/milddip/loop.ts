@@ -1731,6 +1731,23 @@ async function tryExits(
   for (const { mint, px, volume5mUsd, pc5mPct, source } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
+    /**
+     * 1.11.879 — let a sell settle before deciding again on this bag.
+     *
+     * `sellInFlight` only covers the transaction. Once it cleared, the next mark
+     * tick two seconds later decided on a price that could predate the sell, and
+     * on a size the chain read had not caught up with: two `never_arm_bounce`
+     * legs went out 4.1s apart (33Grh5V then 2HJmyTW), the second filling 5.6%
+     * lower than the first while the reading it fired on said the bounce had
+     * grown. One decision per bag until the data postdates the last one.
+     */
+    if (
+      cfg.exitMinSpacingMs > 0 &&
+      pos.lastSellAtMs != null &&
+      nowMs - pos.lastSellAtMs < cfg.exitMinSpacingMs
+    ) {
+      continue;
+    }
 
     const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
     const maxHold = cfg.exit.neverArmMaxHoldMs > 0 ? cfg.exit.neverArmMaxHoldMs : 0;
@@ -2180,6 +2197,10 @@ async function tryExits(
       await executeQueuedSell({ cfg, state, decision, nowMs: Date.now() });
     } finally {
       sellInFlight.delete(decision.mint);
+      // Stamped after the attempt, so the settle window starts from the moment
+      // the size on chain could have changed (1.11.879).
+      const after = state.open[decision.mint];
+      if (after) after.lastSellAtMs = Date.now();
     }
   }).catch((err) => {
     console.warn(
