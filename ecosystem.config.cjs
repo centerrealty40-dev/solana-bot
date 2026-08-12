@@ -2982,7 +2982,36 @@ const PM2_APPS = [
          * stream-first), not pure copy.
          */
         MILD_DIP_MIN_VOLUME_5M_USD: '300',
-        MILD_DIP_MIN_LIQUIDITY_USD: '5000',
+        /**
+         * 1.11.844 — liquidity floor $5k → $15k, the one change the overnight
+         * analysis supports on its own.
+         *
+         * 390 closed bags over 13h. Mean outcome by floor, and it is monotone
+         * across the well-sampled range:
+         *
+         * | floor | kept | sum   | mean  |
+         * |-------|------|-------|-------|
+         * | $5k   | 387  | −559  | −1.44 |
+         * | $10k  | 289  | −338  | −1.17 |
+         * | $12k  | 248  | −141  | −0.57 |
+         * | $15k  | 197  | **+76**  | **+0.39** |
+         * | $20k  | 144  | +201  | +1.39 |
+         * | $30k  |  76  | −137  | −1.80 |
+         *
+         * $15k is picked over the better-looking $20k/$25k because it is the
+         * highest floor that improves the mean in **all three** sub-windows
+         * (−1.36→+1.57, −0.61→+1.35, −2.67→−1.35) while keeping half the volume.
+         * The curve reverses at $30k on 76 samples, so the tail of it is noise.
+         *
+         * Mechanism, not just fit: thin liquidity is where our worst trades come
+         * from. The deep losses are price gaps — a mark at ~0% and the next fill
+         * at −30…−70% — and a stop cannot fill inside a book that thin.
+         *
+         * Cost is real: it skips 63% of trades at the $20k level and half here,
+         * and 48% of the skipped ones were winners (best skipped: +81%, +65%,
+         * +51%). Revisit once there is more than one regime in the sample.
+         */
+        MILD_DIP_MIN_LIQUIDITY_USD: '15000',
         /**
          * 1.11.776 — global entry floor $5k (was $50k). One clip tier ($10);
          * turn→dump gate still selects depth. Knife/micro floor matches.
