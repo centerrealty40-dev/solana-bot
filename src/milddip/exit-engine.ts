@@ -113,6 +113,8 @@ export function decideMarkExit(args: {
   markSource?: 'stream' | 'dex' | null;
   /** 1.11.910 — live 5m volume over pool liquidity, for the dead-set exit. */
   turnover5mLiq?: number | null;
+  /** 1.11.919 — how long a refused mark may stand before we accept it. */
+  markJumpConfirmMaxMs?: number;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
@@ -197,7 +199,25 @@ export function decideMarkExit(args: {
        */
       const pendingPx = pos.pendingMarkPriceUsd;
       const pendingSrc = pos.pendingMarkSource;
+      /**
+       * 1.11.919 — the identical-re-read rule has to let go eventually.
+       *
+       * A feed handing back one cached datum twice is not two observations, which
+       * is why 1.11.889 refused it. A value that keeps coming back for half a
+       * minute is a stable price. nBxqeJsm sat on gain 0 / giveback 0 for 31
+       * seconds across five identical Dex reads while the coin fell, and when the
+       * guard finally let go the trail was at -23.88% instead of the -20% that
+       * should have fired.
+       */
+      const quarantineMaxMs = args.markJumpConfirmMaxMs ?? 8_000;
+      const seenAtMs = args.nowMs ?? Date.now();
+      const pendingAgeMs =
+        pos.pendingMarkAtMs != null && pos.pendingMarkAtMs > 0
+          ? seenAtMs - pos.pendingMarkAtMs
+          : 0;
+      const quarantineExpired = quarantineMaxMs > 0 && pendingAgeMs >= quarantineMaxMs;
       const identicalReread =
+        !quarantineExpired &&
         pendingPx != null &&
         markPriceUsd === pendingPx &&
         (pendingSrc == null || pendingSrc === args.markSource);
@@ -327,6 +347,11 @@ export function applyMarkDecisionToPosition(
   if (decision.markQuarantined) {
     // Remember the outlier so a second print at the same level can confirm it,
     // and leave every other field, including lastMarkPriceUsd, untouched.
+    // Keep the original timestamp while the same value keeps coming back, so the
+    // quarantine clock measures how long we have been refusing it (1.11.919).
+    if (pos.pendingMarkPriceUsd !== decision.markPriceUsd || pos.pendingMarkAtMs == null) {
+      pos.pendingMarkAtMs = Date.now();
+    }
     pos.pendingMarkPriceUsd = decision.markPriceUsd;
     pos.pendingMarkSource = decision.markSource ?? undefined;
     return;
@@ -334,6 +359,7 @@ export function applyMarkDecisionToPosition(
   pos.lastMarkPriceUsd = decision.markPriceUsd;
   pos.pendingMarkPriceUsd = undefined;
   pos.pendingMarkSource = undefined;
+  pos.pendingMarkAtMs = undefined;
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;

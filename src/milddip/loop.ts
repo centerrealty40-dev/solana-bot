@@ -1949,6 +1949,7 @@ async function tryExits(
       pos,
       markPriceUsd: px,
       gates: cfg.exit,
+      markJumpConfirmMaxMs: cfg.markJumpConfirmMaxMs,
       nowMs,
       pc5mPct,
       volume5mUsd,

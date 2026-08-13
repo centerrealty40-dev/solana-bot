@@ -85,6 +85,17 @@ const MildDipConfigSchema = z.object({
    */
   markArmedMaxAgeMs: z.coerce.number().int().min(0).max(300_000).default(10_000),
   /**
+   * 1.11.919 — how long a quarantined mark may be refused before we accept it.
+   *
+   * 1.11.889 stopped an identical re-read from the same feed confirming a jump,
+   * because a feed handing back one cached datum twice is not two observations.
+   * But a value that keeps coming back for half a minute is a stable price, not a
+   * glitch: nBxqeJsm sat on gain 0 / giveback 0 for 31 seconds and five identical
+   * Dex reads while the coin fell, and by the time the guard let go the trail was
+   * at -23.88% instead of the -20% that should have fired. 0 = never time out.
+   */
+  markJumpConfirmMaxMs: z.coerce.number().int().min(0).max(120_000).default(8_000),
+  /**
    * 1.11.794 — max concurrent background Dex→ring refreshes for open bags
    * (`requestOpenMarkRefresh`). Exit mark reads stay sync from the ring.
    */
@@ -888,6 +899,7 @@ export function loadMildDipConfig(): MildDipConfig {
     markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 8_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
     markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000,
+    markJumpConfirmMaxMs: process.env.MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS ?? 8_000,
     /** 1.11.736 — tighter journal so giveback gaps are visible (was 30s). */
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 5_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,

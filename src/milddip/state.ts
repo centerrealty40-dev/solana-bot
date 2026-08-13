@@ -15,6 +15,8 @@ export type MildDipOpenPosition = {
   buySignature: string | null;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
+  /** 1.11.919 — when the quarantined mark first appeared, so it can time out. */
+  pendingMarkAtMs?: number;
   /**
    * 1.11.848 — the Dex price the entry decision was made on.
    *

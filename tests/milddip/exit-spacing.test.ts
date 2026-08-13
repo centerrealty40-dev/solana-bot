@@ -154,3 +154,21 @@ describe('1.11.918 the time cut waits for the turn as well', () => {
     expect(gates).toContain("reason: 'never_arm_timeout'");
   });
 });
+
+describe('1.11.919 the jump quarantine lets go after a few seconds', () => {
+  const eng = readFileSync(resolve('src/milddip/exit-engine.ts'), 'utf8');
+  const cfg = readFileSync(resolve('src/milddip/config.ts'), 'utf8');
+
+  it('accepts a value that keeps coming back, identical or not', () => {
+    // nBxqeJsm: gain 0 / giveback 0 for 31 seconds across five identical Dex
+    // reads while the coin fell. The trail fired at -23.88% instead of -20%.
+    expect(eng).toContain('const quarantineExpired = quarantineMaxMs > 0 && pendingAgeMs >= quarantineMaxMs;');
+    expect(eng).toContain('!quarantineExpired &&');
+    expect(cfg).toContain('markJumpConfirmMaxMs: process.env.MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS ?? 8_000');
+  });
+
+  it('measures the wait from when the value first appeared', () => {
+    // Re-stamping on every refusal would restart the clock and never expire.
+    expect(eng).toContain('if (pos.pendingMarkPriceUsd !== decision.markPriceUsd || pos.pendingMarkAtMs == null) {');
+  });
+});
