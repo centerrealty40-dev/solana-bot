@@ -52,8 +52,15 @@ describe('cost floor on money-motivated sells', () => {
 
   it('the floor is cost: the fill, or the mark beside it when that sat higher', () => {
     expect(loop).toContain('const costPriceUsd = Math.max(');
-    expect(loop).toContain('MONEY_MOTIVATED_EXIT_REASONS.has(decision.reason) && costPriceUsd > 0');
+    expect(loop).toContain('MONEY_MOTIVATED_EXIT_REASONS.has(decision.reason) &&');
     expect(loop).toContain('...(minExitPriceUsd != null ? { minExitPriceUsd } : {})');
+  });
+
+  it('a decision already below cost is a cut, and cuts are never floored', () => {
+    // 9PXM1p sat eleven hours at -27% issuing 2898 refused sells at
+    // sell_quote_below_floor:-26.86%, one Jupiter quote each: breakeven_stop
+    // also fires on a deeply red bag, and a floor at cost is unreachable there.
+    expect(loop).toContain('decision.gainPct >= 0');
   });
 
   it('the executor checks the real quote before it signs', () => {

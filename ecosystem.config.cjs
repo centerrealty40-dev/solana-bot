@@ -2861,7 +2861,13 @@ const PM2_APPS = [
          * 1.11.702 — slightly wider knife floor (was −20). Prebuy was skipping
          * dumps that printed −25…−30 by the time the quote landed.
          */
-        MILD_DIP_MIN_DIP_PCT: '-25',
+        /**
+         * 1.11.885 — the deep end pays for itself nowhere. Over 186 closed
+         * positions in 11h, entries below −20% returned −2.97 USD at a 50% win
+         * rate, the only band besides the shallow one in the red, and
+         * `turn_dump_knife` (−2.71 on 5) sits inside it.
+         */
+        MILD_DIP_MIN_DIP_PCT: '-20',
         /**
          * 1.11.773 — shallow edge opened to −2 so turn→dump formula can allow
          * low-turn scrapes (8zkg p50≈4% at turn<0.05). Depth quality is
@@ -2884,7 +2890,18 @@ const PM2_APPS = [
          * 27.8% land inside −25…−8; 13.7% sit in −8…−3, which we were refusing.
          * Green entries (35.6% of theirs) stay out of scope for now.
          */
-        MILD_DIP_MAX_DIP_PCT: '0',
+        /**
+         * 1.11.885 — the shallow end is the largest single loss source left.
+         * By entry depth over the same window: (−4,−2] returned −2.39 USD at 59%
+         * and (−2,0] −2.50 USD at 52%, while every band from −20% to −4% was
+         * positive at a 65–81% win rate. Fifty positions, −4.89 USD, against a
+         * whole-window result of +7.01.
+         *
+         * This band was cut to −8 once before and reopened in 1.11.854 on data
+         * the basis bugs had corrupted. Measured clean, the line is −4: (−8,−4]
+         * earns, (−4,0] does not.
+         */
+        MILD_DIP_MAX_DIP_PCT: '-4',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).

@@ -1206,8 +1206,20 @@ async function executeQueuedSell(args: {
     pos.entryPriceUsd,
     pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > 0 ? pos.entryMarkPriceUsd : 0,
   );
+  /**
+   * 1.11.884 — only when the decision itself was at or above cost.
+   *
+   * The floor is there to stop slippage dragging a genuine gain under water. It
+   * is not a veto on leaving: `breakeven_stop` also fires on a bag that is
+   * deeply red, and 9PXM1p spent eleven hours at −27% issuing 2898 refused
+   * sells at `sell_quote_below_floor:-26.86%`, one Jupiter quote each, because
+   * a floor at cost can never be met from there. If we are already below cost
+   * when we decide, the exit is a cut and it goes.
+   */
   const minExitPriceUsd =
-    MONEY_MOTIVATED_EXIT_REASONS.has(decision.reason) && costPriceUsd > 0
+    MONEY_MOTIVATED_EXIT_REASONS.has(decision.reason) &&
+    costPriceUsd > 0 &&
+    decision.gainPct >= 0
       ? costPriceUsd
       : undefined;
   const sell = await executeCopySell({
