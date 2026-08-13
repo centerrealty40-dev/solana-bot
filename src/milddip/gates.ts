@@ -155,6 +155,23 @@ export type MildDipExitGates = {
    */
   markSellHaircutPct: number;
   /**
+   * 1.11.910 — the dead-set exit, which replaces a fixed loss floor.
+   *
+   * A stop at a number leaves on a red candle, which is the worst moment: a whale
+   * emptying a position takes the price through our level and it comes back
+   * without us. Instead, three things have to have gone at once - the volume, the
+   * turnover and the price - and only then do we wait for the price to lift off
+   * its own low before selling. The bag is condemned by the conjunction; the exit
+   * is timed by the bounce.
+   *
+   * 0 on either fraction, or on the bounce, disables it.
+   */
+  deadSetVolFadeFrac: number;
+  deadSetTurnFadeFrac: number;
+  deadSetMinDropPct: number;
+  deadSetBouncePct: number;
+  deadSetMinHoldMs: number;
+  /**
    * 1.11.855 — once MFE has reached `breakevenArmPct`, close the whole bag if
    * P&L falls to `breakevenFloorPct`. 0 = off.
    */
@@ -653,6 +670,8 @@ export type MildDipExitReason =
   | 'hard_stop'
   /** 1.11.855 — was meaningfully green, came back to the floor. */
   | 'breakeven_stop'
+  /** 1.11.910 — volume, turnover and price all gone, sold into a bounce. */
+  | 'dead_set_bounce'
   /** 1.11.832 — bank/bounce remnant too small to manage; frees mark bandwidth. */
   | 'dust_close'
   /** 1.11.860 — green lane: fixed target, tight stop, short ceiling. */
@@ -834,6 +853,9 @@ export function evaluateMildDipPeakGiveback(args: {
   volume5mUsd?: number | null;
   /** 5m volume captured at entry — the fade baseline. */
   entryVolume5mUsd?: number | null;
+  /** 1.11.910 — turnover now and at entry, for the dead-set conjunction. */
+  turnover5mLiq?: number | null;
+  entryTurnover5mLiq?: number | null;
   /** Prior spaced vol5m samples on this position (mutated via return value). */
   volFadeSamples?: readonly MildDipVolFadeSample[] | null;
   /** Wall clock for spacing samples; defaults to held-relative when omitted. */
@@ -1027,6 +1049,30 @@ export function evaluateMildDipPeakGiveback(args: {
     postEntryTroughPriceUsd,
     postEntryTroughAtMs,
   };
+
+  /**
+   * 1.11.910 — condemned by the conjunction, timed by the bounce.
+   *
+   * All three have to have gone: the 5m volume against what it was at entry, the
+   * turnover against what it was at entry, and the price. Only then does the
+   * bounce off the running low release the sell, so we are not the ones handing
+   * a whale the bottom tick.
+   */
+  const dsVol = gates.deadSetVolFadeFrac;
+  const dsTurn = gates.deadSetTurnFadeFrac;
+  const dsBounce = gates.deadSetBouncePct;
+  if (dsVol > 0 && dsTurn > 0 && dsBounce > 0 && heldMs >= gates.deadSetMinHoldMs) {
+    const v = args.volume5mUsd;
+    const v0 = args.entryVolume5mUsd;
+    const t = args.turnover5mLiq;
+    const t0 = args.entryTurnover5mLiq;
+    const volGone = v != null && v0 != null && v0 > 0 && v <= v0 * dsVol;
+    const turnGone = t != null && t0 != null && t0 > 0 && t <= t0 * dsTurn;
+    const priceGone = gainPct <= -gates.deadSetMinDropPct;
+    if (volGone && turnGone && priceGone && bounceOffTroughPct >= dsBounce - 1e-9) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'dead_set_bounce' };
+    }
+  }
 
   // Loss floors from entry — fire before soft exits / grace / leader-align.
   const hardStop = gates.hardStopPnlPct > 0 ? gates.hardStopPnlPct : 0;

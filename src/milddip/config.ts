@@ -573,6 +573,12 @@ const MildDipConfigSchema = z.object({
     markJumpConfirmStreamPct: z.coerce.number().min(0).max(100).default(8),
     /** Measured mark-to-fill gap on the sell side; taken off the gain only. */
     markSellHaircutPct: z.coerce.number().min(0).max(10).default(1),
+    /** 1.11.910 — the dead-set exit: volume, turnover and price all gone. */
+    deadSetVolFadeFrac: z.coerce.number().min(0).max(1).default(0),
+    deadSetTurnFadeFrac: z.coerce.number().min(0).max(1).default(0),
+    deadSetMinDropPct: z.coerce.number().min(0).max(100).default(10),
+    deadSetBouncePct: z.coerce.number().min(0).max(100).default(0),
+    deadSetMinHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
     /** 1.11.855 — breakeven floor once the bag has been green. 0 = off. */
     breakevenArmPct: z.coerce.number().min(0).max(500).default(0),
     breakevenFloorPct: z.coerce.number().min(-100).max(100).default(0),
@@ -763,6 +769,11 @@ export function loadMildDipConfig(): MildDipConfig {
     markJumpConfirmPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT', 25),
     markJumpConfirmStreamPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT', 8),
     markSellHaircutPct: envNum('MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT', 1),
+    deadSetVolFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC', 0),
+    deadSetTurnFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC', 0),
+    deadSetMinDropPct: envNum('MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT', 10),
+    deadSetBouncePct: envNum('MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT', 0),
+    deadSetMinHoldMs: envNum('MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS', 300_000),
     breakevenArmPct: envNum('MILD_DIP_EXIT_BREAKEVEN_ARM_PCT', 0),
     breakevenFloorPct: envNum('MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT', 0),
     tpGridSellFraction: envNum('MILD_DIP_EXIT_TP_GRID_SELL_FRACTION', 0.5),

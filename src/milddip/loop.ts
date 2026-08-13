@@ -1919,6 +1919,12 @@ async function tryExits(
       nowMs,
       pc5mPct,
       volume5mUsd,
+      turnover5mLiq: (() => {
+        const om = readOpenMarkMetrics(mint, nowMs);
+        return om && om.volume5mUsd != null && om.liquidityUsd != null && om.liquidityUsd > 0
+          ? om.volume5mUsd / om.liquidityUsd
+          : null;
+      })(),
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
       markSource: source,

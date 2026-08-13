@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   applyMarkDecisionToPosition,
@@ -1369,3 +1371,34 @@ describe('dust close', () => {
   });
 });
 
+
+describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  const src = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+
+  it('needs volume, turnover and price all gone before it condemns a bag', () => {
+    expect(src).toContain('const volGone = v != null && v0 != null && v0 > 0 && v <= v0 * dsVol');
+    expect(src).toContain('const turnGone = t != null && t0 != null && t0 > 0 && t <= t0 * dsTurn');
+    expect(src).toContain('const priceGone = gainPct <= -gates.deadSetMinDropPct');
+    expect(src).toContain('volGone && turnGone && priceGone');
+  });
+
+  it('sells only after the price lifts off its own low', () => {
+    // Not on the red candle: a whale emptying a position takes the price through
+    // any fixed level and it comes back without us.
+    expect(src).toContain('bounceOffTroughPct >= dsBounce - 1e-9');
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '2'");
+  });
+
+  it('live env runs it at a quarter of entry volume and turnover', () => {
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC: '0.25'");
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC: '0.25'");
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000'");
+  });
+
+  it('leaves the loss floor far out, where the level stops mattering', () => {
+    // Across 2,226 leader bags every stop from -25 to -80 replays the same; only
+    // a tight one is measurably worse.
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '50'");
+  });
+});

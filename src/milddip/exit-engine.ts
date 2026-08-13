@@ -111,6 +111,8 @@ export function decideMarkExit(args: {
   greenGates?: GreenExitGates;
   /** Which feed produced this mark; stream prints are held to a tighter jump guard. */
   markSource?: 'stream' | 'dex' | null;
+  /** 1.11.910 — live 5m volume over pool liquidity, for the dead-set exit. */
+  turnover5mLiq?: number | null;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
@@ -253,6 +255,13 @@ export function decideMarkExit(args: {
     pc5mPct: args.pc5mPct ?? null,
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
+    turnover5mLiq: args.turnover5mLiq ?? null,
+    entryTurnover5mLiq:
+      pos.entryVolume5mUsd != null &&
+      pos.entryLiquidityUsd != null &&
+      pos.entryLiquidityUsd > 0
+        ? pos.entryVolume5mUsd / pos.entryLiquidityUsd
+        : null,
     volFadeSamples: pos.volFadeSamples ?? null,
     postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
     postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,

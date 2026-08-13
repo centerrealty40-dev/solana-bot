@@ -3385,7 +3385,36 @@ const PM2_APPS = [
          * winners. Grid on the full sample: hard15 −$9.52, hard20 −$0.17,
          * hard25 +$4.15, hard30 +$6.19.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
+        /**
+         * 1.11.910 — the loss floor moves to −50 and stops being the primary exit.
+         *
+         * A stop at a number leaves on a red candle, which is the worst tick there
+         * is: a whale emptying a position takes the price through our level and it
+         * comes back without us. The measurement said the level itself is not a
+         * lever - across 2,226 leader bags every stop between −25 and −80 replays
+         * the same, and only a tight one (−10, −15) is measurably worse - so the
+         * level goes where the operator's reference strategy keeps it, −50, and the
+         * work moves to `dead_set_bounce` below.
+         */
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '50',
+        /**
+         * 1.11.910 — condemned by the conjunction, timed by the bounce.
+         *
+         * All three have to have gone before a bag is written off: its 5m volume
+         * down to a quarter of what it was at entry, its turnover likewise, and the
+         * price down 10%. That combination is what the leaders' own departures look
+         * like - on GCa9TZ they left when turnover fell 0.209 to 0.038 with
+         * liquidity intact - and it is the state no single number describes.
+         *
+         * Then the sell waits for the price to lift 2% off its running low, so we
+         * are not the ones handing a whale the bottom tick. Fifteen minutes minimum
+         * hold, so a fresh bag on a quiet five minutes is not condemned by noise.
+         */
+        MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC: '0.25',
+        MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC: '0.25',
+        MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT: '10',
+        MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '2',
+        MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
