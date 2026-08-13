@@ -3336,24 +3336,20 @@ const PM2_APPS = [
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
         /**
-         * 1.11.699 — scale-out trail; 1.11.741 — half-first even on −8% gap:
-         * Arm at +5% MFE; first giveback hit (−3% or deeper) always sells 50%;
-         * runner full-exits only after scaleOutDone + another −8% hit.
+         * 1.11.699 — scale-out trail; 1.11.741 — half-first even on −8% gap;
+         * 1.11.922 — dual trail: −5% sells half the remainder, −15% closes.
+         * Arm at +5% MFE; first giveback hit (−5% or deeper) always sells 50%;
+         * runner full-exits only after scaleOutDone + another −15% hit.
          */
         MILD_DIP_EXIT_ARM_PCT: '5',
-        MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '0',
+        MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '5',
         MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0.5',
         /**
-         * Trail width: full exit 30% below the peak. Measured off the leaders'
-         * own bag marks, where giveback at exit is a constant ~30% of peak for
-         * any peak above 15% (−29.4% / −29.9% / −33.6% across buckets).
+         * 1.11.918 — a pure 20% trail was positive on 4796 tapes but too wide
+         * in live: we gave back most of a pop before acting. 1.11.922 — bank
+         * half at −5%, close the runner at −15%.
          */
-        // 1.11.918 - measured on 4796 of our own mark tapes: every laddered
-        // variant is negative in the mean and the pure trail is positive.
-        // On the 89 runners past +100% MFE the live ladder means +117.98 and a
-        // 20% trail means +540.61. The ladder buys a better median by selling
-        // the runners, and the runners are where the money is.
-        MILD_DIP_EXIT_GIVEBACK_PCT: '20',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '15',
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
@@ -3576,7 +3572,8 @@ const PM2_APPS = [
         // 1.11.920 - the sleeve is what actually trails a bag once the ladder is
         // off, so it has to carry the same giveback as the trail. AvecKFxn peaked
         // at +21.49% and this cut it at -12.58% while GIVEBACK_PCT said 20.
-        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '20',
+        // 1.11.922 — sleeve aligned to the full close trail (−15%).
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '15',
         /**
          * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):
          * half the remainder at every +8%, no top rung. Replaces bank1 +6%/40% +

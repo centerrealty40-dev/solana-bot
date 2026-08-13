@@ -299,7 +299,8 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     // 4796 mark tapes disagree on the mean: banking in 0..+25% is exactly what
     // caps the runners, and the runners carry the distribution.
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0'");
-    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '20'");
+    expect(eco).toContain("MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '5'");
+    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '15'");
     // Floors unchanged.
     expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8'");
     // 1.11.910 — the floor moved to −50 and stopped being the primary exit; the
