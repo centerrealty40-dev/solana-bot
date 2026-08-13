@@ -3455,7 +3455,33 @@ const PM2_APPS = [
          * rung would leave under 20% of the original, it closes the bag: +8%
          * takes half, +16% half again, +24% takes the last quarter whole.
          */
-        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.2',
+        /**
+         * 1.11.897 — 0.6, which closes the whole position on the first rung.
+         *
+         * The leaders take 92.6% of their positions off in a single sell, at a
+         * median +34.75%, and 43.9% of their winners clear +100%. We were closing
+         * 39.1% in one leg, 55% of our winners landed under +10% and none cleared
+         * +100%: the ladder trimmed every runner into a scalp and left a
+         * remainder to age, which is also why 48 bags sat open at a median age of
+         * 51 minutes against their 17.
+         *
+         * Removing the ladder outright was tested and is much worse on our tapes
+         * (median −3.55 against +1.73 over 24h; the same in the 12h window),
+         * because our entries produce far fewer runners than theirs — 5% of our
+         * positions clear +25% against their 43.9% over +100%. So the ladder
+         * stays and only its remainder floor moves, which turns the first rung
+         * into a full exit:
+         *
+         *   remainder   24h median / trimmed   12h median / trimmed
+         *   0.20 (was)      +1.72 / −2.55          +2.06 / −2.71
+         *   0.35, 0.50      +1.72 / −2.35          +2.06 / −2.48
+         *   0.60            +5.47 / −1.81          +7.06 / −1.70
+         *
+         * Better on median, trimmed mean, plain mean and win rate in both
+         * windows. It caps a position at the first rung, which is the trade: the
+         * share clearing +25% goes 5% to 4%.
+         */
+        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.6',
         /**
          * 1.11.865 — green lane on, at its own $1 clip. Momentum entries with
          * their own floors and their own exit (+30% / −6% / 10 min); see

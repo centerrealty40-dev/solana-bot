@@ -46,3 +46,17 @@ describe('exit spacing after a sell', () => {
     expect(config).toContain("process.env.MILD_DIP_EXIT_MIN_SPACING_MS ?? 10_000");
   });
 });
+
+describe('1.11.897 the ladder closes on the first rung', () => {
+  it('live env carries the remainder floor that makes it a single exit', () => {
+    // The leaders take 92.6% of positions off in one sell; we were doing 39.1%,
+    // with 55% of winners under +10% and a remainder left to age. Removing the
+    // ladder is worse on our tapes (median -3.55 against +1.73), so only the
+    // remainder floor moves: 0.6 turns the first rung into a full exit, which
+    // wins on median, trimmed mean, mean and win rate in both windows.
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.6'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5'");
+  });
+});
