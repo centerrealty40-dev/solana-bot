@@ -3004,7 +3004,22 @@ const PM2_APPS = [
          * 7BNax knife style dump≥30% & turn=vol5m/liq≥0.30 → buy now
          * (does not open a second wallet / lane).
          */
-        MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '1',
+        /**
+         * 1.11.891 — off. This branch exists to buy a collapse of 30% or more,
+         * reaching past the band floor, and across the whole journal it is the
+         * worst entry we have by a wide margin:
+         *
+         *   turn_dump_knife  263 pos  −50.31 USD  −0.191/pos  46% win  6 rugs
+         *   wait_dip        1257 pos  −50.53 USD  −0.040/pos
+         *   dex             1030 pos  −35.72 USD  −0.035/pos
+         *   dex+stream       760 pos  −10.09 USD  −0.013/pos
+         *
+         * Five times the loss per position of anything else. It wins slightly
+         * more often than the others and loses far more when it does not, which
+         * is what buying a collapse means: HTHEyy5n came in at pc5m −66.62% with
+         * mcap $37k, four buyers against fourteen sellers, and went to −96%.
+         */
+        MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '0',
         MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '30',
         MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN: '0.3',
         /**

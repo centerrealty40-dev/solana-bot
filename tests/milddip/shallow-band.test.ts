@@ -33,10 +33,13 @@ describe('1.11.858 the entry band runs from -25 to flat', () => {
     expect(eco).toContain("MILD_DIP_MIN_DIP_PCT: '-25'");
   });
 
-  it('knife OR still reaches deeper than the band floor', () => {
-    // pc5m ≤ −25 was the best bucket (median MFE 54%); it enters via knife OR.
+  it('nothing reaches past the band floor any more (1.11.891)', () => {
+    // The knife branch bought collapses of 30%+ and was the worst entry we had:
+    // 263 positions at −0.191 USD each, five times the loss per position of
+    // anything else, and the source of a −96% bag entered at pc5m −66.62%.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '1'");
+    expect(eco).toContain("MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '0'");
+    // Threshold kept, so the branch can be measured again if it is reopened.
     expect(eco).toContain("MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '30'");
   });
 });
