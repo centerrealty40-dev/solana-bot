@@ -575,7 +575,9 @@ async function tryFireWaitDip(
    * all 6 came through this path.
    */
   const freshStruct = await loadStructural(mint, cfg, nowMs);
-  if (freshStruct && !structuralOk(freshStruct.metrics, cfg)) {
+  // 1.11.915 — the re-check has to know what the entry gate knows, or a
+  // leader-seen name clears the floors on the way in and is thrown out here.
+  if (freshStruct && !structuralOk(freshStruct.metrics, cfg, leaderEverSeen(cfg, state, mint, nowMs))) {
     delete state.waitDipWatch![mint];
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_wait_dip_refloor_skip',

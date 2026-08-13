@@ -17,7 +17,7 @@ describe('wait-dip structural re-check', () => {
 
   it('re-reads structure before firing a parked seat', () => {
     expect(loop).toContain('const freshStruct = await loadStructural(mint, cfg, nowMs);');
-    expect(loop).toContain('if (freshStruct && !structuralOk(freshStruct.metrics, cfg))');
+    expect(loop).toContain('if (freshStruct && !structuralOk(freshStruct.metrics, cfg,');
   });
 
   it('drops the seat and journals the refusal', () => {

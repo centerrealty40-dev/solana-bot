@@ -319,20 +319,29 @@ export function structuralOk(
    * ceiling together.
    */
   const maxTurn = leaderSeen ? 0 : g.maxTurnover5mLiq;
+  /**
+   * 1.11.915 — same reasoning for the turnover floor and the 5m volume ceiling.
+   * 49nkLrXi printed $51.9k of 5m volume on $73.9k of liquidity with a leader in
+   * it, and the $40k ceiling threw it out; CgnQ8a ran turnover 0.044 against the
+   * 0.06 floor. Both ceilings and that floor describe coins we have no other
+   * evidence about.
+   */
+  const minTurn = leaderSeen ? 0 : g.minTurnover5mLiq;
+  const maxVol = leaderSeen ? 0 : g.maxVolume5mUsd;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
-  if (g.maxVolume5mUsd > 0 && metrics.volume5mUsd > g.maxVolume5mUsd) return false;
+  if (maxVol > 0 && metrics.volume5mUsd > maxVol) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
   if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
   if (metrics.pairAgeHours == null || metrics.pairAgeHours < minAge) return false;
   if (
-    (g.minTurnover5mLiq > 0 || maxTurn > 0) &&
+    (minTurn > 0 || maxTurn > 0) &&
     metrics.volume5mUsd != null &&
     metrics.liquidityUsd != null &&
     metrics.liquidityUsd > 0
   ) {
     const turn = metrics.volume5mUsd / metrics.liquidityUsd;
-    if (g.minTurnover5mLiq > 0 && turn < g.minTurnover5mLiq) return false;
+    if (minTurn > 0 && turn < minTurn) return false;
     if (maxTurn > 0 && turn > maxTurn) return false;
   }
   if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
@@ -493,12 +502,26 @@ export async function evaluateFastPathCandidate(
   const streamRally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
   // Journal / turn-dump prefer true dump extent; fall back to mark-vs-peak.
   const streamDd = streamDump ?? streamCurrentDd;
+  /**
+   * 1.11.915 — one flag for "a leader has traded this name", read from our own
+   * memory as well as from the wake that found the coin, and applied to every
+   * prior that was fitted on names we know nothing else about.
+   */
+  const leaderSeenName = trigger === 'leader' || seedHit != null || leaderSeenMint;
+  /**
+   * The dip ceiling exists because our -4..0 entries were negative in every
+   * window. A leader buying at -2% is not that population. Flat is as far as it
+   * goes though - green candles stay out, which is what the ceiling was for.
+   *
+   * CgnQ8a: 36 days old, $52k liquidity, pc5m -2.12, leader in for $496.69.
+   */
+  const maxDip = leaderSeenName ? Math.max(cfg.entry.maxDipPct, 0) : cfg.entry.maxDipPct;
   const streamInMain = streamDipInBandOk({
     dumpExtentPct: streamDump,
     currentDrawdownPct: streamCurrentDd,
     rallyIntoPeakPct: streamRally,
     minDipPct: cfg.entry.minDipPct,
-    maxDipPct: cfg.entry.maxDipPct,
+    maxDipPct: maxDip,
     dumpRallyGateMinPct: cfg.dumpRallyGateMinPct,
     dumpRallyMinFrac: cfg.dumpRallyMinFrac,
   });
@@ -583,7 +606,7 @@ export async function evaluateFastPathCandidate(
   }
 
   // A name a leader is buying gets the younger age floor (1.11.905).
-  const leaderSeenForAge = trigger === 'leader' || seedHit != null || leaderSeenMint;
+  const leaderSeenForAge = leaderSeenName;
   if (!structuralOk(struct.metrics, cfg, leaderSeenForAge)) {
     return skip('structural_fail', {
       structSource,
@@ -598,7 +621,7 @@ export async function evaluateFastPathCandidate(
   }
 
   const dexPc = struct.metrics.priceChange5mPct;
-  const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, cfg.entry.maxDipPct);
+  const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, maxDip);
 
   // 1.11.793/799 — 7BNax OR: deep+hot (dump≥30 & turn≥0.3) buys now.
   // Do not require TD branch==='knife' (hot dumps classify as main first).
@@ -629,7 +652,20 @@ export async function evaluateFastPathCandidate(
     (dexPc != null &&
       dexPc > cfg.knifeStabilizeMinDipPct &&
       dexPc <= cfg.knifeStabilizeMaxDipPct);
-  if (cfg.knifeStabilizeEnabled && deepKnife && !streamInMain && !dexInMain && !knifeOrOk) {
+  /**
+   * 1.11.915 — the defer waits 30s for the blade to stop. That wait is for
+   * names nobody credible is touching; when a leader is already in, waiting is
+   * how we arrive after the move. BVEaDToN and D3WreYVj both died here while
+   * 8zkgFG bought them.
+   */
+  if (
+    cfg.knifeStabilizeEnabled &&
+    deepKnife &&
+    !streamInMain &&
+    !dexInMain &&
+    !knifeOrOk &&
+    !leaderSeenName
+  ) {
     return skip('deep_knife_defer', {
       streamDd,
       streamDump,

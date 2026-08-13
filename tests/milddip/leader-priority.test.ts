@@ -66,7 +66,7 @@ describe('1.11.905 a name a leader is buying may be younger', () => {
   });
 
   it('counts a leader trigger or a seed hit as evidence', () => {
-    expect(src).toContain("const leaderSeenForAge = trigger === 'leader' || seedHit != null");
+    expect(src).toContain("const leaderSeenName = trigger === 'leader' || seedHit != null");
     expect(src).toContain('structuralOk(struct.metrics, cfg, leaderSeenForAge)');
   });
 
@@ -143,5 +143,35 @@ describe('1.11.909 the leader memory survives a restart', () => {
     const src = readFileSync(resolve('src/milddip/state.ts'), 'utf8');
     expect(src).toContain('leaderSeenMints:\n        parsed.leaderSeenMints');
     expect(src).toContain("leaderSeenMints: {},");
+  });
+});
+
+describe('1.11.915 the leader override covers every fitted prior', () => {
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+
+  it('drops the 5m volume ceiling and the turnover floor', () => {
+    // 49nkLrXi: $51.9k of 5m volume on $73.9k of liquidity, against a $40k
+    // ceiling. CgnQ8a: turnover 0.044 against a 0.06 floor. Leader in both.
+    expect(fast).toContain('const maxVol = leaderSeen ? 0 : g.maxVolume5mUsd;');
+    expect(fast).toContain('const minTurn = leaderSeen ? 0 : g.minTurnover5mLiq;');
+  });
+
+  it('lets the dip ceiling out to flat, but no further', () => {
+    expect(fast).toContain(
+      'const maxDip = leaderSeenName ? Math.max(cfg.entry.maxDipPct, 0) : cfg.entry.maxDipPct;',
+    );
+    expect(fast).toContain('inDipBand(dexPc, cfg.entry.minDipPct, maxDip)');
+    expect(fast).toContain('maxDipPct: maxDip,');
+  });
+
+  it('stops deferring a knife a leader is already holding', () => {
+    expect(fast).toContain('!knifeOrOk &&\n    !leaderSeenName');
+  });
+
+  it('re-checks wait-dip floors with the same knowledge as the entry gate', () => {
+    expect(loop).toContain(
+      'structuralOk(freshStruct.metrics, cfg, leaderEverSeen(cfg, state, mint, nowMs))',
+    );
   });
 });
