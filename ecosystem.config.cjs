@@ -2921,7 +2921,29 @@ const PM2_APPS = [
          * at signal books −$33; waiting for −12% more books +$13…+$78, and our
          * fill on shared leader names was −20.2% MAE vs their −15.9%.
          */
-        MILD_DIP_WAIT_DIP: '1',
+        /**
+         * 1.11.890 — off. The seat parks a dip that already qualified and buys
+         * only if it falls another `WAIT_DIP_PCT`, which selects for continuation:
+         * we fill precisely when the price keeps going down.
+         *
+         * Over 6h, 448 seats parked and 304 expired, so 68% of the dips we found
+         * were never traded. What those were worth is readable from the leader
+         * corpus, taking leader bags opened on the same mint within a minute of
+         * our seat — buying the dip we saw instead of waiting for a better one:
+         *
+         *                        expired (skipped)   filled (waited)
+         *   median final              +10.74%            −0.29%
+         *   ended >= 0                    70%               50%
+         *   median peak               +23.74%           +11.47%
+         *   reached +8%                   74%               62%
+         *   median drawdown            −6.75%           −13.48%
+         *   went below −25%               16%               37%
+         *
+         * (90 and 125 matched bags; at a ±60s window the gap is wider still,
+         * +11.31% against +2.33%.) The dips that did not fall further were the
+         * ones that had bottomed, and those are exactly the ones the seat let go.
+         */
+        MILD_DIP_WAIT_DIP: '0',
         MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1',
         /**
          * 1.11.808 — ask deeper, accept shallower. With wait −12 / overshoot 2

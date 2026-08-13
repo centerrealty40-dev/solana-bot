@@ -255,9 +255,14 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(src).toContain('!parsed.data.waitDipWithTurnDump');
   });
 
-  it('live env parks the formula-selected dip for another leg down', () => {
+  it('live env no longer parks a dip that already qualified (1.11.890)', () => {
+    // 448 seats over 6h, 304 expired, and the leader bags opened on those same
+    // mints within a minute of our seat returned a median +10.74% against
+    // −0.29% for the seats we did fill: waiting selects for continuation, so we
+    // filled only when the price kept falling and let the bottoms go.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_WAIT_DIP: '1'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP: '0'");
+    // The parameters stay in place; only the lane is off.
     expect(eco).toContain("MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1'");
     expect(eco).toContain("MILD_DIP_WAIT_DIP_PCT: '-5'");
     expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT: '3'");
