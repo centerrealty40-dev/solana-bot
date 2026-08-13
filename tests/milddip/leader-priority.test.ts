@@ -175,3 +175,13 @@ describe('1.11.915 the leader override covers every fitted prior', () => {
     );
   });
 });
+
+describe('1.11.915 the knife branch opens for leader-seen names only', () => {
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+
+  it('leaves the branch off for everything else', () => {
+    // BVEaDToN printed -55.7%, past the -25% band, so the knife OR is its only
+    // door. The branch stays disabled for the population it lost money on.
+    expect(fast).toContain('knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled || leaderSeenName,');
+  });
+});

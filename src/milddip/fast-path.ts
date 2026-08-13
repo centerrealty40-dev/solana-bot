@@ -631,9 +631,16 @@ export async function evaluateFastPathCandidate(
       : streamDd != null
         ? streamDd
         : dexPc;
+  /**
+   * 1.11.915 — the knife branch is off because it lost five times more per
+   * position than anything else, measured over the whole journal. That is the
+   * population of deep dumps nobody credible is buying. BVEaDToN printed -55.7%,
+   * which is past the -25% band, so the branch is the only door it has, and
+   * 8zkgFG walked through it. Open the door for leader-seen names only.
+   */
   const knifeOr = turnDumpKnifeOrOk({
     enabled: cfg.turnDumpGateEnabled,
-    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled || leaderSeenName,
     pc5m: deepestPc,
     volume5mUsd: struct.metrics.volume5mUsd,
     liquidityUsd: struct.metrics.liquidityUsd,
