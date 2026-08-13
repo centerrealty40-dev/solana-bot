@@ -71,6 +71,7 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeWeakWindows: 3,
   cliffDumpPnlPct: 50,
   hardStopPnlPct: 15,
+  hardStopBouncePct: 3,
   hardStopPartialFraction: 0,
   neverArmBounceMinDumpPct: 8,
   neverArmBouncePct: 8,
@@ -569,17 +570,27 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('1.11.916 — the deeper collapse is cliff_dump, answered on the print', () => {
-    const v = evaluateMildDipPeakGiveback({
+  it('1.11.916 — cliff_dump waits for the turn off the trough, like the stop', () => {
+    const args = {
       entryPriceUsd: 100,
-      markPriceUsd: 40,
       peakPriceUsd: 100,
       armed: false,
-      gates: exitGates,
+      gates: { ...exitGates, hardStopPnlPct: 0 },
       heldMs: 5_000,
+    };
+    const falling = evaluateMildDipPeakGiveback({
+      ...args,
+      markPriceUsd: 40,
+      troughPriceUsd: 40,
     });
-    expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('cliff_dump');
+    expect(falling.shouldExit).toBe(false);
+    const turned = evaluateMildDipPeakGiveback({
+      ...args,
+      markPriceUsd: 42,
+      troughPriceUsd: 40,
+    });
+    expect(turned.shouldExit).toBe(true);
+    expect(turned.reason).toBe('cliff_dump');
   });
 
   it('1.11.916 — the stop waits for the price to turn off its trough', () => {
@@ -693,18 +704,29 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.fraction).toBe(1);
   });
 
-  it('cliff_dump exits immediately at ≤ −50% without waiting dead min-hold', () => {
-    const v = evaluateMildDipPeakGiveback({
+  it('cliff_dump at ≤ −50% fires once the price turns off the trough', () => {
+    const falling = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
       peakPriceUsd: 103.71,
       armed: false,
       gates: { ...exitGates, hardStopPnlPct: 0 },
       heldMs: 30_000,
+      troughPriceUsd: 40,
     });
-    expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('cliff_dump');
-    expect(v.pnlPct).toBeLessThanOrEqual(-50);
+    expect(falling.shouldExit).toBe(false);
+    const turned = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 42,
+      peakPriceUsd: 103.71,
+      armed: false,
+      gates: { ...exitGates, hardStopPnlPct: 0 },
+      heldMs: 30_000,
+      troughPriceUsd: 40,
+    });
+    expect(turned.shouldExit).toBe(true);
+    expect(turned.reason).toBe('cliff_dump');
+    expect(turned.pnlPct).toBeLessThanOrEqual(-50);
   });
 
   it('cliff_dump off when cliffDumpPnlPct=0', () => {

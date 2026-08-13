@@ -82,6 +82,7 @@ const gatesForDust = {
   neverArmVolFadeWeakWindows: 3,
   cliffDumpPnlPct: 50,
   hardStopPnlPct: 15,
+  hardStopBouncePct: 3,
   hardStopPartialFraction: 0,
   neverArmBounceMinDumpPct: 8,
   neverArmBouncePct: 8,
@@ -125,6 +126,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     neverArmVolFadeWeakWindows: 3,
     cliffDumpPnlPct: 50,
     hardStopPnlPct: 15,
+    hardStopBouncePct: 3,
     hardStopPartialFraction: 0,
     neverArmBounceMinDumpPct: 8,
     neverArmBouncePct: 8,
@@ -697,7 +699,16 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
 
     it('leaves the −25% stop in charge below that', () => {
-      const d = at(bounced, 'b_stop', ENTRY * 0.7);
+      const g = { ...bounced, hardStopPnlPct: 25 };
+      const p = bag('b_stop');
+      p.postEntryTroughUsd = ENTRY * 0.679;
+      const d = decideMarkExit({
+        mint: 'b_stop',
+        pos: p,
+        markPriceUsd: ENTRY * 0.7,
+        gates: g,
+        nowMs: 1_130_000,
+      });
       expect(d?.reason).toBe('hard_stop');
     });
   });
@@ -753,7 +764,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       const p = held();
       applyMarkDecisionToPosition(p, mark(p, STEADY)!);
       applyMarkDecisionToPosition(p, mark(p, PHANTOM)!);
-      const again = mark(p, PHANTOM * 1.01)!;
+      p.postEntryTroughUsd = PHANTOM;
+      const again = mark(p, PHANTOM * 1.04)!;
       expect(again.markQuarantined).toBeFalsy();
       expect(again.reason).toBe('hard_stop');
       expect(again.fraction).toBe(1);
@@ -828,6 +840,55 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       })!;
       expect(d.markQuarantined).toBeFalsy();
     });
+
+    it('does not confirm a stream cliff Dex never saw (46vV3Z, 1.11.923)', () => {
+      const g = { ...gates, markJumpConfirmStreamPct: 8, hardStopPnlPct: 0 };
+      const entry = 6.932e-5;
+      const dexPx = 6.573e-5;
+      const phantom = 3.303e-5;
+      const p = pos({
+        mint: '46v',
+        entryPriceUsd: entry,
+        peakPriceUsd: 7.408e-5,
+        trailArmed: true,
+        openedAtMs: 1_000_000,
+        postEntryTroughUsd: entry,
+      });
+      applyMarkDecisionToPosition(
+        p,
+        decideMarkExit({
+          mint: '46v',
+          pos: p,
+          markPriceUsd: dexPx,
+          gates: g,
+          nowMs: 1_500_000,
+          markSource: 'dex',
+        })!,
+      );
+      applyMarkDecisionToPosition(
+        p,
+        decideMarkExit({
+          mint: '46v',
+          pos: p,
+          markPriceUsd: phantom,
+          gates: g,
+          nowMs: 1_506_000,
+          markSource: 'stream',
+          dexCrossCheckPx: dexPx,
+        })!,
+      );
+      const again = decideMarkExit({
+        mint: '46v',
+        pos: p,
+        markPriceUsd: phantom * 1.01,
+        gates: g,
+        nowMs: 1_512_000,
+        markSource: 'stream',
+        dexCrossCheckPx: dexPx,
+      })!;
+      expect(again.markQuarantined).toBe(true);
+      expect(again.shouldExit).toBe(false);
+    });
   });
 
   describe('a bag that was green does not come back as a loss (1.11.855)', () => {
@@ -872,7 +933,9 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
 
     it('the −25% stop still owns anything deeper', () => {
-      expect(at(bag(ENTRY * 1.02, false), ENTRY * 0.7)?.reason).toBe('hard_stop');
+      const p = bag(ENTRY * 1.02, false);
+      p.postEntryTroughUsd = ENTRY * 0.679;
+      expect(at(p, ENTRY * 0.7)?.reason).toBe('hard_stop');
     });
 
     it('off by default', () => {

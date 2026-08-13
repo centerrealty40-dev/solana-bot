@@ -1117,7 +1117,7 @@ export function evaluateMildDipPeakGiveback(args: {
     // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
     // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
     // full cliff_dump.
-    if (cliff > 0 && pnlPct <= -cliff) {
+    if (cliff > 0 && pnlPct <= -cliff && turned) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
     if (hardStop > 0 && pnlPct <= -hardStop && turned) {
@@ -1132,8 +1132,8 @@ export function evaluateMildDipPeakGiveback(args: {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
   } else {
-    // The deeper collapse is answered on the print; the stop waits for the turn.
-    if (cliff > 0 && pnlPct <= -cliff) {
+    // Cliff and stop both wait for the turn (1.11.923); missing trough → fire.
+    if (cliff > 0 && pnlPct <= -cliff && turned) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
     if (hardStop > 0 && pnlPct <= -hardStop && turned) {
