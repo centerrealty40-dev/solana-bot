@@ -35,3 +35,153 @@ describe('1.11.824 leader seeds order the scan queue', () => {
     expect(eco).toContain("MILD_DIP_LEADER_SEED_MAX_AGE_MS: '7200000'");
   });
 });
+
+describe('1.11.899 the first touch needs a leader to have been there', () => {
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('gates only the first position on a mint', () => {
+    expect(loop).toContain('const isFirstTouchForLeaderGate = !state.lastExitByMint?.[mint]');
+    expect(loop).toContain('cfg.requireLeaderSeenFirstTouch &&');
+    expect(loop).toContain('isFirstTouchForLeaderGate &&');
+  });
+
+  it('leaves the whole-funnel gate off, which starved entry in 1.11.816', () => {
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '0'");
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1'");
+  });
+
+  it('does not double-gate when the funnel-wide flag is on', () => {
+    expect(loop).toContain('!cfg.requireLeaderSeen &&');
+  });
+});
+
+describe('1.11.905 a name a leader is buying may be younger', () => {
+  const src = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('lowers the age floor and never raises it', () => {
+    expect(src).toContain('Math.min(g.minPairAgeHoursLeaderSeen, g.minPairAgeHours)');
+    expect(src).toContain('metrics.pairAgeHours < minAge');
+  });
+
+  it('counts a leader trigger or a seed hit as evidence', () => {
+    expect(src).toContain("const leaderSeenName = trigger === 'leader' || seedHit != null");
+    expect(src).toContain('structuralOk(struct.metrics, cfg, leaderSeenForAge)');
+  });
+
+  it('live env allows one hour there and six everywhere else', () => {
+    // 4CmYEyg: the leaders traded it 26 times while it sat behind our floor.
+    expect(eco).toContain("MILD_DIP_MIN_PAIR_AGE_HOURS_LEADER_SEEN: '1'");
+    expect(eco).toContain("MILD_DIP_MIN_PAIR_AGE_HOURS: '6'");
+  });
+
+  it('every other floor still applies to a young name', () => {
+    expect(eco).toContain("MILD_DIP_MIN_LIQUIDITY_USD: '8000'");
+    expect(eco).toContain("MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.06'");
+    expect(eco).toContain("MILD_DIP_MIN_VOL5M_PACE_RATIO: '0.3'");
+  });
+});
+
+describe('1.11.906 the gate remembers a leader for a week, not two hours', () => {
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('accumulates every seed read into a durable memory', () => {
+    // The seed file is a two-hour view by design, so reading it alone made the
+    // gate stricter than the measurement it came from, which asked "ever".
+    expect(loop).toContain('function rememberLeaderSeen(');
+    expect(loop).toContain('mem[h.mint] = Math.max(mem[h.mint] ?? 0, h.lastSeenAtMs || nowMs)');
+    expect(loop).toContain('if (nowMs - ts > cfg.leaderSeenMemoryMs) delete mem[mint]');
+  });
+
+  it('consults the memory before rejecting a first touch', () => {
+    expect(loop).toContain('!leaderEverSeen(cfg, state, mint, nowMs)');
+  });
+
+  it('live env remembers for a week', () => {
+    expect(eco).toContain("MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000'");
+  });
+});
+
+describe('1.11.907/908 turnover ceiling and the re-entry price rule', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  const gates = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+
+  it('caps turnover as well as flooring it, on both gate paths', () => {
+    expect(eco).toContain("MILD_DIP_MAX_TURNOVER_5M_LIQ: '0.25'");
+    expect(gates).toContain('turn > gates.maxTurnover5mLiq');
+    expect(fast).toContain('maxTurn > 0 && turn > maxTurn');
+  });
+
+  it('no longer demands a cheaper re-entry than our last exit', () => {
+    // Priced against our own first entry on the coin, re-entering above it is
+    // four times better per position than re-entering below it, in all windows.
+    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
+  });
+});
+
+describe('1.11.914 a leader in the name overrides the structural priors', () => {
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+
+  it('drops the turnover ceiling for names a leader has traded', () => {
+    // ELiQoVM9: 3.1h old, turnover 0.355, rejected 239 times on structural_fail
+    // while the leader turned $149.57 into $249.73 on it in 23 minutes.
+    expect(fast).toContain('const maxTurn = leaderSeen ? 0 : g.maxTurnover5mLiq;');
+  });
+
+  it('reads leader-seen from our memory, not just from the wake that found it', () => {
+    expect(fast).toContain('|| leaderSeenMint');
+    expect(loop).toContain('leaderEverSeen(cfg, state, mint, nowMs),');
+  });
+});
+
+describe('1.11.909 the leader memory survives a restart', () => {
+  it('is carried by the state loader, which drops anything it does not name', () => {
+    const src = readFileSync(resolve('src/milddip/state.ts'), 'utf8');
+    expect(src).toContain('leaderSeenMints:\n        parsed.leaderSeenMints');
+    expect(src).toContain("leaderSeenMints: {},");
+  });
+});
+
+describe('1.11.915 the leader override covers every fitted prior', () => {
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+
+  it('drops the 5m volume ceiling and the turnover floor', () => {
+    // 49nkLrXi: $51.9k of 5m volume on $73.9k of liquidity, against a $40k
+    // ceiling. CgnQ8a: turnover 0.044 against a 0.06 floor. Leader in both.
+    expect(fast).toContain('const maxVol = leaderSeen ? 0 : g.maxVolume5mUsd;');
+    expect(fast).toContain('const minTurn = leaderSeen ? 0 : g.minTurnover5mLiq;');
+  });
+
+  it('lets the dip ceiling out to flat, but no further', () => {
+    expect(fast).toContain(
+      'const maxDip = leaderSeenName ? Math.max(cfg.entry.maxDipPct, 0) : cfg.entry.maxDipPct;',
+    );
+    expect(fast).toContain('inDipBand(dexPc, cfg.entry.minDipPct, maxDip)');
+    expect(fast).toContain('maxDipPct: maxDip,');
+  });
+
+  it('stops deferring a knife a leader is already holding', () => {
+    expect(fast).toContain('!knifeOrOk &&\n    !leaderSeenName');
+  });
+
+  it('re-checks wait-dip floors with the same knowledge as the entry gate', () => {
+    expect(loop).toContain(
+      'structuralOk(freshStruct.metrics, cfg, leaderEverSeen(cfg, state, mint, nowMs))',
+    );
+  });
+});
+
+describe('1.11.915 the knife branch opens for leader-seen names only', () => {
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+
+  it('leaves the branch off for everything else', () => {
+    // BVEaDToN printed -55.7%, past the -25% band, so the knife OR is its only
+    // door. The branch stays disabled for the population it lost money on.
+    expect(fast).toContain('knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled || leaderSeenName,');
+  });
+});

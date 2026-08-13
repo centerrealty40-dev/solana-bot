@@ -7,11 +7,31 @@ import { evaluateMildDipPeakGiveback, type MildDipExitReason } from './gates.js'
 import type { MildDipOpenPosition } from './state.js';
 import { decideGreenExit, type GreenExitGates } from './green-lane.js';
 
+/** How far the mark taken at entry may sit from the fill and still be a basis. */
+const ENTRY_MARK_MAX_GAP_FRAC = 0.25;
+
+/**
+ * The basis every threshold measures from: the mark taken beside the fill, when
+ * it is a comparable observation of the same token.
+ *
+ * A stored mark far from the fill is bad data, not an execution cost. 7rMnp9
+ * carried 9.87e-06 against a 1.646e-03 fill and read MFE 17821%, which walks
+ * the whole ladder in one tick and empties the bag. The band admits any real
+ * gap (chase caps 4%, slippage 200bps, sample up to 30s old) and rejects that.
+ * Outside it the fill serves, as it did before 1.11.873.
+ */
+export function resolveEntryMarkBasis(pos: MildDipOpenPosition): number | null {
+  const raw = pos.entryMarkPriceUsd;
+  if (raw == null || !Number.isFinite(raw) || !(raw > 0)) return null;
+  if (!(pos.entryPriceUsd > 0)) return null;
+  return Math.abs(raw / pos.entryPriceUsd - 1) <= ENTRY_MARK_MAX_GAP_FRAC ? raw : null;
+}
+
 export type MarkExitDecision = {
   mint: string;
   markPriceUsd: number;
-  /** Movement baseline once latched; null while the fill still serves. */
-  mfeBasisPriceUsd: number | null;
+  /** Mark taken at entry: the basis for every threshold. Null → fill basis. */
+  entryMarketPriceUsd: number | null;
   peakPriceUsd: number;
   armed: boolean;
   justArmed: boolean;
@@ -23,9 +43,18 @@ export type MarkExitDecision = {
   tpRungIndex: number | null;
   /** 1.11.852 — mark held back pending confirmation; nothing was decided. */
   markQuarantined?: boolean;
+  /** 1.11.921 — drop a stream outlier Dex never saw; pending clears, last mark stays. */
+  markDiscardStreamOutlier?: boolean;
+  /** Which feed this mark came from; a quarantine remembers it (1.11.889). */
+  markSource?: 'stream' | 'dex' | null;
   mfePct: number;
   givebackPct: number;
+  /** Move on the loss basis — what the stops compared. */
   pnlPct: number;
+  /** Gain on the profit basis — what the ladder and banks compared. */
+  gainPct: number;
+  /** Move since the fill — real money, for logging only. */
+  pnlPctVsFill: number;
   /** Updated spaced vol5m ring — caller persists onto the open position. */
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry low-water mark. */
@@ -84,6 +113,15 @@ export function decideMarkExit(args: {
   greenGates?: GreenExitGates;
   /** Which feed produced this mark; stream prints are held to a tighter jump guard. */
   markSource?: 'stream' | 'dex' | null;
+  /** 1.11.910 — live 5m volume over pool liquidity, for the dead-set exit. */
+  turnover5mLiq?: number | null;
+  /** 1.11.919 — how long a refused mark may stand before we accept it. */
+  markJumpConfirmMaxMs?: number;
+  /**
+   * 1.11.921 — Dex price for cross-checking a stream print before a loss exit.
+   * 3J8CiL: stream 1.98e-06 (-93%), Dex 3.124e-05 (+2%), cliff_dump fired anyway.
+   */
+  dexCrossCheckPx?: number | null;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
@@ -95,12 +133,14 @@ export function decideMarkExit(args: {
    */
   if (pos.lane === 'green' && args.greenGates) {
     const heldMsGreen = Math.max(0, (args.nowMs ?? Date.now()) - (pos.openedAtMs || 0));
-    const pnl = (markPriceUsd / pos.entryPriceUsd - 1) * 100;
+    const basis =
+      resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
+    const pnl = (markPriceUsd / basis - 1) * 100;
     const g = decideGreenExit(pnl, heldMsGreen, args.greenGates);
     return {
       mint,
       markPriceUsd,
-      mfeBasisPriceUsd: null,
+      entryMarketPriceUsd: null,
       peakPriceUsd: Math.max(pos.peakPriceUsd ?? pos.entryPriceUsd, markPriceUsd),
       armed: false,
       justArmed: false,
@@ -111,13 +151,20 @@ export function decideMarkExit(args: {
       mfePct: 0,
       givebackPct: 0,
       pnlPct: pnl,
+      gainPct: pnl,
+      pnlPctVsFill: pnl,
       volFadeSamples: [...(pos.volFadeSamples ?? [])],
       postEntryTroughPriceUsd: Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd),
       postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     };
   }
-  const peakPrev =
+  const entryMarketPriceUsd = resolveEntryMarkBasis(pos);
+  const peakStored =
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
+  const peakPrev =
+    entryMarketPriceUsd != null && entryMarketPriceUsd > 0 && peakStored === pos.entryPriceUsd
+      ? entryMarketPriceUsd
+      : peakStored;
 
   /**
    * A violent single-tick move has to be seen twice before it decides anything.
@@ -141,17 +188,106 @@ export function decideMarkExit(args: {
   if (jumpLimit > 0 && lastMark != null && lastMark > 0) {
     const jumpPct = Math.abs(markPriceUsd / lastMark - 1) * 100;
     if (jumpPct > jumpLimit) {
+      /**
+       * 1.11.889 — a re-read is not a second opinion.
+       *
+       * DKxHTQCv sat at 3.8570e-04 for minutes, then took two stream prints of
+       * 5.3768721e-04 two seconds apart — identical to the last digit — and the
+       * second confirmed the first. The price was back at 3.8570e-04 on the next
+       * mark, so 5.3768721e-04 never existed to trade on; MFE latched at +35.83%
+       * and armed breakeven, which closed the bag at +2.28% while the name ran.
+       *
+       * Real prices tick. A value repeated exactly, from the same feed, is that
+       * feed handing back one cached datum twice, so confirmation now has to come
+       * from a different feed or at least a different number. Oscar answers the
+       * same question by verifying an exit price against a fresh Jupiter quote
+       * (`priceVerifyExit`, `tracker.ts:522`); this is the cheap form of it, on a
+       * path that runs every two seconds.
+       */
       const pendingPx = pos.pendingMarkPriceUsd;
+      const pendingSrc = pos.pendingMarkSource;
+      /**
+       * 1.11.919 — the identical-re-read rule has to let go eventually.
+       *
+       * A feed handing back one cached datum twice is not two observations, which
+       * is why 1.11.889 refused it. A value that keeps coming back for half a
+       * minute is a stable price. nBxqeJsm sat on gain 0 / giveback 0 for 31
+       * seconds across five identical Dex reads while the coin fell, and when the
+       * guard finally let go the trail was at -23.88% instead of the -20% that
+       * should have fired.
+       */
+      const quarantineMaxMs = args.markJumpConfirmMaxMs ?? 8_000;
+      const seenAtMs = args.nowMs ?? Date.now();
+      const pendingAgeMs =
+        pos.pendingMarkAtMs != null && pos.pendingMarkAtMs > 0
+          ? seenAtMs - pos.pendingMarkAtMs
+          : 0;
+      const quarantineExpired = quarantineMaxMs > 0 && pendingAgeMs >= quarantineMaxMs;
+      const identicalReread =
+        !quarantineExpired &&
+        pendingPx != null &&
+        markPriceUsd === pendingPx &&
+        (pendingSrc == null || pendingSrc === args.markSource);
       const confirms =
         pendingPx != null &&
         pendingPx > 0 &&
+        !identicalReread &&
         Math.abs(markPriceUsd / pendingPx - 1) * 100 <= jumpLimit;
-      if (!confirms) {
+      /**
+       * 1.11.921 — ageing out is not confirmation of a stream phantom.
+       *
+       * 1.11.919 let an identical quarantined value through after 8s, which is
+       * right for a Dex reading that landed and stayed, and wrong for a stream
+       * print Dex never saw. 3J8CiL bought at 3.05e-05, Dex held +2%, stream
+       * printed 1.98e-06 (-93%), quarantine expired on the same wrong number,
+       * and cliff_dump fired. On chain the sell was -7.76%.
+       */
+      let acceptQuarantined = confirms;
+      if (
+        quarantineExpired &&
+        pendingPx != null &&
+        markPriceUsd === pendingPx
+      ) {
+        if (args.markSource === 'stream') {
+          const dexPx = args.dexCrossCheckPx;
+          acceptQuarantined =
+            dexPx != null &&
+            dexPx > 0 &&
+            Math.abs(markPriceUsd / dexPx - 1) * 100 <= jumpLimit;
+          if (!acceptQuarantined) {
+            return {
+              mint,
+              markPriceUsd: pos.lastMarkPriceUsd ?? peakPrev,
+              entryMarketPriceUsd: null,
+              peakPriceUsd: peakPrev,
+              armed: pos.trailArmed === true,
+              justArmed: false,
+              shouldExit: false,
+              fraction: 0,
+              reason: null,
+              tpRungIndex: null,
+              markSource: args.markSource ?? null,
+              markDiscardStreamOutlier: true,
+              mfePct: 0,
+              givebackPct: 0,
+              pnlPct: 0,
+              gainPct: 0,
+              pnlPctVsFill: 0,
+              volFadeSamples: [...(pos.volFadeSamples ?? [])],
+              postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+              postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+            };
+          }
+        } else {
+          acceptQuarantined = true;
+        }
+      }
+      if (!acceptQuarantined) {
         // Hold everything as it was; only remember what we saw.
         return {
           mint,
           markPriceUsd,
-          mfeBasisPriceUsd: null,
+          entryMarketPriceUsd: null,
           peakPriceUsd: peakPrev,
           armed: pos.trailArmed === true,
           justArmed: false,
@@ -159,15 +295,34 @@ export function decideMarkExit(args: {
           fraction: 0,
           reason: null,
           tpRungIndex: null,
+          markSource: args.markSource ?? null,
           mfePct: 0,
           givebackPct: 0,
           pnlPct: 0,
+          gainPct: 0,
+          pnlPctVsFill: 0,
           volFadeSamples: [...(pos.volFadeSamples ?? [])],
           postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
           postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
           markQuarantined: true,
         };
       }
+    }
+  }
+  /**
+   * 1.11.921 — a stream loss Dex never saw is not a loss.
+   *
+   * Even when the jump guard lets a print through, cliff_dump and the stops
+   * decide on the mark they are given. Cross-check Dex first; if it disagrees
+   * by more than the jump limit, decide on Dex instead.
+   */
+  let decisionMark = markPriceUsd;
+  let decisionSource = args.markSource ?? null;
+  if (args.markSource === 'stream' && args.dexCrossCheckPx != null && args.dexCrossCheckPx > 0) {
+    const crossLimit = jumpLimit > 0 ? jumpLimit : 10;
+    if (Math.abs(markPriceUsd / args.dexCrossCheckPx - 1) * 100 > crossLimit) {
+      decisionMark = args.dexCrossCheckPx;
+      decisionSource = 'dex';
     }
   }
   const nowMs = args.nowMs ?? Date.now();
@@ -178,30 +333,28 @@ export function decideMarkExit(args: {
     : pos.scaleOutDone === true
       ? 1
       : 0;
-  /**
-   * The Dex price the entry decision was made on is the movement baseline. Only
-   * used when it sits above the fill, which is the case that misreads a
-   * motionless price as profit; buying above the mark needs no correction
-   * because it understates MFE, and the stop already answers for it.
-   */
-  const mfeBasisPriceUsd =
-    pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > pos.entryPriceUsd
-      ? pos.entryMarkPriceUsd
-      : null;
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
-    mfeBasisPriceUsd,
-    markPriceUsd,
+    entryMarketPriceUsd,
+    markPriceUsd: decisionMark,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
     scaleOutDone: pos.scaleOutDone === true,
     mfeBankStage,
     gates,
     heldMs,
+    troughPriceUsd: pos.postEntryTroughUsd,
     nowMs,
     pc5mPct: args.pc5mPct ?? null,
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
+    turnover5mLiq: args.turnover5mLiq ?? null,
+    entryTurnover5mLiq:
+      pos.entryVolume5mUsd != null &&
+      pos.entryLiquidityUsd != null &&
+      pos.entryLiquidityUsd > 0
+        ? pos.entryVolume5mUsd / pos.entryLiquidityUsd
+        : null,
     volFadeSamples: pos.volFadeSamples ?? null,
     postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
     postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
@@ -238,8 +391,8 @@ export function decideMarkExit(args: {
     heldMs >= dustHold;
   return {
     mint,
-    markPriceUsd,
-    mfeBasisPriceUsd,
+    markPriceUsd: decisionMark,
+    entryMarketPriceUsd,
     peakPriceUsd: verdict.peakPriceUsd,
     armed: verdict.armed,
     justArmed: verdict.justArmed,
@@ -247,9 +400,12 @@ export function decideMarkExit(args: {
     fraction: dustClose ? 1 : verdict.fraction,
     reason: dustClose ? 'dust_close' : verdict.reason,
     tpRungIndex: dustClose ? null : verdict.tpRungIndex,
+    markSource: decisionSource,
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
+    gainPct: verdict.gainPct,
+    pnlPctVsFill: verdict.pnlPctVsFill,
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,
@@ -261,14 +417,31 @@ export function applyMarkDecisionToPosition(
   pos: MildDipOpenPosition,
   decision: MarkExitDecision,
 ): void {
+  if (decision.markDiscardStreamOutlier) {
+    pos.pendingMarkPriceUsd = undefined;
+    pos.pendingMarkSource = undefined;
+    pos.pendingMarkAtMs = undefined;
+    return;
+  }
   if (decision.markQuarantined) {
     // Remember the outlier so a second print at the same level can confirm it,
     // and leave every other field, including lastMarkPriceUsd, untouched.
+    // Keep the original timestamp while the same value keeps coming back, so the
+    // quarantine clock measures how long we have been refusing it (1.11.919).
+    if (pos.pendingMarkPriceUsd !== decision.markPriceUsd || pos.pendingMarkAtMs == null) {
+      pos.pendingMarkAtMs = Date.now();
+    }
     pos.pendingMarkPriceUsd = decision.markPriceUsd;
+    pos.pendingMarkSource = decision.markSource ?? undefined;
     return;
+  }
+  if (pos.lastMarkPriceUsd !== decision.markPriceUsd || pos.markUnchangedSinceMs == null) {
+    pos.markUnchangedSinceMs = Date.now();
   }
   pos.lastMarkPriceUsd = decision.markPriceUsd;
   pos.pendingMarkPriceUsd = undefined;
+  pos.pendingMarkSource = undefined;
+  pos.pendingMarkAtMs = undefined;
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;

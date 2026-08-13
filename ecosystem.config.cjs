@@ -2837,13 +2837,13 @@ const PM2_APPS = [
         /** 1.11.828 — flat $5 across base / thick / micro. */
         /** 1.11.839 — flat $2 across base / thick / micro. */
         /** 1.11.841 — flat $1 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '3',
+        MILD_DIP_POSITION_USD: '8',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          * 1.11.841 — same $1 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '3',
+        MILD_DIP_THICK_POSITION_USD: '8',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
@@ -2852,7 +2852,7 @@ const PM2_APPS = [
          * 1.11.776 — floor aligned to global $5k (was $15k–$50k).
          * 1.11.841 — clip flat $1 with base/thick (one economic tier).
          */
-        MILD_DIP_MICRO_POSITION_USD: '3',
+        MILD_DIP_MICRO_POSITION_USD: '8',
         MILD_DIP_MICRO_MIN_MCAP_USD: '5000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -2860,6 +2860,12 @@ const PM2_APPS = [
         /**
          * 1.11.702 — slightly wider knife floor (was −20). Prebuy was skipping
          * dumps that printed −25…−30 by the time the quote landed.
+         */
+        /**
+         * 1.11.885 — the deep end pays for itself nowhere. Over 186 closed
+         * positions in 11h, entries below −20% returned −2.97 USD at a 50% win
+         * rate, the only band besides the shallow one in the red, and
+         * `turn_dump_knife` (−2.71 on 5) sits inside it.
          */
         MILD_DIP_MIN_DIP_PCT: '-25',
         /**
@@ -2884,7 +2890,39 @@ const PM2_APPS = [
          * 27.8% land inside −25…−8; 13.7% sit in −8…−3, which we were refusing.
          * Green entries (35.6% of theirs) stay out of scope for now.
          */
-        MILD_DIP_MAX_DIP_PCT: '0',
+        /**
+         * 1.11.885 — the shallow end is the largest single loss source left.
+         * By entry depth over the same window: (−4,−2] returned −2.39 USD at 59%
+         * and (−2,0] −2.50 USD at 52%, while every band from −20% to −4% was
+         * positive at a 65–81% win rate. Fifty positions, −4.89 USD, against a
+         * whole-window result of +7.01.
+         *
+         * This band was cut to −8 once before and reopened in 1.11.854 on data
+         * the basis bugs had corrupted. Measured clean, the line is −4: (−8,−4]
+         * earns, (−4,0] does not.
+         */
+        /**
+         * 1.11.893 — a 1.5% wiggle is not a dip.
+         *
+         * 77rUTY78 came in at pc5m −1.53% inside an hour that was up 11%, which
+         * on a chart is a green candle. By entry depth, and unlike anything else
+         * tested today, this holds across every window:
+         *
+         *   band      last 12h      last 24h    whole journal
+         *   (−2,0]      −0.079        −0.034        −0.012   USD/pos
+         *   (−4,−2]     −0.047        −0.089        −0.017
+         *   (−6,−4]     +0.048        +0.053        −0.007
+         *   (−10,−6]    +0.133        −0.018        −0.034
+         *
+         * (−4,0] is the only band negative in all three, over 754 positions in
+         * total. The hour trend was tested too and is not the discriminator: on
+         * the clean 12h window a green hour with a real dump returns +0.051/pos,
+         * so the pullback depth is what matters, not the candle colour.
+         *
+         * Only the ceiling moves. The floor stays at −25: the deep end was cut
+         * once on 14 positions, which was not evidence, and that is reverted.
+         */
+        MILD_DIP_MAX_DIP_PCT: '-4',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).
@@ -2892,7 +2930,16 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_ENABLED: '1',
         MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT: '-50',
         MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT: '-20',
-        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '120000',
+        /**
+         * 1.11.892 — 30s, not 120s. This gate sits in front of both paths, so a
+         * knife that had already lifted 1.5–10% off its trough still had to sit
+         * out the remaining minute and a half before we could look at it. The
+         * bounce is the evidence that the fall stopped; waiting past it only
+         * hands back the entry. The stabilize path keeps its own separate
+         * requirement of `QUIET_MS` with no new trough, which is the evidence
+         * that applies when there is no bounce yet.
+         */
+        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '30000',
         MILD_DIP_KNIFE_STABILIZE_MAX_WATCH_MS: '600000',
         MILD_DIP_KNIFE_STABILIZE_QUIET_MS: '45000',
         MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
@@ -2903,6 +2950,44 @@ const PM2_APPS = [
          * picks the mint, wait-dip picks the price. 8h CF on live buys: entering
          * at signal books −$33; waiting for −12% more books +$13…+$78, and our
          * fill on shared leader names was −20.2% MAE vs their −15.9%.
+         */
+        /**
+         * 1.11.890 — off. The seat parks a dip that already qualified and buys
+         * only if it falls another `WAIT_DIP_PCT`, which selects for continuation:
+         * we fill precisely when the price keeps going down.
+         *
+         * Over 6h, 448 seats parked and 304 expired, so 68% of the dips we found
+         * were never traded. What those were worth is readable from the leader
+         * corpus, taking leader bags opened on the same mint within a minute of
+         * our seat — buying the dip we saw instead of waiting for a better one:
+         *
+         *                        expired (skipped)   filled (waited)
+         *   median final              +10.74%            −0.29%
+         *   ended >= 0                    70%               50%
+         *   median peak               +23.74%           +11.47%
+         *   reached +8%                   74%               62%
+         *   median drawdown            −6.75%           −13.48%
+         *   went below −25%               16%               37%
+         *
+         * (90 and 125 matched bags; at a ±60s window the gap is wider still,
+         * +11.31% against +2.33%.) The dips that did not fall further were the
+         * ones that had bottomed, and those are exactly the ones the seat let go.
+         */
+        /**
+         * 1.11.896 — back on. Turning it off in 1.11.890 rested on what the
+         * *leaders* made buying the dips our seats let expire (+10.74% median
+         * against −0.29% for the ones we waited out). That was never our number:
+         * they fill without our chase and overpay and they exit on their own
+         * rule, so their result on a dip is not the result we would have had.
+         *
+         * Ours, per position, matched to the buy row:
+         *
+         *   overnight, seats on       409 pos  −0.0415/pos  24% end in time_red
+         *   09:48–11:35, seats off     70 pos  −0.0906/pos  40% end in time_red
+         *
+         * The leaders' own book did not deteriorate over those hours - their
+         * round trips ran a +0.52% median overnight and +0.92% through the
+         * morning - so this is not the market turning, it is the change.
          */
         MILD_DIP_WAIT_DIP: '1',
         MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1',
@@ -2965,7 +3050,22 @@ const PM2_APPS = [
          * 7BNax knife style dump≥30% & turn=vol5m/liq≥0.30 → buy now
          * (does not open a second wallet / lane).
          */
-        MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '1',
+        /**
+         * 1.11.891 — off. This branch exists to buy a collapse of 30% or more,
+         * reaching past the band floor, and across the whole journal it is the
+         * worst entry we have by a wide margin:
+         *
+         *   turn_dump_knife  263 pos  −50.31 USD  −0.191/pos  46% win  6 rugs
+         *   wait_dip        1257 pos  −50.53 USD  −0.040/pos
+         *   dex             1030 pos  −35.72 USD  −0.035/pos
+         *   dex+stream       760 pos  −10.09 USD  −0.013/pos
+         *
+         * Five times the loss per position of anything else. It wins slightly
+         * more often than the others and loses far more when it does not, which
+         * is what buying a collapse means: HTHEyy5n came in at pc5m −66.62% with
+         * mcap $37k, four buyers against fourteen sellers, and went to −96%.
+         */
+        MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '0',
         MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '30',
         MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN: '0.3',
         /**
@@ -3014,6 +3114,79 @@ const PM2_APPS = [
          * stream-first), not pure copy.
          */
         MILD_DIP_MIN_VOLUME_5M_USD: '150',
+        /**
+         * 1.11.895 — the last five minutes must actually be trading.
+         *
+         * The absolute floor above is cleared by a coin with a busy hour and a
+         * dead last five minutes. EkcTa8n1 came in on $619 of 5m volume against
+         * $34,662 for the hour — 21% of the hourly pace, a drift with nobody in
+         * it rather than a flush. It fell 24% over the next ten minutes, we cut
+         * at −18.4%, and the leader bought the actual flush 21 seconds later.
+         *
+         * Ratio of 5m volume to `vol1h / 12`. Below 0.3 loses in every window:
+         *
+         *   pace       last 12h   last 24h   whole journal
+         *   < 0.3        −0.080     −0.040      −0.095   USD/pos
+         *   0.3–0.6      −0.053     −0.009      −0.013
+         *   0.6–1.0      −0.050     −0.062      −0.056
+         *
+         * 264 positions below 0.3 across the journal. A missing hourly reading
+         * does not block: the absolute floor still applies there.
+         */
+        MILD_DIP_MIN_VOL5M_PACE_RATIO: '0.3',
+        /**
+         * 1.11.904 — 5m volume must be at least 3% of pool liquidity: the name has
+         * to still be changing hands relative to its own size.
+         *
+         * GCa9TZ is the case that found this. While both leaders were taking it,
+         * turnover ran 0.209 on $14,090 of 5m volume; after they stopped it ran
+         * 0.038 on $4,307, with liquidity barely moved ($118.5k to $113.7k) and
+         * market cap down only a fifth. Nothing about the pool broke - the coin
+         * simply stopped trading. We kept buying for another twelve hours, nine
+         * more positions, −2.80 USD, while both leaders stayed away.
+         *
+         * The pace gate cannot see this, because 5m and 1h volume fell together
+         * and their ratio stayed healthy. Only the comparison against liquidity
+         * moves. By turnover at entry, across three windows:
+         *
+         *   turn        last 24h   last 48h   whole journal
+         *   < 0.03       -0.0635    -0.0552      -0.0644   USD/pos
+         *   0.03-0.06    -0.0459    -0.0572      -0.0490
+         *   0.06-0.12    +0.0192    -0.0086      -0.0163
+         *   0.12-0.25    -0.0565    -0.0344      -0.0325
+         *   > 0.25       -0.0568    -0.0622      -0.1145
+         *
+         * The floor goes at the bottom band, 211 positions and −13.58 USD across
+         * the journal, negative in every window. The top band is worse by dollars
+         * (731 positions, −83.71) but that figure leans on the era before the exit
+         * bases were fixed, and cutting it would drop 40% of entries at once, so it
+         * waits for clean data rather than going out on the same breath.
+         */
+        /**
+         * 1.11.912 — 0.06, because 0.03 did not catch the coin it was built from.
+         *
+         * GCa9TZ ran 0.038 after both leaders walked away, which cleared a floor
+         * at 0.03 by a hair, and we would have kept buying it. The band it sits in
+         * is negative in every window anyway, by the same table that set the floor:
+         *
+         *   turn        last 24h   last 48h   whole journal
+         *   < 0.03       -0.0635    -0.0552      -0.0644   USD/pos
+         *   0.03-0.06    -0.0459    -0.0572      -0.0490
+         *   0.06-0.12    +0.0192    -0.0086      -0.0163
+         *
+         * 0.06 is where the sign turns. It costs another 206 positions and -10.09
+         * USD of loss across the journal on top of the 211 the first floor took.
+         */
+        MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.06',
+        /**
+         * 1.11.907 — and no higher than 0.25. Past that the name is inside an
+         * event rather than trading, and we are on the wrong side of it: 731
+         * positions above 0.25 returned −0.1145 each across the journal, the worst
+         * band by dollars, and negative in every window (−0.0568 over 24h, −0.0622
+         * over 48h). It drops a large share of entries, which is why it waited for
+         * the floor to go in first.
+         */
+        MILD_DIP_MAX_TURNOVER_5M_LIQ: '0.25',
         /**
          * 1.11.870 — ceiling at $40k of 5m volume. Over 499 fully closed bags
          * joined to the entry snapshot, counted in cash:
@@ -3071,8 +3244,25 @@ const PM2_APPS = [
          * 65.9% of them — by far the largest single blocker. Their median
          * liquidity at entry is $11,344 and p25 is $6,726, i.e. our floor sat
          * above the middle of the range they trade in.
+         *
+         * 1.11.894 — $8k. The band the old floor admitted is a standing loss and
+         * the only liquidity band negative in every window:
+         *
+         *   liquidity    last 12h   last 24h   whole journal
+         *   < $8k          −0.129     −0.070      −0.112   USD/pos
+         *   $8–15k         −0.013     −0.097      −0.117
+         *   $15–30k        +0.048     −0.023      −0.017
+         *   > $80k         −0.051     −0.012      −0.008
+         *
+         * 238 positions below $8k across the journal. The leaders agree from the
+         * other side: over 18,475 of their buy moments the p25 liquidity is
+         * $8,150, so they essentially do not trade under it. 7mPKEd18 came in at
+         * $7,686 with a $13.8k market cap.
+         *
+         * $8–15k is negative in all three windows too, but the 12h reading is
+         * near zero and it holds 592 positions, so it waits for more clean data.
          */
-        MILD_DIP_MIN_LIQUIDITY_USD: '6000',
+        MILD_DIP_MIN_LIQUIDITY_USD: '8000',
         /**
          * 1.11.776 — global entry floor $5k (was $50k). One clip tier ($10);
          * turn→dump gate still selects depth. Knife/micro floor matches.
@@ -3102,6 +3292,23 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_PAIR_AGE_HOURS: '6',
         /**
+         * 1.11.905 — one hour instead of six for a name a leader is buying.
+         *
+         * The floor is there because a young pair is usually unformed, but two
+         * leaders actively taking one is evidence about that specific pair, and
+         * the clock does not carry it. 4CmYEyg is the case: the leaders traded it
+         * 26 times while it sat behind our six-hour floor, and by the time it
+         * cleared, the phase they had traded was over. GPzpoXpD and 94yadmf3 read
+         * the same way - they were in from hour one to four, we arrived at six or
+         * seven and bought the retrace of a move that had already happened.
+         *
+         * Only ever lowers the floor, never raises it, and every other floor
+         * stands: liquidity $8k, turnover 0.03, the volume pace ratio, the dip
+         * band. So a young name still has to be liquid and actually trading; it
+         * just no longer has to be old as well.
+         */
+        MILD_DIP_MIN_PAIR_AGE_HOURS_LEADER_SEEN: '1',
+        /**
          * 1.11.815 — cap at 72h. Pairs older than that are dead money on this
          * strategy: 20 trades, −$7.60, winrate 0.25, median MFE 1.1% — they
          * simply do not bounce. Cutting them is the only filter that turns
@@ -3129,19 +3336,20 @@ const PM2_APPS = [
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
         /**
-         * 1.11.699 — scale-out trail; 1.11.741 — half-first even on −8% gap:
-         * Arm at +5% MFE; first giveback hit (−3% or deeper) always sells 50%;
-         * runner full-exits only after scaleOutDone + another −8% hit.
+         * 1.11.699 — scale-out trail; 1.11.741 — half-first even on −8% gap;
+         * 1.11.922 — dual trail: −5% sells half the remainder, −15% closes.
+         * Arm at +5% MFE; first giveback hit (−5% or deeper) always sells 50%;
+         * runner full-exits only after scaleOutDone + another −15% hit.
          */
         MILD_DIP_EXIT_ARM_PCT: '5',
-        MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '0',
+        MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '5',
         MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0.5',
         /**
-         * Trail width: full exit 30% below the peak. Measured off the leaders'
-         * own bag marks, where giveback at exit is a constant ~30% of peak for
-         * any peak above 15% (−29.4% / −29.9% / −33.6% across buckets).
+         * 1.11.918 — a pure 20% trail was positive on 4796 tapes but too wide
+         * in live: we gave back most of a pop before acting. 1.11.922 — bank
+         * half at −5%, close the runner at −15%.
          */
-        MILD_DIP_EXIT_GIVEBACK_PCT: '12',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '15',
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
@@ -3193,7 +3401,72 @@ const PM2_APPS = [
          * winners. Grid on the full sample: hard15 −$9.52, hard20 −$0.17,
          * hard25 +$4.15, hard30 +$6.19.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
+        /**
+         * 1.11.911 — −15, because the upside is now capped.
+         *
+         * 1.11.910 put this at −50 on the grounds that across 2,226 leader bags
+         * every stop from −25 to −80 replays the same. That reasoning was borrowed
+         * from a book it does not describe. Their median winner is +34.75% and
+         * 43.9% of their winners clear +100%, so the size of a loss barely moves
+         * their result. Ours, over 1500 closed positions: win rate 53%, average
+         * win +11.79%, average loss −17.96%, expectancy −2.076% per position, and
+         * a pairing like that needs a 60% win rate to break even.
+         *
+         * Capping the upside at the first rung (1.11.897) therefore requires
+         * capping the downside harder. Clipping our own losses at each level:
+         *
+         *   floor   average loss   break-even win rate   expectancy
+         *   −15         −12.17%            51%             +0.622%
+         *   −20         −14.60%            55%             −0.508%
+         *   −25         −15.83%            57%             −1.081%
+         *   −50         −17.40%            60%             −1.813%
+         *
+         * −15 is the only level with a positive expectancy on our distribution,
+         * and −50 was the worst of the six. The two knobs have to move together:
+         * a laddered runner can carry a wide floor, a single-leg exit at +8%
+         * cannot. `dead_set_bounce` still fires first at −10% with the
+         * conjunction, so this is the backstop rather than the usual exit.
+         */
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
+        /**
+         * 1.11.910 — condemned by the conjunction, timed by the bounce.
+         *
+         * All three have to have gone before a bag is written off: its 5m volume
+         * down to a quarter of what it was at entry, its turnover likewise, and the
+         * price down 10%. That combination is what the leaders' own departures look
+         * like - on GCa9TZ they left when turnover fell 0.209 to 0.038 with
+         * liquidity intact - and it is the state no single number describes.
+         *
+         * Then the sell waits for the price to lift 2% off its running low, so we
+         * are not the ones handing a whale the bottom tick. Fifteen minutes minimum
+         * hold, so a fresh bag on a quiet five minutes is not condemned by noise.
+         */
+        MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC: '0.25',
+        MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC: '0.25',
+        MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT: '10',
+        /**
+         * 1.11.913 — 5%, not 2%. Measured on 995 losing leader bags, the lift off
+         * the low at the last reading before they let go:
+         *
+         *   p25 +2.13%   median +10.17%   p75 +26.27%   p90 +62.02%
+         *
+         * and only 24.9% of their losing exits happen at a lift of 2% or less.
+         * Worse, 98.3% of losing bags lift more than 2% at some point, so a 2%
+         * release is close to no wait at all - it fires on noise and we still hand
+         * over the bottom tick.
+         *
+         * Their median is +10%, and the honest reason for not going there is our
+         * own floor: the conjunction condemns a bag at −10% and `hard_stop` takes
+         * it at −15%, so there are five points of room, and a +10% lift off the low
+         * would often arrive after the floor had already sold. 5% is a real wait
+         * that fits inside it, and the max lift these bags manage - p25 +14.08%,
+         * median +28.86% - says it is reachable.
+         */
+        MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '5',
+        // 1.11.916 - the stop level decides, the bounce times the sale. 4rLgnF
+        // went out at -16.0% and traded 8.5% above our exit four minutes later.
+        MILD_DIP_EXIT_HARD_STOP_BOUNCE_PCT: '3',
+        MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
@@ -3210,10 +3483,46 @@ const PM2_APPS = [
          * the 25% guard, armed the trail and fired a ladder rung on a coin that
          * had not moved.
          */
-        MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '25',
+        /**
+         * 1.11.880 — 25% was far too wide for a 2000ms mark cadence. 7ZgRjHSn
+         * took three marks at 6.7779e-05, one at 7.6591e-05 (+13%) and the next
+         * back at 6.956e-05: the spike passed unconfirmed, read gain +8.44%,
+         * fired the +8% rung into a fill at the real price (−4.45%) and left the
+         * peak polluted, which then armed breakeven for the remainder. One tick
+         * of confirmation costs two seconds; the phantom cost the position.
+         */
+        MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '10',
         MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT: '8',
+        /**
+         * 1.11.874 — a soft exit asks the entry gate first. GCa9TZ went out on
+         * breakeven_stop at −10.48% and the entry side bought it back 98s later
+         * 7.7% lower, where the ladder banked two rungs: we paid a round trip to
+         * swap the bag for itself. Budget bounds the claim; risk exits and the
+         * profit ladder are never deferred.
+         */
+        MILD_DIP_EXIT_DEFER_WOULD_BUY: '1',
+        MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS: '600000',
         MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8',
+        /**
+         * 1.11.873 — the floor is a mark-basis level, so breaking even in money
+         * means clearing the round trip. Seven `breakeven_stop` exits at a floor
+         * of 0 realised −3.58% on average: entry overpay (median 1.80%) plus the
+         * sell side. Held at that measured cost so the exit lands where its name
+         * says it does.
+         */
+        /**
+         * 1.11.882 — back to 0. The 3.5% stood in for a round trip we now measure
+         * properly: the gain basis already answers for entry overpay and the sell
+         * haircut answers for the exit, so 0 is literally breakeven in money.
+         */
         MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0',
+        /**
+         * Measured over 2009 live sells: the fill lands a median 0.99% below the
+         * mark that decided it (p25 −3.59%, half of them past 1%). The mark is a
+         * mid and we sell into the bid, so a money threshold has to clear on a
+         * price we can actually get.
+         */
+        MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT: '1',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
@@ -3256,10 +3565,15 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS: '20000',
         MILD_DIP_EXIT_MFE_BANK1_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
-        MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
+        // Off with the grid, or the bank takes the same rung the grid used to.
+        MILD_DIP_EXIT_MFE_BANK2_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
         /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
-        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '12',
+        // 1.11.920 - the sleeve is what actually trails a bag once the ladder is
+        // off, so it has to carry the same giveback as the trail. AvecKFxn peaked
+        // at +21.49% and this cut it at -12.58% while GIVEBACK_PCT said 20.
+        // 1.11.922 — sleeve aligned to the full close trail (−15%).
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '15',
         /**
          * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):
          * half the remainder at every +8%, no top rung. Replaces bank1 +6%/40% +
@@ -3275,14 +3589,40 @@ const PM2_APPS = [
          * −3.47% (+25%×50%) or +0.66% (+50%×50%) — the rungs cut the only tail
          * that pays. Both ladders off; a single full exit on the trail below.
          */
-        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
+        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
         MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
         /**
          * 1.11.861 — the ladder stops instead of running forever. When the next
          * rung would leave under 20% of the original, it closes the bag: +8%
          * takes half, +16% half again, +24% takes the last quarter whole.
          */
-        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.2',
+        /**
+         * 1.11.897 — 0.6, which closes the whole position on the first rung.
+         *
+         * The leaders take 92.6% of their positions off in a single sell, at a
+         * median +34.75%, and 43.9% of their winners clear +100%. We were closing
+         * 39.1% in one leg, 55% of our winners landed under +10% and none cleared
+         * +100%: the ladder trimmed every runner into a scalp and left a
+         * remainder to age, which is also why 48 bags sat open at a median age of
+         * 51 minutes against their 17.
+         *
+         * Removing the ladder outright was tested and is much worse on our tapes
+         * (median −3.55 against +1.73 over 24h; the same in the 12h window),
+         * because our entries produce far fewer runners than theirs — 5% of our
+         * positions clear +25% against their 43.9% over +100%. So the ladder
+         * stays and only its remainder floor moves, which turns the first rung
+         * into a full exit:
+         *
+         *   remainder   24h median / trimmed   12h median / trimmed
+         *   0.20 (was)      +1.72 / −2.55          +2.06 / −2.71
+         *   0.35, 0.50      +1.72 / −2.35          +2.06 / −2.48
+         *   0.60            +5.47 / −1.81          +7.06 / −1.70
+         *
+         * Better on median, trimmed mean, plain mean and win rate in both
+         * windows. It caps a position at the first rung, which is the trade: the
+         * share clearing +25% goes 5% to 4%.
+         */
+        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.6',
         /**
          * 1.11.865 — green lane on, at its own $1 clip. Momentum entries with
          * their own floors and their own exit (+30% / −6% / 10 min); see
@@ -3293,7 +3633,13 @@ const PM2_APPS = [
          * the ten-minute ceiling bounds the exposure that floor guards against.
          * At 1h we keep 39% of signals, roughly 57 a day.
          */
-        MILD_DIP_GREEN_ENABLED: '1',
+        /**
+         * 1.11.876 — off. Zero `green_momentum` buys across 7098 buy attempts
+         * since it shipped, so it has produced no trades and no data, while its
+         * lane still spends the shared DexScreener budget the dip lane is short
+         * of (`structural_fetch_null` is a standing top-two skip).
+         */
+        MILD_DIP_GREEN_ENABLED: '0',
         MILD_DIP_GREEN_POSITION_USD: '1',
         /**
          * 1.11.867 — 0.05h (3 min), was 1h. Measured on the sampler with the
@@ -3327,14 +3673,57 @@ const PM2_APPS = [
          * held ≥ 5m AND pnl ≤ −15% AND Dex pc5m ≤ −5%.
          * Armed / MFE-bank trail unchanged. Missing pc5m → no fire.
          */
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '300000',
+        /**
+         * 1.11.900 — 900s, not 300s. Measured on the dips we and a leader both
+         * entered within a minute of each other, so the same flush and not two
+         * entries hours apart: 75 matched pairs, of which we stopped out of 30.
+         *
+         *   what we did              n    ours       theirs   they held
+         *   stopped out (<=-5%)     30  -19.77%      -0.26%     15.5 min
+         *   scratched (-5..+5%)     20   +1.81%      +5.27%      5.1 min
+         *   banked (>+5%)           25   +9.41%      +3.90%     10.1 min
+         *
+         * On the bags that worked our exit beats theirs, +9.41% against +3.90%.
+         * On the bags that did not, we realised -19.77% where they came out
+         * around flat, having given it three times as long. Our median hold on
+         * these was 4.8 minutes, which is this gate firing at its floor.
+         *
+         * A replay of every tape agrees on direction: against no time cut at
+         * all, the rule at 300s costs -6.37 USD over 24h, at 900s -0.84, at
+         * 1200s nothing. It still helps the typical position on a trimmed mean
+         * at every setting, so it stays - it just stops firing at five minutes.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT: '5',
         /**
          * 1.11.791 — max-hold / underwater time ceiling OFF.
          * Never-arm loss uses HELD+PC+SL; green armed trail may wait.
          */
-        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '0',
+        /**
+         * 1.11.901 — three hours. This is the only ceiling on how long a bag may
+         * sit: it closes an unarmed bag outright, and an armed one when its gain
+         * is at or below zero.
+         *
+         * For positions still open at each age, what they were worth then
+         * against what they ended up worth, over 835 closed positions in 36h:
+         *
+         *   age    still on   gain then   gain at end
+         *   30m         283      -2.86%       -2.06%
+         *   60m         139      -2.56%       -2.84%
+         *   120m         59      -3.13%       -3.00%
+         *   180m         33      -4.52%       -7.36%
+         *   240m         19      -3.49%      -11.78%
+         *
+         * Waiting is roughly free up to two hours and then turns: a bag still
+         * open at three hours gives back another 2.8 points, at four hours 8.3.
+         *
+         * Cutting earlier is measurably harmful - a replay of every tape puts
+         * leaving at 30 minutes at -0.207 per position on a trimmed mean, and at
+         * 60 minutes -0.007 - so the ceiling goes where the tape turns, not where
+         * the pile is most annoying. It reaches about thirty bags per 36h.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '10800000',
         /**
          * 1.11.734 — oneshot emptied-bag dump grace:
          * Stream sell that empties a wallet (post≈0) and ≥$500 → defer
@@ -3366,7 +3755,20 @@ const PM2_APPS = [
          * 1.11.782 — NOT copytrading. Leader-seed does not open buys; align/
          * scale-in OFF. Observer may still log leaders for research only.
          */
-        MILD_DIP_LEADER_SEED_ENTRY: '0',
+        /**
+         * 1.11.875 — the seed is attention, not a buy signal: the lane hands the
+         * mint to our own structural + dip gates, which reject most of them. With
+         * it off a name only reached us through stream / boosts / profiles, so
+         * 49nkLrXi — traded by two leaders, sitting in our seed — had not one
+         * journal row: never looked at, never skipped, simply absent.
+         *
+         * The observer snapshot serves the structural gate while it is fresh, so
+         * the lane costs no Dex slots; the two bounds below stop it re-checking
+         * the whole seed every scan.
+         */
+        MILD_DIP_LEADER_SEED_ENTRY: '1',
+        MILD_DIP_LEADER_SEED_WAKE_MAX: '12',
+        MILD_DIP_LEADER_SEED_RELOOK_MS: '60000',
         /**
          * 1.11.783 — after our exit keep mint on stream/knife wake 2h
          * (was ~10m via bounce lookback → 23e4CN knife at +61m invisible).
@@ -3414,6 +3816,10 @@ const PM2_APPS = [
          */
         MILD_DIP_MARK_DEX_REFRESH_MS: '2000',
         MILD_DIP_MARK_CACHE_TTL_MS: '3000',
+        // 1.11.917 - an armed bag stops trusting a ring sample this old and gets
+        // an awaited Dex read instead. GPzpoXpD sat on one frozen print for 44s
+        // while it halved, and we banked +298% of a +699% peak.
+        MILD_DIP_MARK_ARMED_MAX_AGE_MS: '10000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
         MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',
@@ -3444,7 +3850,23 @@ const PM2_APPS = [
         MILD_DIP_FAST_PATH_SKIP_BOUNCE: '0',
         /** After full exit: rebuy only if mark ≥20% below exit (15m memory). */
         /** 1.11.757 — rebuy if ≥10% below last exit (was 20%; Sheep 09:15 miss). */
-        MILD_DIP_REBUY_BELOW_EXIT_PCT: '10',
+        /**
+         * 1.11.908 — off. The gate demanded the price sit 10% below our last exit
+         * before we could re-enter, on the assumption that cheaper is better. Our
+         * own book says the opposite. Every buy, priced against our own first entry
+         * on that coin:
+         *
+         *                     last 24h   last 48h   whole journal
+         *   first buy          -0.1423    -0.0961      -0.1156   USD/pos
+         *   below first        -0.0417    -0.0501      -0.0334
+         *   above first        -0.0361    -0.0249      -0.0083
+         *
+         * Re-entering a name that has recovered above our first price is our best
+         * population, four times better per position than re-entering one that has
+         * kept falling, and the ordering holds in all three windows. The gate was
+         * steering us into the worse half by construction.
+         */
+        MILD_DIP_REBUY_BELOW_EXIT_PCT: '0',
         MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
         /** 1.11.797 — after loss exit: skip rebuy when Dex liq fell vs exit. */
         MILD_DIP_REBUY_LIQ_DROP: '1',
@@ -3663,6 +4085,30 @@ const PM2_APPS = [
          * journal so they never mix into the book's statistics.
          */
         MILD_DIP_PROBE_BLOCKED: '1',
+        /**
+         * 1.11.898 — $1 on a coin we have never closed a position in, against
+         * the $3 clip everywhere else. Ordered by how many times we have traded
+         * a mint, our own closed positions:
+         *
+         *   trade #     n     USD/pos    median   win
+         *   1st       565    -0.2050    -2.95%   44%
+         *   2nd       318    -0.0486    +0.18%   50%
+         *   3rd       205    -0.0418    +1.87%   52%
+         *   4th-6th   375    -0.0219    +1.02%   53%
+         *   7th+      595    -0.0266    +2.36%   54%
+         *
+         * The first touch carries -115.82 USD of a -164 total and holds in every
+         * window (-0.134/pos over 24h, -0.120 over 12h, repeats -0.019 to
+         * +0.047). The leaders are the mirror image: their first trip on a mint
+         * is their best, median +20.56% at a 65% win rate, and their top five
+         * mints then carry a third of all their round trips.
+         *
+         * So the first trade is priced as the cost of finding out, not skipped -
+         * without it there are no repeats.
+         */
+        // Kept at the same third of a clip as the tiers move 3 -> 8: a first
+        // touch on a mint is still the worst-performing entry we take.
+        MILD_DIP_FIRST_TOUCH_POSITION_USD: '3',
         MILD_DIP_PROBE_BLOCKED_USD: '2',
         MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
         /**
@@ -3690,6 +4136,40 @@ const PM2_APPS = [
         MILD_DIP_RUG_KNIFE_TURN: '3',
         MILD_DIP_RUG_BLOCK_DUMP_PCT: '0',
         MILD_DIP_REQUIRE_LEADER_SEEN: '0',
+        /**
+         * 1.11.899 — a leader has to have touched a name before we open it for
+         * the first time; repeats on names we know are not gated.
+         *
+         * Measured on our own closed positions, and the two effects are
+         * independent rather than one standing in for the other:
+         *
+         *                          first trade      repeat
+         *   leader has traded it     -0.1470       -0.0284   USD/pos
+         *   only we trade it        -0.3068       -0.0436
+         *
+         * The first-touch penalty survives inside each column (five- and
+         * seven-fold) and the no-leader penalty inside each row, so both are
+         * real. Their intersection is the worst population we have: 205
+         * positions, 10% of the volume, -62.89 USD of a -162 total, 41% win.
+         *
+         * 1.11.816 applied this to the whole funnel and starved entry, since our
+         * discovery overlaps the seed by about a tenth. Scoped to the first touch
+         * it drops 21% of positions and moves the book from -0.0784 to -0.0546
+         * per position, while a name we already know stays tradeable.
+         */
+        MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
+        /**
+         * 1.11.906 — remember for a week that a leader traded a name.
+         *
+         * The gate above asks whether a leader finds a name worth trading at all,
+         * and the measurement behind it asked exactly that - ever. The code read
+         * the seed file, which is a two-hour view by design, so the gate was
+         * stricter than its own evidence: of 20,614 rejections, 1,066 were names
+         * the leaders had bought earlier than two hours. 78.2% were names no
+         * leader ever bought, which is the gate working, and only 19 were inside
+         * the window it was checking, so this is the one real defect in it.
+         */
+        MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
         MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS: '7200000',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
@@ -3809,8 +4289,13 @@ const PM2_APPS = [
        * 429 three times in a row while the bot paces itself to a healthy 10
        * marks/min. Structure (liq / mcap / age / vol5m) moves slowly, so it is
        * rationed to 3 DexScreener requests per minute against the bot's ~30.
+       *
+       * 1.11.876 — off. The lane it was built to justify never opened a position
+       * (zero `green_momentum` buys in 7098 attempts), so its corpus is paying a
+       * share of a saturated DexScreener quota for a strategy that does not
+       * trade. Start it again when green is something we intend to run.
        */
-      autostart: true,
+      autostart: false,
       autorestart: true,
       max_restarts: 50,
       restart_delay: 10_000,

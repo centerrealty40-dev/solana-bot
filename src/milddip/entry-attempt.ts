@@ -468,7 +468,21 @@ export async function attemptMildDipEntry(args: {
         lastExitAtMs: last?.atMs ?? null,
         reasons: rebuy.reasons,
       });
-      if (takeProbeSlot(cfg, nowMs)) {
+      /**
+       * 1.11.876 — a probe never argues with a loss we just took.
+       *
+       * PrkyDd was cut at −15.13% on `never_arm_time_red` — held, never armed,
+       * tape still dumping — and 140 seconds later this probe bought it back
+       * 1.06% lower at pc5m −13.27%: the same bag, the same fall, two more legs
+       * of fees. The gate had refused it correctly and the probe walked around
+       * its own gate.
+       *
+       * The probe exists to price what the re-entry blocks cost, and after a
+       * losing exit there is nothing left to price: we just held that tape and
+       * it answered. Blocks after a profitable or stale exit still get probed.
+       */
+      const lastExitWasLoss = last?.pnlPct != null && last.pnlPct < 0;
+      if (!lastExitWasLoss && takeProbeSlot(cfg, nowMs)) {
         probeReason = 'rebuy_below_exit';
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_probe_override',
@@ -518,7 +532,10 @@ export async function attemptMildDipEntry(args: {
         lastExitPnlPct: last?.pnlPct ?? null,
         reasons: liqDrop.reasons,
       });
-      if (takeProbeSlot(cfg, nowMs)) {
+      // Same rule (1.11.876). With `onlyAfterLoss` on, every liq-drop block is
+      // already a losing exit, so the probe overrode the gate every single time.
+      const liqLastExitWasLoss = last?.pnlPct != null && last.pnlPct < 0;
+      if (!liqLastExitWasLoss && takeProbeSlot(cfg, nowMs)) {
         probeReason = 'rebuy_liq_drop';
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_probe_override',
@@ -671,7 +688,37 @@ export async function attemptMildDipEntry(args: {
     isGreen && cfg.green.positionUsd > 0
       ? Math.min(cfg.green.positionUsd, knifeCapped)
       : knifeCapped;
-  const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, laneCapped) : laneCapped;
+  /**
+   * 1.11.898 — the first position on a coin is sized down.
+   *
+   * Ordered by how many times we have traded a mint, our own closed positions:
+   *
+   *   trade #     n     USD/pos    median   win
+   *   1st       565    -0.2050    -2.95%   44%
+   *   2nd       318    -0.0486    +0.18%   50%
+   *   3rd       205    -0.0418    +1.87%   52%
+   *   4th-6th   375    -0.0219    +1.02%   53%
+   *   7th+      595    -0.0266    +2.36%   54%
+   *
+   * The first touch carries -115.82 USD of a -164 total: five to ten times the
+   * loss per position of any repeat, and it holds in every window (-0.134/pos
+   * over 24h, -0.120 over 12h, while repeats run -0.019 to +0.047).
+   *
+   * The leaders are the mirror image - their first trip on a mint is their best
+   * (median +20.56%, 65% win) and they then grind the name dozens of times, with
+   * their top five mints carrying a third of all their round trips. We cannot
+   * pick an unknown coin the way they can, so the first trade is priced as what
+   * it is: the cost of finding out. It is not skipped, because without it there
+   * are no repeats.
+   */
+  const firstTouch =
+    cfg.firstTouchPositionUsd > 0 && !state.lastExitByMint?.[c.mint];
+  const familiarityCapped = firstTouch
+    ? Math.min(cfg.firstTouchPositionUsd, laneCapped)
+    : laneCapped;
+  const wantUsd = probeReason
+    ? Math.min(cfg.probeBlockedUsd, familiarityCapped)
+    : familiarityCapped;
   const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wantUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {
@@ -709,12 +756,16 @@ export async function attemptMildDipEntry(args: {
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,
     buySignature: null,
-    peakPriceUsd: entryPriceUsd,
+    // The peak lives in the mark series, like MFE; seeding it with the fill
+    // would book the entry overpay as a gain already given back.
+    peakPriceUsd: entryMarkPriceUsd ?? entryPriceUsd,
     entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
+    entryMarketCapUsd: c.metrics.marketCapUsd ?? null,
+    entryPairAgeHours: c.metrics.pairAgeHours ?? null,
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
   // Keep waitDipWatch until fill succeeds — quote-premium reject must retry.
@@ -966,12 +1017,14 @@ export async function attemptMildDipEntry(args: {
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,
     buySignature: buy.signature ?? null,
-    peakPriceUsd: fillPx,
+    peakPriceUsd: entryMarkPriceUsd ?? fillPx,
     entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
+    entryMarketCapUsd: c.metrics.marketCapUsd ?? null,
+    entryPairAgeHours: c.metrics.pairAgeHours ?? null,
   };
   // Seed exit mark ring so stream-only marks have a print before first swap decode.
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });

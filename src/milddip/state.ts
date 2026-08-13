@@ -15,6 +15,8 @@ export type MildDipOpenPosition = {
   buySignature: string | null;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
+  /** 1.11.919 — when the quarantined mark first appeared, so it can time out. */
+  pendingMarkAtMs?: number;
   /**
    * 1.11.848 — the Dex price the entry decision was made on.
    *
@@ -44,7 +46,15 @@ export type MildDipOpenPosition = {
    * twice before it decides anything.
    */
   lastMarkPriceUsd?: number;
+  /** 1.11.920 — since when the feed has been handing back the same number. */
+  markUnchangedSinceMs?: number;
   pendingMarkPriceUsd?: number;
+  /**
+   * 1.11.889 — which feed the quarantined print came from. Two byte-identical
+   * prints from one feed are a stale value read twice, not a market at that
+   * price, so they may not confirm each other.
+   */
+  pendingMarkSource?: 'stream' | 'dex';
   /** Running low-water mark from entry (never-arm bounce / freefall). */
   postEntryTroughUsd?: number;
   /** When postEntryTroughUsd was last deepened. */
@@ -62,6 +72,26 @@ export type MildDipOpenPosition = {
   entryVolume5mUsd?: number | null;
   /** Dex liquidity at entry — fallback baseline for exit → rebuy liq-drop. */
   entryLiquidityUsd?: number | null;
+  /**
+   * 1.11.874 — carried so the exit path can ask the entry gate whether it would
+   * open this position now. Market cap is scaled by the price move since entry,
+   * pair age grows with the hold; neither is re-read on the mark path.
+   */
+  entryMarketCapUsd?: number | null;
+  entryPairAgeHours?: number | null;
+  /**
+   * 1.11.879 — when this bag last sold. A partial changes the size on chain and
+   * the balance read lags, so the next decision has to wait for data that
+   * postdates the sell; two `never_arm_bounce` legs fired 4.1s apart on 33Grh5V
+   * / 2HJmyTW, the second on a reading from before the first.
+   */
+  lastSellAtMs?: number;
+  /** 1.11.920 — the mark the last sell fired on; the next needs a different one. */
+  lastSellMarkPriceUsd?: number;
+  /** Cumulative ms this bag has held a soft exit because the gate still passes. */
+  exitDeferredMs?: number;
+  /** Wall clock of the last such deferral, for accumulating the budget. */
+  exitDeferredAtMs?: number;
   /**
    * Spaced Dex vol5m samples (≥5m apart) for sustained `never_arm_vol_fade`.
    * A single weak tick must not sell — need N consecutive weak windows.
@@ -96,6 +126,19 @@ export type MildDipState = {
   cooldownUntilMs: Record<string, number>;
   /** mint → last full-exit fill/mark price for same-price rebuy guard. */
   lastExitByMint?: Record<string, MildDipLastExit>;
+  /**
+   * 1.11.906 — mint → when a leader was last seen holding or buying it, kept for
+   * as long as `leaderSeenMemoryMs`.
+   *
+   * The first-touch gate asks whether a leader finds a name worth trading at all.
+   * The measurement behind it used exactly that - ever - and found first touches
+   * on leader-traded names at −0.1470 per position against −0.3068 on names no
+   * leader wants. The implementation read the seed file instead, which carries a
+   * two-hour window for its own purposes, so the gate was stricter than the
+   * evidence: of 20,614 rejections, 1,066 were names the leaders had bought
+   * earlier than two hours, which is the better population being turned away.
+   */
+  leaderSeenMints?: Record<string, number>;
   /** mint → deep-knife watch (wait for stabilize / bounce). */
   knifeWatch?: Record<string, KnifeWatchEntry>;
   /** mint → wait-dip watch (park signal; buy after extra dump). */
@@ -234,6 +277,7 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     open: {},
     cooldownUntilMs: {},
     lastExitByMint: {},
+    leaderSeenMints: {},
     knifeWatch: {},
     waitDipWatch: {},
     updatedAtMs: nowMs,
@@ -252,6 +296,16 @@ export function loadMildDipState(statePath: string): MildDipState {
           ? parsed.cooldownUntilMs
           : {},
       lastExitByMint: sanitizeLastExitByMint(parsed.lastExitByMint),
+      /**
+       * 1.11.909 — this loader builds a fresh object field by field, so anything
+       * it does not name is dropped on every restart. The leader memory added in
+       * 1.11.906 was not named, so it reset each reload and never grew past the
+       * handful of mints one seed window holds.
+       */
+      leaderSeenMints:
+        parsed.leaderSeenMints && typeof parsed.leaderSeenMints === 'object'
+          ? parsed.leaderSeenMints
+          : {},
       knifeWatch: sanitizeKnifeWatch(parsed.knifeWatch),
       waitDipWatch: sanitizeWaitDipWatch(parsed.waitDipWatch),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),

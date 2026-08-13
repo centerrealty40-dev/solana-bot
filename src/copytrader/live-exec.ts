@@ -431,6 +431,12 @@ export async function executeLiveCopySell(args: {
   fraction: number;
   /** Copy-attributed balance (required in shared-wallet mode). */
   tokenRawBase?: string;
+  /**
+   * 1.11.883 — refuse to sell below this price. Set only for money-motivated
+   * exits, where realising under our cost defeats the exit's own purpose; risk
+   * exits pass nothing and always execute.
+   */
+  minExitPriceUsd?: number;
 }): Promise<
   {
     ok: boolean;
@@ -537,6 +543,41 @@ export async function executeLiveCopySell(args: {
       tokenAmountRaw: sellRaw,
       solUsd,
     });
+
+    /**
+     * 1.11.883 — the decision was made on a mark; this is the price we can
+     * actually get. Over 2009 sells the two differed by a median 0.99% and p25
+     * −3.59%, so a profit-motivated exit routinely realised below its own floor:
+     * 8PecVcC took the bounce half at −3.26% with MFE 0.12%, twice. If the quote
+     * cannot clear the floor, abandon the sell and let the next tick decide on
+     * fresh data. Risk exits set no floor and are never blocked here.
+     */
+    if (
+      args.minExitPriceUsd != null &&
+      args.minExitPriceUsd > 0 &&
+      exitPriceUsd > 0 &&
+      exitPriceUsd < args.minExitPriceUsd
+    ) {
+      const shortfallPct = (exitPriceUsd / args.minExitPriceUsd - 1) * 100;
+      appendCopyEvent(cfg, {
+        kind: 'sell_quote_below_floor',
+        mint,
+        symbol,
+        leaderSignature,
+        sellFraction: fraction,
+        quoteExitPriceUsd: exitPriceUsd,
+        minExitPriceUsd: args.minExitPriceUsd,
+        shortfallPct: Number(shortfallPct.toFixed(2)),
+        slippageBps: currentSlippageBps,
+        sellSimRetryAttempt: attempt,
+      });
+      return {
+        ok: false,
+        priceUsd: exitPriceUsd,
+        reason: `sell_quote_below_floor:${shortfallPct.toFixed(2)}%`,
+        ...rawFields,
+      };
+    }
 
     const sent = await sendSwap(cfg, prep.swapBuild.b64, {
       side: 'sell',

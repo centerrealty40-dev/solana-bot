@@ -289,15 +289,61 @@ export function streamOnlyNearTroughOk(args: {
   return b <= Math.max(0, args.maxBouncePct);
 }
 
-/** Exported for unit tests — structural floors on fast-path candidates. */
-export function structuralOk(metrics: MildDipCandidateMetrics, cfg: MildDipConfig): boolean {
+/**
+ * Exported for unit tests — structural floors on fast-path candidates.
+ *
+ * `leaderSeen` lowers the age floor to `minPairAgeHoursLeaderSeen`. The floor
+ * exists because a young pair is usually unformed, but a name two leaders are
+ * actively buying is evidence about that specific pair which the clock does not
+ * carry. 4CmYEyg is the case: they traded it 26 times while it sat behind our 6h
+ * floor, and by the time it cleared, the phase they had traded was over.
+ */
+export function structuralOk(
+  metrics: MildDipCandidateMetrics,
+  cfg: MildDipConfig,
+  leaderSeen = false,
+): boolean {
   const g = cfg.entry;
+  const minAge =
+    leaderSeen && g.minPairAgeHoursLeaderSeen > 0
+      ? Math.min(g.minPairAgeHoursLeaderSeen, g.minPairAgeHours)
+      : g.minPairAgeHours;
+  /**
+   * 1.11.914 — the turnover ceiling is a statistical prior about names we know
+   * nothing else about. A leader inside the name is direct evidence that
+   * overrides it, the same way it overrides the age floor.
+   *
+   * ELiQoVM9 is the case: 3.1 hours old, $13k of liquidity, turnover 0.355, and
+   * 8zkgFG turned $149.57 into $249.73 on it in 23 minutes. We evaluated it 239
+   * times and rejected all 239 on structural_fail - the age floor and this
+   * ceiling together.
+   */
+  const maxTurn = leaderSeen ? 0 : g.maxTurnover5mLiq;
+  /**
+   * 1.11.915 — same reasoning for the turnover floor and the 5m volume ceiling.
+   * 49nkLrXi printed $51.9k of 5m volume on $73.9k of liquidity with a leader in
+   * it, and the $40k ceiling threw it out; CgnQ8a ran turnover 0.044 against the
+   * 0.06 floor. Both ceilings and that floor describe coins we have no other
+   * evidence about.
+   */
+  const minTurn = leaderSeen ? 0 : g.minTurnover5mLiq;
+  const maxVol = leaderSeen ? 0 : g.maxVolume5mUsd;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
-  if (g.maxVolume5mUsd > 0 && metrics.volume5mUsd > g.maxVolume5mUsd) return false;
+  if (maxVol > 0 && metrics.volume5mUsd > maxVol) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
   if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
-  if (metrics.pairAgeHours == null || metrics.pairAgeHours < g.minPairAgeHours) return false;
+  if (metrics.pairAgeHours == null || metrics.pairAgeHours < minAge) return false;
+  if (
+    (minTurn > 0 || maxTurn > 0) &&
+    metrics.volume5mUsd != null &&
+    metrics.liquidityUsd != null &&
+    metrics.liquidityUsd > 0
+  ) {
+    const turn = metrics.volume5mUsd / metrics.liquidityUsd;
+    if (minTurn > 0 && turn < minTurn) return false;
+    if (maxTurn > 0 && turn > maxTurn) return false;
+  }
   if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
   if (g.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();
@@ -413,6 +459,12 @@ export async function evaluateFastPathCandidate(
   nowMs: number,
   trigger: 'stream' | 'leader' | 'scan',
   seedHit?: LeaderSeedHit | null,
+  /**
+   * 1.11.914 — a leader has traded this name, however we came to look at it.
+   * The caller knows this from its own memory; the trigger alone does not, which
+   * is why ELiQoVM9 stayed behind the age floor while 8zkgFG made 67% on it.
+   */
+  leaderSeenMint = false,
 ): Promise<MildDipCandidate | null> {
   const skip = (reason: string, extra?: Record<string, unknown>): null => {
     // Leave a trail for leader + stream wakes (silent null hid stream misses).
@@ -450,12 +502,26 @@ export async function evaluateFastPathCandidate(
   const streamRally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
   // Journal / turn-dump prefer true dump extent; fall back to mark-vs-peak.
   const streamDd = streamDump ?? streamCurrentDd;
+  /**
+   * 1.11.915 — one flag for "a leader has traded this name", read from our own
+   * memory as well as from the wake that found the coin, and applied to every
+   * prior that was fitted on names we know nothing else about.
+   */
+  const leaderSeenName = trigger === 'leader' || seedHit != null || leaderSeenMint;
+  /**
+   * The dip ceiling exists because our -4..0 entries were negative in every
+   * window. A leader buying at -2% is not that population. Flat is as far as it
+   * goes though - green candles stay out, which is what the ceiling was for.
+   *
+   * CgnQ8a: 36 days old, $52k liquidity, pc5m -2.12, leader in for $496.69.
+   */
+  const maxDip = leaderSeenName ? Math.max(cfg.entry.maxDipPct, 0) : cfg.entry.maxDipPct;
   const streamInMain = streamDipInBandOk({
     dumpExtentPct: streamDump,
     currentDrawdownPct: streamCurrentDd,
     rallyIntoPeakPct: streamRally,
     minDipPct: cfg.entry.minDipPct,
-    maxDipPct: cfg.entry.maxDipPct,
+    maxDipPct: maxDip,
     dumpRallyGateMinPct: cfg.dumpRallyGateMinPct,
     dumpRallyMinFrac: cfg.dumpRallyMinFrac,
   });
@@ -539,10 +605,13 @@ export async function evaluateFastPathCandidate(
     }
   }
 
-  if (!structuralOk(struct.metrics, cfg)) {
+  // A name a leader is buying gets the younger age floor (1.11.905).
+  const leaderSeenForAge = leaderSeenName;
+  if (!structuralOk(struct.metrics, cfg, leaderSeenForAge)) {
     return skip('structural_fail', {
       structSource,
       structAgeMs,
+      leaderSeen: leaderSeenForAge,
       vol5m: struct.metrics.volume5mUsd,
       liq: struct.metrics.liquidityUsd,
       mcap: struct.metrics.marketCapUsd,
@@ -552,7 +621,7 @@ export async function evaluateFastPathCandidate(
   }
 
   const dexPc = struct.metrics.priceChange5mPct;
-  const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, cfg.entry.maxDipPct);
+  const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, maxDip);
 
   // 1.11.793/799 — 7BNax OR: deep+hot (dump≥30 & turn≥0.3) buys now.
   // Do not require TD branch==='knife' (hot dumps classify as main first).
@@ -562,9 +631,16 @@ export async function evaluateFastPathCandidate(
       : streamDd != null
         ? streamDd
         : dexPc;
+  /**
+   * 1.11.915 — the knife branch is off because it lost five times more per
+   * position than anything else, measured over the whole journal. That is the
+   * population of deep dumps nobody credible is buying. BVEaDToN printed -55.7%,
+   * which is past the -25% band, so the branch is the only door it has, and
+   * 8zkgFG walked through it. Open the door for leader-seen names only.
+   */
   const knifeOr = turnDumpKnifeOrOk({
     enabled: cfg.turnDumpGateEnabled,
-    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled || leaderSeenName,
     pc5m: deepestPc,
     volume5mUsd: struct.metrics.volume5mUsd,
     liquidityUsd: struct.metrics.liquidityUsd,
@@ -583,7 +659,20 @@ export async function evaluateFastPathCandidate(
     (dexPc != null &&
       dexPc > cfg.knifeStabilizeMinDipPct &&
       dexPc <= cfg.knifeStabilizeMaxDipPct);
-  if (cfg.knifeStabilizeEnabled && deepKnife && !streamInMain && !dexInMain && !knifeOrOk) {
+  /**
+   * 1.11.915 — the defer waits 30s for the blade to stop. That wait is for
+   * names nobody credible is touching; when a leader is already in, waiting is
+   * how we arrive after the move. BVEaDToN and D3WreYVj both died here while
+   * 8zkgFG bought them.
+   */
+  if (
+    cfg.knifeStabilizeEnabled &&
+    deepKnife &&
+    !streamInMain &&
+    !dexInMain &&
+    !knifeOrOk &&
+    !leaderSeenName
+  ) {
     return skip('deep_knife_defer', {
       streamDd,
       streamDump,

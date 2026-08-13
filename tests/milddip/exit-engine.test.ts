@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   applyMarkDecisionToPosition,
@@ -177,8 +179,12 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d?.mfePct).toBeCloseTo(0, 6);
       expect(d?.armed).toBe(false);
       expect(d?.shouldExit).toBe(false);
-      // P&L still answers to the fill, so the stop keeps its real basis.
+      // Nothing to bank: the gain basis is the mark, so a motionless price is 0%.
+      expect(d?.gainPct).toBeCloseTo(0, 6);
+      // The loss basis is the fill here, which reads the gap as a paper gain -
+      // harmless, because no floor fires on a positive number (1.11.878).
       expect(d?.pnlPct).toBeCloseTo(10.52, 1);
+      expect(d?.pnlPctVsFill).toBeCloseTo(10.52, 1);
     });
 
     it('measures a later gain from the mark series, not the fill', () => {
@@ -191,7 +197,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         nowMs: 1_040_000,
       })!;
       applyMarkDecisionToPosition(p, first);
-      expect(first.mfeBasisPriceUsd).toBeCloseTo(STALE_MARK, 12);
+      expect(first.entryMarketPriceUsd).toBeCloseTo(STALE_MARK, 12);
 
       const up = decideMarkExit({
         mint: 'eub2',
@@ -205,19 +211,247 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(up?.reason).toBe('mfe_bank_1');
     });
 
-    it('leaves the fill as the basis when the first mark comes in below it', () => {
-      const p = fresh('eub3', FILL, FILL * 0.97);
+    it('does not read an entry overpay as a loss on a motionless price', () => {
+      // We paid 3% over the mark. The price then does not move at all; the loss
+      // floors used to see −3% and could fire on it (never_arm_time_red), and
+      // breakeven_stop only needed a 2% tick to call it a peak worth banking.
+      const MARK = FILL * 0.97;
+      const p = fresh('eub3', FILL, MARK);
       const d = decideMarkExit({
         mint: 'eub3',
         pos: p,
-        markPriceUsd: FILL * 0.97,
+        markPriceUsd: MARK,
         gates: bankGates,
         nowMs: 1_040_000,
       })!;
       applyMarkDecisionToPosition(p, d);
-      expect(d.mfeBasisPriceUsd).toBeNull();
+      expect(d.entryMarketPriceUsd).toBeCloseTo(MARK, 12);
       expect(d.mfePct).toBeCloseTo(0, 6);
-      expect(d.pnlPct).toBeCloseTo(-3, 1);
+      expect(d.pnlPct).toBeCloseTo(0, 6);
+      expect(d.pnlPctVsFill).toBeCloseTo(-3, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('does not bank a 2% tick after an overpay as breakeven profit', () => {
+      const MARK = FILL * 0.97;
+      const beGates = { ...bankGates, breakevenArmPct: 2, breakevenFloorPct: 0 };
+      const p = fresh('eub3b', FILL, MARK);
+      const d = decideMarkExit({
+        mint: 'eub3b',
+        pos: p,
+        markPriceUsd: MARK * 1.02,
+        gates: beGates,
+        nowMs: 1_040_000,
+      })!;
+      // On the money basis a 2% tick after a 3% overpay is not a gain at all,
+      // so there is no peak to arm the breakeven against.
+      expect(d.mfePct).toBeCloseTo(0, 6);
+      expect(d.gainPct).toBeCloseTo(-1.06, 1);
+      // And on the loss basis the price genuinely rose 2%, so nothing cuts.
+      expect(d.pnlPct).toBeCloseTo(2, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('ignores an entry mark that is nowhere near the fill', () => {
+      // 7rMnp9 carried 9.87e-06 against a 1.646e-03 fill: MFE read 17821%,
+      // which walks every ladder rung in one tick and empties the bag.
+      const p = fresh('7rmnp9', 1.645989403945407e-3, 9.87e-6);
+      const d = decideMarkExit({
+        mint: '7rmnp9',
+        pos: p,
+        markPriceUsd: 1.7481963175183285e-3,
+        gates: { ...bankGates, tpGridStepPct: 8, tpGridSellFraction: 0.5 },
+        nowMs: 1_040_000,
+      })!;
+      expect(d.entryMarketPriceUsd).toBeNull();
+      expect(d.mfePct).toBeLessThan(20);
+      expect(d.pnlPct).toBeCloseTo(6.21, 1);
+    });
+
+    it('does not bank a gain the fill never had (5nZMRL, 1.11.878)', () => {
+      // wait_dip: the ring recorded the trough the seat waited for (2.1971e-04)
+      // and Jupiter filled us 8.2% above it (2.3773e-04). On the mark basis MFE
+      // opened at +8.2%, the +8% rung fired at once and sold at -1.59%.
+      const FILL_WD = 2.3773371159100862e-4;
+      const RING_TROUGH = 2.1971e-4;
+      const p = fresh('5nzmrl', FILL_WD, RING_TROUGH);
+      const d = decideMarkExit({
+        mint: '5nzmrl',
+        pos: p,
+        markPriceUsd: 2.419e-4,
+        gates: { ...bankGates, tpGridStepPct: 8, tpGridSellFraction: 0.5, armPct: 5 },
+        nowMs: 1_040_000,
+      })!;
+      // Peak over fill is +1.75%, and that is all the money there is.
+      expect(d.gainPct).toBeCloseTo(1.75, 1);
+      expect(d.mfePct).toBeCloseTo(1.75, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('the chase gap is still not a loss (1.11.878)', () => {
+      // Same bag, price back at the ring trough: our money is -8.2% but the mark
+      // series has not fallen at all, so no floor may fire on it.
+      const FILL_WD = 2.3773371159100862e-4;
+      const RING_TROUGH = 2.1971e-4;
+      const p = fresh('5nzmrl2', FILL_WD, RING_TROUGH);
+      const d = decideMarkExit({
+        mint: '5nzmrl2',
+        pos: p,
+        markPriceUsd: RING_TROUGH,
+        gates: { ...bankGates, hardStopPnlPct: 8 },
+        nowMs: 1_040_000,
+      })!;
+      expect(d.pnlPct).toBeCloseTo(0, 6);
+      expect(d.pnlPctVsFill).toBeCloseTo(-7.58, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('the bounce floor will not sell below our fill (7ZgRjHSn, 1.11.881)', () => {
+      // Filled 7.0630e-05 with the mark at 6.9050e-05. A min-pnl floor of 0 on
+      // the loss basis cleared at 6.9050e-05 - which is -2.24% of our money -
+      // and the half went out at -2.38%.
+      const FILL_B = 7.062982e-5;
+      const MARK_B = 6.905e-5;
+      const bounceGates = {
+        ...gates,
+        neverArmBounceMinDumpPct: 8,
+        neverArmBouncePct: 8,
+        neverArmBouncePartialFraction: 0.5,
+        neverArmBounceMinPnlPct: 0,
+        neverArmBounceRequireRedPct: 0,
+        neverArmBounceMinTroughAgeMs: 0,
+      };
+      const p = fresh('7zgrjh', FILL_B, MARK_B);
+      // Dumped well below, then reclaimed to just above the entry mark.
+      p.postEntryTroughUsd = MARK_B * 0.85;
+      p.postEntryTroughAtMs = 1_000_000;
+      const d = decideMarkExit({
+        mint: '7zgrjh',
+        pos: p,
+        markPriceUsd: MARK_B,
+        gates: bounceGates,
+        nowMs: 1_700_000,
+      })!;
+      expect(d.gainPct).toBeCloseTo(-2.24, 1);
+      expect(d.shouldExit).toBe(false);
+
+      // At our fill it may take the half.
+      const ok = decideMarkExit({
+        mint: '7zgrjh',
+        pos: p,
+        markPriceUsd: FILL_B,
+        gates: bounceGates,
+        nowMs: 1_700_000,
+      })!;
+      expect(ok.gainPct).toBeCloseTo(0, 6);
+      expect(ok.shouldExit).toBe(true);
+      expect(ok.reason).toBe('never_arm_bounce');
+    });
+
+    it('a money threshold clears on a price we can actually get (1.11.882)', () => {
+      // The fill lands a median 0.99% below the deciding mark over 2009 sells,
+      // so the gain takes that haircut: an 8% rung needs 9% on the mark.
+      const hair = { ...bankGates, tpGridStepPct: 8, tpGridSellFraction: 0.5, markSellHaircutPct: 1 };
+      const p = fresh('haircut', 100, 100);
+      const justUnder = decideMarkExit({
+        mint: 'haircut',
+        pos: p,
+        markPriceUsd: 108,
+        gates: hair,
+        nowMs: 1_040_000,
+      })!;
+      expect(justUnder.gainPct).toBeCloseTo(6.92, 1);
+      expect(justUnder.shouldExit).toBe(false);
+
+      const over = decideMarkExit({
+        mint: 'haircut',
+        pos: p,
+        markPriceUsd: 109.1,
+        gates: hair,
+        nowMs: 1_040_000,
+      })!;
+      expect(over.gainPct).toBeGreaterThanOrEqual(8);
+      expect(over.shouldExit).toBe(true);
+      expect(over.reason).toBe('tp_grid');
+    });
+
+    it('the haircut never reaches the loss floors (1.11.882)', () => {
+      // Taking a percent off the stop would invent it.
+      const hair = { ...bankGates, hardStopPnlPct: 25, markSellHaircutPct: 1 };
+      const p = fresh('haircut2', 100, 100);
+      const d = decideMarkExit({
+        mint: 'haircut2',
+        pos: p,
+        markPriceUsd: 75.5,
+        gates: hair,
+        nowMs: 1_040_000,
+      })!;
+      expect(d.pnlPct).toBeCloseTo(-24.5, 1);
+      expect(d.shouldExit).toBe(false);
+    });
+
+    it('an identical re-read does not confirm a jump (DKxHTQCv, 1.11.889)', () => {
+      // Sat at 3.8570e-04 for minutes, then two stream prints of 5.3768721e-04
+      // two seconds apart, identical to the last digit. The second confirmed the
+      // first, MFE latched at +35.83% and breakeven closed the bag at +2.28%
+      // while the name ran. Real prices tick; a repeat is one cached datum twice.
+      const STEADY = 3.857e-4;
+      const SPIKE = 5.3768721e-4;
+      const g = { ...gates, markJumpConfirmPct: 10, markJumpConfirmStreamPct: 8 };
+      const p = fresh('dkxh', STEADY, STEADY);
+      const steady = decideMarkExit({
+        mint: 'dkxh', pos: p, markPriceUsd: STEADY, gates: g, nowMs: 1_010_000, markSource: 'dex',
+      })!;
+      applyMarkDecisionToPosition(p, steady);
+
+      const first = decideMarkExit({
+        mint: 'dkxh', pos: p, markPriceUsd: SPIKE, gates: g, nowMs: 1_012_000, markSource: 'stream',
+      })!;
+      expect(first.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, first);
+
+      const reread = decideMarkExit({
+        mint: 'dkxh', pos: p, markPriceUsd: SPIKE, gates: g, nowMs: 1_014_000, markSource: 'stream',
+      })!;
+      expect(reread.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, reread);
+      // The peak never moved, so nothing armed and nothing latched.
+      expect(p.peakPriceUsd).toBeCloseTo(STEADY, 12);
+      expect(p.trailArmed).not.toBe(true);
+    });
+
+    it('a genuine move still confirms, from either feed', () => {
+      const g = { ...gates, markJumpConfirmPct: 10, markJumpConfirmStreamPct: 8, armPct: 5 };
+      const p = fresh('realmove', 100, 100);
+      applyMarkDecisionToPosition(
+        p,
+        decideMarkExit({ mint: 'realmove', pos: p, markPriceUsd: 100, gates: g, nowMs: 1_010_000, markSource: 'dex' })!,
+      );
+      const jump = decideMarkExit({
+        mint: 'realmove', pos: p, markPriceUsd: 130, gates: g, nowMs: 1_012_000, markSource: 'stream',
+      })!;
+      expect(jump.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, jump);
+      // A different feed at a nearby price is an independent observation.
+      const confirm = decideMarkExit({
+        mint: 'realmove', pos: p, markPriceUsd: 129, gates: g, nowMs: 1_014_000, markSource: 'dex',
+      })!;
+      expect(confirm.markQuarantined).not.toBe(true);
+      expect(confirm.gainPct).toBeCloseTo(29, 0);
+    });
+
+    it('still stops out on a real 25% fall measured from the entry mark', () => {
+      const MARK = FILL * 0.97;
+      const p = fresh('eub3c', FILL, MARK);
+      const d = decideMarkExit({
+        mint: 'eub3c',
+        pos: p,
+        markPriceUsd: MARK * 0.74,
+        gates: { ...bankGates, hardStopPnlPct: 25 },
+        nowMs: 1_040_000,
+      })!;
+      expect(d.shouldExit).toBe(true);
+      expect(d.reason).toBe('hard_stop');
     });
 
     it('still counts a genuine move when the entry mark matched the fill', () => {
@@ -269,18 +503,17 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d?.tpRungIndex).toBe(1);
     });
 
-    it('closes the bag on the rung that would leave under 20% (1.11.861)', () => {
+    it('stands down on the rung that would leave under 20% (1.11.914)', () => {
       // Half-remainder steps: 1.00 -> 0.50 -> 0.25, and the next would be
-      // 0.125, under the 0.20 floor, so rung 3 takes the whole remainder.
+      // 0.125, under the 0.20 floor. The ladder stops there and the trail
+      // carries the last quarter, so a runner is not capped at the third rung.
       const g = { ...grid, tpGridMinRemainderFraction: 0.2 };
       const r1 = decideMarkExit({ mint: 'f1', pos: bag('f1', 0), markPriceUsd: 108, gates: g, nowMs: 1_060_000 });
       expect(r1?.fraction).toBe(0.5);
       const r2 = decideMarkExit({ mint: 'f2', pos: bag('f2', 1), markPriceUsd: 116, gates: g, nowMs: 1_060_000 });
       expect(r2?.fraction).toBe(0.5);
       const r3 = decideMarkExit({ mint: 'f3', pos: bag('f3', 2), markPriceUsd: 124, gates: g, nowMs: 1_060_000 });
-      expect(r3?.reason).toBe('tp_grid');
-      expect(r3?.fraction).toBe(1);
-      expect(r3?.tpRungIndex).toBe(3);
+      expect(r3?.reason).not.toBe('tp_grid');
     });
 
     it('a floor of 0 leaves the ladder unbounded', () => {
@@ -296,7 +529,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       const fifth = decideMarkExit({ mint: 'q5', pos: bag('q5', 4), markPriceUsd: 148, gates: g, nowMs: 1_060_000 });
       expect(fifth?.fraction).toBe(0.25);
       const sixth = decideMarkExit({ mint: 'q6', pos: bag('q6', 5), markPriceUsd: 156, gates: g, nowMs: 1_060_000 });
-      expect(sixth?.fraction).toBe(1);
+      expect(sixth?.reason).not.toBe('tp_grid');
     });
 
     it('keeps paying on every further +8% with no upper rung', () => {
@@ -362,14 +595,14 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d?.fraction).toBe(1);
     });
 
-    it('leaves the loss exits exactly as they were', () => {
+    it('leaves the loss exits full exits', () => {
+      // These bags carry no trough, so the stop keeps its old behaviour and
+      // fires on the print (1.11.916). The −50% cliff is answered there too.
       const stop = at(bag('g_stop'), 74);
       expect(stop?.reason).toBe('hard_stop');
       expect(stop?.fraction).toBe(1);
-      // The −25% floor is checked before the −50% cliff, so a −51% mark is
-      // still a hard_stop; both are full exits and neither is touched here.
       const deep = at(bag('g_deep'), 49);
-      expect(deep?.reason).toBe('hard_stop');
+      expect(deep?.reason).toBe('cliff_dump');
       expect(deep?.fraction).toBe(1);
     });
 
@@ -1137,3 +1370,39 @@ describe('dust close', () => {
   });
 });
 
+
+describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  const src = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+
+  it('needs volume, turnover and price all gone before it condemns a bag', () => {
+    expect(src).toContain('const volGone = v != null && v0 != null && v0 > 0 && v <= v0 * dsVol');
+    expect(src).toContain('const turnGone = t != null && t0 != null && t0 > 0 && t <= t0 * dsTurn');
+    expect(src).toContain('const priceGone = gainPct <= -gates.deadSetMinDropPct');
+    expect(src).toContain('volGone && turnGone && priceGone');
+  });
+
+  it('sells only after the price lifts off its own low', () => {
+    // Not on the red candle: a whale emptying a position takes the price through
+    // any fixed level and it comes back without us.
+    expect(src).toContain('bounceOffTroughPct >= dsBounce - 1e-9');
+    // 1.11.913 — 5%, not 2%: across 995 losing leader bags the lift off the low
+    // at their exit has a median of +10.17%, and 98.3% of losing bags lift past
+    // 2% at some point, so a 2% release was close to no wait at all.
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '5'");
+  });
+
+  it('live env runs it at a quarter of entry volume and turnover', () => {
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC: '0.25'");
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC: '0.25'");
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000'");
+  });
+
+  it('pairs the capped upside with a tight floor (1.11.911)', () => {
+    // With the upside capped at the first rung, our own numbers - 53% win rate,
+    // average win +11.79%, average loss -17.96% - need a 60% win rate to break
+    // even. Clipping losses at -15 is the only level with positive expectancy
+    // (+0.622%); -50 was the worst of six (-1.813%).
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15'");
+  });
+});

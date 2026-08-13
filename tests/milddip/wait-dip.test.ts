@@ -255,7 +255,12 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(src).toContain('!parsed.data.waitDipWithTurnDump');
   });
 
-  it('live env parks the formula-selected dip for another leg down', () => {
+  it('live env parks the formula-selected dip again (1.11.896)', () => {
+    // 1.11.890 turned this off on what the leaders made buying the dips our
+    // seats let expire. That was their number, not ours: with the seats off our
+    // own per-position result went from -0.0415 to -0.0906 and the share of
+    // bags ending in never_arm_time_red from 24% to 40%, while the leaders' own
+    // book was unchanged over the same hours.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_WAIT_DIP: '1'");
     expect(eco).toContain("MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1'");
@@ -290,12 +295,17 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     // 08-12, the only day whose SOL accounting is clean: 219 closed leader
     // positions, 42.9% of them landing in 0..+25%. A 30% trail put only 16%
     // there and let a +25% peak decay with nothing firing (236wfN8D).
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5'");
-    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '12'");
+    // 1.11.918 — that reading came from 219 leader closes on one day. Our own
+    // 4796 mark tapes disagree on the mean: banking in 0..+25% is exactly what
+    // caps the runners, and the runners carry the distribution.
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '5'");
+    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '15'");
     // Floors unchanged.
     expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8'");
-    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25'");
+    // 1.11.910 — the floor moved to −50 and stopped being the primary exit; the
+    // work is done by dead_set_bounce, which needs three factors and a bounce.
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15'");
   });
 
   it('1.11.853 admits pairs up to 30 days, not 3', () => {
@@ -305,7 +315,7 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_MAX_PAIR_AGE_HOURS: '720'");
     // Liveness now rests on these two, so they must stay in place.
     expect(eco).toContain("MILD_DIP_MIN_VOLUME_5M_USD: '150'");
-    expect(eco).toContain("MILD_DIP_MIN_LIQUIDITY_USD: '6000'");
+    expect(eco).toContain("MILD_DIP_MIN_LIQUIDITY_USD: '8000'");
   });
 
   it('throttles the ready journal so one seat cannot spam 363 lines', () => {

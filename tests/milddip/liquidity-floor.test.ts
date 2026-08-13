@@ -25,11 +25,12 @@ describe('mild-dip liquidity floor', () => {
     return m ? m[1] : null;
   }
 
-  it('sits inside the range the leaders trade, at $6k', () => {
-    // 1288 leader buys with our own metrics within ten minutes: a $15k floor
-    // blocked 65.9% of them, the largest single blocker by far. Their median
-    // liquidity at entry is $11,344, p25 $6,726.
-    expect(Number(botEnv('MILD_DIP_MIN_LIQUIDITY_USD'))).toBe(6_000);
+  it('sits at the p25 of their entries, $8k (1.11.894)', () => {
+    // Below $8k is the only liquidity band negative in every window: -0.129 per
+    // position over 12h, -0.070 over 24h, -0.112 across the journey, on 238
+    // positions. Over 18,475 leader buy moments their p25 liquidity is $8,150,
+    // so they essentially do not trade under it either.
+    expect(Number(botEnv('MILD_DIP_MIN_LIQUIDITY_USD'))).toBe(8_000);
   });
 
   it('does not go below the p10 of their entries', () => {
@@ -116,5 +117,41 @@ describe('1.11.872 entry overpay is capped', () => {
     // Capping at 4% keeps 71.7% of bags and takes -$76.79 to -$33.34.
     expect(Number(botEnv('MILD_DIP_MAX_CHASE_PCT'))).toBe(4);
     expect(Number(botEnv('MILD_DIP_FAST_PATH_CHASE_PCT'))).toBe(4);
+  });
+});
+
+describe('1.11.895 the five minutes must be trading', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('gates 5m volume against the hourly pace, not just an absolute floor', () => {
+    // EkcTa8n1: $619 of 5m volume against $34,662 for the hour is 21% of the
+    // hourly pace. Below 0.3 loses in all three windows, 264 positions.
+    expect(eco).toContain("MILD_DIP_MIN_VOL5M_PACE_RATIO: '0.3'");
+    expect(eco).toContain("MILD_DIP_MIN_VOLUME_5M_USD: '150'");
+  });
+
+  it('a missing hourly reading does not block on its own', () => {
+    const src = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+    expect(src).toContain('v1 != null && Number.isFinite(v1) && v1 > 0');
+    expect(src).toContain('vol5m_pace=');
+  });
+});
+
+describe('1.11.904 a coin has to still be changing hands', () => {
+  it('gates 5m volume against pool liquidity', () => {
+    // GCa9TZ ran turnover 0.209 while both leaders took it and 0.038 after they
+    // stopped, with liquidity barely moved. We bought for another twelve hours.
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    // 1.11.912 — 0.06, because GCa9TZ ran 0.038 after the leaders left and would
+    // have cleared a floor at 0.03. 0.06 is where the sign turns.
+    expect(eco).toContain("MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.06'");
+  });
+
+  it('is independent of the pace gate, which cannot see it', () => {
+    // 5m and 1h volume fell together there, so their ratio stayed healthy.
+    const src = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+    expect(src).toContain('const turn = v5 / liq;');
+    expect(src).toContain('turn < gates.minTurnover5mLiq');
+    expect(src).toContain('vol5m_pace=');
   });
 });

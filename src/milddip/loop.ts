@@ -47,6 +47,7 @@ import {
   orderMintsForMark,
   type MarkExitDecision,
 } from './exit-engine.js';
+import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
@@ -63,7 +64,7 @@ import { isRunnerPartialExit } from './sell-partial.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
-import { prefetchDexScreenerPairDetailsMany } from '../papertrader/pricing/dexscreener-quote-cache.js';
+import { prefetchDexScreenerPairDetailsMany, fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
@@ -325,12 +326,17 @@ function maybeJournalMark(
     mint: pos.mint,
     symbol: pos.symbol,
     entryPx: pos.entryPriceUsd,
+    /** Mark beside the fill: the basis `pnlPct` / `mfePct` are measured from. */
+    entryMarkPx: decision.entryMarketPriceUsd,
     px: decision.markPriceUsd,
     peakPx: decision.peakPriceUsd,
     armed: decision.armed,
     mfePct: +decision.mfePct.toFixed(2),
     givebackPct: +decision.givebackPct.toFixed(2),
     pnlPct: +decision.pnlPct.toFixed(2),
+    gainPct: +decision.gainPct.toFixed(2),
+    /** Real money against the fill; differs from `pnlPct` by the entry overpay. */
+    pnlPctVsFill: +decision.pnlPctVsFill.toFixed(2),
     heldSec: Math.round(Math.max(0, nowMs - pos.openedAtMs) / 1000),
     vol5m: volume5mUsd,
     entryVol5m: pos.entryVolume5mUsd ?? null,
@@ -569,7 +575,9 @@ async function tryFireWaitDip(
    * all 6 came through this path.
    */
   const freshStruct = await loadStructural(mint, cfg, nowMs);
-  if (freshStruct && !structuralOk(freshStruct.metrics, cfg)) {
+  // 1.11.915 — the re-check has to know what the entry gate knows, or a
+  // leader-seen name clears the floors on the way in and is thrown out here.
+  if (freshStruct && !structuralOk(freshStruct.metrics, cfg, leaderEverSeen(cfg, state, mint, nowMs))) {
     delete state.waitDipWatch![mint];
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_wait_dip_refloor_skip',
@@ -724,6 +732,56 @@ async function tryFastPathForMint(
   // Fire parked wait-dip first — must not require re-qualifying the main band.
   if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
 
+  /**
+   * 1.11.899 — a leader has to have touched a name before we open it for the
+   * first time. Repeats on names we already know are not gated.
+   *
+   * Both halves of this are measured on our own closed positions, and they are
+   * independent rather than one standing in for the other:
+   *
+   *                          first trade      repeat
+   *   leader has traded it     -0.1470       -0.0284   USD/pos
+   *   only we trade it        -0.3068       -0.0436
+   *
+   * The penalty for a first touch survives inside each column (five- and
+   * seven-fold) and the penalty for a name no leader wants survives inside each
+   * row, so both are real. Their intersection is the worst population in the
+   * book: 205 positions, 10% of the volume, carrying -62.89 USD of a -162 total
+   * at a 41% win rate.
+   *
+   * 1.11.816 gated the whole funnel this way and starved entry, because our
+   * discovery only overlaps the seed by about a tenth. Scoped to the first touch
+   * it removes 21% of positions and moves the book from -0.0784 to -0.0546 per
+   * position, and a name we already know stays tradeable whatever the seed says.
+   */
+  const isFirstTouchForLeaderGate = !state.lastExitByMint?.[mint];
+  if (
+    cfg.requireLeaderSeenFirstTouch &&
+    isFirstTouchForLeaderGate &&
+    !cfg.requireLeaderSeen &&
+    !leaderEverSeen(cfg, state, mint, nowMs)
+  ) {
+    const hit =
+      seedHit ??
+      leaderSeedHitByMint(
+        readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+          maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+          max: cfg.leaderSeedMax,
+        }),
+        mint,
+      );
+    if (!hit) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_not_leader_seen_skip',
+        mint,
+        trigger,
+        firstTouch: true,
+        maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+      });
+      return false;
+    }
+  }
+
   // 1.11.816 — names no leader has touched are the losing half of the book.
   // Checked before the Dex round-trip so it also saves the rate budget.
   if (cfg.requireLeaderSeen) {
@@ -753,6 +811,7 @@ async function tryFastPathForMint(
     nowMs,
     trigger,
     trigger === 'leader' ? seedHit : null,
+    leaderEverSeen(cfg, state, mint, nowMs),
   );
   if (!candidate) {
     // Deep knife skips entry but must stay on own-tape knife watch.
@@ -838,12 +897,58 @@ async function wakeWaitDipWatches(
  * 1.11.739 skipped all tryEntries when open>0 and starved this wake path.
  * 1.11.779 — secondary to stream hot wake.
  */
+/**
+ * 1.11.906 — remember that a leader traded a mint, for as long as configured.
+ *
+ * The seed file is a two-hour view by design, so reading it alone makes the
+ * first-touch gate stricter than the evidence it was built on: that measurement
+ * asked whether a leader had *ever* traded the name. Every seed read unions into
+ * this memory, which is what the gate then consults.
+ */
+function rememberLeaderSeen(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  hits: readonly LeaderSeedHit[],
+  nowMs: number,
+): void {
+  if (cfg.leaderSeenMemoryMs <= 0 || hits.length === 0) return;
+  if (!state.leaderSeenMints) state.leaderSeenMints = {};
+  const mem = state.leaderSeenMints;
+  for (const h of hits) {
+    if (h.mint) mem[h.mint] = Math.max(mem[h.mint] ?? 0, h.lastSeenAtMs || nowMs);
+  }
+  for (const [mint, ts] of Object.entries(mem)) {
+    if (nowMs - ts > cfg.leaderSeenMemoryMs) delete mem[mint];
+  }
+}
+
+/** True when a leader has traded this mint inside the remembered window. */
+function leaderEverSeen(cfg: MildDipConfig, state: MildDipState, mint: string, nowMs: number): boolean {
+  if (cfg.leaderSeenMemoryMs <= 0) return false;
+  const ts = state.leaderSeenMints?.[mint];
+  return ts != null && nowMs - ts <= cfg.leaderSeenMemoryMs;
+}
+
 async function wakeLeaderSeeds(
   cfg: MildDipConfig,
   state: MildDipState,
   nowMs: number,
 ): Promise<number> {
-  // 1.11.782 — disabled: leader-seed entry is copytrading. Own stream only.
+  /**
+   * 1.11.875 — the seed is attention, not a buy signal.
+   *
+   * This lane was switched off in 1.11.782 as "copytrading", but it does not
+   * buy anything: it hands the mint to `tryFastPathForMint`, which runs our own
+   * structural and dip gates and rejects most of them. With it off, a mint only
+   * reaches us through stream / boosts / profiles, so a name two leaders were
+   * trading (49nkLrXi) had a seed entry and not one journal row — never looked
+   * at, never skipped, simply absent.
+   *
+   * Bounded because the seed holds up to `leaderSeedMax` mints and this runs
+   * every scan: a per-cycle slice, and a per-mint re-look interval so the same
+   * seed does not spend the Dex budget every three seconds. One batched Dex
+   * request warms the slice before the gates read it.
+   */
   if (!cfg.leaderSeedEntryEnabled) return 0;
   if (!cfg.fastPathEnabled) return 0;
   const unlimited = cfg.maxOpenPositions <= 0;
@@ -852,12 +957,33 @@ async function wakeLeaderSeeds(
     maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
     max: cfg.leaderSeedMax,
   });
+  rememberLeaderSeen(cfg, state, leaders, nowMs);
+  const perCycle = cfg.leaderSeedWakeMax > 0 ? cfg.leaderSeedWakeMax : 12;
+  const relookMs = cfg.leaderSeedRelookMs;
+  const due = leaders.filter((hit) => {
+    if (state.open[hit.mint]) return false;
+    if (onCooldown(state, hit.mint, nowMs)) return false;
+    const last = leaderSeedLookedAtMs.get(hit.mint) ?? 0;
+    return relookMs <= 0 || nowMs - last >= relookMs;
+  });
+  // Freshest leader activity first: the dip they just took is the live one, and
+  // its observer snapshot is the one still inside `LEADER_SEED_DEX_MAX_AGE_MS`,
+  // so the structural gate reads it instead of spending a Dex slot.
+  due.sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs);
+  const slice = due.slice(0, perCycle);
+  if (slice.length === 0) return 0;
   let n = 0;
-  for (const hit of leaders) {
+  for (const hit of slice) {
     if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
     if (state.open[hit.mint]) continue;
+    leaderSeedLookedAtMs.set(hit.mint, nowMs);
     await tryFastPathForMint(cfg, state, hit.mint, 'leader', nowMs, hit);
     n += 1;
+  }
+  if (leaderSeedLookedAtMs.size > 4_000) {
+    for (const [mint, ts] of leaderSeedLookedAtMs) {
+      if (nowMs - ts > cfg.leaderSeedMaxAgeMs) leaderSeedLookedAtMs.delete(mint);
+    }
   }
   return n;
 }
@@ -1154,6 +1280,34 @@ async function executeQueuedSell(args: {
    * produced the `Custom:6024` bursts (three failed bank_2 legs over 11s on
    * `J7o48eA9q` before the node caught up).
    */
+  /**
+   * 1.11.883 — a sell taken because there is money on the table must not fill
+   * under our cost. The mark that decided it is a mid; the quote in the executor
+   * is the price we can get, and over 2009 sells those differed by a median
+   * 0.99% (p25 −3.59%). 8PecVcC took the bounce half at −3.26% with MFE 0.12%,
+   * twice. Cost is the gain basis: the fill, or the mark beside it when that sat
+   * higher. Stops and time cuts pass no floor — they are leaving regardless.
+   */
+  const costPriceUsd = Math.max(
+    pos.entryPriceUsd,
+    pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > 0 ? pos.entryMarkPriceUsd : 0,
+  );
+  /**
+   * 1.11.884 — only when the decision itself was at or above cost.
+   *
+   * The floor is there to stop slippage dragging a genuine gain under water. It
+   * is not a veto on leaving: `breakeven_stop` also fires on a bag that is
+   * deeply red, and 9PXM1p spent eleven hours at −27% issuing 2898 refused
+   * sells at `sell_quote_below_floor:-26.86%`, one Jupiter quote each, because
+   * a floor at cost can never be met from there. If we are already below cost
+   * when we decide, the exit is a cut and it goes.
+   */
+  const minExitPriceUsd =
+    MONEY_MOTIVATED_EXIT_REASONS.has(decision.reason) &&
+    costPriceUsd > 0 &&
+    decision.gainPct >= 0
+      ? costPriceUsd
+      : undefined;
   const sell = await executeCopySell({
     cfg: copyCfg,
     mint,
@@ -1164,6 +1318,7 @@ async function executeQueuedSell(args: {
     fraction,
     leaderSignature: `milddip_exit_${decision.reason}_${nowMs}`,
     sellDelayMs: 0,
+    ...(minExitPriceUsd != null ? { minExitPriceUsd } : {}),
     ...(pos.tokenRawSettled && pos.tokenRaw ? { tokenRawBase: pos.tokenRaw } : {}),
   });
 
@@ -1456,6 +1611,10 @@ const RECOVER_DEFER_REASONS = new Set([
 const lastDumpClassifyJournalMs = new Map<string, number>();
 /** mint → last recover_defer journal ts (throttle). */
 const lastRecoverDeferJournalMs = new Map<string, number>();
+/** mint → last time the leader-seed lane looked at it (Dex budget guard). */
+const leaderSeedLookedAtMs = new Map<string, number>();
+/** mint → last exit_defer_would_buy journal ts (throttle). */
+const lastExitDeferJournalMs = new Map<string, number>();
 /** mint → last leader_align_defer journal ts (throttle). */
 const lastLeaderAlignJournalMs = new Map<string, number>();
 
@@ -1655,6 +1814,48 @@ async function tryExits(
       }).catch(() => undefined);
     }
   }
+  /**
+   * 1.11.917 — an armed bag may not be judged on a print that has not moved.
+   *
+   * The ring accepts a sample up to `markStreamMaxAgeMs` old, five minutes,
+   * because a cold coin needs some price. A live trail does not: when the stream
+   * goes quiet mid-move the ring keeps serving the last print and the giveback
+   * reads flat while the coin falls. That is how GPzpoXpD banked +298% of a
+   * +699% peak - 44 seconds on one frozen number, then -48.59% in a single step.
+   *
+   * So the armed bags whose ring has gone stale get an awaited Dex read here,
+   * ahead of the decision pass, rather than a fire-and-forget one they will not
+   * see for another tick.
+   */
+  const armedBound = cfg.markArmedMaxAgeMs > 0 ? cfg.markArmedMaxAgeMs : 0;
+  const armedStale =
+    armedBound > 0
+      ? refreshOrder.filter((m) => {
+          const p = state.open[m];
+          if (p?.trailArmed !== true) return false;
+          if (openMarkRingAgeMs(m, nowMs) >= armedBound) return true;
+          /**
+           * 1.11.920 — a feed that keeps re-writing the same number looks fresh
+           * by age and carries nothing. GPzpoXpD held one stream price across
+           * every read from near its peak, so the age check passed while the
+           * trail sat blind, and the first moving print was a 46.78% giveback.
+           */
+          const px = mildDipPriceRing.lastPrice(m, nowMs)?.priceUsd;
+          const unchangedSinceMs = p.markUnchangedSinceMs;
+          if (px != null && px === p.lastMarkPriceUsd && unchangedSinceMs != null) {
+            return nowMs - unchangedSinceMs >= armedBound;
+          }
+          return false;
+        })
+      : [];
+  if (armedStale.length > 0) {
+    await prefetchDexScreenerPairDetailsMany(armedStale, {
+      nowMs,
+      allowedDexIds: cfg.entry.allowedDexIds,
+      cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+      bypassGate: true,
+    }).catch(() => undefined);
+  }
   for (const mint of refreshOrder) {
     maybeRequestOpenMarkRefresh(mint, nowMs, cfg);
   }
@@ -1684,9 +1885,53 @@ async function tryExits(
   }
 
   const toSell: MarkExitDecision[] = [];
+  const streamRows = markRows.filter((r) => r.source === 'stream' && r.px != null);
+  if (streamRows.length > 0) {
+    await prefetchDexScreenerPairDetailsMany(
+      streamRows.map((r) => r.mint),
+      {
+        nowMs,
+        allowedDexIds: cfg.entry.allowedDexIds,
+        cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+        bypassGate: true,
+      },
+    ).catch(() => undefined);
+  }
   for (const { mint, px, volume5mUsd, pc5mPct, source } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
+    /**
+     * 1.11.879 — let a sell settle before deciding again on this bag.
+     *
+     * `sellInFlight` only covers the transaction. Once it cleared, the next mark
+     * tick two seconds later decided on a price that could predate the sell, and
+     * on a size the chain read had not caught up with: two `never_arm_bounce`
+     * legs went out 4.1s apart (33Grh5V then 2HJmyTW), the second filling 5.6%
+     * lower than the first while the reading it fired on said the bounce had
+     * grown. One decision per bag until the data postdates the last one.
+     */
+    if (
+      cfg.exitMinSpacingMs > 0 &&
+      pos.lastSellAtMs != null &&
+      nowMs - pos.lastSellAtMs < cfg.exitMinSpacingMs
+    ) {
+      continue;
+    }
+    /**
+     * 1.11.920 — and the price has to have moved since the last sell.
+     *
+     * Spacing alone only buys time. GPzpoXpD went out in three legs at 20:43:46,
+     * 20:44:00 and 20:44:13, each 13 seconds apart and every one of them on the
+     * identical mark 1.6827e-04, so we paid three sets of fees for one decision
+     * taken on one number.
+     */
+    if (
+      px != null &&
+      pos.lastSellMarkPriceUsd != null &&
+      px === pos.lastSellMarkPriceUsd
+    ) {
+      continue;
+    }
 
     const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
     const maxHold = cfg.exit.neverArmMaxHoldMs > 0 ? cfg.exit.neverArmMaxHoldMs : 0;
@@ -1717,10 +1962,7 @@ async function tryExits(
         toSell.push({
           mint,
           markPriceUsd: syn,
-          mfeBasisPriceUsd:
-            pos.entryMarkPriceUsd != null && pos.entryMarkPriceUsd > pos.entryPriceUsd
-              ? pos.entryMarkPriceUsd
-              : null,
+          entryMarketPriceUsd: pos.entryMarkPriceUsd ?? null,
           tpRungIndex: null,
           peakPriceUsd: syn,
           armed: pos.trailArmed === true,
@@ -1731,6 +1973,8 @@ async function tryExits(
           mfePct: 0,
           givebackPct: 0,
           pnlPct: 0,
+          gainPct: 0,
+          pnlPctVsFill: 0,
           volFadeSamples: pos.volFadeSamples ?? [],
           postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
           postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
@@ -1744,9 +1988,27 @@ async function tryExits(
       pos,
       markPriceUsd: px,
       gates: cfg.exit,
+      markJumpConfirmMaxMs: cfg.markJumpConfirmMaxMs,
+      dexCrossCheckPx:
+        source === 'stream' && px != null
+          ? (
+              await fetchDexScreenerPairDetails(mint, {
+                nowMs,
+                allowedDexIds: cfg.entry.allowedDexIds,
+                cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+                bypassGate: true,
+              })
+            )?.priceUsd ?? null
+          : null,
       nowMs,
       pc5mPct,
       volume5mUsd,
+      turnover5mLiq: (() => {
+        const om = readOpenMarkMetrics(mint, nowMs);
+        return om && om.volume5mUsd != null && om.liquidityUsd != null && om.liquidityUsd > 0
+          ? om.volume5mUsd / om.liquidityUsd
+          : null;
+      })(),
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
       markSource: source,
@@ -1783,6 +2045,94 @@ async function tryExits(
     }
 
     if (decision.shouldExit && decision.reason) {
+      /**
+       * 1.11.874 — would the entry side buy this right now? Then do not sell it
+       * to buy it back. GCa9TZ went out on `breakeven_stop` at −10.48% and the
+       * entry gate took it again ninety-eight seconds later, 7.7% lower, where
+       * the ladder banked two rungs. One brain, not two hands.
+       */
+      if (cfg.exitDeferWouldBuyEnabled) {
+        const om = readOpenMarkMetrics(mint, nowMs);
+        const held = Math.max(0, nowMs - pos.openedAtMs);
+        const deferVerdict = shouldDeferSoftExit({
+          reason: decision.reason,
+          gates: {
+            enabled: true,
+            maxTotalMs: cfg.exitDeferWouldBuyMaxMs,
+          },
+          entryGates: cfg.entry,
+          metrics: om
+            ? {
+                pc5mPct: om.pc5mPct,
+                volume5mUsd: om.volume5mUsd,
+                liquidityUsd: om.liquidityUsd,
+                ageMs: Math.max(0, nowMs - om.tsMs),
+              }
+            : null,
+          carried: {
+            marketCapUsd: pos.entryMarketCapUsd ?? null,
+            pairAgeHours: pos.entryPairAgeHours ?? null,
+          },
+          priceRatioSinceEntry:
+            pos.entryPriceUsd > 0 ? decision.markPriceUsd / pos.entryPriceUsd : null,
+          heldMs: held,
+          deferredMsSoFar: pos.exitDeferredMs ?? 0,
+        });
+        if (deferVerdict.defer) {
+          const sinceLast =
+            pos.exitDeferredAtMs != null ? Math.max(0, nowMs - pos.exitDeferredAtMs) : 0;
+          // Only count time actually spent deferring, not the gaps between marks.
+          pos.exitDeferredMs =
+            (pos.exitDeferredMs ?? 0) + Math.min(sinceLast, cfg.markDexRefreshMs * 4);
+          pos.exitDeferredAtMs = nowMs;
+          const lastJ = lastExitDeferJournalMs.get(mint) ?? 0;
+          if (nowMs - lastJ >= 5_000) {
+            lastExitDeferJournalMs.set(mint, nowMs);
+            appendMildDipJournal(cfg.journalPath, {
+              kind: 'exit_defer_would_buy',
+              mint,
+              symbol: pos.symbol,
+              wouldReason: decision.reason,
+              pnlPct: +decision.pnlPct.toFixed(2),
+              pnlPctVsFill: +decision.pnlPctVsFill.toFixed(2),
+              mfePct: +decision.mfePct.toFixed(2),
+              markPx: decision.markPriceUsd,
+              entryPx: pos.entryPriceUsd,
+              pc5m: om?.pc5mPct ?? null,
+              vol5m: om?.volume5mUsd ?? null,
+              liq: om?.liquidityUsd ?? null,
+              deferredMs: pos.exitDeferredMs,
+              budgetMs: cfg.exitDeferWouldBuyMaxMs,
+            });
+            console.log(
+              `[mild-dip] EXIT_DEFER_WOULD_BUY ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+                `held ${decision.reason} pnl=${decision.pnlPct.toFixed(1)}% ` +
+                `pc5m=${om?.pc5mPct?.toFixed(1) ?? '?'}% spent=${Math.round((pos.exitDeferredMs ?? 0) / 1000)}s`,
+            );
+          }
+          continue;
+        }
+        pos.exitDeferredAtMs = nowMs;
+        /**
+         * Why we are selling anyway. Without this the check was a blind spot:
+         * four deferrable exits fired with no deferral and no record of what
+         * declined them, which is how a mismatched staleness window hid.
+         */
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'exit_defer_declined',
+          mint,
+          symbol: pos.symbol,
+          wouldReason: decision.reason,
+          declinedBy: deferVerdict.reasons.slice(0, 4).join(',') || null,
+          pnlPct: +decision.pnlPct.toFixed(2),
+          pc5m: readOpenMarkMetrics(mint, nowMs)?.pc5mPct ?? null,
+          metricsAgeMs: (() => {
+            const om = readOpenMarkMetrics(mint, nowMs, 0);
+            return om ? Math.max(0, nowMs - om.tsMs) : null;
+          })(),
+        });
+      }
+
       // 1.11.761 — leader just bought this mint while a soft exit is firing:
       // hold the sell and optionally average-in once (narrow; not a −5% scale-in).
       if (cfg.leaderAlignEnabled) {
@@ -2049,6 +2399,13 @@ async function tryExits(
       await executeQueuedSell({ cfg, state, decision, nowMs: Date.now() });
     } finally {
       sellInFlight.delete(decision.mint);
+      // Stamped after the attempt, so the settle window starts from the moment
+      // the size on chain could have changed (1.11.879).
+      const after = state.open[decision.mint];
+      if (after) {
+        after.lastSellAtMs = Date.now();
+        after.lastSellMarkPriceUsd = decision.markPriceUsd;
+      }
     }
   }).catch((err) => {
     console.warn(

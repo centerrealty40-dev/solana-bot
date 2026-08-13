@@ -147,6 +147,8 @@ export async function executeCopySell(args: {
   leaderSignature: string;
   sellDelayMs: number;
   tokenRawBase?: string;
+  /** 1.11.883 — money exits refuse to fill below cost; risk exits omit it. */
+  minExitPriceUsd?: number;
 }): Promise<SellExecutionResult> {
   const {
     cfg,
@@ -194,6 +196,7 @@ export async function executeCopySell(args: {
       leaderSignature,
       fraction,
       tokenRawBase,
+      minExitPriceUsd: args.minExitPriceUsd,
     });
     const exitPx = live.priceUsd || exitPriceUsd;
     const livePnl = entryPriceUsd > 0 ? ((exitPx / entryPriceUsd - 1) * 100) : pnlPct;

@@ -30,6 +30,40 @@ export type MildDipEntryGates = {
   maxDipPct: number;
   minVolume5mUsd: number;
   /**
+   * 1.11.895 — the five minutes must actually be trading.
+   *
+   * `minVolume5mUsd` is absolute, so a coin with a busy hour and a dead last
+   * five minutes clears it. EkcTa8n1 came in on $619 of 5m volume against
+   * $34,662 for the hour: 21% of the hourly pace, a drift with nobody in it
+   * rather than a flush. It fell 24% over the next ten minutes and the leader
+   * bought the actual flush 21 seconds after our stop.
+   *
+   * Ratio of 5m volume to the hourly pace (`vol1h / 12`). 0 = off.
+   */
+  minVolume5mPaceRatio: number;
+  /**
+   * 1.11.904 — 5m volume against pool liquidity: is the name still being traded
+   * relative to its own size.
+   *
+   * GCa9TZ is the case. While both leaders were taking it, its turnover ran 0.209
+   * and its 5m volume $14,090; after they stopped it ran 0.038 on $4,307, and its
+   * liquidity had barely moved ($118.5k to $113.7k) — so nothing about the pool
+   * broke, the name simply stopped changing hands. We kept buying it for another
+   * twelve hours, nine more positions, −2.80 USD.
+   *
+   * The pace gate does not see this: 5m and 1h volume fell together, so the ratio
+   * between them stayed healthy. Only the comparison against liquidity moves.
+   * 0 = off.
+   */
+  minTurnover5mLiq: number;
+  /**
+   * 1.11.907 — upper bound on the same ratio. Above it the name is inside an
+   * event rather than trading: 731 positions past 0.25 returned −0.1145 each
+   * across the journal, the worst band by dollars, and negative in every window.
+   * 0 = off.
+   */
+  maxTurnover5mLiq: number;
+  /**
    * 1.11.870 — upper bound at entry. A name doing more than this in five
    * minutes is inside an event: over 499 closed bags, the 19% above $40k
    * carried 42% of the whole loss at a 0.298 win rate. 0 = off.
@@ -39,6 +73,13 @@ export type MildDipEntryGates = {
   minMarketCapUsd: number;
   maxMarketCapUsd: number;
   minPairAgeHours: number;
+  /**
+   * 1.11.905 — the age floor for a name a leader is buying, which only ever
+   * lowers it. A young pair is usually unformed, but two leaders actively taking
+   * one is evidence about that specific pair which the clock does not carry.
+   * 0 = no exception.
+   */
+  minPairAgeHoursLeaderSeen: number;
   maxPairAgeHours: number;
   /** Empty = any dex. */
   allowedDexIds: string[];
@@ -108,6 +149,44 @@ export type MildDipExitGates = {
    * had not moved. 0 falls back to `markJumpConfirmPct`.
    */
   markJumpConfirmStreamPct: number;
+  /**
+   * 1.11.882 — measured gap between the mark and what a sell actually fills at,
+   * taken off the gain side so a money threshold clears on a price we can get.
+   */
+  markSellHaircutPct: number;
+  /**
+   * 1.11.910 — the dead-set exit, which replaces a fixed loss floor.
+   *
+   * A stop at a number leaves on a red candle, which is the worst moment: a whale
+   * emptying a position takes the price through our level and it comes back
+   * without us. Instead, three things have to have gone at once - the volume, the
+   * turnover and the price - and only then do we wait for the price to lift off
+   * its own low before selling. The bag is condemned by the conjunction; the exit
+   * is timed by the bounce.
+   *
+   * 0 on either fraction, or on the bounce, disables it.
+   */
+  deadSetVolFadeFrac: number;
+  deadSetTurnFadeFrac: number;
+  deadSetMinDropPct: number;
+  deadSetBouncePct: number;
+  /**
+   * 1.11.916 — the stop level says *decide*, not *dump at this instant*.
+   *
+   * A hard stop that fires on the print itself sells into the red candle, which
+   * is the worst tick of the move by construction: the sweep that broke the
+   * level is still in the book. 4rLgnF went out at -16.0% and traded 8.5% above
+   * our exit four minutes later.
+   *
+   * So once the level is breached we wait for the price to come this far off its
+   * trough and leave on the green tick instead. Nothing is being held and hoped
+   * for: `cliff_dump` still fires instantly on a deeper collapse, and the
+   * never-arm family (time_red at 15m, dead, vol_fade) still ends a bag that
+   * flatlines below the level, because a breach without a bounce now falls
+   * through to them rather than returning. 0 = fire on the print.
+   */
+  hardStopBouncePct: number;
+  deadSetMinHoldMs: number;
   /**
    * 1.11.855 — once MFE has reached `breakevenArmPct`, close the whole bag if
    * P&L falls to `breakevenFloorPct`. 0 = off.
@@ -307,6 +386,33 @@ export function evaluateMildDipEntry(
     const v = metrics.volume5mUsd;
     if (v == null || !Number.isFinite(v)) reasons.push('missing_volume_5m');
     else if (v < gates.minVolume5mUsd) reasons.push(`vol5m=${v.toFixed(0)}<${gates.minVolume5mUsd}`);
+  }
+
+  if (gates.minTurnover5mLiq > 0) {
+    const v5 = metrics.volume5mUsd;
+    const liq = metrics.liquidityUsd;
+    if (v5 != null && Number.isFinite(v5) && liq != null && Number.isFinite(liq) && liq > 0) {
+      const turn = v5 / liq;
+      if (turn < gates.minTurnover5mLiq) {
+        reasons.push(`turn=${turn.toFixed(4)}<${gates.minTurnover5mLiq}`);
+      }
+      if (gates.maxTurnover5mLiq > 0 && turn > gates.maxTurnover5mLiq) {
+        reasons.push(`turn=${turn.toFixed(4)}>${gates.maxTurnover5mLiq}`);
+      }
+    }
+  }
+
+  if (gates.minVolume5mPaceRatio > 0) {
+    const v5 = metrics.volume5mUsd;
+    const v1 = metrics.volume1hUsd;
+    // No hourly reading is not evidence of a dead window; the absolute floor
+    // above still applies.
+    if (v5 != null && Number.isFinite(v5) && v1 != null && Number.isFinite(v1) && v1 > 0) {
+      const pace = v5 / (v1 / 12);
+      if (pace < gates.minVolume5mPaceRatio) {
+        reasons.push(`vol5m_pace=${pace.toFixed(2)}<${gates.minVolume5mPaceRatio}`);
+      }
+    }
   }
 
   if (gates.minLiquidityUsd > 0) {
@@ -580,6 +686,8 @@ export type MildDipExitReason =
   | 'hard_stop'
   /** 1.11.855 — was meaningfully green, came back to the floor. */
   | 'breakeven_stop'
+  /** 1.11.910 — volume, turnover and price all gone, sold into a bounce. */
+  | 'dead_set_bounce'
   /** 1.11.832 — bank/bounce remnant too small to manage; frees mark bandwidth. */
   | 'dust_close'
   /** 1.11.860 — green lane: fixed target, tight stop, short ceiling. */
@@ -726,19 +834,22 @@ export function sustainedVolFade(
 export function evaluateMildDipPeakGiveback(args: {
   entryPriceUsd: number;
   /**
-   * 1.11.848 — baseline for *movement* (arm, MFE bank levels, giveback).
+   * 1.11.873 — the mark standing next to the fill; basis for *every* threshold.
    *
-   * The Dex mark and our fill do not share a scale: a stale or different-pool
-   * snapshot can sit well above the price Jupiter actually gave us. EUB1eZ
-   * filled at 7.683e-05 while the mark held 8.492e-05 — unchanged from before
-   * the buy and for twelve seconds after — so the position read +10.52% with
-   * the price motionless, armed the trail, fired bank1 and sold into a loss.
+   * Our fill and the Dex mark are not the same quantity. We pay the ask plus
+   * price impact and fees; the mark is the pool mid. On a motionless coin a 3%
+   * entry overpay therefore reads as a permanent −3%, and thresholds that mixed
+   * the two bases fired on that alone: `breakeven_stop` asked for MFE (mark
+   * basis) ≥ arm and P&L (fill basis) ≤ floor, which any 2% market tick
+   * satisfies at once — buy, "profit", sell, lose. `never_arm_time_red` had the
+   * same read on a flat coin.
    *
-   * Movement is only meaningful within one series, so MFE is measured from the
-   * first post-entry mark when that sits above the fill. `pnlPct` keeps the
-   * fill basis: the stop must answer for real money.
+   * Keeping mark against mark-at-entry puts arm, ladder, trail and the loss
+   * floors in one series, so each one measures a price move and nothing else.
+   * Entry overpay is a sunk execution cost, answered at the entry gate
+   * (slippage/chase caps), not by the exit engine.
    */
-  mfeBasisPriceUsd?: number | null;
+  entryMarketPriceUsd?: number | null;
   markPriceUsd: number;
   peakPriceUsd: number;
   armed: boolean;
@@ -752,12 +863,17 @@ export function evaluateMildDipPeakGiveback(args: {
   mfeBankStage?: number;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
+  /** Lowest mark seen on this bag - the stop waits for a bounce off it. */
+  troughPriceUsd?: number | null;
   /** Live Dex/stream pc5m % — required when neverArmTimeRedMaxPc5mPct > 0. */
   pc5mPct?: number | null;
   /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
   volume5mUsd?: number | null;
   /** 5m volume captured at entry — the fade baseline. */
   entryVolume5mUsd?: number | null;
+  /** 1.11.910 — turnover now and at entry, for the dead-set conjunction. */
+  turnover5mLiq?: number | null;
+  entryTurnover5mLiq?: number | null;
   /** Prior spaced vol5m samples on this position (mutated via return value). */
   volFadeSamples?: readonly MildDipVolFadeSample[] | null;
   /** Wall clock for spacing samples; defaults to held-relative when omitted. */
@@ -789,7 +905,12 @@ export function evaluateMildDipPeakGiveback(args: {
   reason: MildDipExitReason;
   /** Rung index this decision fills; null unless the reason is `tp_grid`. */
   tpRungIndex: number | null;
+  /** Move measured on the loss basis — what the stops and cuts answered to. */
   pnlPct: number;
+  /** Gain measured on the profit basis — what the ladder and banks answered to. */
+  gainPct: number;
+  /** Move since the fill: real money, for logging and P&L only. */
+  pnlPctVsFill: number;
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry trough (caller persists). */
   postEntryTroughPriceUsd: number;
@@ -843,13 +964,56 @@ export function evaluateMildDipPeakGiveback(args: {
   );
   const postEntryTroughAtMs = markDeepensTrough ? nowMs : troughAtPrev;
   const troughAgeMs = Math.max(0, nowMs - postEntryTroughAtMs);
-  // Movement is measured inside the mark series; P&L keeps the fill basis.
-  const mfeBasis =
-    args.mfeBasisPriceUsd != null &&
-    Number.isFinite(args.mfeBasisPriceUsd) &&
-    args.mfeBasisPriceUsd > entryPriceUsd
-      ? Number(args.mfeBasisPriceUsd)
+  /**
+   * 1.11.878 — two bases, because a gain and a loss are not the same question.
+   *
+   * The mark at entry and the fill disagree in both directions, and a single
+   * basis manufactures a signal out of whichever gap it faces:
+   *
+   * - mark **above** the fill (stale or other-pool snapshot, EUB1eZ: fill
+   *   7.683e-05, mark 8.492e-05 unmoved for twelve seconds). On the fill basis a
+   *   motionless price read +10.52%, armed and banked into a loss.
+   * - mark **below** the fill (a `wait_dip` chase: the ring records the trough
+   *   the seat waited for, Jupiter fills up to `chase` above it — 5nZMRL: mark
+   *   2.1971e-04, fill 2.3773e-04). On the mark basis MFE opened at +8.2%, so
+   *   the +8% ladder rung fired at once and sold at −1.59%. Bought and sold at
+   *   the same price, which is exactly what it looks like on chain.
+   *
+   * So each side takes the basis that cannot invent its own signal:
+   *
+   * - **taking profit** (arm, MFE banks, ladder rungs, breakeven arm) measures
+   *   from `max(fill, mark)`. We never bank a gain we do not have.
+   * - **loss floors** (stop, cliff, trough, the never-arm cuts) measure from
+   *   `min(fill, mark)`. Entry overpay is a sunk cost, not a fall.
+   *
+   * Both reduce to the fill when no mark was captured beside it.
+   */
+  const entryMarkBasis =
+    args.entryMarketPriceUsd != null &&
+    Number.isFinite(args.entryMarketPriceUsd) &&
+    Number(args.entryMarketPriceUsd) > 0
+      ? Number(args.entryMarketPriceUsd)
       : entryPriceUsd;
+  const gainBasisPriceUsd = Math.max(entryPriceUsd, entryMarkBasis);
+  const lossBasisPriceUsd = Math.min(entryPriceUsd, entryMarkBasis);
+  /**
+   * 1.11.882 — the mark is a mid; we sell into the bid.
+   *
+   * Over 2009 live sells the fill landed a median 0.99% below the mark that
+   * decided it, p25 −3.59%, with half of them more than 1% below. So every
+   * money threshold measured on the raw mark was optimistic by about a percent,
+   * which is the whole of the "sold 1% under what we paid" complaint: the rung,
+   * the bounce floor and breakeven all cleared on a price we could not get.
+   *
+   * Oscar compares an achievable sell price against what it paid
+   * (`xAvg = marketSell / ot.avgEntry`, `tracker.ts:2545`). A quote per mark
+   * would cost a Jupiter call per tick, so the measured haircut stands in for
+   * it. Applied to the gain only: taking a percent off the loss floors would
+   * invent stops.
+   */
+  const sellHaircut =
+    gates.markSellHaircutPct > 0 ? Math.min(gates.markSellHaircutPct, 10) / 100 : 0;
+  const sellableMarkPriceUsd = markPriceUsd > 0 ? markPriceUsd * (1 - sellHaircut) : markPriceUsd;
   /**
    * Never below zero. MFE is the best the bag has been; a negative reading only
    * means the basis sits above the peak, which is a basis fault, not a price
@@ -857,13 +1021,24 @@ export function evaluateMildDipPeakGiveback(args: {
    * `wait_dip` bag opened at MFE −11% and could not reach a rung until the
    * price climbed all the way back.
    */
-  const mfePct = Math.max(0, mfeFromEntryPct(peakPriceUsd, mfeBasis) ?? 0);
+  const mfePct = Math.max(
+    0,
+    mfeFromEntryPct(peakPriceUsd * (1 - sellHaircut), gainBasisPriceUsd) ?? 0,
+  );
+  /** What the ladder rungs answer to: the gain standing right now, in money. */
+  const gainPct =
+    gainBasisPriceUsd > 0 && sellableMarkPriceUsd > 0
+      ? (sellableMarkPriceUsd / gainBasisPriceUsd - 1) * 100
+      : 0;
   const givebackPct = givebackFromPeakPct(markPriceUsd, peakPriceUsd) ?? 0;
   const pnlPct =
-    entryPriceUsd > 0 && markPriceUsd > 0 ? ((markPriceUsd / entryPriceUsd - 1) * 100) : 0;
+    lossBasisPriceUsd > 0 && markPriceUsd > 0 ? (markPriceUsd / lossBasisPriceUsd - 1) * 100 : 0;
+  /** Money P&L against the fill — reported, never a threshold input. */
+  const pnlPctVsFill =
+    entryPriceUsd > 0 && markPriceUsd > 0 ? (markPriceUsd / entryPriceUsd - 1) * 100 : 0;
   const troughDumpPct =
-    entryPriceUsd > 0 && postEntryTroughPriceUsd > 0
-      ? ((postEntryTroughPriceUsd / entryPriceUsd - 1) * 100)
+    lossBasisPriceUsd > 0 && postEntryTroughPriceUsd > 0
+      ? (postEntryTroughPriceUsd / lossBasisPriceUsd - 1) * 100
       : 0;
   const bounceOffTroughPct =
     bounceFromTroughPct(markPriceUsd, postEntryTroughPriceUsd) ?? 0;
@@ -886,10 +1061,36 @@ export function evaluateMildDipPeakGiveback(args: {
     reason: null as MildDipExitReason,
     tpRungIndex: null as number | null,
     pnlPct,
+    gainPct,
+    pnlPctVsFill,
     volFadeSamples,
     postEntryTroughPriceUsd,
     postEntryTroughAtMs,
   };
+
+  /**
+   * 1.11.910 — condemned by the conjunction, timed by the bounce.
+   *
+   * All three have to have gone: the 5m volume against what it was at entry, the
+   * turnover against what it was at entry, and the price. Only then does the
+   * bounce off the running low release the sell, so we are not the ones handing
+   * a whale the bottom tick.
+   */
+  const dsVol = gates.deadSetVolFadeFrac;
+  const dsTurn = gates.deadSetTurnFadeFrac;
+  const dsBounce = gates.deadSetBouncePct;
+  if (dsVol > 0 && dsTurn > 0 && dsBounce > 0 && heldMs >= gates.deadSetMinHoldMs) {
+    const v = args.volume5mUsd;
+    const v0 = args.entryVolume5mUsd;
+    const t = args.turnover5mLiq;
+    const t0 = args.entryTurnover5mLiq;
+    const volGone = v != null && v0 != null && v0 > 0 && v <= v0 * dsVol;
+    const turnGone = t != null && t0 != null && t0 > 0 && t <= t0 * dsTurn;
+    const priceGone = gainPct <= -gates.deadSetMinDropPct;
+    if (volGone && turnGone && priceGone && bounceOffTroughPct >= dsBounce - 1e-9) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'dead_set_bounce' };
+    }
+  }
 
   // Loss floors from entry — fire before soft exits / grace / leader-align.
   const hardStop = gates.hardStopPnlPct > 0 ? gates.hardStopPnlPct : 0;
@@ -899,6 +1100,19 @@ export function evaluateMildDipPeakGiveback(args: {
       ? gates.hardStopPartialFraction
       : 0;
 
+  /**
+   * 1.11.916 — has the price turned yet? A breach with no turn is not an exit.
+   */
+  const stopBounce = gates.hardStopBouncePct > 0 ? gates.hardStopBouncePct : 0;
+  const troughPx = args.troughPriceUsd;
+  // An unknown trough falls back to firing on the print: a missing input must
+  // not be able to switch the stop off.
+  const turned =
+    stopBounce <= 0 ||
+    troughPx == null ||
+    !(troughPx > 0) ||
+    (args.markPriceUsd / troughPx - 1) * 100 >= stopBounce;
+
   if (hardPartial > 0) {
     // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
     // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
@@ -906,7 +1120,7 @@ export function evaluateMildDipPeakGiveback(args: {
     if (cliff > 0 && pnlPct <= -cliff) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
-    if (hardStop > 0 && pnlPct <= -hardStop) {
+    if (hardStop > 0 && pnlPct <= -hardStop && turned) {
       if (!scaleOutDone) {
         return {
           ...hold,
@@ -918,12 +1132,12 @@ export function evaluateMildDipPeakGiveback(args: {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
   } else {
-    // Legacy: full hard_stop before cliff (tighter floor wins first).
-    if (hardStop > 0 && pnlPct <= -hardStop) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
-    }
+    // The deeper collapse is answered on the print; the stop waits for the turn.
     if (cliff > 0 && pnlPct <= -cliff) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+    }
+    if (hardStop > 0 && pnlPct <= -hardStop && turned) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
   }
 
@@ -943,7 +1157,8 @@ export function evaluateMildDipPeakGiveback(args: {
    * 5.4% went on to finish above +100%, so the tail barely notices.
    */
   const beArm = gates.breakevenArmPct > 0 ? gates.breakevenArmPct : 0;
-  if (beArm > 0 && mfePct >= beArm && pnlPct <= gates.breakevenFloorPct + 1e-9) {
+  // Both halves are about money: it was green and it came back (1.11.878).
+  if (beArm > 0 && mfePct >= beArm && gainPct <= gates.breakevenFloorPct + 1e-9) {
     return { ...hold, shouldExit: true, fraction: 1, reason: 'breakeven_stop' };
   }
 
@@ -951,7 +1166,8 @@ export function evaluateMildDipPeakGiveback(args: {
   // peak_giveback_partial). Past this age only green armed runners may wait
   // for TP / trail steps. Unarmed timeout stays in the never-arm branch below.
   const maxHoldCeil = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
-  if (armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && pnlPct <= 0) {
+  // "Underwater" is money, so it reads the gain basis (1.11.881).
+  if (armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && gainPct <= 0) {
     return { ...hold, shouldExit: true, fraction: 1, reason: 'max_hold_underwater' };
   }
 
@@ -995,7 +1211,6 @@ export function evaluateMildDipPeakGiveback(args: {
      * No upper rung. One rung per tick, as with the bank ladder, so a gap up
      * does not fire several sells at once.
      */
-    const gainPct = mfeBasis > 0 && markPriceUsd > 0 ? (markPriceUsd / mfeBasis - 1) * 100 : 0;
     const maxK = Math.floor((gainPct + 1e-9) / gridStep);
     if (gridReady && maxK > rungsDone) {
       // Remaining share of the original bag, exactly, because every rung takes
@@ -1004,14 +1219,25 @@ export function evaluateMildDipPeakGiveback(args: {
       const remainingAfter = remainingBefore * (1 - gridFrac);
       const floor =
         gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
-      const closeOut = floor > 0 && remainingAfter < floor - 1e-9;
-      return {
-        ...hold,
-        shouldExit: true,
-        fraction: closeOut ? 1 : gridFrac,
-        reason: 'tp_grid',
-        tpRungIndex: rungsDone + 1,
-      };
+      /**
+       * 1.11.914 — when the next rung would cut past the floor, the ladder
+       * stands down and the trail carries the last slice out. It used to close
+       * the bag instead, which capped a runner at the third rung: on an 8%/50%
+       * ladder that is +24%, so a coin that goes +67% could never pay us more
+       * than about +14% blended. 8zkgFG rode ELiQoVM9 the whole way and took it
+       * in one leg near the top; a 12% giveback trail is how we do the same.
+       */
+      if (floor > 0 && remainingAfter < floor - 1e-9) {
+        // fall through to the trail
+      } else {
+        return {
+          ...hold,
+          shouldExit: true,
+          fraction: gridFrac,
+          reason: 'tp_grid',
+          tpRungIndex: rungsDone + 1,
+        };
+      }
     }
   }
 
@@ -1080,7 +1306,7 @@ export function evaluateMildDipPeakGiveback(args: {
         // EjD5Y9 / 4aWQZP…: full sleeve at −11% cut the bag into a later bounce.
         // Underwater: half first; runner waits for bounce reclaim (below), not
         // another continuous sleeve tick.
-        if (pnlPct < 0 && !scaleOutDone && lossPartial > 0) {
+        if (gainPct < 0 && !scaleOutDone && lossPartial > 0) {
           return {
             ...hold,
             shouldExit: true,
@@ -1088,7 +1314,7 @@ export function evaluateMildDipPeakGiveback(args: {
             reason: 'mfe_bank_sleeve',
           };
         }
-        if (!(pnlPct < 0 && scaleOutDone && lossPartial > 0)) {
+        if (!(gainPct < 0 && scaleOutDone && lossPartial > 0)) {
           return {
             ...hold,
             shouldExit: true,
@@ -1154,8 +1380,16 @@ export function evaluateMildDipPeakGiveback(args: {
     bounceDumpNeed > 0 &&
     troughDumpPct <= -bounceDumpNeed + 1e-9 &&
     troughAgeMs >= bounceTroughAge &&
-    (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9) &&
-    pnlPct >= bounceMinPnl - 1e-9;
+    /**
+     * 1.11.881 — both halves are money, so both read the gain basis.
+     *
+     * `bounceMinPnl` says "do not sell while we are losing", and on the loss
+     * basis that sentence is not true: 7ZgRjHSn filled at 7.0630e-05 with the
+     * mark at 6.9050e-05, so a floor of 0 cleared at 6.9050e-05 — which is
+     * −2.24% of our money. It sold at −2.38%.
+     */
+    (bounceRequireRed <= 0 || gainPct <= -bounceRequireRed + 1e-9) &&
+    gainPct >= bounceMinPnl - 1e-9;
 
   if (!armed && bounceBaseOk) {
     if (!scaleOutDone && bounceOffTroughPct >= bounceNeed - 1e-9) {
@@ -1214,7 +1448,13 @@ export function evaluateMildDipPeakGiveback(args: {
         // 1.11.794 — fail open when pc5m missing; when present require ≤ −N.
         pcOk = pc == null || pc <= -timeRedPc + 1e-9;
       }
-      if (pcOk) {
+      /**
+       * 1.11.918 — the same rule as the stop (1.11.916): a red print is not a
+       * moment to sell into. GRehQKv9 was cut here at -19.51% on a falling tick
+       * after 50 minutes. The turn is what times the sale; the max-hold ceiling
+       * is the backstop that ignores it, because past that we cannot prove green.
+       */
+      if (pcOk && turned) {
         return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
       }
     }

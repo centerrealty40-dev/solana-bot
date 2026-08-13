@@ -569,7 +569,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('hard_stop wins over cliff when both thresholds are breached', () => {
+  it('1.11.916 — the deeper collapse is cliff_dump, answered on the print', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
@@ -579,6 +579,44 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 5_000,
     });
     expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('cliff_dump');
+  });
+
+  it('1.11.916 — the stop waits for the price to turn off its trough', () => {
+    const args = {
+      entryPriceUsd: 100,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: { ...exitGates, hardStopBouncePct: 3 },
+      heldMs: 5_000,
+    };
+    // Still on the low: breached, no turn, so no hard_stop.
+    const falling = evaluateMildDipPeakGiveback({
+      ...args,
+      markPriceUsd: 70,
+      troughPriceUsd: 70,
+    });
+    expect(falling.reason).not.toBe('hard_stop');
+    // Up 4.5% off the trough: the turn is in, take the exit.
+    const turned = evaluateMildDipPeakGiveback({
+      ...args,
+      markPriceUsd: 73.5,
+      troughPriceUsd: 70,
+    });
+    expect(turned.shouldExit).toBe(true);
+    expect(turned.reason).toBe('hard_stop');
+  });
+
+  it('1.11.916 — a zero bounce setting fires on the print, as before', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 70,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: { ...exitGates, hardStopBouncePct: 0 },
+      heldMs: 5_000,
+      troughPriceUsd: 70,
+    });
     expect(v.reason).toBe('hard_stop');
   });
 

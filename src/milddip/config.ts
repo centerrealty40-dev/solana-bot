@@ -71,6 +71,31 @@ const MildDipConfigSchema = z.object({
    */
   markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(20_000),
   /**
+   * 1.11.917 — how old a ring sample may be before an *armed* bag stops
+   * treating it as the current price.
+   *
+   * `markStreamMaxAgeMs` is five minutes, which is right for deciding whether a
+   * cold coin has a price at all and completely wrong for a live trail. GPzpoXpD
+   * ran +732%, our stream went quiet, and the ring served the same print for 44
+   * seconds while the coin halved. The trail read a 1.48% giveback the whole
+   * time and then -48.59% in one step, so we banked +298% of a +699% peak.
+   *
+   * A bag past this bound gets an awaited Dex read before the decision instead
+   * of being judged on a print that has not moved. 0 = off.
+   */
+  markArmedMaxAgeMs: z.coerce.number().int().min(0).max(300_000).default(10_000),
+  /**
+   * 1.11.919 — how long a quarantined mark may be refused before we accept it.
+   *
+   * 1.11.889 stopped an identical re-read from the same feed confirming a jump,
+   * because a feed handing back one cached datum twice is not two observations.
+   * But a value that keeps coming back for half a minute is a stable price, not a
+   * glitch: nBxqeJsm sat on gain 0 / giveback 0 for 31 seconds and five identical
+   * Dex reads while the coin fell, and by the time the guard let go the trail was
+   * at -23.88% instead of the -20% that should have fired. 0 = never time out.
+   */
+  markJumpConfirmMaxMs: z.coerce.number().int().min(0).max(120_000).default(8_000),
+  /**
    * 1.11.794 — max concurrent background Dex→ring refreshes for open bags
    * (`requestOpenMarkRefresh`). Exit mark reads stay sync from the ring.
    */
@@ -150,6 +175,28 @@ const MildDipConfigSchema = z.object({
    * ≥ minBouncePct off the ring trough in lookback. cliff/timeout still fire.
    */
   /** 1.11.749 default off — was blocking trail giveback on green-vs-trough. */
+  /**
+   * 1.11.874 — hold a soft exit while the entry gate would still open the bag.
+   * Selling a name the entry side likes only to buy it back costs a full round
+   * trip; GCa9TZ was sold at −10.48% and rebought 98s later, 7.7% lower.
+   */
+  /**
+   * 1.11.875 — how many seeded mints the leader lane looks at per scan, and how
+   * long before it looks again. The seed can hold `leaderSeedMax` names and the
+   * lane runs every scan interval, so both bounds are what keep it from
+   * re-checking the same 250 mints every three seconds.
+   */
+  leaderSeedWakeMax: z.coerce.number().int().min(0).max(250).default(12),
+  leaderSeedRelookMs: z.coerce.number().int().min(0).max(3_600_000).default(60_000),
+  /**
+   * 1.11.879 — minimum gap between two sells on one mint. `sellInFlight` only
+   * covers the transaction itself, so the next mark tick could decide again on
+   * data older than the sell that just landed.
+   */
+  exitMinSpacingMs: z.coerce.number().int().min(0).max(600_000).default(10_000),
+  exitDeferWouldBuyEnabled: z.boolean().default(false),
+  /** Cumulative ms one bag may hold a soft exit this way. */
+  exitDeferWouldBuyMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(600_000),
   recoverDeferEnabled: z.boolean().default(false),
   recoverDeferLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(300_000),
   recoverDeferMinBouncePct: z.coerce.number().min(0).max(50).default(3),
@@ -269,6 +316,11 @@ const MildDipConfigSchema = z.object({
    * no forward tape on what we refused: marks stop for mints we do not hold.
    */
   probeBlockedEnabled: z.boolean().default(false),
+  /**
+   * 1.11.898 — size for the first position on a mint we have never closed.
+   * 0 = off (first touch is sized like any other).
+   */
+  firstTouchPositionUsd: z.coerce.number().min(0).max(10_000).default(0),
   probeBlockedUsd: z.coerce.number().min(0).max(50).default(2),
   probeBlockedMaxPerHour: z.coerce.number().int().min(0).max(120).default(6),
   /**
@@ -281,6 +333,10 @@ const MildDipConfigSchema = z.object({
   /** pc5m at or below this is refused outright — the dump already happened. */
   rugBlockDumpPct: z.coerce.number().min(-100).max(0).default(0),
   requireLeaderSeen: z.boolean().default(false),
+  /** 1.11.899 — the same requirement, but only for the first touch on a mint. */
+  requireLeaderSeenFirstTouch: z.boolean().default(false),
+  /** 1.11.906 — how long we remember that a leader traded a mint. 0 = off. */
+  leaderSeenMemoryMs: z.coerce.number().int().min(0).max(30 * 86_400_000).default(0),
   requireLeaderSeenMaxAgeMs: z.coerce
     .number()
     .int()
@@ -491,6 +547,12 @@ const MildDipConfigSchema = z.object({
     minDipPct: z.number(),
     maxDipPct: z.number(),
     minVolume5mUsd: z.number(),
+    /** 1.11.895 — 5m volume as a share of the hourly pace. 0 = off. */
+    minVolume5mPaceRatio: z.number(),
+    /** 1.11.904 — 5m volume over pool liquidity. 0 = off. */
+    minTurnover5mLiq: z.number(),
+    /** 1.11.907 — upper bound on 5m volume over liquidity. 0 = off. */
+    maxTurnover5mLiq: z.number(),
     /**
      * 1.11.870 — upper bound on 5m volume at entry. 0 = off.
      * A name doing this much in five minutes is inside an event, and we are on
@@ -501,6 +563,11 @@ const MildDipConfigSchema = z.object({
     minMarketCapUsd: z.number(),
     maxMarketCapUsd: z.number(),
     minPairAgeHours: z.number(),
+    /**
+     * 1.11.905 — the age floor for a name a leader is buying. 0 = no exception.
+     * Only ever lowers the floor, never raises it.
+     */
+    minPairAgeHoursLeaderSeen: z.number(),
     maxPairAgeHours: z.number(),
     allowedDexIds: z.array(z.string()),
   }),
@@ -529,6 +596,15 @@ const MildDipConfigSchema = z.object({
     markJumpConfirmPct: z.coerce.number().min(0).max(100).default(25),
     /** 1.11.868 — tighter guard for stream prints; 0 = use markJumpConfirmPct. */
     markJumpConfirmStreamPct: z.coerce.number().min(0).max(100).default(8),
+    /** Measured mark-to-fill gap on the sell side; taken off the gain only. */
+    markSellHaircutPct: z.coerce.number().min(0).max(10).default(1),
+    /** 1.11.910 — the dead-set exit: volume, turnover and price all gone. */
+    deadSetVolFadeFrac: z.coerce.number().min(0).max(1).default(0),
+    deadSetTurnFadeFrac: z.coerce.number().min(0).max(1).default(0),
+    deadSetMinDropPct: z.coerce.number().min(0).max(100).default(10),
+    deadSetBouncePct: z.coerce.number().min(0).max(100).default(0),
+    hardStopBouncePct: z.coerce.number().min(0).max(100).default(3),
+    deadSetMinHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
     /** 1.11.855 — breakeven floor once the bag has been green. 0 = off. */
     breakevenArmPct: z.coerce.number().min(0).max(500).default(0),
     breakevenFloorPct: z.coerce.number().min(-100).max(100).default(0),
@@ -661,6 +737,9 @@ export function loadMildDipConfig(): MildDipConfig {
     maxDipPct: envNum('MILD_DIP_MAX_DIP_PCT', -8),
     /** 1.11.735 — default $500 (was $1500). Dex 5m volume floor before buy. */
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 300),
+    minVolume5mPaceRatio: envNum('MILD_DIP_MIN_VOL5M_PACE_RATIO', 0),
+    minTurnover5mLiq: envNum('MILD_DIP_MIN_TURNOVER_5M_LIQ', 0),
+    maxTurnover5mLiq: envNum('MILD_DIP_MAX_TURNOVER_5M_LIQ', 0),
     maxVolume5mUsd: envNum('MILD_DIP_MAX_VOLUME_5M_USD', 0),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 5_000),
@@ -672,6 +751,7 @@ export function loadMildDipConfig(): MildDipConfig {
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     /** 1.11.724 — floor 30m (was 15m). Youngest bucket had worst cliffs. */
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.5),
+    minPairAgeHoursLeaderSeen: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS_LEADER_SEEN', 0),
     /** 0 = no max age cap (older pump names like CATE still eligible). */
     maxPairAgeHours: envNum('MILD_DIP_MAX_PAIR_AGE_HOURS', 0),
     allowedDexIds,
@@ -714,6 +794,13 @@ export function loadMildDipConfig(): MildDipConfig {
     tpGridStepPct: envNum('MILD_DIP_EXIT_TP_GRID_STEP_PCT', 0),
     markJumpConfirmPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT', 25),
     markJumpConfirmStreamPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT', 8),
+    markSellHaircutPct: envNum('MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT', 1),
+    deadSetVolFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC', 0),
+    deadSetTurnFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC', 0),
+    deadSetMinDropPct: envNum('MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT', 10),
+    deadSetBouncePct: envNum('MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT', 0),
+    hardStopBouncePct: envNum('MILD_DIP_EXIT_HARD_STOP_BOUNCE_PCT', 3),
+    deadSetMinHoldMs: envNum('MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS', 300_000),
     breakevenArmPct: envNum('MILD_DIP_EXIT_BREAKEVEN_ARM_PCT', 0),
     breakevenFloorPct: envNum('MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT', 0),
     tpGridSellFraction: envNum('MILD_DIP_EXIT_TP_GRID_SELL_FRACTION', 0.5),
@@ -811,6 +898,8 @@ export function loadMildDipConfig(): MildDipConfig {
     markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
     markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 8_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
+    markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000,
+    markJumpConfirmMaxMs: process.env.MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS ?? 8_000,
     /** 1.11.736 — tighter journal so giveback gaps are visible (was 30s). */
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 5_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,
@@ -872,6 +961,8 @@ export function loadMildDipConfig(): MildDipConfig {
     rugKnifeTurn: envNum('MILD_DIP_RUG_KNIFE_TURN', 3),
     rugBlockDumpPct: envNum('MILD_DIP_RUG_BLOCK_DUMP_PCT', 0),
     requireLeaderSeen: envBool('MILD_DIP_REQUIRE_LEADER_SEEN', false),
+    requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
+    leaderSeenMemoryMs: process.env.MILD_DIP_LEADER_SEEN_MEMORY_MS ?? 0,
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
@@ -990,6 +1081,11 @@ export function loadMildDipConfig(): MildDipConfig {
     dumpClassifyWhaleShare: process.env.MILD_DIP_DUMP_CLASSIFY_WHALE_SHARE ?? 0.6,
     /** 1.11.744 — defer soft exits while reclaiming off local trough. */
     /** 1.11.749 — default off; dump_classify owns soft-giveback gating. */
+    leaderSeedWakeMax: process.env.MILD_DIP_LEADER_SEED_WAKE_MAX ?? 12,
+    leaderSeedRelookMs: process.env.MILD_DIP_LEADER_SEED_RELOOK_MS ?? 60_000,
+    exitMinSpacingMs: process.env.MILD_DIP_EXIT_MIN_SPACING_MS ?? 10_000,
+    exitDeferWouldBuyEnabled: envBool('MILD_DIP_EXIT_DEFER_WOULD_BUY', false),
+    exitDeferWouldBuyMaxMs: process.env.MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS ?? 600_000,
     recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),
     recoverDeferLookbackMs: process.env.MILD_DIP_RECOVER_DEFER_LOOKBACK_MS ?? 300_000,
     recoverDeferMinBouncePct: process.env.MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT ?? 3,
