@@ -289,15 +289,31 @@ export function streamOnlyNearTroughOk(args: {
   return b <= Math.max(0, args.maxBouncePct);
 }
 
-/** Exported for unit tests — structural floors on fast-path candidates. */
-export function structuralOk(metrics: MildDipCandidateMetrics, cfg: MildDipConfig): boolean {
+/**
+ * Exported for unit tests — structural floors on fast-path candidates.
+ *
+ * `leaderSeen` lowers the age floor to `minPairAgeHoursLeaderSeen`. The floor
+ * exists because a young pair is usually unformed, but a name two leaders are
+ * actively buying is evidence about that specific pair which the clock does not
+ * carry. 4CmYEyg is the case: they traded it 26 times while it sat behind our 6h
+ * floor, and by the time it cleared, the phase they had traded was over.
+ */
+export function structuralOk(
+  metrics: MildDipCandidateMetrics,
+  cfg: MildDipConfig,
+  leaderSeen = false,
+): boolean {
   const g = cfg.entry;
+  const minAge =
+    leaderSeen && g.minPairAgeHoursLeaderSeen > 0
+      ? Math.min(g.minPairAgeHoursLeaderSeen, g.minPairAgeHours)
+      : g.minPairAgeHours;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
   if (g.maxVolume5mUsd > 0 && metrics.volume5mUsd > g.maxVolume5mUsd) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
   if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
-  if (metrics.pairAgeHours == null || metrics.pairAgeHours < g.minPairAgeHours) return false;
+  if (metrics.pairAgeHours == null || metrics.pairAgeHours < minAge) return false;
   if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
   if (g.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();
@@ -539,10 +555,13 @@ export async function evaluateFastPathCandidate(
     }
   }
 
-  if (!structuralOk(struct.metrics, cfg)) {
+  // A name a leader is buying gets the younger age floor (1.11.905).
+  const leaderSeenForAge = trigger === 'leader' || seedHit != null;
+  if (!structuralOk(struct.metrics, cfg, leaderSeenForAge)) {
     return skip('structural_fail', {
       structSource,
       structAgeMs,
+      leaderSeen: leaderSeenForAge,
       vol5m: struct.metrics.volume5mUsd,
       liq: struct.metrics.liquidityUsd,
       mcap: struct.metrics.marketCapUsd,

@@ -3268,6 +3268,23 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_PAIR_AGE_HOURS: '6',
         /**
+         * 1.11.905 — one hour instead of six for a name a leader is buying.
+         *
+         * The floor is there because a young pair is usually unformed, but two
+         * leaders actively taking one is evidence about that specific pair, and
+         * the clock does not carry it. 4CmYEyg is the case: the leaders traded it
+         * 26 times while it sat behind our six-hour floor, and by the time it
+         * cleared, the phase they had traded was over. GPzpoXpD and 94yadmf3 read
+         * the same way - they were in from hour one to four, we arrived at six or
+         * seven and bought the retrace of a move that had already happened.
+         *
+         * Only ever lowers the floor, never raises it, and every other floor
+         * stands: liquidity $8k, turnover 0.03, the volume pace ratio, the dip
+         * band. So a young name still has to be liquid and actually trading; it
+         * just no longer has to be old as well.
+         */
+        MILD_DIP_MIN_PAIR_AGE_HOURS_LEADER_SEEN: '1',
+        /**
          * 1.11.815 — cap at 72h. Pairs older than that are dead money on this
          * strategy: 20 trades, −$7.60, winrate 0.25, median MFE 1.1% — they
          * simply do not bounce. Cutting them is the only filter that turns

@@ -66,6 +66,13 @@ export type MildDipEntryGates = {
   minMarketCapUsd: number;
   maxMarketCapUsd: number;
   minPairAgeHours: number;
+  /**
+   * 1.11.905 — the age floor for a name a leader is buying, which only ever
+   * lowers it. A young pair is usually unformed, but two leaders actively taking
+   * one is evidence about that specific pair which the clock does not carry.
+   * 0 = no exception.
+   */
+  minPairAgeHoursLeaderSeen: number;
   maxPairAgeHours: number;
   /** Empty = any dex. */
   allowedDexIds: string[];
