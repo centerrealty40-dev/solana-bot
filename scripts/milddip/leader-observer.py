@@ -495,11 +495,34 @@ def gate_fit(d: dict[str, Any] | None) -> dict[str, Any]:
     }
 
 
-def sol_usd_from_dex_cache(cache: dict[str, Any]) -> float | None:
+def sol_usd_from_dex_cache(cache: dict[str, Any], price_url: str = "") -> float | None:
+    """
+    SOL in USD, from Jupiter first and DexScreener only as a fallback.
+
+    This one price decides whether a SOL-denominated fill is readable at all:
+    `quote_leg_deltas` multiplies the lamport delta by it, so when it is missing
+    the whole leg silently becomes zero. It used to come from DexScreener alone -
+    the same saturated quota that answers 429 - and that is why 16,434 leader sell
+    fills carry no proceeds. Verified on chain: three of them had paid +0.62,
+    +2.96 and +2.01 SOL into the wallet, plainly readable, and were dropped only
+    because SOL itself had no price at that moment.
+
+    A stale SOL price is far better than none, so a cached value is served for
+    five minutes and, if every source is failing, up to an hour.
+    """
     px = cache.get("solUsd")
-    if isinstance(px, (int, float)) and px > 0:
-        if time.time() - float(cache.get("solUsdAt") or 0) < 60:
-            return float(px)
+    fetched_at = float(cache.get("solUsdAt") or 0)
+    if isinstance(px, (int, float)) and px > 0 and time.time() - fetched_at < 300:
+        return float(px)
+    try:
+        jup = fetch_jupiter_prices([WSOL], price_url)
+        jp = jup.get(WSOL)
+        if jp and jp > 0:
+            cache["solUsd"] = float(jp)
+            cache["solUsdAt"] = time.time()
+            return float(jp)
+    except Exception:
+        pass
     try:
         req = urllib.request.Request(
             f"https://api.dexscreener.com/latest/dex/tokens/{WSOL}",
@@ -522,6 +545,10 @@ def sol_usd_from_dex_cache(cache: dict[str, Any]) -> float | None:
             return px
     except Exception:
         pass
+    # Both sources are down. An hour-old SOL price still reads a fill correctly
+    # to within its own drift; dropping the leg loses it completely.
+    if isinstance(px, (int, float)) and px > 0 and time.time() - fetched_at < 3600:
+        return float(px)
     return None
 
 
@@ -1224,7 +1251,7 @@ class Observer:
         cutoff = time.time() - self.lookback_sec
         # Process oldest→newest so bag ledger is chronological within the poll batch.
         ordered = list(reversed(sigs))
-        sol_usd = sol_usd_from_dex_cache(self._sol_cache)
+        sol_usd = sol_usd_from_dex_cache(self._sol_cache, self.price_url)
         for s in ordered:
             sig = s.get("signature")
             if not sig or sig in self.seen:
