@@ -35,3 +35,22 @@ describe('1.11.824 leader seeds order the scan queue', () => {
     expect(eco).toContain("MILD_DIP_LEADER_SEED_MAX_AGE_MS: '7200000'");
   });
 });
+
+describe('1.11.899 the first touch needs a leader to have been there', () => {
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('gates only the first position on a mint', () => {
+    expect(loop).toContain('const isFirstTouchForLeaderGate = !state.lastExitByMint?.[mint]');
+    expect(loop).toContain('cfg.requireLeaderSeenFirstTouch && isFirstTouchForLeaderGate');
+  });
+
+  it('leaves the whole-funnel gate off, which starved entry in 1.11.816', () => {
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '0'");
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1'");
+  });
+
+  it('does not double-gate when the funnel-wide flag is on', () => {
+    expect(loop).toContain('&& !cfg.requireLeaderSeen');
+  });
+});

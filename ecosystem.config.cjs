@@ -3930,6 +3930,28 @@ const PM2_APPS = [
         MILD_DIP_RUG_KNIFE_TURN: '3',
         MILD_DIP_RUG_BLOCK_DUMP_PCT: '0',
         MILD_DIP_REQUIRE_LEADER_SEEN: '0',
+        /**
+         * 1.11.899 — a leader has to have touched a name before we open it for
+         * the first time; repeats on names we know are not gated.
+         *
+         * Measured on our own closed positions, and the two effects are
+         * independent rather than one standing in for the other:
+         *
+         *                          first trade      repeat
+         *   leader has traded it     -0.1470       -0.0284   USD/pos
+         *   only we trade it        -0.3068       -0.0436
+         *
+         * The first-touch penalty survives inside each column (five- and
+         * seven-fold) and the no-leader penalty inside each row, so both are
+         * real. Their intersection is the worst population we have: 205
+         * positions, 10% of the volume, -62.89 USD of a -162 total, 41% win.
+         *
+         * 1.11.816 applied this to the whole funnel and starved entry, since our
+         * discovery overlaps the seed by about a tenth. Scoped to the first touch
+         * it drops 21% of positions and moves the book from -0.0784 to -0.0546
+         * per position, while a name we already know stays tradeable.
+         */
+        MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
         MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS: '7200000',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',

@@ -308,6 +308,8 @@ const MildDipConfigSchema = z.object({
   /** pc5m at or below this is refused outright — the dump already happened. */
   rugBlockDumpPct: z.coerce.number().min(-100).max(0).default(0),
   requireLeaderSeen: z.boolean().default(false),
+  /** 1.11.899 — the same requirement, but only for the first touch on a mint. */
+  requireLeaderSeenFirstTouch: z.boolean().default(false),
   requireLeaderSeenMaxAgeMs: z.coerce
     .number()
     .int()
@@ -905,6 +907,7 @@ export function loadMildDipConfig(): MildDipConfig {
     rugKnifeTurn: envNum('MILD_DIP_RUG_KNIFE_TURN', 3),
     rugBlockDumpPct: envNum('MILD_DIP_RUG_BLOCK_DUMP_PCT', 0),
     requireLeaderSeen: envBool('MILD_DIP_REQUIRE_LEADER_SEEN', false),
+    requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),

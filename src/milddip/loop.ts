@@ -730,6 +730,51 @@ async function tryFastPathForMint(
   // Fire parked wait-dip first — must not require re-qualifying the main band.
   if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
 
+  /**
+   * 1.11.899 — a leader has to have touched a name before we open it for the
+   * first time. Repeats on names we already know are not gated.
+   *
+   * Both halves of this are measured on our own closed positions, and they are
+   * independent rather than one standing in for the other:
+   *
+   *                          first trade      repeat
+   *   leader has traded it     -0.1470       -0.0284   USD/pos
+   *   only we trade it        -0.3068       -0.0436
+   *
+   * The penalty for a first touch survives inside each column (five- and
+   * seven-fold) and the penalty for a name no leader wants survives inside each
+   * row, so both are real. Their intersection is the worst population in the
+   * book: 205 positions, 10% of the volume, carrying -62.89 USD of a -162 total
+   * at a 41% win rate.
+   *
+   * 1.11.816 gated the whole funnel this way and starved entry, because our
+   * discovery only overlaps the seed by about a tenth. Scoped to the first touch
+   * it removes 21% of positions and moves the book from -0.0784 to -0.0546 per
+   * position, and a name we already know stays tradeable whatever the seed says.
+   */
+  const isFirstTouchForLeaderGate = !state.lastExitByMint?.[mint];
+  if (cfg.requireLeaderSeenFirstTouch && isFirstTouchForLeaderGate && !cfg.requireLeaderSeen) {
+    const hit =
+      seedHit ??
+      leaderSeedHitByMint(
+        readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+          maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+          max: cfg.leaderSeedMax,
+        }),
+        mint,
+      );
+    if (!hit) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_not_leader_seen_skip',
+        mint,
+        trigger,
+        firstTouch: true,
+        maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+      });
+      return false;
+    }
+  }
+
   // 1.11.816 — names no leader has touched are the losing half of the book.
   // Checked before the Dex round-trip so it also saves the rate budget.
   if (cfg.requireLeaderSeen) {
