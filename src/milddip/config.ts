@@ -300,6 +300,11 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
   /**
+   * 1.11.924 — every entry (except knife/mild_stabilize) must show bounce or
+   * quiet hold off the post-peak trough before send. Blocks wait_dip blade-catch.
+   */
+  entryRequireStabilize: z.boolean().default(true),
+  /**
    * 1.11.753 — park signal; buy only after extra dump from signal.
    * 1.11.762 — default −10%; main-band only (stabilize buys immediate).
    * 0 waitDipPct = off shape.
@@ -948,6 +953,7 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeBandPct: envNum('MILD_DIP_KNIFE_STABILIZE_BAND_PCT', 2.5),
     knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
+    entryRequireStabilize: envBool('MILD_DIP_ENTRY_REQUIRE_STABILIZE', true),
     /**
      * 1.11.752 — wait extra −7% from signal before buy (MFE-bank CF winner).
      * Set MILD_DIP_WAIT_DIP=0 to restore immediate entries (all branches).

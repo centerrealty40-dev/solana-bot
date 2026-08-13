@@ -14,7 +14,9 @@ import {
   streamDumpExtentPct,
 } from './fast-path.js';
 import {
+  entryStabilizeExemptDipSource,
   evaluateCooldownBounce,
+  evaluateEntryStabilizeRequired,
   evaluateMildDipPreBuy,
   evaluateRebuyBelowExit,
   evaluateRebuyLiquidityDrop,
@@ -555,6 +557,40 @@ export async function attemptMildDipEntry(args: {
         state.cooldownUntilMs[c.mint] = nowMs + softCd;
         return 'skip';
       }
+    }
+  }
+
+  if (cfg.entryRequireStabilize && !entryStabilizeExemptDipSource(c.dipSource)) {
+    const stabLookbackMs = Math.max(cfg.cooldownBounceLookbackMs, cfg.mintCooldownMs);
+    const pt = mildDipPriceRing.troughAfterPeak(c.mint, stabLookbackMs, nowMs);
+    const stabilize = evaluateEntryStabilizeRequired({
+      freshPriceUsd: freshPx ?? entryPriceUsd,
+      troughPriceUsd: pt?.trough.priceUsd ?? null,
+      troughAtMs: pt?.trough.tsMs ?? null,
+      nowMs,
+      gates: {
+        enabled: true,
+        minBouncePct: cfg.knifeStabilizeMinBouncePct,
+        quietMs: cfg.knifeStabilizeQuietMs,
+        stabilizeBandPct: cfg.knifeStabilizeBandPct,
+      },
+    });
+    if (!stabilize.pass) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_entry_stabilize_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        lane: opts.lane,
+        dipSource: c.dipSource,
+        freshPriceUsd: freshPx ?? entryPriceUsd,
+        troughPriceUsd: pt?.trough.priceUsd ?? null,
+        reasons: stabilize.reasons,
+      });
+      console.log(
+        `[mild-dip] SKIP stabilize ${c.symbol} mint=${c.mint.slice(0, 8)}… ${stabilize.reasons.join(',')}`,
+      );
+      state.cooldownUntilMs[c.mint] = nowMs + Math.min(softCd, 1_500);
+      return 'skip';
     }
   }
 

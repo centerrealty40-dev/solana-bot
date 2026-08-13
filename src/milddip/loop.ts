@@ -645,7 +645,7 @@ async function tryFireWaitDip(
     adoptOnChainHolding,
     opts: {
       chasePct: chase,
-      skipBounce: true,
+      skipBounce: false,
       skipOnchainAdopt: true,
       freshDexPrebuy: true,
       softSkipCooldownMs: Math.min(cfg.fastPathSoftSkipCooldownMs, 1_500),
@@ -2676,6 +2676,7 @@ export async function runMildDipLoop(
       `(${cfg.knifeStabilizeMinDipPct},${cfg.knifeStabilizeMaxDipPct}]` +
       `/wait${Math.round(cfg.knifeStabilizeWaitMs / 1000)}s` +
       `/bounce[${cfg.knifeStabilizeMinBouncePct},${cfg.knifeStabilizeMaxBouncePct}] ` +
+      `entryStab=${cfg.entryRequireStabilize ? 1 : 0} ` +
       `mildStabilize=${cfg.mildStabilizeEnabled ? 1 : 0}` +
       `/fresh=${cfg.mildStabilizeFreshEntryEnabled ? 1 : 0}` +
       `(dump(${cfg.mildStabilizeMinDumpPct},${cfg.mildStabilizeMaxDumpPct}]` +
