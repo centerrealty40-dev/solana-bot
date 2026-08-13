@@ -2909,7 +2909,16 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_ENABLED: '1',
         MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT: '-50',
         MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT: '-20',
-        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '120000',
+        /**
+         * 1.11.892 — 30s, not 120s. This gate sits in front of both paths, so a
+         * knife that had already lifted 1.5–10% off its trough still had to sit
+         * out the remaining minute and a half before we could look at it. The
+         * bounce is the evidence that the fall stopped; waiting past it only
+         * hands back the entry. The stabilize path keeps its own separate
+         * requirement of `QUIET_MS` with no new trough, which is the evidence
+         * that applies when there is no bounce yet.
+         */
+        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '30000',
         MILD_DIP_KNIFE_STABILIZE_MAX_WATCH_MS: '600000',
         MILD_DIP_KNIFE_STABILIZE_QUIET_MS: '45000',
         MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',

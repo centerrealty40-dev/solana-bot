@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   evaluateKnifeStabilizePreBuy,
@@ -147,5 +149,17 @@ describe('evaluateKnifeStabilizePreBuy', () => {
     });
     expect(v.pass).toBe(false);
     expect(v.reasons.some((r) => r.startsWith('knife_prebuy_chase='))).toBe(true);
+  });
+});
+
+describe('1.11.892 the knife wait is 30s', () => {
+  it('live env no longer sits out a bounce that already happened', () => {
+    // The wait gate is in front of both paths, so a knife that had already
+    // lifted 1.5-10% off its trough still had to sit out the rest of the two
+    // minutes. The bounce is the evidence that the fall stopped.
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '30000'");
+    // The no-bounce path keeps its own evidence: a trough left alone.
+    expect(eco).toContain("MILD_DIP_KNIFE_STABILIZE_QUIET_MS: '45000'");
   });
 });
