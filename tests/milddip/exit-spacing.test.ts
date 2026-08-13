@@ -60,3 +60,15 @@ describe('1.11.897 the ladder closes on the first rung', () => {
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5'");
   });
 });
+
+describe('1.11.900 the time cut stops firing at five minutes', () => {
+  it('live env gives a red bag fifteen minutes, not five', () => {
+    // On 75 dips we and a leader both entered within a minute, we stopped out of
+    // 30 at a -19.77% median where they came out around flat having held 15.5
+    // minutes. On the bags that worked our exit beat theirs, +9.41% to +3.90%,
+    // so the gate stays - it just no longer fires at its old floor.
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000'");
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15'");
+  });
+});

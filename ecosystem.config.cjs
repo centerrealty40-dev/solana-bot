@@ -3532,7 +3532,27 @@ const PM2_APPS = [
          * held ≥ 5m AND pnl ≤ −15% AND Dex pc5m ≤ −5%.
          * Armed / MFE-bank trail unchanged. Missing pc5m → no fire.
          */
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '300000',
+        /**
+         * 1.11.900 — 900s, not 300s. Measured on the dips we and a leader both
+         * entered within a minute of each other, so the same flush and not two
+         * entries hours apart: 75 matched pairs, of which we stopped out of 30.
+         *
+         *   what we did              n    ours       theirs   they held
+         *   stopped out (<=-5%)     30  -19.77%      -0.26%     15.5 min
+         *   scratched (-5..+5%)     20   +1.81%      +5.27%      5.1 min
+         *   banked (>+5%)           25   +9.41%      +3.90%     10.1 min
+         *
+         * On the bags that worked our exit beats theirs, +9.41% against +3.90%.
+         * On the bags that did not, we realised -19.77% where they came out
+         * around flat, having given it three times as long. Our median hold on
+         * these was 4.8 minutes, which is this gate firing at its floor.
+         *
+         * A replay of every tape agrees on direction: against no time cut at
+         * all, the rule at 300s costs -6.37 USD over 24h, at 900s -0.84, at
+         * 1200s nothing. It still helps the typical position on a trimmed mean
+         * at every setting, so it stays - it just stops firing at five minutes.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT: '5',
         /**
