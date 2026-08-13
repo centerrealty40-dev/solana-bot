@@ -2837,13 +2837,13 @@ const PM2_APPS = [
         /** 1.11.828 — flat $5 across base / thick / micro. */
         /** 1.11.839 — flat $2 across base / thick / micro. */
         /** 1.11.841 — flat $1 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '3',
+        MILD_DIP_POSITION_USD: '8',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          * 1.11.841 — same $1 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '3',
+        MILD_DIP_THICK_POSITION_USD: '8',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
@@ -2852,7 +2852,7 @@ const PM2_APPS = [
          * 1.11.776 — floor aligned to global $5k (was $15k–$50k).
          * 1.11.841 — clip flat $1 with base/thick (one economic tier).
          */
-        MILD_DIP_MICRO_POSITION_USD: '3',
+        MILD_DIP_MICRO_POSITION_USD: '8',
         MILD_DIP_MICRO_MIN_MCAP_USD: '5000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -4109,7 +4109,9 @@ const PM2_APPS = [
          * So the first trade is priced as the cost of finding out, not skipped -
          * without it there are no repeats.
          */
-        MILD_DIP_FIRST_TOUCH_POSITION_USD: '1',
+        // Kept at the same third of a clip as the tiers move 3 -> 8: a first
+        // touch on a mint is still the worst-performing entry we take.
+        MILD_DIP_FIRST_TOUCH_POSITION_USD: '3',
         MILD_DIP_PROBE_BLOCKED_USD: '2',
         MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
         /**

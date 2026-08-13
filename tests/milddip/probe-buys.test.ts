@@ -68,10 +68,10 @@ describe('1.11.898 the first position on a coin is sized down', () => {
     expect(src).toContain('Math.min(cfg.probeBlockedUsd, familiarityCapped)');
   });
 
-  it('live env risks $1 on an unknown coin and $3 once it is known', () => {
+  it('live env risks a third of a clip on an unknown coin', () => {
     // First touch carries -0.2050 USD/position against -0.02 to -0.05 for every
     // repeat, and -115.82 of a -164 total.
-    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '1'");
-    expect(eco).toContain("MILD_DIP_POSITION_USD: '3'");
+    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '3'");
+    expect(eco).toContain("MILD_DIP_POSITION_USD: '8'");
   });
 });
