@@ -388,6 +388,56 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d.shouldExit).toBe(false);
     });
 
+    it('an identical re-read does not confirm a jump (DKxHTQCv, 1.11.889)', () => {
+      // Sat at 3.8570e-04 for minutes, then two stream prints of 5.3768721e-04
+      // two seconds apart, identical to the last digit. The second confirmed the
+      // first, MFE latched at +35.83% and breakeven closed the bag at +2.28%
+      // while the name ran. Real prices tick; a repeat is one cached datum twice.
+      const STEADY = 3.857e-4;
+      const SPIKE = 5.3768721e-4;
+      const g = { ...gates, markJumpConfirmPct: 10, markJumpConfirmStreamPct: 8 };
+      const p = fresh('dkxh', STEADY, STEADY);
+      const steady = decideMarkExit({
+        mint: 'dkxh', pos: p, markPriceUsd: STEADY, gates: g, nowMs: 1_010_000, markSource: 'dex',
+      })!;
+      applyMarkDecisionToPosition(p, steady);
+
+      const first = decideMarkExit({
+        mint: 'dkxh', pos: p, markPriceUsd: SPIKE, gates: g, nowMs: 1_012_000, markSource: 'stream',
+      })!;
+      expect(first.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, first);
+
+      const reread = decideMarkExit({
+        mint: 'dkxh', pos: p, markPriceUsd: SPIKE, gates: g, nowMs: 1_014_000, markSource: 'stream',
+      })!;
+      expect(reread.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, reread);
+      // The peak never moved, so nothing armed and nothing latched.
+      expect(p.peakPriceUsd).toBeCloseTo(STEADY, 12);
+      expect(p.trailArmed).not.toBe(true);
+    });
+
+    it('a genuine move still confirms, from either feed', () => {
+      const g = { ...gates, markJumpConfirmPct: 10, markJumpConfirmStreamPct: 8, armPct: 5 };
+      const p = fresh('realmove', 100, 100);
+      applyMarkDecisionToPosition(
+        p,
+        decideMarkExit({ mint: 'realmove', pos: p, markPriceUsd: 100, gates: g, nowMs: 1_010_000, markSource: 'dex' })!,
+      );
+      const jump = decideMarkExit({
+        mint: 'realmove', pos: p, markPriceUsd: 130, gates: g, nowMs: 1_012_000, markSource: 'stream',
+      })!;
+      expect(jump.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, jump);
+      // A different feed at a nearby price is an independent observation.
+      const confirm = decideMarkExit({
+        mint: 'realmove', pos: p, markPriceUsd: 129, gates: g, nowMs: 1_014_000, markSource: 'dex',
+      })!;
+      expect(confirm.markQuarantined).not.toBe(true);
+      expect(confirm.gainPct).toBeCloseTo(29, 0);
+    });
+
     it('still stops out on a real 25% fall measured from the entry mark', () => {
       const MARK = FILL * 0.97;
       const p = fresh('eub3c', FILL, MARK);

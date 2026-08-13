@@ -45,6 +45,12 @@ export type MildDipOpenPosition = {
    */
   lastMarkPriceUsd?: number;
   pendingMarkPriceUsd?: number;
+  /**
+   * 1.11.889 — which feed the quarantined print came from. Two byte-identical
+   * prints from one feed are a stale value read twice, not a market at that
+   * price, so they may not confirm each other.
+   */
+  pendingMarkSource?: 'stream' | 'dex';
   /** Running low-water mark from entry (never-arm bounce / freefall). */
   postEntryTroughUsd?: number;
   /** When postEntryTroughUsd was last deepened. */

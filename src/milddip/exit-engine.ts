@@ -43,6 +43,8 @@ export type MarkExitDecision = {
   tpRungIndex: number | null;
   /** 1.11.852 — mark held back pending confirmation; nothing was decided. */
   markQuarantined?: boolean;
+  /** Which feed this mark came from; a quarantine remembers it (1.11.889). */
+  markSource?: 'stream' | 'dex' | null;
   mfePct: number;
   givebackPct: number;
   /** Move on the loss basis — what the stops compared. */
@@ -175,10 +177,32 @@ export function decideMarkExit(args: {
   if (jumpLimit > 0 && lastMark != null && lastMark > 0) {
     const jumpPct = Math.abs(markPriceUsd / lastMark - 1) * 100;
     if (jumpPct > jumpLimit) {
+      /**
+       * 1.11.889 — a re-read is not a second opinion.
+       *
+       * DKxHTQCv sat at 3.8570e-04 for minutes, then took two stream prints of
+       * 5.3768721e-04 two seconds apart — identical to the last digit — and the
+       * second confirmed the first. The price was back at 3.8570e-04 on the next
+       * mark, so 5.3768721e-04 never existed to trade on; MFE latched at +35.83%
+       * and armed breakeven, which closed the bag at +2.28% while the name ran.
+       *
+       * Real prices tick. A value repeated exactly, from the same feed, is that
+       * feed handing back one cached datum twice, so confirmation now has to come
+       * from a different feed or at least a different number. Oscar answers the
+       * same question by verifying an exit price against a fresh Jupiter quote
+       * (`priceVerifyExit`, `tracker.ts:522`); this is the cheap form of it, on a
+       * path that runs every two seconds.
+       */
       const pendingPx = pos.pendingMarkPriceUsd;
+      const pendingSrc = pos.pendingMarkSource;
+      const identicalReread =
+        pendingPx != null &&
+        markPriceUsd === pendingPx &&
+        (pendingSrc == null || pendingSrc === args.markSource);
       const confirms =
         pendingPx != null &&
         pendingPx > 0 &&
+        !identicalReread &&
         Math.abs(markPriceUsd / pendingPx - 1) * 100 <= jumpLimit;
       if (!confirms) {
         // Hold everything as it was; only remember what we saw.
@@ -193,6 +217,7 @@ export function decideMarkExit(args: {
           fraction: 0,
           reason: null,
           tpRungIndex: null,
+          markSource: args.markSource ?? null,
           mfePct: 0,
           givebackPct: 0,
           pnlPct: 0,
@@ -293,10 +318,12 @@ export function applyMarkDecisionToPosition(
     // Remember the outlier so a second print at the same level can confirm it,
     // and leave every other field, including lastMarkPriceUsd, untouched.
     pos.pendingMarkPriceUsd = decision.markPriceUsd;
+    pos.pendingMarkSource = decision.markSource ?? undefined;
     return;
   }
   pos.lastMarkPriceUsd = decision.markPriceUsd;
   pos.pendingMarkPriceUsd = undefined;
+  pos.pendingMarkSource = undefined;
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;
