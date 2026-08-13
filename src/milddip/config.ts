@@ -310,6 +310,8 @@ const MildDipConfigSchema = z.object({
   requireLeaderSeen: z.boolean().default(false),
   /** 1.11.899 — the same requirement, but only for the first touch on a mint. */
   requireLeaderSeenFirstTouch: z.boolean().default(false),
+  /** 1.11.906 — how long we remember that a leader traded a mint. 0 = off. */
+  leaderSeenMemoryMs: z.coerce.number().int().min(0).max(30 * 86_400_000).default(0),
   requireLeaderSeenMaxAgeMs: z.coerce
     .number()
     .int()
@@ -524,6 +526,8 @@ const MildDipConfigSchema = z.object({
     minVolume5mPaceRatio: z.number(),
     /** 1.11.904 — 5m volume over pool liquidity. 0 = off. */
     minTurnover5mLiq: z.number(),
+    /** 1.11.907 — upper bound on 5m volume over liquidity. 0 = off. */
+    maxTurnover5mLiq: z.number(),
     /**
      * 1.11.870 — upper bound on 5m volume at entry. 0 = off.
      * A name doing this much in five minutes is inside an event, and we are on
@@ -703,6 +707,7 @@ export function loadMildDipConfig(): MildDipConfig {
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 300),
     minVolume5mPaceRatio: envNum('MILD_DIP_MIN_VOL5M_PACE_RATIO', 0),
     minTurnover5mLiq: envNum('MILD_DIP_MIN_TURNOVER_5M_LIQ', 0),
+    maxTurnover5mLiq: envNum('MILD_DIP_MAX_TURNOVER_5M_LIQ', 0),
     maxVolume5mUsd: envNum('MILD_DIP_MAX_VOLUME_5M_USD', 0),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 5_000),
@@ -917,6 +922,7 @@ export function loadMildDipConfig(): MildDipConfig {
     rugBlockDumpPct: envNum('MILD_DIP_RUG_BLOCK_DUMP_PCT', 0),
     requireLeaderSeen: envBool('MILD_DIP_REQUIRE_LEADER_SEEN', false),
     requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
+    leaderSeenMemoryMs: process.env.MILD_DIP_LEADER_SEEN_MEMORY_MS ?? 0,
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),

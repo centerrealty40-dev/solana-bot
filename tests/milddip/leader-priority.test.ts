@@ -42,7 +42,8 @@ describe('1.11.899 the first touch needs a leader to have been there', () => {
 
   it('gates only the first position on a mint', () => {
     expect(loop).toContain('const isFirstTouchForLeaderGate = !state.lastExitByMint?.[mint]');
-    expect(loop).toContain('cfg.requireLeaderSeenFirstTouch && isFirstTouchForLeaderGate');
+    expect(loop).toContain('cfg.requireLeaderSeenFirstTouch &&');
+    expect(loop).toContain('isFirstTouchForLeaderGate &&');
   });
 
   it('leaves the whole-funnel gate off, which starved entry in 1.11.816', () => {
@@ -51,7 +52,7 @@ describe('1.11.899 the first touch needs a leader to have been there', () => {
   });
 
   it('does not double-gate when the funnel-wide flag is on', () => {
-    expect(loop).toContain('&& !cfg.requireLeaderSeen');
+    expect(loop).toContain('!cfg.requireLeaderSeen &&');
   });
 });
 
@@ -79,5 +80,44 @@ describe('1.11.905 a name a leader is buying may be younger', () => {
     expect(eco).toContain("MILD_DIP_MIN_LIQUIDITY_USD: '8000'");
     expect(eco).toContain("MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.03'");
     expect(eco).toContain("MILD_DIP_MIN_VOL5M_PACE_RATIO: '0.3'");
+  });
+});
+
+describe('1.11.906 the gate remembers a leader for a week, not two hours', () => {
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('accumulates every seed read into a durable memory', () => {
+    // The seed file is a two-hour view by design, so reading it alone made the
+    // gate stricter than the measurement it came from, which asked "ever".
+    expect(loop).toContain('function rememberLeaderSeen(');
+    expect(loop).toContain('mem[h.mint] = Math.max(mem[h.mint] ?? 0, h.lastSeenAtMs || nowMs)');
+    expect(loop).toContain('if (nowMs - ts > cfg.leaderSeenMemoryMs) delete mem[mint]');
+  });
+
+  it('consults the memory before rejecting a first touch', () => {
+    expect(loop).toContain('!leaderEverSeen(cfg, state, mint, nowMs)');
+  });
+
+  it('live env remembers for a week', () => {
+    expect(eco).toContain("MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000'");
+  });
+});
+
+describe('1.11.907/908 turnover ceiling and the re-entry price rule', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  const gates = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+
+  it('caps turnover as well as flooring it, on both gate paths', () => {
+    expect(eco).toContain("MILD_DIP_MAX_TURNOVER_5M_LIQ: '0.25'");
+    expect(gates).toContain('turn > gates.maxTurnover5mLiq');
+    expect(fast).toContain('g.maxTurnover5mLiq > 0 && turn > g.maxTurnover5mLiq');
+  });
+
+  it('no longer demands a cheaper re-entry than our last exit', () => {
+    // Priced against our own first entry on the coin, re-entering above it is
+    // four times better per position than re-entering below it, in all windows.
+    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
   });
 });

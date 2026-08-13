@@ -120,6 +120,19 @@ export type MildDipState = {
   cooldownUntilMs: Record<string, number>;
   /** mint → last full-exit fill/mark price for same-price rebuy guard. */
   lastExitByMint?: Record<string, MildDipLastExit>;
+  /**
+   * 1.11.906 — mint → when a leader was last seen holding or buying it, kept for
+   * as long as `leaderSeenMemoryMs`.
+   *
+   * The first-touch gate asks whether a leader finds a name worth trading at all.
+   * The measurement behind it used exactly that - ever - and found first touches
+   * on leader-traded names at −0.1470 per position against −0.3068 on names no
+   * leader wants. The implementation read the seed file instead, which carries a
+   * two-hour window for its own purposes, so the gate was stricter than the
+   * evidence: of 20,614 rejections, 1,066 were names the leaders had bought
+   * earlier than two hours, which is the better population being turned away.
+   */
+  leaderSeenMints?: Record<string, number>;
   /** mint → deep-knife watch (wait for stabilize / bounce). */
   knifeWatch?: Record<string, KnifeWatchEntry>;
   /** mint → wait-dip watch (park signal; buy after extra dump). */

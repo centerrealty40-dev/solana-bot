@@ -753,7 +753,12 @@ async function tryFastPathForMint(
    * position, and a name we already know stays tradeable whatever the seed says.
    */
   const isFirstTouchForLeaderGate = !state.lastExitByMint?.[mint];
-  if (cfg.requireLeaderSeenFirstTouch && isFirstTouchForLeaderGate && !cfg.requireLeaderSeen) {
+  if (
+    cfg.requireLeaderSeenFirstTouch &&
+    isFirstTouchForLeaderGate &&
+    !cfg.requireLeaderSeen &&
+    !leaderEverSeen(cfg, state, mint, nowMs)
+  ) {
     const hit =
       seedHit ??
       leaderSeedHitByMint(
@@ -889,6 +894,38 @@ async function wakeWaitDipWatches(
  * 1.11.739 skipped all tryEntries when open>0 and starved this wake path.
  * 1.11.779 — secondary to stream hot wake.
  */
+/**
+ * 1.11.906 — remember that a leader traded a mint, for as long as configured.
+ *
+ * The seed file is a two-hour view by design, so reading it alone makes the
+ * first-touch gate stricter than the evidence it was built on: that measurement
+ * asked whether a leader had *ever* traded the name. Every seed read unions into
+ * this memory, which is what the gate then consults.
+ */
+function rememberLeaderSeen(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  hits: readonly LeaderSeedHit[],
+  nowMs: number,
+): void {
+  if (cfg.leaderSeenMemoryMs <= 0 || hits.length === 0) return;
+  if (!state.leaderSeenMints) state.leaderSeenMints = {};
+  const mem = state.leaderSeenMints;
+  for (const h of hits) {
+    if (h.mint) mem[h.mint] = Math.max(mem[h.mint] ?? 0, h.lastSeenAtMs || nowMs);
+  }
+  for (const [mint, ts] of Object.entries(mem)) {
+    if (nowMs - ts > cfg.leaderSeenMemoryMs) delete mem[mint];
+  }
+}
+
+/** True when a leader has traded this mint inside the remembered window. */
+function leaderEverSeen(cfg: MildDipConfig, state: MildDipState, mint: string, nowMs: number): boolean {
+  if (cfg.leaderSeenMemoryMs <= 0) return false;
+  const ts = state.leaderSeenMints?.[mint];
+  return ts != null && nowMs - ts <= cfg.leaderSeenMemoryMs;
+}
+
 async function wakeLeaderSeeds(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -917,6 +954,7 @@ async function wakeLeaderSeeds(
     maxAgeMs: Math.min(cfg.leaderSeedMaxAgeMs, 600_000),
     max: cfg.leaderSeedMax,
   });
+  rememberLeaderSeen(cfg, state, leaders, nowMs);
   const perCycle = cfg.leaderSeedWakeMax > 0 ? cfg.leaderSeedWakeMax : 12;
   const relookMs = cfg.leaderSeedRelookMs;
   const due = leaders.filter((hit) => {

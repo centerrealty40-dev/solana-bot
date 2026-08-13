@@ -3164,6 +3164,15 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.03',
         /**
+         * 1.11.907 — and no higher than 0.25. Past that the name is inside an
+         * event rather than trading, and we are on the wrong side of it: 731
+         * positions above 0.25 returned −0.1145 each across the journal, the worst
+         * band by dollars, and negative in every window (−0.0568 over 24h, −0.0622
+         * over 48h). It drops a large share of entries, which is why it waited for
+         * the floor to go in first.
+         */
+        MILD_DIP_MAX_TURNOVER_5M_LIQ: '0.25',
+        /**
          * 1.11.870 — ceiling at $40k of 5m volume. Over 499 fully closed bags
          * joined to the entry snapshot, counted in cash:
          *
@@ -3751,7 +3760,23 @@ const PM2_APPS = [
         MILD_DIP_FAST_PATH_SKIP_BOUNCE: '0',
         /** After full exit: rebuy only if mark ≥20% below exit (15m memory). */
         /** 1.11.757 — rebuy if ≥10% below last exit (was 20%; Sheep 09:15 miss). */
-        MILD_DIP_REBUY_BELOW_EXIT_PCT: '10',
+        /**
+         * 1.11.908 — off. The gate demanded the price sit 10% below our last exit
+         * before we could re-enter, on the assumption that cheaper is better. Our
+         * own book says the opposite. Every buy, priced against our own first entry
+         * on that coin:
+         *
+         *                     last 24h   last 48h   whole journal
+         *   first buy          -0.1423    -0.0961      -0.1156   USD/pos
+         *   below first        -0.0417    -0.0501      -0.0334
+         *   above first        -0.0361    -0.0249      -0.0083
+         *
+         * Re-entering a name that has recovered above our first price is our best
+         * population, four times better per position than re-entering one that has
+         * kept falling, and the ordering holds in all three windows. The gate was
+         * steering us into the worse half by construction.
+         */
+        MILD_DIP_REBUY_BELOW_EXIT_PCT: '0',
         MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
         /** 1.11.797 — after loss exit: skip rebuy when Dex liq fell vs exit. */
         MILD_DIP_REBUY_LIQ_DROP: '1',
@@ -4041,6 +4066,18 @@ const PM2_APPS = [
          * per position, while a name we already know stays tradeable.
          */
         MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
+        /**
+         * 1.11.906 — remember for a week that a leader traded a name.
+         *
+         * The gate above asks whether a leader finds a name worth trading at all,
+         * and the measurement behind it asked exactly that - ever. The code read
+         * the seed file, which is a two-hour view by design, so the gate was
+         * stricter than its own evidence: of 20,614 rejections, 1,066 were names
+         * the leaders had bought earlier than two hours. 78.2% were names no
+         * leader ever bought, which is the gate working, and only 19 were inside
+         * the window it was checking, so this is the one real defect in it.
+         */
+        MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
         MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS: '7200000',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',

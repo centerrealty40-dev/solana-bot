@@ -314,6 +314,16 @@ export function structuralOk(
   if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
   if (metrics.pairAgeHours == null || metrics.pairAgeHours < minAge) return false;
+  if (
+    (g.minTurnover5mLiq > 0 || g.maxTurnover5mLiq > 0) &&
+    metrics.volume5mUsd != null &&
+    metrics.liquidityUsd != null &&
+    metrics.liquidityUsd > 0
+  ) {
+    const turn = metrics.volume5mUsd / metrics.liquidityUsd;
+    if (g.minTurnover5mLiq > 0 && turn < g.minTurnover5mLiq) return false;
+    if (g.maxTurnover5mLiq > 0 && turn > g.maxTurnover5mLiq) return false;
+  }
   if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
   if (g.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();

@@ -57,6 +57,13 @@ export type MildDipEntryGates = {
    */
   minTurnover5mLiq: number;
   /**
+   * 1.11.907 — upper bound on the same ratio. Above it the name is inside an
+   * event rather than trading: 731 positions past 0.25 returned −0.1145 each
+   * across the journal, the worst band by dollars, and negative in every window.
+   * 0 = off.
+   */
+  maxTurnover5mLiq: number;
+  /**
    * 1.11.870 — upper bound at entry. A name doing more than this in five
    * minutes is inside an event: over 499 closed bags, the 19% above $40k
    * carried 42% of the whole loss at a 0.298 win rate. 0 = off.
@@ -355,6 +362,9 @@ export function evaluateMildDipEntry(
       const turn = v5 / liq;
       if (turn < gates.minTurnover5mLiq) {
         reasons.push(`turn=${turn.toFixed(4)}<${gates.minTurnover5mLiq}`);
+      }
+      if (gates.maxTurnover5mLiq > 0 && turn > gates.maxTurnover5mLiq) {
+        reasons.push(`turn=${turn.toFixed(4)}>${gates.maxTurnover5mLiq}`);
       }
     }
   }
