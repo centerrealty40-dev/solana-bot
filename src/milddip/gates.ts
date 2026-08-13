@@ -1063,24 +1063,38 @@ export function evaluateMildDipPeakGiveback(args: {
      * every rung under a spent high still owed, and the ladder would dribble the
      * bag out on the way down at prices the peak never represented.
      *
-     * No upper rung. One rung per tick, as with the bank ladder, so a gap up
-     * does not fire several sells at once.
+     * 1.11.886 — every rung the price has already passed is filled in ONE leg.
+     *
+     * The old rule was one rung per tick, to stop a gap up firing several sells
+     * at once. It did not stop them: it spread them across consecutive ticks at
+     * the same price. DcK63VSm sold 50% at +23.25% and another 25% fourteen
+     * seconds later at +23.23% — rungs 1 and 2 were both long behind the price,
+     * so that is not a ladder, it is three quarters of the bag sold twice over
+     * at one price, paying two sets of fees and two lots of impact.
+     *
+     * A ladder means selling at +8%, then +16%, then +24%. When the tape gaps
+     * past them the amounts are still owed, but they are owed *here*, in a
+     * single fill. The phantom-spike worry that motivated the throttle is
+     * answered where it belongs: `markJumpConfirmPct` holds an unconfirmed jump
+     * out of the decision entirely.
      */
     const maxK = Math.floor((gainPct + 1e-9) / gridStep);
     if (gridReady && maxK > rungsDone) {
       // Remaining share of the original bag, exactly, because every rung takes
       // the same fraction of what is left.
       const remainingBefore = Math.pow(1 - gridFrac, rungsDone);
-      const remainingAfter = remainingBefore * (1 - gridFrac);
+      const remainingAfter = Math.pow(1 - gridFrac, maxK);
       const floor =
         gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
       const closeOut = floor > 0 && remainingAfter < floor - 1e-9;
+      // Share of what is *left* that clears every rung up to maxK at once.
+      const fraction = remainingBefore > 0 ? 1 - remainingAfter / remainingBefore : gridFrac;
       return {
         ...hold,
         shouldExit: true,
-        fraction: closeOut ? 1 : gridFrac,
+        fraction: closeOut ? 1 : fraction,
         reason: 'tp_grid',
-        tpRungIndex: rungsDone + 1,
+        tpRungIndex: maxK,
       };
     }
   }
@@ -1237,10 +1251,17 @@ export function evaluateMildDipPeakGiveback(args: {
 
   if (!armed && bounceBaseOk) {
     if (!scaleOutDone && bounceOffTroughPct >= bounceNeed - 1e-9) {
+      /**
+       * 1.11.886 — same rule as the ladder: if the reclaim has already cleared
+       * the second stage, take the whole bag here rather than a half now and
+       * the rest at the same price on the next tick. 9sfCHMLW went out 0.5 at
+       * +2.96% and the remainder fifteen seconds later at +2.94%.
+       */
+      const clearedStage2 = bounce2Need > 0 && bounceOffTroughPct >= bounce2Need - 1e-9;
       return {
         ...hold,
         shouldExit: true,
-        fraction: bouncePartialFrac > 0 ? bouncePartialFrac : 1,
+        fraction: clearedStage2 || bouncePartialFrac <= 0 ? 1 : bouncePartialFrac,
         reason: 'never_arm_bounce',
       };
     }
