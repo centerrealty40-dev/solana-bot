@@ -2973,7 +2973,23 @@ const PM2_APPS = [
          * +11.31% against +2.33%.) The dips that did not fall further were the
          * ones that had bottomed, and those are exactly the ones the seat let go.
          */
-        MILD_DIP_WAIT_DIP: '0',
+        /**
+         * 1.11.896 — back on. Turning it off in 1.11.890 rested on what the
+         * *leaders* made buying the dips our seats let expire (+10.74% median
+         * against −0.29% for the ones we waited out). That was never our number:
+         * they fill without our chase and overpay and they exit on their own
+         * rule, so their result on a dip is not the result we would have had.
+         *
+         * Ours, per position, matched to the buy row:
+         *
+         *   overnight, seats on       409 pos  −0.0415/pos  24% end in time_red
+         *   09:48–11:35, seats off     70 pos  −0.0906/pos  40% end in time_red
+         *
+         * The leaders' own book did not deteriorate over those hours - their
+         * round trips ran a +0.52% median overnight and +0.92% through the
+         * morning - so this is not the market turning, it is the change.
+         */
+        MILD_DIP_WAIT_DIP: '1',
         MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1',
         /**
          * 1.11.808 — ask deeper, accept shallower. With wait −12 / overshoot 2
