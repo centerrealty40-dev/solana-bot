@@ -809,6 +809,7 @@ async function tryFastPathForMint(
     nowMs,
     trigger,
     trigger === 'leader' ? seedHit : null,
+    leaderEverSeen(cfg, state, mint, nowMs),
   );
   if (!candidate) {
     // Deep knife skips entry but must stay on own-tape knife watch.

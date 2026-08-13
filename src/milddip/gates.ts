@@ -1188,14 +1188,25 @@ export function evaluateMildDipPeakGiveback(args: {
       const remainingAfter = remainingBefore * (1 - gridFrac);
       const floor =
         gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
-      const closeOut = floor > 0 && remainingAfter < floor - 1e-9;
-      return {
-        ...hold,
-        shouldExit: true,
-        fraction: closeOut ? 1 : gridFrac,
-        reason: 'tp_grid',
-        tpRungIndex: rungsDone + 1,
-      };
+      /**
+       * 1.11.914 — when the next rung would cut past the floor, the ladder
+       * stands down and the trail carries the last slice out. It used to close
+       * the bag instead, which capped a runner at the third rung: on an 8%/50%
+       * ladder that is +24%, so a coin that goes +67% could never pay us more
+       * than about +14% blended. 8zkgFG rode ELiQoVM9 the whole way and took it
+       * in one leg near the top; a 12% giveback trail is how we do the same.
+       */
+      if (floor > 0 && remainingAfter < floor - 1e-9) {
+        // fall through to the trail
+      } else {
+        return {
+          ...hold,
+          shouldExit: true,
+          fraction: gridFrac,
+          reason: 'tp_grid',
+          tpRungIndex: rungsDone + 1,
+        };
+      }
     }
   }
 

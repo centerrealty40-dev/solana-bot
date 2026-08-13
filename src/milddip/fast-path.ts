@@ -308,6 +308,17 @@ export function structuralOk(
     leaderSeen && g.minPairAgeHoursLeaderSeen > 0
       ? Math.min(g.minPairAgeHoursLeaderSeen, g.minPairAgeHours)
       : g.minPairAgeHours;
+  /**
+   * 1.11.914 — the turnover ceiling is a statistical prior about names we know
+   * nothing else about. A leader inside the name is direct evidence that
+   * overrides it, the same way it overrides the age floor.
+   *
+   * ELiQoVM9 is the case: 3.1 hours old, $13k of liquidity, turnover 0.355, and
+   * 8zkgFG turned $149.57 into $249.73 on it in 23 minutes. We evaluated it 239
+   * times and rejected all 239 on structural_fail - the age floor and this
+   * ceiling together.
+   */
+  const maxTurn = leaderSeen ? 0 : g.maxTurnover5mLiq;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
   if (g.maxVolume5mUsd > 0 && metrics.volume5mUsd > g.maxVolume5mUsd) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
@@ -315,14 +326,14 @@ export function structuralOk(
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
   if (metrics.pairAgeHours == null || metrics.pairAgeHours < minAge) return false;
   if (
-    (g.minTurnover5mLiq > 0 || g.maxTurnover5mLiq > 0) &&
+    (g.minTurnover5mLiq > 0 || maxTurn > 0) &&
     metrics.volume5mUsd != null &&
     metrics.liquidityUsd != null &&
     metrics.liquidityUsd > 0
   ) {
     const turn = metrics.volume5mUsd / metrics.liquidityUsd;
     if (g.minTurnover5mLiq > 0 && turn < g.minTurnover5mLiq) return false;
-    if (g.maxTurnover5mLiq > 0 && turn > g.maxTurnover5mLiq) return false;
+    if (maxTurn > 0 && turn > maxTurn) return false;
   }
   if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
   if (g.allowedDexIds.length > 0) {
@@ -439,6 +450,12 @@ export async function evaluateFastPathCandidate(
   nowMs: number,
   trigger: 'stream' | 'leader' | 'scan',
   seedHit?: LeaderSeedHit | null,
+  /**
+   * 1.11.914 — a leader has traded this name, however we came to look at it.
+   * The caller knows this from its own memory; the trigger alone does not, which
+   * is why ELiQoVM9 stayed behind the age floor while 8zkgFG made 67% on it.
+   */
+  leaderSeenMint = false,
 ): Promise<MildDipCandidate | null> {
   const skip = (reason: string, extra?: Record<string, unknown>): null => {
     // Leave a trail for leader + stream wakes (silent null hid stream misses).
@@ -566,7 +583,7 @@ export async function evaluateFastPathCandidate(
   }
 
   // A name a leader is buying gets the younger age floor (1.11.905).
-  const leaderSeenForAge = trigger === 'leader' || seedHit != null;
+  const leaderSeenForAge = trigger === 'leader' || seedHit != null || leaderSeenMint;
   if (!structuralOk(struct.metrics, cfg, leaderSeenForAge)) {
     return skip('structural_fail', {
       structSource,

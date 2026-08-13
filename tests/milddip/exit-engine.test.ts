@@ -503,18 +503,17 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d?.tpRungIndex).toBe(1);
     });
 
-    it('closes the bag on the rung that would leave under 20% (1.11.861)', () => {
+    it('stands down on the rung that would leave under 20% (1.11.914)', () => {
       // Half-remainder steps: 1.00 -> 0.50 -> 0.25, and the next would be
-      // 0.125, under the 0.20 floor, so rung 3 takes the whole remainder.
+      // 0.125, under the 0.20 floor. The ladder stops there and the trail
+      // carries the last quarter, so a runner is not capped at the third rung.
       const g = { ...grid, tpGridMinRemainderFraction: 0.2 };
       const r1 = decideMarkExit({ mint: 'f1', pos: bag('f1', 0), markPriceUsd: 108, gates: g, nowMs: 1_060_000 });
       expect(r1?.fraction).toBe(0.5);
       const r2 = decideMarkExit({ mint: 'f2', pos: bag('f2', 1), markPriceUsd: 116, gates: g, nowMs: 1_060_000 });
       expect(r2?.fraction).toBe(0.5);
       const r3 = decideMarkExit({ mint: 'f3', pos: bag('f3', 2), markPriceUsd: 124, gates: g, nowMs: 1_060_000 });
-      expect(r3?.reason).toBe('tp_grid');
-      expect(r3?.fraction).toBe(1);
-      expect(r3?.tpRungIndex).toBe(3);
+      expect(r3?.reason).not.toBe('tp_grid');
     });
 
     it('a floor of 0 leaves the ladder unbounded', () => {
@@ -530,7 +529,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       const fifth = decideMarkExit({ mint: 'q5', pos: bag('q5', 4), markPriceUsd: 148, gates: g, nowMs: 1_060_000 });
       expect(fifth?.fraction).toBe(0.25);
       const sixth = decideMarkExit({ mint: 'q6', pos: bag('q6', 5), markPriceUsd: 156, gates: g, nowMs: 1_060_000 });
-      expect(sixth?.fraction).toBe(1);
+      expect(sixth?.reason).not.toBe('tp_grid');
     });
 
     it('keeps paying on every further +8% with no upper rung', () => {

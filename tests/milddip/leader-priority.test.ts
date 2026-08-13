@@ -112,13 +112,29 @@ describe('1.11.907/908 turnover ceiling and the re-entry price rule', () => {
   it('caps turnover as well as flooring it, on both gate paths', () => {
     expect(eco).toContain("MILD_DIP_MAX_TURNOVER_5M_LIQ: '0.25'");
     expect(gates).toContain('turn > gates.maxTurnover5mLiq');
-    expect(fast).toContain('g.maxTurnover5mLiq > 0 && turn > g.maxTurnover5mLiq');
+    expect(fast).toContain('maxTurn > 0 && turn > maxTurn');
   });
 
   it('no longer demands a cheaper re-entry than our last exit', () => {
     // Priced against our own first entry on the coin, re-entering above it is
     // four times better per position than re-entering below it, in all windows.
     expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
+  });
+});
+
+describe('1.11.914 a leader in the name overrides the structural priors', () => {
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+
+  it('drops the turnover ceiling for names a leader has traded', () => {
+    // ELiQoVM9: 3.1h old, turnover 0.355, rejected 239 times on structural_fail
+    // while the leader turned $149.57 into $249.73 on it in 23 minutes.
+    expect(fast).toContain('const maxTurn = leaderSeen ? 0 : g.maxTurnover5mLiq;');
+  });
+
+  it('reads leader-seen from our memory, not just from the wake that found it', () => {
+    expect(fast).toContain('|| leaderSeenMint');
+    expect(loop).toContain('leaderEverSeen(cfg, state, mint, nowMs),');
   });
 });
 
