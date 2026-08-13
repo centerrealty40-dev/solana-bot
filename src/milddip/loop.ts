@@ -1814,6 +1814,36 @@ async function tryExits(
       }).catch(() => undefined);
     }
   }
+  /**
+   * 1.11.917 — an armed bag may not be judged on a print that has not moved.
+   *
+   * The ring accepts a sample up to `markStreamMaxAgeMs` old, five minutes,
+   * because a cold coin needs some price. A live trail does not: when the stream
+   * goes quiet mid-move the ring keeps serving the last print and the giveback
+   * reads flat while the coin falls. That is how GPzpoXpD banked +298% of a
+   * +699% peak - 44 seconds on one frozen number, then -48.59% in a single step.
+   *
+   * So the armed bags whose ring has gone stale get an awaited Dex read here,
+   * ahead of the decision pass, rather than a fire-and-forget one they will not
+   * see for another tick.
+   */
+  const armedBound = cfg.markArmedMaxAgeMs > 0 ? cfg.markArmedMaxAgeMs : 0;
+  const armedStale =
+    armedBound > 0
+      ? refreshOrder.filter(
+          (m) =>
+            state.open[m]?.trailArmed === true &&
+            openMarkRingAgeMs(m, nowMs) >= armedBound,
+        )
+      : [];
+  if (armedStale.length > 0) {
+    await prefetchDexScreenerPairDetailsMany(armedStale, {
+      nowMs,
+      allowedDexIds: cfg.entry.allowedDexIds,
+      cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+      bypassGate: true,
+    }).catch(() => undefined);
+  }
   for (const mint of refreshOrder) {
     maybeRequestOpenMarkRefresh(mint, nowMs, cfg);
   }

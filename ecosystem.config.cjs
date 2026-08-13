@@ -3810,6 +3810,10 @@ const PM2_APPS = [
          */
         MILD_DIP_MARK_DEX_REFRESH_MS: '2000',
         MILD_DIP_MARK_CACHE_TTL_MS: '3000',
+        // 1.11.917 - an armed bag stops trusting a ring sample this old and gets
+        // an awaited Dex read instead. GPzpoXpD sat on one frozen print for 44s
+        // while it halved, and we banked +298% of a +699% peak.
+        MILD_DIP_MARK_ARMED_MAX_AGE_MS: '10000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
         MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',

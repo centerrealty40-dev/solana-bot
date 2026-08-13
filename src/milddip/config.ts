@@ -71,6 +71,20 @@ const MildDipConfigSchema = z.object({
    */
   markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(20_000),
   /**
+   * 1.11.917 — how old a ring sample may be before an *armed* bag stops
+   * treating it as the current price.
+   *
+   * `markStreamMaxAgeMs` is five minutes, which is right for deciding whether a
+   * cold coin has a price at all and completely wrong for a live trail. GPzpoXpD
+   * ran +732%, our stream went quiet, and the ring served the same print for 44
+   * seconds while the coin halved. The trail read a 1.48% giveback the whole
+   * time and then -48.59% in one step, so we banked +298% of a +699% peak.
+   *
+   * A bag past this bound gets an awaited Dex read before the decision instead
+   * of being judged on a print that has not moved. 0 = off.
+   */
+  markArmedMaxAgeMs: z.coerce.number().int().min(0).max(300_000).default(10_000),
+  /**
    * 1.11.794 — max concurrent background Dex→ring refreshes for open bags
    * (`requestOpenMarkRefresh`). Exit mark reads stay sync from the ring.
    */
@@ -873,6 +887,7 @@ export function loadMildDipConfig(): MildDipConfig {
     markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
     markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 8_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
+    markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000,
     /** 1.11.736 — tighter journal so giveback gaps are visible (was 30s). */
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 5_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,

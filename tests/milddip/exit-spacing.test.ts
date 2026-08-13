@@ -88,3 +88,22 @@ describe('1.11.901 nothing sits past three hours', () => {
     expect(gates).toContain('armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && gainPct <= 0');
   });
 });
+
+describe('1.11.917 an armed bag is not judged on a print that has not moved', () => {
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+  const cfg = readFileSync(resolve('src/milddip/config.ts'), 'utf8');
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('awaits a fresh Dex read for armed bags whose ring went stale', () => {
+    // GPzpoXpD: 44 seconds on one frozen stream print while the coin halved, so
+    // the giveback read -1.48% until it read -48.59% in a single step.
+    expect(loop).toContain("state.open[m]?.trailArmed === true &&");
+    expect(loop).toContain('openMarkRingAgeMs(m, nowMs) >= armedBound');
+    expect(loop).toContain('await prefetchDexScreenerPairDetailsMany(armedStale,');
+  });
+
+  it('bounds it well below the five minutes the ring allows a cold coin', () => {
+    expect(cfg).toContain("markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000");
+    expect(eco).toContain("MILD_DIP_MARK_ARMED_MAX_AGE_MS: '10000'");
+  });
+});
