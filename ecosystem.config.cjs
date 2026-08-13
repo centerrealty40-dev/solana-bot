@@ -2901,7 +2901,28 @@ const PM2_APPS = [
          * the basis bugs had corrupted. Measured clean, the line is −4: (−8,−4]
          * earns, (−4,0] does not.
          */
-        MILD_DIP_MAX_DIP_PCT: '0',
+        /**
+         * 1.11.893 — a 1.5% wiggle is not a dip.
+         *
+         * 77rUTY78 came in at pc5m −1.53% inside an hour that was up 11%, which
+         * on a chart is a green candle. By entry depth, and unlike anything else
+         * tested today, this holds across every window:
+         *
+         *   band      last 12h      last 24h    whole journal
+         *   (−2,0]      −0.079        −0.034        −0.012   USD/pos
+         *   (−4,−2]     −0.047        −0.089        −0.017
+         *   (−6,−4]     +0.048        +0.053        −0.007
+         *   (−10,−6]    +0.133        −0.018        −0.034
+         *
+         * (−4,0] is the only band negative in all three, over 754 positions in
+         * total. The hour trend was tested too and is not the discriminator: on
+         * the clean 12h window a green hour with a real dump returns +0.051/pos,
+         * so the pullback depth is what matters, not the candle colour.
+         *
+         * Only the ceiling moves. The floor stays at −25: the deep end was cut
+         * once on 14 positions, which was not evidence, and that is reverted.
+         */
+        MILD_DIP_MAX_DIP_PCT: '-4',
         /**
          * Deep knife (−50, −20]: wait 2m, buy only if price stabilizes near the
          * trough or starts a controlled bounce (not the falling blade).
