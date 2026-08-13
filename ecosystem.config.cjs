@@ -3559,7 +3559,30 @@ const PM2_APPS = [
          * 1.11.791 — max-hold / underwater time ceiling OFF.
          * Never-arm loss uses HELD+PC+SL; green armed trail may wait.
          */
-        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '0',
+        /**
+         * 1.11.901 — three hours. This is the only ceiling on how long a bag may
+         * sit: it closes an unarmed bag outright, and an armed one when its gain
+         * is at or below zero.
+         *
+         * For positions still open at each age, what they were worth then
+         * against what they ended up worth, over 835 closed positions in 36h:
+         *
+         *   age    still on   gain then   gain at end
+         *   30m         283      -2.86%       -2.06%
+         *   60m         139      -2.56%       -2.84%
+         *   120m         59      -3.13%       -3.00%
+         *   180m         33      -4.52%       -7.36%
+         *   240m         19      -3.49%      -11.78%
+         *
+         * Waiting is roughly free up to two hours and then turns: a bag still
+         * open at three hours gives back another 2.8 points, at four hours 8.3.
+         *
+         * Cutting earlier is measurably harmful - a replay of every tape puts
+         * leaving at 30 minutes at -0.207 per position on a trimmed mean, and at
+         * 60 minutes -0.007 - so the ceiling goes where the tape turns, not where
+         * the pile is most annoying. It reaches about thirty bags per 36h.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '10800000',
         /**
          * 1.11.734 — oneshot emptied-bag dump grace:
          * Stream sell that empties a wallet (post≈0) and ≥$500 → defer

@@ -72,3 +72,19 @@ describe('1.11.900 the time cut stops firing at five minutes', () => {
     expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15'");
   });
 });
+
+describe('1.11.901 nothing sits past three hours', () => {
+  it('live env caps the hold where the tape turns against waiting', () => {
+    // Positions still open at each age, worth then against worth at the end:
+    // 30m -2.86 -> -2.06, 60m -2.56 -> -2.84, 120m -3.13 -> -3.00,
+    // 180m -4.52 -> -7.36, 240m -3.49 -> -11.78. Cutting at 30m costs -0.207
+    // per position on a trimmed replay, so the ceiling goes at three hours.
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '10800000'");
+  });
+
+  it('an armed bag is only closed by it while it is not green', () => {
+    const gates = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+    expect(gates).toContain('armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && gainPct <= 0');
+  });
+});
