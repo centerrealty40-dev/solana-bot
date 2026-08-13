@@ -3193,7 +3193,32 @@ const PM2_APPS = [
          * winners. Grid on the full sample: hard15 −$9.52, hard20 −$0.17,
          * hard25 +$4.15, hard30 +$6.19.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
+        /**
+         * 1.11.887 — −20, not −25, and not a combination.
+         *
+         * Grouped by the deepest drawdown each bag actually reached, over 233
+         * closed positions in 12h:
+         *
+         *   never below −10   101 pos  +36.17 USD  96% win
+         *   touched −10..−20   77 pos   −1.52 USD  57% win
+         *   touched −20..−25   28 pos  −15.31 USD  11% win
+         *   touched ≤ −25      27 pos  −14.57 USD   7% win
+         *
+         * Recovery is essentially over at −20: the two deepest buckets are 55
+         * positions and −29.88 USD, which is the whole loss of the book, and the
+         * 28 that touched −20 without reaching −25 lost anyway at an 11% win
+         * rate. A replay of every tape agrees: −20 returns +0.96 USD over −25,
+         * while −15 costs −8.19 by cutting the −10..−20 band, which is roughly
+         * break-even and still recovers 57% of the time.
+         *
+         * Wider is pointless rather than safer: −30, −40, −50 and no stop at all
+         * replay identically, because almost nothing that deep ever comes back.
+         *
+         * Conditioning it was tested and adds nothing: `only if never armed` is
+         * identical (the stop never fires on an armed bag), `after 10/30/60min`
+         * is identical, and the volume-fade condition moved 4 positions.
+         */
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '20',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
