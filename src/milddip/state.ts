@@ -271,6 +271,7 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     open: {},
     cooldownUntilMs: {},
     lastExitByMint: {},
+    leaderSeenMints: {},
     knifeWatch: {},
     waitDipWatch: {},
     updatedAtMs: nowMs,
@@ -289,6 +290,16 @@ export function loadMildDipState(statePath: string): MildDipState {
           ? parsed.cooldownUntilMs
           : {},
       lastExitByMint: sanitizeLastExitByMint(parsed.lastExitByMint),
+      /**
+       * 1.11.909 — this loader builds a fresh object field by field, so anything
+       * it does not name is dropped on every restart. The leader memory added in
+       * 1.11.906 was not named, so it reset each reload and never grew past the
+       * handful of mints one seed window holds.
+       */
+      leaderSeenMints:
+        parsed.leaderSeenMints && typeof parsed.leaderSeenMints === 'object'
+          ? parsed.leaderSeenMints
+          : {},
       knifeWatch: sanitizeKnifeWatch(parsed.knifeWatch),
       waitDipWatch: sanitizeWaitDipWatch(parsed.waitDipWatch),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),

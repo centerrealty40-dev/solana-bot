@@ -121,3 +121,11 @@ describe('1.11.907/908 turnover ceiling and the re-entry price rule', () => {
     expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
   });
 });
+
+describe('1.11.909 the leader memory survives a restart', () => {
+  it('is carried by the state loader, which drops anything it does not name', () => {
+    const src = readFileSync(resolve('src/milddip/state.ts'), 'utf8');
+    expect(src).toContain('leaderSeenMints:\n        parsed.leaderSeenMints');
+    expect(src).toContain("leaderSeenMints: {},");
+  });
+});
