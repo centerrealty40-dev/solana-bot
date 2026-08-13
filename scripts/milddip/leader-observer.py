@@ -55,6 +55,9 @@ WSOL = "So11111111111111111111111111111111111111112"
 USDC = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
 USDT = "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB"
 QUOTE_MINTS = {WSOL, USDC, USDT}
+# mint -> (fetched_at, usd price), for valuing the far side of a swap.
+COUNTER_PX_CACHE: dict[str, tuple[float, float]] = {}
+COUNTER_PX_TTL_SEC = 300.0
 # Backstop cap on remembered signatures; the real bound is age (see _save_state).
 SEEN_SIGNATURE_CAP = 20_000
 # Quote delta below this share of the DEX-implied notional = not the counterparty.
@@ -617,6 +620,42 @@ def quote_leg_deltas(
     }
 
 
+def counter_leg_deltas(
+    leader: str,
+    pre: list[dict[str, Any]],
+    post: list[dict[str, Any]],
+    traded_mint: str,
+) -> dict[str, float]:
+    """
+    The other side of a token-for-token swap.
+
+    `quote_leg_deltas` only follows SOL, USDC and USDT, so a route that pays out
+    in some third SPL token moves none of them and the leg lands with no readable
+    proceeds at all. Over the corpus that is 26-32% of leader sell legs, and the
+    gap is not uniform: a name sold once loses its whole proceeds while a name
+    sold a hundred times loses a third of them, which biases any per-mint P&L
+    along exactly the axis we want to measure.
+
+    Returns every non-quote mint whose balance moved for this wallet, excluding
+    the mint being traded, as a signed UI amount. Positive means received.
+    """
+    seen: dict[tuple[Any, str], list[Any]] = {}
+    for b in pre:
+        m = b.get("mint")
+        if b.get("owner") == leader and m and m not in QUOTE_MINTS and m != traded_mint:
+            seen[(b.get("accountIndex"), m)] = [b, None]
+    for b in post:
+        m = b.get("mint")
+        if b.get("owner") == leader and m and m not in QUOTE_MINTS and m != traded_mint:
+            seen.setdefault((b.get("accountIndex"), m), [None, None])[1] = b
+    out: dict[str, float] = {}
+    for (_idx, m), (a, b) in seen.items():
+        d = ui_amt(b) - ui_amt(a)
+        if d:
+            out[m] = out.get(m, 0.0) + d
+    return {m: d for m, d in out.items() if abs(d) > 0}
+
+
 def fill_metrics(
     token_delta: float,
     quote: dict[str, Any],
@@ -717,6 +756,54 @@ class Observer:
     def _dense_path_for_today(self) -> Path:
         day = dt.datetime.utcnow().strftime("%Y%m%d")
         return self.out_dir / f"leader-dense-{day}.jsonl"
+
+    def counter_leg_usd(
+        self,
+        deltas: dict[str, float],
+        want_received: bool,
+    ) -> tuple[float | None, list[str]]:
+        """
+        Value the other side of a token-for-token swap, in USD.
+
+        Prices come from Jupiter, which is a separate quota from the DexScreener
+        budget the bot needs and prices almost any tradeable SPL token. Cached per
+        mint because the same counter tokens recur across a leader's routes.
+        """
+        wanted = {
+            m: d
+            for m, d in (deltas or {}).items()
+            if (d > 0 if want_received else d < 0)
+        }
+        if not wanted:
+            return None, []
+        now = time.time()
+        missing = [
+            m for m in wanted
+            if not (
+                m in COUNTER_PX_CACHE
+                and now - COUNTER_PX_CACHE[m][0] <= COUNTER_PX_TTL_SEC
+            )
+        ]
+        if missing:
+            try:
+                fetched = fetch_jupiter_prices(missing, self.price_url)
+            except Exception:
+                fetched = {}
+            for m in missing:
+                px = fetched.get(m)
+                if px and px > 0:
+                    COUNTER_PX_CACHE[m] = (now, float(px))
+        total = 0.0
+        priced: list[str] = []
+        for m, d in wanted.items():
+            hit = COUNTER_PX_CACHE.get(m)
+            if not hit or now - hit[0] > COUNTER_PX_TTL_SEC:
+                continue
+            total += abs(d) * hit[1]
+            priced.append(m)
+        if not priced or total <= 0:
+            return None, []
+        return total, priced
 
     def emit_trade(self, payload: dict[str, Any]) -> None:
         """Canonical trade_fill / trade_roundtrip into shared trades.jsonl."""
@@ -1271,6 +1358,14 @@ class Observer:
                         if isinstance(qdelta, (int, float)) and abs(float(qdelta)) > 0
                         else fills.get("sizeUsd")
                     )
+                    # 1.11.902 — same gap on the way in: a token-for-token buy
+                    # pays with a third SPL token, so cost is what they gave up.
+                    counter_src = None
+                    if not spent:
+                        cl = counter_leg_deltas(leader, pre, post, mint)
+                        spent, priced = self.counter_leg_usd(cl, False)
+                        if spent:
+                            counter_src = ",".join(m[:8] for m in priced)
                     self.emit_trade(
                         {
                             "kind": "trade_fill",
@@ -1287,7 +1382,12 @@ class Observer:
                             # Buy always spends quote — force negative cash delta.
                             "cashDeltaUsd": (-float(spent) if spent else None),
                             "fillPriceUsd": fills.get("fillPriceUsd"),
-                            "cashSource": "observed_delta" if qdelta else "quote",
+                            "cashSource": (
+                                "observed_delta"
+                                if qdelta
+                                else ("counter_leg" if counter_src else "quote")
+                            ),
+                            "counterLegMints": counter_src,
                             "source": "leader_observer",
                             "blockTime": block_time,
                         }
@@ -1362,6 +1462,15 @@ class Observer:
                         if isinstance(qdelta, (int, float)) and abs(float(qdelta)) > 0
                         else fills.get("sizeUsd")
                     )
+                    # 1.11.902 — a route that paid out in a third SPL token moves
+                    # no quote leg, and if the sold mint has no Dex price either
+                    # the proceeds were simply lost. Value what they received.
+                    counter_src = None
+                    if not received:
+                        cl = counter_leg_deltas(leader, pre, post, mint)
+                        received, priced = self.counter_leg_usd(cl, True)
+                        if received:
+                            counter_src = ",".join(m[:8] for m in priced)
                     self.emit_trade(
                         {
                             "kind": "trade_fill",
@@ -1381,7 +1490,12 @@ class Observer:
                             "markPnlPct": sess.get("pnlPctApprox"),
                             "cashPnlUsd": sess.get("cashPnlUsd"),
                             "costBasisUsd": sess.get("costBasisUsd"),
-                            "cashSource": "observed_delta" if qdelta else "quote",
+                            "cashSource": (
+                                "observed_delta"
+                                if qdelta
+                                else ("counter_leg" if counter_src else "quote")
+                            ),
+                            "counterLegMints": counter_src,
                             "source": "leader_observer",
                             "blockTime": block_time,
                         }
