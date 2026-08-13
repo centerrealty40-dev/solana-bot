@@ -1448,7 +1448,13 @@ export function evaluateMildDipPeakGiveback(args: {
         // 1.11.794 — fail open when pc5m missing; when present require ≤ −N.
         pcOk = pc == null || pc <= -timeRedPc + 1e-9;
       }
-      if (pcOk) {
+      /**
+       * 1.11.918 — the same rule as the stop (1.11.916): a red print is not a
+       * moment to sell into. GRehQKv9 was cut here at -19.51% on a falling tick
+       * after 50 minutes. The turn is what times the sale; the max-hold ceiling
+       * is the backstop that ignores it, because past that we cannot prove green.
+       */
+      if (pcOk && turned) {
         return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
       }
     }

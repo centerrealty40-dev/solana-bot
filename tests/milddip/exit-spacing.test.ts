@@ -138,3 +138,19 @@ describe('1.11.918 the runners are not sold in rungs', () => {
     expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0'");
   });
 });
+
+describe('1.11.918 the time cut waits for the turn as well', () => {
+  const gates = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+
+  it('does not cut a red bag on a falling tick', () => {
+    // GRehQKv9 was cut by never_arm_time_red at -19.51% on a falling print after
+    // 50 minutes. 1.11.916 only covered hard_stop and cliff_dump.
+    expect(gates).toContain('if (pcOk && turned) {');
+  });
+
+  it('leaves the hold ceiling as the backstop that ignores the turn', () => {
+    // Past max hold we cannot prove green, so that exit stays unconditional.
+    expect(gates).toContain("reason: 'max_hold_underwater'");
+    expect(gates).toContain("reason: 'never_arm_timeout'");
+  });
+});
