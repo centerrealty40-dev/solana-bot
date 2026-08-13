@@ -64,7 +64,7 @@ import { isRunnerPartialExit } from './sell-partial.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
-import { prefetchDexScreenerPairDetailsMany } from '../papertrader/pricing/dexscreener-quote-cache.js';
+import { prefetchDexScreenerPairDetailsMany, fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
@@ -1885,6 +1885,18 @@ async function tryExits(
   }
 
   const toSell: MarkExitDecision[] = [];
+  const streamRows = markRows.filter((r) => r.source === 'stream' && r.px != null);
+  if (streamRows.length > 0) {
+    await prefetchDexScreenerPairDetailsMany(
+      streamRows.map((r) => r.mint),
+      {
+        nowMs,
+        allowedDexIds: cfg.entry.allowedDexIds,
+        cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+        bypassGate: true,
+      },
+    ).catch(() => undefined);
+  }
   for (const { mint, px, volume5mUsd, pc5mPct, source } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
@@ -1977,6 +1989,17 @@ async function tryExits(
       markPriceUsd: px,
       gates: cfg.exit,
       markJumpConfirmMaxMs: cfg.markJumpConfirmMaxMs,
+      dexCrossCheckPx:
+        source === 'stream' && px != null
+          ? (
+              await fetchDexScreenerPairDetails(mint, {
+                nowMs,
+                allowedDexIds: cfg.entry.allowedDexIds,
+                cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+                bypassGate: true,
+              })
+            )?.priceUsd ?? null
+          : null,
       nowMs,
       pc5mPct,
       volume5mUsd,

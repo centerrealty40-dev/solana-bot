@@ -197,3 +197,20 @@ describe('1.11.920 the trail, the feed and the repeat sell', () => {
     expect(loop).toContain('after.lastSellMarkPriceUsd = decision.markPriceUsd;');
   });
 });
+
+describe('1.11.921 a stream cliff Dex never saw is not a cliff', () => {
+  const eng = readFileSync(resolve('src/milddip/exit-engine.ts'), 'utf8');
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+
+  it('cross-checks Dex before deciding on a stream print', () => {
+    // 3J8CiL: stream 1.98e-06 (-93%), Dex 3.124e-05 (+2%), cliff_dump fired anyway.
+    expect(eng).toContain('dexCrossCheckPx?: number | null;');
+    expect(eng).toContain('decisionMark = args.dexCrossCheckPx;');
+    expect(loop).toContain('dexCrossCheckPx:');
+  });
+
+  it('does not treat quarantine expiry as confirmation when Dex disagrees', () => {
+    expect(eng).toContain('markDiscardStreamOutlier: true');
+    expect(eng).toContain('ageing out is not confirmation of a stream phantom');
+  });
+});
