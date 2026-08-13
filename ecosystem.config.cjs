@@ -3155,8 +3155,25 @@ const PM2_APPS = [
          * 65.9% of them — by far the largest single blocker. Their median
          * liquidity at entry is $11,344 and p25 is $6,726, i.e. our floor sat
          * above the middle of the range they trade in.
+         *
+         * 1.11.894 — $8k. The band the old floor admitted is a standing loss and
+         * the only liquidity band negative in every window:
+         *
+         *   liquidity    last 12h   last 24h   whole journal
+         *   < $8k          −0.129     −0.070      −0.112   USD/pos
+         *   $8–15k         −0.013     −0.097      −0.117
+         *   $15–30k        +0.048     −0.023      −0.017
+         *   > $80k         −0.051     −0.012      −0.008
+         *
+         * 238 positions below $8k across the journal. The leaders agree from the
+         * other side: over 18,475 of their buy moments the p25 liquidity is
+         * $8,150, so they essentially do not trade under it. 7mPKEd18 came in at
+         * $7,686 with a $13.8k market cap.
+         *
+         * $8–15k is negative in all three windows too, but the 12h reading is
+         * near zero and it holds 592 positions, so it waits for more clean data.
          */
-        MILD_DIP_MIN_LIQUIDITY_USD: '6000',
+        MILD_DIP_MIN_LIQUIDITY_USD: '8000',
         /**
          * 1.11.776 — global entry floor $5k (was $50k). One clip tier ($10);
          * turn→dump gate still selects depth. Knife/micro floor matches.

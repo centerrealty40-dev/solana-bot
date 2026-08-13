@@ -25,11 +25,12 @@ describe('mild-dip liquidity floor', () => {
     return m ? m[1] : null;
   }
 
-  it('sits inside the range the leaders trade, at $6k', () => {
-    // 1288 leader buys with our own metrics within ten minutes: a $15k floor
-    // blocked 65.9% of them, the largest single blocker by far. Their median
-    // liquidity at entry is $11,344, p25 $6,726.
-    expect(Number(botEnv('MILD_DIP_MIN_LIQUIDITY_USD'))).toBe(6_000);
+  it('sits at the p25 of their entries, $8k (1.11.894)', () => {
+    // Below $8k is the only liquidity band negative in every window: -0.129 per
+    // position over 12h, -0.070 over 24h, -0.112 across the journey, on 238
+    // positions. Over 18,475 leader buy moments their p25 liquidity is $8,150,
+    // so they essentially do not trade under it either.
+    expect(Number(botEnv('MILD_DIP_MIN_LIQUIDITY_USD'))).toBe(8_000);
   });
 
   it('does not go below the p10 of their entries', () => {
