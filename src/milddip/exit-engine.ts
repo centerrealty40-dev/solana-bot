@@ -251,6 +251,7 @@ export function decideMarkExit(args: {
     mfeBankStage,
     gates,
     heldMs,
+    troughPriceUsd: pos.postEntryTroughUsd,
     nowMs,
     pc5mPct: args.pc5mPct ?? null,
     volume5mUsd: args.volume5mUsd ?? null,

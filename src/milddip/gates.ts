@@ -170,6 +170,22 @@ export type MildDipExitGates = {
   deadSetTurnFadeFrac: number;
   deadSetMinDropPct: number;
   deadSetBouncePct: number;
+  /**
+   * 1.11.916 — the stop level says *decide*, not *dump at this instant*.
+   *
+   * A hard stop that fires on the print itself sells into the red candle, which
+   * is the worst tick of the move by construction: the sweep that broke the
+   * level is still in the book. 4rLgnF went out at -16.0% and traded 8.5% above
+   * our exit four minutes later.
+   *
+   * So once the level is breached we wait for the price to come this far off its
+   * trough and leave on the green tick instead. Nothing is being held and hoped
+   * for: `cliff_dump` still fires instantly on a deeper collapse, and the
+   * never-arm family (time_red at 15m, dead, vol_fade) still ends a bag that
+   * flatlines below the level, because a breach without a bounce now falls
+   * through to them rather than returning. 0 = fire on the print.
+   */
+  hardStopBouncePct: number;
   deadSetMinHoldMs: number;
   /**
    * 1.11.855 — once MFE has reached `breakevenArmPct`, close the whole bag if
@@ -847,6 +863,8 @@ export function evaluateMildDipPeakGiveback(args: {
   mfeBankStage?: number;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
+  /** Lowest mark seen on this bag - the stop waits for a bounce off it. */
+  troughPriceUsd?: number | null;
   /** Live Dex/stream pc5m % — required when neverArmTimeRedMaxPc5mPct > 0. */
   pc5mPct?: number | null;
   /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
@@ -1082,6 +1100,19 @@ export function evaluateMildDipPeakGiveback(args: {
       ? gates.hardStopPartialFraction
       : 0;
 
+  /**
+   * 1.11.916 — has the price turned yet? A breach with no turn is not an exit.
+   */
+  const stopBounce = gates.hardStopBouncePct > 0 ? gates.hardStopBouncePct : 0;
+  const troughPx = args.troughPriceUsd;
+  // An unknown trough falls back to firing on the print: a missing input must
+  // not be able to switch the stop off.
+  const turned =
+    stopBounce <= 0 ||
+    troughPx == null ||
+    !(troughPx > 0) ||
+    (args.markPriceUsd / troughPx - 1) * 100 >= stopBounce;
+
   if (hardPartial > 0) {
     // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
     // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
@@ -1089,7 +1120,7 @@ export function evaluateMildDipPeakGiveback(args: {
     if (cliff > 0 && pnlPct <= -cliff) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
-    if (hardStop > 0 && pnlPct <= -hardStop) {
+    if (hardStop > 0 && pnlPct <= -hardStop && turned) {
       if (!scaleOutDone) {
         return {
           ...hold,
@@ -1101,12 +1132,12 @@ export function evaluateMildDipPeakGiveback(args: {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
   } else {
-    // Legacy: full hard_stop before cliff (tighter floor wins first).
-    if (hardStop > 0 && pnlPct <= -hardStop) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
-    }
+    // The deeper collapse is answered on the print; the stop waits for the turn.
     if (cliff > 0 && pnlPct <= -cliff) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
+    }
+    if (hardStop > 0 && pnlPct <= -hardStop && turned) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
   }
 

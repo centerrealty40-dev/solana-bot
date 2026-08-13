@@ -3462,6 +3462,9 @@ const PM2_APPS = [
          * median +28.86% - says it is reachable.
          */
         MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '5',
+        // 1.11.916 - the stop level decides, the bounce times the sale. 4rLgnF
+        // went out at -16.0% and traded 8.5% above our exit four minutes later.
+        MILD_DIP_EXIT_HARD_STOP_BOUNCE_PCT: '3',
         MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag

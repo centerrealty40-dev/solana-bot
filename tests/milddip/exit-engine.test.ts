@@ -595,14 +595,14 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d?.fraction).toBe(1);
     });
 
-    it('leaves the loss exits exactly as they were', () => {
+    it('leaves the loss exits full exits', () => {
+      // These bags carry no trough, so the stop keeps its old behaviour and
+      // fires on the print (1.11.916). The −50% cliff is answered there too.
       const stop = at(bag('g_stop'), 74);
       expect(stop?.reason).toBe('hard_stop');
       expect(stop?.fraction).toBe(1);
-      // The −25% floor is checked before the −50% cliff, so a −51% mark is
-      // still a hard_stop; both are full exits and neither is touched here.
       const deep = at(bag('g_deep'), 49);
-      expect(deep?.reason).toBe('hard_stop');
+      expect(deep?.reason).toBe('cliff_dump');
       expect(deep?.fraction).toBe(1);
     });
 
