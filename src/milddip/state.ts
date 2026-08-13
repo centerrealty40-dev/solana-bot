@@ -46,6 +46,8 @@ export type MildDipOpenPosition = {
    * twice before it decides anything.
    */
   lastMarkPriceUsd?: number;
+  /** 1.11.920 — since when the feed has been handing back the same number. */
+  markUnchangedSinceMs?: number;
   pendingMarkPriceUsd?: number;
   /**
    * 1.11.889 — which feed the quarantined print came from. Two byte-identical
@@ -84,6 +86,8 @@ export type MildDipOpenPosition = {
    * / 2HJmyTW, the second on a reading from before the first.
    */
   lastSellAtMs?: number;
+  /** 1.11.920 — the mark the last sell fired on; the next needs a different one. */
+  lastSellMarkPriceUsd?: number;
   /** Cumulative ms this bag has held a soft exit because the gate still passes. */
   exitDeferredMs?: number;
   /** Wall clock of the last such deferral, for accumulating the budget. */

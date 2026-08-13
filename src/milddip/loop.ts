@@ -1830,11 +1830,23 @@ async function tryExits(
   const armedBound = cfg.markArmedMaxAgeMs > 0 ? cfg.markArmedMaxAgeMs : 0;
   const armedStale =
     armedBound > 0
-      ? refreshOrder.filter(
-          (m) =>
-            state.open[m]?.trailArmed === true &&
-            openMarkRingAgeMs(m, nowMs) >= armedBound,
-        )
+      ? refreshOrder.filter((m) => {
+          const p = state.open[m];
+          if (p?.trailArmed !== true) return false;
+          if (openMarkRingAgeMs(m, nowMs) >= armedBound) return true;
+          /**
+           * 1.11.920 — a feed that keeps re-writing the same number looks fresh
+           * by age and carries nothing. GPzpoXpD held one stream price across
+           * every read from near its peak, so the age check passed while the
+           * trail sat blind, and the first moving print was a 46.78% giveback.
+           */
+          const px = mildDipPriceRing.lastPrice(m, nowMs)?.priceUsd;
+          const unchangedSinceMs = p.markUnchangedSinceMs;
+          if (px != null && px === p.lastMarkPriceUsd && unchangedSinceMs != null) {
+            return nowMs - unchangedSinceMs >= armedBound;
+          }
+          return false;
+        })
       : [];
   if (armedStale.length > 0) {
     await prefetchDexScreenerPairDetailsMany(armedStale, {
@@ -1890,6 +1902,21 @@ async function tryExits(
       cfg.exitMinSpacingMs > 0 &&
       pos.lastSellAtMs != null &&
       nowMs - pos.lastSellAtMs < cfg.exitMinSpacingMs
+    ) {
+      continue;
+    }
+    /**
+     * 1.11.920 — and the price has to have moved since the last sell.
+     *
+     * Spacing alone only buys time. GPzpoXpD went out in three legs at 20:43:46,
+     * 20:44:00 and 20:44:13, each 13 seconds apart and every one of them on the
+     * identical mark 1.6827e-04, so we paid three sets of fees for one decision
+     * taken on one number.
+     */
+    if (
+      px != null &&
+      pos.lastSellMarkPriceUsd != null &&
+      px === pos.lastSellMarkPriceUsd
     ) {
       continue;
     }
@@ -2352,7 +2379,10 @@ async function tryExits(
       // Stamped after the attempt, so the settle window starts from the moment
       // the size on chain could have changed (1.11.879).
       const after = state.open[decision.mint];
-      if (after) after.lastSellAtMs = Date.now();
+      if (after) {
+        after.lastSellAtMs = Date.now();
+        after.lastSellMarkPriceUsd = decision.markPriceUsd;
+      }
     }
   }).catch((err) => {
     console.warn(

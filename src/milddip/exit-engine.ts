@@ -356,6 +356,9 @@ export function applyMarkDecisionToPosition(
     pos.pendingMarkSource = decision.markSource ?? undefined;
     return;
   }
+  if (pos.lastMarkPriceUsd !== decision.markPriceUsd || pos.markUnchangedSinceMs == null) {
+    pos.markUnchangedSinceMs = Date.now();
+  }
   pos.lastMarkPriceUsd = decision.markPriceUsd;
   pos.pendingMarkPriceUsd = undefined;
   pos.pendingMarkSource = undefined;

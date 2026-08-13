@@ -3573,7 +3573,10 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK2_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
         /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
-        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '12',
+        // 1.11.920 - the sleeve is what actually trails a bag once the ladder is
+        // off, so it has to carry the same giveback as the trail. AvecKFxn peaked
+        // at +21.49% and this cut it at -12.58% while GIVEBACK_PCT said 20.
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '20',
         /**
          * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):
          * half the remainder at every +8%, no top rung. Replaces bank1 +6%/40% +

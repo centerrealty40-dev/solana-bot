@@ -18,7 +18,7 @@ describe('exit spacing after a sell', () => {
   });
 
   it('stamps the sell time so the window starts when the size could change', () => {
-    expect(loop).toContain('if (after) after.lastSellAtMs = Date.now();');
+    expect(loop).toContain('after.lastSellAtMs = Date.now();');
   });
 
   it('the guard sits alongside sellInFlight, not instead of it', () => {
@@ -98,8 +98,8 @@ describe('1.11.917 an armed bag is not judged on a print that has not moved', ()
   it('awaits a fresh Dex read for armed bags whose ring went stale', () => {
     // GPzpoXpD: 44 seconds on one frozen stream print while the coin halved, so
     // the giveback read -1.48% until it read -48.59% in a single step.
-    expect(loop).toContain("state.open[m]?.trailArmed === true &&");
-    expect(loop).toContain('openMarkRingAgeMs(m, nowMs) >= armedBound');
+    expect(loop).toContain("if (p?.trailArmed !== true) return false;");
+    expect(loop).toContain('if (openMarkRingAgeMs(m, nowMs) >= armedBound) return true;');
     expect(loop).toContain('await prefetchDexScreenerPairDetailsMany(armedStale,');
   });
 
@@ -170,5 +170,30 @@ describe('1.11.919 the jump quarantine lets go after a few seconds', () => {
   it('measures the wait from when the value first appeared', () => {
     // Re-stamping on every refusal would restart the clock and never expire.
     expect(eng).toContain('if (pos.pendingMarkPriceUsd !== decision.markPriceUsd || pos.pendingMarkAtMs == null) {');
+  });
+});
+
+describe('1.11.920 the trail, the feed and the repeat sell', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+
+  it('gives the sleeve the same giveback as the trail', () => {
+    // With the ladder off the sleeve is what trails the bag. AvecKFxn peaked at
+    // +21.49% and it cut at -12.58% while GIVEBACK_PCT said 20.
+    expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '20'");
+    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '20'");
+  });
+
+  it('treats an unchanging feed as stale even when its timestamps are fresh', () => {
+    // GPzpoXpD held one stream price from near its peak, so the age check passed
+    // and the first moving print was a 46.78% giveback.
+    expect(loop).toContain('const unchangedSinceMs = p.markUnchangedSinceMs;');
+    expect(loop).toContain('return nowMs - unchangedSinceMs >= armedBound;');
+  });
+
+  it('will not sell twice on the same number', () => {
+    // Three legs 13s apart, all on the identical mark 1.6827e-04.
+    expect(loop).toContain('px === pos.lastSellMarkPriceUsd');
+    expect(loop).toContain('after.lastSellMarkPriceUsd = decision.markPriceUsd;');
   });
 });
