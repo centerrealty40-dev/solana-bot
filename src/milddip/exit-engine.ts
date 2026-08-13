@@ -248,13 +248,34 @@ export function decideMarkExit(args: {
         pendingPx != null &&
         markPriceUsd === pendingPx
       ) {
-        if (args.markSource === 'stream') {
-          const dexPx = args.dexCrossCheckPx;
-          acceptQuarantined =
-            dexPx != null &&
-            dexPx > 0 &&
-            Math.abs(markPriceUsd / dexPx - 1) * 100 <= jumpLimit;
-          if (!acceptQuarantined) {
+        acceptQuarantined = args.markSource !== 'stream';
+      }
+      /**
+       * 1.11.923 — stream confirmation is not confirmation without Dex.
+       *
+       * 46vV3Z: Dex held −5% while stream printed 3.30e-05 (−52%). Two stream
+       * ticks at the phantom confirmed each other through `confirms`, cliff_dump
+       * fired on the red leg, fill came back at −41.9%. Dex agreement is required
+       * for both expiry and the second-tick confirm path.
+       */
+      const streamNeedsDex =
+        args.markSource === 'stream' &&
+        (acceptQuarantined ||
+          (quarantineExpired &&
+            pendingPx != null &&
+            markPriceUsd === pendingPx));
+      if (streamNeedsDex) {
+        const dexPx = args.dexCrossCheckPx;
+        const dexOk =
+          dexPx != null &&
+          dexPx > 0 &&
+          Math.abs(markPriceUsd / dexPx - 1) * 100 <= jumpLimit;
+        if (!dexOk) {
+          if (
+            quarantineExpired &&
+            pendingPx != null &&
+            markPriceUsd === pendingPx
+          ) {
             return {
               mint,
               markPriceUsd: pos.lastMarkPriceUsd ?? peakPrev,
@@ -278,6 +299,7 @@ export function decideMarkExit(args: {
               postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
             };
           }
+          acceptQuarantined = false;
         } else {
           acceptQuarantined = true;
         }
