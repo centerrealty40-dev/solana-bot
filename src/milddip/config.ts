@@ -113,10 +113,10 @@ const MildDipConfigSchema = z.object({
   cooldownBounceLookbackMs: z.coerce.number().int().min(60_000).max(3_600_000).default(300_000),
   /**
    * After a full exit: require mark ≥ this % below exit price before rebuy.
-   * Stream mark only — no Dex. 0 = off. Default 4.
+   * Stream mark only — no Dex. 0 = off.
+   * 1.11.908 — off live (re-entering above first entry outperforms); default 0.
    */
-  /** 1.11.757 — live default 10 (was 20). */
-  rebuyBelowExitPct: z.coerce.number().min(0).max(50).default(10),
+  rebuyBelowExitPct: z.coerce.number().min(0).max(50).default(0),
   /** How long the last-exit floor applies (ms). Default 15m. */
   rebuyBelowExitMaxAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
   /**
@@ -1043,7 +1043,7 @@ export function loadMildDipConfig(): MildDipConfig {
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     scanIntervalWithOpensMs: process.env.MILD_DIP_SCAN_INTERVAL_WITH_OPENS_MS ?? 3000,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,
-    rebuyBelowExitPct: process.env.MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 10,
+    rebuyBelowExitPct: process.env.MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 0,
     rebuyBelowExitMaxAgeMs: process.env.MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS ?? 900_000,
     rebuyLiqDropEnabled: envBool('MILD_DIP_REBUY_LIQ_DROP', true),
     rebuyLiqDropMaxAgeMs: process.env.MILD_DIP_REBUY_LIQ_DROP_MAX_AGE_MS ?? 21_600_000,
