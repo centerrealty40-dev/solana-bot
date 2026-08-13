@@ -119,3 +119,20 @@ describe('1.11.872 entry overpay is capped', () => {
     expect(Number(botEnv('MILD_DIP_FAST_PATH_CHASE_PCT'))).toBe(4);
   });
 });
+
+describe('1.11.895 the five minutes must be trading', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('gates 5m volume against the hourly pace, not just an absolute floor', () => {
+    // EkcTa8n1: $619 of 5m volume against $34,662 for the hour is 21% of the
+    // hourly pace. Below 0.3 loses in all three windows, 264 positions.
+    expect(eco).toContain("MILD_DIP_MIN_VOL5M_PACE_RATIO: '0.3'");
+    expect(eco).toContain("MILD_DIP_MIN_VOLUME_5M_USD: '150'");
+  });
+
+  it('a missing hourly reading does not block on its own', () => {
+    const src = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+    expect(src).toContain('v1 != null && Number.isFinite(v1) && v1 > 0');
+    expect(src).toContain('vol5m_pace=');
+  });
+});

@@ -30,6 +30,18 @@ export type MildDipEntryGates = {
   maxDipPct: number;
   minVolume5mUsd: number;
   /**
+   * 1.11.895 — the five minutes must actually be trading.
+   *
+   * `minVolume5mUsd` is absolute, so a coin with a busy hour and a dead last
+   * five minutes clears it. EkcTa8n1 came in on $619 of 5m volume against
+   * $34,662 for the hour: 21% of the hourly pace, a drift with nobody in it
+   * rather than a flush. It fell 24% over the next ten minutes and the leader
+   * bought the actual flush 21 seconds after our stop.
+   *
+   * Ratio of 5m volume to the hourly pace (`vol1h / 12`). 0 = off.
+   */
+  minVolume5mPaceRatio: number;
+  /**
    * 1.11.870 — upper bound at entry. A name doing more than this in five
    * minutes is inside an event: over 499 closed bags, the 19% above $40k
    * carried 42% of the whole loss at a 0.298 win rate. 0 = off.
@@ -312,6 +324,19 @@ export function evaluateMildDipEntry(
     const v = metrics.volume5mUsd;
     if (v == null || !Number.isFinite(v)) reasons.push('missing_volume_5m');
     else if (v < gates.minVolume5mUsd) reasons.push(`vol5m=${v.toFixed(0)}<${gates.minVolume5mUsd}`);
+  }
+
+  if (gates.minVolume5mPaceRatio > 0) {
+    const v5 = metrics.volume5mUsd;
+    const v1 = metrics.volume1hUsd;
+    // No hourly reading is not evidence of a dead window; the absolute floor
+    // above still applies.
+    if (v5 != null && Number.isFinite(v5) && v1 != null && Number.isFinite(v1) && v1 > 0) {
+      const pace = v5 / (v1 / 12);
+      if (pace < gates.minVolume5mPaceRatio) {
+        reasons.push(`vol5m_pace=${pace.toFixed(2)}<${gates.minVolume5mPaceRatio}`);
+      }
+    }
   }
 
   if (gates.minLiquidityUsd > 0) {

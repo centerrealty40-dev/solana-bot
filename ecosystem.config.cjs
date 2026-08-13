@@ -3099,6 +3099,26 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_VOLUME_5M_USD: '150',
         /**
+         * 1.11.895 — the last five minutes must actually be trading.
+         *
+         * The absolute floor above is cleared by a coin with a busy hour and a
+         * dead last five minutes. EkcTa8n1 came in on $619 of 5m volume against
+         * $34,662 for the hour — 21% of the hourly pace, a drift with nobody in
+         * it rather than a flush. It fell 24% over the next ten minutes, we cut
+         * at −18.4%, and the leader bought the actual flush 21 seconds later.
+         *
+         * Ratio of 5m volume to `vol1h / 12`. Below 0.3 loses in every window:
+         *
+         *   pace       last 12h   last 24h   whole journal
+         *   < 0.3        −0.080     −0.040      −0.095   USD/pos
+         *   0.3–0.6      −0.053     −0.009      −0.013
+         *   0.6–1.0      −0.050     −0.062      −0.056
+         *
+         * 264 positions below 0.3 across the journal. A missing hourly reading
+         * does not block: the absolute floor still applies there.
+         */
+        MILD_DIP_MIN_VOL5M_PACE_RATIO: '0.3',
+        /**
          * 1.11.870 — ceiling at $40k of 5m volume. Over 499 fully closed bags
          * joined to the entry snapshot, counted in cash:
          *
