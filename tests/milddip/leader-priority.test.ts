@@ -78,7 +78,7 @@ describe('1.11.905 a name a leader is buying may be younger', () => {
 
   it('every other floor still applies to a young name', () => {
     expect(eco).toContain("MILD_DIP_MIN_LIQUIDITY_USD: '8000'");
-    expect(eco).toContain("MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.03'");
+    expect(eco).toContain("MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.06'");
     expect(eco).toContain("MILD_DIP_MIN_VOL5M_PACE_RATIO: '0.3'");
   });
 });

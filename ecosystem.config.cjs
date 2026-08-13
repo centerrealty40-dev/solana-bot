@@ -3162,7 +3162,22 @@ const PM2_APPS = [
          * bases were fixed, and cutting it would drop 40% of entries at once, so it
          * waits for clean data rather than going out on the same breath.
          */
-        MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.03',
+        /**
+         * 1.11.912 — 0.06, because 0.03 did not catch the coin it was built from.
+         *
+         * GCa9TZ ran 0.038 after both leaders walked away, which cleared a floor
+         * at 0.03 by a hair, and we would have kept buying it. The band it sits in
+         * is negative in every window anyway, by the same table that set the floor:
+         *
+         *   turn        last 24h   last 48h   whole journal
+         *   < 0.03       -0.0635    -0.0552      -0.0644   USD/pos
+         *   0.03-0.06    -0.0459    -0.0572      -0.0490
+         *   0.06-0.12    +0.0192    -0.0086      -0.0163
+         *
+         * 0.06 is where the sign turns. It costs another 206 positions and -10.09
+         * USD of loss across the journal on top of the 211 the first floor took.
+         */
+        MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.06',
         /**
          * 1.11.907 — and no higher than 0.25. Past that the name is inside an
          * event rather than trading, and we are on the wrong side of it: 731

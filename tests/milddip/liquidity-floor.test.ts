@@ -142,7 +142,9 @@ describe('1.11.904 a coin has to still be changing hands', () => {
     // GCa9TZ ran turnover 0.209 while both leaders took it and 0.038 after they
     // stopped, with liquidity barely moved. We bought for another twelve hours.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.03'");
+    // 1.11.912 — 0.06, because GCa9TZ ran 0.038 after the leaders left and would
+    // have cleared a floor at 0.03. 0.06 is where the sign turns.
+    expect(eco).toContain("MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.06'");
   });
 
   it('is independent of the pace gate, which cannot see it', () => {
