@@ -2945,6 +2945,8 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
+        /** 1.11.924 — no buy on falling blade (wait_dip / dex / stream). */
+        MILD_DIP_ENTRY_REQUIRE_STABILIZE: '1',
         /**
          * 1.11.803 — wait-dip back ON, now *alongside* turn→dump: the formula
          * picks the mint, wait-dip picks the price. 8h CF on live buys: entering

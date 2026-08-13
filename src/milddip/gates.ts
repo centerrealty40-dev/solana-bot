@@ -620,6 +620,84 @@ export function evaluateRebuyBelowExit(args: {
   return { pass: reasons.length === 0, reasons };
 }
 
+/** Sources that already passed a stabilize / bounce gate before buy. */
+export function entryStabilizeExemptDipSource(dipSource: string | null | undefined): boolean {
+  return dipSource === 'knife_stabilize' || dipSource === 'mild_stabilize';
+}
+
+export type EntryStabilizeGates = {
+  enabled: boolean;
+  minBouncePct: number;
+  quietMs: number;
+  stabilizeBandPct: number;
+};
+
+/**
+ * Universal entry gate: refuse buys on a falling blade.
+ * Pass when price bounced ≥ minBouncePct off the post-peak trough, or held
+ * quietly within stabilizeBandPct of the trough for quietMs (knife-style).
+ */
+export function evaluateEntryStabilizeRequired(args: {
+  freshPriceUsd: number | null;
+  troughPriceUsd: number | null;
+  troughAtMs: number | null;
+  nowMs: number;
+  gates: EntryStabilizeGates;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const { freshPriceUsd, troughPriceUsd, troughAtMs, nowMs, gates } = args;
+
+  if (!gates.enabled) {
+    return { pass: true, reasons };
+  }
+
+  if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
+    reasons.push('entry_stabilize_missing_price');
+    return { pass: false, reasons };
+  }
+
+  if (troughPriceUsd == null || !(troughPriceUsd > 0) || troughAtMs == null || !(troughAtMs > 0)) {
+    reasons.push('entry_stabilize_missing_trough');
+    return { pass: false, reasons };
+  }
+
+  const bouncePct = bounceFromTroughPct(freshPriceUsd, troughPriceUsd);
+  if (bouncePct == null) {
+    reasons.push('entry_stabilize_missing_bounce');
+    return { pass: false, reasons };
+  }
+
+  const minBounce = gates.minBouncePct > 0 ? gates.minBouncePct : 0;
+  if (minBounce > 0 && bouncePct >= minBounce - 1e-9) {
+    reasons.push(
+      `entry_stabilize_bounce=${bouncePct.toFixed(2)}%>=min=${minBounce}`,
+    );
+    return { pass: true, reasons };
+  }
+
+  const quietAgeMs = nowMs - troughAtMs;
+  const band = gates.stabilizeBandPct > 0 ? gates.stabilizeBandPct : 0;
+  const quiet = gates.quietMs > 0 ? gates.quietMs : 0;
+  if (
+    quiet > 0 &&
+    band > 0 &&
+    quietAgeMs >= quiet &&
+    bouncePct >= 0 &&
+    bouncePct <= band + 1e-9
+  ) {
+    reasons.push(
+      `entry_stabilize_hold=${bouncePct.toFixed(2)}%<=${band}_quiet=${quietAgeMs}ms`,
+    );
+    return { pass: true, reasons };
+  }
+
+  reasons.push(
+    `entry_no_stabilize bounce=${bouncePct.toFixed(2)}%` +
+      `_min=${minBounce}_band=${band}_quiet=${quietAgeMs}ms<${quiet}`,
+  );
+  return { pass: false, reasons };
+}
+
 /**
  * After mint cooldown: refuse rebuy if mark already bounced too far off the
  * trough we observed (stream/Dex samples) during the cooldown lookback window.

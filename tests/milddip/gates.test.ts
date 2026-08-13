@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   bounceFromTroughPct,
+  entryStabilizeExemptDipSource,
+  evaluateEntryStabilizeRequired,
   evaluateFlatMicroDip,
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
@@ -1616,6 +1618,58 @@ describe('knifeStabilizeMinMarketCapUsd', () => {
         microMinMarketCapUsd: 15_000,
       }),
     ).toBe(50_000);
+  });
+});
+
+describe('evaluateEntryStabilizeRequired', () => {
+  const gates = {
+    enabled: true,
+    minBouncePct: 1.5,
+    quietMs: 45_000,
+    stabilizeBandPct: 2.5,
+  };
+  const nowMs = 1_000_000;
+
+  it('blocks J2HuKn-style blade catch (0% bounce, fresh trough)', () => {
+    const v = evaluateEntryStabilizeRequired({
+      freshPriceUsd: 0.00004296,
+      troughPriceUsd: 0.00004296,
+      troughAtMs: nowMs - 5_000,
+      nowMs,
+      gates,
+    });
+    expect(v.pass).toBe(false);
+    expect(v.reasons.join(',')).toContain('entry_no_stabilize');
+  });
+
+  it('passes on controlled bounce off trough', () => {
+    const v = evaluateEntryStabilizeRequired({
+      freshPriceUsd: 0.00004361,
+      troughPriceUsd: 0.00004296,
+      troughAtMs: nowMs - 5_000,
+      nowMs,
+      gates,
+    });
+    expect(v.pass).toBe(true);
+    expect(v.reasons.join(',')).toContain('entry_stabilize_bounce');
+  });
+
+  it('passes on quiet hold near trough', () => {
+    const v = evaluateEntryStabilizeRequired({
+      freshPriceUsd: 0.00004317,
+      troughPriceUsd: 0.00004296,
+      troughAtMs: nowMs - 60_000,
+      nowMs,
+      gates,
+    });
+    expect(v.pass).toBe(true);
+    expect(v.reasons.join(',')).toContain('entry_stabilize_hold');
+  });
+
+  it('exempts knife/mild_stabilize sources', () => {
+    expect(entryStabilizeExemptDipSource('knife_stabilize')).toBe(true);
+    expect(entryStabilizeExemptDipSource('mild_stabilize')).toBe(true);
+    expect(entryStabilizeExemptDipSource('wait_dip')).toBe(false);
   });
 });
 
