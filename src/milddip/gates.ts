@@ -42,6 +42,21 @@ export type MildDipEntryGates = {
    */
   minVolume5mPaceRatio: number;
   /**
+   * 1.11.904 — 5m volume against pool liquidity: is the name still being traded
+   * relative to its own size.
+   *
+   * GCa9TZ is the case. While both leaders were taking it, its turnover ran 0.209
+   * and its 5m volume $14,090; after they stopped it ran 0.038 on $4,307, and its
+   * liquidity had barely moved ($118.5k to $113.7k) — so nothing about the pool
+   * broke, the name simply stopped changing hands. We kept buying it for another
+   * twelve hours, nine more positions, −2.80 USD.
+   *
+   * The pace gate does not see this: 5m and 1h volume fell together, so the ratio
+   * between them stayed healthy. Only the comparison against liquidity moves.
+   * 0 = off.
+   */
+  minTurnover5mLiq: number;
+  /**
    * 1.11.870 — upper bound at entry. A name doing more than this in five
    * minutes is inside an event: over 499 closed bags, the 19% above $40k
    * carried 42% of the whole loss at a 0.298 win rate. 0 = off.
@@ -324,6 +339,17 @@ export function evaluateMildDipEntry(
     const v = metrics.volume5mUsd;
     if (v == null || !Number.isFinite(v)) reasons.push('missing_volume_5m');
     else if (v < gates.minVolume5mUsd) reasons.push(`vol5m=${v.toFixed(0)}<${gates.minVolume5mUsd}`);
+  }
+
+  if (gates.minTurnover5mLiq > 0) {
+    const v5 = metrics.volume5mUsd;
+    const liq = metrics.liquidityUsd;
+    if (v5 != null && Number.isFinite(v5) && liq != null && Number.isFinite(liq) && liq > 0) {
+      const turn = v5 / liq;
+      if (turn < gates.minTurnover5mLiq) {
+        reasons.push(`turn=${turn.toFixed(4)}<${gates.minTurnover5mLiq}`);
+      }
+    }
   }
 
   if (gates.minVolume5mPaceRatio > 0) {

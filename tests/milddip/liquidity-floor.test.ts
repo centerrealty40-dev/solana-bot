@@ -136,3 +136,20 @@ describe('1.11.895 the five minutes must be trading', () => {
     expect(src).toContain('vol5m_pace=');
   });
 });
+
+describe('1.11.904 a coin has to still be changing hands', () => {
+  it('gates 5m volume against pool liquidity', () => {
+    // GCa9TZ ran turnover 0.209 while both leaders took it and 0.038 after they
+    // stopped, with liquidity barely moved. We bought for another twelve hours.
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.03'");
+  });
+
+  it('is independent of the pace gate, which cannot see it', () => {
+    // 5m and 1h volume fell together there, so their ratio stayed healthy.
+    const src = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
+    expect(src).toContain('const turn = v5 / liq;');
+    expect(src).toContain('turn < gates.minTurnover5mLiq');
+    expect(src).toContain('vol5m_pace=');
+  });
+});

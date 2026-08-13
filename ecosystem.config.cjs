@@ -3135,6 +3135,35 @@ const PM2_APPS = [
          */
         MILD_DIP_MIN_VOL5M_PACE_RATIO: '0.3',
         /**
+         * 1.11.904 — 5m volume must be at least 3% of pool liquidity: the name has
+         * to still be changing hands relative to its own size.
+         *
+         * GCa9TZ is the case that found this. While both leaders were taking it,
+         * turnover ran 0.209 on $14,090 of 5m volume; after they stopped it ran
+         * 0.038 on $4,307, with liquidity barely moved ($118.5k to $113.7k) and
+         * market cap down only a fifth. Nothing about the pool broke - the coin
+         * simply stopped trading. We kept buying for another twelve hours, nine
+         * more positions, −2.80 USD, while both leaders stayed away.
+         *
+         * The pace gate cannot see this, because 5m and 1h volume fell together
+         * and their ratio stayed healthy. Only the comparison against liquidity
+         * moves. By turnover at entry, across three windows:
+         *
+         *   turn        last 24h   last 48h   whole journal
+         *   < 0.03       -0.0635    -0.0552      -0.0644   USD/pos
+         *   0.03-0.06    -0.0459    -0.0572      -0.0490
+         *   0.06-0.12    +0.0192    -0.0086      -0.0163
+         *   0.12-0.25    -0.0565    -0.0344      -0.0325
+         *   > 0.25       -0.0568    -0.0622      -0.1145
+         *
+         * The floor goes at the bottom band, 211 positions and −13.58 USD across
+         * the journal, negative in every window. The top band is worse by dollars
+         * (731 positions, −83.71) but that figure leans on the era before the exit
+         * bases were fixed, and cutting it would drop 40% of entries at once, so it
+         * waits for clean data rather than going out on the same breath.
+         */
+        MILD_DIP_MIN_TURNOVER_5M_LIQ: '0.03',
+        /**
          * 1.11.870 — ceiling at $40k of 5m volume. Over 499 fully closed bags
          * joined to the entry snapshot, counted in cash:
          *

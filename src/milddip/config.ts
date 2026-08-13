@@ -522,6 +522,8 @@ const MildDipConfigSchema = z.object({
     minVolume5mUsd: z.number(),
     /** 1.11.895 — 5m volume as a share of the hourly pace. 0 = off. */
     minVolume5mPaceRatio: z.number(),
+    /** 1.11.904 — 5m volume over pool liquidity. 0 = off. */
+    minTurnover5mLiq: z.number(),
     /**
      * 1.11.870 — upper bound on 5m volume at entry. 0 = off.
      * A name doing this much in five minutes is inside an event, and we are on
@@ -695,6 +697,7 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 1.11.735 — default $500 (was $1500). Dex 5m volume floor before buy. */
     minVolume5mUsd: envNum('MILD_DIP_MIN_VOLUME_5M_USD', 300),
     minVolume5mPaceRatio: envNum('MILD_DIP_MIN_VOL5M_PACE_RATIO', 0),
+    minTurnover5mLiq: envNum('MILD_DIP_MIN_TURNOVER_5M_LIQ', 0),
     maxVolume5mUsd: envNum('MILD_DIP_MAX_VOLUME_5M_USD', 0),
     /** 1.11.700 — default $10k (canary $40k was too tight for mild dips). */
     minLiquidityUsd: envNum('MILD_DIP_MIN_LIQUIDITY_USD', 5_000),
