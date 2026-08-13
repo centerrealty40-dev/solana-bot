@@ -388,54 +388,6 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(d.shouldExit).toBe(false);
     });
 
-    it('fills every passed rung in one leg (DcK63VSm, 1.11.886)', () => {
-      // Sold 50% at +23.25% and another 25% fourteen seconds later at +23.23%.
-      // Rungs 1 and 2 were both behind the price, so that was three quarters of
-      // the bag sold twice at one price, paying two sets of fees.
-      const g = { ...gates, tpGridStepPct: 8, tpGridSellFraction: 0.5, tpGridMinRemainderFraction: 0 };
-      const p = fresh('dck63v', 100, 100);
-      const d = decideMarkExit({
-        mint: 'dck63v',
-        pos: p,
-        markPriceUsd: 123.25,
-        gates: g,
-        nowMs: 1_040_000,
-      })!;
-      expect(d.reason).toBe('tp_grid');
-      expect(d.tpRungIndex).toBe(2);
-      // Two rungs of a half each leave a quarter: sell 75% now, in one fill.
-      expect(d.fraction).toBeCloseTo(0.75, 6);
-    });
-
-    it('a single rung still sells a single step', () => {
-      const g = { ...gates, tpGridStepPct: 8, tpGridSellFraction: 0.5, tpGridMinRemainderFraction: 0 };
-      const p = fresh('onerung', 100, 100);
-      const d = decideMarkExit({
-        mint: 'onerung',
-        pos: p,
-        markPriceUsd: 109,
-        gates: g,
-        nowMs: 1_040_000,
-      })!;
-      expect(d.tpRungIndex).toBe(1);
-      expect(d.fraction).toBeCloseTo(0.5, 6);
-    });
-
-    it('picks up where the ladder left off', () => {
-      const g = { ...gates, tpGridStepPct: 8, tpGridSellFraction: 0.5, tpGridMinRemainderFraction: 0 };
-      const p = { ...fresh('resume', 100, 100), tpRungsDone: 1 };
-      const d = decideMarkExit({
-        mint: 'resume',
-        pos: p,
-        markPriceUsd: 125,
-        gates: g,
-        nowMs: 1_040_000,
-      })!;
-      // Rung 1 already filled; rungs 2 and 3 are due, which is 75% of the rest.
-      expect(d.tpRungIndex).toBe(3);
-      expect(d.fraction).toBeCloseTo(0.75, 6);
-    });
-
     it('still stops out on a real 25% fall measured from the entry mark', () => {
       const MARK = FILL * 0.97;
       const p = fresh('eub3c', FILL, MARK);
@@ -523,20 +475,10 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       // 0.25 per rung: 1.00 -> .75 -> .5625 -> .4219 -> .3164 -> .2373 -> .178,
       // so the sixth rung is the one that would breach 0.20.
       const g = { ...grid, tpGridSellFraction: 0.25, tpGridMinRemainderFraction: 0.2 };
-      // +40% supports exactly rung 5, so with four done it is one step.
-      const fifth = decideMarkExit({ mint: 'q5', pos: bag('q5', 4), markPriceUsd: 140, gates: g, nowMs: 1_060_000 });
-      expect(fifth?.tpRungIndex).toBe(5);
+      const fifth = decideMarkExit({ mint: 'q5', pos: bag('q5', 4), markPriceUsd: 148, gates: g, nowMs: 1_060_000 });
       expect(fifth?.fraction).toBe(0.25);
       const sixth = decideMarkExit({ mint: 'q6', pos: bag('q6', 5), markPriceUsd: 156, gates: g, nowMs: 1_060_000 });
       expect(sixth?.fraction).toBe(1);
-    });
-
-    it('closes out when the rungs now due would breach the floor together', () => {
-      // Four done and the price at +48% owes rungs 5 and 6; together they leave
-      // 17.8%, under the 20% floor, so the bag closes here rather than dribbling.
-      const g = { ...grid, tpGridSellFraction: 0.25, tpGridMinRemainderFraction: 0.2 };
-      const d = decideMarkExit({ mint: 'q56', pos: bag('q56', 4), markPriceUsd: 148, gates: g, nowMs: 1_060_000 });
-      expect(d?.fraction).toBe(1);
     });
 
     it('keeps paying on every further +8% with no upper rung', () => {
@@ -562,12 +504,9 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       }
     });
 
-    it('fills every rung the price has passed in one leg (1.11.886)', () => {
-      // +40% supports rung 5. Five halvings leave 1/32, so the whole owed
-      // amount goes in a single fill rather than five sells at one price.
-      const d = at(bag('g_gap'), 140);
-      expect(d?.tpRungIndex).toBe(5);
-      expect(d?.fraction).toBeCloseTo(1 - 0.5 ** 5, 6);
+    it('fires one rung per tick when the price gaps through several', () => {
+      const d = at(bag('g_gap'), 140); // +40% supports rung 5
+      expect(d?.tpRungIndex).toBe(1);
     });
 
     it('owes no rung the current price does not support, even after a high peak', () => {

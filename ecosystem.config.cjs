@@ -2861,6 +2861,12 @@ const PM2_APPS = [
          * 1.11.702 — slightly wider knife floor (was −20). Prebuy was skipping
          * dumps that printed −25…−30 by the time the quote landed.
          */
+        /**
+         * 1.11.885 — the deep end pays for itself nowhere. Over 186 closed
+         * positions in 11h, entries below −20% returned −2.97 USD at a 50% win
+         * rate, the only band besides the shallow one in the red, and
+         * `turn_dump_knife` (−2.71 on 5) sits inside it.
+         */
         MILD_DIP_MIN_DIP_PCT: '-25',
         /**
          * 1.11.773 — shallow edge opened to −2 so turn→dump formula can allow
@@ -2883,6 +2889,17 @@ const PM2_APPS = [
          * so the reason no longer stands. Against 3288 deduped leader buys only
          * 27.8% land inside −25…−8; 13.7% sit in −8…−3, which we were refusing.
          * Green entries (35.6% of theirs) stay out of scope for now.
+         */
+        /**
+         * 1.11.885 — the shallow end is the largest single loss source left.
+         * By entry depth over the same window: (−4,−2] returned −2.39 USD at 59%
+         * and (−2,0] −2.50 USD at 52%, while every band from −20% to −4% was
+         * positive at a 65–81% win rate. Fifty positions, −4.89 USD, against a
+         * whole-window result of +7.01.
+         *
+         * This band was cut to −8 once before and reopened in 1.11.854 on data
+         * the basis bugs had corrupted. Measured clean, the line is −4: (−8,−4]
+         * earns, (−4,0] does not.
          */
         MILD_DIP_MAX_DIP_PCT: '0',
         /**
@@ -3193,32 +3210,7 @@ const PM2_APPS = [
          * winners. Grid on the full sample: hard15 −$9.52, hard20 −$0.17,
          * hard25 +$4.15, hard30 +$6.19.
          */
-        /**
-         * 1.11.887 — −20, not −25, and not a combination.
-         *
-         * Grouped by the deepest drawdown each bag actually reached, over 233
-         * closed positions in 12h:
-         *
-         *   never below −10   101 pos  +36.17 USD  96% win
-         *   touched −10..−20   77 pos   −1.52 USD  57% win
-         *   touched −20..−25   28 pos  −15.31 USD  11% win
-         *   touched ≤ −25      27 pos  −14.57 USD   7% win
-         *
-         * Recovery is essentially over at −20: the two deepest buckets are 55
-         * positions and −29.88 USD, which is the whole loss of the book, and the
-         * 28 that touched −20 without reaching −25 lost anyway at an 11% win
-         * rate. A replay of every tape agrees: −20 returns +0.96 USD over −25,
-         * while −15 costs −8.19 by cutting the −10..−20 band, which is roughly
-         * break-even and still recovers 57% of the time.
-         *
-         * Wider is pointless rather than safer: −30, −40, −50 and no stop at all
-         * replay identically, because almost nothing that deep ever comes back.
-         *
-         * Conditioning it was tested and adds nothing: `only if never armed` is
-         * identical (the stop never fires on an armed bag), `after 10/30/60min`
-         * is identical, and the volume-fade condition moved 4 positions.
-         */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '20',
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by

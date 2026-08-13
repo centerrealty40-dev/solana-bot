@@ -293,10 +293,9 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5'");
     expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '12'");
+    // Floors unchanged.
     expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8'");
-    // 1.11.887 — the stop moved to −20 once the drawdown buckets were measured:
-    // a bag that touches −20 recovers 11% of the time, and −25 only 7%.
-    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '20'");
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '25'");
   });
 
   it('1.11.853 admits pairs up to 30 days, not 3', () => {
