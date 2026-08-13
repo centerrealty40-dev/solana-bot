@@ -3881,6 +3881,28 @@ const PM2_APPS = [
          * journal so they never mix into the book's statistics.
          */
         MILD_DIP_PROBE_BLOCKED: '1',
+        /**
+         * 1.11.898 — $1 on a coin we have never closed a position in, against
+         * the $3 clip everywhere else. Ordered by how many times we have traded
+         * a mint, our own closed positions:
+         *
+         *   trade #     n     USD/pos    median   win
+         *   1st       565    -0.2050    -2.95%   44%
+         *   2nd       318    -0.0486    +0.18%   50%
+         *   3rd       205    -0.0418    +1.87%   52%
+         *   4th-6th   375    -0.0219    +1.02%   53%
+         *   7th+      595    -0.0266    +2.36%   54%
+         *
+         * The first touch carries -115.82 USD of a -164 total and holds in every
+         * window (-0.134/pos over 24h, -0.120 over 12h, repeats -0.019 to
+         * +0.047). The leaders are the mirror image: their first trip on a mint
+         * is their best, median +20.56% at a 65% win rate, and their top five
+         * mints then carry a third of all their round trips.
+         *
+         * So the first trade is priced as the cost of finding out, not skipped -
+         * without it there are no repeats.
+         */
+        MILD_DIP_FIRST_TOUCH_POSITION_USD: '1',
         MILD_DIP_PROBE_BLOCKED_USD: '2',
         MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
         /**

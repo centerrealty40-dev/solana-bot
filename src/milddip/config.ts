@@ -291,6 +291,11 @@ const MildDipConfigSchema = z.object({
    * no forward tape on what we refused: marks stop for mints we do not hold.
    */
   probeBlockedEnabled: z.boolean().default(false),
+  /**
+   * 1.11.898 — size for the first position on a mint we have never closed.
+   * 0 = off (first touch is sized like any other).
+   */
+  firstTouchPositionUsd: z.coerce.number().min(0).max(10_000).default(0),
   probeBlockedUsd: z.coerce.number().min(0).max(50).default(2),
   probeBlockedMaxPerHour: z.coerce.number().int().min(0).max(120).default(6),
   /**

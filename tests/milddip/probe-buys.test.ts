@@ -15,9 +15,9 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
   it('a probe is clamped to the probe size, never the normal clip', () => {
     // 1.11.865 — the green lane caps first, then the probe caps on top, so the
     // probe is still the floor of the two.
-    expect(src).toContain(
-      'const wantUsd = probeReason ? Math.min(cfg.probeBlockedUsd, laneCapped) : laneCapped;',
-    );
+    // 1.11.898 — the first-touch cap sits between the lane cap and the probe
+    // cap, so the probe is still the floor of them all.
+    expect(src).toContain('Math.min(cfg.probeBlockedUsd, familiarityCapped)');
     expect(src).toContain('Math.min(cfg.green.positionUsd, knifeCapped)');
   });
 
@@ -52,5 +52,26 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED: '1'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_USD: '2'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6'");
+  });
+});
+
+describe('1.11.898 the first position on a coin is sized down', () => {
+  const src = readFileSync(resolve('src/milddip/entry-attempt.ts'), 'utf8');
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('recognises a first touch as a mint we have never closed', () => {
+    expect(src).toContain("cfg.firstTouchPositionUsd > 0 && !state.lastExitByMint?.[c.mint]");
+  });
+
+  it('caps the first touch and still lets a probe cap under it', () => {
+    expect(src).toContain('Math.min(cfg.firstTouchPositionUsd, laneCapped)');
+    expect(src).toContain('Math.min(cfg.probeBlockedUsd, familiarityCapped)');
+  });
+
+  it('live env risks $1 on an unknown coin and $3 once it is known', () => {
+    // First touch carries -0.2050 USD/position against -0.02 to -0.05 for every
+    // repeat, and -115.82 of a -164 total.
+    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '1'");
+    expect(eco).toContain("MILD_DIP_POSITION_USD: '3'");
   });
 });
