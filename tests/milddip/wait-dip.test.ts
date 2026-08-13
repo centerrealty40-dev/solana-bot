@@ -302,7 +302,7 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8'");
     // 1.11.910 — the floor moved to −50 and stopped being the primary exit; the
     // work is done by dead_set_bounce, which needs three factors and a bounce.
-    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '50'");
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15'");
   });
 
   it('1.11.853 admits pairs up to 30 days, not 3', () => {

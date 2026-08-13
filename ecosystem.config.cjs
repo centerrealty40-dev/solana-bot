@@ -3386,17 +3386,32 @@ const PM2_APPS = [
          * hard25 +$4.15, hard30 +$6.19.
          */
         /**
-         * 1.11.910 — the loss floor moves to −50 and stops being the primary exit.
+         * 1.11.911 — −15, because the upside is now capped.
          *
-         * A stop at a number leaves on a red candle, which is the worst tick there
-         * is: a whale emptying a position takes the price through our level and it
-         * comes back without us. The measurement said the level itself is not a
-         * lever - across 2,226 leader bags every stop between −25 and −80 replays
-         * the same, and only a tight one (−10, −15) is measurably worse - so the
-         * level goes where the operator's reference strategy keeps it, −50, and the
-         * work moves to `dead_set_bounce` below.
+         * 1.11.910 put this at −50 on the grounds that across 2,226 leader bags
+         * every stop from −25 to −80 replays the same. That reasoning was borrowed
+         * from a book it does not describe. Their median winner is +34.75% and
+         * 43.9% of their winners clear +100%, so the size of a loss barely moves
+         * their result. Ours, over 1500 closed positions: win rate 53%, average
+         * win +11.79%, average loss −17.96%, expectancy −2.076% per position, and
+         * a pairing like that needs a 60% win rate to break even.
+         *
+         * Capping the upside at the first rung (1.11.897) therefore requires
+         * capping the downside harder. Clipping our own losses at each level:
+         *
+         *   floor   average loss   break-even win rate   expectancy
+         *   −15         −12.17%            51%             +0.622%
+         *   −20         −14.60%            55%             −0.508%
+         *   −25         −15.83%            57%             −1.081%
+         *   −50         −17.40%            60%             −1.813%
+         *
+         * −15 is the only level with a positive expectancy on our distribution,
+         * and −50 was the worst of the six. The two knobs have to move together:
+         * a laddered runner can carry a wide floor, a single-leg exit at +8%
+         * cannot. `dead_set_bounce` still fires first at −10% with the
+         * conjunction, so this is the backstop rather than the usual exit.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '50',
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
         /**
          * 1.11.910 — condemned by the conjunction, timed by the bounce.
          *
