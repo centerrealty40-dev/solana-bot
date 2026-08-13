@@ -34,7 +34,9 @@ describe('exit spacing after a sell', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT: '10'");
     expect(eco).toContain("MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT: '8'");
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
+    // 1.11.918 — there is no rung left for a spike to reach, but the confirm
+    // thresholds still protect the peak the trail is measured against.
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0'");
   });
 
   it('defaults to a window several mark cycles wide', () => {
@@ -48,16 +50,15 @@ describe('exit spacing after a sell', () => {
 });
 
 describe('1.11.897 the ladder closes on the first rung', () => {
-  it('live env carries the remainder floor that makes it a single exit', () => {
-    // The leaders take 92.6% of positions off in one sell; we were doing 39.1%,
-    // with 55% of winners under +10% and a remainder left to age. Removing the
-    // ladder is worse on our tapes (median -3.55 against +1.73), so only the
-    // remainder floor moves: 0.6 turns the first rung into a full exit, which
-    // wins on median, trimmed mean, mean and win rate in both windows.
+  it('1.11.918 — the ladder is off, so the floor is what it always was', () => {
+    // The 0.6 floor made the first rung a full exit at +8%, which won on median
+    // and cost the runners: with 1.11.914 handing the tail to the trail instead
+    // of closing, that same floor stops the first rung from firing at all. So
+    // the live behaviour was already a pure trail; 1.11.918 makes the config say
+    // it, because the mean says the runners are worth more than the median.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.6'");
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0'");
   });
 });
 
@@ -105,5 +106,35 @@ describe('1.11.917 an armed bag is not judged on a print that has not moved', ()
   it('bounds it well below the five minutes the ring allows a cold coin', () => {
     expect(cfg).toContain("markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000");
     expect(eco).toContain("MILD_DIP_MARK_ARMED_MAX_AGE_MS: '10000'");
+  });
+});
+
+describe('1.11.918 the runners are not sold in rungs', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  /**
+   * Measured on 4796 of our own mark tapes. Mean realized % per position:
+   *
+   *                        all paths   MFE>=10%   MFE>=100% (89)
+   *   live 8%/50% rem.20       -1.89      13.44           117.98
+   *   5%/25% rem.20            -1.94      13.10           113.35
+   *   15%/33% unbounded        -3.20      10.80            35.79
+   *   trail only, giveback 12   4.18      29.17           444.00
+   *   trail only, giveback 20   5.57      33.34           540.61
+   *
+   * Every laddered variant is negative in the mean; the trail is positive. The
+   * ladder buys a better median (-0.50 against -3.35) by selling the runners,
+   * and the runners are the whole distribution.
+   */
+  it('runs a pure trail, with the bank off so it cannot take the same rung', () => {
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK2_PCT: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '20'");
+  });
+
+  it('still floors a faded pop at breakeven rather than at the giveback', () => {
+    // A +9% peak fading 20% would land under water without this.
+    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT");
+    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0'");
   });
 });

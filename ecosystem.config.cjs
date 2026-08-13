@@ -3348,7 +3348,12 @@ const PM2_APPS = [
          * own bag marks, where giveback at exit is a constant ~30% of peak for
          * any peak above 15% (−29.4% / −29.9% / −33.6% across buckets).
          */
-        MILD_DIP_EXIT_GIVEBACK_PCT: '12',
+        // 1.11.918 - measured on 4796 of our own mark tapes: every laddered
+        // variant is negative in the mean and the pure trail is positive.
+        // On the 89 runners past +100% MFE the live ladder means +117.98 and a
+        // 20% trail means +540.61. The ladder buys a better median by selling
+        // the runners, and the runners are where the money is.
+        MILD_DIP_EXIT_GIVEBACK_PCT: '20',
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
@@ -3564,7 +3569,8 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS: '20000',
         MILD_DIP_EXIT_MFE_BANK1_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
-        MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
+        // Off with the grid, or the bank takes the same rung the grid used to.
+        MILD_DIP_EXIT_MFE_BANK2_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
         /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '12',
@@ -3583,7 +3589,7 @@ const PM2_APPS = [
          * −3.47% (+25%×50%) or +0.66% (+50%×50%) — the rungs cut the only tail
          * that pays. Both ladders off; a single full exit on the trail below.
          */
-        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
+        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
         MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
         /**
          * 1.11.861 — the ladder stops instead of running forever. When the next
