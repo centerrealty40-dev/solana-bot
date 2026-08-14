@@ -62,15 +62,14 @@ describe('1.11.897 the ladder closes on the first rung', () => {
   });
 });
 
-describe('1.11.900 the time cut stops firing at five minutes', () => {
-  it('live env gives a red bag fifteen minutes, not five', () => {
-    // On 75 dips we and a leader both entered within a minute, we stopped out of
-    // 30 at a -19.77% median where they came out around flat having held 15.5
-    // minutes. On the bags that worked our exit beat theirs, +9.41% to +3.90%,
-    // so the gate stays - it just no longer fires at its old floor.
+describe('1.11.926 the time cut is off', () => {
+  it('live env does not cut a never-armed bag at −15% / 15m', () => {
+    // 4CmYEyg: 7BNax sat MAE −15…−17% and sold green. 1.11.925 widened
+    // hard_stop to −30%, but never_arm_time_red still fired on the first
+    // bounce after 15m and realised the same −15% scratch.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000'");
-    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15'");
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '0'");
   });
 });
 
