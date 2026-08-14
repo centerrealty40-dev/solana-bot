@@ -48,6 +48,63 @@ describe('trade-journal cash math', () => {
     expect(sell.receivedUsd).toBe(11);
   });
 
+  it('does not substitute quote when sell wallet peek is stale (delta ≤ 0)', () => {
+    const sell = resolveSellCash({
+      usdcBefore: 156.77,
+      usdcAfter: 123.14,
+      quoteReceivedUsd: 8.5,
+    });
+    expect(sell.cashSource).toBe('wallet_delta_stale');
+    expect(sell.receivedUsd).toBe(0);
+    expect(sell.cashDeltaUsd).toBeCloseTo(-33.63, 2);
+  });
+
+  it('marks stale buy peek without crediting wallet delta as spend', () => {
+    const buy = resolveBuyCash({
+      usdcBefore: 100,
+      usdcAfter: 105,
+      quoteSpentUsd: 10,
+      sizeUsdIntent: 10,
+    });
+    expect(buy.cashSource).toBe('wallet_delta_stale');
+    expect(buy.spentUsd).toBe(10);
+    expect(buy.cashDeltaUsd).toBeCloseTo(5, 5);
+  });
+
+  it('stale sell peek yields lossy roundtrip instead of quote-inflated win', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trades-stale-'));
+    dirs.push(dir);
+    const path = join(dir, 'trades.jsonl');
+    writeUsBuyFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintA',
+      ok: true,
+      signature: 'buySig',
+      sizeUsdIntent: 10,
+      usdcBefore: 100,
+      usdcAfter: 90,
+      nowMs: 1_000,
+    });
+    const { roundtrip } = writeUsSellFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintA',
+      ok: true,
+      signature: 'sellSig',
+      sizeUsdIntent: 10,
+      fraction: 1,
+      usdcBefore: 90,
+      usdcAfter: 88,
+      quoteReceivedUsd: 12,
+      reason: 'peak_giveback',
+      nowMs: 2_000,
+    });
+    expect(roundtrip).not.toBeNull();
+    expect(roundtrip!.cashPnlUsd).toBeCloseTo(-10, 5);
+    expect(roundtrip!.sellProceedsUsd).toBe(0);
+  });
+
   it('allocates cost pro-rata on partial sells', () => {
     expect(allocateSellCost({ lotCostUsd: 10, fraction: 0.4 })).toEqual({
       costBasisUsd: 4,

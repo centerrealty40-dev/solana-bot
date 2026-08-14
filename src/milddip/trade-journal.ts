@@ -44,7 +44,7 @@ export type TradeFillEvent = {
   dipSource?: string | null;
   source: 'mild_dip' | 'leader_observer';
   leader?: string | null;
-  cashSource?: 'wallet_delta' | 'quote' | 'observed_delta' | 'none' | null;
+  cashSource?: 'wallet_delta' | 'wallet_delta_stale' | 'quote' | 'observed_delta' | 'none' | null;
 };
 
 export type TradeRoundtripEvent = {
@@ -114,15 +114,18 @@ export function resolveBuyCash(args: {
   const after = args.usdcAfter;
   if (before != null && after != null && Number.isFinite(before) && Number.isFinite(after)) {
     const delta = after - before;
-    const spent =
-      delta < -1e-6
-        ? -delta
+    if (delta < -1e-6) {
+      return { spentUsd: -delta, cashDeltaUsd: delta, cashSource: 'wallet_delta' };
+    }
+    // Concurrent txs can make buy peeks non-decreasing; never substitute Jupiter quote
+    // for wallet cash when before/after were actually sampled.
+    const intent =
+      args.sizeUsdIntent && args.sizeUsdIntent > 0
+        ? args.sizeUsdIntent
         : args.quoteSpentUsd && args.quoteSpentUsd > 0
           ? args.quoteSpentUsd
-          : args.sizeUsdIntent && args.sizeUsdIntent > 0
-            ? args.sizeUsdIntent
-            : 0;
-    return { spentUsd: spent, cashDeltaUsd: delta, cashSource: 'wallet_delta' };
+          : 0;
+    return { spentUsd: intent, cashDeltaUsd: delta, cashSource: 'wallet_delta_stale' };
   }
   if (args.quoteSpentUsd != null && args.quoteSpentUsd > 0) {
     return {
@@ -154,13 +157,11 @@ export function resolveSellCash(args: {
   const after = args.usdcAfter;
   if (before != null && after != null && Number.isFinite(before) && Number.isFinite(after)) {
     const delta = after - before;
-    const received =
-      delta > 1e-6
-        ? delta
-        : args.quoteReceivedUsd && args.quoteReceivedUsd > 0
-          ? args.quoteReceivedUsd
-          : 0;
-    return { receivedUsd: received, cashDeltaUsd: delta, cashSource: 'wallet_delta' };
+    if (delta > 1e-6) {
+      return { receivedUsd: delta, cashDeltaUsd: delta, cashSource: 'wallet_delta' };
+    }
+    // Stale peek on sell (delta ≤ 0): do not credit Jupiter quote as wallet proceeds.
+    return { receivedUsd: 0, cashDeltaUsd: delta, cashSource: 'wallet_delta_stale' };
   }
   if (args.quoteReceivedUsd != null && args.quoteReceivedUsd > 0) {
     return {
