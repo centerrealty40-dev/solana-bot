@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateTurnDumpGate,
   predictDumpDepthPct,
+  turnDumpKnifeBranchLive,
   turnDumpKnifeOrOk,
   turnover5mLiq,
 } from '../../src/milddip/turn-dump.js';
@@ -233,5 +234,37 @@ describe('turn-dump gate (8zkg formula)', () => {
         minTurn: 0.3,
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe('turnDumpKnifeBranchLive / 8jsX4b leader deep+hot', () => {
+  it('enables knife for leader-seen when global branch is off', () => {
+    expect(turnDumpKnifeBranchLive(false, { leaderSeenName: true })).toBe(true);
+    expect(turnDumpKnifeBranchLive(false, { dipSource: 'turn_dump_knife' })).toBe(true);
+    expect(turnDumpKnifeBranchLive(false, {})).toBe(false);
+  });
+
+  it('passes final gate on deep dump main rejects (8jsX4b-class)', () => {
+    // Leader buy #2: dump ~79%, turn ~0.65 — main deep fail, knife OR pass.
+    const td = evaluateTurnDumpGate({
+      enabled: true,
+      pc5m: -78.99,
+      volume5mUsd: 13_906,
+      liquidityUsd: 21_322,
+      alpha: -5.08,
+      beta: 6.86,
+      shallowSlackPct: 10,
+      deepSlackPct: 12,
+      shallowBranchEnabled: true,
+      shallowAlpha: -8.83,
+      shallowBeta: 4.23,
+      shallowBandPct: 8,
+      knifeBranchEnabled: turnDumpKnifeBranchLive(false, { leaderSeenName: true }),
+      knifeMinDumpPct: 30,
+      knifeMinTurn: 0.3,
+    });
+    expect(td.pass).toBe(true);
+    expect(td.branch).toBe('knife');
+    expect(td.reasons.some((r) => r.includes('turn_dump_main_deep'))).toBe(true);
   });
 });

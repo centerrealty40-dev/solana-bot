@@ -180,6 +180,11 @@ describe('1.11.915 the knife branch opens for leader-seen names only', () => {
     // door. The branch stays disabled for the population it lost money on.
     expect(fast).toContain('knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled || leaderSeenName,');
   });
+
+  it('final turn-dump gate uses leader-seen knife branch', () => {
+    expect(fast).toContain('turnDumpArgsFromCfg(cfg, tdPc5mForGate, metrics, leaderSeenName)');
+    expect(fast).toContain('turnDumpKnifeBranchLive(cfg.turnDumpKnifeBranchEnabled, {');
+  });
 });
 
 describe('1.11.921 leader co-buy align blocks low-turn solo dips', () => {
@@ -195,5 +200,12 @@ describe('1.11.921 leader co-buy align blocks low-turn solo dips', () => {
   it('skips fast-path when turn is below floor and leader is not fresh', () => {
     expect(fast).toContain("return skip('leader_co_buy_align'");
     expect(fast).toContain('export function leaderCoBuyAlignOk');
+  });
+
+  it('passes fresh seed hit on stream wake for co-buy turnover relax', () => {
+    const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+    expect(loop).toContain('freshSeedHit');
+    expect(loop).toContain('leaderFreshCoBuy: leaderFreshBuy');
+    expect(loop).toContain('leaderSeenName: leaderSeenForEntry');
   });
 });
