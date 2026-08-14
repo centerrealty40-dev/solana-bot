@@ -7,8 +7,8 @@ describe('1.11.826 open-book mark cadence', () => {
 
   it('marks refresh fast enough for a −12% sleeve to mean anything', () => {
     // At 8s/20s a +22.95% peak round-tripped to −23.6% from peak between marks.
-    expect(eco).toContain("MILD_DIP_MARK_DEX_REFRESH_MS: '2000'");
-    expect(eco).toContain("MILD_DIP_MARK_CACHE_TTL_MS: '3000'");
+    expect(eco).toContain("MILD_DIP_MARK_DEX_REFRESH_MS: '1000'");
+    expect(eco).toContain("MILD_DIP_MARK_CACHE_TTL_MS: '2000'");
   });
 
   it('cache TTL does not outlive the refresh interval', () => {

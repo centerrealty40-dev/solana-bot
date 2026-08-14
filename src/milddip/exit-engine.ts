@@ -161,10 +161,7 @@ export function decideMarkExit(args: {
   const entryMarketPriceUsd = resolveEntryMarkBasis(pos);
   const peakStored =
     pos.peakPriceUsd != null && pos.peakPriceUsd > 0 ? pos.peakPriceUsd : pos.entryPriceUsd;
-  const peakPrev =
-    entryMarketPriceUsd != null && entryMarketPriceUsd > 0 && peakStored === pos.entryPriceUsd
-      ? entryMarketPriceUsd
-      : peakStored;
+  const peakPrev = Math.max(peakStored, pos.entryPriceUsd);
 
   /**
    * A violent single-tick move has to be seen twice before it decides anything.

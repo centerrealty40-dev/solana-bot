@@ -950,6 +950,7 @@ export function evaluateMildDipPeakGiveback(args: {
     weakWindows > 0 ? weakWindows : 3,
   );
   const peakPriceUsd = Math.max(
+    entryPriceUsd,
     args.peakPriceUsd > 0 ? args.peakPriceUsd : entryPriceUsd,
     markPriceUsd > 0 ? markPriceUsd : 0,
   );

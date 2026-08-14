@@ -1,3 +1,23 @@
+## 1.11.926 — 2026-08-14
+
+### Changed — mild-dip entry clip: liquidity power law ($1–$30)
+
+- **Leader shape, our book:** `clamp($1, $30, 0.0004168 × liq^0.866)` — same exponent as the 24h observer fit (`0.0387 × liq^0.866`), coefficient rescaled to ~**1.08%** of leader notional.
+- **Anchor:** `$8k` entry floor → **~$1**; deep pools cap at **$30** (~$500k+ liq).
+- Env: `MILD_DIP_SIZE_LIQ_POWER_COEF`, `MILD_DIP_SIZE_LIQ_POWER_EXP`, `MILD_DIP_SIZE_MIN_USD`, `MILD_DIP_SIZE_MAX_USD`.
+
+### Fixed — open-bag marks: stream/Jupiter cadence, peak from fill, green reclaim trail
+
+- **Mark cadence 1s** (`MILD_DIP_MARK_INTERVAL_MS`, `MILD_DIP_MARK_DEX_REFRESH_MS`); **stream min-gap 250ms** on open bags.
+- **Jupiter sell quote → ring** every 2s when stream quiet (`MILD_DIP_MARK_JUPITER_REFRESH_MS`).
+- **Stream-first exit mark** when a stream print is ≤15s old (`MILD_DIP_MARK_STREAM_PREFER_MAX_AGE_MS`).
+- **Peak/MFE seed from fill**, not wait_dip ring trough — fixes `mfePct=0` and dead trail (4kZdVs).
+- **Soft loss bounce defer 12%** (`MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT`) — peak_giveback / breakeven wait for green reclaim off trough.
+
+### Rollback
+
+- Remove power-law + Jupiter refresh env keys; restore 2s mark cadence + `MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '3'` + flat `MILD_DIP_POSITION_USD: '3'` + reload PM2.
+
 ## 1.11.925 — 2026-08-14
 
 ### Fixed — wallet-truth accounting (roundtrip ≠ USDC)
