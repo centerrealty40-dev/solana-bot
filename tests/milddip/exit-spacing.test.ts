@@ -126,17 +126,17 @@ describe('1.11.918 the runners are not sold in rungs', () => {
    * ladder buys a better median (-0.50 against -3.35) by selling the runners,
    * and the runners are the whole distribution.
    */
-  it('runs a dual trail with the bank off so it cannot take the same rung', () => {
+  it('runs a single leader-style trail with the bank off (1.11.925)', () => {
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK2_PCT: '0'");
-    expect(eco).toContain("MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '5'");
-    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '15'");
-    expect(eco).toContain("MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0.5'");
+    expect(eco).toContain("MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0'");
   });
 
-  it('still floors a faded pop at breakeven rather than at the giveback', () => {
-    // A +9% peak fading 20% would land under water without this.
-    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT");
+  it('does not scratch an armed bag back to entry (1.11.925)', () => {
+    // 4CmYEyg: BE after MFE 8–20% flattened us; leaders trailed ~8% from peak.
+    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0'");
   });
 });
@@ -182,8 +182,8 @@ describe('1.11.920 the trail, the feed and the repeat sell', () => {
   it('gives the sleeve the same giveback as the full close trail', () => {
     // With the ladder off the sleeve is what trails the bag. AvecKFxn peaked at
     // +21.49% and it cut at -12.58% while GIVEBACK_PCT said 20.
-    expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '15'");
-    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '15'");
+    expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '8'");
   });
 
   it('treats an unchanging feed as stale even when its timestamps are fresh', () => {
@@ -200,14 +200,14 @@ describe('1.11.920 the trail, the feed and the repeat sell', () => {
   });
 });
 
-describe('1.11.922 dual trail banks half at −5%, closes at −15%', () => {
+describe('1.11.925 single trail closes at −8% from peak', () => {
   const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
   const gates = readFileSync(resolve('src/milddip/gates.ts'), 'utf8');
 
-  it('configures partial and full giveback with half scale-out', () => {
-    expect(eco).toContain("MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '5'");
-    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '15'");
-    expect(eco).toContain("MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0.5'");
+  it('configures a full giveback and no scale-out', () => {
+    expect(eco).toContain("MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0'");
   });
 
   it('sells half on the first giveback hit before the full trail', () => {
