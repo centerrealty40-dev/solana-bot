@@ -43,6 +43,8 @@ export type MarkExitDecision = {
   tpRungIndex: number | null;
   /** 1.11.852 — mark held back pending confirmation; nothing was decided. */
   markQuarantined?: boolean;
+  /** 1.11.921 — drop a stream outlier Dex never saw; pending clears, last mark stays. */
+  markDiscardStreamOutlier?: boolean;
   /** Which feed this mark came from; a quarantine remembers it (1.11.889). */
   markSource?: 'stream' | 'dex' | null;
   mfePct: number;
@@ -113,6 +115,13 @@ export function decideMarkExit(args: {
   markSource?: 'stream' | 'dex' | null;
   /** 1.11.910 — live 5m volume over pool liquidity, for the dead-set exit. */
   turnover5mLiq?: number | null;
+  /** 1.11.919 — how long a refused mark may stand before we accept it. */
+  markJumpConfirmMaxMs?: number;
+  /**
+   * 1.11.921 — Dex price for cross-checking a stream print before a loss exit.
+   * 3J8CiL: stream 1.98e-06 (-93%), Dex 3.124e-05 (+2%), cliff_dump fired anyway.
+   */
+  dexCrossCheckPx?: number | null;
 }): MarkExitDecision | null {
   const { mint, pos, markPriceUsd, gates } = args;
   if (!(markPriceUsd > 0) || !(pos.entryPriceUsd > 0)) return null;
@@ -176,6 +185,7 @@ export function decideMarkExit(args: {
         ? gates.markJumpConfirmPct
         : 0;
   const lastMark = pos.lastMarkPriceUsd;
+  let armedTrailUsesDex = false;
   if (jumpLimit > 0 && lastMark != null && lastMark > 0) {
     const jumpPct = Math.abs(markPriceUsd / lastMark - 1) * 100;
     if (jumpPct > jumpLimit) {
@@ -197,7 +207,25 @@ export function decideMarkExit(args: {
        */
       const pendingPx = pos.pendingMarkPriceUsd;
       const pendingSrc = pos.pendingMarkSource;
+      /**
+       * 1.11.919 — the identical-re-read rule has to let go eventually.
+       *
+       * A feed handing back one cached datum twice is not two observations, which
+       * is why 1.11.889 refused it. A value that keeps coming back for half a
+       * minute is a stable price. nBxqeJsm sat on gain 0 / giveback 0 for 31
+       * seconds across five identical Dex reads while the coin fell, and when the
+       * guard finally let go the trail was at -23.88% instead of the -20% that
+       * should have fired.
+       */
+      const quarantineMaxMs = args.markJumpConfirmMaxMs ?? 8_000;
+      const seenAtMs = args.nowMs ?? Date.now();
+      const pendingAgeMs =
+        pos.pendingMarkAtMs != null && pos.pendingMarkAtMs > 0
+          ? seenAtMs - pos.pendingMarkAtMs
+          : 0;
+      const quarantineExpired = quarantineMaxMs > 0 && pendingAgeMs >= quarantineMaxMs;
       const identicalReread =
+        !quarantineExpired &&
         pendingPx != null &&
         markPriceUsd === pendingPx &&
         (pendingSrc == null || pendingSrc === args.markSource);
@@ -206,31 +234,136 @@ export function decideMarkExit(args: {
         pendingPx > 0 &&
         !identicalReread &&
         Math.abs(markPriceUsd / pendingPx - 1) * 100 <= jumpLimit;
-      if (!confirms) {
-        // Hold everything as it was; only remember what we saw.
-        return {
-          mint,
-          markPriceUsd,
-          entryMarketPriceUsd: null,
-          peakPriceUsd: peakPrev,
-          armed: pos.trailArmed === true,
-          justArmed: false,
-          shouldExit: false,
-          fraction: 0,
-          reason: null,
-          tpRungIndex: null,
-          markSource: args.markSource ?? null,
-          mfePct: 0,
-          givebackPct: 0,
-          pnlPct: 0,
-          gainPct: 0,
-          pnlPctVsFill: 0,
-          volFadeSamples: [...(pos.volFadeSamples ?? [])],
-          postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
-          postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
-          markQuarantined: true,
-        };
+      /**
+       * 1.11.921 — ageing out is not confirmation of a stream phantom.
+       *
+       * 1.11.919 let an identical quarantined value through after 8s, which is
+       * right for a Dex reading that landed and stayed, and wrong for a stream
+       * print Dex never saw. 3J8CiL bought at 3.05e-05, Dex held +2%, stream
+       * printed 1.98e-06 (-93%), quarantine expired on the same wrong number,
+       * and cliff_dump fired. On chain the sell was -7.76%.
+       */
+      let acceptQuarantined = confirms;
+      if (
+        quarantineExpired &&
+        pendingPx != null &&
+        markPriceUsd === pendingPx
+      ) {
+        acceptQuarantined = args.markSource !== 'stream';
       }
+      /**
+       * 1.11.923 — stream confirmation is not confirmation without Dex.
+       *
+       * 46vV3Z: Dex held −5% while stream printed 3.30e-05 (−52%). Two stream
+       * ticks at the phantom confirmed each other through `confirms`, cliff_dump
+       * fired on the red leg, fill came back at −41.9%. Dex agreement is required
+       * for both expiry and the second-tick confirm path.
+       */
+      const streamNeedsDex =
+        args.markSource === 'stream' &&
+        (acceptQuarantined ||
+          (quarantineExpired &&
+            pendingPx != null &&
+            markPriceUsd === pendingPx));
+      if (streamNeedsDex) {
+        const dexPx = args.dexCrossCheckPx;
+        const dexOk =
+          dexPx != null &&
+          dexPx > 0 &&
+          Math.abs(markPriceUsd / dexPx - 1) * 100 <= jumpLimit;
+        if (!dexOk) {
+          if (
+            quarantineExpired &&
+            pendingPx != null &&
+            markPriceUsd === pendingPx
+          ) {
+            return {
+              mint,
+              markPriceUsd: pos.lastMarkPriceUsd ?? peakPrev,
+              entryMarketPriceUsd: null,
+              peakPriceUsd: peakPrev,
+              armed: pos.trailArmed === true,
+              justArmed: false,
+              shouldExit: false,
+              fraction: 0,
+              reason: null,
+              tpRungIndex: null,
+              markSource: args.markSource ?? null,
+              markDiscardStreamOutlier: true,
+              mfePct: 0,
+              givebackPct: 0,
+              pnlPct: 0,
+              gainPct: 0,
+              pnlPctVsFill: 0,
+              volFadeSamples: [...(pos.volFadeSamples ?? [])],
+              postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+              postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+            };
+          }
+          acceptQuarantined = false;
+        } else {
+          acceptQuarantined = true;
+        }
+      }
+      if (!acceptQuarantined) {
+        const dexPx = args.dexCrossCheckPx;
+        armedTrailUsesDex =
+          pos.trailArmed === true &&
+          args.markSource === 'stream' &&
+          markPriceUsd < lastMark &&
+          dexPx != null &&
+          dexPx > 0 &&
+          markPriceUsd < dexPx;
+        if (!armedTrailUsesDex) {
+          // Hold everything as it was; only remember what we saw.
+          return {
+            mint,
+            markPriceUsd,
+            entryMarketPriceUsd: null,
+            peakPriceUsd: peakPrev,
+            armed: pos.trailArmed === true,
+            justArmed: false,
+            shouldExit: false,
+            fraction: 0,
+            reason: null,
+            tpRungIndex: null,
+            markSource: args.markSource ?? null,
+            mfePct: 0,
+            givebackPct: 0,
+            pnlPct: 0,
+            gainPct: 0,
+            pnlPctVsFill: 0,
+            volFadeSamples: [...(pos.volFadeSamples ?? [])],
+            postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+            postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+            markQuarantined: true,
+          };
+        }
+        // Dmkj4d: stream jumped down below Dex on an armed bag — trail on Dex, not blind.
+      }
+    }
+  }
+  /**
+   * 1.11.921 — a stream loss Dex never saw is not a loss.
+   *
+   * Even when the jump guard lets a print through, cliff_dump and the stops
+   * decide on the mark they are given. Cross-check Dex first; if it disagrees
+   * by more than the jump limit, decide on Dex instead.
+   */
+  let decisionMark = markPriceUsd;
+  let decisionSource = args.markSource ?? null;
+  if (
+    armedTrailUsesDex &&
+    args.dexCrossCheckPx != null &&
+    args.dexCrossCheckPx > 0
+  ) {
+    decisionMark = args.dexCrossCheckPx;
+    decisionSource = 'dex';
+  } else if (args.markSource === 'stream' && args.dexCrossCheckPx != null && args.dexCrossCheckPx > 0) {
+    const crossLimit = jumpLimit > 0 ? jumpLimit : 10;
+    if (Math.abs(markPriceUsd / args.dexCrossCheckPx - 1) * 100 > crossLimit) {
+      decisionMark = args.dexCrossCheckPx;
+      decisionSource = 'dex';
     }
   }
   const nowMs = args.nowMs ?? Date.now();
@@ -244,7 +377,7 @@ export function decideMarkExit(args: {
   const verdict = evaluateMildDipPeakGiveback({
     entryPriceUsd: pos.entryPriceUsd,
     entryMarketPriceUsd,
-    markPriceUsd,
+    markPriceUsd: decisionMark,
     peakPriceUsd: peakPrev,
     armed: pos.trailArmed === true,
     scaleOutDone: pos.scaleOutDone === true,
@@ -298,7 +431,7 @@ export function decideMarkExit(args: {
     heldMs >= dustHold;
   return {
     mint,
-    markPriceUsd,
+    markPriceUsd: decisionMark,
     entryMarketPriceUsd,
     peakPriceUsd: verdict.peakPriceUsd,
     armed: verdict.armed,
@@ -307,6 +440,7 @@ export function decideMarkExit(args: {
     fraction: dustClose ? 1 : verdict.fraction,
     reason: dustClose ? 'dust_close' : verdict.reason,
     tpRungIndex: dustClose ? null : verdict.tpRungIndex,
+    markSource: decisionSource,
     mfePct: verdict.mfePct,
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
@@ -323,16 +457,31 @@ export function applyMarkDecisionToPosition(
   pos: MildDipOpenPosition,
   decision: MarkExitDecision,
 ): void {
+  if (decision.markDiscardStreamOutlier) {
+    pos.pendingMarkPriceUsd = undefined;
+    pos.pendingMarkSource = undefined;
+    pos.pendingMarkAtMs = undefined;
+    return;
+  }
   if (decision.markQuarantined) {
     // Remember the outlier so a second print at the same level can confirm it,
     // and leave every other field, including lastMarkPriceUsd, untouched.
+    // Keep the original timestamp while the same value keeps coming back, so the
+    // quarantine clock measures how long we have been refusing it (1.11.919).
+    if (pos.pendingMarkPriceUsd !== decision.markPriceUsd || pos.pendingMarkAtMs == null) {
+      pos.pendingMarkAtMs = Date.now();
+    }
     pos.pendingMarkPriceUsd = decision.markPriceUsd;
     pos.pendingMarkSource = decision.markSource ?? undefined;
     return;
   }
+  if (pos.lastMarkPriceUsd !== decision.markPriceUsd || pos.markUnchangedSinceMs == null) {
+    pos.markUnchangedSinceMs = Date.now();
+  }
   pos.lastMarkPriceUsd = decision.markPriceUsd;
   pos.pendingMarkPriceUsd = undefined;
   pos.pendingMarkSource = undefined;
+  pos.pendingMarkAtMs = undefined;
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;

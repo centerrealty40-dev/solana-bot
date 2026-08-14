@@ -15,6 +15,8 @@ export type MildDipOpenPosition = {
   buySignature: string | null;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
+  /** 1.11.919 — when the quarantined mark first appeared, so it can time out. */
+  pendingMarkAtMs?: number;
   /**
    * 1.11.848 — the Dex price the entry decision was made on.
    *
@@ -44,6 +46,8 @@ export type MildDipOpenPosition = {
    * twice before it decides anything.
    */
   lastMarkPriceUsd?: number;
+  /** 1.11.920 — since when the feed has been handing back the same number. */
+  markUnchangedSinceMs?: number;
   pendingMarkPriceUsd?: number;
   /**
    * 1.11.889 — which feed the quarantined print came from. Two byte-identical
@@ -75,6 +79,10 @@ export type MildDipOpenPosition = {
    */
   entryMarketCapUsd?: number | null;
   entryPairAgeHours?: number | null;
+  /** Dex pool at entry — exit defer allow-list fallback when mark refresh lags. */
+  entryDexId?: string | null;
+  /** dipSource at entry — stabilize-exempt sources skip re-check on defer. */
+  entryDipSource?: string | null;
   /**
    * 1.11.879 — when this bag last sold. A partial changes the size on chain and
    * the balance read lags, so the next decision has to wait for data that
@@ -82,6 +90,8 @@ export type MildDipOpenPosition = {
    * / 2HJmyTW, the second on a reading from before the first.
    */
   lastSellAtMs?: number;
+  /** 1.11.920 — the mark the last sell fired on; the next needs a different one. */
+  lastSellMarkPriceUsd?: number;
   /** Cumulative ms this bag has held a soft exit because the gate still passes. */
   exitDeferredMs?: number;
   /** Wall clock of the last such deferral, for accumulating the budget. */

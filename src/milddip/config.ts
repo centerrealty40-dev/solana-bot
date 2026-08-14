@@ -71,6 +71,15 @@ const MildDipConfigSchema = z.object({
    */
   markCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(20_000),
   /**
+   * 1.11.917 — armed bags must not trail on a stale or frozen stream print.
+   * 0 = off. Default 10s.
+   */
+  markArmedMaxAgeMs: z.coerce.number().int().min(0).max(300_000).default(10_000),
+  /**
+   * 1.11.919 — how long a quarantined mark may be refused before we accept it.
+   */
+  markJumpConfirmMaxMs: z.coerce.number().int().min(0).max(120_000).default(8_000),
+  /**
    * 1.11.794 — max concurrent background Dex→ring refreshes for open bags
    * (`requestOpenMarkRefresh`). Exit mark reads stay sync from the ring.
    */
@@ -318,6 +327,13 @@ const MildDipConfigSchema = z.object({
     .min(60_000)
     .max(24 * 3_600_000)
     .default(7_200_000),
+  /**
+   * 1.11.921 — low-turn entries need a leader on the same dip, not just a name
+   * touched days ago. 49% of solo buys had turn<0.06 while co-bought was 24%.
+   */
+  leaderCoBuyAlignEnabled: z.boolean().default(false),
+  leaderCoBuyAlignMaxMs: z.coerce.number().int().min(10_000).max(600_000).default(120_000),
+  leaderCoBuyAlignMinTurn: z.coerce.number().min(0).max(5).default(0.06),
   waitDipEnabled: z.boolean().default(true),
   /**
    * 1.11.803 — allow wait-dip to run under the turn→dump gate (formula selects
@@ -879,6 +895,8 @@ export function loadMildDipConfig(): MildDipConfig {
     markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
     markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 8_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
+    markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000,
+    markJumpConfirmMaxMs: process.env.MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS ?? 8_000,
     /** 1.11.736 — tighter journal so giveback gaps are visible (was 30s). */
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 5_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,
@@ -943,6 +961,9 @@ export function loadMildDipConfig(): MildDipConfig {
     requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
     leaderSeenMemoryMs: process.env.MILD_DIP_LEADER_SEEN_MEMORY_MS ?? 0,
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
+    leaderCoBuyAlignEnabled: envBool('MILD_DIP_LEADER_CO_BUY_ALIGN', false),
+    leaderCoBuyAlignMaxMs: envNum('MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS', 120_000),
+    leaderCoBuyAlignMinTurn: envNum('MILD_DIP_LEADER_CO_BUY_ALIGN_MIN_TURN', 0.06),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),

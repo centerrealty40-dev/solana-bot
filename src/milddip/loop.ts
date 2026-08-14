@@ -23,6 +23,7 @@ import {
   getStructuralCache,
   streamDrawdownPct,
   loadStructural,
+  leaderCoBuyAlignOk,
   structuralOk,
 } from './fast-path.js';
 import {
@@ -51,6 +52,7 @@ import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
+  isLeaderFreshCoBuy,
   leaderSeedHitByMint,
   readLeaderSeedHits,
   type LeaderSeedHit,
@@ -64,7 +66,10 @@ import { isRunnerPartialExit } from './sell-partial.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
-import { prefetchDexScreenerPairDetailsMany } from '../papertrader/pricing/dexscreener-quote-cache.js';
+import {
+  fetchDexScreenerPairDetails,
+  prefetchDexScreenerPairDetailsMany,
+} from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
@@ -575,9 +580,34 @@ async function tryFireWaitDip(
    * all 6 came through this path.
    */
   const freshStruct = await loadStructural(mint, cfg, nowMs);
-  // 1.11.915 — the re-check has to know what the entry gate knows, or a
-  // leader-seen name clears the floors on the way in and is thrown out here.
-  if (freshStruct && !structuralOk(freshStruct.metrics, cfg, leaderEverSeen(cfg, state, mint, nowMs))) {
+  const leaderSeenAtMs = state.leaderSeenMints?.[mint] ?? null;
+  const waitSeedHit =
+    cfg.leaderSeedPath != null
+      ? leaderSeedHitByMint(
+          readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+            maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+            max: cfg.leaderSeedMax,
+          }),
+          mint,
+        )
+      : null;
+  const leaderFreshBuy = isLeaderFreshCoBuy({
+    nowMs,
+    maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+    trigger: 'scan',
+    seedHit: waitSeedHit,
+    leaderSeenAtMs,
+  });
+  // 1.11.915/921 — the re-check has to know what the entry gate knows.
+  if (
+    freshStruct &&
+    !structuralOk(
+      freshStruct.metrics,
+      cfg,
+      leaderEverSeen(cfg, state, mint, nowMs),
+      leaderFreshBuy,
+    )
+  ) {
     delete state.waitDipWatch![mint];
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_wait_dip_refloor_skip',
@@ -594,6 +624,33 @@ async function tryFireWaitDip(
     console.log(
       `[mild-dip] SKIP wait-dip refloor ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
         `liq=${freshStruct.metrics.liquidityUsd} mcap=${freshStruct.metrics.marketCapUsd}`,
+    );
+    return false;
+  }
+
+  const metricsForCoBuy = freshStruct?.metrics ?? watch.metrics;
+  const coBuy = leaderCoBuyAlignOk(cfg, metricsForCoBuy, {
+    nowMs,
+    trigger: 'scan',
+    seedHit: waitSeedHit,
+    leaderSeenAtMs,
+  });
+  if (!coBuy.ok) {
+    delete state.waitDipWatch![mint];
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_leader_co_buy_skip',
+      mint,
+      symbol: watch.symbol,
+      turn: coBuy.turn,
+      minTurn: cfg.leaderCoBuyAlignMinTurn,
+      maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+      leaderFresh: coBuy.leaderFresh,
+      waitMs: nowMs - watch.detectedAtMs,
+      pc5m: metricsForCoBuy.priceChange5mPct ?? null,
+    });
+    console.log(
+      `[mild-dip] SKIP leader co-buy ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
+        `turn=${coBuy.turn?.toFixed(4)}<${cfg.leaderCoBuyAlignMinTurn}`,
     );
     return false;
   }
@@ -811,7 +868,7 @@ async function tryFastPathForMint(
     nowMs,
     trigger,
     trigger === 'leader' ? seedHit : null,
-    leaderEverSeen(cfg, state, mint, nowMs),
+    state.leaderSeenMints?.[mint] ?? null,
   );
   if (!candidate) {
     // Deep knife skips entry but must stay on own-tape knife watch.
@@ -1814,6 +1871,32 @@ async function tryExits(
       }).catch(() => undefined);
     }
   }
+  /**
+   * 1.11.917 — an armed bag may not be judged on a print that has not moved.
+   */
+  const armedBound = cfg.markArmedMaxAgeMs > 0 ? cfg.markArmedMaxAgeMs : 0;
+  const armedStale =
+    armedBound > 0
+      ? refreshOrder.filter((m) => {
+          const p = state.open[m];
+          if (p?.trailArmed !== true) return false;
+          if (openMarkRingAgeMs(m, nowMs) >= armedBound) return true;
+          const px = mildDipPriceRing.lastPrice(m, nowMs)?.priceUsd;
+          const unchangedSinceMs = p.markUnchangedSinceMs;
+          if (px != null && px === p.lastMarkPriceUsd && unchangedSinceMs != null) {
+            return nowMs - unchangedSinceMs >= armedBound;
+          }
+          return false;
+        })
+      : [];
+  if (armedStale.length > 0) {
+    await prefetchDexScreenerPairDetailsMany(armedStale, {
+      nowMs,
+      allowedDexIds: cfg.entry.allowedDexIds,
+      cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+      bypassGate: true,
+    }).catch(() => undefined);
+  }
   for (const mint of refreshOrder) {
     maybeRequestOpenMarkRefresh(mint, nowMs, cfg);
   }
@@ -1843,6 +1926,18 @@ async function tryExits(
   }
 
   const toSell: MarkExitDecision[] = [];
+  const streamRows = markRows.filter((r) => r.source === 'stream' && r.px != null);
+  if (streamRows.length > 0) {
+    await prefetchDexScreenerPairDetailsMany(
+      streamRows.map((r) => r.mint),
+      {
+        nowMs,
+        allowedDexIds: cfg.entry.allowedDexIds,
+        cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+        bypassGate: true,
+      },
+    ).catch(() => undefined);
+  }
   for (const { mint, px, volume5mUsd, pc5mPct, source } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
@@ -1860,6 +1955,13 @@ async function tryExits(
       cfg.exitMinSpacingMs > 0 &&
       pos.lastSellAtMs != null &&
       nowMs - pos.lastSellAtMs < cfg.exitMinSpacingMs
+    ) {
+      continue;
+    }
+    if (
+      px != null &&
+      pos.lastSellMarkPriceUsd != null &&
+      px === pos.lastSellMarkPriceUsd
     ) {
       continue;
     }
@@ -1919,6 +2021,18 @@ async function tryExits(
       pos,
       markPriceUsd: px,
       gates: cfg.exit,
+      markJumpConfirmMaxMs: cfg.markJumpConfirmMaxMs,
+      dexCrossCheckPx:
+        source === 'stream' && px != null
+          ? (
+              await fetchDexScreenerPairDetails(mint, {
+                nowMs,
+                allowedDexIds: cfg.entry.allowedDexIds,
+                cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+                bypassGate: true,
+              })
+            )?.priceUsd ?? null
+          : null,
       nowMs,
       pc5mPct,
       volume5mUsd,
@@ -2321,7 +2435,10 @@ async function tryExits(
       // Stamped after the attempt, so the settle window starts from the moment
       // the size on chain could have changed (1.11.879).
       const after = state.open[decision.mint];
-      if (after) after.lastSellAtMs = Date.now();
+      if (after) {
+        after.lastSellAtMs = Date.now();
+        after.lastSellMarkPriceUsd = decision.markPriceUsd;
+      }
     }
   }).catch((err) => {
     console.warn(
