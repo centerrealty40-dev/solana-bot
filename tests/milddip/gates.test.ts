@@ -576,6 +576,40 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.pnlPct).toBeLessThan(-15);
   });
 
+  it('1.11.926 — live-like: −16% MAE still holds after 16m bounce (time-red off)', () => {
+    // Same 4CmYEyg print: trough then a 3% turn. Old live knobs (900s/−15)
+    // sold here as never_arm_time_red. Leaders sat and finished green.
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 0.000393,
+      markPriceUsd: 0.000330,
+      peakPriceUsd: 0.000399,
+      troughPriceUsd: 0.000320,
+      armed: false,
+      gates: {
+        ...exitGates,
+        hardStopPnlPct: 30,
+        hardStopBouncePct: 3,
+        breakevenArmPct: 0,
+        partialGivebackPct: 0,
+        givebackPct: 8,
+        neverArmFreefallPnlPct: 0,
+        neverArmBouncePct: 0,
+        neverArmStaleMinMs: 0,
+        neverArmDeadMinMs: 0,
+        neverArmVolFadeMinMs: 0,
+        neverArmMaxHoldMs: 10_800_000,
+        neverArmTimeRedMinMs: 0,
+        neverArmTimeRedPnlPct: 0,
+        neverArmTimeRedMaxPc5mPct: 0,
+      },
+      heldMs: 960_000,
+      pc5mPct: -8,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).not.toBe('never_arm_time_red');
+    expect(v.pnlPct).toBeLessThan(-15);
+  });
+
   it('1.11.925 — leader-style: armed MFE does not scratch at breakeven', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,

@@ -689,13 +689,13 @@ const MildDipConfigSchema = z.object({
     neverArmFreefallPnlPct: z.coerce.number().min(0).max(100).default(25),
     neverArmFreefallMinMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
     /**
-     * 1.11.792 — never-arm HELD+PC+SL (7BNax DOWN): 5m / −15% / pc5m ≤ −5.
-     * 0 min = off.
+     * 1.11.926 — off. A −15%/15m time cut undoes the −30% hard_stop.
+     * 0 min / 0 pnl = disabled.
      */
-    neverArmTimeRedMinMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
-    neverArmTimeRedPnlPct: z.coerce.number().min(0).max(100).default(15),
+    neverArmTimeRedMinMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+    neverArmTimeRedPnlPct: z.coerce.number().min(0).max(100).default(0),
     /** Positive N → require pc5m ≤ −N. 0 = no pc5m gate. */
-    neverArmTimeRedMaxPc5mPct: z.coerce.number().min(0).max(100).default(5),
+    neverArmTimeRedMaxPc5mPct: z.coerce.number().min(0).max(100).default(0),
   }),
 });
 
@@ -870,12 +870,12 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmFreefallPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT', 25),
     neverArmFreefallMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS', 60_000),
     /**
-     * 1.11.792 — never-arm DOWN formula: held≥5m & pnl≤−15% & pc5m≤−5%.
-     * Armed trail / MFE-bank unchanged. Ecosystem zeros freefall/stale/dead/vol_fade/max_hold.
+     * 1.11.926 — off. A −15%/15m time cut undoes the −30% hard_stop on
+     * never-armed bags (4CmYEyg). 0 = disabled.
      */
-    neverArmTimeRedMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS', 300_000),
-    neverArmTimeRedPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', 15),
-    neverArmTimeRedMaxPc5mPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT', 5),
+    neverArmTimeRedMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS', 0),
+    neverArmTimeRedPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', 0),
+    neverArmTimeRedMaxPc5mPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT', 0),
   };
 
   const raw = {
