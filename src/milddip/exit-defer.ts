@@ -27,16 +27,9 @@
  * 1.11.876 no probe walks around. Profit exits are never deferred either:
  * `tp_grid` and the banks are the point.
  */
-import {
-  entryStabilizeExemptDipSource,
-  evaluateEntryStabilizeRequired,
-  evaluateMildDipEntry,
-  type MildDipEntryGates,
-} from './gates.js';
+import { evaluateMildDipEntry, type MildDipEntryGates } from './gates.js';
 import type { MildDipExitReason } from './gates.js';
 import { OPEN_MARK_METRICS_MAX_AGE_MS } from './open-mark-metrics.js';
-import { mildDipPriceRing } from './price-ring.js';
-import { evaluateTurnDumpGate } from './turn-dump.js';
 import type { MildDipConfig } from './config.js';
 
 /**
@@ -157,6 +150,26 @@ export type ExitDeferEntryPath = {
  */
 const METRICS_MAX_AGE_MS = OPEN_MARK_METRICS_MAX_AGE_MS;
 
+/**
+ * Open-bag defer uses dip-band + pool health only.
+ *
+ * Fresh-entry vol/turn/stabilize/turn→dump block defer on stale open-mark reads
+ * (FXoZh2: sold never_arm_stale at −5.8% with pc5m −4.34% in band; defer saw
+ * vol5m=92<150 and sold anyway — then rebought the same name minutes earlier).
+ * We already hold the clip; the question is whether the name is still a dip,
+ * not whether we would size a new probe into a quiet 5m window.
+ */
+export function heldBagEntryGatesForDefer(gates: MildDipEntryGates): MildDipEntryGates {
+  return {
+    ...gates,
+    minVolume5mUsd: 0,
+    maxVolume5mUsd: 0,
+    minTurnover5mLiq: 0,
+    maxTurnover5mLiq: 0,
+    minVolume5mPaceRatio: 0,
+  };
+}
+
 /** Prefer the deeper stream dump when Dex pc5m is flat or lagging (fast-path). */
 export function resolveExitDeferPc5m(
   dexPc5m: number | null,
@@ -170,10 +183,10 @@ export function resolveExitDeferPc5m(
 }
 
 /**
- * Would the live entry path open this position right now?
+ * Would we still treat this open bag as a dip name?
  *
- * Runs the same gates as buy: structural entry, turn→dump, stabilize — with
- * stream pc5m when it is deeper than Dex, and dexId from the mark tick.
+ * Dip band (+ stream pc5m), dex allow-list, liq/mcap/age floors — not fresh-entry
+ * vol/turn/stabilize/turn→dump (we already hold; stale vol must not force a sell).
  */
 export function evaluateWouldBuyForExitDefer(args: {
   entryGates: MildDipEntryGates;
@@ -201,7 +214,7 @@ export function evaluateWouldBuyForExitDefer(args: {
       ? args.carried.pairAgeHours + Math.max(0, args.heldMs) / 3_600_000
       : null;
 
-  const entryVerdict = evaluateMildDipEntry(
+  return evaluateMildDipEntry(
     {
       priceChange5mPct: entryPc5m,
       priceChange1hPct: null,
@@ -214,56 +227,8 @@ export function evaluateWouldBuyForExitDefer(args: {
       buys5m: null,
       sells5m: null,
     },
-    args.entryGates,
+    heldBagEntryGatesForDefer(args.entryGates),
   );
-  if (!entryVerdict.pass) return entryVerdict;
-
-  if (args.path.turnDumpGateEnabled) {
-    const td = evaluateTurnDumpGate({
-      enabled: true,
-      pc5m: entryPc5m,
-      volume5mUsd: m.volume5mUsd,
-      liquidityUsd: m.liquidityUsd,
-      alpha: args.path.turnDumpAlpha,
-      beta: args.path.turnDumpBeta,
-      shallowSlackPct: args.path.turnDumpShallowSlackPct,
-      deepSlackPct: args.path.turnDumpDeepSlackPct,
-      shallowBranchEnabled: args.path.turnDumpShallowBranchEnabled,
-      shallowAlpha: args.path.turnDumpShallowAlpha,
-      shallowBeta: args.path.turnDumpShallowBeta,
-      shallowBandPct: args.path.turnDumpShallowBandPct,
-      knifeBranchEnabled: args.path.turnDumpKnifeBranchEnabled,
-      knifeMinDumpPct: args.path.turnDumpKnifeMinDumpPct,
-      knifeMinTurn: args.path.turnDumpKnifeMinTurn,
-    });
-    if (!td.pass) return { pass: false, reasons: td.reasons };
-  }
-
-  if (
-    args.path.entryRequireStabilize &&
-    !entryStabilizeExemptDipSource(args.path.entryDipSource)
-  ) {
-    const pt = mildDipPriceRing.troughAfterPeak(
-      args.path.mint,
-      args.path.stabLookbackMs,
-      args.path.nowMs,
-    );
-    const stabilize = evaluateEntryStabilizeRequired({
-      freshPriceUsd: args.path.markPriceUsd,
-      troughPriceUsd: pt?.trough.priceUsd ?? null,
-      troughAtMs: pt?.trough.tsMs ?? null,
-      nowMs: args.path.nowMs,
-      gates: {
-        enabled: true,
-        minBouncePct: args.path.knifeStabilizeMinBouncePct,
-        quietMs: args.path.knifeStabilizeQuietMs,
-        stabilizeBandPct: args.path.knifeStabilizeBandPct,
-      },
-    });
-    if (!stabilize.pass) return stabilize;
-  }
-
-  return { pass: true, reasons: [] };
 }
 
 /** Build the entry-path slice from live cfg + mark-tick runtime fields. */
