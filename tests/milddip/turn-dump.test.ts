@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateTurnDumpGate,
+  metricsHotDeepDumpOk,
   predictDumpDepthPct,
   turnDumpKnifeBranchLive,
   turnDumpKnifeOrOk,
@@ -264,5 +265,22 @@ describe('turnDumpKnifeBranchLive / hot deep dump seat', () => {
     });
     expect(td.pass).toBe(true);
     expect(td.branch).toBe('knife');
+  });
+
+  it('1.11.922 HJs8xT-class −28% / turn 0.647 passes at knife min 28 (not 30)', () => {
+    const cfg = {
+      turnDumpGateEnabled: true,
+      turnDumpKnifeMinDumpPct: 28,
+      turnDumpKnifeMinTurn: 0.3,
+    };
+    const metrics = {
+      priceChange5mPct: -28,
+      volume5mUsd: 18_427.72,
+      liquidityUsd: 28_497.81,
+    };
+    expect(metricsHotDeepDumpOk(cfg, metrics)).toBe(true);
+    expect(metricsHotDeepDumpOk({ ...cfg, turnDumpKnifeMinDumpPct: 30 }, metrics)).toBe(
+      false,
+    );
   });
 });

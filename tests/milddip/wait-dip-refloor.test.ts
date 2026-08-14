@@ -17,11 +17,13 @@ describe('wait-dip structural re-check', () => {
 
   it('re-reads structure before firing a parked seat', () => {
     expect(loop).toContain('const freshStruct = await loadStructural(mint, cfg, nowMs);');
-    expect(loop).toContain('if (freshStruct && !structuralOk(freshStruct.metrics, cfg,');
+    expect(loop).toContain('metricsHotDeepDumpOk(cfg, freshStruct.metrics, streamDump)');
+    expect(loop).toContain('structuralOk(freshStruct.metrics, cfg, leaderSeen, leaderFreshBuy, hotDeepDump)');
   });
 
-  it('drops the seat and journals the refusal', () => {
+  it('drops the seat on refloor skip when not a hot deep dump', () => {
     expect(loop).toContain("kind: 'mild_dip_wait_dip_refloor_skip'");
+    expect(loop).toContain('if (!hardOk || !hotDeepDump)');
     expect(loop).toContain("delete state.waitDipWatch![mint];");
   });
 

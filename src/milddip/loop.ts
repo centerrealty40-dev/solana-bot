@@ -22,6 +22,7 @@ import {
   fastPathChasePct,
   getStructuralCache,
   streamDrawdownPct,
+  streamDumpExtentPct,
   loadStructural,
   leaderCoBuyAlignOk,
   structuralOk,
@@ -51,6 +52,7 @@ import {
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
+import { metricsHotDeepDumpOk } from './turn-dump.js';
 import {
   isLeaderFreshCoBuy,
   leaderSeedHitByMint,
@@ -598,33 +600,42 @@ async function tryFireWaitDip(
     seedHit: waitSeedHit,
     leaderSeenAtMs,
   });
-  // 1.11.915/921 — the re-check has to know what the entry gate knows.
+  const streamDump = streamDumpExtentPct(mint, cfg.cooldownBounceLookbackMs, nowMs);
+  const hotDeepDump =
+    freshStruct != null
+      ? metricsHotDeepDumpOk(cfg, freshStruct.metrics, streamDump)
+      : false;
+  const leaderSeen = leaderEverSeen(cfg, state, mint, nowMs);
+  // 1.11.915/921/922 — refloor must relax turnover on hot deep dumps (same as fast-path).
   if (
     freshStruct &&
-    !structuralOk(
-      freshStruct.metrics,
-      cfg,
-      leaderEverSeen(cfg, state, mint, nowMs),
-      leaderFreshBuy,
-    )
+    !structuralOk(freshStruct.metrics, cfg, leaderSeen, leaderFreshBuy, hotDeepDump)
   ) {
-    delete state.waitDipWatch![mint];
-    appendMildDipJournal(cfg.journalPath, {
-      kind: 'mild_dip_wait_dip_refloor_skip',
-      mint,
-      symbol: watch.symbol,
-      waitMs: nowMs - watch.detectedAtMs,
-      vol5m: freshStruct.metrics.volume5mUsd ?? null,
-      liq: freshStruct.metrics.liquidityUsd ?? null,
-      mcap: freshStruct.metrics.marketCapUsd ?? null,
-      ageH: freshStruct.metrics.pairAgeHours ?? null,
-      parkedLiq: watch.metrics?.liquidityUsd ?? null,
-      parkedVol5m: watch.metrics?.volume5mUsd ?? null,
-    });
-    console.log(
-      `[mild-dip] SKIP wait-dip refloor ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
-        `liq=${freshStruct.metrics.liquidityUsd} mcap=${freshStruct.metrics.marketCapUsd}`,
-    );
+    const hardOk = structuralOk(freshStruct.metrics, cfg, leaderSeen, true, true);
+    if (!hardOk || !hotDeepDump) {
+      delete state.waitDipWatch![mint];
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_wait_dip_refloor_skip',
+        mint,
+        symbol: watch.symbol,
+        waitMs: nowMs - watch.detectedAtMs,
+        vol5m: freshStruct.metrics.volume5mUsd ?? null,
+        liq: freshStruct.metrics.liquidityUsd ?? null,
+        mcap: freshStruct.metrics.marketCapUsd ?? null,
+        ageH: freshStruct.metrics.pairAgeHours ?? null,
+        parkedLiq: watch.metrics?.liquidityUsd ?? null,
+        parkedVol5m: watch.metrics?.volume5mUsd ?? null,
+        hotDeepDump,
+        streamDumpPct: streamDump,
+        pc5m: freshStruct.metrics.priceChange5mPct ?? null,
+      });
+      console.log(
+        `[mild-dip] SKIP wait-dip refloor ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
+          `liq=${freshStruct.metrics.liquidityUsd} mcap=${freshStruct.metrics.marketCapUsd}`,
+      );
+      return false;
+    }
+    // Hot deep dump with hard floors ok — keep seat; retry next tick (Dex/co-buy blip).
     return false;
   }
 

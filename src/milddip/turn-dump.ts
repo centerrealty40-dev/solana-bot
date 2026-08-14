@@ -3,7 +3,7 @@
  *
  * MAIN:    pred = -5.08 + 6.86·log1p(turn·100), band [pred−10, pred+12]  (8zkg)
  * SHALLOW: pred = -8.83 + 4.23·log1p(turn·100), band [pred−8, pred+8]   (8zkg)
- * KNIFE:   dump ≥ 30 AND turn ≥ 0.30                                   (7BNax OR)
+ * KNIFE:   dump ≥ 28 AND turn ≥ 0.30                                   (7BNax OR)
  *
  * turn = vol5m / liq
  * dump = −pc5m  (positive depth %)
@@ -150,6 +150,52 @@ export function evaluateTurnDumpKnife(args: {
  * high-turn dumps often classify as `main` first — and those are exactly
  * the seats we want to buy now (EeqYr8 −35% / turn≈1.0 → deep_knife_defer).
  */
+/** Most negative pc5m across Dex and stream (deepest dump). */
+export function deepestDumpPc5m(
+  dexPc: number | null | undefined,
+  streamPc: number | null | undefined,
+): number | null {
+  const vals: number[] = [];
+  for (const v of [dexPc, streamPc]) {
+    if (v != null && Number.isFinite(v)) vals.push(v);
+  }
+  if (vals.length === 0) return null;
+  return Math.min(...vals);
+}
+
+export type HotDeepDumpCfg = {
+  turnDumpGateEnabled: boolean;
+  turnDumpKnifeMinDumpPct: number;
+  turnDumpKnifeMinTurn: number;
+};
+
+export type HotDeepDumpMetrics = {
+  priceChange5mPct: number | null;
+  volume5mUsd: number | null;
+  liquidityUsd: number | null;
+};
+
+/**
+ * Hot deep dump on our own tape: dump≥knifeMin & turn≥knifeMin.
+ * Used by fast-path and wait-dip refloor so high turnover does not block the blade.
+ */
+export function metricsHotDeepDumpOk(
+  cfg: HotDeepDumpCfg,
+  metrics: HotDeepDumpMetrics,
+  streamPc5m?: number | null,
+): boolean {
+  const pc = deepestDumpPc5m(metrics.priceChange5mPct, streamPc5m);
+  return turnDumpKnifeOrOk({
+    enabled: cfg.turnDumpGateEnabled,
+    knifeBranchEnabled: true,
+    pc5m: pc,
+    volume5mUsd: metrics.volume5mUsd,
+    liquidityUsd: metrics.liquidityUsd,
+    minDumpPct: cfg.turnDumpKnifeMinDumpPct,
+    minTurn: cfg.turnDumpKnifeMinTurn,
+  }).ok;
+}
+
 export function turnDumpKnifeOrOk(args: {
   enabled: boolean;
   knifeBranchEnabled: boolean;
