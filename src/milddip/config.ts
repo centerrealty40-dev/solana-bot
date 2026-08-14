@@ -235,6 +235,12 @@ const MildDipConfigSchema = z.object({
    * after close is not blocked for 10m.
    */
   lossCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
+  /**
+   * Max successful entries per mint within rolling 24h (0 = off). Wallet-truth
+   * backtest: 821/1390 re-entries were churn losses; blocking ~59% of trips
+   * cut fees ~$238/48h on live wallet.
+   */
+  maxEntriesPerMint24h: z.coerce.number().int().min(0).max(100).default(0),
   slippageBps: z.coerce.number().int().min(10).max(5000).default(150),
   minFeeSolReserve: z.coerce.number().min(0).max(10).default(0.02),
   /**
@@ -913,6 +919,7 @@ export function loadMildDipConfig(): MildDipConfig {
     loadAlertCooldownMs: process.env.MILD_DIP_LOAD_ALERT_COOLDOWN_MS ?? 1_800_000,
     mintCooldownMs: process.env.MILD_DIP_MINT_COOLDOWN_MS ?? 60_000,
     lossCooldownMs: process.env.MILD_DIP_LOSS_COOLDOWN_MS ?? 60_000,
+    maxEntriesPerMint24h: process.env.MILD_DIP_MAX_ENTRIES_PER_MINT_24H ?? 0,
     slippageBps: process.env.MILD_DIP_SLIPPAGE_BPS ?? 150,
     minFeeSolReserve: process.env.MILD_DIP_MIN_FEE_SOL_RESERVE ?? 0.02,
     feeSolTopupEnabled: (() => {

@@ -45,6 +45,7 @@ import {
 } from './state.js';
 import { writeUsBuyFill } from './trade-journal.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
+import { maxEntriesBlock, noteMintEntry } from './entry-churn.js';
 
 const HOLDING_DUST_RAW = 1000n;
 
@@ -123,6 +124,20 @@ export async function attemptMildDipEntry(args: {
   if (state.open[c.mint]) return 'skip';
   if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
+
+  const churn = maxEntriesBlock(cfg, state, c.mint, nowMs);
+  if (churn.block) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_max_entries_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      dipSource: c.dipSource,
+      lane: opts.lane,
+      count24h: churn.count,
+      limit24h: churn.limit,
+    });
+    return 'skip';
+  }
 
   // 1.11.802 — stream ring only for stream-timed sources; Dex/TD may enter on Dex.
   if (cfg.requireStreamPriceEntry && requireStreamPriceForDipSource(c.dipSource)) {
@@ -1030,6 +1045,7 @@ export async function attemptMildDipEntry(args: {
   };
   // Seed exit mark ring so stream-only marks have a print before first swap decode.
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });
+  noteMintEntry(state, c.mint, nowMs);
   buyInFlight.delete(c.mint);
   saveMildDipState(cfg.statePath, state);
   resetCopyFundingCache();

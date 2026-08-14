@@ -1,3 +1,20 @@
+## 1.11.925 — 2026-08-14
+
+### Fixed — wallet-truth accounting (roundtrip ≠ USDC)
+
+- **`trade-journal`**: stale sell USDC peek (delta ≤ 0) no longer credits Jupiter **`quoteReceivedUsd`** as proceeds — **`wallet_delta_stale`**, `receivedUsd=0` for lot/roundtrip.
+- Stale buy peek → **`wallet_delta_stale`** (no quote-as-wallet on concurrent txs).
+- Forensic: **`scripts-tmp/wallet_truth_forensic_48h.py`** (USDC bookend vs roundtrip gap).
+
+### Added — anti-churn max 3 entries/mint/24h
+
+- **`MILD_DIP_MAX_ENTRIES_PER_MINT_24H=3`** (prod): rolling window in `state.recentEntryMsByMint`; journal `mild_dip_max_entries_skip`.
+- Wallet-truth 48h backtest: ~59% trip cut → est **~+$364** vs **−$84** USDC bleed (fees + losing re-entries).
+
+### Rollback
+
+- `MILD_DIP_MAX_ENTRIES_PER_MINT_24H: '0'` + revert `trade-journal.ts` stale peek + reload PM2.
+
 ## 1.11.924 — 2026-08-14
 
 ### Fixed — hot deep dump missed on wait_dip refloor + deep_knife_defer (HJs8xT)

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { KnifeWatchEntry } from './knife-stabilize.js';
 import type { WaitDipWatchEntry } from './wait-dip.js';
 import type { MildDipCandidateMetrics } from './gates.js';
+import { sanitizeRecentEntryMsByMint } from './entry-churn.js';
 
 export type MildDipOpenPosition = {
   mint: string;
@@ -128,6 +129,8 @@ export type MildDipState = {
   open: Record<string, MildDipOpenPosition>;
   /** mint → last close/attempt ms (cooldown). */
   cooldownUntilMs: Record<string, number>;
+  /** mint → successful entry timestamps (rolling 24h anti-churn). */
+  recentEntryMsByMint?: Record<string, number[]>;
   /** mint → last full-exit fill/mark price for same-price rebuy guard. */
   lastExitByMint?: Record<string, MildDipLastExit>;
   /**
@@ -284,6 +287,7 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     leaderSeenMints: {},
     knifeWatch: {},
     waitDipWatch: {},
+    recentEntryMsByMint: {},
     updatedAtMs: nowMs,
   };
 }
@@ -312,6 +316,7 @@ export function loadMildDipState(statePath: string): MildDipState {
           : {},
       knifeWatch: sanitizeKnifeWatch(parsed.knifeWatch),
       waitDipWatch: sanitizeWaitDipWatch(parsed.waitDipWatch),
+      recentEntryMsByMint: sanitizeRecentEntryMsByMint(parsed.recentEntryMsByMint),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),
     };
   } catch {
