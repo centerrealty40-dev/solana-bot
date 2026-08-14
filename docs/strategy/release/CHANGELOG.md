@@ -1,3 +1,15 @@
+## 1.11.924 — 2026-08-14
+
+### Fixed — hot deep dump missed on wait_dip refloor + deep_knife_defer (HJs8xT)
+
+- **`wait_dip` refloor** now passes **`hotDeepDump`** into `structuralOk` (same as fast-path): high turnover on a hot blade no longer kills the parked seat at fill time.
+- **`MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT`**: **30 → 28** — catches −28% / turn≈0.65 flushes (7BNax `5pD6XkRi…` @ 21:42 UTC) without waiting for leader seed.
+- Shared helper **`metricsHotDeepDumpOk`** in `turn-dump.ts` for fast-path + refloor.
+
+### Rollback
+
+- `MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '30'` + revert `loop.ts` / `turn-dump.ts` refloor helper + reload PM2.
+
 ## 1.11.923 — 2026-08-14
 
 ### Restored — mild-dip **known-good baseline** (`milddip-good-baseline-1.11.915`)

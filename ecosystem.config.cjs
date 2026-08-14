@@ -3066,7 +3066,13 @@ const PM2_APPS = [
          * mcap $37k, four buyers against fourteen sellers, and went to −96%.
          */
         MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '0',
-        MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '30',
+        /**
+         * 1.11.922 — 28, was 30. HJs8xT at 21:42 UTC: pc5m −28% / turn 0.647 —
+         * wait_dip refloor and deep_knife_defer both missed because 28 < 30 while
+         * turnover was above the 0.25 ceiling. 7BNax filled the same flush one
+         * tick later.
+         */
+        MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '28',
         MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN: '0.3',
         /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in

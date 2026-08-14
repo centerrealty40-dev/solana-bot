@@ -46,6 +46,6 @@ describe('1.11.893 the entry band runs from -25 to -4', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_TURN_DUMP_KNIFE_BRANCH: '0'");
     // Threshold kept, so the branch can be measured again if it is reopened.
-    expect(eco).toContain("MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '30'");
+    expect(eco).toContain("MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '28'");
   });
 });

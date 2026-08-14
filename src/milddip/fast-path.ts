@@ -20,8 +20,8 @@ import { isLeaderFreshCoBuy } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
 import {
   evaluateTurnDumpGate,
+  metricsHotDeepDumpOk,
   turnDumpKnifeBranchLive,
-  turnDumpKnifeOrOk,
 } from './turn-dump.js';
 
 function turnDumpArgsFromCfg(
@@ -653,20 +653,11 @@ export async function evaluateFastPathCandidate(
         ? streamDd
         : dexPc;
   /**
-   * Hot deep dump on our own tape: dump≥30 & turn≥0.3. Evaluated *before*
+   * Hot deep dump on our own tape: dump≥knifeMin & turn≥knifeMin. Evaluated *before*
    * structural so high turnover (vol5m/liq) does not block the blade we are
    * trying to catch ahead of anyone else.
    */
-  const hotDeepKnife = turnDumpKnifeOrOk({
-    enabled: cfg.turnDumpGateEnabled,
-    knifeBranchEnabled: true,
-    pc5m: deepestPc,
-    volume5mUsd: struct.metrics.volume5mUsd,
-    liquidityUsd: struct.metrics.liquidityUsd,
-    minDumpPct: cfg.turnDumpKnifeMinDumpPct,
-    minTurn: cfg.turnDumpKnifeMinTurn,
-  });
-  const hotDeepKnifeOk = hotDeepKnife.ok;
+  const hotDeepKnifeOk = metricsHotDeepDumpOk(cfg, struct.metrics, deepestPc);
 
   const leaderSeenForAge = leaderSeenName;
   if (
