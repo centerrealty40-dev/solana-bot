@@ -241,7 +241,29 @@ describe('shouldDeferSoftExit', () => {
     expect(v.reasons.join(' ')).toContain('age_h=');
   });
 
-  it('requires entry stabilize when enabled', () => {
+  it('defers on dip band despite stale low vol/turn (FXoZh2 held-bag)', () => {
+    const liveGates: MildDipEntryGates = {
+      ...entryGates,
+      minVolume5mUsd: 150,
+      minTurnover5mLiq: 0.06,
+      allowedDexIds: ['pumpswap'],
+    };
+    const v = shouldDeferSoftExit({
+      ...base,
+      entryGates: liveGates,
+      reason: 'never_arm_stale',
+      metrics: {
+        pc5mPct: -4.34,
+        volume5mUsd: 92,
+        liquidityUsd: 30_000,
+        ageMs: 2_000,
+      },
+      path: { ...pathOff, dexId: 'pumpswap' },
+    });
+    expect(v.defer).toBe(true);
+  });
+
+  it('does not require entry stabilize for an open bag', () => {
     const mint = 'Stab1111111111111111111111111111111111111';
     const nowMs = 1_700_000_100_000;
     mildDipPriceRing.note(mint, 0.001, { tsMs: nowMs - 60_000, source: 'stream' });
@@ -262,7 +284,6 @@ describe('shouldDeferSoftExit', () => {
         stabLookbackMs: 300_000,
       },
     });
-    expect(v.defer).toBe(false);
-    expect(v.reasons.join(' ')).toContain('entry_no_stabilize');
+    expect(v.defer).toBe(true);
   });
 });
