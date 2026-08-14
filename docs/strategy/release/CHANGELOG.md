@@ -1,3 +1,18 @@
+## 1.11.917 — 2026-08-14
+
+### Fixed — pump-chase entries on H1 green (CX2v7J)
+
+- **Turn-dump rescue** no longer bypasses main dip band `(−25, −4]` on flat tape: rescue requires pc5m in band **or** stream dump ≤ `MILD_DIP_DUMP_H1_PUMP_MIN_DUMP_PCT` (−8%).
+- **H1 pump gate** threshold lowered **15% → 12%** (`MILD_DIP_DUMP_H1_PUMP_MIN_PCT`): blocks entries like pc1h +14% with only −3% pc5m.
+
+### Why
+
+- CX2v7J buy at 09:00 UTC: tdRescue + h1 gate miss (14.2% < 15%) bought a micro-red candle on a +14% H1 pump — not a dip.
+
+### Rollback
+
+- Restore `MILD_DIP_DUMP_H1_PUMP_MIN_PCT=15` and revert `turnDumpRescueDipOk` guard in `fast-path.ts`.
+
 ## [1.11.872] — 2026-08-12
 
 **Тег:** `sa-1.11.872`

@@ -248,6 +248,28 @@ export function inDipBand(
 }
 
 /**
+ * 1.11.917 — TD rescue must not invent a dip outside the main band.
+ *
+ * CX2v7J: pc5m −3.29%, pc1h +14% — turn-dump matched low-turn flat tape and
+ * bypassed (−25,−4], buying the H1 pump top. Rescue is allowed only when Dex/stream
+ * pc5m is already in the main band, or the stream ring shows a real dump (≤ minDeep).
+ */
+export function turnDumpRescueDipOk(args: {
+  pc5m: number | null | undefined;
+  streamDumpPct: number | null | undefined;
+  minDipPct: number;
+  maxDipPct: number;
+  /** Same floor as H1 pump gate (live −8). 0 = main band only. */
+  minDeepDumpPct: number;
+}): boolean {
+  if (inDipBand(args.pc5m, args.minDipPct, args.maxDipPct)) return true;
+  const deep = args.minDeepDumpPct;
+  if (!(deep < 0)) return false;
+  const sd = args.streamDumpPct;
+  return sd != null && Number.isFinite(sd) && sd <= deep + 1e-9;
+}
+
+/**
  * Stream-only Dex confirm.
  * - requireDexDip: Dex must print ≤ dexMaxDipPct (classic).
  * - allowMissingDex: null Dex OK (API lag) when require on.
@@ -841,7 +863,16 @@ export async function evaluateFastPathCandidate(
       : (metrics.priceChange5mPct ?? dexPc);
   if (!dipSource && cfg.turnDumpGateEnabled) {
     const tdEarly = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5mForGate, metrics));
-    if (tdEarly.pass) {
+    if (
+      tdEarly.pass &&
+      turnDumpRescueDipOk({
+        pc5m: tdPc5mForGate,
+        streamDumpPct: streamDump,
+        minDipPct: cfg.entry.minDipPct,
+        maxDipPct: maxDip,
+        minDeepDumpPct: cfg.dumpH1PumpMinDumpPct,
+      })
+    ) {
       tdRescue = true;
       dipSource = tdEarly.branch === 'knife' ? 'turn_dump_knife' : 'dex';
       if (tdPc5mForGate != null && Number.isFinite(tdPc5mForGate)) {

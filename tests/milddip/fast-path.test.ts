@@ -6,6 +6,7 @@ import {
   inDipBand,
   requireStreamPriceForDipSource,
   resetFastPathStateForTests,
+  turnDumpRescueDipOk,
   streamDipInBandOk,
   streamOnlyDexDipOk,
   streamOnlyNearTroughOk,
@@ -135,7 +136,7 @@ describe('fast-path helpers', () => {
       dumpH1PumpGateOk({
         priceChange1hPct: 46,
         dumpExtentPct: -10,
-        h1PumpMinPct: 15,
+        h1PumpMinPct: 12,
         minDumpPct: -15,
       }),
     ).toBe(false);
@@ -143,7 +144,7 @@ describe('fast-path helpers', () => {
       dumpH1PumpGateOk({
         priceChange1hPct: 46,
         dumpExtentPct: -18,
-        h1PumpMinPct: 15,
+        h1PumpMinPct: 12,
         minDumpPct: -15,
       }),
     ).toBe(true);
@@ -152,8 +153,51 @@ describe('fast-path helpers', () => {
       dumpH1PumpGateOk({
         priceChange1hPct: 8,
         dumpExtentPct: -5,
-        h1PumpMinPct: 15,
+        h1PumpMinPct: 12,
         minDumpPct: -15,
+      }),
+    ).toBe(true);
+  });
+
+  it('1.11.917 H1 pump gate blocks CX2v7J-class +14% H1 / −3% pc5m', () => {
+    expect(
+      dumpH1PumpGateOk({
+        priceChange1hPct: 14.23,
+        dumpExtentPct: -3.29,
+        h1PumpMinPct: 12,
+        minDumpPct: -8,
+      }),
+    ).toBe(false);
+  });
+
+  it('1.11.917 turnDumpRescue requires main band or deep stream dump', () => {
+    const min = -25;
+    const max = -4;
+    expect(
+      turnDumpRescueDipOk({
+        pc5m: -10,
+        streamDumpPct: -10,
+        minDipPct: min,
+        maxDipPct: max,
+        minDeepDumpPct: -8,
+      }),
+    ).toBe(true);
+    expect(
+      turnDumpRescueDipOk({
+        pc5m: -3.29,
+        streamDumpPct: -3.29,
+        minDipPct: min,
+        maxDipPct: max,
+        minDeepDumpPct: -8,
+      }),
+    ).toBe(false);
+    expect(
+      turnDumpRescueDipOk({
+        pc5m: -2,
+        streamDumpPct: -12,
+        minDipPct: min,
+        maxDipPct: max,
+        minDeepDumpPct: -8,
       }),
     ).toBe(true);
   });
