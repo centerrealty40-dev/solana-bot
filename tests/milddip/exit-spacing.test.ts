@@ -62,12 +62,10 @@ describe('1.11.897 the ladder closes on the first rung', () => {
   });
 });
 
-describe('1.11.921 stale time+drawdown exit', () => {
-  it('live env cuts a flat never-armed bag at −5% after 5m (MFE≤5%)', () => {
+describe('1.11.922 stale time+drawdown exit OFF (revert 1.11.921)', () => {
+  it('live env does not cut on never_arm_stale', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '300000'");
-    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5'");
-    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '5'");
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '0'");
   });
 });
 
