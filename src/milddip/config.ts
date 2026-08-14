@@ -354,6 +354,13 @@ const MildDipConfigSchema = z.object({
     .min(60_000)
     .max(24 * 3_600_000)
     .default(7_200_000),
+  /**
+   * 1.11.921 — low-turn entries need a leader on the same dip, not just a name
+   * touched days ago. 49% of solo buys had turn<0.06 while co-bought was 24%.
+   */
+  leaderCoBuyAlignEnabled: z.boolean().default(false),
+  leaderCoBuyAlignMaxMs: z.coerce.number().int().min(10_000).max(600_000).default(120_000),
+  leaderCoBuyAlignMinTurn: z.coerce.number().min(0).max(5).default(0.06),
   waitDipEnabled: z.boolean().default(false),
   /**
    * 1.11.803 — allow wait-dip to run under the turn→dump gate (formula selects
@@ -979,6 +986,9 @@ export function loadMildDipConfig(): MildDipConfig {
     requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
     leaderSeenMemoryMs: process.env.MILD_DIP_LEADER_SEEN_MEMORY_MS ?? 0,
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
+    leaderCoBuyAlignEnabled: envBool('MILD_DIP_LEADER_CO_BUY_ALIGN', false),
+    leaderCoBuyAlignMaxMs: envNum('MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS', 120_000),
+    leaderCoBuyAlignMinTurn: envNum('MILD_DIP_LEADER_CO_BUY_ALIGN_MIN_TURN', 0.06),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', false),
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),

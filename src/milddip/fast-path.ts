@@ -16,6 +16,7 @@ import {
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 import type { LeaderSeedHit } from './discover-extra.js';
+import { isLeaderFreshCoBuy } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
 import { evaluateTurnDumpGate, turnDumpKnifeOrOk } from './turn-dump.js';
 
@@ -324,6 +325,8 @@ export function structuralOk(
   metrics: MildDipCandidateMetrics,
   cfg: MildDipConfig,
   leaderSeen = false,
+  /** Fresh leader co-buy only — relaxes turn/vol ceilings, not age. */
+  leaderFreshBuy = false,
 ): boolean {
   const g = cfg.entry;
   const minAge =
@@ -331,25 +334,14 @@ export function structuralOk(
       ? Math.min(g.minPairAgeHoursLeaderSeen, g.minPairAgeHours)
       : g.minPairAgeHours;
   /**
-   * 1.11.914 — the turnover ceiling is a statistical prior about names we know
-   * nothing else about. A leader inside the name is direct evidence that
-   * overrides it, the same way it overrides the age floor.
-   *
-   * ELiQoVM9 is the case: 3.1 hours old, $13k of liquidity, turnover 0.355, and
-   * 8zkgFG turned $149.57 into $249.73 on it in 23 minutes. We evaluated it 239
-   * times and rejected all 239 on structural_fail - the age floor and this
-   * ceiling together.
+   * 1.11.914/921 — turnover/vol ceilings relax only on a *fresh* leader buy.
+   * Seven-day `leaderSeen` memory kept letting solo low-turn wait_dip fills
+   * through (5XtrJ3 turn=0.019 with leader flat 50m earlier).
    */
-  const maxTurn = leaderSeen ? 0 : g.maxTurnover5mLiq;
-  /**
-   * 1.11.915 — same reasoning for the turnover floor and the 5m volume ceiling.
-   * 49nkLrXi printed $51.9k of 5m volume on $73.9k of liquidity with a leader in
-   * it, and the $40k ceiling threw it out; CgnQ8a ran turnover 0.044 against the
-   * 0.06 floor. Both ceilings and that floor describe coins we have no other
-   * evidence about.
-   */
-  const minTurn = leaderSeen ? 0 : g.minTurnover5mLiq;
-  const maxVol = leaderSeen ? 0 : g.maxVolume5mUsd;
+  const relaxTurnVol = leaderFreshBuy;
+  const maxTurn = relaxTurnVol ? 0 : g.maxTurnover5mLiq;
+  const minTurn = relaxTurnVol ? 0 : g.minTurnover5mLiq;
+  const maxVol = relaxTurnVol ? 0 : g.maxVolume5mUsd;
   if (metrics.volume5mUsd == null || !(metrics.volume5mUsd >= g.minVolume5mUsd)) return false;
   if (maxVol > 0 && metrics.volume5mUsd > maxVol) return false;
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
@@ -372,6 +364,37 @@ export function structuralOk(
     if (!dex || !g.allowedDexIds.includes(dex)) return false;
   }
   return true;
+}
+
+/** Turnover floor unless a leader is actively co-buying this dip. */
+export function leaderCoBuyAlignOk(
+  cfg: MildDipConfig,
+  metrics: MildDipCandidateMetrics,
+  args: {
+    nowMs: number;
+    trigger: 'stream' | 'leader' | 'scan';
+    seedHit?: LeaderSeedHit | null;
+    leaderSeenAtMs?: number | null;
+  },
+): { ok: boolean; turn: number | null; leaderFresh: boolean } {
+  if (!cfg.leaderCoBuyAlignEnabled || !(cfg.leaderCoBuyAlignMinTurn > 0)) {
+    return { ok: true, turn: null, leaderFresh: false };
+  }
+  const v5 = metrics.volume5mUsd;
+  const liq = metrics.liquidityUsd;
+  const turn =
+    v5 != null && liq != null && liq > 0 && Number.isFinite(v5) ? v5 / liq : null;
+  const leaderFresh = isLeaderFreshCoBuy({
+    nowMs: args.nowMs,
+    maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+    trigger: args.trigger,
+    seedHit: args.seedHit,
+    leaderSeenAtMs: args.leaderSeenAtMs,
+  });
+  if (turn != null && turn < cfg.leaderCoBuyAlignMinTurn && !leaderFresh) {
+    return { ok: false, turn, leaderFresh };
+  }
+  return { ok: true, turn, leaderFresh };
 }
 
 /**
@@ -482,11 +505,10 @@ export async function evaluateFastPathCandidate(
   trigger: 'stream' | 'leader' | 'scan',
   seedHit?: LeaderSeedHit | null,
   /**
-   * 1.11.914 — a leader has traded this name, however we came to look at it.
-   * The caller knows this from its own memory; the trigger alone does not, which
-   * is why ELiQoVM9 stayed behind the age floor while 8zkgFG made 67% on it.
+   * 1.11.914 — when a leader last traded this mint (from state memory). Used for
+   * age-floor relax and, when fresh, turnover co-buy align.
    */
-  leaderSeenMint = false,
+  leaderSeenAtMs?: number | null,
 ): Promise<MildDipCandidate | null> {
   const skip = (reason: string, extra?: Record<string, unknown>): null => {
     // Leave a trail for leader + stream wakes (silent null hid stream misses).
@@ -529,7 +551,15 @@ export async function evaluateFastPathCandidate(
    * memory as well as from the wake that found the coin, and applied to every
    * prior that was fitted on names we know nothing else about.
    */
-  const leaderSeenName = trigger === 'leader' || seedHit != null || leaderSeenMint;
+  const leaderSeenName =
+    trigger === 'leader' || seedHit != null || leaderSeenAtMs != null;
+  const leaderFreshBuy = isLeaderFreshCoBuy({
+    nowMs,
+    maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+    trigger,
+    seedHit: seedHit ?? null,
+    leaderSeenAtMs,
+  });
   /**
    * The dip ceiling exists because our -4..0 entries were negative in every
    * window. A leader buying at -2% is not that population. Flat is as far as it
@@ -629,15 +659,33 @@ export async function evaluateFastPathCandidate(
 
   // A name a leader is buying gets the younger age floor (1.11.905).
   const leaderSeenForAge = leaderSeenName;
-  if (!structuralOk(struct.metrics, cfg, leaderSeenForAge)) {
+  if (!structuralOk(struct.metrics, cfg, leaderSeenForAge, leaderFreshBuy)) {
     return skip('structural_fail', {
       structSource,
       structAgeMs,
       leaderSeen: leaderSeenForAge,
+      leaderFreshBuy,
       vol5m: struct.metrics.volume5mUsd,
       liq: struct.metrics.liquidityUsd,
       mcap: struct.metrics.marketCapUsd,
       ageH: struct.metrics.pairAgeHours,
+      pc5m: struct.metrics.priceChange5mPct,
+    });
+  }
+
+  const coBuy = leaderCoBuyAlignOk(cfg, struct.metrics, {
+    nowMs,
+    trigger,
+    seedHit: seedHit ?? null,
+    leaderSeenAtMs,
+  });
+  if (!coBuy.ok) {
+    return skip('leader_co_buy_align', {
+      turn: coBuy.turn,
+      minTurn: cfg.leaderCoBuyAlignMinTurn,
+      leaderFresh: coBuy.leaderFresh,
+      maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+      structSource,
       pc5m: struct.metrics.priceChange5mPct,
     });
   }

@@ -153,6 +153,30 @@ export function leaderSeedHitByMint(
 }
 
 /**
+ * True when a leader buy on this mint is fresh enough to count as the same dip
+ * (±leaderCoBuyAlignMaxMs co-buy window from the 48h solo-vs-co analysis).
+ */
+export function isLeaderFreshCoBuy(args: {
+  nowMs: number;
+  maxAgeMs: number;
+  trigger: 'stream' | 'leader' | 'scan';
+  seedHit?: LeaderSeedHit | null;
+  leaderSeenAtMs?: number | null;
+}): boolean {
+  if (args.trigger === 'leader') return true;
+  if (!(args.maxAgeMs > 0)) return false;
+  const max = args.maxAgeMs;
+  if (args.seedHit && args.nowMs - args.seedHit.lastSeenAtMs <= max) return true;
+  if (
+    args.leaderSeenAtMs != null &&
+    args.nowMs - args.leaderSeenAtMs <= max
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
  * Merge one leader buy into the sidecar seed file (atomic). Used by observer;
  * also exported for tests / TS callers.
  */
