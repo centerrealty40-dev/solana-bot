@@ -74,6 +74,7 @@ const exitGates: MildDipExitGates = {
   cliffDumpPnlPct: 50,
   hardStopPnlPct: 15,
   hardStopBouncePct: 3,
+  hardStopBounce2Pct: 0,
   hardStopPartialFraction: 0,
   neverArmBounceMinDumpPct: 8,
   neverArmBouncePct: 8,
@@ -709,10 +710,12 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('hard_stop');
   });
 
-  it('1.11.794 — staged hard stop: half at −25%, runner full-exits if still ≤ −25%', () => {
+  it('1.11.920 — staged hard stop: half at −25% + 3% bounce; runner at 6% bounce', () => {
     const staged = {
       ...exitGates,
       hardStopPnlPct: 25,
+      hardStopBouncePct: 3,
+      hardStopBounce2Pct: 6,
       hardStopPartialFraction: 0.5,
       cliffDumpPnlPct: 50,
       neverArmFreefallPnlPct: 0,
@@ -722,8 +725,10 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     };
     const half = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 75,
+      markPriceUsd: 73.5,
       peakPriceUsd: 100,
+      troughPriceUsd: 70,
+      postEntryTroughPriceUsd: 70,
       armed: false,
       gates: staged,
       heldMs: 5_000,
@@ -732,11 +737,26 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(half.reason).toBe('hard_stop');
     expect(half.fraction).toBe(0.5);
 
-    // 1.11.794 — no limbo: runner still ≤ −hardStop → full hard_stop (not wait −50).
+    // Runner still underwater but only 3% bounce — hold for 2× bounce.
+    const holdRunner = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 72.1,
+      peakPriceUsd: 100,
+      troughPriceUsd: 70,
+      postEntryTroughPriceUsd: 70,
+      armed: false,
+      scaleOutDone: true,
+      gates: staged,
+      heldMs: 5_000,
+    });
+    expect(holdRunner.shouldExit).toBe(false);
+
     const killRunner = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 70,
+      markPriceUsd: 74.2,
       peakPriceUsd: 100,
+      troughPriceUsd: 70,
+      postEntryTroughPriceUsd: 70,
       armed: false,
       scaleOutDone: true,
       gates: staged,
@@ -750,6 +770,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       entryPriceUsd: 100,
       markPriceUsd: 50,
       peakPriceUsd: 100,
+      troughPriceUsd: 40,
+      postEntryTroughPriceUsd: 40,
       armed: false,
       scaleOutDone: true,
       gates: staged,

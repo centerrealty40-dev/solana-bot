@@ -3516,8 +3516,9 @@ const PM2_APPS = [
          * price we can actually get.
          */
         MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT: '1',
-        /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
-        MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
+        /** 1.11.920 — staged hard_stop: half @ 3% bounce, runner @ 6%. */
+        MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0.5',
+        MILD_DIP_EXIT_HARD_STOP_BOUNCE_2_PCT: '6',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         /**
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):

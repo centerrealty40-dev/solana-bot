@@ -83,6 +83,7 @@ const gatesForDust = {
   cliffDumpPnlPct: 50,
   hardStopPnlPct: 15,
   hardStopBouncePct: 3,
+  hardStopBounce2Pct: 0,
   hardStopPartialFraction: 0,
   neverArmBounceMinDumpPct: 8,
   neverArmBouncePct: 8,

@@ -2594,7 +2594,8 @@ export async function runMildDipLoop(
           `fullGiveback=-${cfg.exit.givebackPct}% `) +
       `hardStop=-${cfg.exit.hardStopPnlPct}%` +
       (cfg.exit.hardStopPartialFraction > 0 && cfg.exit.hardStopPartialFraction < 1
-        ? `×${cfg.exit.hardStopPartialFraction}`
+        ? `×${cfg.exit.hardStopPartialFraction}/bounce≥${cfg.exit.hardStopBouncePct}%` +
+          `/≥${cfg.exit.hardStopBounce2Pct > cfg.exit.hardStopBouncePct ? cfg.exit.hardStopBounce2Pct : cfg.exit.hardStopBouncePct * 2}%`
         : '') +
       ` ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +

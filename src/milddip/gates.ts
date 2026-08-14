@@ -186,6 +186,8 @@ export type MildDipExitGates = {
    * through to them rather than returning. 0 = fire on the print.
    */
   hardStopBouncePct: number;
+  /** Second staged hard_stop cut: bounce off trough ≥ this (0 = 2× hardStopBouncePct). */
+  hardStopBounce2Pct: number;
   deadSetMinHoldMs: number;
   /**
    * 1.11.855 — once MFE has reached `breakevenArmPct`, close the whole bag if
@@ -1182,6 +1184,12 @@ export function evaluateMildDipPeakGiveback(args: {
    * 1.11.916 — has the price turned yet? A breach with no turn is not an exit.
    */
   const stopBounce = gates.hardStopBouncePct > 0 ? gates.hardStopBouncePct : 0;
+  const stopBounce2 =
+    gates.hardStopBounce2Pct > stopBounce
+      ? gates.hardStopBounce2Pct
+      : stopBounce > 0
+        ? stopBounce * 2
+        : 0;
   const troughPx = args.troughPriceUsd;
   // An unknown trough falls back to firing on the print: a missing input must
   // not be able to switch the stop off.
@@ -1192,14 +1200,12 @@ export function evaluateMildDipPeakGiveback(args: {
     (args.markPriceUsd / troughPx - 1) * 100 >= stopBounce;
 
   if (hardPartial > 0) {
-    // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
-    // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
-    // full cliff_dump.
+    // 1.11.920 — half @ hardStop + first bounce; runner @ 2× bounce (not on print).
     if (cliff > 0 && pnlPct <= -cliff && turned) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
-    if (hardStop > 0 && pnlPct <= -hardStop && turned) {
-      if (!scaleOutDone) {
+    if (hardStop > 0 && pnlPct <= -hardStop) {
+      if (!scaleOutDone && turned) {
         return {
           ...hold,
           shouldExit: true,
@@ -1207,7 +1213,13 @@ export function evaluateMildDipPeakGiveback(args: {
           reason: 'hard_stop',
         };
       }
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
+      if (
+        scaleOutDone &&
+        stopBounce2 > 0 &&
+        bounceOffTroughPct >= stopBounce2 - 1e-9
+      ) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
+      }
     }
   } else {
     // Cliff and stop both wait for the turn (1.11.923); missing trough → fire.
