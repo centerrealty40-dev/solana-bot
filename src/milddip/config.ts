@@ -148,7 +148,7 @@ const MildDipConfigSchema = z.object({
   requireStreamPriceMaxAgeMs: z.coerce.number().int().min(5_000).max(900_000).default(120_000),
   /** Decode program-log signatures → stream price samples (RPC). */
   streamPriceSampleEnabled: z.boolean().default(true),
-  streamPriceMinGapMs: z.coerce.number().int().min(500).max(60_000).default(2_000),
+  streamPriceMinGapMs: z.coerce.number().int().min(250).max(60_000).default(2_000),
   streamPriceConcurrency: z.coerce.number().int().min(1).max(8).default(3),
   /**
    * On open mints: if a stream sell empties a wallet bag (post≈0) and is large,

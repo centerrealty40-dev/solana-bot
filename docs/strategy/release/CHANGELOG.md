@@ -1,3 +1,13 @@
+## 1.11.927 — 2026-08-14
+
+### Fixed — mild-dip boot: allow `MILD_DIP_STREAM_PRICE_MIN_GAP_MS=250`
+
+- Zod floor was 500 while live env is 250 (open-bag force-fetch bypasses gap anyway). Bot was crash-looping on PM2 reload after 1.11.926.
+
+### Rollback
+
+- Revert `config.ts` min to 500 or set env to `'500'` + reload PM2.
+
 ## 1.11.926 — 2026-08-14
 
 ### Changed — mild-dip entry clip: liquidity power law ($1–$30)
