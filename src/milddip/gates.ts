@@ -1583,26 +1583,45 @@ export function knifeStabilizeMinMarketCapUsd(args: {
   return args.entryMinMarketCapUsd;
 }
 
+/** Leader-fit liquidity power law, rescaled to our clip book (see ecosystem comments). */
+export type MildDipLiquidityPowerLawSize = {
+  /** Multiplier k in k × liq^exp. ≤0 disables power law (flat tiers). */
+  coef: number;
+  /** Exponent (leader fit ≈ 0.866). */
+  exp: number;
+  minUsd: number;
+  maxUsd: number;
+};
+
 /**
- * Wanted entry notional:
- * - thick clip when mcap/liq/age all clear
- * - else micro clip when mcap ∈ [microMin, microMax]
- * - else base
- * Missing metrics never size up (fail closed); micro needs mcap only.
+ * sizeUsd = clamp(minUsd, maxUsd, coef × liquidityUsd^exp).
+ * Leader reference: 0.0387 × liq^0.866 — we use ~1.08% of that scale for $1–$30 clips.
  */
-export function resolveMildDipWantedSizeUsd(args: {
-  basePositionUsd: number;
+export function mildDipLiquidityPowerLawSizeUsd(
+  liquidityUsd: number,
+  law: MildDipLiquidityPowerLawSize,
+): number {
+  const { coef, exp, minUsd, maxUsd } = law;
+  if (!(coef > 0) || !(exp > 0) || !(liquidityUsd > 0)) {
+    return Math.min(maxUsd, Math.max(minUsd, minUsd));
+  }
+  const raw = coef * liquidityUsd ** exp;
+  if (!Number.isFinite(raw) || raw <= 0) {
+    return Math.min(maxUsd, Math.max(minUsd, minUsd));
+  }
+  return Math.min(maxUsd, Math.max(minUsd, raw));
+}
+
+function mildDipResolveSizeTier(args: {
   thick: MildDipThickSizeGates;
   micro?: MildDipMicroSizeGates | null;
   metrics: Pick<MildDipCandidateMetrics, 'liquidityUsd' | 'marketCapUsd' | 'pairAgeHours'>;
-}): { sizeUsd: number; tier: 'base' | 'thick' | 'micro' } {
-  const base = args.basePositionUsd;
-  const thickUsd = args.thick.positionUsd;
+}): 'base' | 'thick' | 'micro' {
   const liq = args.metrics.liquidityUsd;
   const mcap = args.metrics.marketCapUsd;
   const age = args.metrics.pairAgeHours;
+  const thickUsd = args.thick.positionUsd;
 
-  // 1.11.754 — allow thick/micro when size == base (flat $30 book).
   if (
     thickUsd > 0 &&
     liq != null &&
@@ -1615,7 +1634,7 @@ export function resolveMildDipWantedSizeUsd(args: {
     Number.isFinite(age) &&
     age >= args.thick.minPairAgeHours
   ) {
-    return { sizeUsd: thickUsd, tier: 'thick' };
+    return 'thick';
   }
 
   const micro = args.micro;
@@ -1630,7 +1649,41 @@ export function resolveMildDipWantedSizeUsd(args: {
     mcap >= micro.minMarketCapUsd &&
     mcap <= micro.maxMarketCapUsd
   ) {
-    return { sizeUsd: microUsd, tier: 'micro' };
+    return 'micro';
+  }
+
+  return 'base';
+}
+
+/**
+ * Wanted entry notional:
+ * - when `liqPowerLaw.coef > 0` and liq known: clamp(min, max, coef × liq^exp)
+ * - else flat tier clip: thick / micro / base
+ * Tier labels (thick/micro/base) are kept for telemetry either way.
+ * Missing metrics never size up (fail closed); micro needs mcap only.
+ */
+export function resolveMildDipWantedSizeUsd(args: {
+  basePositionUsd: number;
+  thick: MildDipThickSizeGates;
+  micro?: MildDipMicroSizeGates | null;
+  liqPowerLaw?: MildDipLiquidityPowerLawSize | null;
+  metrics: Pick<MildDipCandidateMetrics, 'liquidityUsd' | 'marketCapUsd' | 'pairAgeHours'>;
+}): { sizeUsd: number; tier: 'base' | 'thick' | 'micro' } {
+  const base = args.basePositionUsd;
+  const thickUsd = args.thick.positionUsd;
+  const liq = args.metrics.liquidityUsd;
+  const tier = mildDipResolveSizeTier(args);
+
+  const law = args.liqPowerLaw;
+  if (law && law.coef > 0 && liq != null && Number.isFinite(liq) && liq > 0) {
+    return { sizeUsd: mildDipLiquidityPowerLawSizeUsd(liq, law), tier };
+  }
+
+  if (tier === 'thick') {
+    return { sizeUsd: thickUsd, tier };
+  }
+  if (tier === 'micro') {
+    return { sizeUsd: args.micro!.positionUsd, tier };
   }
 
   return { sizeUsd: base, tier: 'base' };

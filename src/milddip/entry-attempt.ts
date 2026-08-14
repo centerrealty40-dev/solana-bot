@@ -652,6 +652,15 @@ export async function attemptMildDipEntry(args: {
 
   const wanted = resolveMildDipWantedSizeUsd({
     basePositionUsd: cfg.positionUsd,
+    liqPowerLaw:
+      cfg.sizeLiqPowerCoef > 0
+        ? {
+            coef: cfg.sizeLiqPowerCoef,
+            exp: cfg.sizeLiqPowerExp,
+            minUsd: cfg.sizeMinUsd,
+            maxUsd: cfg.sizeMaxUsd,
+          }
+        : null,
     thick: {
       positionUsd: cfg.thickPositionUsd,
       minMarketCapUsd: cfg.thickMinMarketCapUsd,
