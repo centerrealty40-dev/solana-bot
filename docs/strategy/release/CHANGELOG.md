@@ -1,3 +1,15 @@
+## 1.11.920 — 2026-08-14
+
+### Changed — staged `hard_stop` on 2× bounce (3wNpT4)
+
+- **`hard_stop`** now sells **50%** at the first bounce off trough (`HARD_STOP_BOUNCE_PCT=3%`) when PnL ≤ −30%.
+- **Runner 50%** waits for **2× bounce** (`HARD_STOP_BOUNCE_2_PCT=6%`), not the next underwater print.
+- Fixes full-bag dump on a single bounce (tx `4J6WCc…` on `3wNpT4`, −40% one shot).
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION=0` for legacy full hard_stop.
+
 ## 1.11.919 — 2026-08-14
 
 ### Fixed — orphan sweep burn fallback (rent reclaim)

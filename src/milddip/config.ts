@@ -615,6 +615,8 @@ const MildDipConfigSchema = z.object({
     deadSetMinDropPct: z.coerce.number().min(0).max(100).default(10),
     deadSetBouncePct: z.coerce.number().min(0).max(100).default(0),
     hardStopBouncePct: z.coerce.number().min(0).max(100).default(3),
+    /** 1.11.920 — second hard_stop cut waits for this bounce off trough (0 = 2× bounce). */
+    hardStopBounce2Pct: z.coerce.number().min(0).max(100).default(0),
     deadSetMinHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
     /** 1.11.855 — breakeven floor once the bag has been green. 0 = off. */
     breakevenArmPct: z.coerce.number().min(0).max(500).default(0),
@@ -811,6 +813,7 @@ export function loadMildDipConfig(): MildDipConfig {
     deadSetMinDropPct: envNum('MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT', 10),
     deadSetBouncePct: envNum('MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT', 0),
     hardStopBouncePct: envNum('MILD_DIP_EXIT_HARD_STOP_BOUNCE_PCT', 3),
+    hardStopBounce2Pct: envNum('MILD_DIP_EXIT_HARD_STOP_BOUNCE_2_PCT', 0),
     deadSetMinHoldMs: envNum('MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS', 300_000),
     breakevenArmPct: envNum('MILD_DIP_EXIT_BREAKEVEN_ARM_PCT', 0),
     breakevenFloorPct: envNum('MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT', 0),
