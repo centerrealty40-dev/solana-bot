@@ -9,8 +9,6 @@ export type MildDipOpenMarkMetrics = {
   volume5mUsd: number | null;
   /** 1.11.797 — pool liquidity at last Dex refresh (rebuy liq-drop baseline). */
   liquidityUsd: number | null;
-  /** DexScreener dexId at last refresh — entry allow-list on exit defer. */
-  dexId: string | null;
 };
 
 const byMint = new Map<string, MildDipOpenMarkMetrics>();
@@ -25,7 +23,6 @@ export function noteOpenMarkMetrics(
     pc5mPct?: number | null;
     volume5mUsd?: number | null;
     liquidityUsd?: number | null;
-    dexId?: string | null;
   },
 ): void {
   if (!mint || mint.length < 32) return;
@@ -40,11 +37,7 @@ export function noteOpenMarkMetrics(
     metrics.liquidityUsd != null && Number.isFinite(metrics.liquidityUsd) && metrics.liquidityUsd > 0
       ? Number(metrics.liquidityUsd)
       : null;
-  const dexId =
-    typeof metrics.dexId === 'string' && metrics.dexId.trim().length > 0
-      ? metrics.dexId.trim()
-      : null;
-  byMint.set(mint, { tsMs, pc5mPct: pc, volume5mUsd: vol, liquidityUsd: liq, dexId });
+  byMint.set(mint, { tsMs, pc5mPct: pc, volume5mUsd: vol, liquidityUsd: liq });
 }
 
 export function readOpenMarkMetrics(

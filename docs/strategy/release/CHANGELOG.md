@@ -1,3 +1,17 @@
+## 1.11.923 — 2026-08-14
+
+### Restored — mild-dip **known-good baseline** (`milddip-good-baseline-1.11.915`)
+
+Per owner mark in [`docs/strategy/specs/MILDDIP_KNOWN_GOOD_BASELINE.md`](../../specs/MILDDIP_KNOWN_GOOD_BASELINE.md) (2026-08-13): **`git reset --hard milddip-good-baseline-1.11.915`** (`abc39755`).
+
+- Restored **`src/milddip/**`**, **`tests/milddip/**`**, and **`mild-dip-bot`** PM2 env block to that tag.
+- Undoes post-baseline drift: stale 5m cut (#812), staged hard_stop 2-cut (#811), orphan burn (#810), $5 clip (#809), time_red off (#807), exit-defer #813–#814, revert #815, etc.
+- Canonical exit stack at baseline: **hard_stop −15%**, **time_red 15m/−15%**, **tp_grid 8%**, **giveback 12%**, **clip $3**, leader-seen priors override.
+
+### Rollback
+
+- Redeploy current `origin/v2` HEAD (post-1.11.923 commits) via NORM §5.2.
+
 ## 1.11.922 — 2026-08-14
 
 ### Reverted — `never_arm_stale` 5m / −5% / MFE≤5% (1.11.921)

@@ -14,9 +14,7 @@ import {
   streamDumpExtentPct,
 } from './fast-path.js';
 import {
-  entryStabilizeExemptDipSource,
   evaluateCooldownBounce,
-  evaluateEntryStabilizeRequired,
   evaluateMildDipPreBuy,
   evaluateRebuyBelowExit,
   evaluateRebuyLiquidityDrop,
@@ -560,40 +558,6 @@ export async function attemptMildDipEntry(args: {
     }
   }
 
-  if (cfg.entryRequireStabilize && !entryStabilizeExemptDipSource(c.dipSource)) {
-    const stabLookbackMs = Math.max(cfg.cooldownBounceLookbackMs, cfg.mintCooldownMs);
-    const pt = mildDipPriceRing.troughAfterPeak(c.mint, stabLookbackMs, nowMs);
-    const stabilize = evaluateEntryStabilizeRequired({
-      freshPriceUsd: freshPx ?? entryPriceUsd,
-      troughPriceUsd: pt?.trough.priceUsd ?? null,
-      troughAtMs: pt?.trough.tsMs ?? null,
-      nowMs,
-      gates: {
-        enabled: true,
-        minBouncePct: cfg.knifeStabilizeMinBouncePct,
-        quietMs: cfg.knifeStabilizeQuietMs,
-        stabilizeBandPct: cfg.knifeStabilizeBandPct,
-      },
-    });
-    if (!stabilize.pass) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_entry_stabilize_skip',
-        mint: c.mint,
-        symbol: c.symbol,
-        lane: opts.lane,
-        dipSource: c.dipSource,
-        freshPriceUsd: freshPx ?? entryPriceUsd,
-        troughPriceUsd: pt?.trough.priceUsd ?? null,
-        reasons: stabilize.reasons,
-      });
-      console.log(
-        `[mild-dip] SKIP stabilize ${c.symbol} mint=${c.mint.slice(0, 8)}… ${stabilize.reasons.join(',')}`,
-      );
-      state.cooldownUntilMs[c.mint] = nowMs + Math.min(softCd, 1_500);
-      return 'skip';
-    }
-  }
-
   if (!opts.skipBounce) {
     const bounceLookbackMs = Math.max(
       cfg.cooldownBounceLookbackMs,
@@ -802,8 +766,6 @@ export async function attemptMildDipEntry(args: {
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
     entryMarketCapUsd: c.metrics.marketCapUsd ?? null,
     entryPairAgeHours: c.metrics.pairAgeHours ?? null,
-    entryDexId: c.metrics.dexId ?? null,
-    entryDipSource: c.dipSource ?? null,
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
   // Keep waitDipWatch until fill succeeds — quote-premium reject must retry.
@@ -1063,8 +1025,6 @@ export async function attemptMildDipEntry(args: {
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
     entryMarketCapUsd: c.metrics.marketCapUsd ?? null,
     entryPairAgeHours: c.metrics.pairAgeHours ?? null,
-    entryDexId: c.metrics.dexId ?? null,
-    entryDipSource: c.dipSource ?? null,
   };
   // Seed exit mark ring so stream-only marks have a print before first swap decode.
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });

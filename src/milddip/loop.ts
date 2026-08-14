@@ -47,7 +47,7 @@ import {
   orderMintsForMark,
   type MarkExitDecision,
 } from './exit-engine.js';
-import { MONEY_MOTIVATED_EXIT_REASONS, buildExitDeferEntryPath, shouldDeferSoftExit } from './exit-defer.js';
+import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
@@ -64,7 +64,7 @@ import { isRunnerPartialExit } from './sell-partial.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
-import { prefetchDexScreenerPairDetailsMany, fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
+import { prefetchDexScreenerPairDetailsMany } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
@@ -645,7 +645,7 @@ async function tryFireWaitDip(
     adoptOnChainHolding,
     opts: {
       chasePct: chase,
-      skipBounce: false,
+      skipBounce: true,
       skipOnchainAdopt: true,
       freshDexPrebuy: true,
       softSkipCooldownMs: Math.min(cfg.fastPathSoftSkipCooldownMs, 1_500),
@@ -1814,48 +1814,6 @@ async function tryExits(
       }).catch(() => undefined);
     }
   }
-  /**
-   * 1.11.917 — an armed bag may not be judged on a print that has not moved.
-   *
-   * The ring accepts a sample up to `markStreamMaxAgeMs` old, five minutes,
-   * because a cold coin needs some price. A live trail does not: when the stream
-   * goes quiet mid-move the ring keeps serving the last print and the giveback
-   * reads flat while the coin falls. That is how GPzpoXpD banked +298% of a
-   * +699% peak - 44 seconds on one frozen number, then -48.59% in a single step.
-   *
-   * So the armed bags whose ring has gone stale get an awaited Dex read here,
-   * ahead of the decision pass, rather than a fire-and-forget one they will not
-   * see for another tick.
-   */
-  const armedBound = cfg.markArmedMaxAgeMs > 0 ? cfg.markArmedMaxAgeMs : 0;
-  const armedStale =
-    armedBound > 0
-      ? refreshOrder.filter((m) => {
-          const p = state.open[m];
-          if (p?.trailArmed !== true) return false;
-          if (openMarkRingAgeMs(m, nowMs) >= armedBound) return true;
-          /**
-           * 1.11.920 — a feed that keeps re-writing the same number looks fresh
-           * by age and carries nothing. GPzpoXpD held one stream price across
-           * every read from near its peak, so the age check passed while the
-           * trail sat blind, and the first moving print was a 46.78% giveback.
-           */
-          const px = mildDipPriceRing.lastPrice(m, nowMs)?.priceUsd;
-          const unchangedSinceMs = p.markUnchangedSinceMs;
-          if (px != null && px === p.lastMarkPriceUsd && unchangedSinceMs != null) {
-            return nowMs - unchangedSinceMs >= armedBound;
-          }
-          return false;
-        })
-      : [];
-  if (armedStale.length > 0) {
-    await prefetchDexScreenerPairDetailsMany(armedStale, {
-      nowMs,
-      allowedDexIds: cfg.entry.allowedDexIds,
-      cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
-      bypassGate: true,
-    }).catch(() => undefined);
-  }
   for (const mint of refreshOrder) {
     maybeRequestOpenMarkRefresh(mint, nowMs, cfg);
   }
@@ -1885,18 +1843,6 @@ async function tryExits(
   }
 
   const toSell: MarkExitDecision[] = [];
-  const streamRows = markRows.filter((r) => r.source === 'stream' && r.px != null);
-  if (streamRows.length > 0) {
-    await prefetchDexScreenerPairDetailsMany(
-      streamRows.map((r) => r.mint),
-      {
-        nowMs,
-        allowedDexIds: cfg.entry.allowedDexIds,
-        cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
-        bypassGate: true,
-      },
-    ).catch(() => undefined);
-  }
   for (const { mint, px, volume5mUsd, pc5mPct, source } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
@@ -1914,21 +1860,6 @@ async function tryExits(
       cfg.exitMinSpacingMs > 0 &&
       pos.lastSellAtMs != null &&
       nowMs - pos.lastSellAtMs < cfg.exitMinSpacingMs
-    ) {
-      continue;
-    }
-    /**
-     * 1.11.920 — and the price has to have moved since the last sell.
-     *
-     * Spacing alone only buys time. GPzpoXpD went out in three legs at 20:43:46,
-     * 20:44:00 and 20:44:13, each 13 seconds apart and every one of them on the
-     * identical mark 1.6827e-04, so we paid three sets of fees for one decision
-     * taken on one number.
-     */
-    if (
-      px != null &&
-      pos.lastSellMarkPriceUsd != null &&
-      px === pos.lastSellMarkPriceUsd
     ) {
       continue;
     }
@@ -1988,18 +1919,6 @@ async function tryExits(
       pos,
       markPriceUsd: px,
       gates: cfg.exit,
-      markJumpConfirmMaxMs: cfg.markJumpConfirmMaxMs,
-      dexCrossCheckPx:
-        source === 'stream' && px != null
-          ? (
-              await fetchDexScreenerPairDetails(mint, {
-                nowMs,
-                allowedDexIds: cfg.entry.allowedDexIds,
-                cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
-                bypassGate: true,
-              })
-            )?.priceUsd ?? null
-          : null,
       nowMs,
       pc5mPct,
       volume5mUsd,
@@ -2053,13 +1972,7 @@ async function tryExits(
        */
       if (cfg.exitDeferWouldBuyEnabled) {
         const om = readOpenMarkMetrics(mint, nowMs);
-        const metricsTsMs = om?.tsMs ?? nowMs;
         const held = Math.max(0, nowMs - pos.openedAtMs);
-        const streamPc5m = streamDrawdownPct(
-          mint,
-          Math.max(cfg.cooldownBounceLookbackMs, cfg.mintCooldownMs),
-          nowMs,
-        );
         const deferVerdict = shouldDeferSoftExit({
           reason: decision.reason,
           gates: {
@@ -2067,12 +1980,14 @@ async function tryExits(
             maxTotalMs: cfg.exitDeferWouldBuyMaxMs,
           },
           entryGates: cfg.entry,
-          metrics: {
-            pc5mPct: pc5mPct ?? om?.pc5mPct ?? null,
-            volume5mUsd: volume5mUsd ?? om?.volume5mUsd ?? null,
-            liquidityUsd: om?.liquidityUsd ?? null,
-            ageMs: Math.max(0, nowMs - metricsTsMs),
-          },
+          metrics: om
+            ? {
+                pc5mPct: om.pc5mPct,
+                volume5mUsd: om.volume5mUsd,
+                liquidityUsd: om.liquidityUsd,
+                ageMs: Math.max(0, nowMs - om.tsMs),
+              }
+            : null,
           carried: {
             marketCapUsd: pos.entryMarketCapUsd ?? null,
             pairAgeHours: pos.entryPairAgeHours ?? null,
@@ -2081,14 +1996,6 @@ async function tryExits(
             pos.entryPriceUsd > 0 ? decision.markPriceUsd / pos.entryPriceUsd : null,
           heldMs: held,
           deferredMsSoFar: pos.exitDeferredMs ?? 0,
-          path: buildExitDeferEntryPath(cfg, {
-            mint,
-            nowMs,
-            markPriceUsd: decision.markPriceUsd,
-            streamPc5mPct: streamPc5m,
-            dexId: om?.dexId ?? pos.entryDexId ?? null,
-            entryDipSource: pos.entryDipSource ?? null,
-          }),
         });
         if (deferVerdict.defer) {
           const sinceLast =
@@ -2110,9 +2017,7 @@ async function tryExits(
               mfePct: +decision.mfePct.toFixed(2),
               markPx: decision.markPriceUsd,
               entryPx: pos.entryPriceUsd,
-              pc5m: pc5mPct ?? om?.pc5mPct ?? null,
-              streamPc5m,
-              dexId: om?.dexId ?? pos.entryDexId ?? null,
+              pc5m: om?.pc5mPct ?? null,
               vol5m: om?.volume5mUsd ?? null,
               liq: om?.liquidityUsd ?? null,
               deferredMs: pos.exitDeferredMs,
@@ -2416,10 +2321,7 @@ async function tryExits(
       // Stamped after the attempt, so the settle window starts from the moment
       // the size on chain could have changed (1.11.879).
       const after = state.open[decision.mint];
-      if (after) {
-        after.lastSellAtMs = Date.now();
-        after.lastSellMarkPriceUsd = decision.markPriceUsd;
-      }
+      if (after) after.lastSellAtMs = Date.now();
     }
   }).catch((err) => {
     console.warn(
@@ -2608,8 +2510,7 @@ export async function runMildDipLoop(
           `fullGiveback=-${cfg.exit.givebackPct}% `) +
       `hardStop=-${cfg.exit.hardStopPnlPct}%` +
       (cfg.exit.hardStopPartialFraction > 0 && cfg.exit.hardStopPartialFraction < 1
-        ? `×${cfg.exit.hardStopPartialFraction}/bounce≥${cfg.exit.hardStopBouncePct}%` +
-          `/≥${cfg.exit.hardStopBounce2Pct > cfg.exit.hardStopBouncePct ? cfg.exit.hardStopBounce2Pct : cfg.exit.hardStopBouncePct * 2}%`
+        ? `×${cfg.exit.hardStopPartialFraction}`
         : '') +
       ` ` +
       `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
@@ -2691,7 +2592,6 @@ export async function runMildDipLoop(
       `(${cfg.knifeStabilizeMinDipPct},${cfg.knifeStabilizeMaxDipPct}]` +
       `/wait${Math.round(cfg.knifeStabilizeWaitMs / 1000)}s` +
       `/bounce[${cfg.knifeStabilizeMinBouncePct},${cfg.knifeStabilizeMaxBouncePct}] ` +
-      `entryStab=${cfg.entryRequireStabilize ? 1 : 0} ` +
       `mildStabilize=${cfg.mildStabilizeEnabled ? 1 : 0}` +
       `/fresh=${cfg.mildStabilizeFreshEntryEnabled ? 1 : 0}` +
       `(dump(${cfg.mildStabilizeMinDumpPct},${cfg.mildStabilizeMaxDumpPct}]` +
@@ -2723,8 +2623,7 @@ export async function runMildDipLoop(
         if (swept.candidates > 0) {
           console.log(
             `[mild-dip] orphanSweep candidates=${swept.candidates} ` +
-              `sold=${swept.sold} burned=${swept.burned} failed=${swept.failed} ` +
-              `skipped=${swept.skipped} reclaimed=${(swept.reclaimedLamports / 1e9).toFixed(4)}SOL`,
+              `sold=${swept.sold} failed=${swept.failed} skipped=${swept.skipped}`,
           );
         }
       } catch (err) {
@@ -2738,7 +2637,6 @@ export async function runMildDipLoop(
 
   let lastScan = 0;
   let lastMark = 0;
-  let lastOrphanReclaimMs = Date.now();
   let lastFeeTopupTickMs = 0;
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
@@ -2801,34 +2699,6 @@ export async function runMildDipLoop(
         } catch (err) {
           console.warn('[mild-dip] fee-sol topup tick failed', err);
         }
-      }
-    }
-
-    if (
-      cfg.orphanSweepEnabled &&
-      cfg.orphanReclaimIntervalMs > 0 &&
-      nowMs - lastOrphanReclaimMs >= cfg.orphanReclaimIntervalMs
-    ) {
-      lastOrphanReclaimMs = nowMs;
-      try {
-        const swept = await sweepUnmanagedPumpOrphans({
-          cfg,
-          state,
-          maxSells: cfg.orphanSweepMaxSells,
-          maxBurns: cfg.orphanJanitorMaxClose,
-        });
-        if (swept.candidates > 0) {
-          console.log(
-            `[mild-dip] orphanReclaim candidates=${swept.candidates} ` +
-              `sold=${swept.sold} burned=${swept.burned} failed=${swept.failed} ` +
-              `reclaimed=${(swept.reclaimedLamports / 1e9).toFixed(4)}SOL`,
-          );
-        }
-      } catch (err) {
-        console.warn(
-          '[mild-dip] orphanReclaim failed',
-          err instanceof Error ? err.message : err,
-        );
       }
     }
 

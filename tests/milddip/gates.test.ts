@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   bounceFromTroughPct,
-  entryStabilizeExemptDipSource,
-  evaluateEntryStabilizeRequired,
   evaluateFlatMicroDip,
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
@@ -73,8 +71,6 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeWeakWindows: 3,
   cliffDumpPnlPct: 50,
   hardStopPnlPct: 15,
-  hardStopBouncePct: 3,
-  hardStopBounce2Pct: 0,
   hardStopPartialFraction: 0,
   neverArmBounceMinDumpPct: 8,
   neverArmBouncePct: 8,
@@ -555,82 +551,6 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.pnlPct).toBeLessThanOrEqual(-15);
   });
 
-  it('1.11.925 — leader-style: −16% MAE holds when hard_stop is 30 (4CmYEyg)', () => {
-    const v = evaluateMildDipPeakGiveback({
-      entryPriceUsd: 0.000393,
-      markPriceUsd: 0.000330,
-      peakPriceUsd: 0.000399,
-      armed: false,
-      gates: {
-        ...exitGates,
-        hardStopPnlPct: 30,
-        breakevenArmPct: 0,
-        partialGivebackPct: 0,
-        givebackPct: 8,
-        neverArmFreefallPnlPct: 0,
-        neverArmBouncePct: 0,
-        neverArmTimeRedMinMs: 0,
-      },
-      heldMs: 360_000,
-    });
-    expect(v.shouldExit).toBe(false);
-    expect(v.pnlPct).toBeLessThan(-15);
-  });
-
-  it('1.11.926 — live-like: −16% MAE still holds after 16m bounce (time-red off)', () => {
-    // Same 4CmYEyg print: trough then a 3% turn. Old live knobs (900s/−15)
-    // sold here as never_arm_time_red. Leaders sat and finished green.
-    const v = evaluateMildDipPeakGiveback({
-      entryPriceUsd: 0.000393,
-      markPriceUsd: 0.000330,
-      peakPriceUsd: 0.000399,
-      troughPriceUsd: 0.000320,
-      armed: false,
-      gates: {
-        ...exitGates,
-        hardStopPnlPct: 30,
-        hardStopBouncePct: 3,
-        breakevenArmPct: 0,
-        partialGivebackPct: 0,
-        givebackPct: 8,
-        neverArmFreefallPnlPct: 0,
-        neverArmBouncePct: 0,
-        neverArmStaleMinMs: 0,
-        neverArmDeadMinMs: 0,
-        neverArmVolFadeMinMs: 0,
-        neverArmMaxHoldMs: 10_800_000,
-        neverArmTimeRedMinMs: 0,
-        neverArmTimeRedPnlPct: 0,
-        neverArmTimeRedMaxPc5mPct: 0,
-      },
-      heldMs: 960_000,
-      pc5mPct: -8,
-    });
-    expect(v.shouldExit).toBe(false);
-    expect(v.reason).not.toBe('never_arm_time_red');
-    expect(v.pnlPct).toBeLessThan(-15);
-  });
-
-  it('1.11.925 — leader-style: armed MFE does not scratch at breakeven', () => {
-    const v = evaluateMildDipPeakGiveback({
-      entryPriceUsd: 100,
-      markPriceUsd: 100,
-      peakPriceUsd: 119.7,
-      armed: true,
-      gates: {
-        ...exitGates,
-        hardStopPnlPct: 30,
-        breakevenArmPct: 0,
-        partialGivebackPct: 0,
-        givebackPct: 8,
-      },
-      heldMs: 600_000,
-    });
-    expect(v.reason).not.toBe('breakeven_stop');
-    expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('peak_giveback');
-  });
-
   it('hard_stop off when hardStopPnlPct=0', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
@@ -649,73 +569,23 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('1.11.916 — cliff_dump waits for the turn off the trough, like the stop', () => {
-    const args = {
-      entryPriceUsd: 100,
-      peakPriceUsd: 100,
-      armed: false,
-      gates: { ...exitGates, hardStopPnlPct: 0 },
-      heldMs: 5_000,
-    };
-    const falling = evaluateMildDipPeakGiveback({
-      ...args,
-      markPriceUsd: 40,
-      troughPriceUsd: 40,
-    });
-    expect(falling.shouldExit).toBe(false);
-    const turned = evaluateMildDipPeakGiveback({
-      ...args,
-      markPriceUsd: 42,
-      troughPriceUsd: 40,
-    });
-    expect(turned.shouldExit).toBe(true);
-    expect(turned.reason).toBe('cliff_dump');
-  });
-
-  it('1.11.916 — the stop waits for the price to turn off its trough', () => {
-    const args = {
-      entryPriceUsd: 100,
-      peakPriceUsd: 100,
-      armed: false,
-      gates: { ...exitGates, hardStopBouncePct: 3 },
-      heldMs: 5_000,
-    };
-    // Still on the low: breached, no turn, so no hard_stop.
-    const falling = evaluateMildDipPeakGiveback({
-      ...args,
-      markPriceUsd: 70,
-      troughPriceUsd: 70,
-    });
-    expect(falling.reason).not.toBe('hard_stop');
-    // Up 4.5% off the trough: the turn is in, take the exit.
-    const turned = evaluateMildDipPeakGiveback({
-      ...args,
-      markPriceUsd: 73.5,
-      troughPriceUsd: 70,
-    });
-    expect(turned.shouldExit).toBe(true);
-    expect(turned.reason).toBe('hard_stop');
-  });
-
-  it('1.11.916 — a zero bounce setting fires on the print, as before', () => {
+  it('hard_stop wins over cliff when both thresholds are breached', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 70,
+      markPriceUsd: 40,
       peakPriceUsd: 100,
       armed: false,
-      gates: { ...exitGates, hardStopBouncePct: 0 },
+      gates: exitGates,
       heldMs: 5_000,
-      troughPriceUsd: 70,
     });
+    expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('hard_stop');
   });
 
-  it('1.11.920 — staged hard stop: half at −25% + 3% bounce; runner at 6% bounce', () => {
+  it('1.11.794 — staged hard stop: half at −25%, runner full-exits if still ≤ −25%', () => {
     const staged = {
       ...exitGates,
       hardStopPnlPct: 25,
-      hardStopBouncePct: 3,
-      hardStopBounce2Pct: 6,
       hardStopPartialFraction: 0.5,
       cliffDumpPnlPct: 50,
       neverArmFreefallPnlPct: 0,
@@ -725,10 +595,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     };
     const half = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 73.5,
+      markPriceUsd: 75,
       peakPriceUsd: 100,
-      troughPriceUsd: 70,
-      postEntryTroughPriceUsd: 70,
       armed: false,
       gates: staged,
       heldMs: 5_000,
@@ -737,26 +605,11 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(half.reason).toBe('hard_stop');
     expect(half.fraction).toBe(0.5);
 
-    // Runner still underwater but only 3% bounce — hold for 2× bounce.
-    const holdRunner = evaluateMildDipPeakGiveback({
-      entryPriceUsd: 100,
-      markPriceUsd: 72.1,
-      peakPriceUsd: 100,
-      troughPriceUsd: 70,
-      postEntryTroughPriceUsd: 70,
-      armed: false,
-      scaleOutDone: true,
-      gates: staged,
-      heldMs: 5_000,
-    });
-    expect(holdRunner.shouldExit).toBe(false);
-
+    // 1.11.794 — no limbo: runner still ≤ −hardStop → full hard_stop (not wait −50).
     const killRunner = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
-      markPriceUsd: 74.2,
+      markPriceUsd: 70,
       peakPriceUsd: 100,
-      troughPriceUsd: 70,
-      postEntryTroughPriceUsd: 70,
       armed: false,
       scaleOutDone: true,
       gates: staged,
@@ -770,8 +623,6 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       entryPriceUsd: 100,
       markPriceUsd: 50,
       peakPriceUsd: 100,
-      troughPriceUsd: 40,
-      postEntryTroughPriceUsd: 40,
       armed: false,
       scaleOutDone: true,
       gates: staged,
@@ -804,29 +655,18 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.fraction).toBe(1);
   });
 
-  it('cliff_dump at ≤ −50% fires once the price turns off the trough', () => {
-    const falling = evaluateMildDipPeakGiveback({
+  it('cliff_dump exits immediately at ≤ −50% without waiting dead min-hold', () => {
+    const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
       peakPriceUsd: 103.71,
       armed: false,
       gates: { ...exitGates, hardStopPnlPct: 0 },
       heldMs: 30_000,
-      troughPriceUsd: 40,
     });
-    expect(falling.shouldExit).toBe(false);
-    const turned = evaluateMildDipPeakGiveback({
-      entryPriceUsd: 100,
-      markPriceUsd: 42,
-      peakPriceUsd: 103.71,
-      armed: false,
-      gates: { ...exitGates, hardStopPnlPct: 0 },
-      heldMs: 30_000,
-      troughPriceUsd: 40,
-    });
-    expect(turned.shouldExit).toBe(true);
-    expect(turned.reason).toBe('cliff_dump');
-    expect(turned.pnlPct).toBeLessThanOrEqual(-50);
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('cliff_dump');
+    expect(v.pnlPct).toBeLessThanOrEqual(-50);
   });
 
   it('cliff_dump off when cliffDumpPnlPct=0', () => {
@@ -1716,58 +1556,6 @@ describe('knifeStabilizeMinMarketCapUsd', () => {
         microMinMarketCapUsd: 15_000,
       }),
     ).toBe(50_000);
-  });
-});
-
-describe('evaluateEntryStabilizeRequired', () => {
-  const gates = {
-    enabled: true,
-    minBouncePct: 1.5,
-    quietMs: 45_000,
-    stabilizeBandPct: 2.5,
-  };
-  const nowMs = 1_000_000;
-
-  it('blocks J2HuKn-style blade catch (0% bounce, fresh trough)', () => {
-    const v = evaluateEntryStabilizeRequired({
-      freshPriceUsd: 0.00004296,
-      troughPriceUsd: 0.00004296,
-      troughAtMs: nowMs - 5_000,
-      nowMs,
-      gates,
-    });
-    expect(v.pass).toBe(false);
-    expect(v.reasons.join(',')).toContain('entry_no_stabilize');
-  });
-
-  it('passes on controlled bounce off trough', () => {
-    const v = evaluateEntryStabilizeRequired({
-      freshPriceUsd: 0.00004361,
-      troughPriceUsd: 0.00004296,
-      troughAtMs: nowMs - 5_000,
-      nowMs,
-      gates,
-    });
-    expect(v.pass).toBe(true);
-    expect(v.reasons.join(',')).toContain('entry_stabilize_bounce');
-  });
-
-  it('passes on quiet hold near trough', () => {
-    const v = evaluateEntryStabilizeRequired({
-      freshPriceUsd: 0.00004317,
-      troughPriceUsd: 0.00004296,
-      troughAtMs: nowMs - 60_000,
-      nowMs,
-      gates,
-    });
-    expect(v.pass).toBe(true);
-    expect(v.reasons.join(',')).toContain('entry_stabilize_hold');
-  });
-
-  it('exempts knife/mild_stabilize sources', () => {
-    expect(entryStabilizeExemptDipSource('knife_stabilize')).toBe(true);
-    expect(entryStabilizeExemptDipSource('mild_stabilize')).toBe(true);
-    expect(entryStabilizeExemptDipSource('wait_dip')).toBe(false);
   });
 });
 

@@ -74,7 +74,6 @@ export function requestOpenMarkRefresh(args: {
           pc5mPct: details.priceChangeM5Pct,
           volume5mUsd: details.volume5mUsd,
           liquidityUsd: details.liquidityUsd,
-          dexId: details.dexId ?? null,
         });
       }
     })

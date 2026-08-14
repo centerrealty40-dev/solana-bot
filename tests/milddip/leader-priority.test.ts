@@ -119,9 +119,6 @@ describe('1.11.907/908 turnover ceiling and the re-entry price rule', () => {
     // Priced against our own first entry on the coin, re-entering above it is
     // four times better per position than re-entering below it, in all windows.
     expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
-    const cfg = readFileSync(resolve('src/milddip/config.ts'), 'utf8');
-    expect(cfg).toContain('MILD_DIP_REBUY_BELOW_EXIT_PCT ?? 0');
-    expect(cfg).toContain('.default(0),');
   });
 });
 
