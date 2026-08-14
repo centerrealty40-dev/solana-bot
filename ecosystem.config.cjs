@@ -3475,7 +3475,7 @@ const PM2_APPS = [
          * AzXuLS: half cut at −19.8% giveback / pc5m −18.75%; price reclaimed entry
          * seconds after the fill.
          */
-        MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '3',
+        MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '12',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
@@ -3796,30 +3796,25 @@ const PM2_APPS = [
          * 1.11.740 — dump classify before peak_giveback (whale vs mass).
          * Was Dex-only + scan-blocked → real gaps ~60s (2qE4vp −17% giveback).
          */
-        MILD_DIP_MARK_INTERVAL_MS: '2000',
+        MILD_DIP_MARK_INTERVAL_MS: '1000',
         /**
          * 1.11.769 — exit marks = price ring only (stream + fill seed).
          * Never await Dex on mark pass (that built the 20–60s gate queue).
          */
-        MILD_DIP_MARK_STREAM_MAX_AGE_MS: '300000',
+        MILD_DIP_MARK_STREAM_MAX_AGE_MS: '120000',
+        MILD_DIP_MARK_STREAM_PREFER_MAX_AGE_MS: '15000',
         // Background Dex→ring for open bags when stream quiet (0 = off).
         /**
-         * 1.11.826 — 8000 → 2000 and TTL 20000 → 3000. The trail could not work
-         * at the old cadence: `6tfuqq` peaked at +22.95%, sleeve sits at −12%
-         * from peak so we should have left near +8%, and we left at −23.6% from
-         * peak — the whole round trip happened between two usable marks.
-         *
-         * CF over 91 trades confirmed the consequence: every wider ladder loses
-         * (bank +6/+15 −$8.74, runner+sleeve18 −$13.46, bank1-only −$15.68 vs
-         * −$7.34 live), i.e. we cannot sit in a name while the exit sees price
-         * once every 8–20s.
-         *
-         * Affordable only after 1.11.820: the whole open book is one batched
-         * request per 30 mints, so ~19 positions at 2s cost ~30 req/min of a
-         * 120 RPM budget instead of 19 separate calls per refresh.
+         * 1.11.926 — 2s → 1s mark cadence + Jupiter sell quote every 2s when
+         * stream quiet. 4kZdVs: Dex-only ring missed the green candle; peak stuck
+         * at wait_dip trough → mfePct=0 → dead_set_bounce instead of giveback.
          */
-        MILD_DIP_MARK_DEX_REFRESH_MS: '2000',
-        MILD_DIP_MARK_CACHE_TTL_MS: '3000',
+        MILD_DIP_MARK_DEX_REFRESH_MS: '1000',
+        MILD_DIP_MARK_CACHE_TTL_MS: '2000',
+        MILD_DIP_MARK_JUPITER_REFRESH_MS: '2000',
+        MILD_DIP_MARK_JUPITER_PROBE_USD: '1',
+        MILD_DIP_MARK_JUPITER_MAX_IN_FLIGHT: '2',
+        MILD_DIP_MARK_JUPITER_STREAM_QUIET_MS: '5000',
         MILD_DIP_MARK_ARMED_MAX_AGE_MS: '10000',
         MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS: '8000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
@@ -3948,7 +3943,7 @@ const PM2_APPS = [
         MILD_DIP_FAST_PATH_HOT_DEX_PROBE_ENABLED: '1',
         MILD_DIP_FAST_PATH_HOT_DEX_PROBE_GAP_MS: '10000',
         MILD_DIP_FAST_PATH_HOT_DEX_PROBE_MAX_PER_MIN: '40',
-        MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '500',
+        MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '250',
         MILD_DIP_STREAM_PRICE_CONCURRENCY: '6',
         /**
          * Telegram ALERT [MILD_DIP_DEX] when mark pass is slow / opens high /

@@ -1,3 +1,17 @@
+## 1.11.926 — 2026-08-14
+
+### Fixed — open-bag marks: stream/Jupiter cadence, peak from fill, green reclaim trail
+
+- **Mark cadence 1s** (`MILD_DIP_MARK_INTERVAL_MS`, `MILD_DIP_MARK_DEX_REFRESH_MS`); **stream min-gap 250ms** on open bags (force-fetch unchanged).
+- **Jupiter sell quote → ring** every 2s when stream quiet (`MILD_DIP_MARK_JUPITER_REFRESH_MS`) — executable mark when chain goes quiet through a green candle.
+- **Stream-first exit mark** when a stream print is ≤15s old (`MILD_DIP_MARK_STREAM_PREFER_MAX_AGE_MS`).
+- **Peak/MFE seed from fill**, not wait_dip ring trough — fixes `mfePct=0` and dead trail (4kZdVs / dead_set_bounce vs peak_giveback).
+- **Soft loss bounce defer 12%** (`MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT`) — peak_giveback / breakeven_stop wait for green reclaim off trough (~8zkg +16% session).
+
+### Rollback
+
+- Restore 2s mark cadence, remove Jupiter refresh env keys, `MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '3'`, revert `entry-attempt.ts` / `gates.ts` / `loop.ts` peak+mark paths + reload PM2.
+
 ## 1.11.924 — 2026-08-14
 
 ### Fixed — hot deep dump missed on wait_dip refloor + deep_knife_defer (HJs8xT)

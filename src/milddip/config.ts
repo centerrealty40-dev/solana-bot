@@ -61,11 +61,24 @@ const MildDipConfigSchema = z.object({
    */
   markStreamMaxAgeMs: z.coerce.number().int().min(0).max(900_000).default(300_000),
   /**
+   * Prefer a fresh stream print over Dex when choosing the exit mark (ms).
+   * 0 = use whichever sample is newest in the ring.
+   */
+  markStreamPreferMaxAgeMs: z.coerce.number().int().min(0).max(120_000).default(15_000),
+  /**
    * Background only: when stream/seed ring age ≥ this gap, fire-and-forget
    * Dex→ring for open bags (never blocks the exit mark pass). 0 = off.
    * Default 8s — enough to see pumps without flooding the 120 RPM gate.
    */
   markDexRefreshMs: z.coerce.number().int().min(0).max(300_000).default(8_000),
+  /**
+   * Background Jupiter sell quote → ring when stream is quiet on open bags. 0 = off.
+   */
+  markJupiterRefreshMs: z.coerce.number().int().min(0).max(300_000).default(0),
+  markJupiterProbeUsd: z.coerce.number().min(0).max(100).default(1),
+  markJupiterMaxInFlight: z.coerce.number().int().min(1).max(8).default(2),
+  /** Skip Jupiter refresh when a stream print landed within this window. */
+  markJupiterStreamQuietMs: z.coerce.number().int().min(0).max(120_000).default(5_000),
   /**
    * Dex cache TTL for discovery/entry Dex calls (not exit marks).
    */
@@ -893,7 +906,12 @@ export function loadMildDipConfig(): MildDipConfig {
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
     markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
+    markStreamPreferMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_PREFER_MAX_AGE_MS ?? 15_000,
     markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 8_000,
+    markJupiterRefreshMs: process.env.MILD_DIP_MARK_JUPITER_REFRESH_MS ?? 0,
+    markJupiterProbeUsd: process.env.MILD_DIP_MARK_JUPITER_PROBE_USD ?? 1,
+    markJupiterMaxInFlight: process.env.MILD_DIP_MARK_JUPITER_MAX_IN_FLIGHT ?? 2,
+    markJupiterStreamQuietMs: process.env.MILD_DIP_MARK_JUPITER_STREAM_QUIET_MS ?? 5_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
     markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000,
     markJumpConfirmMaxMs: process.env.MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS ?? 8_000,
