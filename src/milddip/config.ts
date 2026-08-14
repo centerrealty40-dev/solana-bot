@@ -665,6 +665,10 @@ const MildDipConfigSchema = z.object({
     neverArmTimeRedPnlPct: z.coerce.number().min(0).max(100).default(15),
     /** Positive N → require pc5m ≤ −N. 0 = no pc5m gate. */
     neverArmTimeRedMaxPc5mPct: z.coerce.number().min(0).max(100).default(5),
+    /**
+     * 1.11.920 — min bounce off trough before soft loss exits (0 = off).
+     */
+    lossExitMinBouncePct: z.coerce.number().min(0).max(100).default(3),
   }),
 });
 
@@ -844,6 +848,10 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmTimeRedMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS', 300_000),
     neverArmTimeRedPnlPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT', 15),
     neverArmTimeRedMaxPc5mPct: envNum('MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT', 5),
+    /**
+     * 1.11.920 — soft loss exits wait for bounce off trough (AzXuLS mfe_bank_sleeve).
+     */
+    lossExitMinBouncePct: envNum('MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT', 3),
   };
 
   const raw = {
