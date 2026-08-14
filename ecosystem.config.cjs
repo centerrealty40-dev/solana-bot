@@ -3710,6 +3710,10 @@ const PM2_APPS = [
         /** 1.11.767 — sell unmanaged *pump ATAs not in state.open on boot. */
         MILD_DIP_ORPHAN_SWEEP: '1',
         MILD_DIP_ORPHAN_SWEEP_MAX_SELLS: '25',
+        /** 1.11.919 — burn+close unsellable/migrated orphans (reclaim ATA rent). */
+        MILD_DIP_ORPHAN_BURN_FALLBACK: '1',
+        MILD_DIP_ORPHAN_JANITOR_MAX_CLOSE: '25',
+        MILD_DIP_ORPHAN_RECLAIM_INTERVAL_MS: '1800000',
         MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD: '500',
         MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC: '0.02',
         /** 1.11.740 — soft giveback only after whale vs mass-flee classify. */

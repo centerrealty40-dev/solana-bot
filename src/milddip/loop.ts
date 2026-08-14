@@ -2708,7 +2708,8 @@ export async function runMildDipLoop(
         if (swept.candidates > 0) {
           console.log(
             `[mild-dip] orphanSweep candidates=${swept.candidates} ` +
-              `sold=${swept.sold} failed=${swept.failed} skipped=${swept.skipped}`,
+              `sold=${swept.sold} burned=${swept.burned} failed=${swept.failed} ` +
+              `skipped=${swept.skipped} reclaimed=${(swept.reclaimedLamports / 1e9).toFixed(4)}SOL`,
           );
         }
       } catch (err) {
@@ -2722,6 +2723,7 @@ export async function runMildDipLoop(
 
   let lastScan = 0;
   let lastMark = 0;
+  let lastOrphanReclaimMs = Date.now();
   let lastFeeTopupTickMs = 0;
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
@@ -2784,6 +2786,34 @@ export async function runMildDipLoop(
         } catch (err) {
           console.warn('[mild-dip] fee-sol topup tick failed', err);
         }
+      }
+    }
+
+    if (
+      cfg.orphanSweepEnabled &&
+      cfg.orphanReclaimIntervalMs > 0 &&
+      nowMs - lastOrphanReclaimMs >= cfg.orphanReclaimIntervalMs
+    ) {
+      lastOrphanReclaimMs = nowMs;
+      try {
+        const swept = await sweepUnmanagedPumpOrphans({
+          cfg,
+          state,
+          maxSells: cfg.orphanSweepMaxSells,
+          maxBurns: cfg.orphanJanitorMaxClose,
+        });
+        if (swept.candidates > 0) {
+          console.log(
+            `[mild-dip] orphanReclaim candidates=${swept.candidates} ` +
+              `sold=${swept.sold} burned=${swept.burned} failed=${swept.failed} ` +
+              `reclaimed=${(swept.reclaimedLamports / 1e9).toFixed(4)}SOL`,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          '[mild-dip] orphanReclaim failed',
+          err instanceof Error ? err.message : err,
+        );
       }
     }
 
