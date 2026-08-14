@@ -66,8 +66,8 @@ describe('1.11.905 a name a leader is buying may be younger', () => {
   });
 
   it('counts a leader trigger or a seed hit as evidence', () => {
-    expect(src).toContain("const leaderSeenName = trigger === 'leader' || seedHit != null");
-    expect(src).toContain('structuralOk(struct.metrics, cfg, leaderSeenForAge)');
+    expect(src).toContain('trigger === \'leader\' || seedHit != null || leaderSeenAtMs != null');
+    expect(src).toContain('structuralOk(struct.metrics, cfg, leaderSeenForAge, leaderFreshBuy)');
   });
 
   it('live env allows one hour there and six everywhere else', () => {
@@ -126,15 +126,14 @@ describe('1.11.914 a leader in the name overrides the structural priors', () => 
   const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
   const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
 
-  it('drops the turnover ceiling for names a leader has traded', () => {
-    // ELiQoVM9: 3.1h old, turnover 0.355, rejected 239 times on structural_fail
-    // while the leader turned $149.57 into $249.73 on it in 23 minutes.
-    expect(fast).toContain('const maxTurn = leaderSeen ? 0 : g.maxTurnover5mLiq;');
+  it('drops the turnover ceiling only for a fresh leader co-buy', () => {
+    expect(fast).toContain('const relaxTurnVol = leaderFreshBuy;');
+    expect(fast).toContain('const maxTurn = relaxTurnVol ? 0 : g.maxTurnover5mLiq;');
   });
 
-  it('reads leader-seen from our memory, not just from the wake that found it', () => {
-    expect(fast).toContain('|| leaderSeenMint');
-    expect(loop).toContain('leaderEverSeen(cfg, state, mint, nowMs),');
+  it('reads leader-seen timestamp from state memory', () => {
+    expect(fast).toContain('leaderSeenAtMs?: number | null');
+    expect(loop).toContain('state.leaderSeenMints?.[mint] ?? null');
   });
 });
 
@@ -150,11 +149,9 @@ describe('1.11.915 the leader override covers every fitted prior', () => {
   const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
   const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
 
-  it('drops the 5m volume ceiling and the turnover floor', () => {
-    // 49nkLrXi: $51.9k of 5m volume on $73.9k of liquidity, against a $40k
-    // ceiling. CgnQ8a: turnover 0.044 against a 0.06 floor. Leader in both.
-    expect(fast).toContain('const maxVol = leaderSeen ? 0 : g.maxVolume5mUsd;');
-    expect(fast).toContain('const minTurn = leaderSeen ? 0 : g.minTurnover5mLiq;');
+  it('drops the 5m volume ceiling and the turnover floor only on fresh co-buy', () => {
+    expect(fast).toContain('const maxVol = relaxTurnVol ? 0 : g.maxVolume5mUsd;');
+    expect(fast).toContain('const minTurn = relaxTurnVol ? 0 : g.minTurnover5mLiq;');
   });
 
   it('lets the dip ceiling out to flat, but no further', () => {
@@ -170,9 +167,8 @@ describe('1.11.915 the leader override covers every fitted prior', () => {
   });
 
   it('re-checks wait-dip floors with the same knowledge as the entry gate', () => {
-    expect(loop).toContain(
-      'structuralOk(freshStruct.metrics, cfg, leaderEverSeen(cfg, state, mint, nowMs))',
-    );
+    expect(loop).toContain('leaderFreshBuy');
+    expect(loop).toContain('mild_dip_leader_co_buy_skip');
   });
 });
 
@@ -183,5 +179,21 @@ describe('1.11.915 the knife branch opens for leader-seen names only', () => {
     // BVEaDToN printed -55.7%, past the -25% band, so the knife OR is its only
     // door. The branch stays disabled for the population it lost money on.
     expect(fast).toContain('knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled || leaderSeenName,');
+  });
+});
+
+describe('1.11.921 leader co-buy align blocks low-turn solo dips', () => {
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+  const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+
+  it('is enabled in live config with the 48h analysis window', () => {
+    expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN: '1'");
+    expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS: '120000'");
+    expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN_MIN_TURN: '0.06'");
+  });
+
+  it('skips fast-path when turn is below floor and leader is not fresh', () => {
+    expect(fast).toContain("return skip('leader_co_buy_align'");
+    expect(fast).toContain('export function leaderCoBuyAlignOk');
   });
 });

@@ -4163,6 +4163,14 @@ const PM2_APPS = [
          */
         MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
         MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS: '7200000',
+        /**
+         * 1.11.921 — solo buys (92.8% / 48h): turn<0.06 without leader in ±2m.
+         * Requires fresh leader co-buy when turnover is below floor; age relax
+         * from leaderSeen memory unchanged.
+         */
+        MILD_DIP_LEADER_CO_BUY_ALIGN: '1',
+        MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS: '120000',
+        MILD_DIP_LEADER_CO_BUY_ALIGN_MIN_TURN: '0.06',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',
         ...(HELIUS_API_KEY_PM2 ? { HELIUS_API_KEY: HELIUS_API_KEY_PM2 } : {}),

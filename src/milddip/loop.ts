@@ -23,6 +23,7 @@ import {
   getStructuralCache,
   streamDrawdownPct,
   loadStructural,
+  leaderCoBuyAlignOk,
   structuralOk,
 } from './fast-path.js';
 import {
@@ -51,6 +52,7 @@ import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
+  isLeaderFreshCoBuy,
   leaderSeedHitByMint,
   readLeaderSeedHits,
   type LeaderSeedHit,
@@ -575,9 +577,34 @@ async function tryFireWaitDip(
    * all 6 came through this path.
    */
   const freshStruct = await loadStructural(mint, cfg, nowMs);
-  // 1.11.915 — the re-check has to know what the entry gate knows, or a
-  // leader-seen name clears the floors on the way in and is thrown out here.
-  if (freshStruct && !structuralOk(freshStruct.metrics, cfg, leaderEverSeen(cfg, state, mint, nowMs))) {
+  const leaderSeenAtMs = state.leaderSeenMints?.[mint] ?? null;
+  const waitSeedHit =
+    cfg.leaderSeedPath != null
+      ? leaderSeedHitByMint(
+          readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+            maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+            max: cfg.leaderSeedMax,
+          }),
+          mint,
+        )
+      : null;
+  const leaderFreshBuy = isLeaderFreshCoBuy({
+    nowMs,
+    maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+    trigger: 'scan',
+    seedHit: waitSeedHit,
+    leaderSeenAtMs,
+  });
+  // 1.11.915/921 — the re-check has to know what the entry gate knows.
+  if (
+    freshStruct &&
+    !structuralOk(
+      freshStruct.metrics,
+      cfg,
+      leaderEverSeen(cfg, state, mint, nowMs),
+      leaderFreshBuy,
+    )
+  ) {
     delete state.waitDipWatch![mint];
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_wait_dip_refloor_skip',
@@ -594,6 +621,33 @@ async function tryFireWaitDip(
     console.log(
       `[mild-dip] SKIP wait-dip refloor ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
         `liq=${freshStruct.metrics.liquidityUsd} mcap=${freshStruct.metrics.marketCapUsd}`,
+    );
+    return false;
+  }
+
+  const metricsForCoBuy = freshStruct?.metrics ?? watch.metrics;
+  const coBuy = leaderCoBuyAlignOk(cfg, metricsForCoBuy, {
+    nowMs,
+    trigger: 'scan',
+    seedHit: waitSeedHit,
+    leaderSeenAtMs,
+  });
+  if (!coBuy.ok) {
+    delete state.waitDipWatch![mint];
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_leader_co_buy_skip',
+      mint,
+      symbol: watch.symbol,
+      turn: coBuy.turn,
+      minTurn: cfg.leaderCoBuyAlignMinTurn,
+      maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+      leaderFresh: coBuy.leaderFresh,
+      waitMs: nowMs - watch.detectedAtMs,
+      pc5m: metricsForCoBuy.priceChange5mPct ?? null,
+    });
+    console.log(
+      `[mild-dip] SKIP leader co-buy ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
+        `turn=${coBuy.turn?.toFixed(4)}<${cfg.leaderCoBuyAlignMinTurn}`,
     );
     return false;
   }
@@ -811,7 +865,7 @@ async function tryFastPathForMint(
     nowMs,
     trigger,
     trigger === 'leader' ? seedHit : null,
-    leaderEverSeen(cfg, state, mint, nowMs),
+    state.leaderSeenMints?.[mint] ?? null,
   );
   if (!candidate) {
     // Deep knife skips entry but must stay on own-tape knife watch.
