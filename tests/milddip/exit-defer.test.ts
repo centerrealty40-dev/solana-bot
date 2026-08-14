@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { shouldDeferSoftExit } from '../../src/milddip/exit-defer.js';
+import {
+  evaluateWouldBuyForExitDefer,
+  resolveExitDeferPc5m,
+  shouldDeferSoftExit,
+} from '../../src/milddip/exit-defer.js';
 import type { MildDipEntryGates } from '../../src/milddip/gates.js';
+import { mildDipPriceRing } from '../../src/milddip/price-ring.js';
 
 const entryGates: MildDipEntryGates = {
   minDipPct: -20,
@@ -17,6 +22,32 @@ const entryGates: MildDipEntryGates = {
 
 const gates = { enabled: true, maxTotalMs: 600_000 };
 
+const pathOff = {
+  mint: 'GCa9TZ111111111111111111111111111111111111',
+  nowMs: 1_700_000_000_000,
+  markPriceUsd: 0.001,
+  streamPc5mPct: null as number | null,
+  dexId: 'pumpswap' as string | null,
+  entryDipSource: 'dex' as string | null,
+  turnDumpGateEnabled: false,
+  turnDumpAlpha: -5,
+  turnDumpBeta: 6,
+  turnDumpShallowSlackPct: 10,
+  turnDumpDeepSlackPct: 12,
+  turnDumpShallowBranchEnabled: false,
+  turnDumpShallowAlpha: -8,
+  turnDumpShallowBeta: 4,
+  turnDumpShallowBandPct: 8,
+  turnDumpKnifeBranchEnabled: false,
+  turnDumpKnifeMinDumpPct: 30,
+  turnDumpKnifeMinTurn: 0.3,
+  entryRequireStabilize: false,
+  knifeStabilizeMinBouncePct: 2,
+  knifeStabilizeQuietMs: 30_000,
+  knifeStabilizeBandPct: 3,
+  stabLookbackMs: 300_000,
+};
+
 /** GCa9TZ: sold on breakeven_stop, rebought 98s later 7.7% lower. */
 const base = {
   reason: 'breakeven_stop' as const,
@@ -32,11 +63,67 @@ const base = {
   priceRatioSinceEntry: 0.9,
   heldMs: 600_000,
   deferredMsSoFar: 0,
+  path: pathOff,
 };
+
+describe('resolveExitDeferPc5m', () => {
+  it('prefers deeper stream drawdown over flat Dex pc5m', () => {
+    expect(resolveExitDeferPc5m(0.05, -4.5)).toBe(-4.5);
+  });
+
+  it('keeps Dex when stream is shallower', () => {
+    expect(resolveExitDeferPc5m(-8, -5)).toBe(-8);
+  });
+});
+
+describe('evaluateWouldBuyForExitDefer', () => {
+  it('passes dex allow-list when dexId is present', () => {
+    const gatesWithDex: MildDipEntryGates = {
+      ...entryGates,
+      allowedDexIds: ['pumpswap'],
+    };
+    const v = evaluateWouldBuyForExitDefer({
+      entryGates: gatesWithDex,
+      metrics: base.metrics,
+      carried: base.carried,
+      priceRatioSinceEntry: base.priceRatioSinceEntry,
+      heldMs: base.heldMs,
+      path: { ...pathOff, dexId: 'pumpswap' },
+    });
+    expect(v.pass).toBe(true);
+  });
+
+  it('fails dex allow-list when dexId is missing', () => {
+    const gatesWithDex: MildDipEntryGates = {
+      ...entryGates,
+      allowedDexIds: ['pumpswap'],
+    };
+    const v = evaluateWouldBuyForExitDefer({
+      entryGates: gatesWithDex,
+      metrics: base.metrics,
+      carried: base.carried,
+      priceRatioSinceEntry: base.priceRatioSinceEntry,
+      heldMs: base.heldMs,
+      path: { ...pathOff, dexId: null },
+    });
+    expect(v.pass).toBe(false);
+    expect(v.reasons.join(' ')).toContain('dex=null_not_allowed');
+  });
+});
 
 describe('shouldDeferSoftExit', () => {
   it('holds a soft exit the entry gate would still buy', () => {
     const v = shouldDeferSoftExit(base);
+    expect(v.defer).toBe(true);
+  });
+
+  it('holds when stream dip qualifies but Dex pc5m is flat (A13oRB-style)', () => {
+    const v = shouldDeferSoftExit({
+      ...base,
+      reason: 'peak_giveback',
+      metrics: { ...base.metrics, pc5mPct: 0.05 },
+      path: { ...pathOff, streamPc5mPct: -4.5 },
+    });
     expect(v.defer).toBe(true);
   });
 
@@ -54,6 +141,7 @@ describe('shouldDeferSoftExit', () => {
     const v = shouldDeferSoftExit({
       ...base,
       metrics: { ...base.metrics, pc5mPct: 12 },
+      path: { ...pathOff, streamPc5mPct: 12 },
     });
     expect(v.defer).toBe(false);
   });
@@ -151,5 +239,30 @@ describe('shouldDeferSoftExit', () => {
     });
     expect(v.defer).toBe(false);
     expect(v.reasons.join(' ')).toContain('age_h=');
+  });
+
+  it('requires entry stabilize when enabled', () => {
+    const mint = 'Stab1111111111111111111111111111111111111';
+    const nowMs = 1_700_000_100_000;
+    mildDipPriceRing.note(mint, 0.001, { tsMs: nowMs - 60_000, source: 'stream' });
+    mildDipPriceRing.note(mint, 0.0009, { tsMs: nowMs - 30_000, source: 'stream' });
+    mildDipPriceRing.note(mint, 0.000927, { tsMs: nowMs, source: 'stream' });
+
+    const v = shouldDeferSoftExit({
+      ...base,
+      path: {
+        ...pathOff,
+        mint,
+        nowMs,
+        markPriceUsd: 0.000927,
+        entryRequireStabilize: true,
+        knifeStabilizeMinBouncePct: 5,
+        knifeStabilizeQuietMs: 30_000,
+        knifeStabilizeBandPct: 2,
+        stabLookbackMs: 300_000,
+      },
+    });
+    expect(v.defer).toBe(false);
+    expect(v.reasons.join(' ')).toContain('entry_no_stabilize');
   });
 });

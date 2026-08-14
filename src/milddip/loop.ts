@@ -47,7 +47,7 @@ import {
   orderMintsForMark,
   type MarkExitDecision,
 } from './exit-engine.js';
-import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
+import { MONEY_MOTIVATED_EXIT_REASONS, buildExitDeferEntryPath, shouldDeferSoftExit } from './exit-defer.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
@@ -2053,7 +2053,13 @@ async function tryExits(
        */
       if (cfg.exitDeferWouldBuyEnabled) {
         const om = readOpenMarkMetrics(mint, nowMs);
+        const metricsTsMs = om?.tsMs ?? nowMs;
         const held = Math.max(0, nowMs - pos.openedAtMs);
+        const streamPc5m = streamDrawdownPct(
+          mint,
+          Math.max(cfg.cooldownBounceLookbackMs, cfg.mintCooldownMs),
+          nowMs,
+        );
         const deferVerdict = shouldDeferSoftExit({
           reason: decision.reason,
           gates: {
@@ -2061,14 +2067,12 @@ async function tryExits(
             maxTotalMs: cfg.exitDeferWouldBuyMaxMs,
           },
           entryGates: cfg.entry,
-          metrics: om
-            ? {
-                pc5mPct: om.pc5mPct,
-                volume5mUsd: om.volume5mUsd,
-                liquidityUsd: om.liquidityUsd,
-                ageMs: Math.max(0, nowMs - om.tsMs),
-              }
-            : null,
+          metrics: {
+            pc5mPct: pc5mPct ?? om?.pc5mPct ?? null,
+            volume5mUsd: volume5mUsd ?? om?.volume5mUsd ?? null,
+            liquidityUsd: om?.liquidityUsd ?? null,
+            ageMs: Math.max(0, nowMs - metricsTsMs),
+          },
           carried: {
             marketCapUsd: pos.entryMarketCapUsd ?? null,
             pairAgeHours: pos.entryPairAgeHours ?? null,
@@ -2077,6 +2081,14 @@ async function tryExits(
             pos.entryPriceUsd > 0 ? decision.markPriceUsd / pos.entryPriceUsd : null,
           heldMs: held,
           deferredMsSoFar: pos.exitDeferredMs ?? 0,
+          path: buildExitDeferEntryPath(cfg, {
+            mint,
+            nowMs,
+            markPriceUsd: decision.markPriceUsd,
+            streamPc5mPct: streamPc5m,
+            dexId: om?.dexId ?? pos.entryDexId ?? null,
+            entryDipSource: pos.entryDipSource ?? null,
+          }),
         });
         if (deferVerdict.defer) {
           const sinceLast =
@@ -2098,7 +2110,9 @@ async function tryExits(
               mfePct: +decision.mfePct.toFixed(2),
               markPx: decision.markPriceUsd,
               entryPx: pos.entryPriceUsd,
-              pc5m: om?.pc5mPct ?? null,
+              pc5m: pc5mPct ?? om?.pc5mPct ?? null,
+              streamPc5m,
+              dexId: om?.dexId ?? pos.entryDexId ?? null,
               vol5m: om?.volume5mUsd ?? null,
               liq: om?.liquidityUsd ?? null,
               deferredMs: pos.exitDeferredMs,
