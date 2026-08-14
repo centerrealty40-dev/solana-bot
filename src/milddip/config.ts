@@ -156,6 +156,12 @@ const MildDipConfigSchema = z.object({
    */
   orphanSweepEnabled: z.boolean().default(true),
   orphanSweepMaxSells: z.coerce.number().int().min(0).max(200).default(25),
+  /** Burn+close unsellable / migrated orphan ATAs after sell fail (reclaim rent). */
+  orphanBurnFallbackEnabled: z.boolean().default(true),
+  /** Max burn+close ops per sweep pass (non-pump + jupiter_sell_quote_failed). */
+  orphanJanitorMaxClose: z.coerce.number().int().min(0).max(200).default(25),
+  /** Periodic orphan reclaim interval (0 = startup only). */
+  orphanReclaimIntervalMs: z.coerce.number().int().min(0).max(86_400_000).default(1_800_000),
   oneshotDumpMinSellUsd: z.coerce.number().min(0).max(1_000_000).default(500),
   /** post/pre ≤ this counts as emptied (dust left OK). */
   oneshotDumpMaxPostResidualFrac: z.coerce.number().min(0).max(1).default(0.02),
@@ -1076,6 +1082,9 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 1.11.767 — sell unmanaged pump ATAs not in open (startup safety net). */
     orphanSweepEnabled: envBool('MILD_DIP_ORPHAN_SWEEP', true),
     orphanSweepMaxSells: process.env.MILD_DIP_ORPHAN_SWEEP_MAX_SELLS ?? 25,
+    orphanBurnFallbackEnabled: envBool('MILD_DIP_ORPHAN_BURN_FALLBACK', true),
+    orphanJanitorMaxClose: process.env.MILD_DIP_ORPHAN_JANITOR_MAX_CLOSE ?? 25,
+    orphanReclaimIntervalMs: process.env.MILD_DIP_ORPHAN_RECLAIM_INTERVAL_MS ?? 1_800_000,
     oneshotDumpMinSellUsd: process.env.MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD ?? 500,
     oneshotDumpMaxPostResidualFrac:
       process.env.MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC ?? 0.02,

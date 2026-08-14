@@ -1,3 +1,15 @@
+## 1.11.919 — 2026-08-14
+
+### Fixed — orphan sweep burn fallback (rent reclaim)
+
+- **`orphanSweep`** no longer stops at `jupiter_sell_quote_failed`: unsellable *pump* orphans fall through to **burn + close ATA** (~0.002 SOL rent each).
+- **Non-pump migrated orphans** (40+ on wallet outside `state.open`) are now burned on sweep — previously ignored because only `*pump` suffix was sell-eligible.
+- **Periodic reclaim** every 30m (`MILD_DIP_ORPHAN_RECLAIM_INTERVAL_MS`) in addition to startup pass.
+
+### Rollback
+
+- Set `MILD_DIP_ORPHAN_BURN_FALLBACK=0` or restore prior `orphan-sweep.ts`.
+
 ## 1.11.918 — 2026-08-14
 
 ### Changed
