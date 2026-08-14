@@ -79,6 +79,10 @@ export type MildDipOpenPosition = {
    */
   entryMarketCapUsd?: number | null;
   entryPairAgeHours?: number | null;
+  /** Dex pool at entry — exit defer allow-list fallback when mark refresh lags. */
+  entryDexId?: string | null;
+  /** dipSource at entry — stabilize-exempt sources skip re-check on defer. */
+  entryDipSource?: string | null;
   /**
    * 1.11.879 — when this bag last sold. A partial changes the size on chain and
    * the balance read lags, so the next decision has to wait for data that

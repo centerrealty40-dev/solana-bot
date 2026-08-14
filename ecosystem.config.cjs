@@ -3494,7 +3494,8 @@ const PM2_APPS = [
          * profit ladder are never deferred.
          */
         MILD_DIP_EXIT_DEFER_WOULD_BUY: '1',
-        MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS: '600000',
+        /** 0 = hold while entry still passes; no artificial sell-after-10m. */
+        MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS: '0',
         /**
          * 1.11.925 — OFF. On 4CmYEyg four BE scratches after MFE 8–20%
          * (e.g. +8.7% → +$0.04 while 7BNax held to +17.9%). Leaders trail
