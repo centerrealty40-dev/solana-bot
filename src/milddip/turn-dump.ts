@@ -59,6 +59,20 @@ export function turnover5mLiq(
   return volume5mUsd / liquidityUsd;
 }
 
+/**
+ * Live knife branch at send/final gate: global flag, or a seat that already
+ * qualified as hot deep dump on our stream/Dex tape.
+ */
+export function turnDumpKnifeBranchLive(
+  knifeBranchEnabled: boolean,
+  opts?: { hotDeepKnifeSeat?: boolean; dipSource?: string | null },
+): boolean {
+  if (knifeBranchEnabled) return true;
+  if (opts?.hotDeepKnifeSeat) return true;
+  if (opts?.dipSource === 'turn_dump_knife') return true;
+  return false;
+}
+
 function evaluateBand(args: {
   dump: number;
   turn: number;

@@ -18,12 +18,17 @@ import { mildDipPriceRing } from './price-ring.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { isLeaderFreshCoBuy } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
-import { evaluateTurnDumpGate, turnDumpKnifeOrOk } from './turn-dump.js';
+import {
+  evaluateTurnDumpGate,
+  turnDumpKnifeBranchLive,
+  turnDumpKnifeOrOk,
+} from './turn-dump.js';
 
 function turnDumpArgsFromCfg(
   cfg: MildDipConfig,
   pc5m: number | null | undefined,
   metrics: MildDipCandidateMetrics,
+  hotDeepKnifeSeat = false,
 ) {
   return {
     enabled: true as const,
@@ -38,7 +43,9 @@ function turnDumpArgsFromCfg(
     shallowAlpha: cfg.turnDumpShallowAlpha,
     shallowBeta: cfg.turnDumpShallowBeta,
     shallowBandPct: cfg.turnDumpShallowBandPct,
-    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    knifeBranchEnabled: turnDumpKnifeBranchLive(cfg.turnDumpKnifeBranchEnabled, {
+      hotDeepKnifeSeat,
+    }),
     knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
     knifeMinTurn: cfg.turnDumpKnifeMinTurn,
   };
@@ -305,6 +312,8 @@ export function structuralOk(
   leaderSeen = false,
   /** Fresh leader co-buy only — relaxes turn/vol ceilings, not age. */
   leaderFreshBuy = false,
+  /** Stream/Dex hot deep dump (dump≥knifeMin & turn≥knifeMin) — same relax, no leader. */
+  hotDeepDump = false,
 ): boolean {
   const g = cfg.entry;
   const minAge =
@@ -312,11 +321,11 @@ export function structuralOk(
       ? Math.min(g.minPairAgeHoursLeaderSeen, g.minPairAgeHours)
       : g.minPairAgeHours;
   /**
-   * 1.11.914/921 — turnover/vol ceilings relax only on a *fresh* leader buy.
-   * Seven-day `leaderSeen` memory kept letting solo low-turn wait_dip fills
-   * through (5XtrJ3 turn=0.019 with leader flat 50m earlier).
+   * Turnover/vol ceilings relax on fresh leader co-buy OR on our own hot-blade
+   * signal (dump≥30 & turn≥0.3). The latter is how we compete on the same
+   * proлив as 7BNax without waiting for his buy.
    */
-  const relaxTurnVol = leaderFreshBuy;
+  const relaxTurnVol = leaderFreshBuy || hotDeepDump;
   const maxTurn = relaxTurnVol ? 0 : g.maxTurnover5mLiq;
   const minTurn = relaxTurnVol ? 0 : g.minTurnover5mLiq;
   const maxVol = relaxTurnVol ? 0 : g.maxVolume5mUsd;
@@ -636,18 +645,51 @@ export async function evaluateFastPathCandidate(
   }
 
   // A name a leader is buying gets the younger age floor (1.11.905).
+  const dexPc = struct.metrics.priceChange5mPct;
+  const deepestPc =
+    streamDd != null && dexPc != null
+      ? Math.min(streamDd, dexPc)
+      : streamDd != null
+        ? streamDd
+        : dexPc;
+  /**
+   * Hot deep dump on our own tape: dump≥30 & turn≥0.3. Evaluated *before*
+   * structural so high turnover (vol5m/liq) does not block the blade we are
+   * trying to catch ahead of anyone else.
+   */
+  const hotDeepKnife = turnDumpKnifeOrOk({
+    enabled: cfg.turnDumpGateEnabled,
+    knifeBranchEnabled: true,
+    pc5m: deepestPc,
+    volume5mUsd: struct.metrics.volume5mUsd,
+    liquidityUsd: struct.metrics.liquidityUsd,
+    minDumpPct: cfg.turnDumpKnifeMinDumpPct,
+    minTurn: cfg.turnDumpKnifeMinTurn,
+  });
+  const hotDeepKnifeOk = hotDeepKnife.ok;
+
   const leaderSeenForAge = leaderSeenName;
-  if (!structuralOk(struct.metrics, cfg, leaderSeenForAge, leaderFreshBuy)) {
+  if (
+    !structuralOk(
+      struct.metrics,
+      cfg,
+      leaderSeenForAge,
+      leaderFreshBuy,
+      hotDeepKnifeOk,
+    )
+  ) {
     return skip('structural_fail', {
       structSource,
       structAgeMs,
       leaderSeen: leaderSeenForAge,
       leaderFreshBuy,
+      hotDeepKnife: hotDeepKnifeOk,
       vol5m: struct.metrics.volume5mUsd,
       liq: struct.metrics.liquidityUsd,
       mcap: struct.metrics.marketCapUsd,
       ageH: struct.metrics.pairAgeHours,
       pc5m: struct.metrics.priceChange5mPct,
+      deepestPc,
     });
   }
 
@@ -668,34 +710,9 @@ export async function evaluateFastPathCandidate(
     });
   }
 
-  const dexPc = struct.metrics.priceChange5mPct;
   const dexInMain = inDipBand(dexPc, cfg.entry.minDipPct, maxDip);
 
-  // 1.11.793/799 — 7BNax OR: deep+hot (dump≥30 & turn≥0.3) buys now.
-  // Do not require TD branch==='knife' (hot dumps classify as main first).
-  const deepestPc =
-    streamDd != null && dexPc != null
-      ? Math.min(streamDd, dexPc)
-      : streamDd != null
-        ? streamDd
-        : dexPc;
-  /**
-   * 1.11.915 — the knife branch is off because it lost five times more per
-   * position than anything else, measured over the whole journal. That is the
-   * population of deep dumps nobody credible is buying. BVEaDToN printed -55.7%,
-   * which is past the -25% band, so the branch is the only door it has, and
-   * 8zkgFG walked through it. Open the door for leader-seen names only.
-   */
-  const knifeOr = turnDumpKnifeOrOk({
-    enabled: cfg.turnDumpGateEnabled,
-    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled || leaderSeenName,
-    pc5m: deepestPc,
-    volume5mUsd: struct.metrics.volume5mUsd,
-    liquidityUsd: struct.metrics.liquidityUsd,
-    minDumpPct: cfg.turnDumpKnifeMinDumpPct,
-    minTurn: cfg.turnDumpKnifeMinTurn,
-  });
-  const knifeOrOk = knifeOr.ok;
+  const knifeOrOk = hotDeepKnifeOk;
 
   // Deep knife band — leave to knife-stabilize wait path (not instant blade catch),
   // unless the 7BNax knife OR already qualifies for an immediate seat.
@@ -708,18 +725,15 @@ export async function evaluateFastPathCandidate(
       dexPc > cfg.knifeStabilizeMinDipPct &&
       dexPc <= cfg.knifeStabilizeMaxDipPct);
   /**
-   * 1.11.915 — the defer waits 30s for the blade to stop. That wait is for
-   * names nobody credible is touching; when a leader is already in, waiting is
-   * how we arrive after the move. BVEaDToN and D3WreYVj both died here while
-   * 8zkgFG bought them.
+   * Defer waits 30s for the blade to stop — for cold deep knives only. A hot
+   * deep dump (dump≥30 & turn≥0.3 on our stream) buys now; no leader required.
    */
   if (
     cfg.knifeStabilizeEnabled &&
     deepKnife &&
     !streamInMain &&
     !dexInMain &&
-    !knifeOrOk &&
-    !leaderSeenName
+    !knifeOrOk
   ) {
     return skip('deep_knife_defer', {
       streamDd,
@@ -888,7 +902,9 @@ export async function evaluateFastPathCandidate(
       ? streamDd
       : (metrics.priceChange5mPct ?? dexPc);
   if (!dipSource && cfg.turnDumpGateEnabled) {
-    const tdEarly = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5mForGate, metrics));
+    const tdEarly = evaluateTurnDumpGate(
+      turnDumpArgsFromCfg(cfg, tdPc5mForGate, metrics, hotDeepKnifeOk),
+    );
     if (tdEarly.pass) {
       tdRescue = true;
       dipSource = tdEarly.branch === 'knife' ? 'turn_dump_knife' : 'dex';
@@ -939,7 +955,9 @@ export async function evaluateFastPathCandidate(
   // 1.11.779/790 — prefer deeper stream dump-extent vs lagging Dex pc5m for the gate.
   if (cfg.turnDumpGateEnabled) {
     const tdPc5m = tdPc5mForGate;
-    const td = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5m, metrics));
+    const td = evaluateTurnDumpGate(
+      turnDumpArgsFromCfg(cfg, tdPc5m, metrics, hotDeepKnifeOk || dipSource === 'turn_dump_knife'),
+    );
     if (!td.pass) {
       // 1.11.774 — was silent null; journal so live misses are visible.
       appendMildDipJournal(cfg.journalPath, {
