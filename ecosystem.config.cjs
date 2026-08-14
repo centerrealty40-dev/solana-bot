@@ -3342,12 +3342,17 @@ const PM2_APPS = [
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
-         * Freefall / stale / dead / vol_fade / max-hold OFF (0).
-         * patience=0: no early never_arm_giveback knife.
+         * Freefall / dead / vol_fade OFF (0). patience=0: no early giveback knife.
+         *
+         * 1.11.921 — stale ON (wallet-anchored mark sweep, 72h / 1954 bags):
+         *   plain 5m + −5% cuts 51% of bags and bleeds −$13.4k on winners (mark basis);
+         *   same rule with mfe≤5% (never green) saves +$108 vs actual exit, triggers 32%,
+         *   exits deep bags at ~−11% mark vs −44% min on −30% cohort. Re-enter later
+         *   beats sitting through −30% on 127 bags. hard_stop −30% still catches fast dumps.
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
-        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '0',
-        MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '2',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '300000',
+        MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '5',
         MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_DEAD_PNL_PCT: '10',
