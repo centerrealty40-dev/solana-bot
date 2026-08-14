@@ -170,24 +170,6 @@ export type MildDipExitGates = {
   deadSetTurnFadeFrac: number;
   deadSetMinDropPct: number;
   deadSetBouncePct: number;
-  /**
-   * 1.11.916 — the stop level says *decide*, not *dump at this instant*.
-   *
-   * A hard stop that fires on the print itself sells into the red candle, which
-   * is the worst tick of the move by construction: the sweep that broke the
-   * level is still in the book. 4rLgnF went out at -16.0% and traded 8.5% above
-   * our exit four minutes later.
-   *
-   * So once the level is breached we wait for the price to come this far off its
-   * trough and leave on the green tick instead. Nothing is being held and hoped
-   * for: `cliff_dump` still fires instantly on a deeper collapse, and the
-   * never-arm family (time_red at 15m, dead, vol_fade) still ends a bag that
-   * flatlines below the level, because a breach without a bounce now falls
-   * through to them rather than returning. 0 = fire on the print.
-   */
-  hardStopBouncePct: number;
-  /** Second staged hard_stop cut: bounce off trough ≥ this (0 = 2× hardStopBouncePct). */
-  hardStopBounce2Pct: number;
   deadSetMinHoldMs: number;
   /**
    * 1.11.855 — once MFE has reached `breakevenArmPct`, close the whole bag if
@@ -622,84 +604,6 @@ export function evaluateRebuyBelowExit(args: {
   return { pass: reasons.length === 0, reasons };
 }
 
-/** Sources that already passed a stabilize / bounce gate before buy. */
-export function entryStabilizeExemptDipSource(dipSource: string | null | undefined): boolean {
-  return dipSource === 'knife_stabilize' || dipSource === 'mild_stabilize';
-}
-
-export type EntryStabilizeGates = {
-  enabled: boolean;
-  minBouncePct: number;
-  quietMs: number;
-  stabilizeBandPct: number;
-};
-
-/**
- * Universal entry gate: refuse buys on a falling blade.
- * Pass when price bounced ≥ minBouncePct off the post-peak trough, or held
- * quietly within stabilizeBandPct of the trough for quietMs (knife-style).
- */
-export function evaluateEntryStabilizeRequired(args: {
-  freshPriceUsd: number | null;
-  troughPriceUsd: number | null;
-  troughAtMs: number | null;
-  nowMs: number;
-  gates: EntryStabilizeGates;
-}): MildDipGateVerdict {
-  const reasons: string[] = [];
-  const { freshPriceUsd, troughPriceUsd, troughAtMs, nowMs, gates } = args;
-
-  if (!gates.enabled) {
-    return { pass: true, reasons };
-  }
-
-  if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
-    reasons.push('entry_stabilize_missing_price');
-    return { pass: false, reasons };
-  }
-
-  if (troughPriceUsd == null || !(troughPriceUsd > 0) || troughAtMs == null || !(troughAtMs > 0)) {
-    reasons.push('entry_stabilize_missing_trough');
-    return { pass: false, reasons };
-  }
-
-  const bouncePct = bounceFromTroughPct(freshPriceUsd, troughPriceUsd);
-  if (bouncePct == null) {
-    reasons.push('entry_stabilize_missing_bounce');
-    return { pass: false, reasons };
-  }
-
-  const minBounce = gates.minBouncePct > 0 ? gates.minBouncePct : 0;
-  if (minBounce > 0 && bouncePct >= minBounce - 1e-9) {
-    reasons.push(
-      `entry_stabilize_bounce=${bouncePct.toFixed(2)}%>=min=${minBounce}`,
-    );
-    return { pass: true, reasons };
-  }
-
-  const quietAgeMs = nowMs - troughAtMs;
-  const band = gates.stabilizeBandPct > 0 ? gates.stabilizeBandPct : 0;
-  const quiet = gates.quietMs > 0 ? gates.quietMs : 0;
-  if (
-    quiet > 0 &&
-    band > 0 &&
-    quietAgeMs >= quiet &&
-    bouncePct >= 0 &&
-    bouncePct <= band + 1e-9
-  ) {
-    reasons.push(
-      `entry_stabilize_hold=${bouncePct.toFixed(2)}%<=${band}_quiet=${quietAgeMs}ms`,
-    );
-    return { pass: true, reasons };
-  }
-
-  reasons.push(
-    `entry_no_stabilize bounce=${bouncePct.toFixed(2)}%` +
-      `_min=${minBounce}_band=${band}_quiet=${quietAgeMs}ms<${quiet}`,
-  );
-  return { pass: false, reasons };
-}
-
 /**
  * After mint cooldown: refuse rebuy if mark already bounced too far off the
  * trough we observed (stream/Dex samples) during the cooldown lookback window.
@@ -943,8 +847,6 @@ export function evaluateMildDipPeakGiveback(args: {
   mfeBankStage?: number;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
-  /** Lowest mark seen on this bag - the stop waits for a bounce off it. */
-  troughPriceUsd?: number | null;
   /** Live Dex/stream pc5m % — required when neverArmTimeRedMaxPc5mPct > 0. */
   pc5mPct?: number | null;
   /** Current 5m volume (Dex) — used to extend the spaced sample ring. */
@@ -1180,32 +1082,15 @@ export function evaluateMildDipPeakGiveback(args: {
       ? gates.hardStopPartialFraction
       : 0;
 
-  /**
-   * 1.11.916 — has the price turned yet? A breach with no turn is not an exit.
-   */
-  const stopBounce = gates.hardStopBouncePct > 0 ? gates.hardStopBouncePct : 0;
-  const stopBounce2 =
-    gates.hardStopBounce2Pct > stopBounce
-      ? gates.hardStopBounce2Pct
-      : stopBounce > 0
-        ? stopBounce * 2
-        : 0;
-  const troughPx = args.troughPriceUsd;
-  // An unknown trough falls back to firing on the print: a missing input must
-  // not be able to switch the stop off.
-  const turned =
-    stopBounce <= 0 ||
-    troughPx == null ||
-    !(troughPx > 0) ||
-    (args.markPriceUsd / troughPx - 1) * 100 >= stopBounce;
-
   if (hardPartial > 0) {
-    // 1.11.920 — half @ hardStop + first bounce; runner @ 2× bounce (not on print).
-    if (cliff > 0 && pnlPct <= -cliff && turned) {
+    // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
+    // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
+    // full cliff_dump.
+    if (cliff > 0 && pnlPct <= -cliff) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
     if (hardStop > 0 && pnlPct <= -hardStop) {
-      if (!scaleOutDone && turned) {
+      if (!scaleOutDone) {
         return {
           ...hold,
           shouldExit: true,
@@ -1213,21 +1098,15 @@ export function evaluateMildDipPeakGiveback(args: {
           reason: 'hard_stop',
         };
       }
-      if (
-        scaleOutDone &&
-        stopBounce2 > 0 &&
-        bounceOffTroughPct >= stopBounce2 - 1e-9
-      ) {
-        return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
-      }
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
   } else {
-    // Cliff and stop both wait for the turn (1.11.923); missing trough → fire.
-    if (cliff > 0 && pnlPct <= -cliff && turned) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
-    }
-    if (hardStop > 0 && pnlPct <= -hardStop && turned) {
+    // Legacy: full hard_stop before cliff (tighter floor wins first).
+    if (hardStop > 0 && pnlPct <= -hardStop) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
+    }
+    if (cliff > 0 && pnlPct <= -cliff) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
   }
 
@@ -1538,13 +1417,7 @@ export function evaluateMildDipPeakGiveback(args: {
         // 1.11.794 — fail open when pc5m missing; when present require ≤ −N.
         pcOk = pc == null || pc <= -timeRedPc + 1e-9;
       }
-      /**
-       * 1.11.918 — the same rule as the stop (1.11.916): a red print is not a
-       * moment to sell into. GRehQKv9 was cut here at -19.51% on a falling tick
-       * after 50 minutes. The turn is what times the sale; the max-hold ceiling
-       * is the backstop that ignores it, because past that we cannot prove green.
-       */
-      if (pcOk && turned) {
+      if (pcOk) {
         return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
       }
     }

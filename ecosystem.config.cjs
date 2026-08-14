@@ -2837,23 +2837,22 @@ const PM2_APPS = [
         /** 1.11.828 — flat $5 across base / thick / micro. */
         /** 1.11.839 — flat $2 across base / thick / micro. */
         /** 1.11.841 — flat $1 across base / thick / micro. */
-        /** 1.11.924 — flat $2 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '5',
+        MILD_DIP_POSITION_USD: '3',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
-         * 1.11.924 — same $2 as base.
+         * 1.11.841 — same $1 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '5',
+        MILD_DIP_THICK_POSITION_USD: '3',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
         /**
          * 1.11.746 — micro band, knife_stabilize only.
          * 1.11.776 — floor aligned to global $5k (was $15k–$50k).
-         * 1.11.924 — clip flat $2 with base/thick (one economic tier).
+         * 1.11.841 — clip flat $1 with base/thick (one economic tier).
          */
-        MILD_DIP_MICRO_POSITION_USD: '5',
+        MILD_DIP_MICRO_POSITION_USD: '3',
         MILD_DIP_MICRO_MIN_MCAP_USD: '5000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
@@ -2946,8 +2945,6 @@ const PM2_APPS = [
         MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
-        /** 1.11.924 — no buy on falling blade (wait_dip / dex / stream). */
-        MILD_DIP_ENTRY_REQUIRE_STABILIZE: '1',
         /**
          * 1.11.803 — wait-dip back ON, now *alongside* turn→dump: the formula
          * picks the mint, wait-dip picks the price. 8h CF on live buys: entering
@@ -2977,14 +2974,23 @@ const PM2_APPS = [
          * ones that had bottomed, and those are exactly the ones the seat let go.
          */
         /**
-         * 1.11.925 — OFF. 4CmYEyg (15 our rounds vs 28 leader): every fill was
-         * wait_dip. We bought the continuation (−5% from signal, stream already
-         * −16…−24%) and printed 4–18% above the leader fill 2–4 min later.
-         * Leaders buy the signal / trough (turn→dump or green), not another
-         * dump after the seat. Stabilize gate still blocks a falling blade.
+         * 1.11.896 — back on. Turning it off in 1.11.890 rested on what the
+         * *leaders* made buying the dips our seats let expire (+10.74% median
+         * against −0.29% for the ones we waited out). That was never our number:
+         * they fill without our chase and overpay and they exit on their own
+         * rule, so their result on a dip is not the result we would have had.
+         *
+         * Ours, per position, matched to the buy row:
+         *
+         *   overnight, seats on       409 pos  −0.0415/pos  24% end in time_red
+         *   09:48–11:35, seats off     70 pos  −0.0906/pos  40% end in time_red
+         *
+         * The leaders' own book did not deteriorate over those hours - their
+         * round trips ran a +0.52% median overnight and +0.92% through the
+         * morning - so this is not the market turning, it is the change.
          */
-        MILD_DIP_WAIT_DIP: '0',
-        MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '0',
+        MILD_DIP_WAIT_DIP: '1',
+        MILD_DIP_WAIT_DIP_WITH_TURN_DUMP: '1',
         /**
          * 1.11.808 — ask deeper, accept shallower. With wait −12 / overshoot 2
          * the fill window was ready(0.88×signal) → ceiling(0.90×signal): a 2.3%
@@ -3330,23 +3336,24 @@ const PM2_APPS = [
         /** USDG + other junk; built-in stables also denied in config defaults. */
         MILD_DIP_DENIED_MINTS: '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
         /**
-         * 1.11.925 — leader-style single trail. 4CmYEyg + 7d observer:
-         * armed winners exit at med −6.7% giveback from peak (p90 −2.5%).
-         * Dual 5/15 plus breakeven_stop scratched +8…+20% MFE back to flat
-         * while 7BNax held the same bag to +18%. One full exit at −8%.
+         * 1.11.699 — scale-out trail; 1.11.741 — half-first even on −8% gap:
+         * Arm at +5% MFE; first giveback hit (−3% or deeper) always sells 50%;
+         * runner full-exits only after scaleOutDone + another −8% hit.
          */
         MILD_DIP_EXIT_ARM_PCT: '5',
         MILD_DIP_EXIT_PARTIAL_GIVEBACK_PCT: '0',
-        MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0',
-        MILD_DIP_EXIT_GIVEBACK_PCT: '8',
+        MILD_DIP_EXIT_SCALE_OUT_FRACTION: '0.5',
+        /**
+         * Trail width: full exit 30% below the peak. Measured off the leaders'
+         * own bag marks, where giveback at exit is a constant ~30% of peak for
+         * any peak above 15% (−29.4% / −29.9% / −33.6% across buckets).
+         */
+        MILD_DIP_EXIT_GIVEBACK_PCT: '12',
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
-         * Freefall / stale / dead / vol_fade OFF (0).
+         * Freefall / stale / dead / vol_fade / max-hold OFF (0).
          * patience=0: no early never_arm_giveback knife.
-         *
-         * 1.11.922 — revert 1.11.921 stale (5m/−5%/MFE≤5%): live 3h cut 94 bags
-         * −$44; 33% bounced ≥5% within 60m — churn tax without net save.
          */
         MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '0',
@@ -3413,12 +3420,13 @@ const PM2_APPS = [
          *   −25         −15.83%            57%             −1.081%
          *   −50         −17.40%            60%             −1.813%
          *
-         * 1.11.925 — −30. Leaders sit MAE −15…−17% on the same 4CmYEyg swings
-         * our −15 hard_stop cut (then they sold green). 1.11.815 grid on 183
-         * of ours: hard15 −$9.52, hard25 +$4.15, hard30 +$6.19. Cliff −50
-         * remains the rug floor.
+         * −15 is the only level with a positive expectancy on our distribution,
+         * and −50 was the worst of the six. The two knobs have to move together:
+         * a laddered runner can carry a wide floor, a single-leg exit at +8%
+         * cannot. `dead_set_bounce` still fires first at −10% with the
+         * conjunction, so this is the backstop rather than the usual exit.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30',
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
         /**
          * 1.11.910 — condemned by the conjunction, timed by the bounce.
          *
@@ -3454,9 +3462,6 @@ const PM2_APPS = [
          * median +28.86% - says it is reachable.
          */
         MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '5',
-        // 1.11.916 - the stop level decides, the bounce times the sale. 4rLgnF
-        // went out at -16.0% and traded 8.5% above our exit four minutes later.
-        MILD_DIP_EXIT_HARD_STOP_BOUNCE_PCT: '3',
         MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
@@ -3492,14 +3497,8 @@ const PM2_APPS = [
          * profit ladder are never deferred.
          */
         MILD_DIP_EXIT_DEFER_WOULD_BUY: '1',
-        /** 0 = hold while entry still passes; no artificial sell-after-10m. */
-        MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS: '0',
-        /**
-         * 1.11.925 — OFF. On 4CmYEyg four BE scratches after MFE 8–20%
-         * (e.g. +8.7% → +$0.04 while 7BNax held to +17.9%). Leaders trail
-         * ~8% from peak and stay green; they do not flatten at entry.
-         */
-        MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '0',
+        MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS: '600000',
+        MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8',
         /**
          * 1.11.873 — the floor is a mark-basis level, so breaking even in money
          * means clearing the round trip. Seven `breakeven_stop` exits at a floor
@@ -3520,9 +3519,8 @@ const PM2_APPS = [
          * price we can actually get.
          */
         MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT: '1',
-        /** 1.11.920 — staged hard_stop: half @ 3% bounce, runner @ 6%. */
-        MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0.5',
-        MILD_DIP_EXIT_HARD_STOP_BOUNCE_2_PCT: '6',
+        /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
+        MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         /**
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
@@ -3563,15 +3561,10 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS: '20000',
         MILD_DIP_EXIT_MFE_BANK1_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
-        // Off with the grid, or the bank takes the same rung the grid used to.
-        MILD_DIP_EXIT_MFE_BANK2_PCT: '0',
+        MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
         /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
-        // 1.11.920 - the sleeve is what actually trails a bag once the ladder is
-        // off, so it has to carry the same giveback as the trail. AvecKFxn peaked
-        // at +21.49% and this cut it at -12.58% while GIVEBACK_PCT said 20.
-        // 1.11.922 — sleeve aligned to the full close trail (−15%).
-        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '8',
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '12',
         /**
          * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):
          * half the remainder at every +8%, no top rung. Replaces bank1 +6%/40% +
@@ -3587,7 +3580,7 @@ const PM2_APPS = [
          * −3.47% (+25%×50%) or +0.66% (+50%×50%) — the rungs cut the only tail
          * that pays. Both ladders off; a single full exit on the trail below.
          */
-        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
+        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
         MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
         /**
          * 1.11.861 — the ladder stops instead of running forever. When the next
@@ -3667,15 +3660,33 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '0',
         /**
-         * 1.11.926 — never_arm_time_red OFF. 1.11.925 widened hard_stop to −30%
-         * so a 4CmYEyg-style −16% MAE can sit like 7BNax and finish green.
-         * This gate still cut the same bag at −15% / 15m after the first bounce
-         * (`turned`), so the wider stop never got to work on never-armed seats.
-         * Loss floor is hard_stop −30% + cliff −50%; hold ceiling stays 3h.
+         * 1.11.792 — never-arm DOWN formula (7BNax ~44% cover):
+         * held ≥ 5m AND pnl ≤ −15% AND Dex pc5m ≤ −5%.
+         * Armed / MFE-bank trail unchanged. Missing pc5m → no fire.
          */
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '0',
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '0',
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT: '0',
+        /**
+         * 1.11.900 — 900s, not 300s. Measured on the dips we and a leader both
+         * entered within a minute of each other, so the same flush and not two
+         * entries hours apart: 75 matched pairs, of which we stopped out of 30.
+         *
+         *   what we did              n    ours       theirs   they held
+         *   stopped out (<=-5%)     30  -19.77%      -0.26%     15.5 min
+         *   scratched (-5..+5%)     20   +1.81%      +5.27%      5.1 min
+         *   banked (>+5%)           25   +9.41%      +3.90%     10.1 min
+         *
+         * On the bags that worked our exit beats theirs, +9.41% against +3.90%.
+         * On the bags that did not, we realised -19.77% where they came out
+         * around flat, having given it three times as long. Our median hold on
+         * these was 4.8 minutes, which is this gate firing at its floor.
+         *
+         * A replay of every tape agrees on direction: against no time cut at
+         * all, the rule at 300s costs -6.37 USD over 24h, at 900s -0.84, at
+         * 1200s nothing. It still helps the typical position on a trimmed mean
+         * at every setting, so it stays - it just stops firing at five minutes.
+         */
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15',
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT: '5',
         /**
          * 1.11.791 — max-hold / underwater time ceiling OFF.
          * Never-arm loss uses HELD+PC+SL; green armed trail may wait.
@@ -3715,10 +3726,6 @@ const PM2_APPS = [
         /** 1.11.767 — sell unmanaged *pump ATAs not in state.open on boot. */
         MILD_DIP_ORPHAN_SWEEP: '1',
         MILD_DIP_ORPHAN_SWEEP_MAX_SELLS: '25',
-        /** 1.11.919 — burn+close unsellable/migrated orphans (reclaim ATA rent). */
-        MILD_DIP_ORPHAN_BURN_FALLBACK: '1',
-        MILD_DIP_ORPHAN_JANITOR_MAX_CLOSE: '25',
-        MILD_DIP_ORPHAN_RECLAIM_INTERVAL_MS: '1800000',
         MILD_DIP_ONESHOT_DUMP_MIN_SELL_USD: '500',
         MILD_DIP_ONESHOT_DUMP_MAX_POST_RESIDUAL_FRAC: '0.02',
         /** 1.11.740 — soft giveback only after whale vs mass-flee classify. */
@@ -3800,10 +3807,6 @@ const PM2_APPS = [
          */
         MILD_DIP_MARK_DEX_REFRESH_MS: '2000',
         MILD_DIP_MARK_CACHE_TTL_MS: '3000',
-        // 1.11.917 - an armed bag stops trusting a ring sample this old and gets
-        // an awaited Dex read instead. GPzpoXpD sat on one frozen print for 44s
-        // while it halved, and we banked +298% of a +699% peak.
-        MILD_DIP_MARK_ARMED_MAX_AGE_MS: '10000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
         MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',
@@ -3893,7 +3896,7 @@ const PM2_APPS = [
          * 1.11.801 — D2zNEW / 3XeNADY: H1 +46% pump, buy −10% off peak.
          * If Dex H1 ≥ +15%, dump must be ≤ −15% (not a shallow pullback).
          */
-        MILD_DIP_DUMP_H1_PUMP_MIN_PCT: '12',
+        MILD_DIP_DUMP_H1_PUMP_MIN_PCT: '15',
         /**
          * 1.11.863 — −8, was −15. On a coin up 15%+ on the hour we demanded a
          * −15% dip. Of 1666 leader buys already inside our −25..0 band, 503 sit
@@ -4090,9 +4093,7 @@ const PM2_APPS = [
          * So the first trade is priced as the cost of finding out, not skipped -
          * without it there are no repeats.
          */
-        // Kept at the same third of a clip as the tiers move 3 -> 8: a first
-        // touch on a mint is still the worst-performing entry we take.
-        MILD_DIP_FIRST_TOUCH_POSITION_USD: '3',
+        MILD_DIP_FIRST_TOUCH_POSITION_USD: '1',
         MILD_DIP_PROBE_BLOCKED_USD: '2',
         MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
         /**

@@ -143,34 +143,6 @@ export type OrphanJanitorResult = {
   errors: string[];
 };
 
-/** Jupiter/sim failures where the bag is unsellable — burn+close to reclaim rent. */
-export function isOrphanSellBurnFallbackReason(reason: string | null | undefined): boolean {
-  if (!reason) return false;
-  const r = reason.toLowerCase();
-  if (r === 'jupiter_sell_quote_failed' || r === 'jupiter_sell_swap_failed') return true;
-  if (r.startsWith('sim_failed')) return true;
-  if (r.startsWith('route_too_impactful')) return true;
-  if (r.startsWith('quote_quality_regressed')) return true;
-  if (r.includes('no route') || r.includes('could not find any route')) return true;
-  return false;
-}
-
-export async function burnAndCloseOrphanAta(args: {
-  rpcUrl: string;
-  walletSecret: string;
-  row: OrphanAtaRow;
-}): Promise<{ ok: boolean; signature?: string; reclaimedLamports: number; error?: string }> {
-  const signer = loadLiveKeypairFromSecretEnv(args.walletSecret);
-  const connection = new Connection(args.rpcUrl, 'confirmed');
-  const one = await burnAndCloseOne({ connection, signer, row: args.row });
-  return {
-    ok: Boolean(one.signature),
-    signature: one.signature,
-    reclaimedLamports: one.reclaimedLamports,
-    error: one.error,
-  };
-}
-
 async function burnAndCloseOne(args: {
   connection: Connection;
   signer: Keypair;
