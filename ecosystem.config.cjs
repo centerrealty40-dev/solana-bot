@@ -3348,7 +3348,7 @@ const PM2_APPS = [
          * own bag marks, where giveback at exit is a constant ~30% of peak for
          * any peak above 15% (−29.4% / −29.9% / −33.6% across buckets).
          */
-        MILD_DIP_EXIT_GIVEBACK_PCT: '12',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '8',
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.
@@ -3571,7 +3571,7 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
         /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
-        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '12',
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '8',
         /**
          * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):
          * half the remainder at every +8%, no top rung. Replaces bank1 +6%/40% +
@@ -3587,7 +3587,7 @@ const PM2_APPS = [
          * −3.47% (+25%×50%) or +0.66% (+50%×50%) — the rungs cut the only tail
          * that pays. Both ladders off; a single full exit on the trail below.
          */
-        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
+        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
         MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
         /**
          * 1.11.861 — the ladder stops instead of running forever. When the next
@@ -3814,6 +3814,8 @@ const PM2_APPS = [
          */
         MILD_DIP_MARK_DEX_REFRESH_MS: '2000',
         MILD_DIP_MARK_CACHE_TTL_MS: '3000',
+        MILD_DIP_MARK_ARMED_MAX_AGE_MS: '10000',
+        MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS: '8000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
         MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',

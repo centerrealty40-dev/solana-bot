@@ -828,6 +828,45 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       })!;
       expect(d.markQuarantined).toBeFalsy();
     });
+
+    it('armed trail uses Dex when stream jumps down below Dex (Dmkj4d)', () => {
+      const PEAK = 0.000429;
+      const DEX = 0.000388;
+      const STREAM = 0.000357;
+      const g = {
+        ...gates,
+        markJumpConfirmStreamPct: 8,
+        mfeBank1Pct: 0,
+        tpGridStepPct: 0,
+        mfeBankSleeveGivebackPct: 8,
+        partialGivebackPct: 0,
+        givebackPct: 8,
+        armPct: 5,
+      };
+      const p = {
+        ...pos({
+          mint: 'dmkj',
+          entryPriceUsd: 0.000148,
+          peakPriceUsd: PEAK,
+          trailArmed: true,
+          openedAtMs: 1_000_000,
+        }),
+        lastMarkPriceUsd: PEAK,
+      };
+      const d = decideMarkExit({
+        mint: 'dmkj',
+        pos: p,
+        markPriceUsd: STREAM,
+        gates: g,
+        nowMs: 1_800_000,
+        markSource: 'stream',
+        dexCrossCheckPx: DEX,
+      })!;
+      expect(d.markQuarantined).toBeFalsy();
+      expect(d.shouldExit).toBe(true);
+      expect(d.markPriceUsd).toBeCloseTo(DEX, 10);
+      expect(['mfe_bank_sleeve', 'peak_giveback']).toContain(d.reason);
+    });
   });
 
   describe('a bag that was green does not come back as a loss (1.11.855)', () => {
