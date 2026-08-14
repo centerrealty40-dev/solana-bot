@@ -554,6 +554,48 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.pnlPct).toBeLessThanOrEqual(-15);
   });
 
+  it('1.11.925 — leader-style: −16% MAE holds when hard_stop is 30 (4CmYEyg)', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 0.000393,
+      markPriceUsd: 0.000330,
+      peakPriceUsd: 0.000399,
+      armed: false,
+      gates: {
+        ...exitGates,
+        hardStopPnlPct: 30,
+        breakevenArmPct: 0,
+        partialGivebackPct: 0,
+        givebackPct: 8,
+        neverArmFreefallPnlPct: 0,
+        neverArmBouncePct: 0,
+        neverArmTimeRedMinMs: 0,
+      },
+      heldMs: 360_000,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.pnlPct).toBeLessThan(-15);
+  });
+
+  it('1.11.925 — leader-style: armed MFE does not scratch at breakeven', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 100,
+      peakPriceUsd: 119.7,
+      armed: true,
+      gates: {
+        ...exitGates,
+        hardStopPnlPct: 30,
+        breakevenArmPct: 0,
+        partialGivebackPct: 0,
+        givebackPct: 8,
+      },
+      heldMs: 600_000,
+    });
+    expect(v.reason).not.toBe('breakeven_stop');
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('peak_giveback');
+  });
+
   it('hard_stop off when hardStopPnlPct=0', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,

@@ -1466,6 +1466,6 @@ describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
     // average win +11.79%, average loss -17.96% - need a 60% win rate to break
     // even. Clipping losses at -15 is the only level with positive expectancy
     // (+0.622%); -50 was the worst of six (-1.813%).
-    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15'");
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30'");
   });
 });

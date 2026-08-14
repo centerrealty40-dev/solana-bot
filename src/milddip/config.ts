@@ -348,7 +348,7 @@ const MildDipConfigSchema = z.object({
     .min(60_000)
     .max(24 * 3_600_000)
     .default(7_200_000),
-  waitDipEnabled: z.boolean().default(true),
+  waitDipEnabled: z.boolean().default(false),
   /**
    * 1.11.803 — allow wait-dip to run under the turn→dump gate (formula selects
    * the mint, wait-dip selects the price). Off = legacy buy-at-signal.
@@ -970,7 +970,7 @@ export function loadMildDipConfig(): MildDipConfig {
     requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
     leaderSeenMemoryMs: process.env.MILD_DIP_LEADER_SEEN_MEMORY_MS ?? 0,
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
-    waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
+    waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', false),
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
