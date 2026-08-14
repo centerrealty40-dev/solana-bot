@@ -98,7 +98,10 @@ export function shouldParkWaitDip(args: {
   nowMs: number;
   rebuyBelowExitPct: number;
   rebuyBelowExitMaxAgeMs: number;
+  /** Fresh leader co-buy — buy at signal, do not stack −5% wait. */
+  leaderFreshCoBuy?: boolean;
 }): boolean {
+  if (args.leaderFreshCoBuy) return false;
   if (!waitDipAppliesToSource(args.dipSource)) return false;
   if (isRebuyBelowExitWindow(args)) return false;
   return true;

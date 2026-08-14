@@ -18,12 +18,17 @@ import { mildDipPriceRing } from './price-ring.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { isLeaderFreshCoBuy } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
-import { evaluateTurnDumpGate, turnDumpKnifeOrOk } from './turn-dump.js';
+import {
+  evaluateTurnDumpGate,
+  turnDumpKnifeBranchLive,
+  turnDumpKnifeOrOk,
+} from './turn-dump.js';
 
 function turnDumpArgsFromCfg(
   cfg: MildDipConfig,
   pc5m: number | null | undefined,
   metrics: MildDipCandidateMetrics,
+  leaderSeenName = false,
 ) {
   return {
     enabled: true as const,
@@ -38,7 +43,9 @@ function turnDumpArgsFromCfg(
     shallowAlpha: cfg.turnDumpShallowAlpha,
     shallowBeta: cfg.turnDumpShallowBeta,
     shallowBandPct: cfg.turnDumpShallowBandPct,
-    knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+    knifeBranchEnabled: turnDumpKnifeBranchLive(cfg.turnDumpKnifeBranchEnabled, {
+      leaderSeenName,
+    }),
     knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
     knifeMinTurn: cfg.turnDumpKnifeMinTurn,
   };
@@ -888,7 +895,9 @@ export async function evaluateFastPathCandidate(
       ? streamDd
       : (metrics.priceChange5mPct ?? dexPc);
   if (!dipSource && cfg.turnDumpGateEnabled) {
-    const tdEarly = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5mForGate, metrics));
+    const tdEarly = evaluateTurnDumpGate(
+      turnDumpArgsFromCfg(cfg, tdPc5mForGate, metrics, leaderSeenName),
+    );
     if (tdEarly.pass) {
       tdRescue = true;
       dipSource = tdEarly.branch === 'knife' ? 'turn_dump_knife' : 'dex';
@@ -939,7 +948,9 @@ export async function evaluateFastPathCandidate(
   // 1.11.779/790 — prefer deeper stream dump-extent vs lagging Dex pc5m for the gate.
   if (cfg.turnDumpGateEnabled) {
     const tdPc5m = tdPc5mForGate;
-    const td = evaluateTurnDumpGate(turnDumpArgsFromCfg(cfg, tdPc5m, metrics));
+    const td = evaluateTurnDumpGate(
+      turnDumpArgsFromCfg(cfg, tdPc5m, metrics, leaderSeenName),
+    );
     if (!td.pass) {
       // 1.11.774 — was silent null; journal so live misses are visible.
       appendMildDipJournal(cfg.journalPath, {

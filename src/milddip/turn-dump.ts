@@ -59,6 +59,20 @@ export function turnover5mLiq(
   return volume5mUsd / liquidityUsd;
 }
 
+/**
+ * Live knife branch: globally off, but on for leader-seen names and for seats
+ * that already qualified via `turn_dump_knife` in fast-path.
+ */
+export function turnDumpKnifeBranchLive(
+  knifeBranchEnabled: boolean,
+  opts?: { leaderSeenName?: boolean; dipSource?: string | null },
+): boolean {
+  if (knifeBranchEnabled) return true;
+  if (opts?.dipSource === 'turn_dump_knife') return true;
+  if (opts?.leaderSeenName) return true;
+  return false;
+}
+
 function evaluateBand(args: {
   dump: number;
   turn: number;

@@ -37,7 +37,7 @@ import {
   evaluateWaitDipPreBuy,
   waitDipMaxPriceUsd,
 } from './wait-dip.js';
-import { evaluateTurnDumpGate } from './turn-dump.js';
+import { evaluateTurnDumpGate, turnDumpKnifeBranchLive } from './turn-dump.js';
 import {
   appendMildDipJournal,
   saveMildDipState,
@@ -84,6 +84,8 @@ export type EntryAttemptOpts = {
   /** Short cooldown after soft skip (prebuy/bounce). */
   softSkipCooldownMs?: number;
   lane: 'fast' | 'slow';
+  /** Leader-seen / co-buy — knife turn-dump branch at send. */
+  leaderSeenName?: boolean;
 };
 
 export type EntryAttemptResult = 'filled' | 'skip' | 'stop';
@@ -411,7 +413,10 @@ export async function attemptMildDipEntry(args: {
       shallowAlpha: cfg.turnDumpShallowAlpha,
       shallowBeta: cfg.turnDumpShallowBeta,
       shallowBandPct: cfg.turnDumpShallowBandPct,
-      knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+      knifeBranchEnabled: turnDumpKnifeBranchLive(cfg.turnDumpKnifeBranchEnabled, {
+        leaderSeenName: opts.leaderSeenName,
+        dipSource: c.dipSource,
+      }),
       knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
       knifeMinTurn: cfg.turnDumpKnifeMinTurn,
     });

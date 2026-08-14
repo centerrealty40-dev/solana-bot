@@ -862,13 +862,35 @@ async function tryFastPathForMint(
     }
   }
 
+  const freshSeedHit =
+    seedHit ??
+    (cfg.leaderSeedPath != null
+      ? leaderSeedHitByMint(
+          readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+            maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+            max: cfg.leaderSeedMax,
+          }),
+          mint,
+        )
+      : null);
+  const leaderSeenAtMs = state.leaderSeenMints?.[mint] ?? null;
+  const leaderFreshBuy = isLeaderFreshCoBuy({
+    nowMs,
+    maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+    trigger,
+    seedHit: freshSeedHit,
+    leaderSeenAtMs,
+  });
+  const leaderSeenForEntry =
+    trigger === 'leader' || freshSeedHit != null || leaderSeenAtMs != null;
+
   const candidate = await evaluateFastPathCandidate(
     cfg,
     mint,
     nowMs,
     trigger,
-    trigger === 'leader' ? seedHit : null,
-    state.leaderSeenMints?.[mint] ?? null,
+    freshSeedHit,
+    leaderSeenAtMs,
   );
   if (!candidate) {
     // Deep knife skips entry but must stay on own-tape knife watch.
@@ -889,6 +911,7 @@ async function tryFastPathForMint(
       nowMs,
       rebuyBelowExitPct: cfg.rebuyBelowExitPct,
       rebuyBelowExitMaxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
+      leaderFreshCoBuy: leaderFreshBuy,
     })
   ) {
     parkWaitDipFromCandidate(cfg, state, candidate, nowMs);
@@ -920,6 +943,7 @@ async function tryFastPathForMint(
       freshDexPrebuy: false,
       softSkipCooldownMs: cfg.fastPathSoftSkipCooldownMs,
       lane: 'fast',
+      leaderSeenName: leaderSeenForEntry,
     },
   });
   return result === 'filled';

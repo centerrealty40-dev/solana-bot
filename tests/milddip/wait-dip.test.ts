@@ -93,6 +93,17 @@ describe('shouldParkWaitDip / rebuy window', () => {
     ).toBe(false);
   });
 
+  it('does not park when leader is fresh co-buying', () => {
+    expect(
+      shouldParkWaitDip({
+        ...base,
+        dipSource: 'dex',
+        lastExitAtMs: null,
+        leaderFreshCoBuy: true,
+      }),
+    ).toBe(false);
+  });
+
   it('does not park main branch inside rebuy-below-exit window', () => {
     for (const src of ['dex', 'dex+stream', 'stream', 'flat_micro_dip'] as const) {
       expect(
