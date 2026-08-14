@@ -28,8 +28,17 @@ const MildDipConfigSchema = z.object({
   /** Cash-accurate fills + roundtrips (us + leaders). CF source of truth. */
   tradesPath: z.string().min(1),
   statePath: z.string().min(1),
-  /** 1.11.841 — flat $1 across base/thick/micro (live via env). */
+  /** 1.11.841 — flat $1 across base/thick/micro (live via env). Fallback when liq power law off. */
   positionUsd: z.coerce.number().positive().max(10_000).default(1),
+  /**
+   * 1.11.925 — liquidity power law: clamp(min, max, coef × liq^exp).
+   * Leader fit 0.0387×liq^0.866; live coef ≈0.0004168 (~1.08% scale) → $1 @ $8k liq … $30 cap.
+   * coef ≤ 0 → flat tier clips (positionUsd / thick / micro).
+   */
+  sizeLiqPowerCoef: z.coerce.number().min(0).max(1).default(0),
+  sizeLiqPowerExp: z.coerce.number().min(0).max(2).default(0.866),
+  sizeMinUsd: z.coerce.number().min(0).max(10_000).default(1),
+  sizeMaxUsd: z.coerce.number().min(0).max(10_000).default(30),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
    * 1.11.841 — same $1 as base (flat book).
@@ -881,6 +890,10 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_TRADES_PATH?.trim() || path.join('data', 'milddip', 'trades.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
     positionUsd: process.env.MILD_DIP_POSITION_USD ?? 1,
+    sizeLiqPowerCoef: process.env.MILD_DIP_SIZE_LIQ_POWER_COEF ?? 0,
+    sizeLiqPowerExp: process.env.MILD_DIP_SIZE_LIQ_POWER_EXP ?? 0.866,
+    sizeMinUsd: process.env.MILD_DIP_SIZE_MIN_USD ?? 1,
+    sizeMaxUsd: process.env.MILD_DIP_SIZE_MAX_USD ?? 30,
     thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 1,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,

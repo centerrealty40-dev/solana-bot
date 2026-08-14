@@ -2839,6 +2839,17 @@ const PM2_APPS = [
         /** 1.11.841 — flat $1 across base / thick / micro. */
         MILD_DIP_POSITION_USD: '3',
         /**
+         * 1.11.925 — liquidity power law (leader shape, our clip book).
+         * Leader: sizeUsd ≈ 0.0387 × liq^0.866 (24h observer fit).
+         * Ours: clamp($1, $30, coef × liq^0.866) with coef = 1 / 8000^0.866
+         * so the $8k entry floor maps to ~$1 and deep pools cap at $30 (~500k+ liq).
+         * coef ≈ 0.0108 × leader (1.08% of leader notional).
+         */
+        MILD_DIP_SIZE_LIQ_POWER_COEF: '0.0004168',
+        MILD_DIP_SIZE_LIQ_POWER_EXP: '0.866',
+        MILD_DIP_SIZE_MIN_USD: '1',
+        MILD_DIP_SIZE_MAX_USD: '30',
+        /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          * 1.11.841 — same $1 as base.

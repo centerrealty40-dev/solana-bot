@@ -1,3 +1,16 @@
+## 1.11.925 — 2026-08-14
+
+### Changed — mild-dip entry clip: liquidity power law ($1–$30)
+
+- **Leader shape, our book:** `clamp($1, $30, 0.0004168 × liq^0.866)` — same exponent as the 24h observer fit (`0.0387 × liq^0.866`), coefficient rescaled to ~**1.08%** of leader notional.
+- **Anchor:** `$8k` entry floor → **~$1**; deep pools cap at **$30** (~$500k+ liq).
+- Env: `MILD_DIP_SIZE_LIQ_POWER_COEF`, `MILD_DIP_SIZE_LIQ_POWER_EXP`, `MILD_DIP_SIZE_MIN_USD`, `MILD_DIP_SIZE_MAX_USD`.
+- `MILD_DIP_POSITION_USD` remains fallback when coef ≤ 0 or liq missing.
+
+### Rollback
+
+- Remove power-law env keys (or `MILD_DIP_SIZE_LIQ_POWER_COEF: '0'`) + restore flat `MILD_DIP_POSITION_USD: '3'` + reload PM2.
+
 ## 1.11.924 — 2026-08-14
 
 ### Fixed — hot deep dump missed on wait_dip refloor + deep_knife_defer (HJs8xT)
