@@ -3884,7 +3884,7 @@ const PM2_APPS = [
          * 1.11.801 — D2zNEW / 3XeNADY: H1 +46% pump, buy −10% off peak.
          * If Dex H1 ≥ +15%, dump must be ≤ −15% (not a shallow pullback).
          */
-        MILD_DIP_DUMP_H1_PUMP_MIN_PCT: '15',
+        MILD_DIP_DUMP_H1_PUMP_MIN_PCT: '12',
         /**
          * 1.11.863 — −8, was −15. On a coin up 15%+ on the hour we demanded a
          * −15% dip. Of 1666 leader buys already inside our −25..0 band, 503 sit
