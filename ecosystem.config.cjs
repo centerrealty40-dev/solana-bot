@@ -2838,13 +2838,13 @@ const PM2_APPS = [
         /** 1.11.839 — flat $2 across base / thick / micro. */
         /** 1.11.841 — flat $1 across base / thick / micro. */
         /** 1.11.924 — flat $2 across base / thick / micro. */
-        MILD_DIP_POSITION_USD: '2',
+        MILD_DIP_POSITION_USD: '5',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          * 1.11.924 — same $2 as base.
          */
-        MILD_DIP_THICK_POSITION_USD: '2',
+        MILD_DIP_THICK_POSITION_USD: '5',
         MILD_DIP_THICK_MIN_MCAP_USD: '100000',
         MILD_DIP_THICK_MIN_LIQUIDITY_USD: '50000',
         MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '6',
@@ -2853,7 +2853,7 @@ const PM2_APPS = [
          * 1.11.776 — floor aligned to global $5k (was $15k–$50k).
          * 1.11.924 — clip flat $2 with base/thick (one economic tier).
          */
-        MILD_DIP_MICRO_POSITION_USD: '2',
+        MILD_DIP_MICRO_POSITION_USD: '5',
         MILD_DIP_MICRO_MIN_MCAP_USD: '5000',
         MILD_DIP_MICRO_MAX_MCAP_USD: '50000',
         /** 0 = no slot cap — spend USDC until the wallet is empty. */
