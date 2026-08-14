@@ -7,6 +7,7 @@ import {
   evaluateMildDipPreBuy,
   isRecoveringFromTrough,
   knifeStabilizeMinMarketCapUsd,
+  mildDipLiquidityPowerLawSizeUsd,
   mildDipMicroSizeGatesForSource,
   resolveMildDipWantedSizeUsd,
   type MildDipCandidateMetrics,
@@ -1572,6 +1573,75 @@ describe('resolveMildDipWantedSizeUsd', () => {
       metrics: { liquidityUsd: 20_000, marketCapUsd: 30_000, pairAgeHours: 1 },
     });
     expect(v).toEqual({ sizeUsd: 30, tier: 'micro' });
+  });
+});
+
+describe('mildDipLiquidityPowerLawSizeUsd', () => {
+  const law = { coef: 0.0004168, exp: 0.866, minUsd: 1, maxUsd: 30 };
+
+  it('anchors ~$1 at $8k liq (entry floor)', () => {
+    expect(mildDipLiquidityPowerLawSizeUsd(8_000, law)).toBeCloseTo(1, 2);
+  });
+
+  it('scales up with liquidity and caps at $30', () => {
+    expect(mildDipLiquidityPowerLawSizeUsd(50_000, law)).toBeCloseTo(4.89, 1);
+    expect(mildDipLiquidityPowerLawSizeUsd(100_000, law)).toBeCloseTo(8.91, 1);
+    expect(mildDipLiquidityPowerLawSizeUsd(500_000, law)).toBe(30);
+    expect(mildDipLiquidityPowerLawSizeUsd(1_000_000, law)).toBe(30);
+  });
+
+  it('clamps sub-$1 raw values to minUsd', () => {
+    expect(mildDipLiquidityPowerLawSizeUsd(1_000, law)).toBe(1);
+  });
+});
+
+describe('resolveMildDipWantedSizeUsd (liquidity power law)', () => {
+  const thick = {
+    positionUsd: 20,
+    minMarketCapUsd: 100_000,
+    minLiquidityUsd: 50_000,
+    minPairAgeHours: 6,
+  };
+  const micro = {
+    positionUsd: 5,
+    minMarketCapUsd: 15_000,
+    maxMarketCapUsd: 50_000,
+  };
+  const liqPowerLaw = { coef: 0.0004168, exp: 0.866, minUsd: 1, maxUsd: 30 };
+
+  it('uses power law size but keeps thick tier label', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 3,
+      liqPowerLaw,
+      thick,
+      micro,
+      metrics: { liquidityUsd: 100_000, marketCapUsd: 200_000, pairAgeHours: 12 },
+    });
+    expect(v.tier).toBe('thick');
+    expect(v.sizeUsd).toBeCloseTo(8.91, 1);
+  });
+
+  it('uses power law for micro tier band', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 3,
+      liqPowerLaw,
+      thick,
+      micro,
+      metrics: { liquidityUsd: 12_000, marketCapUsd: 30_000, pairAgeHours: 1 },
+    });
+    expect(v.tier).toBe('micro');
+    expect(v.sizeUsd).toBeCloseTo(1.42, 1);
+  });
+
+  it('falls back to flat tiers when power law coef is 0', () => {
+    const v = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 10,
+      liqPowerLaw: { ...liqPowerLaw, coef: 0 },
+      thick,
+      micro,
+      metrics: { liquidityUsd: 50_000, marketCapUsd: 100_000, pairAgeHours: 6 },
+    });
+    expect(v).toEqual({ sizeUsd: 20, tier: 'thick' });
   });
 });
 

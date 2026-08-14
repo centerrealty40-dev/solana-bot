@@ -69,6 +69,10 @@ import { resolveExitMarkFromRing } from './exit-mark.js';
 import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
 import {
+  openMarkNeedsJupiterTopUp,
+  requestOpenMarkJupiterRefresh,
+} from './open-mark-jupiter-refresh.js';
+import {
   fetchDexScreenerPairDetails,
   prefetchDexScreenerPairDetailsMany,
 } from '../papertrader/pricing/dexscreener-quote-cache.js';
@@ -264,6 +268,34 @@ function maybeRequestOpenMarkRefresh(
   });
 }
 
+function maybeRequestOpenMarkJupiterRefresh(
+  mint: string,
+  nowMs: number,
+  cfg: Pick<
+    MildDipConfig,
+    | 'markJupiterRefreshMs'
+    | 'markJupiterProbeUsd'
+    | 'markJupiterMaxInFlight'
+    | 'markJupiterStreamQuietMs'
+    | 'slippageBps'
+  >,
+): void {
+  const gap = cfg.markJupiterRefreshMs;
+  if (!(gap > 0)) return;
+  if (!openMarkNeedsJupiterTopUp(mint, nowMs, cfg.markJupiterStreamQuietMs)) return;
+  const snap = mildDipPriceRing.lastPrice(mint, nowMs)?.priceUsd;
+  if (!(snap != null && snap > 0)) return;
+  requestOpenMarkJupiterRefresh({
+    mint,
+    nowMs,
+    minGapMs: gap,
+    maxInFlight: cfg.markJupiterMaxInFlight,
+    probeUsd: cfg.markJupiterProbeUsd,
+    slippageBps: cfg.slippageBps,
+    snapshotPriceUsd: snap,
+  });
+}
+
 /**
  * Open-book exit mark: read price-ring only (never await HTTP).
  * Stream should feed the ring; `requestOpenMarkRefresh` tops it up in the
@@ -272,7 +304,7 @@ function maybeRequestOpenMarkRefresh(
 function markPriceUsd(
   mint: string,
   nowMs: number,
-  cfg: Pick<MildDipConfig, 'markStreamMaxAgeMs'>,
+  cfg: Pick<MildDipConfig, 'markStreamMaxAgeMs' | 'markStreamPreferMaxAgeMs' | 'markDexRefreshMs'>,
   /**
    * 1.11.822 — a sample taken before we bought is not a mark on this position.
    * `6tfuqq`: we filled at 0.00012981 while the ring still held the pre-dip
@@ -281,7 +313,18 @@ function markPriceUsd(
    */
   openedAtMs?: number,
 ): { px: number | null; volume5mUsd: number | null; source: 'stream' | 'dex' | null } {
-  const last = mildDipPriceRing.lastPrice(mint, nowMs);
+  const preferStreamMs = cfg.markStreamPreferMaxAgeMs > 0 ? cfg.markStreamPreferMaxAgeMs : 0;
+  const streamSample =
+    preferStreamMs > 0
+      ? mildDipPriceRing.lastPriceBySource(mint, 'stream', nowMs, preferStreamMs)
+      : null;
+  const dexMaxAge = cfg.markDexRefreshMs > 0 ? cfg.markDexRefreshMs * 3 : 0;
+  const dexSample =
+    dexMaxAge > 0 ? mildDipPriceRing.lastPriceBySource(mint, 'dex', nowMs, dexMaxAge) : null;
+  const last =
+    streamSample ??
+    dexSample ??
+    mildDipPriceRing.lastPrice(mint, nowMs);
   const staleVsEntry =
     last != null && openedAtMs != null && openedAtMs > 0 && last.tsMs < openedAtMs;
   const resolved = resolveExitMarkFromRing({
@@ -1910,6 +1953,7 @@ async function tryExits(
   }
   for (const mint of refreshOrder) {
     maybeRequestOpenMarkRefresh(mint, nowMs, cfg);
+    maybeRequestOpenMarkJupiterRefresh(mint, nowMs, cfg);
   }
   // Exit decisions: armed-first; sync ring reads only.
   const markRows = ordered.map((mint) => {

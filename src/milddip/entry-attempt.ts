@@ -652,6 +652,15 @@ export async function attemptMildDipEntry(args: {
 
   const wanted = resolveMildDipWantedSizeUsd({
     basePositionUsd: cfg.positionUsd,
+    liqPowerLaw:
+      cfg.sizeLiqPowerCoef > 0
+        ? {
+            coef: cfg.sizeLiqPowerCoef,
+            exp: cfg.sizeLiqPowerExp,
+            minUsd: cfg.sizeMinUsd,
+            maxUsd: cfg.sizeMaxUsd,
+          }
+        : null,
     thick: {
       positionUsd: cfg.thickPositionUsd,
       minMarketCapUsd: cfg.thickMinMarketCapUsd,
@@ -773,9 +782,9 @@ export async function attemptMildDipEntry(args: {
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,
     buySignature: null,
-    // The peak lives in the mark series, like MFE; seeding it with the fill
-    // would book the entry overpay as a gain already given back.
-    peakPriceUsd: entryMarkPriceUsd ?? entryPriceUsd,
+    // Peak tracks the mark series from the fill — not the wait_dip trough the
+    // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
+    peakPriceUsd: entryPriceUsd,
     entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
     trailArmed: false,
@@ -1034,7 +1043,7 @@ export async function attemptMildDipEntry(args: {
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,
     buySignature: buy.signature ?? null,
-    peakPriceUsd: entryMarkPriceUsd ?? fillPx,
+    peakPriceUsd: fillPx,
     entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
     trailArmed: false,

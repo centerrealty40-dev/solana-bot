@@ -28,8 +28,17 @@ const MildDipConfigSchema = z.object({
   /** Cash-accurate fills + roundtrips (us + leaders). CF source of truth. */
   tradesPath: z.string().min(1),
   statePath: z.string().min(1),
-  /** 1.11.841 — flat $1 across base/thick/micro (live via env). */
+  /** 1.11.841 — flat $1 across base/thick/micro (live via env). Fallback when liq power law off. */
   positionUsd: z.coerce.number().positive().max(10_000).default(1),
+  /**
+   * 1.11.925 — liquidity power law: clamp(min, max, coef × liq^exp).
+   * Leader fit 0.0387×liq^0.866; live coef ≈0.0004168 (~1.08% scale) → $1 @ $8k liq … $30 cap.
+   * coef ≤ 0 → flat tier clips (positionUsd / thick / micro).
+   */
+  sizeLiqPowerCoef: z.coerce.number().min(0).max(1).default(0),
+  sizeLiqPowerExp: z.coerce.number().min(0).max(2).default(0.866),
+  sizeMinUsd: z.coerce.number().min(0).max(10_000).default(1),
+  sizeMaxUsd: z.coerce.number().min(0).max(10_000).default(30),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
    * 1.11.841 — same $1 as base (flat book).
@@ -61,11 +70,24 @@ const MildDipConfigSchema = z.object({
    */
   markStreamMaxAgeMs: z.coerce.number().int().min(0).max(900_000).default(300_000),
   /**
+   * Prefer a fresh stream print over Dex when choosing the exit mark (ms).
+   * 0 = use whichever sample is newest in the ring.
+   */
+  markStreamPreferMaxAgeMs: z.coerce.number().int().min(0).max(120_000).default(15_000),
+  /**
    * Background only: when stream/seed ring age ≥ this gap, fire-and-forget
    * Dex→ring for open bags (never blocks the exit mark pass). 0 = off.
    * Default 8s — enough to see pumps without flooding the 120 RPM gate.
    */
   markDexRefreshMs: z.coerce.number().int().min(0).max(300_000).default(8_000),
+  /**
+   * Background Jupiter sell quote → ring when stream is quiet on open bags. 0 = off.
+   */
+  markJupiterRefreshMs: z.coerce.number().int().min(0).max(300_000).default(0),
+  markJupiterProbeUsd: z.coerce.number().min(0).max(100).default(1),
+  markJupiterMaxInFlight: z.coerce.number().int().min(1).max(8).default(2),
+  /** Skip Jupiter refresh when a stream print landed within this window. */
+  markJupiterStreamQuietMs: z.coerce.number().int().min(0).max(120_000).default(5_000),
   /**
    * Dex cache TTL for discovery/entry Dex calls (not exit marks).
    */
@@ -887,6 +909,10 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_TRADES_PATH?.trim() || path.join('data', 'milddip', 'trades.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
     positionUsd: process.env.MILD_DIP_POSITION_USD ?? 1,
+    sizeLiqPowerCoef: process.env.MILD_DIP_SIZE_LIQ_POWER_COEF ?? 0,
+    sizeLiqPowerExp: process.env.MILD_DIP_SIZE_LIQ_POWER_EXP ?? 0.866,
+    sizeMinUsd: process.env.MILD_DIP_SIZE_MIN_USD ?? 1,
+    sizeMaxUsd: process.env.MILD_DIP_SIZE_MAX_USD ?? 30,
     thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 1,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
@@ -899,7 +925,12 @@ export function loadMildDipConfig(): MildDipConfig {
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
     markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
+    markStreamPreferMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_PREFER_MAX_AGE_MS ?? 15_000,
     markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 8_000,
+    markJupiterRefreshMs: process.env.MILD_DIP_MARK_JUPITER_REFRESH_MS ?? 0,
+    markJupiterProbeUsd: process.env.MILD_DIP_MARK_JUPITER_PROBE_USD ?? 1,
+    markJupiterMaxInFlight: process.env.MILD_DIP_MARK_JUPITER_MAX_IN_FLIGHT ?? 2,
+    markJupiterStreamQuietMs: process.env.MILD_DIP_MARK_JUPITER_STREAM_QUIET_MS ?? 5_000,
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
     markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000,
     markJumpConfirmMaxMs: process.env.MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS ?? 8_000,
