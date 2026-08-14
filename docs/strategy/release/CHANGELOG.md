@@ -1,3 +1,11 @@
+## 1.11.918 — 2026-08-14
+
+### Changed
+- Live clip size set to **$5** flat across base/thick/micro (`MILD_DIP_POSITION_USD` / `MILD_DIP_THICK_POSITION_USD` / `MILD_DIP_MICRO_POSITION_USD` = `5`).
+
+### Rollback
+- Restore clip env vars to prior values in `ecosystem.config.cjs` and reload PM2.
+
 ## 1.11.917 — 2026-08-14
 
 ### Fixed — pump-chase entries on H1 green (CX2v7J)

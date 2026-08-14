@@ -29,12 +29,12 @@ const MildDipConfigSchema = z.object({
   tradesPath: z.string().min(1),
   statePath: z.string().min(1),
   /** 1.11.841 — flat $1 across base/thick/micro (live via env). */
-  positionUsd: z.coerce.number().positive().max(10_000).default(1),
+  positionUsd: z.coerce.number().positive().max(10_000).default(5),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
    * 1.11.841 — same $1 as base (flat book).
    */
-  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(1),
+  thickPositionUsd: z.coerce.number().min(0).max(10_000).default(5),
   thickMinMarketCapUsd: z.coerce.number().min(0).default(100_000),
   thickMinLiquidityUsd: z.coerce.number().min(0).default(50_000),
   thickMinPairAgeHours: z.coerce.number().min(0).default(6),
@@ -42,7 +42,7 @@ const MildDipConfigSchema = z.object({
    * Micro-cap clip: mcap ∈ [min, max] → this size (knife_stabilize only).
    * 1.11.841 — same $1 as base (flat book). 0 = off.
    */
-  microPositionUsd: z.coerce.number().min(0).max(10_000).default(1),
+  microPositionUsd: z.coerce.number().min(0).max(10_000).default(5),
   microMinMarketCapUsd: z.coerce.number().min(0).default(5_000),
   microMaxMarketCapUsd: z.coerce.number().min(0).default(50_000),
   /** 0 = unlimited — keep buying while USDC remains. */
@@ -888,13 +888,13 @@ export function loadMildDipConfig(): MildDipConfig {
     tradesPath:
       process.env.MILD_DIP_TRADES_PATH?.trim() || path.join('data', 'milddip', 'trades.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
-    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 1,
-    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 1,
+    positionUsd: process.env.MILD_DIP_POSITION_USD ?? 5,
+    thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 5,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
     thickMinPairAgeHours: process.env.MILD_DIP_THICK_MIN_PAIR_AGE_HOURS ?? 6,
     /** 1.11.841 — $1 live; knife_stabilize only (see mildDipMicroSizeGatesForSource). */
-    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 1,
+    microPositionUsd: process.env.MILD_DIP_MICRO_POSITION_USD ?? 5,
     microMinMarketCapUsd: process.env.MILD_DIP_MICRO_MIN_MCAP_USD ?? 5_000,
     microMaxMarketCapUsd: process.env.MILD_DIP_MICRO_MAX_MCAP_USD ?? 50_000,
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
