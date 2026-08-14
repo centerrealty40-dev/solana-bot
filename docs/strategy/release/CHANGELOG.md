@@ -1,3 +1,15 @@
+## 1.11.922 — 2026-08-14
+
+### Reverted — `never_arm_stale` 5m / −5% / MFE≤5% (1.11.921)
+
+- **OFF again:** `MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS=0` (canonical **1.11.920** exit stack).
+- Live ~3h after 1.11.921: 94 full-bag stale cuts, **−$44** cash; **33%** bounced **≥5%** within 60m — wick-regret / re-entry churn dominates.
+- **Unchanged:** staged `hard_stop` −30% (50% @ 3% bounce, runner @ 6%), orphan sweep, $5 clip, exit-defer fixes (#813–#814).
+
+### Rollback
+
+- Re-enable 1.11.921 env block + reload PM2 (not recommended per live post-mortem).
+
 ## 1.11.921 — 2026-08-14
 
 ### Changed — `never_arm_stale` time+drawdown exit (5m / −5% / MFE≤5%)
