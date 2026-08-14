@@ -341,6 +341,14 @@ export type MildDipExitGates = {
    * held+pnl (fail open) so dead marks cannot pin an underwater bag forever.
    */
   neverArmTimeRedMaxPc5mPct: number;
+  /**
+   * 1.11.920 — soft loss exits sell into a bounce, not on the red candle itself.
+   * When gain is underwater, require mark to lift ≥ this % off the post-entry
+   * trough before `mfe_bank_sleeve`, never_arm_* cuts, breakeven_stop, etc.
+   * 0 = off (legacy sell on the dump tick). Uses `neverArmBounceMinTroughAgeMs`
+   * for trough age before the bounce may release the sell.
+   */
+  lossExitMinBouncePct: number;
 };
 
 /** One spaced Dex vol5m reading used by the sustained fade exit. */
@@ -736,6 +744,25 @@ export function isRecoveringFromTrough(args: {
   return bounce != null && bounce >= min - 1e-9;
 }
 
+/**
+ * Soft loss exits must wait for lift off the trough — never sell on the red
+ * candle itself (same timing idea as dead_set_bounce / never_arm_bounce).
+ */
+export function mayFireSoftLossExit(args: {
+  gates: MildDipExitGates;
+  gainPct: number;
+  bounceOffTroughPct: number;
+  troughAgeMs: number;
+}): boolean {
+  const minBounce = args.gates.lossExitMinBouncePct > 0 ? args.gates.lossExitMinBouncePct : 0;
+  if (!(minBounce > 0)) return true;
+  if (args.gainPct >= 0) return true;
+  const minAge =
+    args.gates.neverArmBounceMinTroughAgeMs > 0 ? args.gates.neverArmBounceMinTroughAgeMs : 0;
+  if (minAge > 0 && args.troughAgeMs < minAge) return false;
+  return args.bounceOffTroughPct >= minBounce - 1e-9;
+}
+
 function numOrNull(x: number | null | undefined): number | null {
   return typeof x === 'number' && Number.isFinite(x) ? x : null;
 }
@@ -1024,6 +1051,9 @@ export function evaluateMildDipPeakGiveback(args: {
       : 0;
   const bounceOffTroughPct =
     bounceFromTroughPct(markPriceUsd, postEntryTroughPriceUsd) ?? 0;
+  const lossExitMin = gates.lossExitMinBouncePct > 0 ? gates.lossExitMinBouncePct : 0;
+  const softLossOk = () =>
+    mayFireSoftLossExit({ gates, gainPct, bounceOffTroughPct, troughAgeMs });
 
   let armed = args.armed === true;
   let justArmed = false;
@@ -1128,7 +1158,9 @@ export function evaluateMildDipPeakGiveback(args: {
   const beArm = gates.breakevenArmPct > 0 ? gates.breakevenArmPct : 0;
   // Both halves are about money: it was green and it came back (1.11.878).
   if (beArm > 0 && mfePct >= beArm && gainPct <= gates.breakevenFloorPct + 1e-9) {
-    return { ...hold, shouldExit: true, fraction: 1, reason: 'breakeven_stop' };
+    if (softLossOk()) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'breakeven_stop' };
+    }
   }
 
   // 1.11.782 — hard hold ceiling for underwater armed bags (before soft trail /
@@ -1137,7 +1169,9 @@ export function evaluateMildDipPeakGiveback(args: {
   const maxHoldCeil = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
   // "Underwater" is money, so it reads the gain basis (1.11.881).
   if (armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && gainPct <= 0) {
-    return { ...hold, shouldExit: true, fraction: 1, reason: 'max_hold_underwater' };
+    if (softLossOk()) {
+      return { ...hold, shouldExit: true, fraction: 1, reason: 'max_hold_underwater' };
+    }
   }
 
   const fullGivebackHit =
@@ -1261,7 +1295,14 @@ export function evaluateMildDipPeakGiveback(args: {
     }
 
     // Wide sleeve / pre-bank armed giveback — soft, grace-deferred.
-    if (!oneshotGrace && sleeveGb > 0 && givebackPct <= -sleeveGb + 1e-9) {
+    const sleeveGivebackAtTroughPct =
+      peakPriceUsd > 0 && postEntryTroughPriceUsd > 0
+        ? (postEntryTroughPriceUsd / peakPriceUsd - 1) * 100
+        : givebackPct;
+    const sleeveTroughHit = sleeveGivebackAtTroughPct <= -sleeveGb + 1e-9;
+    const sleeveLiveHit = givebackPct <= -sleeveGb + 1e-9;
+    const sleeveHit = lossExitMin > 0 ? sleeveTroughHit : sleeveLiveHit;
+    if (!oneshotGrace && sleeveGb > 0 && sleeveHit) {
       // After any profit taken: trail the remainder. Before the first rung but
       // armed: protect the full bag if the early spike already gave back sleeve
       // width.
@@ -1272,18 +1313,20 @@ export function evaluateMildDipPeakGiveback(args: {
           gates.mfeBankSleeveLossPartialFraction < 1
             ? gates.mfeBankSleeveLossPartialFraction
             : 0;
-        // EjD5Y9 / 4aWQZP…: full sleeve at −11% cut the bag into a later bounce.
-        // Underwater: half first; runner waits for bounce reclaim (below), not
-        // another continuous sleeve tick.
-        if (gainPct < 0 && !scaleOutDone && lossPartial > 0) {
+        const bounceOk =
+          gainPct >= 0 ||
+          lossExitMin <= 0 ||
+          mayFireSoftLossExit({ gates, gainPct, bounceOffTroughPct, troughAgeMs });
+        if (!bounceOk) {
+          // 1.11.920 — condemned at the trough, timed by the bounce.
+        } else if (gainPct < 0 && !scaleOutDone && lossPartial > 0) {
           return {
             ...hold,
             shouldExit: true,
             fraction: lossPartial,
             reason: 'mfe_bank_sleeve',
           };
-        }
-        if (!(gainPct < 0 && scaleOutDone && lossPartial > 0)) {
+        } else if (!(gainPct < 0 && scaleOutDone && lossPartial > 0)) {
           return {
             ...hold,
             shouldExit: true,
@@ -1308,15 +1351,19 @@ export function evaluateMildDipPeakGiveback(args: {
       !scaleOutDone &&
       (partialGivebackHit || fullGivebackHit)
     ) {
-      return {
-        ...hold,
-        shouldExit: true,
-        fraction: scaleFrac,
-        reason: 'peak_giveback_partial',
-      };
+      if (softLossOk()) {
+        return {
+          ...hold,
+          shouldExit: true,
+          fraction: scaleFrac,
+          reason: 'peak_giveback_partial',
+        };
+      }
     }
     if (armed && fullGivebackHit) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
+      if (softLossOk()) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' };
+      }
     }
   }
 
@@ -1403,13 +1450,21 @@ export function evaluateMildDipPeakGiveback(args: {
     }
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (!oneshotGrace && patience > 0 && heldMs >= patience && givebackHit) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };
+      if (softLossOk()) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' };
+      }
     }
     const timeRedMin = gates.neverArmTimeRedMinMs > 0 ? gates.neverArmTimeRedMinMs : 0;
     const timeRedPnl = gates.neverArmTimeRedPnlPct > 0 ? gates.neverArmTimeRedPnlPct : 0;
     const timeRedPc =
       gates.neverArmTimeRedMaxPc5mPct > 0 ? gates.neverArmTimeRedMaxPc5mPct : 0;
-    if (timeRedMin > 0 && timeRedPnl > 0 && heldMs >= timeRedMin && pnlPct <= -timeRedPnl + 1e-9) {
+    const timeRedTroughHit =
+      lossBasisPriceUsd > 0 && postEntryTroughPriceUsd > 0
+        ? (postEntryTroughPriceUsd / lossBasisPriceUsd - 1) * 100 <= -timeRedPnl + 1e-9
+        : false;
+    const timeRedLiveHit = pnlPct <= -timeRedPnl + 1e-9;
+    const timeRedNeed = lossExitMin > 0 ? timeRedTroughHit : timeRedLiveHit;
+    if (timeRedMin > 0 && timeRedPnl > 0 && heldMs >= timeRedMin && timeRedNeed) {
       let pcOk = true;
       if (timeRedPc > 0) {
         const pc =
@@ -1417,7 +1472,7 @@ export function evaluateMildDipPeakGiveback(args: {
         // 1.11.794 — fail open when pc5m missing; when present require ≤ −N.
         pcOk = pc == null || pc <= -timeRedPc + 1e-9;
       }
-      if (pcOk) {
+      if (pcOk && softLossOk()) {
         return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' };
       }
     }
@@ -1432,12 +1487,16 @@ export function evaluateMildDipPeakGiveback(args: {
       mfePct <= staleMaxMfe + 1e-9 &&
       pnlPct <= -stalePnl
     ) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_stale' };
+      if (softLossOk()) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_stale' };
+      }
     }
     const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
     const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
     if (deadMin > 0 && deadPnl > 0 && heldMs >= deadMin && pnlPct <= -deadPnl) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_dead' };
+      if (softLossOk()) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_dead' };
+      }
     }
     const volFadeMin = gates.neverArmVolFadeMinMs > 0 ? gates.neverArmVolFadeMinMs : 0;
     if (volFadeMin > 0 && heldMs >= volFadeMin && weakWindows > 0) {
@@ -1452,7 +1511,9 @@ export function evaluateMildDipPeakGiveback(args: {
           floor,
         )
       ) {
-        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_vol_fade' };
+        if (softLossOk()) {
+          return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_vol_fade' };
+        }
       }
     }
     const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;

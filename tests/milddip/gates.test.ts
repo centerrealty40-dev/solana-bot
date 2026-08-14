@@ -84,6 +84,7 @@ const exitGates: MildDipExitGates = {
   neverArmTimeRedMinMs: 0,
   neverArmTimeRedPnlPct: 5,
   neverArmTimeRedMaxPc5mPct: 0,
+  lossExitMinBouncePct: 0,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -1304,6 +1305,38 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.fraction).toBe(0.5);
   });
 
+  it('lossExitMinBouncePct blocks underwater sleeve at the trough', () => {
+    const now = 1_000_000;
+    const bounceGates: MildDipExitGates = { ...bankGates, lossExitMinBouncePct: 3 };
+    const atTrough = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 95,
+      peakPriceUsd: 112,
+      armed: true,
+      mfeBankStage: 1,
+      gates: bounceGates,
+      postEntryTroughPriceUsd: 95,
+      postEntryTroughAtMs: now - 120_000,
+      nowMs: now,
+    });
+    expect(atTrough.shouldExit).toBe(false);
+
+    const bounced = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 97.85,
+      peakPriceUsd: 112,
+      armed: true,
+      mfeBankStage: 1,
+      gates: bounceGates,
+      postEntryTroughPriceUsd: 95,
+      postEntryTroughAtMs: now - 120_000,
+      nowMs: now,
+    });
+    expect(bounced.shouldExit).toBe(true);
+    expect(bounced.reason).toBe('mfe_bank_sleeve');
+    expect(bounced.fraction).toBe(0.5);
+  });
+
   it('underwater sleeve after half does not dump runner on same giveback', () => {
     // EjD5Y9 / 4aWQZP… pattern: armed, sleeve hit, already scaled once
     const now = 1_000_000;
@@ -1356,6 +1389,42 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     });
     expect(v.shouldExit).toBe(false);
     expect(v.reason).toBeNull();
+  });
+
+  it('AzXuLS: underwater mfe_bank_sleeve waits for bounce off trough (1.11.920)', () => {
+    const bounceGates: MildDipExitGates = { ...bankGates, lossExitMinBouncePct: 3 };
+    const now = 1_000_000;
+    const entry = 0.00007848858906012518;
+    const peak = 0.00008352;
+    const trough = 0.0000666031139908646;
+    const atKnife = evaluateMildDipPeakGiveback({
+      entryPriceUsd: entry,
+      markPriceUsd: trough,
+      peakPriceUsd: peak,
+      armed: true,
+      mfeBankStage: 1,
+      gates: bounceGates,
+      heldMs: 1_154_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: trough,
+      postEntryTroughAtMs: now - 5_000,
+    });
+    expect(atKnife.reason).not.toBe('mfe_bank_sleeve');
+
+    const bounced = evaluateMildDipPeakGiveback({
+      entryPriceUsd: entry,
+      markPriceUsd: trough * 1.04,
+      peakPriceUsd: peak,
+      armed: true,
+      mfeBankStage: 1,
+      gates: bounceGates,
+      heldMs: 1_160_000,
+      nowMs: now + 6_000,
+      postEntryTroughPriceUsd: trough,
+      postEntryTroughAtMs: now - 120_000,
+    });
+    expect(bounced.shouldExit).toBe(true);
+    expect(bounced.reason).toBe('mfe_bank_sleeve');
   });
 
   it('oneshot grace defers sleeve but not bank1', () => {

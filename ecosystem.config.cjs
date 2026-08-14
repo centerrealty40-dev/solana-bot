@@ -3464,6 +3464,13 @@ const PM2_APPS = [
         MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '5',
         MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
         /**
+         * 1.11.920 — soft loss exits (mfe_bank_sleeve, never_arm_*, breakeven_stop)
+         * sell into a bounce off the trough, not on the red candle itself.
+         * AzXuLS: half cut at −19.8% giveback / pc5m −18.75%; price reclaimed entry
+         * seconds after the fill.
+         */
+        MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '3',
+        /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
          * arithmetic; 2iKmjMW3 went +13.5% → −25.53% that way. On 355 leader
