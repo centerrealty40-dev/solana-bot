@@ -1,3 +1,15 @@
+## 1.11.921 — 2026-08-14
+
+### Changed — `never_arm_stale` time+drawdown exit (5m / −5% / MFE≤5%)
+
+- Re-enable **`never_arm_stale`**: after **5 minutes**, if the bag never went green (**MFE ≤ 5%**) and PnL ≤ **−5%**, full exit (`never_arm_stale`).
+- Wallet-anchored mark-tape sweep (72h, 1954 bags): naked **5m + −5%** destroys winners on mark basis; **+ MFE≤5%** filter is +$108 vs actual exits and cuts **−30%** bags earlier (~−11% vs sitting to −44%).
+- **`hard_stop` −30%** unchanged for fast dumps before the 5m clock.
+
+### Rollback
+
+- `MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS=0` (stale off) + reload PM2.
+
 ## 1.11.920 — 2026-08-14
 
 ### Changed — staged `hard_stop` on 2× bounce (3wNpT4)

@@ -62,6 +62,15 @@ describe('1.11.897 the ladder closes on the first rung', () => {
   });
 });
 
+describe('1.11.921 stale time+drawdown exit', () => {
+  it('live env cuts a flat never-armed bag at −5% after 5m (MFE≤5%)', () => {
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_STALE_MIN_MS: '300000'");
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_STALE_PNL_PCT: '5'");
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_STALE_MAX_MFE_PCT: '5'");
+  });
+});
+
 describe('1.11.926 the time cut is off', () => {
   it('live env does not cut a never-armed bag at −15% / 15m', () => {
     // 4CmYEyg: 7BNax sat MAE −15…−17% and sold green. 1.11.925 widened
