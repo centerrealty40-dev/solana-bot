@@ -37,7 +37,7 @@ import {
   evaluateWaitDipPreBuy,
   waitDipMaxPriceUsd,
 } from './wait-dip.js';
-import { evaluateTurnDumpGate } from './turn-dump.js';
+import { evaluateTurnDumpGate, turnDumpKnifeBranchLive } from './turn-dump.js';
 import {
   appendMildDipJournal,
   saveMildDipState,
@@ -411,7 +411,9 @@ export async function attemptMildDipEntry(args: {
       shallowAlpha: cfg.turnDumpShallowAlpha,
       shallowBeta: cfg.turnDumpShallowBeta,
       shallowBandPct: cfg.turnDumpShallowBandPct,
-      knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled,
+      knifeBranchEnabled: turnDumpKnifeBranchLive(cfg.turnDumpKnifeBranchEnabled, {
+        dipSource: c.dipSource,
+      }),
       knifeMinDumpPct: cfg.turnDumpKnifeMinDumpPct,
       knifeMinTurn: cfg.turnDumpKnifeMinTurn,
     });

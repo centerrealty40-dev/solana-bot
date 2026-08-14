@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateTurnDumpGate,
   predictDumpDepthPct,
+  turnDumpKnifeBranchLive,
   turnDumpKnifeOrOk,
   turnover5mLiq,
 } from '../../src/milddip/turn-dump.js';
@@ -233,5 +234,35 @@ describe('turn-dump gate (8zkg formula)', () => {
         minTurn: 0.3,
       }).ok,
     ).toBe(false);
+  });
+});
+
+describe('turnDumpKnifeBranchLive / hot deep dump seat', () => {
+  it('enables knife at send for hot deep seat without global branch', () => {
+    expect(turnDumpKnifeBranchLive(false, { hotDeepKnifeSeat: true })).toBe(true);
+    expect(turnDumpKnifeBranchLive(false, { dipSource: 'turn_dump_knife' })).toBe(true);
+    expect(turnDumpKnifeBranchLive(false, {})).toBe(false);
+  });
+
+  it('passes final gate on 8jsX4b-class dump when hot seat (no leader)', () => {
+    const td = evaluateTurnDumpGate({
+      enabled: true,
+      pc5m: -78.99,
+      volume5mUsd: 13_906,
+      liquidityUsd: 21_322,
+      alpha: -5.08,
+      beta: 6.86,
+      shallowSlackPct: 10,
+      deepSlackPct: 12,
+      shallowBranchEnabled: true,
+      shallowAlpha: -8.83,
+      shallowBeta: 4.23,
+      shallowBandPct: 8,
+      knifeBranchEnabled: turnDumpKnifeBranchLive(false, { hotDeepKnifeSeat: true }),
+      knifeMinDumpPct: 30,
+      knifeMinTurn: 0.3,
+    });
+    expect(td.pass).toBe(true);
+    expect(td.branch).toBe('knife');
   });
 });

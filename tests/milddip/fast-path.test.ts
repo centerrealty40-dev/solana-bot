@@ -308,14 +308,21 @@ describe('fast-path helpers', () => {
     expect(requireStreamPriceForDipSource(null)).toBe(true);
   });
 
-  it('1.11.921 structuralOk relaxes turn only on fresh leader co-buy', () => {
+  it('1.11.921 structuralOk relaxes turn on fresh leader co-buy or hot deep dump', () => {
     const cfg = stubCfg(50_000);
     (cfg.entry as { minTurnover5mLiq: number }).minTurnover5mLiq = 0.06;
+    (cfg.entry as { maxTurnover5mLiq: number }).maxTurnover5mLiq = 0.25;
     const lowTurn = stubMetrics({
       volume5mUsd: 1500,
       liquidityUsd: 50_000,
     }); // turn 0.03
-    expect(structuralOk(lowTurn, cfg, true, false)).toBe(false);
-    expect(structuralOk(lowTurn, cfg, true, true)).toBe(true);
+    expect(structuralOk(lowTurn, cfg, true, false, false)).toBe(false);
+    expect(structuralOk(lowTurn, cfg, true, true, false)).toBe(true);
+    const hotTurn = stubMetrics({
+      volume5mUsd: 14_000,
+      liquidityUsd: 21_000,
+    }); // turn ~0.67 > 0.25 max
+    expect(structuralOk(hotTurn, cfg, false, false, false)).toBe(false);
+    expect(structuralOk(hotTurn, cfg, false, false, true)).toBe(true);
   });
 });

@@ -4146,12 +4146,10 @@ const PM2_APPS = [
          * real. Their intersection is the worst population we have: 205
          * positions, 10% of the volume, -62.89 USD of a -162 total, 41% win.
          *
-         * 1.11.816 applied this to the whole funnel and starved entry, since our
-         * discovery overlaps the seed by about a tenth. Scoped to the first touch
-         * it drops 21% of positions and moves the book from -0.0784 to -0.0546
-         * per position, while a name we already know stays tradeable.
+         * 1.11.922 — OFF: we compete on stream/Dex hot dumps first; waiting for
+         * a leader buy on first touch guarantees arriving after the move.
          */
-        MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
+        MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '0',
         /**
          * 1.11.906 — remember for a week that a leader traded a name.
          *

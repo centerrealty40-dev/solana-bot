@@ -36,19 +36,19 @@ describe('1.11.824 leader seeds order the scan queue', () => {
   });
 });
 
-describe('1.11.899 the first touch needs a leader to have been there', () => {
+describe('1.11.899 / 1.11.922 first touch vs compete-first', () => {
   const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
   const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
 
-  it('gates only the first position on a mint', () => {
+  it('gates only the first position on a mint when first-touch flag is on', () => {
     expect(loop).toContain('const isFirstTouchForLeaderGate = !state.lastExitByMint?.[mint]');
     expect(loop).toContain('cfg.requireLeaderSeenFirstTouch &&');
     expect(loop).toContain('isFirstTouchForLeaderGate &&');
   });
 
-  it('leaves the whole-funnel gate off, which starved entry in 1.11.816', () => {
+  it('first-touch leader gate off — compete on stream before leader buy', () => {
     expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '0'");
-    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1'");
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '0'");
   });
 
   it('does not double-gate when the funnel-wide flag is on', () => {
@@ -67,7 +67,8 @@ describe('1.11.905 a name a leader is buying may be younger', () => {
 
   it('counts a leader trigger or a seed hit as evidence', () => {
     expect(src).toContain('trigger === \'leader\' || seedHit != null || leaderSeenAtMs != null');
-    expect(src).toContain('structuralOk(struct.metrics, cfg, leaderSeenForAge, leaderFreshBuy)');
+    expect(src).toContain('hotDeepKnifeOk,');
+    expect(src).toContain('leaderFreshBuy,');
   });
 
   it('live env allows one hour there and six everywhere else', () => {
@@ -126,8 +127,8 @@ describe('1.11.914 a leader in the name overrides the structural priors', () => 
   const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
   const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
 
-  it('drops the turnover ceiling only for a fresh leader co-buy', () => {
-    expect(fast).toContain('const relaxTurnVol = leaderFreshBuy;');
+  it('drops turnover ceiling on fresh leader co-buy or hot deep dump signal', () => {
+    expect(fast).toContain('const relaxTurnVol = leaderFreshBuy || hotDeepDump;');
     expect(fast).toContain('const maxTurn = relaxTurnVol ? 0 : g.maxTurnover5mLiq;');
   });
 
@@ -162,8 +163,9 @@ describe('1.11.915 the leader override covers every fitted prior', () => {
     expect(fast).toContain('maxDipPct: maxDip,');
   });
 
-  it('stops deferring a knife a leader is already holding', () => {
-    expect(fast).toContain('!knifeOrOk &&\n    !leaderSeenName');
+  it('stops deferring deep knife when hot dump OR qualifies on stream', () => {
+    expect(fast).toContain('!knifeOrOk\n  ) {');
+    expect(fast).toContain('const hotDeepKnife = turnDumpKnifeOrOk({');
   });
 
   it('re-checks wait-dip floors with the same knowledge as the entry gate', () => {
@@ -172,13 +174,23 @@ describe('1.11.915 the leader override covers every fitted prior', () => {
   });
 });
 
-describe('1.11.915 the knife branch opens for leader-seen names only', () => {
+describe('1.11.922 hot deep dump — stream signal, not leader follow', () => {
   const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+  const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
 
-  it('leaves the branch off for everything else', () => {
-    // BVEaDToN printed -55.7%, past the -25% band, so the knife OR is its only
-    // door. The branch stays disabled for the population it lost money on.
-    expect(fast).toContain('knifeBranchEnabled: cfg.turnDumpKnifeBranchEnabled || leaderSeenName,');
+  it('evaluates hot knife OR before structural turnover choke', () => {
+    expect(fast).toContain('const hotDeepKnife = turnDumpKnifeOrOk({');
+    expect(fast).toContain('hotDeepKnifeOk,');
+    expect(fast).toContain('knifeBranchEnabled: true,');
+  });
+
+  it('does not defer deep knife when hot deep dump qualifies', () => {
+    expect(fast).toContain('!knifeOrOk\n  ) {');
+    expect(fast).not.toContain('!leaderSeenName\n  ) {');
+  });
+
+  it('first touch does not require leader seen (compete first)', () => {
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '0'");
   });
 });
 
