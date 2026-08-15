@@ -1,3 +1,24 @@
+## 1.11.949 — 2026-08-15
+
+### Changed — keep a green sleeve runner after the first giveback
+
+- Add `MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION`, defaulting to
+  `0` for the historical full-bag behavior. Production sets it to `'0.5'`:
+  before any scale-out, a green `mfe_bank_sleeve` hit sells half and leaves
+  the remainder to the TP grid and peak-giveback trail.
+- After a scale-out, a green sleeve hit no longer fires. This prevents the
+  sleeve from selling the same green bag twice; the remaining runner belongs
+  only to the TP grid and trail.
+- In the last 48h, 121 `mfe_bank_sleeve` exits had median MFE +23.15% and
+  median realized PnL +10.82%; the median maximum lift in the next 30 minutes
+  was +8.4%. The partial runner preserves that upside while leaving
+  underwater sleeve behavior unchanged.
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION` to `'0'` to
+  restore full-bag green sleeve exits.
+
 ## 1.11.948 — 2026-08-15
 
 ### Changed — move dead-set exits out of ordinary chop

@@ -1447,6 +1447,12 @@ describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
     expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT: '15'");
   });
 
+  it('live env configures a green sleeve partial runner', () => {
+    expect(eco).toContain(
+      "MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION: '0.5'",
+    );
+  });
+
   it('live env runs it at a quarter of entry volume and turnover', () => {
     expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC: '0.25'");
     expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC: '0.25'");
