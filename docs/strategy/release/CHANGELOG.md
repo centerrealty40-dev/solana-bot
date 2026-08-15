@@ -1,3 +1,22 @@
+## 1.11.946 — 2026-08-15
+
+### Changed — keep never-arm bounce exits red-only
+
+- `DTGWeDVPAvr7TdY7sdbfjz2bi4QihVMMn9KhyKH1pump` entered at `0.00026326`,
+  troughed at `0.00023900` (−9.2%), then bounced +16.10% off the trough.
+  The never-arm path sold two legs at +5.72% and +6.29% before the trail
+  had armed.
+- Set `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT` to `3`, so the
+  never-arm bounce path can only fire while the mark remains at least 3% below
+  entry. Set `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_PNL_PCT` to `-1000`, the
+  documented off sentinel, so the redness requirement is the sole PnL guard.
+  Green bags remain governed by the trail and TP ladder.
+
+### Rollback
+
+- Restore `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT` to `'0'` and
+  `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_PNL_PCT` to `'0'`.
+
 ## 1.11.945 — 2026-08-15
 
 ### Changed — widen entry structural trust for recent leader trades

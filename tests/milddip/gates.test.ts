@@ -1034,6 +1034,40 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.fraction).toBe(1);
   });
 
+  it('never_arm_bounce: red-only config blocks green reclaim but allows red reclaim', () => {
+    const now = 1_000_000;
+    const gates = {
+      ...exitGates,
+      neverArmBounceRequireRedPct: 3,
+      neverArmBounceMinPnlPct: -1000,
+    };
+    const green = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105,
+      peakPriceUsd: 110,
+      armed: false,
+      gates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(green.reason).not.toBe('never_arm_bounce');
+
+    const red = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 93,
+      peakPriceUsd: 102,
+      armed: false,
+      gates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(red.reason).toBe('never_arm_bounce');
+  });
+
   it('never_arm_bounce: zero partial fraction remains a full first exit', () => {
     const now = 1_000_000;
     const v = evaluateMildDipPeakGiveback({
