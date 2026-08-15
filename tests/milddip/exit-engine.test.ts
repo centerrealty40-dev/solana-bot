@@ -555,9 +555,25 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       }
     });
 
-    it('fires one rung per tick when the price gaps through several', () => {
-      const d = at(bag('g_gap'), 140); // +40% supports rung 5
-      expect(d?.tpRungIndex).toBe(1);
+    it('settles two owed rungs in one sell when price gaps to +16%', () => {
+      const d = at(bag('g_gap'), 116);
+      expect(d?.reason).toBe('tp_grid');
+      expect(d?.fraction).toBeCloseTo(1 - 0.5 ** 2, 6);
+      expect(d?.tpRungIndex).toBe(2);
+    });
+
+    it('clamps a multi-rung catch-up to the floor', () => {
+      const g = { ...grid, tpGridSellFraction: 0.34, tpGridMinRemainderFraction: 0.3 };
+      const d = decideMarkExit({
+        mint: 'g_floor_gap',
+        pos: bag('g_floor_gap', 0),
+        markPriceUsd: 132,
+        gates: g,
+        nowMs: 1_060_000,
+      });
+      expect(d?.reason).toBe('tp_grid');
+      expect(d?.fraction).toBeCloseTo(1 - 0.66 ** 2, 6);
+      expect(d?.tpRungIndex).toBe(2);
     });
 
     it('owes no rung the current price does not support, even after a high peak', () => {

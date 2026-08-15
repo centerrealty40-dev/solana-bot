@@ -14,6 +14,36 @@
 - Revert this commit and redeploy through the normal Git-based runtime
   procedure.
 
+## 1.11.943 — 2026-08-15
+
+### Changed — settle owed ladder rungs together and stop sweeping runners
+
+- **Ladder catch-up:** mint `7bHZ8M` reached +18.31% at 133s and sold rung 1
+  at 0.34; at 146s it sold rung 2 at +16.75%, a lower price fourteen seconds
+  later. The ladder now settles every owed rung in one sell. A jump from
+  `rungsDone` to `maxK` sells `1 - (1 - gridFrac)^(maxK - rungsDone)` and
+  reports `maxK` as the rung index. The existing minimum-remainder floor still
+  clamps to the largest safe catch-up, or preserves the prior full-close /
+  trail behavior if even one rung breaches it.
+- **Dust threshold:** mint `8kzojN` had its 0.34 rung sell at +24.75%, then
+  `dust_close` swept the entire remainder fourteen seconds later at +24.73%:
+  the remainder was $0.53 against the $0.6 threshold. The live clip is ~$1,
+  so `MILD_DIP_EXIT_DUST_CLOSE_USD` `0.6` → `0.15`; with 0.34 rungs the
+  remainder is about $0.44 and 0.15 still catches true crumbs.
+- **Breakeven stop:** `MILD_DIP_EXIT_BREAKEVEN_ARM_PCT` `20` → `0`. The trail
+  arms at +5%, and with `MILD_DIP_EXIT_GIVEBACK_PCT: '12'`, a +20% peak exits
+  around +5.6%, above the unchanged +3% floor. Breakeven therefore only fired
+  below what the trail already covers, closing `7bHZ8M` at +2.19%; the +3%
+  floor remains configured but is inert while the arm is 0.
+
+No other app/product configuration changes.
+
+### Rollback
+
+- Restore the previous one-rung-per-tick ladder block in `src/milddip/gates.ts`.
+- Restore `MILD_DIP_EXIT_DUST_CLOSE_USD` to `'0.6'`.
+- Restore `MILD_DIP_EXIT_BREAKEVEN_ARM_PCT` to `'20'` (leave the floor at `'3'`).
+
 ## 1.11.941 — 2026-08-15
 
 ### Added — optional loss-exit bounce safety caps

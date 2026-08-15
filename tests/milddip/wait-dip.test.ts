@@ -297,7 +297,9 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.34'");
     expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '12'");
-    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '20'");
+    // The +5% trail arm and 12% giveback cover a +20% peak above the +3%
+    // floor, so breakeven is intentionally inert.
+    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '0'");
     // 1.11.936 — the floor states where the bounce gate actually fills it; the
     // work is done by dead_set_bounce, which needs three factors and a bounce.
     expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30'");
