@@ -72,6 +72,43 @@ describe('tape shadow arithmetic and lane boundaries', () => {
     expect(evaluateMildDipTape(features, gates).matches).toEqual([]);
   });
 
+  it('uses boundary samples for coverage even when the in-window span is shorter', () => {
+    const now = 12_000_000;
+    const ring = new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 });
+    note(ring, now - 61 * 60_000, 100);
+    note(ring, now - 59 * 60_000, 160);
+    note(ring, now - 6 * 60_000, 100);
+    note(ring, now, 104);
+    const features = tapeFeatures(ring, mint, now, 1);
+    expect(features.window60SpanMs).toBe(59 * 60_000);
+    expect(features.spanMs).toBe(61 * 60_000);
+    expect(features.imp60).toBeCloseTo(0.04);
+    expect(features.imp5).toBeCloseTo(0.04);
+    expect(evaluateMildDipTape(features, gates).matches).toContain('green');
+
+    const dip = new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 });
+    note(dip, now - 61 * 60_000, 100);
+    note(dip, now - 59 * 60_000, 200);
+    note(dip, now - 6 * 60_000, 200);
+    note(dip, now, 110);
+    expect(evaluateMildDipTape(tapeFeatures(dip, mint, now, 1), gates).matches).toContain(
+      'dip',
+    );
+  });
+
+  it('fails closed when no sample reaches either lookback boundary', () => {
+    const now = 13_000_000;
+    const ring = new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 });
+    note(ring, now - 4 * 60_000, 100);
+    note(ring, now - 1 * 60_000, 160);
+    note(ring, now, 104);
+    const features = tapeFeatures(ring, mint, now, 1);
+    expect(features.window60SpanMs).toBe(4 * 60_000);
+    expect(features.imp60).toBeNull();
+    expect(features.imp5).toBeNull();
+    expect(evaluateMildDipTape(features, gates).matches).toEqual([]);
+  });
+
   it.each([
     ['imp5 lower boundary', 0.04, true],
     ['imp5 upper boundary', 0.4, true],
@@ -295,6 +332,32 @@ describe('MildDipTapeShadow', () => {
       suppressedInterval: 1,
       suppressedCap: 1,
     });
+    expect(
+      (summary?.lanes as { green: { rejectionReasons: Record<string, number> } }).green
+        .rejectionReasons.no_60m_coverage,
+    ).toBeGreaterThan(0);
+  });
+
+  it('summarizes missing tape coverage and null pair age as rejection reasons', () => {
+    const events: Record<string, unknown>[] = [];
+    const shadow = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 }),
+      gates,
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      summaryIntervalMs: 60_000,
+      append: (event) => events.push(event),
+    });
+    const now = 76_000_000;
+    shadow.onPriceSample({ mint, priceUsd: 104, tsMs: now, pairAgeHours: null });
+    shadow.tick(now + 60_000);
+    const summary = events.find((e) => e.kind === 'mild_dip_tape_lane_summary');
+    const greenReasons = (
+      summary?.lanes as { green: { rejectionReasons: Record<string, number> } }
+    ).green.rejectionReasons;
+    expect(greenReasons.no_60m_coverage).toBe(1);
+    expect(greenReasons.no_5m_coverage).toBe(1);
+    expect(greenReasons['pairAgeHours=null']).toBe(1);
   });
 
   it('evicts idle mints and removes completed pending signals', () => {

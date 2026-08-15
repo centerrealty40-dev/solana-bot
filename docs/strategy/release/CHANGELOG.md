@@ -1,3 +1,21 @@
+## 1.11.958 — 2026-08-15
+
+### Fixed — tape-shadow boundary coverage and rejection accounting
+
+- Treat a tape window as covered when a sample exists at or before the
+  five-minute or 60-minute lookback boundary, rather than requiring the
+  in-window sample span to equal the boundary duration.
+- Keep the existing fail-closed behavior when either boundary sample or
+  structural pair age is unavailable.
+- Add journal-only summary counters for lane rejection reasons, including
+  missing 60-minute coverage, missing five-minute coverage, and
+  `pairAgeHours=null`, so zero-signal periods are diagnosable.
+
+### Rollback
+
+- Revert this release commit and redeploy the prior `v2` revision. No purchase,
+  execution, or leader-gate behavior is changed by this measurement fix.
+
 ## 1.11.957 — 2026-08-15
 
 ### Changed — defer the first TP rung and reject degraded profit fills
