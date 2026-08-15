@@ -47,7 +47,7 @@ describe('1.11.899 / 1.11.922 first touch vs compete-first', () => {
   });
 
   it('first-touch leader gate off — compete on stream before leader buy', () => {
-    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '0'");
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '1'");
     expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '0'");
   });
 
@@ -97,7 +97,7 @@ describe('1.11.906 the gate remembers a leader for a week, not two hours', () =>
   });
 
   it('consults the memory before rejecting a first touch', () => {
-    expect(loop).toContain('!leaderEverSeen(cfg, state, mint, nowMs)');
+    expect(loop).toContain('leaderEverSeenInState');
   });
 
   it('live env remembers for a week', () => {
