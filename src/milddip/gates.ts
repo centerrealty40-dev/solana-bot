@@ -298,7 +298,8 @@ export type MildDipExitGates = {
   /** Trough must be the low-water for at least this long before bounce counts. */
   neverArmBounceMinTroughAgeMs: number;
   /**
-   * Only fire bounce exit while mark pnl ≤ −this % vs entry (default 3).
+   * Only fire bounce exit while money-basis mark pnl ≤ −this % vs entry
+   * (default 3).
    * Blocks F1XdRe/AENK1Y-style near-flat stream-wick reclaim sells. 0 = off.
    */
   neverArmBounceRequireRedPct: number;
@@ -1508,14 +1509,15 @@ export function evaluateMildDipPeakGiveback(args: {
     troughDumpPct <= -bounceDumpNeed + 1e-9 &&
     troughAgeMs >= bounceTroughAge &&
     /**
-     * 1.11.881 — both halves are money, so both read the gain basis.
+     * 1.11.881 — the PnL floor remains on the gain basis, while the red
+     * requirement protects the money basis from green sells.
      *
      * `bounceMinPnl` says "do not sell while we are losing", and on the loss
      * basis that sentence is not true: 7ZgRjHSn filled at 7.0630e-05 with the
      * mark at 6.9050e-05, so a floor of 0 cleared at 6.9050e-05 — which is
      * −2.24% of our money. It sold at −2.38%.
      */
-    (bounceRequireRed <= 0 || gainPct <= -bounceRequireRed + 1e-9) &&
+    (bounceRequireRed <= 0 || pnlPct <= -bounceRequireRed + 1e-9) &&
     gainPct >= bounceMinPnl - 1e-9;
 
   if (!armed && bounceBaseOk) {

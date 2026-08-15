@@ -683,6 +683,8 @@ const MildDipConfigSchema = z.object({
      * 1.11.759 — underwater sleeve: sell this fraction first (0 = full legacy).
      */
     mfeBankSleeveLossPartialFraction: z.coerce.number().min(0).max(1).default(0.5),
+    /** 1.11.949 — green sleeve partial; 0 preserves the full-bag exit. */
+    mfeBankSleeveGreenPartialFraction: z.coerce.number().min(0).max(1).default(0),
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /**

@@ -1068,6 +1068,46 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(red.reason).toBe('never_arm_bounce');
   });
 
+  it('never_arm_bounce: money-green bags are blocked even when gain is red', () => {
+    const now = 1_000_000;
+    const gates = {
+      ...exitGates,
+      markSellHaircutPct: 1,
+      neverArmBounceRequireRedPct: 3,
+      neverArmBounceMinPnlPct: -1000,
+    };
+    const moneyGreen = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      entryMarketPriceUsd: 105.43,
+      markPriceUsd: 101.51,
+      peakPriceUsd: 105.43,
+      armed: false,
+      gates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(moneyGreen.gainPct).toBeCloseTo(-4.68, 1);
+    expect(moneyGreen.pnlPct).toBeCloseTo(1.51, 2);
+    expect(moneyGreen.reason).not.toBe('never_arm_bounce');
+
+    const moneyRed = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      entryMarketPriceUsd: 105.43,
+      markPriceUsd: 97,
+      peakPriceUsd: 105.43,
+      armed: false,
+      gates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(moneyRed.pnlPct).toBeCloseTo(-3, 2);
+    expect(moneyRed.reason).toBe('never_arm_bounce');
+  });
+
   it('never_arm_bounce: zero partial fraction remains a full first exit', () => {
     const now = 1_000_000;
     const v = evaluateMildDipPeakGiveback({
