@@ -1232,14 +1232,21 @@ export function evaluateMildDipPeakGiveback(args: {
       const floor =
         gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
       /**
-       * 1.11.914 — when the next rung would cut past the floor, the ladder
-       * stands down and the trail carries the last slice out. It used to close
-       * the bag instead, which capped a runner at the third rung: on an 8%/50%
-       * ladder that is +24%, so a coin that goes +67% could never pay us more
-       * than about +14% blended. 8zkgFG rode ELiQoVM9 the whole way and took it
-       * in one leg near the top; a 12% giveback trail is how we do the same.
+       * 1.11.914 — when the next rung would cut past the floor, only a
+       * remaining rung stands down and the trail carries the last slice out.
+       * If the first rung would leave less than the floor, it closes the bag
+       * in full.
        */
       if (floor > 0 && remainingAfter < floor - 1e-9) {
+        if (rungsDone === 0) {
+          return {
+            ...hold,
+            shouldExit: true,
+            fraction: 1,
+            reason: 'tp_grid',
+            tpRungIndex: rungsDone + 1,
+          };
+        }
         // fall through to the trail
       } else {
         return {
@@ -1310,7 +1317,13 @@ export function evaluateMildDipPeakGiveback(args: {
         : givebackPct;
     const sleeveTroughHit = sleeveGivebackAtTroughPct <= -sleeveGb + 1e-9;
     const sleeveLiveHit = givebackPct <= -sleeveGb + 1e-9;
-    const sleeveHit = lossExitMin > 0 ? sleeveTroughHit : sleeveLiveHit;
+    // Green trails measure retracement from peak; trough path remains for losses.
+    const sleeveHit =
+      gainPct >= 0
+        ? sleeveLiveHit
+        : lossExitMin > 0
+          ? sleeveTroughHit
+          : sleeveLiveHit;
     if (!oneshotGrace && sleeveGb > 0 && sleeveHit) {
       // After any profit taken: trail the remainder. Before the first rung but
       // armed: protect the full bag if the early spike already gave back sleeve
