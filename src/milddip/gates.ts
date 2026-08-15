@@ -124,6 +124,11 @@ export type MildDipExitGates = {
    */
   mfeBankSleeveGreenPartialFraction?: number;
   /**
+   * Wide giveback trail for the green remainder after the sleeve partial.
+   * 0 or an omitted value preserves the current no-op runner behavior.
+   */
+  mfeBankSleeveRunnerGivebackPct?: number;
+  /**
    * 1.11.849 — Live Oscar's unbounded take-profit ladder, ported to mild-dip.
    *
    * Rung `k` fires at MFE ≥ k × `tpGridStepPct` and sells `tpGridSellFraction`
@@ -1347,6 +1352,11 @@ export function evaluateMildDipPeakGiveback(args: {
     const lvl2 = gates.mfeBank2Pct > lvl1 ? gates.mfeBank2Pct : 0;
     const sleeveGb =
       gates.mfeBankSleeveGivebackPct > 0 ? gates.mfeBankSleeveGivebackPct : 0;
+    const runnerGb =
+      gates.mfeBankSleeveRunnerGivebackPct != null &&
+      gates.mfeBankSleeveRunnerGivebackPct > 0
+        ? gates.mfeBankSleeveRunnerGivebackPct
+        : 0;
 
     // Bank into strength (not deferred by oneshot grace — this is take-profit).
     // One level per mark tick (same half-first discipline as classic scale-out).
@@ -1399,7 +1409,20 @@ export function evaluateMildDipPeakGiveback(args: {
         : lossExitMin > 0
           ? sleeveTroughHit
           : sleeveLiveHit;
-    if (!oneshotGrace && sleeveGb > 0 && sleeveHit) {
+    const greenPartial =
+      (gates.mfeBankSleeveGreenPartialFraction ?? 0) > 0 &&
+      (gates.mfeBankSleeveGreenPartialFraction ?? 0) < 1
+        ? (gates.mfeBankSleeveGreenPartialFraction ?? 0)
+        : 0;
+    const greenRunnerWidth = Math.max(sleeveGb, runnerGb);
+    const greenRunnerHit =
+      gainPct >= 0 &&
+      scaleOutDone &&
+      greenPartial > 0 &&
+      runnerGb > 0 &&
+      greenRunnerWidth > 0 &&
+      givebackPct <= -greenRunnerWidth + 1e-9;
+    if (!oneshotGrace && ((sleeveGb > 0 && sleeveHit) || greenRunnerHit)) {
       // After any profit taken: trail the remainder. Before the first rung but
       // armed: protect the full bag if the early spike already gave back sleeve
       // width.
@@ -1409,11 +1432,6 @@ export function evaluateMildDipPeakGiveback(args: {
           gates.mfeBankSleeveLossPartialFraction > 0 &&
           gates.mfeBankSleeveLossPartialFraction < 1
             ? gates.mfeBankSleeveLossPartialFraction
-            : 0;
-        const greenPartial =
-          (gates.mfeBankSleeveGreenPartialFraction ?? 0) > 0 &&
-          (gates.mfeBankSleeveGreenPartialFraction ?? 0) < 1
-            ? (gates.mfeBankSleeveGreenPartialFraction ?? 0)
             : 0;
         const bounceOk =
           gainPct >= 0 ||
@@ -1436,8 +1454,16 @@ export function evaluateMildDipPeakGiveback(args: {
             reason: 'mfe_bank_sleeve',
           };
         } else if (gainPct >= 0 && scaleOutDone && greenPartial > 0) {
-          // Green runners belong to the TP grid and peak-giveback trail after
-          // any prior scale-out; the sleeve must not sell them twice.
+          if (greenRunnerHit) {
+            return {
+              ...hold,
+              shouldExit: true,
+              fraction: 1,
+              reason: 'peak_giveback',
+            };
+          }
+          // Green runners belong to the TP grid after the sleeve partial; the
+          // runner trail above is optional and wide by design.
         } else if (!(gainPct < 0 && scaleOutDone && lossPartial > 0)) {
           return {
             ...hold,

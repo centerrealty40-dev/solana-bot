@@ -685,6 +685,8 @@ const MildDipConfigSchema = z.object({
     mfeBankSleeveLossPartialFraction: z.coerce.number().min(0).max(1).default(0.5),
     /** 1.11.949 — green sleeve partial; 0 preserves the full-bag exit. */
     mfeBankSleeveGreenPartialFraction: z.coerce.number().min(0).max(1).default(0),
+    /** 1.11.953 — wide green sleeve runner trail; 0 keeps the no-op default. */
+    mfeBankSleeveRunnerGivebackPct: z.coerce.number().min(0).max(100).default(0),
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /**
@@ -889,6 +891,10 @@ export function loadMildDipConfig(): MildDipConfig {
     ),
     mfeBankSleeveGreenPartialFraction: envNum(
       'MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION',
+      0,
+    ),
+    mfeBankSleeveRunnerGivebackPct: envNum(
+      'MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_PCT',
       0,
     ),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */

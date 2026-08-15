@@ -50,4 +50,15 @@ describe('mild-dip config exit schema', () => {
     );
     expect(cfg.exit.mfeBankSleeveGreenPartialFraction).toBe(0.5);
   });
+
+  it('loads the sleeve runner giveback width from the environment', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_PCT: '25',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.mfeBankSleeveRunnerGivebackPct).toBe(25);
+  });
 });
