@@ -316,6 +316,189 @@ describe('MildDipTapeShadow', () => {
     expect(shadow.pendingMints(now + 60 * 60_000, 0, 10)).toEqual(new Set());
   });
 
+  it('attaches structural snapshots and evaluates lane-specific own floors', async () => {
+    const greenEvents: Record<string, unknown>[] = [];
+    const greenNow = 110_000_000;
+    const greenStructuralRing = new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 });
+    note(greenStructuralRing, greenNow - 61 * 60_000, 100);
+    note(greenStructuralRing, greenNow - 50 * 60_000, 108);
+    note(greenStructuralRing, greenNow - 5 * 60_000, 100);
+    const greenShadow = new MildDipTapeShadow({
+      ring: greenStructuralRing,
+      gates: {
+        ...gates,
+        greenImp60MinPct: -100,
+        greenImp5MinPct: -100,
+        greenImp5MaxPct: 100,
+        greenDd60MaxPct: 0,
+        greenMinPairAgeHours: 0,
+      },
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      idleEvictMs: 90 * 60_000,
+      ownFloors: {
+        green: {
+          minLiquidityUsd: 1_700,
+          maxLiquidityUsd: 20_000,
+          minMarketCapUsd: 2_000,
+          minVolume5mUsd: 150,
+          maxTurnover: 0,
+          minPairAgeHours: 1,
+        },
+        dip: {
+          minLiquidityUsd: 1_700,
+          maxLiquidityUsd: 6_000,
+          minMarketCapUsd: 2_000,
+          minVolume5mUsd: 300,
+          maxTurnover: 0,
+          minPairAgeHours: 0.5,
+        },
+      },
+      structuralSnapshot: async () => ({
+        liquidityUsd: 5_000,
+        marketCapUsd: 3_000,
+        volume5mUsd: 200,
+        turnover: 0.04,
+        dexId: 'raydium',
+        pairAgeHours: 2,
+      }),
+      append: (event) => greenEvents.push(event),
+    });
+    greenShadow.onPriceSample({ mint, priceUsd: 104, tsMs: greenNow, pairAgeHours: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(greenEvents.find((event) => event.kind === 'mild_dip_tape_lane_signal')).toMatchObject({
+      liquidityUsd: 5_000,
+      marketCapUsd: 3_000,
+      volume5mUsd: 200,
+      turnover: 0.04,
+      dexId: 'raydium',
+      pairAgeHours: 2,
+      ownFloorsPass: true,
+      ownFloorsFail: [],
+    });
+
+    const dipEvents: Record<string, unknown>[] = [];
+    const dipNow = greenNow + 10_000_000;
+    const dipStructuralRing = new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 });
+    note(dipStructuralRing, dipNow - 61 * 60_000, 100);
+    note(dipStructuralRing, dipNow - 50 * 60_000, 200);
+    note(dipStructuralRing, dipNow - 5 * 60_000, 140);
+    const dipShadow = new MildDipTapeShadow({
+      ring: dipStructuralRing,
+      gates: {
+        ...gates,
+        dipRangePosMaxPct: 100,
+        dipDd60MaxPct: 0,
+        dipImp5MaxPct: 100,
+        dipMinPairAgeHours: 0,
+        dipMaxPairAgeHours: 100,
+      },
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      idleEvictMs: 90 * 60_000,
+      ownFloors: {
+        green: {
+          minLiquidityUsd: 1_700,
+          maxLiquidityUsd: 20_000,
+          minMarketCapUsd: 2_000,
+          minVolume5mUsd: 150,
+          maxTurnover: 0,
+          minPairAgeHours: 1,
+        },
+        dip: {
+          minLiquidityUsd: 1_700,
+          maxLiquidityUsd: 6_000,
+          minMarketCapUsd: 2_000,
+          minVolume5mUsd: 300,
+          maxTurnover: 0,
+          minPairAgeHours: 0.5,
+        },
+      },
+      structuralSnapshot: async () => ({
+        liquidityUsd: 5_000,
+        marketCapUsd: 3_000,
+        volume5mUsd: 200,
+        turnover: 0.04,
+        dexId: 'raydium',
+        pairAgeHours: 2,
+      }),
+      append: (event) => dipEvents.push(event),
+    });
+    dipShadow.onPriceSample({ mint, priceUsd: 110, tsMs: dipNow, pairAgeHours: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(dipEvents.find((event) => event.kind === 'mild_dip_tape_lane_signal')).toMatchObject({
+      ownFloorsPass: false,
+      ownFloorsFail: ['dip_min_volume5m_usd'],
+    });
+  });
+
+  it('records null structural snapshots and own-floor counters in summary', async () => {
+    const events: Record<string, unknown>[] = [];
+    const now = 120_000_000;
+    const nullStructuralRing = new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 });
+    note(nullStructuralRing, now - 61 * 60_000, 100);
+    note(nullStructuralRing, now - 50 * 60_000, 108);
+    note(nullStructuralRing, now - 5 * 60_000, 100);
+    const shadow = new MildDipTapeShadow({
+      ring: nullStructuralRing,
+      gates: {
+        ...gates,
+        greenImp60MinPct: -100,
+        greenImp5MinPct: -100,
+        greenImp5MaxPct: 100,
+        greenDd60MaxPct: 0,
+        greenMinPairAgeHours: 0,
+      },
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      idleEvictMs: 90 * 60_000,
+      summaryIntervalMs: 60_000,
+      structuralSnapshot: async () => null,
+      ownFloors: {
+        green: {
+          minLiquidityUsd: 1_700,
+          maxLiquidityUsd: 20_000,
+          minMarketCapUsd: 2_000,
+          minVolume5mUsd: 150,
+          maxTurnover: 0,
+          minPairAgeHours: 1,
+        },
+        dip: {
+          minLiquidityUsd: 1_700,
+          maxLiquidityUsd: 6_000,
+          minMarketCapUsd: 2_000,
+          minVolume5mUsd: 300,
+          maxTurnover: 0,
+          minPairAgeHours: 0.5,
+        },
+      },
+      append: (event) => events.push(event),
+    });
+    shadow.onPriceSample({ mint, priceUsd: 104, tsMs: now, pairAgeHours: 1 });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const signal = events.find((event) => event.kind === 'mild_dip_tape_lane_signal');
+    expect(signal).toMatchObject({
+      ownFloorsPass: null,
+      ownFloorsFail: ['no_structural_snapshot'],
+      liquidityUsd: null,
+      pairAgeHours: 1,
+    });
+    shadow.tick(now + 60_000);
+    const summary = events.find((event) => event.kind === 'mild_dip_tape_lane_summary');
+    expect(summary).toMatchObject({
+      lanes: {
+        green: {
+          structural: {
+            signals: 1,
+            ownFloorsPass: 0,
+            ownFloorsNull: 1,
+            rejectionReasons: { no_structural_snapshot: 1 },
+          },
+        },
+      },
+    });
+  });
+
   it('enforces bounded shadow-discovery sampling and keeps zero disabled', () => {
     const seen = new Map<string, number>();
     const cleanup = { lastAtMs: 0 };

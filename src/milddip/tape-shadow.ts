@@ -46,6 +46,24 @@ export type MildDipTapeEvaluation = {
   reasons: Record<MildDipTapeLane, string[]>;
 };
 
+export type MildDipTapeStructuralSnapshot = {
+  liquidityUsd: number | null;
+  marketCapUsd: number | null;
+  volume5mUsd: number | null;
+  turnover: number | null;
+  dexId: string | null;
+  pairAgeHours: number | null;
+};
+
+export type MildDipTapeOwnFloorGates = {
+  minLiquidityUsd: number;
+  maxLiquidityUsd: number;
+  minMarketCapUsd: number;
+  minVolume5mUsd: number;
+  maxTurnover: number;
+  minPairAgeHours: number;
+};
+
 function finite(value: number | null | undefined): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -202,6 +220,11 @@ export type MildDipTapeShadowOptions = {
   idleEvictMs?: number;
   summaryIntervalMs?: number;
   pendingSampleGraceMs?: number;
+  structuralSnapshot?: (
+    mint: string,
+    tsMs: number,
+  ) => Promise<MildDipTapeStructuralSnapshot | null>;
+  ownFloors?: Record<MildDipTapeLane, MildDipTapeOwnFloorGates>;
   append: (event: MildDipTapeShadowEvent) => void;
 };
 
@@ -225,6 +248,10 @@ type TapeLaneCounters = {
   pairAgeKnown: number;
   pairAgeUnknown: number;
   rejectionReasons: Record<string, number>;
+  structuralSignals: number;
+  structuralPass: number;
+  structuralNull: number;
+  structuralRejectionReasons: Record<string, number>;
 };
 
 function rejectionReasonKeys(
@@ -246,6 +273,41 @@ function rejectionReasonKeys(
     if (key && !keys.has(key)) keys.add(key);
   }
   return [...keys];
+}
+
+function evaluateOwnFloors(
+  lane: MildDipTapeLane,
+  snapshot: MildDipTapeStructuralSnapshot | null,
+  gates: MildDipTapeOwnFloorGates | undefined,
+): { pass: boolean | null; fail: string[] } {
+  if (!snapshot) return { pass: null, fail: ['no_structural_snapshot'] };
+  if (!gates) return { pass: true, fail: [] };
+  const fail: string[] = [];
+  if (snapshot.liquidityUsd == null || snapshot.liquidityUsd < gates.minLiquidityUsd) {
+    fail.push(`${lane}_min_liquidity_usd`);
+  }
+  if (
+    gates.maxLiquidityUsd > 0 &&
+    (snapshot.liquidityUsd == null || snapshot.liquidityUsd > gates.maxLiquidityUsd)
+  ) {
+    fail.push(`${lane}_max_liquidity_usd`);
+  }
+  if (snapshot.marketCapUsd == null || snapshot.marketCapUsd < gates.minMarketCapUsd) {
+    fail.push(`${lane}_min_market_cap_usd`);
+  }
+  if (snapshot.volume5mUsd == null || snapshot.volume5mUsd < gates.minVolume5mUsd) {
+    fail.push(`${lane}_min_volume5m_usd`);
+  }
+  if (
+    gates.maxTurnover > 0 &&
+    (snapshot.turnover == null || snapshot.turnover > gates.maxTurnover)
+  ) {
+    fail.push(`${lane}_max_turnover`);
+  }
+  if (snapshot.pairAgeHours == null || snapshot.pairAgeHours < gates.minPairAgeHours) {
+    fail.push(`${lane}_min_age_hours`);
+  }
+  return { pass: fail.length === 0, fail };
 }
 
 const HORIZONS_MS = [15 * 60_000, 30 * 60_000, 60 * 60_000] as const;
@@ -286,6 +348,10 @@ export class MildDipTapeShadow {
       pairAgeKnown: 0,
       pairAgeUnknown: 0,
       rejectionReasons: {},
+      structuralSignals: 0,
+      structuralPass: 0,
+      structuralNull: 0,
+      structuralRejectionReasons: {},
     },
     dip: {
       conditions: 0,
@@ -295,6 +361,10 @@ export class MildDipTapeShadow {
       pairAgeKnown: 0,
       pairAgeUnknown: 0,
       rejectionReasons: {},
+      structuralSignals: 0,
+      structuralPass: 0,
+      structuralNull: 0,
+      structuralRejectionReasons: {},
     },
   };
   private summaryWindowStartMs: number | null = null;
@@ -320,6 +390,47 @@ export class MildDipTapeShadow {
 
   private invalidatePendingMintCache(): void {
     this.pendingMintCache = null;
+  }
+
+  private appendSignal(
+    lane: MildDipTapeLane,
+    id: string,
+    input: {
+      mint: string;
+      priceUsd: number;
+      tsMs: number;
+      source: MildDipPriceSource;
+    },
+    features: MildDipTapeFeatures,
+    snapshot: MildDipTapeStructuralSnapshot | null,
+  ): void {
+    const floor = evaluateOwnFloors(lane, snapshot, this.opts.ownFloors?.[lane]);
+    const counters = this.counters[lane];
+    counters.structuralSignals += 1;
+    if (floor.pass === true) counters.structuralPass += 1;
+    else if (floor.pass == null) counters.structuralNull += 1;
+    for (const reason of floor.fail) {
+      counters.structuralRejectionReasons[reason] =
+        (counters.structuralRejectionReasons[reason] ?? 0) + 1;
+    }
+    this.opts.append({
+      kind: 'mild_dip_tape_lane_signal',
+      signalId: id,
+      lane,
+      mint: input.mint,
+      ...features,
+      liquidityUsd: snapshot?.liquidityUsd ?? null,
+      marketCapUsd: snapshot?.marketCapUsd ?? null,
+      volume5mUsd: snapshot?.volume5mUsd ?? null,
+      turnover: snapshot?.turnover ?? null,
+      dexId: snapshot?.dexId ?? null,
+      pairAgeHours: snapshot?.pairAgeHours ?? features.pairAgeHours,
+      currentPriceUsd: input.priceUsd,
+      source: input.source,
+      ownFloorsPass: floor.pass,
+      ownFloorsFail: floor.fail,
+      shadowOnly: true,
+    });
   }
 
   private refreshPendingMintCache(nowMs: number, graceMs: number, maxMints: number): void {
@@ -545,17 +656,27 @@ export class MildDipTapeShadow {
       this.counters[lane].recorded += 1;
       recordedAny = true;
       const id = `${input.mint}:${input.tsMs}:${lane}:${this.sequence++}`;
-      this.opts.append({
-        kind: 'mild_dip_tape_lane_signal',
-        signalId: id,
-        lane,
-        mint: input.mint,
-        ...evaluation.features,
-        pairAgeHours: evaluation.features.pairAgeHours,
-        currentPriceUsd: input.priceUsd,
-        source,
-        shadowOnly: true,
-      });
+      const emitSignal = (snapshot: MildDipTapeStructuralSnapshot | null): void =>
+        this.appendSignal(
+          lane,
+          id,
+          {
+            mint: input.mint,
+            priceUsd: input.priceUsd,
+            tsMs: input.tsMs,
+            source,
+          },
+          evaluation.features,
+          snapshot,
+        );
+      if (this.opts.structuralSnapshot) {
+        void Promise.resolve()
+          .then(() => this.opts.structuralSnapshot!(input.mint, input.tsMs))
+          .then((snapshot) => emitSignal(snapshot))
+          .catch(() => emitSignal(null));
+      } else {
+        emitSignal(null);
+      }
       this.pending.push({
         id,
         lane,
@@ -630,6 +751,8 @@ export class MildDipTapeShadow {
         this.counters.green.pairAgeUnknown > 0 ||
         this.counters.dip.pairAgeKnown > 0 ||
         this.counters.dip.pairAgeUnknown > 0 ||
+        this.counters.green.structuralSignals > 0 ||
+        this.counters.dip.structuralSignals > 0 ||
         this.pairAgeBackfillRequested > 0 ||
         this.samplingPending > 0 ||
         this.samplingShadowDiscovery > 0 ||
@@ -650,6 +773,12 @@ export class MildDipTapeShadow {
               pairAgeKnown: this.counters.green.pairAgeKnown,
               pairAgeUnknown: this.counters.green.pairAgeUnknown,
               rejectionReasons: { ...this.counters.green.rejectionReasons },
+              structural: {
+                signals: this.counters.green.structuralSignals,
+                ownFloorsPass: this.counters.green.structuralPass,
+                ownFloorsNull: this.counters.green.structuralNull,
+                rejectionReasons: { ...this.counters.green.structuralRejectionReasons },
+              },
             },
             dip: {
               conditions: this.counters.dip.conditions,
@@ -659,6 +788,12 @@ export class MildDipTapeShadow {
               pairAgeKnown: this.counters.dip.pairAgeKnown,
               pairAgeUnknown: this.counters.dip.pairAgeUnknown,
               rejectionReasons: { ...this.counters.dip.rejectionReasons },
+              structural: {
+                signals: this.counters.dip.structuralSignals,
+                ownFloorsPass: this.counters.dip.structuralPass,
+                ownFloorsNull: this.counters.dip.structuralNull,
+                rejectionReasons: { ...this.counters.dip.structuralRejectionReasons },
+              },
             },
           },
           pairAgeBackfill: {
@@ -682,6 +817,10 @@ export class MildDipTapeShadow {
         pairAgeKnown: 0,
         pairAgeUnknown: 0,
         rejectionReasons: {},
+        structuralSignals: 0,
+        structuralPass: 0,
+        structuralNull: 0,
+        structuralRejectionReasons: {},
       };
       this.counters.dip = {
         conditions: 0,
@@ -691,6 +830,10 @@ export class MildDipTapeShadow {
         pairAgeKnown: 0,
         pairAgeUnknown: 0,
         rejectionReasons: {},
+        structuralSignals: 0,
+        structuralPass: 0,
+        structuralNull: 0,
+        structuralRejectionReasons: {},
       };
       this.pairAgeBackfillRequested = 0;
       this.pairAgeBackfillResolved = 0;

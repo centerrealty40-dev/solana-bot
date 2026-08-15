@@ -1,3 +1,21 @@
+## 1.11.965 — 2026-08-15
+
+### Added — tape-shadow lane structural floor measurement
+
+- Attach signal-time liquidity, market-cap, volume, turnover, DEX, and pair-age
+  snapshots to journal-only GREEN and DIP tape signals.
+- Measure branch-specific own-floor pass/fail rates with bounded, rate-gated
+  structural lookups and negative caching, without changing shared entry floors
+  or execution decisions.
+- Report per-lane signal, pass, unavailable, and floor-rejection counters in the
+  existing tape-shadow summary.
+
+### Rollback
+
+- Revert this release commit and redeploy the prior `v2` revision. Structural
+  snapshots and own-floor counters are journal-only diagnostics; they do not
+  alter tape formulas, purchases, execution, or shared gates.
+
 ## 1.11.964 — 2026-08-15
 
 ### Fixed — tape-shadow forward sampling coverage
