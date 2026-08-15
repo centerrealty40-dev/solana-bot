@@ -1310,7 +1310,13 @@ export function evaluateMildDipPeakGiveback(args: {
         : givebackPct;
     const sleeveTroughHit = sleeveGivebackAtTroughPct <= -sleeveGb + 1e-9;
     const sleeveLiveHit = givebackPct <= -sleeveGb + 1e-9;
-    const sleeveHit = lossExitMin > 0 ? sleeveTroughHit : sleeveLiveHit;
+    // Green trails measure retracement from peak; trough path remains for losses.
+    const sleeveHit =
+      gainPct >= 0
+        ? sleeveLiveHit
+        : lossExitMin > 0
+          ? sleeveTroughHit
+          : sleeveLiveHit;
     if (!oneshotGrace && sleeveGb > 0 && sleeveHit) {
       // After any profit taken: trail the remainder. Before the first rung but
       // armed: protect the full bag if the early spike already gave back sleeve

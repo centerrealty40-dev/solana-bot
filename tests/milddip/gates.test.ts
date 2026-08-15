@@ -1397,6 +1397,45 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.fraction).toBe(1);
   });
 
+  it('green sleeve uses live peak retracement when loss bounce is enabled', () => {
+    const gates: MildDipExitGates = {
+      ...bankGates,
+      lossExitMinBouncePct: 12,
+      mfeBankSleeveGivebackPct: 12,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 110,
+      peakPriceUsd: 120,
+      armed: true,
+      mfeBankStage: 2,
+      gates,
+      postEntryTroughPriceUsd: 100,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).not.toBe('mfe_bank_sleeve');
+  });
+
+  it('green sleeve exits fully once live peak retracement reaches its width', () => {
+    const gates: MildDipExitGates = {
+      ...bankGates,
+      lossExitMinBouncePct: 12,
+      mfeBankSleeveGivebackPct: 12,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.6,
+      peakPriceUsd: 120,
+      armed: true,
+      mfeBankStage: 2,
+      gates,
+      postEntryTroughPriceUsd: 100,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('mfe_bank_sleeve');
+    expect(v.fraction).toBe(1);
+  });
+
   it('sleeve can protect remainder after bank1 before +15 (underwater → half)', () => {
     // peak 112, mark 98.56 → −12% giveback, stage=1, pnl −1.44%
     const v = evaluateMildDipPeakGiveback({
@@ -1410,6 +1449,42 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('mfe_bank_sleeve');
     expect(v.fraction).toBe(0.5);
+  });
+
+  it('underwater sleeve keeps trough hit and bounce gating with loss bounce enabled', () => {
+    const now = 1_000_000;
+    const gates: MildDipExitGates = {
+      ...bankGates,
+      lossExitMinBouncePct: 12,
+      mfeBankSleeveGivebackPct: 12,
+    };
+    const atTrough = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 112,
+      armed: true,
+      mfeBankStage: 1,
+      gates,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 120_000,
+      nowMs: now,
+    });
+    expect(atTrough.shouldExit).toBe(false);
+
+    const bounced = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 89.6,
+      peakPriceUsd: 112,
+      armed: true,
+      mfeBankStage: 1,
+      gates,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 120_000,
+      nowMs: now,
+    });
+    expect(bounced.shouldExit).toBe(true);
+    expect(bounced.reason).toBe('mfe_bank_sleeve');
+    expect(bounced.fraction).toBe(0.5);
   });
 
   it('lossExitMinBouncePct blocks underwater sleeve at the trough', () => {
