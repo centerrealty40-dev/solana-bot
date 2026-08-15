@@ -16,6 +16,31 @@
 - Revert this release commit and redeploy the prior `v2` revision. No purchase,
   execution, or leader-gate behavior is changed by this measurement fix.
 
+## 1.11.959 — 2026-08-15
+
+### Changed — break the quarantine blind window for green runners
+
+- An armed green runner was observed on
+  `6nAZ6H96TjBM2M6txShZ39W32HFgcyxfAR2UQhoFpump` with four consecutive stream
+  marks quarantined from 21:40:34 through 21:40:53. The engine was blind for
+  roughly 19 seconds while the mark fell from `4.46e-05` to `3.52e-05`, then
+  `peak_giveback` sold at `−37.1%` off peak instead of the configured 25% trail.
+- Quarantine now triggers an immediate independent Jupiter refresh, with
+  production gap `MILD_DIP_MARK_QUARANTINE_JUPITER_GAP_MS='2000'`; the
+  refresher's own in-flight and minimum-gap controls remain in force.
+- Production allows an armed, money-green position to accept a continuously
+  quarantined mark after
+  `MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS='10000'`. The forced release is
+  journaled with its blind duration and accepted source. Red, never-armed,
+  below-threshold, and ordinary phantom-print refusals remain unchanged.
+
+### Rollback
+
+- Set `MILD_DIP_MARK_QUARANTINE_JUPITER_GAP_MS` to `'0'` to disable the
+  quarantine-triggered refresh.
+- Set `MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS` to `'0'` to disable the
+  bounded green quarantine acceptance.
+
 ## 1.11.957 — 2026-08-15
 
 ### Changed — defer the first TP rung and reject degraded profit fills

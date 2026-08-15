@@ -3883,6 +3883,10 @@ const PM2_APPS = [
         MILD_DIP_MARK_JUPITER_STREAM_QUIET_MS: '5000',
         MILD_DIP_MARK_ARMED_MAX_AGE_MS: '10000',
         MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS: '8000',
+        /** 1.11.958 — refresh Jupiter immediately after a quarantined mark. */
+        MILD_DIP_MARK_QUARANTINE_JUPITER_GAP_MS: '2000',
+        /** 1.11.958 — cap green armed quarantine blindness at 10s. */
+        MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS: '10000',
         /** Peak/exit always journaled; otherwise ≤1 row / 5s / mint. */
         MILD_DIP_MARK_JOURNAL_MS: '5000',
         MILD_DIP_MARK_CONCURRENCY: '48',
