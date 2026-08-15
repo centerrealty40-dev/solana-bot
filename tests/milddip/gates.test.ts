@@ -877,6 +877,31 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
+  it.each([40, 60])(
+    'hard_stop off leaves an otherwise unqualified armed bag open at −%s%%',
+    (drawdown) => {
+      const v = evaluateMildDipPeakGiveback({
+        entryPriceUsd: 100,
+        markPriceUsd: 100 - drawdown,
+        peakPriceUsd: 100,
+        armed: true,
+        gates: {
+          ...exitGates,
+          hardStopPnlPct: 0,
+          cliffDumpPnlPct: 0,
+          partialGivebackPct: 0,
+          givebackPct: 0,
+          neverArmBouncePct: 0,
+          neverArmFreefallPnlPct: 0,
+          neverArmTimeRedMinMs: 0,
+        },
+        heldMs: 5_000,
+      });
+      expect(v.shouldExit).toBe(false);
+      expect(v.reason).not.toBe('hard_stop');
+    },
+  );
+
   it('hard_stop wins over cliff when both thresholds are breached', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,

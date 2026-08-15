@@ -1,3 +1,23 @@
+## 1.11.956 — 2026-08-15
+
+### Changed — disable the entry-relative hard stop
+
+- Set `MILD_DIP_EXIT_HARD_STOP_PNL_PCT` to `'0'` for production mild-dip.
+  The documented zero value disables only `hard_stop`; dead-set, dust close,
+  the never-arm family, the 18% loss reclaim, and green exit behavior remain
+  unchanged.
+- This follows seven days of leader observer evidence across 13.7k sessions
+  and 3990 losers: 61.8% of leader loss exits landed within 2% of the trough,
+  with a median exit bounce of +0.76%. Of sessions that drew down past −30%,
+  only 11.8% ended positive and the median ended −38.2%, while the 146 that
+  recovered had median +65.7% and p75 +1924%. This keeps the same tail bet as
+  the 25% runner trail.
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_HARD_STOP_PNL_PCT` back to `'30'` to restore the
+  entry-relative hard stop.
+
 ## 1.11.955 — 2026-08-15
 
 ### Changed — make the losing sleeve a one-decision exit

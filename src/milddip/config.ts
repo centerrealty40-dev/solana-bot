@@ -172,7 +172,8 @@ const MildDipConfigSchema = z.object({
   tapeStateSaveMs: z.coerce.number().int().min(1_000).max(86_400_000).default(60_000),
   /**
    * On open mints: if a stream sell empties a wallet bag (post≈0) and is large,
-   * defer peak_giveback for graceMs. cliff_dump / hard_stop still fire. 0 grace = off.
+   * defer peak_giveback for graceMs. Configured cliff_dump / hard_stop still fire.
+   * 0 grace = off.
    */
   oneshotDumpGraceEnabled: z.boolean().default(true),
   oneshotDumpGraceMs: z.coerce.number().int().min(0).max(600_000).default(60_000),
@@ -724,10 +725,7 @@ const MildDipConfigSchema = z.object({
      * 1.11.791 — hard stop from entry when pnl ≤ −this % (0=off). Default 25.
      */
     hardStopPnlPct: z.coerce.number().min(0).max(100).default(25),
-    /**
-     * 1.11.791 — fraction sold at hard stop (0=full legacy; live 0.5 → half@-25,
-     * remainder at cliff −50).
-     */
+    /** 1.11.791 — fraction sold at hard stop; 0 = full exit. */
     hardStopPartialFraction: z.coerce.number().min(0).max(1).default(0.5),
     /**
      * 1.11.747 — never-arm bounce reclaim (sell into bounce off post-entry trough).
