@@ -47,17 +47,14 @@ describe('exit spacing after a sell', () => {
   });
 });
 
-describe('1.11.897 the ladder closes on the first rung', () => {
-  it('live env carries the remainder floor that makes it a single exit', () => {
-    // The leaders take 92.6% of positions off in one sell; we were doing 39.1%,
-    // with 55% of winners under +10% and a remainder left to age. Removing the
-    // ladder is worse on our tapes (median -3.55 against +1.73), so only the
-    // remainder floor moves: 0.6 turns the first rung into a full exit, which
-    // wins on median, trimmed mean, mean and win rate in both windows.
+describe('1.11.938 the ladder leaves a runner', () => {
+  it('live env carries the fraction and floor that preserve the tail', () => {
+    // 750 exits reached +8% MFE and 166 ended red; 343 reached +20% and 107
+    // finished below +10%. Two 34% rungs leave ~44% for the sleeve to trail.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.6'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.3'");
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.34'");
   });
 });
 
