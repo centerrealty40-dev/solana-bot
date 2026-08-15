@@ -73,6 +73,8 @@ export type MildDipCandidate = {
   mint: string;
   symbol: string;
   priceUsd: number;
+  /** Candidate is for journal-only funnel measurement; never submit a buy. */
+  shadowOnly?: boolean;
   metrics: MildDipCandidateMetrics;
   /** How the dip signal passed: Dex pc5m and/or stream drawdown. */
   dipSource:

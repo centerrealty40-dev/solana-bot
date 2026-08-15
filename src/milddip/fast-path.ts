@@ -496,8 +496,12 @@ export async function evaluateFastPathCandidate(
    * age-floor relax and, when fresh, turnover co-buy align.
    */
   leaderSeenAtMs?: number | null,
+  shadow?: {
+    onSkip: (reason: string, details?: Record<string, unknown>) => void;
+  },
 ): Promise<MildDipCandidate | null> {
   const skip = (reason: string, extra?: Record<string, unknown>): null => {
+    shadow?.onSkip(reason, extra);
     // Leave a trail for leader + stream wakes (silent null hid stream misses).
     // Throttle: wake ticks every 2s; journal at most every 15s per mint.
     if ((trigger === 'leader' || trigger === 'stream') && reason !== 'min_gap') {
@@ -516,6 +520,10 @@ export async function evaluateFastPathCandidate(
     }
     return null;
   };
+  const shadowSkip = (reason: string, extra?: Record<string, unknown>): null => {
+    shadow?.onSkip(reason, extra);
+    return null;
+  };
 
   if (!cfg.fastPathEnabled) return skip('fast_path_off');
   if (!mint || mint.length < 32) return skip('bad_mint');
@@ -525,7 +533,7 @@ export async function evaluateFastPathCandidate(
   // proceed without a stream print; stream-timed sources still checked below.
 
   const prevAttempt = lastFastAttemptMs.get(mint) ?? 0;
-  if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return null;
+  if (nowMs - prevAttempt < cfg.fastPathMinGapMs) return shadowSkip('fast_path_min_gap');
 
   const lookbackMs = cfg.cooldownBounceLookbackMs;
   const streamCurrentDd = streamDrawdownPct(mint, lookbackMs, nowMs);
@@ -571,7 +579,7 @@ export async function evaluateFastPathCandidate(
   if (trigger === 'stream' && !streamInMain) {
     const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs);
     if (!cached) {
-      if (!cfg.fastPathHotDexProbeEnabled) return null;
+      if (!cfg.fastPathHotDexProbeEnabled) return shadowSkip('hot_dex_probe_off');
       if (
         !allowHotDexProbe(
           mint,
@@ -580,7 +588,7 @@ export async function evaluateFastPathCandidate(
           cfg.fastPathHotDexProbeMaxPerMin,
         )
       ) {
-        return null;
+        return shadowSkip('hot_dex_probe_rate_limited');
       }
     }
   }
@@ -984,7 +992,14 @@ export async function evaluateFastPathCandidate(
         branch: td.branch,
         reasons: td.reasons,
       });
-      return null;
+      return shadowSkip('turn_dump_skip', {
+        dump: td.dump,
+        turn: td.turn,
+        pred: td.pred,
+        resid: td.resid,
+        branch: td.branch,
+        reasons: td.reasons,
+      });
     }
   }
 

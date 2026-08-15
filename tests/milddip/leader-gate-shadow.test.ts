@@ -5,7 +5,10 @@ import { afterEach, describe, expect, it } from 'vitest';
 import type { MildDipConfig } from '../../src/milddip/config.js';
 import {
   __resetLeaderGateShadowBudgetForTests,
+  appendLeaderGateShadowOutcome,
+  attemptMildDipEntry,
   recordLeaderGateShadowCandidate,
+  takeLeaderGateShadowDeferSlot,
 } from '../../src/milddip/entry-attempt.js';
 import type { MildDipCandidate } from '../../src/milddip/discover.js';
 
@@ -40,7 +43,10 @@ function cfg(journalPath: string, overrides?: Partial<MildDipConfig>): MildDipCo
     leaderGateShadowRecord: true,
     leaderGateShadowMinIntervalMs: 600_000,
     leaderGateShadowMaxPerHour: 2_000,
+    leaderGateShadowDefer: false,
+    leaderGateShadowDeferMaxPerHour: 60,
     journalPath,
+    deniedMints: [],
     ...overrides,
   } as MildDipConfig;
 }
@@ -121,6 +127,32 @@ describe('leader-gate shadow candidate journal', () => {
     ).toBe(true);
   });
 
+  it('enforces the deferred-lane hourly budget and keeps it opt-in', () => {
+    const file = journalPath();
+    const base = cfg(file, {
+      leaderGateShadowDefer: true,
+      leaderGateShadowDeferMaxPerHour: 2,
+      leaderGateShadowMinIntervalMs: 0,
+    });
+    expect(takeLeaderGateShadowDeferSlot(base, 'A'.repeat(44), 1_000_000)).toBe(true);
+    expect(takeLeaderGateShadowDeferSlot(base, 'B'.repeat(44), 1_000_001)).toBe(true);
+    expect(takeLeaderGateShadowDeferSlot(base, 'C'.repeat(44), 1_000_002)).toBe(false);
+    expect(
+      takeLeaderGateShadowDeferSlot(
+        { ...base, leaderGateShadowDefer: false },
+        'D'.repeat(44),
+        1_000_003,
+      ),
+    ).toBe(false);
+    expect(
+      takeLeaderGateShadowDeferSlot(
+        { ...base, leaderGateShadowRecord: false },
+        'E'.repeat(44),
+        1_000_004,
+      ),
+    ).toBe(false);
+  });
+
   it('writes the available candidate snapshot fields', () => {
     const file = journalPath();
     recordLeaderGateShadowCandidate({
@@ -143,13 +175,89 @@ describe('leader-gate shadow candidate journal', () => {
       pairAgeHours: 4.5,
       priceChange5mPct: -12.5,
       priceChange1hPct: -21.5,
-      streamDrawdownPct: null,
       liquidityUsd: 45_678,
       marketCapUsd: 456_789,
       volume5mUsd: 12_345,
       buys5m: 17,
       sells5m: 23,
       plannedEntrySizeUsd: null,
+      });
+  });
+
+  it('shadow-only entry skips before sizing or execution and records the outcome', async () => {
+    const file = journalPath();
+    const c = candidate({ shadowOnly: true });
+    let sized = false;
+    const result = await attemptMildDipEntry({
+      cfg: cfg(file),
+      state: {
+        open: {},
+        cooldownUntilMs: {},
+        updatedAtMs: 1_000_000,
+      },
+      candidate: c,
+      copyCfg: {} as never,
+      nowMs: 1_000_000,
+      buyInFlight: new Set(),
+      resolveEntrySizeUsd: async () => {
+        sized = true;
+        throw new Error('shadow candidate must not be sized');
+      },
+      adoptOnChainHolding: () => {
+        throw new Error('shadow candidate must not adopt holdings');
+      },
+      opts: {
+        chasePct: 3,
+        trigger: 'stream',
+        lane: 'fast',
+      },
     });
+    expect(result).toBe('skip');
+    expect(sized).toBe(false);
+    const event = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    expect(event).toMatchObject({
+      kind: 'mild_dip_shadow_entry_candidate',
+      stage: 'entry_attempt',
+      wouldBuy: true,
+      reason: null,
+      shadowOnly: true,
+    });
+  });
+
+  it('records the fast-path stop step and outcome for deferred candidates', () => {
+    const file = journalPath();
+    appendLeaderGateShadowOutcome({
+      cfg: cfg(file),
+      candidate: candidate(),
+      mint: MINT,
+      nowMs: 1_234_567,
+      trigger: 'stream',
+      lane: 'fast',
+      stage: 'fast_path',
+      reason: 'structural_fail',
+      wouldBuy: false,
+      gates: { structural: false, dip: false },
+      details: { structSource: 'dex' },
+    });
+    const event = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
+    expect(event).toMatchObject({
+      stage: 'fast_path',
+      reason: 'structural_fail',
+      wouldBuy: false,
+      gates: { structural: false, dip: false },
+      structSource: 'dex',
+    });
+  });
+
+  it('keeps the early gate and shadow-only propagation wired in loop', () => {
+    const source = readFileSync(
+      path.resolve('src/milddip/loop.ts'),
+      'utf8',
+    );
+    expect(source).toContain('takeLeaderGateShadowDeferSlot');
+    expect(source).toContain('shadowOnly =');
+    expect(source).toContain('shadowOnly: true');
+    expect(source).toContain('candidate: shadowCandidate');
+    expect(source).toContain('mild_dip_not_leader_seen_skip');
   });
 });

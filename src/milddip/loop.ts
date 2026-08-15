@@ -14,7 +14,11 @@ import {
   type MildDipCandidate,
 } from './discover.js';
 import { closeEmptyAtas } from './close-empty-ata.js';
-import { attemptMildDipEntry } from './entry-attempt.js';
+import {
+  appendLeaderGateShadowOutcome,
+  attemptMildDipEntry,
+  takeLeaderGateShadowDeferSlot,
+} from './entry-attempt.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
@@ -791,8 +795,13 @@ async function tryFastPathForMint(
   if (buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
 
   if (state.open[mint]) return false;
-  // Leader/exit attention → stay on the stream watch list (own tape next).
-  if (trigger === 'leader' || trigger === 'stream') {
+  const deferShadowLaneEnabled =
+    cfg.leaderGateShadowRecord && cfg.leaderGateShadowDefer;
+  // Preserve the legacy watchlist timing when deferred shadow mode is off.
+  if (
+    !deferShadowLaneEnabled &&
+    (trigger === 'leader' || trigger === 'stream')
+  ) {
     mildDipHotMints.note(mint, nowMs);
   }
   if (onCooldown(state, mint, nowMs)) return false;
@@ -802,6 +811,8 @@ async function tryFastPathForMint(
 
   // Fire parked wait-dip first — must not require re-qualifying the main band.
   if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
+
+  let shadowOnly = false;
 
   /**
    * 1.11.899 — a leader has to have touched a name before we open it for the
@@ -849,7 +860,10 @@ async function tryFastPathForMint(
         firstTouch: true,
         maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
       });
-      return false;
+      shadowOnly =
+        cfg.leaderGateShadowDefer &&
+        takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
+      if (!shadowOnly) return false;
     }
   }
 
@@ -872,8 +886,21 @@ async function tryFastPathForMint(
         trigger,
         maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
       });
-      return false;
+      shadowOnly =
+        cfg.leaderGateShadowDefer &&
+        takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
+      if (!shadowOnly) return false;
     }
+  }
+
+  // Leader/exit attention → stay on the stream watch list (own tape next).
+  // Shadow-only candidates must not mutate the watchlist.
+  if (
+    !shadowOnly &&
+    deferShadowLaneEnabled &&
+    (trigger === 'leader' || trigger === 'stream')
+  ) {
+    mildDipHotMints.note(mint, nowMs);
   }
 
   /**
@@ -899,29 +926,47 @@ async function tryFastPathForMint(
     trigger,
     coBuySeed,
     state.leaderSeenMints?.[mint] ?? null,
+    shadowOnly
+      ? {
+          onSkip: (reason, details) =>
+            appendLeaderGateShadowOutcome({
+              cfg,
+              mint,
+              nowMs,
+              trigger,
+              lane: 'fast',
+              stage: 'fast_path',
+              reason,
+              wouldBuy: false,
+              details,
+            }),
+        }
+      : undefined,
   );
   if (!candidate) {
     // Deep knife skips entry but must stay on own-tape knife watch.
-    if (trigger === 'stream' || trigger === 'scan') {
+    if (!shadowOnly && (trigger === 'stream' || trigger === 'scan')) {
       maybeArmKnifeWatchFromFastPath(cfg, state, mint, nowMs);
     }
     return false;
   }
+  const shadowCandidate = shadowOnly ? { ...candidate, shadowOnly: true } : candidate;
 
   // 1.11.753 — park signals; buy only after extra dump from signal.
   // 1.11.758 — skip park for h1_red_shallow + any branch inside rebuy-below-exit window.
   if (
+    !shadowOnly &&
     cfg.waitDipEnabled &&
     cfg.waitDipPct < 0 &&
     shouldParkWaitDip({
-      dipSource: candidate.dipSource,
+      dipSource: shadowCandidate.dipSource,
       lastExitAtMs: state.lastExitByMint?.[mint]?.atMs,
       nowMs,
       rebuyBelowExitPct: cfg.rebuyBelowExitPct,
       rebuyBelowExitMaxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
     })
   ) {
-    parkWaitDipFromCandidate(cfg, state, candidate, nowMs);
+    parkWaitDipFromCandidate(cfg, state, shadowCandidate, nowMs);
     // Immediate re-check: already −7% on the same tick (gap fill).
     if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
     return false;
@@ -931,11 +976,11 @@ async function tryFastPathForMint(
   const chase = fastPathChasePct(cfg);
   const cfgFast = { ...cfg, maxChasePct: chase };
   const copyCfg = mildDipToCopyTraderConfig(cfgFast);
-  const isMild = candidate.dipSource === 'mild_stabilize';
+  const isMild = shadowCandidate.dipSource === 'mild_stabilize';
   const result = await attemptMildDipEntry({
     cfg: cfgFast,
     state,
-    candidate,
+    candidate: shadowCandidate,
     copyCfg,
     nowMs,
     buyInFlight,

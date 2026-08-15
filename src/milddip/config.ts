@@ -377,6 +377,13 @@ const MildDipConfigSchema = z.object({
     .max(86_400_000)
     .default(600_000),
   leaderGateShadowMaxPerHour: z.coerce.number().int().min(0).max(100_000).default(2_000),
+  leaderGateShadowDefer: z.boolean().default(false),
+  leaderGateShadowDeferMaxPerHour: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(10_000)
+    .default(60),
   requireLeaderSeenMaxAgeMs: z.coerce
     .number()
     .int()
@@ -1032,6 +1039,11 @@ export function loadMildDipConfig(): MildDipConfig {
       600_000,
     ),
     leaderGateShadowMaxPerHour: envNum('MILD_DIP_LEADER_GATE_SHADOW_MAX_PER_HOUR', 2_000),
+    leaderGateShadowDefer: envBool('MILD_DIP_LEADER_GATE_SHADOW_DEFER', false),
+    leaderGateShadowDeferMaxPerHour: envNum(
+      'MILD_DIP_LEADER_GATE_SHADOW_DEFER_MAX_PER_HOUR',
+      60,
+    ),
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     leaderCoBuyAlignEnabled: envBool('MILD_DIP_LEADER_CO_BUY_ALIGN', false),
     leaderCoBuyAlignMaxMs: envNum('MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS', 120_000),
