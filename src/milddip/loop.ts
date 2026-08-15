@@ -2533,7 +2533,7 @@ export async function runMildDipLoop(
   const tapeShadow = cfg.tapeShadowEnabled
     ? new MildDipTapeShadow({
         ring: new MildDipPriceRing({
-          maxSamplesPerMint: Math.max(3_600, Math.ceil(cfg.tapeWindowMs / 1_000)),
+          maxSamplesPerMint: 3_600,
           ttlMs: cfg.tapeWindowMs,
         }),
         gates: {
@@ -2551,6 +2551,9 @@ export async function runMildDipLoop(
         },
         minIntervalMs: cfg.tapeMinIntervalMs,
         maxSignalsPerHour: cfg.tapeMaxSignalsPerHour,
+        outcomeStaleMs: cfg.tapeOutcomeStaleMs,
+        idleEvictMs: cfg.tapeIdleEvictMs,
+        summaryIntervalMs: cfg.tapeSummaryIntervalMs,
         append: (event) => appendMildDipJournal(cfg.journalPath, event),
       })
     : null;
@@ -2825,6 +2828,7 @@ export async function runMildDipLoop(
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
     const opens = openCount(state);
+    tapeShadow?.tick(nowMs);
 
     // 1.11.798 — surface dead stream-price tape (hot-mint WS can look fine alone).
     if (priceSampler && nowMs - lastStreamPriceStatsMs >= 30_000) {

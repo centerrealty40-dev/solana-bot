@@ -165,6 +165,9 @@ const MildDipConfigSchema = z.object({
   tapeDipMaxPairAgeHours: z.coerce.number().min(0).max(168).default(24),
   tapeMinIntervalMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
   tapeMaxSignalsPerHour: z.coerce.number().int().min(1).max(10_000).default(60),
+  tapeOutcomeStaleMs: z.coerce.number().int().min(0).max(86_400_000).default(300_000),
+  tapeIdleEvictMs: z.coerce.number().int().min(60_000).max(86_400_000).default(900_000),
+  tapeSummaryIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(300_000),
   /**
    * On open mints: if a stream sell empties a wallet bag (post≈0) and is large,
    * defer peak_giveback for graceMs. cliff_dump / hard_stop still fire. 0 grace = off.
@@ -1131,6 +1134,9 @@ export function loadMildDipConfig(): MildDipConfig {
     tapeDipMaxPairAgeHours: envNum('MILD_DIP_TAPE_DIP_MAX_PAIR_AGE_HOURS', 24),
     tapeMinIntervalMs: envNum('MILD_DIP_TAPE_MIN_INTERVAL_MS', 60_000),
     tapeMaxSignalsPerHour: envNum('MILD_DIP_TAPE_MAX_SIGNALS_PER_HOUR', 60),
+    tapeOutcomeStaleMs: envNum('MILD_DIP_TAPE_OUTCOME_STALE_MS', 300_000),
+    tapeIdleEvictMs: envNum('MILD_DIP_TAPE_IDLE_EVICT_MS', 900_000),
+    tapeSummaryIntervalMs: envNum('MILD_DIP_TAPE_SUMMARY_INTERVAL_MS', 300_000),
     /** 1.11.734 — oneshot emptied-bag dump grace on peak_giveback. */
     oneshotDumpGraceEnabled: envBool('MILD_DIP_ONESHOT_DUMP_GRACE', true),
     oneshotDumpGraceMs: process.env.MILD_DIP_ONESHOT_DUMP_GRACE_MS ?? 60_000,

@@ -13,6 +13,10 @@ export type MildDipTapeFeatures = {
   pairAgeHours: number | null;
   currentPriceUsd: number | null;
   source: MildDipPriceSource | null;
+  spanMs: number;
+  sampleCount: number;
+  firstSampleTsMs: number | null;
+  window60SpanMs: number;
 };
 
 export type MildDipTapeGates = {
@@ -53,10 +57,14 @@ export function tapeFeatures(
 ): MildDipTapeFeatures {
   const lastSample = current ?? ring.lastPrice(mint, nowMs);
   const last = finite(lastSample?.priceUsd);
-  const high = ring.maxPrice(mint, 60 * 60_000, nowMs);
-  const low = ring.minPrice(mint, 60 * 60_000, nowMs);
-  const p5 = ring.priceAtOrBefore(mint, 5 * 60_000, nowMs);
-  const p60 = ring.priceAtOrBefore(mint, 60 * 60_000, nowMs);
+  const observed = ring.windowStats(mint, 90 * 60_000, nowMs);
+  const window60 = ring.windowStats(mint, 60 * 60_000, nowMs);
+  const has5m = observed.spanMs >= 5 * 60_000;
+  const has60m = window60.spanMs >= 60 * 60_000;
+  const high = has60m ? ring.maxPrice(mint, 60 * 60_000, nowMs) : null;
+  const low = has60m ? ring.minPrice(mint, 60 * 60_000, nowMs) : null;
+  const p5 = has5m ? ring.priceAtOrBefore(mint, 5 * 60_000, nowMs) : null;
+  const p60 = has60m ? ring.priceAtOrBefore(mint, 60 * 60_000, nowMs) : null;
   const high60 = finite(high?.priceUsd);
   const low60 = finite(low?.priceUsd);
   const imp5 = last != null && p5 && p5.priceUsd > 0 ? last / p5.priceUsd - 1 : null;
@@ -77,6 +85,10 @@ export function tapeFeatures(
     pairAgeHours: finite(pairAgeHours),
     currentPriceUsd: last,
     source: lastSample?.source ?? null,
+    spanMs: observed.spanMs,
+    sampleCount: observed.sampleCount,
+    firstSampleTsMs: observed.firstSampleTsMs,
+    window60SpanMs: window60.spanMs,
   };
 }
 
@@ -137,6 +149,9 @@ export type MildDipTapeShadowOptions = {
   gates: MildDipTapeGates;
   minIntervalMs: number;
   maxSignalsPerHour: number;
+  outcomeStaleMs?: number;
+  idleEvictMs?: number;
+  summaryIntervalMs?: number;
   append: (event: MildDipTapeShadowEvent) => void;
 };
 
@@ -158,6 +173,14 @@ export class MildDipTapeShadow {
   private readonly lastSignalAt = new Map<string, number>();
   private readonly signalTimes: number[] = [];
   private readonly pending: PendingSignal[] = [];
+  private readonly counters: Record<
+    MildDipTapeLane,
+    { conditions: number; recorded: number; suppressedCap: number; suppressedInterval: number }
+  > = {
+    green: { conditions: 0, recorded: 0, suppressedCap: 0, suppressedInterval: 0 },
+    dip: { conditions: 0, recorded: 0, suppressedCap: 0, suppressedInterval: 0 },
+  };
+  private summaryWindowStartMs: number | null = null;
   private sequence = 0;
 
   constructor(opts: MildDipTapeShadowOptions) {
@@ -178,7 +201,7 @@ export class MildDipTapeShadow {
       source,
     };
     this.opts.ring.note(input.mint, input.priceUsd, { tsMs: input.tsMs, source });
-    this.advanceOutcomes(input.mint, sample);
+    this.tick(input.tsMs);
 
     const evaluation = evaluateMildDipTape(
       tapeFeatures(this.opts.ring, input.mint, input.tsMs, input.pairAgeHours, sample),
@@ -186,13 +209,21 @@ export class MildDipTapeShadow {
     );
     if (evaluation.matches.length === 0) return;
     this.pruneSignalTimes(input.tsMs);
-    const last = this.lastSignalAt.get(input.mint) ?? 0;
-    if (input.tsMs - last < this.opts.minIntervalMs) return;
-    if (this.signalTimes.length >= this.opts.maxSignalsPerHour) return;
-    this.lastSignalAt.set(input.mint, input.tsMs);
-    this.signalTimes.push(input.tsMs);
-
+    const lastSignalAt = this.lastSignalAt.get(input.mint) ?? 0;
+    let recordedAny = false;
     for (const lane of evaluation.matches) {
+      this.counters[lane].conditions += 1;
+      if (input.tsMs - lastSignalAt < this.opts.minIntervalMs) {
+        this.counters[lane].suppressedInterval += 1;
+        continue;
+      }
+      if (this.signalTimes.length >= this.opts.maxSignalsPerHour) {
+        this.counters[lane].suppressedCap += 1;
+        continue;
+      }
+      this.signalTimes.push(input.tsMs);
+      this.counters[lane].recorded += 1;
+      recordedAny = true;
       const id = `${input.mint}:${input.tsMs}:${lane}:${this.sequence++}`;
       this.opts.append({
         kind: 'mild_dip_tape_lane_signal',
@@ -216,15 +247,19 @@ export class MildDipTapeShadow {
         emitted: new Set(),
       });
     }
+    if (recordedAny) this.lastSignalAt.set(input.mint, input.tsMs);
   }
 
-  private advanceOutcomes(mint: string, sample: MildDipPriceSample): void {
+  tick(nowMs: number): void {
+    if (this.summaryWindowStartMs == null) this.summaryWindowStartMs = nowMs;
     for (const signal of this.pending) {
-      if (signal.mint !== mint || sample.tsMs < signal.signalTsMs) continue;
-      signal.maxPriceUsd = Math.max(signal.maxPriceUsd, sample.priceUsd);
-      signal.minPriceUsd = Math.min(signal.minPriceUsd, sample.priceUsd);
+      const latest = this.opts.ring.latestAtOrBefore(signal.mint, nowMs);
+      if (!latest || latest.tsMs < signal.signalTsMs) continue;
       for (const horizonMs of HORIZONS_MS) {
-        if (signal.emitted.has(horizonMs) || sample.tsMs - signal.signalTsMs < horizonMs) continue;
+        const horizonTsMs = signal.signalTsMs + horizonMs;
+        if (signal.emitted.has(horizonMs) || nowMs < horizonTsMs) continue;
+        const horizonSample = this.opts.ring.latestAtOrBefore(signal.mint, horizonTsMs) ?? latest;
+        const stats = this.opts.ring.samplesInRange(signal.mint, signal.signalTsMs, horizonTsMs);
         signal.emitted.add(horizonMs);
         this.opts.append({
           kind: 'mild_dip_tape_lane_outcome',
@@ -235,15 +270,45 @@ export class MildDipTapeShadow {
           horizonMs,
           horizonMinutes: horizonMs / 60_000,
           signalPriceUsd: signal.signalPriceUsd,
-          priceAtHorizonUsd: sample.priceUsd,
-          maxPriceUsd: signal.maxPriceUsd,
-          minPriceUsd: signal.minPriceUsd,
+          priceAtHorizonUsd: horizonSample.priceUsd,
+          priceAgeMs: Math.max(0, horizonTsMs - horizonSample.tsMs),
+          priceStale:
+            Math.max(0, horizonTsMs - horizonSample.tsMs) >
+            (this.opts.outcomeStaleMs ?? 5 * 60_000),
+          maxPriceUsd: stats.maxPriceUsd ?? signal.signalPriceUsd,
+          minPriceUsd: stats.minPriceUsd ?? signal.signalPriceUsd,
+          sampleCount: stats.sampleCount,
           shadowOnly: true,
         });
       }
     }
-    while (this.pending.length > 0 && this.pending[0]!.emitted.size === HORIZONS_MS.length) {
-      this.pending.shift();
+    for (let i = this.pending.length - 1; i >= 0; i -= 1) {
+      if (this.pending[i]!.emitted.size === HORIZONS_MS.length) this.pending.splice(i, 1);
+    }
+    this.opts.ring.evictIdle(
+      nowMs,
+      this.opts.idleEvictMs ?? this.opts.outcomeStaleMs ?? 15 * 60_000,
+      new Set(this.pending.map((signal) => signal.mint)),
+    );
+    const summaryIntervalMs = this.opts.summaryIntervalMs ?? 5 * 60_000;
+    if (nowMs - this.summaryWindowStartMs >= summaryIntervalMs) {
+      const hasActivity =
+        this.counters.green.conditions > 0 || this.counters.dip.conditions > 0;
+      if (hasActivity) {
+        this.opts.append({
+          kind: 'mild_dip_tape_lane_summary',
+          windowStartMs: this.summaryWindowStartMs,
+          windowEndMs: nowMs,
+          lanes: {
+            green: { ...this.counters.green },
+            dip: { ...this.counters.dip },
+          },
+          shadowOnly: true,
+        });
+      }
+      this.counters.green = { conditions: 0, recorded: 0, suppressedCap: 0, suppressedInterval: 0 };
+      this.counters.dip = { conditions: 0, recorded: 0, suppressedCap: 0, suppressedInterval: 0 };
+      this.summaryWindowStartMs = nowMs;
     }
   }
 
