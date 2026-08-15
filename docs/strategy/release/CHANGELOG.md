@@ -16,22 +16,6 @@
 
 - Revert the never-arm bounce catch-up branch in `src/milddip/gates.ts`.
 
-## 1.11.942 — 2026-08-15
-
-### Fixed — static runtime dependency imports
-
-- Replaced lazy `undici` imports in hot pricing and mild-dip discovery paths
-  with startup-time imports.
-- This prevents a live process from failing with `ERR_MODULE_NOT_FOUND` when
-  `node_modules` is replaced during deployment and a hot path first reaches a
-  lazy import.
-- Existing `fetchImpl` test injection points and request behavior are unchanged.
-
-### Rollback
-
-- Revert this commit and redeploy through the normal Git-based runtime
-  procedure.
-
 ## 1.11.943 — 2026-08-15
 
 ### Changed — settle owed ladder rungs together and stop sweeping runners
@@ -77,6 +61,22 @@ No other app/product configuration changes.
 ### Rollback
 
 - Restore `MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT` to `'0'`.
+
+## 1.11.942 — 2026-08-15
+
+### Fixed — static runtime dependency imports
+
+- Replaced lazy `undici` imports in hot pricing and mild-dip discovery paths
+  with startup-time imports.
+- This prevents a live process from failing with `ERR_MODULE_NOT_FOUND` when
+  `node_modules` is replaced during deployment and a hot path first reaches a
+  lazy import.
+- Existing `fetchImpl` test injection points and request behavior are unchanged.
+
+### Rollback
+
+- Revert this commit and redeploy through the normal Git-based runtime
+  procedure.
 
 ## 1.11.941 — 2026-08-15
 
