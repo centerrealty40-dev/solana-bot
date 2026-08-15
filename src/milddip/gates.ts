@@ -119,6 +119,11 @@ export type MildDipExitGates = {
    */
   mfeBankSleeveGivebackPct: number;
   /**
+   * Fraction of a green bag sold at the sleeve giveback before any scale-out.
+   * 0 or an omitted value preserves the historical full-bag exit.
+   */
+  mfeBankSleeveGreenPartialFraction?: number;
+  /**
    * 1.11.849 — Live Oscar's unbounded take-profit ladder, ported to mild-dip.
    *
    * Rung `k` fires at MFE ≥ k × `tpGridStepPct` and sells `tpGridSellFraction`
@@ -1404,6 +1409,11 @@ export function evaluateMildDipPeakGiveback(args: {
           gates.mfeBankSleeveLossPartialFraction < 1
             ? gates.mfeBankSleeveLossPartialFraction
             : 0;
+        const greenPartial =
+          (gates.mfeBankSleeveGreenPartialFraction ?? 0) > 0 &&
+          (gates.mfeBankSleeveGreenPartialFraction ?? 0) < 1
+            ? (gates.mfeBankSleeveGreenPartialFraction ?? 0)
+            : 0;
         const bounceOk =
           gainPct >= 0 ||
           lossExitMin <= 0 ||
@@ -1417,6 +1427,16 @@ export function evaluateMildDipPeakGiveback(args: {
             fraction: lossPartial,
             reason: 'mfe_bank_sleeve',
           };
+        } else if (gainPct >= 0 && !scaleOutDone && greenPartial > 0) {
+          return {
+            ...hold,
+            shouldExit: true,
+            fraction: greenPartial,
+            reason: 'mfe_bank_sleeve',
+          };
+        } else if (gainPct >= 0 && scaleOutDone && greenPartial > 0) {
+          // Green runners belong to the TP grid and peak-giveback trail after
+          // any prior scale-out; the sleeve must not sell them twice.
         } else if (!(gainPct < 0 && scaleOutDone && lossPartial > 0)) {
           return {
             ...hold,

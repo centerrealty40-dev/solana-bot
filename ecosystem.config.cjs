@@ -3591,6 +3591,13 @@ const PM2_APPS = [
         /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '8',
         /**
+         * 1.11.949 — 121 sleeve exits (median MFE +23.15%, realized +10.82%)
+         * left a median +8.4% lift in the next 30m; bank half before the
+         * green runner reaches the 12% peak-giveback trail. Set to 0 to restore
+         * the historical full-bag sleeve exit.
+         */
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION: '0.5',
+        /**
          * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):
          * half the remainder at every +8%, no top rung. Replaces bank1 +6%/40% +
          * bank2 +8%/60%, which emptied the bag by +8% and capped every winner
