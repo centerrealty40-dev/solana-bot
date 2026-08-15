@@ -3403,12 +3403,10 @@ const PM2_APPS = [
          * touched; 30m min-hold is well past the 12.5m median hold.
          */
         /**
-         * 1.11.857 — $0.60, was $2. With a $3 clip and a ladder halving the
-         * remainder, the first rung leaves $1.50 and the second $0.75; a $2
-         * threshold would have swept every runner as dust half an hour in.
-         * $0.60 only catches what is left after three rungs.
+         * 1.11.942 — the live clip is ~$1 and 0.34 rungs leave ~$0.44; 0.6
+         * swept 8kzojN's runner 14s after rung 1. Keep 0.15 for true crumbs.
          */
-        MILD_DIP_EXIT_DUST_CLOSE_USD: '0.6',
+        MILD_DIP_EXIT_DUST_CLOSE_USD: '0.15',
         MILD_DIP_EXIT_DUST_CLOSE_MIN_HOLD_MS: '1800000',
         /**
          * 1.11.815 — back to 25. The 1.11.810 cut to 15 was fitted on 49 trades
@@ -3536,15 +3534,12 @@ const PM2_APPS = [
         MILD_DIP_EXIT_DEFER_WOULD_BUY: '1',
         MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS: '600000',
         /**
-         * 1.11.938 — 750 exits reached +8% MFE and 166 still finished red;
-         * `breakeven_stop` fired 185 times at median peak +12.16% / result −1.2%.
-         * Arm at +20% and require +3% so small greens are not handed back at zero.
+         * 1.11.942 — the trail arms at +5%; with giveback 12%, a +20% peak
+         * exits around +5.6%, above the +3% floor. Breakeven only fired below
+         * what the trail covers, closing 7bHZ8M at +2.19%; arm 0 makes it inert.
          */
-        /**
-         * The gain basis already answers for entry overpay and the sell haircut
-         * answers for the exit; the +3% floor now protects only real runners.
-         */
-        MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '20',
+        MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '0',
+        /** Floor stays 3% for real greens, but is inert while the arm is 0. */
         MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '3',
         /**
          * Measured over 2009 live sells: the fill lands a median 0.99% below the
@@ -3800,6 +3795,11 @@ const PM2_APPS = [
         MILD_DIP_RECOVER_DEFER: '1',
         MILD_DIP_RECOVER_DEFER_LOOKBACK_MS: '300000',
         MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT: '3',
+        /**
+         * 1.11.943 — 73YcBd9GX… stayed +32–37% above the trough and was
+         * recover-deferred until an −83% rug; profitable exits bypass at +8%.
+         */
+        MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT: '8',
         /**
          * 1.11.782 — NOT copytrading. Leader-seed does not open buys; align/
          * scale-in OFF. Observer may still log leaders for research only.

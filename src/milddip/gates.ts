@@ -1281,24 +1281,32 @@ export function evaluateMildDipPeakGiveback(args: {
      * every rung under a spent high still owed, and the ladder would dribble the
      * bag out on the way down at prices the peak never represented.
      *
-     * No upper rung. One rung per tick, as with the bank ladder, so a gap up
-     * does not fire several sells at once.
+     * No upper rung. A gap can owe several rungs, but they settle in one sell:
+     * 7bHZ8M reached +18.31%, sold rung 1, then sold rung 2 fourteen seconds
+     * later at +16.75%. Catching up in one leg avoids selling the same bag twice
+     * while the price is already moving down.
      */
     const maxK = Math.floor((gainPct + 1e-9) / gridStep);
     if (gridReady && maxK > rungsDone) {
       // Remaining share of the original bag, exactly, because every rung takes
       // the same fraction of what is left.
       const remainingBefore = Math.pow(1 - gridFrac, rungsDone);
-      const remainingAfter = remainingBefore * (1 - gridFrac);
       const floor =
         gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
+      const owedRungs = maxK - rungsDone;
+      let settledRungs = owedRungs;
+      let remainingAfter =
+        remainingBefore * Math.pow(1 - gridFrac, settledRungs);
       /**
-       * 1.11.914 — when the next rung would cut past the floor, only a
-       * remaining rung stands down and the trail carries the last slice out.
-       * If the first rung would leave less than the floor, it closes the bag
-       * in full.
+       * 1.11.942 — settle all owed rungs in one sell. Clamp the catch-up to the
+       * largest number of rungs that stays at or above the floor; if even the
+       * first rung breaches it, preserve the old full-close / trail behavior.
        */
-      if (floor > 0 && remainingAfter < floor - 1e-9) {
+      while (floor > 0 && remainingAfter < floor - 1e-9 && settledRungs > 0) {
+        settledRungs -= 1;
+        remainingAfter = remainingBefore * Math.pow(1 - gridFrac, settledRungs);
+      }
+      if (settledRungs === 0) {
         if (rungsDone === 0) {
           return {
             ...hold,
@@ -1313,9 +1321,9 @@ export function evaluateMildDipPeakGiveback(args: {
         return {
           ...hold,
           shouldExit: true,
-          fraction: gridFrac,
+          fraction: 1 - Math.pow(1 - gridFrac, settledRungs),
           reason: 'tp_grid',
-          tpRungIndex: rungsDone + 1,
+          tpRungIndex: rungsDone + settledRungs,
         };
       }
     }

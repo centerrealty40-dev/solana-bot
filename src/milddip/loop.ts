@@ -52,6 +52,7 @@ import {
   type MarkExitDecision,
 } from './exit-engine.js';
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
+import { recoverDeferIsCapped } from './recover-defer.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
@@ -2319,8 +2320,7 @@ async function tryExits(
           const lastJ = lastRecoverDeferJournalMs.get(mint) ?? 0;
           if (nowMs - lastJ >= 5_000) {
             lastRecoverDeferJournalMs.set(mint, nowMs);
-            appendMildDipJournal(cfg.journalPath, {
-              kind: 'recover_defer',
+            const event = {
               mint,
               symbol: pos.symbol,
               wouldReason: decision.reason,
@@ -2331,14 +2331,33 @@ async function tryExits(
               lookbackMs: cfg.recoverDeferLookbackMs,
               mfePct: +decision.mfePct.toFixed(2),
               pnlPct: +decision.pnlPct.toFixed(2),
-            });
-            console.log(
-              `[mild-dip] RECOVER_DEFER ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
-                `bounce=${bounce.toFixed(1)}%≥${cfg.recoverDeferMinBouncePct}% ` +
-                `(held ${decision.reason})`,
-            );
+            };
+            if (recoverDeferIsCapped(decision.pnlPct, cfg.recoverDeferMaxPnlPct)) {
+              appendMildDipJournal(cfg.journalPath, {
+                kind: 'recover_defer_skip',
+                ...event,
+                capPnlPct: cfg.recoverDeferMaxPnlPct,
+              });
+              console.log(
+                `[mild-dip] RECOVER_DEFER_SKIP ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+                  `pnl=${decision.pnlPct.toFixed(1)}%≥${cfg.recoverDeferMaxPnlPct}% ` +
+                  `bounce=${bounce.toFixed(1)}%`,
+              );
+            } else {
+              appendMildDipJournal(cfg.journalPath, {
+                kind: 'recover_defer',
+                ...event,
+              });
+              console.log(
+                `[mild-dip] RECOVER_DEFER ${pos.symbol} mint=${mint.slice(0, 8)}… ` +
+                  `bounce=${bounce.toFixed(1)}%≥${cfg.recoverDeferMinBouncePct}% ` +
+                  `(held ${decision.reason})`,
+              );
+            }
           }
-          continue;
+          if (!recoverDeferIsCapped(decision.pnlPct, cfg.recoverDeferMaxPnlPct)) {
+            continue;
+          }
         }
       }
 
@@ -2773,6 +2792,7 @@ export async function runMildDipLoop(
       `/mass≥${cfg.dumpClassifyMassMinSellers} ` +
       `recoverDefer=${cfg.recoverDeferEnabled ? 1 : 0}` +
       `/≥${cfg.recoverDeferMinBouncePct}%` +
+      `/cap≥${cfg.recoverDeferMaxPnlPct}%` +
       `/${Math.round(cfg.recoverDeferLookbackMs / 1000)}s ` +
       `leaderSeedEntry=${cfg.leaderSeedEntryEnabled ? 1 : 0} ` +
       `postExitWake=${Math.round(cfg.postExitWakeMs / 60_000)}m/max${cfg.postExitWakeMax} ` +
