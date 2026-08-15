@@ -3,7 +3,7 @@
  *
  * Leaders often ignore a single wallet that dumps its entire bag (post≈0) —
  * the print is temporary unless selling continues. We arm a short grace that
- * defers peak_giveback / peak_giveback_partial (cliff_dump / hard_stop still fire).
+ * defers peak_giveback / peak_giveback_partial (hard_stop still fires).
  */
 import { signerPubkeys } from '../parser/pumpfun.js';
 import type { TokenBal, TxJsonParsed } from '../parser/rpc-http.js';

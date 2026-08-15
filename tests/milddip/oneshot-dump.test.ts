@@ -149,7 +149,7 @@ describe('oneshot dump grace vs exits', () => {
     neverArmVolFadeFloorUsd: 300,
     neverArmVolFadeSampleMs: 300_000,
     neverArmVolFadeWeakWindows: 3,
-    cliffDumpPnlPct: 50,
+    cliffDumpPnlPct: 0,
     hardStopPnlPct: 15,
     hardStopPartialFraction: 0,
     neverArmBounceMinDumpPct: 8,
@@ -237,7 +237,7 @@ describe('oneshot dump grace vs exits', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('cliff_dump still fires under grace when hard stop off', () => {
+  it('deep dump does not cliff under grace (cliff removed 1.11.933)', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
@@ -246,8 +246,7 @@ describe('oneshot dump grace vs exits', () => {
       gates: { ...gates, hardStopPnlPct: 0 },
       oneshotDumpGraceActive: true,
     });
-    expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('cliff_dump');
+    expect(v.reason).not.toBe('cliff_dump');
   });
 
   it('decideMarkExit respects grace flag', () => {

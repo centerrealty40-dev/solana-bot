@@ -252,8 +252,8 @@ export type MildDipExitGates = {
    */
   neverArmVolFadeWeakWindows: number;
   /**
-   * Immediate cliff exit when mark pnl ≤ −this % (default 50). Catches LP-pull
-   * rugs without waiting for never_arm_dead min-hold. 0 = off.
+   * @deprecated Removed 1.11.933 — always 0. Kept for env/schema compat only.
+   * Was: immediate cliff exit when mark pnl ≤ −this % (LP-pull rug). Do not re-enable.
    */
   cliffDumpPnlPct: number;
   /**
@@ -272,8 +272,7 @@ export type MildDipExitGates = {
   /**
    * 1.11.791 / 1.11.794 — when ∈ (0,1): sell this fraction at `hardStopPnlPct`.
    * If the runner is still ≤ −hardStop after that cut, full `hard_stop` (do not
-   * park bags in the −25…−50 limbo until cliff). Gap straight past cliff →
-   * full `cliff_dump`. 0 or ≥1 = legacy full hard_stop (hard before cliff).
+   * park bags in limbo). 0 or ≥1 = legacy full hard_stop at threshold.
    */
   hardStopPartialFraction: number;
   /**
@@ -896,7 +895,7 @@ export function evaluateMildDipPeakGiveback(args: {
   postEntryTroughAtMs?: number | null;
   /**
    * When true, defer peak_giveback / peak_giveback_partial / never_arm_giveback
-   * / mfe_bank_sleeve (one-shot emptied-bag dump grace). cliff_dump / hard_stop
+   * / mfe_bank_sleeve (one-shot emptied-bag dump grace). hard_stop still fires.
    * and MFE banks (sell into strength) still fire.
    */
   oneshotDumpGraceActive?: boolean;
@@ -1107,7 +1106,6 @@ export function evaluateMildDipPeakGiveback(args: {
 
   // Loss floors from entry — fire before soft exits / grace / leader-align.
   const hardStop = gates.hardStopPnlPct > 0 ? gates.hardStopPnlPct : 0;
-  const cliff = gates.cliffDumpPnlPct > 0 ? gates.cliffDumpPnlPct : 0;
   const hardPartial =
     gates.hardStopPartialFraction > 0 && gates.hardStopPartialFraction < 1
       ? gates.hardStopPartialFraction
@@ -1115,11 +1113,7 @@ export function evaluateMildDipPeakGiveback(args: {
 
   if (hardPartial > 0) {
     // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
-    // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
-    // full cliff_dump.
-    if (cliff > 0 && pnlPct <= -cliff) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
-    }
+    // that cut → full hard_stop (no runner limbo).
     if (hardStop > 0 && pnlPct <= -hardStop && softLossOk()) {
       if (!scaleOutDone) {
         return {
@@ -1132,14 +1126,10 @@ export function evaluateMildDipPeakGiveback(args: {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
   } else {
-    // Legacy: full hard_stop before cliff (tighter floor wins first).
     // 1.11.932 — hard_stop waits for bounce off trough (minute-candle reclaim),
-    // same as mfe_bank_sleeve / never_arm_giveback. cliff_dump stays immediate.
+    // same as mfe_bank_sleeve / never_arm_giveback.
     if (hardStop > 0 && pnlPct <= -hardStop && softLossOk()) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
-    }
-    if (cliff > 0 && pnlPct <= -cliff) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
   }
 

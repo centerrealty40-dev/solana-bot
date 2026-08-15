@@ -183,7 +183,7 @@ describe('a green bag is managed by the green rule, not the dip ladder', () => {
     neverArmVolFadeFloorUsd: 300,
     neverArmVolFadeSampleMs: 300_000,
     neverArmVolFadeWeakWindows: 3,
-    cliffDumpPnlPct: 50,
+    cliffDumpPnlPct: 0,
     hardStopPnlPct: 25,
     hardStopPartialFraction: 0,
     neverArmBounceMinDumpPct: 8,
