@@ -1,3 +1,15 @@
+## 1.11.934 — 2026-08-15
+
+### Fixed — take-profit ladder back on (+8%), as in baseline 1.11.915
+
+- `MILD_DIP_EXIT_TP_GRID_STEP_PCT` `0` → `8`. It was turned off in `e38d55c5` (14.08, on top of the restored known-good baseline `aa7d7c4c` which had `'8'`), which left the trail as the only profit exit: `MILD_DIP_EXIT_MFE_BANK1_PCT: '0'` also disables the bank ladder (`isMfeBankEnabled` needs bank1 > 0). Live case `HXbqtb`: +89% MFE, trail fired `peak_giveback` at +26.66%, `recover_defer` held the sell, exit ended at −33.38% on `hard_stop`.
+- With `MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.6'` the first rung closes the whole position (1.11.897), so a winner banks at +8%.
+- No code change; the three `tests/milddip` cases that assert `TP_GRID_STEP_PCT: '8'` in the live env pass again.
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_TP_GRID_STEP_PCT` back to `'0'` + `pm2 reload ecosystem.config.cjs --update-env`.
+
 ## 1.11.933 — 2026-08-15
 
 ### Changed — cliff_dump no longer sells into the dump (bounce-only loss exits)
