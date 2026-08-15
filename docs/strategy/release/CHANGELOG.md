@@ -1,3 +1,13 @@
+## 1.11.929 — 2026-08-15
+
+### Fixed — fast-path leader seed on stream/scan wakes
+
+- `tryFastPathForMint` now passes the co-buy-window leader seed into `evaluateFastPathCandidate` for **all** triggers, not only `leader`. Fixes Ezft93-class misses where a fresh leader buy was in the seed file but `leaderSeenMints` still held an older stamp → `structural_fail` on turn 0.058 vs 0.06 floor.
+
+### Rollback
+
+- Revert `loop.ts` coBuySeed union + reload PM2.
+
 ## 1.11.928 — 2026-08-15
 
 ### Removed — anti-churn max entries/mint/24h

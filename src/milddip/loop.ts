@@ -862,12 +862,28 @@ async function tryFastPathForMint(
     }
   }
 
+  /**
+   * 1.11.929 — stream/scan must see the same fresh leader seed as the leader
+   * wake. Ezft93 @ 07:17:36: 7BNax buy 23s earlier was in the seed file but
+   * `leaderSeenMints` still pointed at an hour-old stamp → structural_fail on
+   * turn 0.058 < 0.06 despite observer main=true.
+   */
+  const coBuySeed =
+    seedHit ??
+    leaderSeedHitByMint(
+      readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+        maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
+        max: cfg.leaderSeedMax,
+      }),
+      mint,
+    );
+
   const candidate = await evaluateFastPathCandidate(
     cfg,
     mint,
     nowMs,
     trigger,
-    trigger === 'leader' ? seedHit : null,
+    coBuySeed,
     state.leaderSeenMints?.[mint] ?? null,
   );
   if (!candidate) {

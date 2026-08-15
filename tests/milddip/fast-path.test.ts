@@ -316,6 +316,14 @@ describe('fast-path helpers', () => {
     expect(src).toContain('!leaderTrustStructural');
   });
 
+  it('1.11.929 stream/scan passes co-buy seed into evaluateFastPathCandidate', () => {
+    const src = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+    expect(src).toContain('coBuySeed');
+    expect(src).not.toMatch(
+      /evaluateFastPathCandidate\([\s\S]*trigger === 'leader' \? seedHit : null/,
+    );
+  });
+
   it('1.11.921 structuralOk relaxes turn on fresh leader co-buy or hot deep dump', () => {
     const cfg = stubCfg(50_000);
     (cfg.entry as { minTurnover5mLiq: number }).minTurnover5mLiq = 0.06;
