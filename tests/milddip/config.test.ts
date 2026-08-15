@@ -61,4 +61,15 @@ describe('mild-dip config exit schema', () => {
     );
     expect(cfg.exit.mfeBankSleeveRunnerGivebackPct).toBe(25);
   });
+
+  it('loads the armed-runner bounce flag from the environment', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_ARMED_RUNNER: '0',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.neverArmBounceArmedRunner).toBe(false);
+  });
 });

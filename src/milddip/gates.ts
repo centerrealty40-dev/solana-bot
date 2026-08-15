@@ -303,6 +303,11 @@ export type MildDipExitGates = {
   /** Trough must be the low-water for at least this long before bounce counts. */
   neverArmBounceMinTroughAgeMs: number;
   /**
+   * Armed scaled-out runners may use the never-arm bounce reclaim. Defaults on
+   * for backward compatibility; production can disable this competing loss exit.
+   */
+  neverArmBounceArmedRunner?: boolean;
+  /**
    * Only fire bounce exit while money-basis mark pnl ≤ −this % vs entry
    * (default 3).
    * Blocks F1XdRe/AENK1Y-style near-flat stream-wick reclaim sells. 0 = off.
@@ -990,6 +995,10 @@ export function evaluateMildDipPeakGiveback(args: {
   /** Updated post-entry trough (caller persists). */
   postEntryTroughPriceUsd: number;
   postEntryTroughAtMs: number;
+  /** Current mark lift from the updated post-entry trough. */
+  bounceOffTroughPct: number;
+  /** Elapsed time since the updated post-entry trough. */
+  troughAgeMs: number;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
   const scaleOutDone = args.scaleOutDone === true;
@@ -1143,6 +1152,8 @@ export function evaluateMildDipPeakGiveback(args: {
     pnlPct,
     gainPct,
     pnlPctVsFill,
+    bounceOffTroughPct,
+    troughAgeMs,
     volFadeSamples,
     postEntryTroughPriceUsd,
     postEntryTroughAtMs,
@@ -1569,6 +1580,7 @@ export function evaluateMildDipPeakGiveback(args: {
   // Armed runner after underwater sleeve half: sell remainder on bounce reclaim.
   if (
     armed &&
+    gates.neverArmBounceArmedRunner !== false &&
     scaleOutDone &&
     pnlPct < 0 &&
     bounceBaseOk &&

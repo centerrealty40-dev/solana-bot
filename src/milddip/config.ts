@@ -743,6 +743,8 @@ const MildDipConfigSchema = z.object({
       .min(0)
       .max(3_600_000)
       .default(60_000),
+    /** Armed runner bounce reclaim; default true preserves historical behavior. */
+    neverArmBounceArmedRunner: z.coerce.boolean().default(true),
     neverArmBounceRequireRedPct: z.coerce.number().min(0).max(100).default(3),
     /** 1.11.851 — bounce may only sell at or above this P&L. −1000 = off. */
     neverArmBounceMinPnlPct: z.coerce.number().min(-1000).max(100).default(-1000),
@@ -938,6 +940,10 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmBounceMinTroughAgeMs: envNum(
       'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS',
       60_000,
+    ),
+    neverArmBounceArmedRunner: envBool(
+      'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_ARMED_RUNNER',
+      true,
     ),
     neverArmBounceRequireRedPct: envNum(
       'MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT',
