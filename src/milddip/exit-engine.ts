@@ -138,7 +138,8 @@ export function decideMarkExit(args: {
    * returns −2.20 against +4.91 for +30/−6 over ten minutes.
    */
   if (pos.lane === 'green' && args.greenGates) {
-    const heldMsGreen = Math.max(0, (args.nowMs ?? Date.now()) - (pos.openedAtMs || 0));
+    const nowMsGreen = args.nowMs ?? Date.now();
+    const heldMsGreen = Math.max(0, nowMsGreen - (pos.openedAtMs || 0));
     const basis =
       resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
     const pnl = (markPriceUsd / basis - 1) * 100;
@@ -171,7 +172,7 @@ export function decideMarkExit(args: {
           : 0,
       troughAgeMs: Math.max(
         0,
-        heldMsGreen - ((pos.postEntryTroughAtMs ?? pos.openedAtMs) || 0),
+        nowMsGreen - ((pos.postEntryTroughAtMs ?? pos.openedAtMs) || 0),
       ),
     };
   }
