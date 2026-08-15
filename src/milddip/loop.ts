@@ -111,6 +111,7 @@ import { createOneshotDumpGraceTracker } from './oneshot-dump.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 import { MildDipPriceRing } from './price-ring.js';
+import { mildDipPairAgeRegistry } from './pair-age-registry.js';
 import {
   DEFAULT_MILD_DIP_TAPE_GATES,
   MildDipTapeShadow,
@@ -2649,6 +2650,9 @@ export async function runMildDipLoop(
   const tapeShadow = tapeShadowRing
     ? new MildDipTapeShadow({
         ring: tapeShadowRing,
+        pairAgeRegistry: mildDipPairAgeRegistry,
+        pairAgeMaxStaleMs: cfg.tapePairAgeMaxStaleMs,
+        pairAgeMaxEntries: cfg.tapePairAgeMaxEntries,
         gates: {
           ...DEFAULT_MILD_DIP_TAPE_GATES,
           greenImp60MinPct: cfg.tapeGreenImp60MinPct,
@@ -2687,6 +2691,8 @@ export async function runMildDipLoop(
           ring: tapeShadowRing,
           saveIntervalMs: cfg.tapeStateSaveMs,
           idleEvictMs: Math.max(cfg.tapeIdleEvictMs, cfg.tapeWindowMs),
+          pairAgeMaxStaleMs: cfg.tapePairAgeMaxStaleMs,
+          pairAgeMaxEntries: cfg.tapePairAgeMaxEntries,
         })
       : null;
   const sampleWatchMs = Math.max(
@@ -2731,7 +2737,9 @@ export async function runMildDipLoop(
             );
             tapeShadow.onPriceSample({
               ...sample,
-              pairAgeHours: structural?.metrics.pairAgeHours ?? null,
+              pairAgeHours:
+                structural?.metrics.pairAgeHours ??
+                mildDipPairAgeRegistry.pairAgeHours(sample.mint, sample.tsMs),
             });
           }
         : undefined,

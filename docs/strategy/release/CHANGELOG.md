@@ -1,3 +1,22 @@
+## 1.11.960 — 2026-08-15
+
+### Fixed — tape-shadow pair-age coverage across restarts
+
+- Persist the first valid pair-creation timestamp observed by existing Dex,
+  leader-seed, and discovery paths, then use it as the journal-only tape-shadow
+  age fallback when the short-lived structural cache has no entry.
+- Keep the registry bounded by last-seen age and entry count in the existing
+  throttled tape-shadow state file, without adding Dex requests or execution
+  behavior.
+- Expose known versus unknown pair-age counts in tape-lane summaries while
+  preserving fail-closed age gates and `shadowOnly` semantics.
+
+### Rollback
+
+- Revert this release commit and redeploy the prior `v2` revision. No purchase,
+  execution, threshold, or leader-gate behavior is changed by this measurement
+  fix.
+
 ## 1.11.958 — 2026-08-15
 
 ### Fixed — tape-shadow boundary coverage and rejection accounting

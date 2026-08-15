@@ -172,6 +172,13 @@ const MildDipConfigSchema = z.object({
   tapeIdleEvictMs: z.coerce.number().int().min(60_000).max(86_400_000).default(5_400_000),
   tapeSummaryIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(300_000),
   tapeStateSaveMs: z.coerce.number().int().min(1_000).max(86_400_000).default(60_000),
+  tapePairAgeMaxStaleMs: z.coerce
+    .number()
+    .int()
+    .min(60_000)
+    .max(365 * 86_400_000)
+    .default(7 * 86_400_000),
+  tapePairAgeMaxEntries: z.coerce.number().int().min(1).max(100_000).default(5_000),
   /**
    * On open mints: if a stream sell empties a wallet bag (post≈0) and is large,
    * defer peak_giveback for graceMs. Configured cliff_dump / hard_stop still fire.
@@ -1269,6 +1276,9 @@ export function loadMildDipConfig(): MildDipConfig {
     tapeShadowStatePath:
       process.env.MILD_DIP_TAPE_STATE_PATH?.trim() ||
       path.join('data', 'milddip', 'tape-shadow-state.json'),
+    tapePairAgeMaxStaleMs:
+      process.env.MILD_DIP_TAPE_PAIR_AGE_MAX_STALE_MS ?? 7 * 86_400_000,
+    tapePairAgeMaxEntries: process.env.MILD_DIP_TAPE_PAIR_AGE_MAX_ENTRIES ?? 5_000,
     green,
     entry,
     exit,
