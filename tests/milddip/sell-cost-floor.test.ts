@@ -76,6 +76,18 @@ describe('cost floor on money-motivated sells', () => {
   it('uses a distinct journal kind for a refused profit fill', () => {
     expect(live).toContain('sell_quote_below_profit_slippage');
     expect(live).toContain("args.minExitPriceGuard === 'profit_fill_slippage'");
+    expect(live).toContain('sell_quote_below_loss_slippage');
+    expect(live).toContain("args.minExitPriceGuard === 'loss_fill_slippage'");
     expect(loop).toContain("minExitPriceGuard: sell.minExitPriceGuard ?? null");
+  });
+
+  it('loss fill protection is scoped to bounce-based losses, not terminal cleanup', () => {
+    expect(loop).toContain("mode: 'loss'");
+    expect(loop).toContain('cfg.exit.lossFillMaxSlipPct');
+    expect(live).toContain('minExitPriceGuard');
+    expect(live).toContain('sendSwap(cfg, prep.swapBuild.b64');
+    expect(live.indexOf('sell_quote_below_loss_slippage')).toBeLessThan(
+      live.indexOf('const sent = await sendSwap(cfg, prep.swapBuild.b64'),
+    );
   });
 });

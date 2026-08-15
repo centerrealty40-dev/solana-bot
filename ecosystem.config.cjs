@@ -3559,10 +3559,11 @@ const PM2_APPS = [
          * trough ≤ −8%, bounce ≥ 8%, trough age ≥ 60s, still ≤ −3% vs entry.
          * 1.11.759 — half on first bounce (8%), runner on bigger bounce (16%).
          * The armed-runner bounce is off since 1.11.954; loss sleeves now use
-         * one full-bag decision after the configured reclaim.
+         * one full-bag decision after the configured reclaim. 1.11.961 moves
+         * this reclaim to +18% and makes the first loss cut one transaction.
          */
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT: '8',
-        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '8',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '18',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS: '60000',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_ARMED_RUNNER: '0',
         /**
@@ -3572,8 +3573,10 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT: '3',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_PNL_PCT: '-1000',
-        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION: '0.5',
+        MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION: '0',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_2_PCT: '16',
+        /** 1.11.961 — refuse materially degraded bounce-based loss fills. */
+        MILD_DIP_EXIT_LOSS_FILL_MAX_SLIP_PCT: '8',
         /**
          * 1.11.810 — bank earlier and finish sooner on the deep-entry profile.
          * Free-form grid on 49 post-1.11.808 trades put `tp8 / sl15` on top and

@@ -130,6 +130,8 @@ export type MildDipExitGates = {
   mfeBankSleeveRunnerGivebackPct?: number;
   /** 1.11.957 — max quote slip below a profit decision; 0 = off. */
   profitFillMaxSlipPct?: number;
+  /** 1.11.961 — max quote slip below a bounce-based loss decision; 0 = off. */
+  lossFillMaxSlipPct?: number;
   /** 1.11.959 — green armed quarantine blind window; 0 = off. */
   markQuarantineGreenMaxMs?: number;
   /**
