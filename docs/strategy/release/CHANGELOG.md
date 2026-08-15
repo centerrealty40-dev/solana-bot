@@ -1,3 +1,46 @@
+## 1.11.938 — 2026-08-15
+
+### Changed — leave runners, protect real greens, and retry trail sells
+
+The 48h production comparison found nearly the same win rate for leaders and us
+(51.3% vs 49.9%) and similar losses (−18.8% vs −14.2%), but leaders averaged
++74.1% on wins against our +12.1%. On the 219 mints both sides traded, their
+mean was +39.9% while ours was −1.0%; we captured a median of only 25% of the
+peak we reached.
+
+- `MILD_DIP_EXIT_TP_GRID_SELL_FRACTION` `0.5` → `0.34`
+- `MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER` `0.6` → `0.3`
+
+At +8% and +16%, the rungs sell 34% of the remaining bag, leaving 0.66 then
+0.4356 of the original; the third rung would leave 0.287496 below the 0.3
+floor, so it stands down and the sleeve trails the remaining ~44%.
+
+750 exits reached a peak of at least +8%, with 166 ending negative; 343 reached
+at least +20%, with 107 ending below +10%. `breakeven_stop` fired 185 times at
+median peak +12.16% and median result −1.2%, so:
+
+- `MILD_DIP_EXIT_BREAKEVEN_ARM_PCT` `8` → `20`
+- `MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT` `0` → `3`
+
+Of 518 trail exits, 90 failed on the first attempt, including 37
+`rpc_error ... custom program error 6001` slippage failures. Paired data says
+the trail detection itself loses only about 2 median points versus an ideal 8%
+giveback; the leak is execution and capped upside. `tp_grid` fired 26 times at
+median +10.87%, always closing the whole bag. The mild-dip app therefore adds:
+
+- `LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '8'`
+- `LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '50'`
+
+No source-code changes.
+
+### Rollback
+
+- Restore `MILD_DIP_EXIT_TP_GRID_SELL_FRACTION` / `MIN_REMAINDER` to `'0.5'` /
+  `'0.6'`.
+- Restore `MILD_DIP_EXIT_BREAKEVEN_ARM_PCT` / `FLOOR_PCT` to `'8'` / `'0'`.
+- Remove `LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS` and
+  `LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS` from the mild-dip env.
+
 ## 1.11.937 — 2026-08-15
 
 ### Changed — trail giveback back to the baseline 12%

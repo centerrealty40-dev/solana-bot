@@ -292,17 +292,15 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
 
   it('1.11.856 banks in the range the leaders actually bank in', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    // 08-12, the only day whose SOL accounting is clean: 219 closed leader
-    // positions, 42.9% of them landing in 0..+25%. A 30% trail put only 16%
-    // there and let a +25% peak decay with nothing firing (236wfN8D).
+    // 48h: leaders averaged +74.1% on wins versus our +12.1%, and we captured
+    // only 25% of our peak. Keep 34% per rung and a 0.3 remainder floor.
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.34'");
     expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '12'");
-    // Floors unchanged.
-    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8'");
-    // 1.11.910 — the floor moved to −50 and stopped being the primary exit; the
+    expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '20'");
+    // 1.11.936 — the floor states where the bounce gate actually fills it; the
     // work is done by dead_set_bounce, which needs three factors and a bounce.
-    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15'");
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30'");
   });
 
   it('1.11.853 admits pairs up to 30 days, not 3', () => {

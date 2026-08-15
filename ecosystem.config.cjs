@@ -3535,20 +3535,17 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_DEFER_WOULD_BUY: '1',
         MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS: '600000',
-        MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '8',
         /**
-         * 1.11.873 — the floor is a mark-basis level, so breaking even in money
-         * means clearing the round trip. Seven `breakeven_stop` exits at a floor
-         * of 0 realised −3.58% on average: entry overpay (median 1.80%) plus the
-         * sell side. Held at that measured cost so the exit lands where its name
-         * says it does.
+         * 1.11.938 — 750 exits reached +8% MFE and 166 still finished red;
+         * `breakeven_stop` fired 185 times at median peak +12.16% / result −1.2%.
+         * Arm at +20% and require +3% so small greens are not handed back at zero.
          */
         /**
-         * 1.11.882 — back to 0. The 3.5% stood in for a round trip we now measure
-         * properly: the gain basis already answers for entry overpay and the sell
-         * haircut answers for the exit, so 0 is literally breakeven in money.
+         * The gain basis already answers for entry overpay and the sell haircut
+         * answers for the exit; the +3% floor now protects only real runners.
          */
-        MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '0',
+        MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '20',
+        MILD_DIP_EXIT_BREAKEVEN_FLOOR_PCT: '3',
         /**
          * Measured over 2009 live sells: the fill lands a median 0.99% below the
          * mark that decided it (p25 −3.59%, half of them past 1%). The mark is a
@@ -3630,7 +3627,12 @@ const PM2_APPS = [
          * sell was deferred → out at −33%). 0 = ladder off.
          */
         MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
-        MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
+        /**
+         * 1.11.938 — 750 exits reached +8% MFE and 166 ended red; 343 reached
+         * +20% and 107 finished below +10%. Sell 34% of the remainder per rung
+         * so the sleeve keeps roughly 44% after +8/+16 instead of closing it.
+         */
+        MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.34',
         /**
          * 1.11.861 — the ladder stops instead of running forever. When the next
          * rung would leave under 20% of the original, it closes the bag: +8%
@@ -3664,7 +3666,12 @@ const PM2_APPS = [
          * explicitly closes the full bag when this floor exceeds its remainder;
          * later floor-breaching rungs fall through to the trail.
          */
-        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.6',
+        /**
+         * 1.11.938 — with 0.34 rungs leave 0.66, then 0.4356; rung three would
+         * leave 0.287496 below the 0.3 floor and stands down for the trail.
+         * `tp_grid` fired 26 times at median +10.87%, always closing the whole bag.
+         */
+        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.3',
         /**
          * 1.11.865 — green lane on, at its own $1 clip. Momentum entries with
          * their own floors and their own exit (+30% / −6% / 10 min); see
@@ -4048,6 +4055,13 @@ const PM2_APPS = [
         MILD_DIP_MAX_CHASE_PCT: '4',
         LIVE_BUY_MAX_CHASE_PCT: '10',
         LIVE_BUY_SIM_SLIPPAGE_RETRY_ATTEMPTS: '4',
+        /**
+         * 1.11.938 — 90 of 518 trail exits failed first-pass; 37 were slippage
+         * errors (`custom program error 6001`). Give sells eight attempts, with
+         * 50bps bumps, instead of losing the fill to the first quote.
+         */
+        LIVE_SELL_SIM_SLIPPAGE_RETRY_ATTEMPTS: '8',
+        LIVE_SIM_SLIPPAGE_RETRY_BUMP_BPS: '50',
         LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS: '1500',
         /**
          * 1.11.711 — buy impact 3% (was 2). HYMQdB: 2.26% reject + 15s soft-skip
