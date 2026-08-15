@@ -3598,6 +3598,11 @@ const PM2_APPS = [
          * the historical full-bag sleeve exit.
          */
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION: '0.5',
+        /**
+         * 1.11.953 — TP-grid mode leaves the post-partial green runner
+         * without the classic peak-giveback path; a wide trail preserves
+         * the measured runner lift. Set to 0 to disable.
+         */
         MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_PCT: '25',
         /**
          * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):

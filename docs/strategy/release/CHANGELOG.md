@@ -6,6 +6,15 @@
   mild-dip app. After the configured green sleeve partial, the remaining
   green runner now exits full at the wider of this trail and the existing
   sleeve width, using `peak_giveback`. TP-grid rungs retain priority.
+- With `MILD_DIP_EXIT_TP_GRID_STEP_PCT=8`, the classic
+  `peak_giveback`/`peak_giveback_partial` path is unreachable in production:
+  the sleeve owns the armed branch. After the 1.11.952 green sleeve partial,
+  its post-scale-out branch was intentionally a no-op, leaving the runner
+  exposed to a round-trip down to the `hard_stop`.
+- In the supplied five-day journal simulation, positions reaching at least
+  +20% peak improved from about +16% mean to about +44% mean with a wide
+  25–30% peak trail, while the median stayed unchanged. An 8% width was the
+  worst tested, so the production trail is intentionally wide.
 - The default is `0`, which preserves the current no-op runner behavior.
   Red bags and the underwater sleeve-loss path are unchanged.
 
