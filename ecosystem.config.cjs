@@ -3464,26 +3464,19 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC: '0.25',
         MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC: '0.25',
-        MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT: '10',
+        MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT: '15',
         /**
-         * 1.11.913 — 5%, not 2%. Measured on 995 losing leader bags, the lift off
-         * the low at the last reading before they let go:
+         * 1.11.948 — move the dead-set floor out of ordinary chop.
          *
-         *   p25 +2.13%   median +10.17%   p75 +26.27%   p90 +62.02%
-         *
-         * and only 24.9% of their losing exits happen at a lift of 2% or less.
-         * Worse, 98.3% of losing bags lift more than 2% at some point, so a 2%
-         * release is close to no wait at all - it fires on noise and we still hand
-         * over the bottom tick.
-         *
-         * Their median is +10%, and the honest reason for not going there is our
-         * own floor: the conjunction condemns a bag at −10% and `hard_stop` takes
-         * it at −15%, so there are five points of room, and a +10% lift off the low
-         * would often arrive after the floor had already sold. 5% is a real wait
-         * that fits inside it, and the max lift these bags manage - p25 +14.08%,
-         * median +28.86% - says it is reachable.
+         * Since hard_stop moved to −30% with an 18% reclaim, the old −10%/+5%
+         * dead-set thresholds became the de-facto loss floor. `4CmYEygE` held
+         * 24m, faded from $5155 to $182 in 5m volume, and sold at −9.8% after
+         * a −16.08% trough. Across 119 dead_set_bounce exits, median realized
+         * PnL was −12.02% and the next-30m median lift was only +2.6%, so the
+         * rule stays; it now requires −15% and a +10% reclaim, matching the
+         * leaders' +10% median lift off losing lows.
          */
-        MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '5',
+        MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '10',
         MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
         /**
          * 1.11.920 — soft loss exits (mfe_bank_sleeve, never_arm_*, breakeven_stop)
