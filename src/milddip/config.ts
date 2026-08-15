@@ -398,6 +398,13 @@ const MildDipConfigSchema = z.object({
    */
   leaderCoBuyAlignEnabled: z.boolean().default(false),
   leaderCoBuyAlignMaxMs: z.coerce.number().int().min(10_000).max(600_000).default(120_000),
+  /** Entry-only structural trust window; 0 falls back to leaderCoBuyAlignMaxMs. */
+  entryLeaderTrustStructuralMs: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(600_000)
+    .default(0),
   leaderCoBuyAlignMinTurn: z.coerce.number().min(0).max(5).default(0.06),
   waitDipEnabled: z.boolean().default(true),
   /**
@@ -1060,6 +1067,10 @@ export function loadMildDipConfig(): MildDipConfig {
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     leaderCoBuyAlignEnabled: envBool('MILD_DIP_LEADER_CO_BUY_ALIGN', false),
     leaderCoBuyAlignMaxMs: envNum('MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS', 120_000),
+    entryLeaderTrustStructuralMs: envNum(
+      'MILD_DIP_ENTRY_LEADER_TRUST_STRUCTURAL_MS',
+      0,
+    ),
     leaderCoBuyAlignMinTurn: envNum('MILD_DIP_LEADER_CO_BUY_ALIGN_MIN_TURN', 0.06),
     waitDipEnabled: envBool('MILD_DIP_WAIT_DIP', true),
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
