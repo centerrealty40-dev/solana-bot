@@ -335,8 +335,8 @@ export type MildDipExitGates = {
    */
   neverArmBounce2Pct: number;
   /**
-   * 1.11.759 — underwater `mfe_bank_sleeve`: sell this fraction first (default
-   * 0.5), hold runner for a bigger bounce reclaim. 0 = full sleeve (legacy).
+   * 1.11.759 — optional underwater `mfe_bank_sleeve` fraction. 0 = sell the
+   * full bag in one decision after the qualifying reclaim.
    */
   mfeBankSleeveLossPartialFraction: number;
   /**

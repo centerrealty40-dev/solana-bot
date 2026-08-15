@@ -1,3 +1,23 @@
+## 1.11.955 — 2026-08-15
+
+### Changed — make the losing sleeve a one-decision exit
+
+- Set `MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION` to `'0'` for
+  production mild-dip. With the existing 18% reclaim requirement, an
+  underwater sleeve now sells the full bag in one transaction instead of
+  selling half and leaving a competing runner decision.
+- This addresses `HMdMSc`, where the sleeve sold half at −11.67% and the
+  armed-runner bounce sold the rest 13.7 seconds later at −11.73% near the
+  same price, incurring a second fee. The armed-runner branch has been off
+  since 1.11.954; this release removes the remaining halving.
+- Green sleeve behavior, including the 0.5 green partial and 25% runner trail,
+  is unchanged.
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION` back to `'0.5'` to
+  restore the historical half-first behavior.
+
 ## 1.11.954 — 2026-08-15
 
 ### Changed — disable the competing armed-runner bounce exit
