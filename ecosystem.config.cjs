@@ -2847,7 +2847,8 @@ const PM2_APPS = [
          */
         MILD_DIP_SIZE_LIQ_POWER_COEF: '0.0004168',
         MILD_DIP_SIZE_LIQ_POWER_EXP: '0.866',
-        MILD_DIP_SIZE_MIN_USD: '1',
+        /** 1.11.947 — preserve the sizing law, but never send a live clip below $3. */
+        MILD_DIP_SIZE_MIN_USD: '3',
         MILD_DIP_SIZE_MAX_USD: '30',
         /**
          * 1.11.742 — thick size-up when structural name
@@ -4161,8 +4162,9 @@ const PM2_APPS = [
          * So the first trade is priced as the cost of finding out, not skipped -
          * without it there are no repeats.
          */
-        MILD_DIP_FIRST_TOUCH_POSITION_USD: '1',
-        MILD_DIP_PROBE_BLOCKED_USD: '2',
+        /** 1.11.947 — first-touch and probe clips now respect the $3 live minimum. */
+        MILD_DIP_FIRST_TOUCH_POSITION_USD: '3',
+        MILD_DIP_PROBE_BLOCKED_USD: '3',
         MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
         /**
          * 1.11.829 — price rug risk instead of flat-sizing it. Over 774 closed
@@ -4184,7 +4186,8 @@ const PM2_APPS = [
          * Base clip is $5 since 1.11.828, so the knife tier is a 2.5x cut, not
          * the 5x the $10-era census measured. Direction holds, size is smaller.
          */
-        MILD_DIP_RUG_KNIFE_CLIP_USD: '2',
+        /** 1.11.947 — rug-knife risk cap is no longer a sub-$3 live clip. */
+        MILD_DIP_RUG_KNIFE_CLIP_USD: '3',
         MILD_DIP_RUG_KNIFE_DUMP_PCT: '-45',
         MILD_DIP_RUG_KNIFE_TURN: '3',
         MILD_DIP_RUG_BLOCK_DUMP_PCT: '0',

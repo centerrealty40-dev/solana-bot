@@ -455,7 +455,7 @@ async function reclaimEmptyAta(
 
 /**
  * Resolve clip size from wallet USDC. No slot cap when maxOpenPositions=0 —
- * keep spending until the wallet cannot fund MIN_CLIP_USD.
+ * keep spending until the wallet cannot fund the configured minimum clip.
  */
 async function resolveEntrySizeUsd(
   cfg: MildDipConfig,
@@ -469,7 +469,8 @@ async function resolveEntrySizeUsd(
 
   if (full.reason === 'insufficient_usdc') {
     const leftover = Math.floor(full.quoteUsd * 100) / 100;
-    if (leftover + 1e-9 < MIN_CLIP_USD) {
+    const minClipUsd = Math.max(MIN_CLIP_USD, cfg.sizeMinUsd);
+    if (leftover + 1e-9 < minClipUsd) {
       return { sizeUsd: 0, stop: true, reason: 'usdc_exhausted', usdc: full.quoteUsd };
     }
     const partial = await checkCopyFundingGate(copyCfg, leftover, nowMs);
