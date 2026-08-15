@@ -1012,6 +1012,56 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('never_arm_bounce');
     expect(v.fraction).toBe(0.5);
+    expect(v.bounceOffTroughPct).toBeCloseTo(8.125, 3);
+    expect(v.troughAgeMs).toBe(90_000);
+  });
+
+  it('armed runner bounce is configurable without changing the default', () => {
+    const now = 1_000_000;
+    const args = {
+      entryPriceUsd: 100,
+      markPriceUsd: 86.5,
+      peakPriceUsd: 102,
+      armed: true,
+      scaleOutDone: true,
+      gates: {
+        ...exitGates,
+        partialGivebackPct: 0,
+        givebackPct: 0,
+        hardStopPnlPct: 0,
+        cliffDumpPnlPct: 0,
+      },
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    } as const;
+    const enabled = evaluateMildDipPeakGiveback(args);
+    expect(enabled.reason).toBe('never_arm_bounce');
+    expect(enabled.fraction).toBe(1);
+
+    const disabled = evaluateMildDipPeakGiveback({
+      ...args,
+      gates: { ...args.gates, neverArmBounceArmedRunner: false },
+    });
+    expect(disabled.shouldExit).toBe(false);
+    expect(disabled.reason).not.toBe('never_arm_bounce');
+  });
+
+  it('never-arm bounce remains active when armed-runner bounce is disabled', () => {
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 86.5,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: { ...exitGates, neverArmBounceArmedRunner: false },
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.reason).toBe('never_arm_bounce');
   });
 
   it('never_arm_bounce: clears both bounce rungs in one full exit', () => {

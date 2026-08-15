@@ -1,3 +1,24 @@
+## 1.11.954 — 2026-08-15
+
+### Changed — disable the competing armed-runner bounce exit
+
+- Add `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_ARMED_RUNNER`, defaulting to `true` for
+  backward compatibility, and set it to `'0'` for production mild-dip.
+  The never-armed (`!armed`) bounce path remains unchanged.
+- With the production flag off, an underwater armed runner is left to the
+  25% runner trail and `hard_stop` rather than being sold by a competing
+  `never_arm_bounce` reclaim. This addresses position `C53zVb`, where the
+  runner sold at −25.7% after a short reclaim from a trough only 80 seconds
+  old; the fill landed 3.9% below the deciding mark.
+- Mark journals now include the actual post-entry trough price, trough
+  timestamp, bounce percentage, and trough age used by the gate, replacing
+  the previous zero/missing audit fields.
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_ARMED_RUNNER` back to `'1'` to restore
+  the historical armed-runner bounce behavior.
+
 ## 1.11.953 — 2026-08-15
 
 ### Changed — give green sleeve runners a wide optional trail

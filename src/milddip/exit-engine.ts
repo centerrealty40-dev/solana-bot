@@ -62,6 +62,10 @@ export type MarkExitDecision = {
   /** Updated post-entry low-water mark. */
   postEntryTroughPriceUsd: number;
   postEntryTroughAtMs: number;
+  /** Current mark lift from the updated post-entry trough. */
+  bounceOffTroughPct: number;
+  /** Elapsed time since the updated post-entry trough. */
+  troughAgeMs: number;
 };
 
 /** Armed positions first (trail can fire), then older opens. */
@@ -134,7 +138,8 @@ export function decideMarkExit(args: {
    * returns −2.20 against +4.91 for +30/−6 over ten minutes.
    */
   if (pos.lane === 'green' && args.greenGates) {
-    const heldMsGreen = Math.max(0, (args.nowMs ?? Date.now()) - (pos.openedAtMs || 0));
+    const nowMsGreen = args.nowMs ?? Date.now();
+    const heldMsGreen = Math.max(0, nowMsGreen - (pos.openedAtMs || 0));
     const basis =
       resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
     const pnl = (markPriceUsd / basis - 1) * 100;
@@ -158,6 +163,17 @@ export function decideMarkExit(args: {
       volFadeSamples: [...(pos.volFadeSamples ?? [])],
       postEntryTroughPriceUsd: Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd),
       postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+      bounceOffTroughPct:
+        Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd) > 0
+          ? (markPriceUsd /
+              Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd) -
+              1) *
+            100
+          : 0,
+      troughAgeMs: Math.max(
+        0,
+        nowMsGreen - ((pos.postEntryTroughAtMs ?? pos.openedAtMs) || 0),
+      ),
     };
   }
   const entryMarketPriceUsd = resolveEntryMarkBasis(pos);
@@ -294,6 +310,8 @@ export function decideMarkExit(args: {
               pnlPct: 0,
               gainPct: 0,
               pnlPctVsFill: 0,
+              bounceOffTroughPct: 0,
+              troughAgeMs: 0,
               volFadeSamples: [...(pos.volFadeSamples ?? [])],
               postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
               postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
@@ -332,6 +350,8 @@ export function decideMarkExit(args: {
             pnlPct: 0,
             gainPct: 0,
             pnlPctVsFill: 0,
+            bounceOffTroughPct: 0,
+            troughAgeMs: 0,
             volFadeSamples: [...(pos.volFadeSamples ?? [])],
             postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
             postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
@@ -445,6 +465,8 @@ export function decideMarkExit(args: {
     pnlPct: verdict.pnlPct,
     gainPct: verdict.gainPct,
     pnlPctVsFill: verdict.pnlPctVsFill,
+    bounceOffTroughPct: verdict.bounceOffTroughPct,
+    troughAgeMs: verdict.troughAgeMs,
     ...(verdict.lossExitBounceCap != null
       ? { lossExitBounceCap: verdict.lossExitBounceCap }
       : {}),

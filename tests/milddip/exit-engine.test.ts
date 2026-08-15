@@ -700,6 +700,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       const d = at(old, 'b_old', 4.5244e-5);
       expect(d?.reason).toBe('never_arm_bounce');
       expect(d?.pnlPct).toBeLessThan(-5);
+      expect(d?.bounceOffTroughPct).toBeCloseTo(18.42, 1);
+      expect(d?.troughAgeMs).toBe(130_000);
     });
 
     it('now it holds through that same reclaim', () => {
