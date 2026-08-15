@@ -1434,7 +1434,7 @@ export function evaluateMildDipPeakGiveback(args: {
             fraction: greenPartial,
             reason: 'mfe_bank_sleeve',
           };
-        } else if (gainPct >= 0 && scaleOutDone) {
+        } else if (gainPct >= 0 && scaleOutDone && greenPartial > 0) {
           // Green runners belong to the TP grid and peak-giveback trail after
           // any prior scale-out; the sleeve must not sell them twice.
         } else if (!(gainPct < 0 && scaleOutDone && lossPartial > 0)) {

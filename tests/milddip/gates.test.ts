@@ -1871,6 +1871,21 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.fraction).toBe(1);
   });
 
+  it('default green sleeve fraction 0 keeps full exit after scale-out', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 105.6,
+      peakPriceUsd: 120,
+      armed: true,
+      scaleOutDone: true,
+      mfeBankStage: 2,
+      gates: { ...bankGates, lossExitMinBouncePct: 12, mfeBankSleeveGivebackPct: 12 },
+      postEntryTroughPriceUsd: 100,
+    });
+    expect(v.reason).toBe('mfe_bank_sleeve');
+    expect(v.fraction).toBe(1);
+  });
+
   it('sleeve can protect remainder after bank1 before +15 (underwater → half)', () => {
     // peak 112, mark 98.56 → −12% giveback, stage=1, pnl −1.44%
     const v = evaluateMildDipPeakGiveback({
