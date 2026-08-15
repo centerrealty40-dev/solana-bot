@@ -33,4 +33,38 @@ describe('mild-dip profit fill quote guard', () => {
       }),
     ).toBeNull();
   });
+
+  it('guards bounce-based loss fills at the configured decision-price slip', () => {
+    const floor = profitFillMinPriceUsd({
+      reason: 'never_arm_bounce',
+      gainPct: -20.4,
+      decisionPriceUsd: 100,
+      maxSlipPct: 8,
+      mode: 'loss',
+    });
+    expect(floor).toBe(92);
+    expect(87).toBeLessThan(floor!);
+    expect(93).toBeGreaterThanOrEqual(floor!);
+  });
+
+  it('does not guard terminal loss reasons or disabled loss protection', () => {
+    expect(
+      profitFillMinPriceUsd({
+        reason: 'dust_close',
+        gainPct: -60,
+        decisionPriceUsd: 100,
+        maxSlipPct: 8,
+        mode: 'loss',
+      }),
+    ).toBeNull();
+    expect(
+      profitFillMinPriceUsd({
+        reason: 'cliff_dump',
+        gainPct: -60,
+        decisionPriceUsd: 100,
+        maxSlipPct: 0,
+        mode: 'loss',
+      }),
+    ).toBeNull();
+  });
 });

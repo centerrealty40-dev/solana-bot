@@ -1,3 +1,27 @@
+## 1.11.961 — 2026-08-15
+
+### Changed — make bounce loss exits one-shot and protect degraded loss fills
+
+- `Dn1EST` exposed a loss-exit execution gap: entry was `5.3815e-05`,
+  the trough was `3.6376e-05`, and a +15.7% bounce produced a decision at
+  −20.4%, but the executable fill landed at −33.16%, 13% below the decision
+  price and at the trough. A second sell of the remainder followed 55 seconds
+  later at −23.05%.
+- Production never-arm bounce exits now require an 18% reclaim, matching the
+  other loss exits, and `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION='0'`
+  sells the full bag in one decision. The existing `...BOUNCE_2_PCT` key is
+  retained unchanged.
+- Bounce-based loss exits (`never_arm_bounce`, `cliff_dump`,
+  `dead_set_bounce`, and underwater `mfe_bank_sleeve`) now refuse an
+  executable quote more than 8% below the decision price and retry on the
+  next tick. Terminal and forced cleanup paths remain unconditional.
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PARTIAL_FRACTION` back to `'0.5'`.
+- Set `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT` back to `'8'`.
+- Set `MILD_DIP_EXIT_LOSS_FILL_MAX_SLIP_PCT` to `'0'`.
+
 ## 1.11.960 — 2026-08-15
 
 ### Fixed — tape-shadow pair-age coverage across restarts

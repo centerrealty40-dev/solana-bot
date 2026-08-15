@@ -1448,20 +1448,35 @@ async function executeQueuedSell(args: {
     cfg.exit.profitFillMaxSlipPct != null && cfg.exit.profitFillMaxSlipPct > 0
       ? cfg.exit.profitFillMaxSlipPct
       : 0;
+  const lossFillMaxSlipPct =
+    cfg.exit.lossFillMaxSlipPct != null && cfg.exit.lossFillMaxSlipPct > 0
+      ? cfg.exit.lossFillMaxSlipPct
+      : 0;
   const profitFillMinPrice = profitFillMinPriceUsd({
     reason: decision.reason,
     gainPct: decision.gainPct,
     decisionPriceUsd: decision.markPriceUsd,
     maxSlipPct: profitFillMaxSlipPct,
   });
+  const lossFillMinPrice = profitFillMinPriceUsd({
+    reason: decision.reason,
+    gainPct: decision.gainPct,
+    decisionPriceUsd: decision.markPriceUsd,
+    maxSlipPct: lossFillMaxSlipPct,
+    mode: 'loss',
+  });
   const profitFillMinPriceUsdValue =
     profitFillMinPrice != null ? profitFillMinPrice : undefined;
+  const lossFillMinPriceUsdValue =
+    lossFillMinPrice != null ? lossFillMinPrice : undefined;
   const guardedMinExitPriceUsd =
-    minExitPriceUsd != null && profitFillMinPriceUsdValue != null
-      ? Math.max(minExitPriceUsd, profitFillMinPriceUsdValue)
-      : minExitPriceUsd ?? profitFillMinPriceUsdValue;
+    [minExitPriceUsd, profitFillMinPriceUsdValue, lossFillMinPriceUsdValue]
+      .filter((value): value is number => value != null)
+      .reduce((max, value) => Math.max(max, value), 0) || undefined;
   const minExitPriceGuard =
-    profitFillMinPriceUsdValue != null
+    lossFillMinPriceUsdValue != null
+      ? 'loss_fill_slippage'
+      : profitFillMinPriceUsdValue != null
       ? 'profit_fill_slippage'
       : minExitPriceUsd != null
         ? 'cost_floor'
@@ -1478,10 +1493,11 @@ async function executeQueuedSell(args: {
     sellDelayMs: 0,
     ...(guardedMinExitPriceUsd != null ? { minExitPriceUsd: guardedMinExitPriceUsd } : {}),
     ...(minExitPriceGuard != null ? { minExitPriceGuard } : {}),
-    ...(profitFillMinPriceUsdValue != null
+    ...(profitFillMinPriceUsdValue != null || lossFillMinPriceUsdValue != null
       ? {
-          profitFillDecisionPriceUsd: decision.markPriceUsd,
-          profitFillMaxSlipPct,
+          fillGuardDecisionPriceUsd: decision.markPriceUsd,
+          fillGuardMaxSlipPct:
+            lossFillMinPriceUsdValue != null ? lossFillMaxSlipPct : profitFillMaxSlipPct,
         }
       : {}),
     ...(pos.tokenRawSettled && pos.tokenRaw ? { tokenRawBase: pos.tokenRaw } : {}),

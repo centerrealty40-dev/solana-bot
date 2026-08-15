@@ -438,9 +438,9 @@ export async function executeLiveCopySell(args: {
    */
   minExitPriceUsd?: number;
   /** Which pre-send quote guard supplied `minExitPriceUsd`, for audit. */
-  minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage';
-  profitFillDecisionPriceUsd?: number;
-  profitFillMaxSlipPct?: number;
+  minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage' | 'loss_fill_slippage';
+  fillGuardDecisionPriceUsd?: number;
+  fillGuardMaxSlipPct?: number;
 }): Promise<
   {
     ok: boolean;
@@ -452,7 +452,7 @@ export async function executeLiveCopySell(args: {
     /** Amount actually sent to Jupiter. */
     tokenRawSold?: string;
     reason?: string;
-    minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage';
+    minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage' | 'loss_fill_slippage';
   } & LiveCashFillFields
 > {
   const { cfg, mint, symbol, leaderSignature, fraction, tokenRawBase } = args;
@@ -566,9 +566,11 @@ export async function executeLiveCopySell(args: {
       const shortfallPct = (exitPriceUsd / args.minExitPriceUsd - 1) * 100;
       appendCopyEvent(cfg, {
         kind:
-          args.minExitPriceGuard === 'profit_fill_slippage'
-            ? 'sell_quote_below_profit_slippage'
-            : 'sell_quote_below_floor',
+            args.minExitPriceGuard === 'profit_fill_slippage'
+              ? 'sell_quote_below_profit_slippage'
+              : args.minExitPriceGuard === 'loss_fill_slippage'
+                ? 'sell_quote_below_loss_slippage'
+              : 'sell_quote_below_floor',
         mint,
         symbol,
         leaderSignature,
@@ -579,18 +581,34 @@ export async function executeLiveCopySell(args: {
         slippageBps: currentSlippageBps,
         sellSimRetryAttempt: attempt,
         minExitPriceGuard: args.minExitPriceGuard ?? 'cost_floor',
-        ...(args.profitFillDecisionPriceUsd != null && args.profitFillDecisionPriceUsd > 0
+        ...(args.fillGuardDecisionPriceUsd != null && args.fillGuardDecisionPriceUsd > 0
           ? {
-              profitFillShortfallPct: Number(
-                ((exitPriceUsd / args.profitFillDecisionPriceUsd - 1) * 100).toFixed(2),
-              ),
+              ...(args.minExitPriceGuard === 'loss_fill_slippage'
+                ? {
+                    lossFillShortfallPct: Number(
+                      ((exitPriceUsd / args.fillGuardDecisionPriceUsd - 1) * 100).toFixed(2),
+                    ),
+                  }
+                : {
+                    profitFillShortfallPct: Number(
+                      ((exitPriceUsd / args.fillGuardDecisionPriceUsd - 1) * 100).toFixed(2),
+                    ),
+                  }),
             }
           : {}),
-        ...(args.profitFillDecisionPriceUsd != null
-          ? { profitFillDecisionPriceUsd: args.profitFillDecisionPriceUsd }
+        ...(args.fillGuardDecisionPriceUsd != null
+          ? {
+              [args.minExitPriceGuard === 'loss_fill_slippage'
+                ? 'lossFillDecisionPriceUsd'
+                : 'profitFillDecisionPriceUsd']: args.fillGuardDecisionPriceUsd,
+            }
           : {}),
-        ...(args.profitFillMaxSlipPct != null
-          ? { profitFillMaxSlipPct: args.profitFillMaxSlipPct }
+        ...(args.fillGuardMaxSlipPct != null
+          ? {
+              [args.minExitPriceGuard === 'loss_fill_slippage'
+                ? 'lossFillMaxSlipPct'
+                : 'profitFillMaxSlipPct']: args.fillGuardMaxSlipPct,
+            }
           : {}),
       });
       return {

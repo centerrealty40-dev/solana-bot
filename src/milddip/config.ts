@@ -679,6 +679,8 @@ const MildDipConfigSchema = z.object({
     markSellHaircutPct: z.coerce.number().min(0).max(10).default(1),
     /** 1.11.957 — max quote slip below a profit decision; 0 = off. */
     profitFillMaxSlipPct: z.coerce.number().min(0).max(100).default(0),
+    /** 1.11.961 — max quote slip below a bounce-based loss decision; 0 = off. */
+    lossFillMaxSlipPct: z.coerce.number().min(0).max(100).default(0),
     /** 1.11.959 — green armed quarantine blind window; 0 = off. */
     markQuarantineGreenMaxMs: z.coerce.number().int().min(0).max(120_000).default(0),
     /** 1.11.910 — the dead-set exit: volume, turnover and price all gone. */
@@ -890,6 +892,7 @@ export function loadMildDipConfig(): MildDipConfig {
     markJumpConfirmStreamPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT', 8),
     markSellHaircutPct: envNum('MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT', 1),
     profitFillMaxSlipPct: envNum('MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT', 0),
+    lossFillMaxSlipPct: envNum('MILD_DIP_EXIT_LOSS_FILL_MAX_SLIP_PCT', 0),
     markQuarantineGreenMaxMs: envNum('MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS', 0),
     deadSetVolFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC', 0),
     deadSetTurnFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC', 0),

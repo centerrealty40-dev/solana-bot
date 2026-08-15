@@ -1200,6 +1200,41 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.fraction).toBe(1);
   });
 
+  it('never_arm_bounce: 15% reclaim is below an 18% configured threshold', () => {
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 92,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: { ...exitGates, neverArmBouncePct: 18 },
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.bounceOffTroughPct).toBeCloseTo(15, 8);
+    expect(v.reason).not.toBe('never_arm_bounce');
+  });
+
+  it('never_arm_bounce: 18% reclaim fires the configured first cut', () => {
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 94.4,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: { ...exitGates, neverArmBouncePct: 18 },
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.bounceOffTroughPct).toBeCloseTo(18, 8);
+    expect(v.reason).toBe('never_arm_bounce');
+    expect(v.fraction).toBe(0.5);
+  });
+
   it('never_arm_bounce: second cut at ≥16% bounce after scaleOutDone', () => {
     // trough 80; mark 93 = +16.25% off trough; still −7% vs entry
     const now = 1_000_000;
