@@ -3562,7 +3562,8 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS: '60000',
         /**
          * 1.11.946 — DTGWeD sold +5.72% / +6.29% before the trail armed;
-         * keep never-arm bounce exits at least 3% red and disable the PnL floor.
+         * keep never-arm bounce exits at least 3% red on the money basis and
+         * disable the gain-basis PnL floor.
          */
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT: '3',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_PNL_PCT: '-1000',

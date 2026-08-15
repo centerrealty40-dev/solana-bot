@@ -1,3 +1,26 @@
+## 1.11.952 — 2026-08-15
+
+### Changed — require never-arm bounce redness on the money basis
+
+- `never_arm_bounce` now applies
+  `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_REQUIRE_RED_PCT` to the money-basis
+  `pnlPct`, the same basis carried into the sell record, rather than the
+  gain-basis `gainPct`. A bag that is green in money can no longer be sold by
+  any never-arm bounce branch.
+- Production evidence from
+  `HXbqtbkRbmwdbSNv3c2CbeS1NYVEigp4BTwBKXJvpump`, sell
+  `2FXCSYqUZ7xYAPbhMvAegQREi9dV2BuwwKzwTHw1JZZTYm9msYrGEZExqfJYLJB6azDwhk9At9WUkbs1dke2Qwbv`:
+  the deciding tick reported `gainPct: -4.68` and `pnlPct: +1.51`, yet
+  `never_arm_bounce` realized +1.55%. The money-basis guard blocks that case.
+- The existing `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_PNL_PCT: '-1000'` floor,
+  its gain-basis rationale, and all other exit values remain unchanged.
+
+### Rollback
+
+- Revert the 1.11.952 gate change to restore the previous gain-basis red
+  requirement. Keep the production environment values at
+  `REQUIRE_RED_PCT: '3'` and `MIN_PNL_PCT: '-1000'`.
+
 ## 1.11.951 — 2026-08-15
 
 ### Changed — persist tape-shadow measurement state across restarts
