@@ -1,3 +1,21 @@
+## 1.11.953 — 2026-08-15
+
+### Changed — give green sleeve runners a wide optional trail
+
+- Add `MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_PCT`, set to `'25'` for the
+  mild-dip app. After the configured green sleeve partial, the remaining
+  green runner now exits full at the wider of this trail and the existing
+  sleeve width, using `peak_giveback`. TP-grid rungs retain priority.
+- The default is `0`, which preserves the current no-op runner behavior.
+  Red bags and the underwater sleeve-loss path are unchanged.
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_PCT` to `'0'` to restore the
+  current no-op green runner behavior. The existing green sleeve partial
+  remains independently controlled by
+  `MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION`.
+
 ## 1.11.952 — 2026-08-15
 
 ### Changed — require never-arm bounce redness on the money basis

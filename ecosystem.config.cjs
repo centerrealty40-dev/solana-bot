@@ -3598,6 +3598,7 @@ const PM2_APPS = [
          * the historical full-bag sleeve exit.
          */
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION: '0.5',
+        MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_PCT: '25',
         /**
          * 1.11.849 — Live Oscar's unbounded ladder (`WAVE_B_FLAT_TP_HALF8_RUNNER`):
          * half the remainder at every +8%, no top rung. Replaces bank1 +6%/40% +

@@ -1896,6 +1896,95 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.reason).not.toBe('mfe_bank_sleeve');
   });
 
+  it('1.11.953 — green sleeve runner holds at −10% and exits at −26%', () => {
+    const gates: MildDipExitGates = {
+      ...bankGates,
+      mfeBankSleeveGreenPartialFraction: 0.5,
+      mfeBankSleeveRunnerGivebackPct: 25,
+      mfeBankSleeveGivebackPct: 8,
+    };
+    const held = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 135,
+      peakPriceUsd: 150,
+      armed: true,
+      scaleOutDone: true,
+      mfeBankStage: 2,
+      gates,
+    });
+    expect(held.givebackPct).toBeCloseTo(-10, 6);
+    expect(held.shouldExit).toBe(false);
+
+    const trailed = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 111,
+      peakPriceUsd: 150,
+      armed: true,
+      scaleOutDone: true,
+      mfeBankStage: 2,
+      gates,
+    });
+    expect(trailed.givebackPct).toBeCloseTo(-26, 6);
+    expect(trailed.reason).toBe('peak_giveback');
+    expect(trailed.fraction).toBe(1);
+  });
+
+  it('1.11.953 — runner width 0 keeps the green remainder unsold', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 111,
+      peakPriceUsd: 150,
+      armed: true,
+      scaleOutDone: true,
+      mfeBankStage: 2,
+      gates: {
+        ...bankGates,
+        mfeBankSleeveGreenPartialFraction: 0.5,
+        mfeBankSleeveRunnerGivebackPct: 0,
+        mfeBankSleeveGivebackPct: 8,
+      },
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).not.toBe('peak_giveback');
+  });
+
+  it('1.11.953 — runner cannot tighten the existing sleeve width', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 141,
+      peakPriceUsd: 150,
+      armed: true,
+      scaleOutDone: true,
+      mfeBankStage: 2,
+      gates: {
+        ...bankGates,
+        mfeBankSleeveGreenPartialFraction: 0.5,
+        mfeBankSleeveRunnerGivebackPct: 4,
+        mfeBankSleeveGivebackPct: 8,
+      },
+    });
+    expect(v.givebackPct).toBeCloseTo(-6, 6);
+    expect(v.shouldExit).toBe(false);
+  });
+
+  it('1.11.953 — runner trail does not change red sleeve behavior', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 90,
+      peakPriceUsd: 150,
+      armed: true,
+      scaleOutDone: false,
+      mfeBankStage: 2,
+      gates: {
+        ...bankGates,
+        mfeBankSleeveRunnerGivebackPct: 25,
+        mfeBankSleeveGivebackPct: 8,
+      },
+    });
+    expect(v.reason).toBe('mfe_bank_sleeve');
+    expect(v.fraction).toBe(0.5);
+  });
+
   it('default green sleeve fraction 0 keeps the full-bag exit', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
