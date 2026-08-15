@@ -9,6 +9,8 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import postgres from 'postgres';
+import { fetch } from 'undici';
 
 export type LeaderSeedHit = {
   mint: string;
@@ -292,7 +294,6 @@ export async function discoverPgVolumeMints(opts?: {
 
   let sql: { end: (opts?: { timeout?: number }) => Promise<void> } | null = null;
   try {
-    const postgres = (await import('postgres')).default;
     const client = postgres(dsn, {
       max: 1,
       idle_timeout: 5,
@@ -373,7 +374,6 @@ export async function discoverGeckoTrendingMints(opts?: {
   const out: string[] = [];
   const seen = new Set<string>();
   try {
-    const { fetch } = await import('undici');
     for (let page = 1; page <= pages; page += 1) {
       const url = `https://api.geckoterminal.com/api/v2/networks/solana/trending_pools?page=${page}`;
       const res = await fetch(url, {

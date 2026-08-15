@@ -5,6 +5,7 @@
  * (even on gate fail / cooldown) so we remember the trough while waiting to rebuy.
  */
 import fs from 'node:fs';
+import { fetch } from 'undici';
 import {
   fetchDexScreenerPairDetails,
   prefetchDexScreenerPairDetailsMany,
@@ -109,7 +110,6 @@ const SOLANA_CHAIN = 'solana';
 
 async function fetchJson(url: string): Promise<unknown> {
   try {
-    const { fetch } = await import('undici');
     const res = await fetch(url, {
       headers: { accept: 'application/json' },
       signal: AbortSignal.timeout(10_000),
