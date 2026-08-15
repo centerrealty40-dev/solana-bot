@@ -2705,6 +2705,7 @@ export async function runMildDipLoop(
     }
   }
   const shadowDiscoveryLastSampleAt = new Map<string, number>();
+  const shadowDiscoveryCleanup = { lastAtMs: 0 };
   const shouldSampleTapeStreamPrice = (mint: string, nowMs: number): boolean => {
     if (shouldSampleStreamPrice(cfg, state, mint, nowMs, sampleWatchMs)) return true;
     if (!cfg.tapeShadowEnabled || !tapeShadow) return false;
@@ -2730,6 +2731,7 @@ export async function runMildDipLoop(
       cfg.tapeShadowSampleMaxMints,
       cfg.tapeShadowSampleMinGapMs,
       cfg.tapeWindowMs,
+      shadowDiscoveryCleanup,
     );
     if (discoveryDecision === 'limitRejected') {
       tapeShadow.noteSampling('limitRejected');

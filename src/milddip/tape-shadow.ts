@@ -166,10 +166,20 @@ export function tapeShadowDiscoverySampleDecision(
   maxMints: number,
   minGapMs: number,
   staleMs: number,
+  cleanup?: { lastAtMs: number },
+  cleanupIntervalMs = 1_000,
 ): 'sample' | 'limitRejected' | 'skip' {
   if (!mint || maxMints <= 0) return 'skip';
-  for (const [seenMint, lastSeenMs] of lastSampleAt) {
-    if (nowMs - lastSeenMs > Math.max(0, staleMs)) lastSampleAt.delete(seenMint);
+  if (
+    cleanup &&
+    (cleanup.lastAtMs <= 0 ||
+      nowMs < cleanup.lastAtMs ||
+      nowMs - cleanup.lastAtMs >= Math.max(0, cleanupIntervalMs))
+  ) {
+    for (const [seenMint, lastSeenMs] of lastSampleAt) {
+      if (nowMs - lastSeenMs > Math.max(0, staleMs)) lastSampleAt.delete(seenMint);
+    }
+    cleanup.lastAtMs = nowMs;
   }
   const lastSampleMs = lastSampleAt.get(mint);
   if (lastSampleMs != null && nowMs - lastSampleMs < Math.max(0, minGapMs)) return 'skip';
@@ -295,9 +305,21 @@ export class MildDipTapeShadow {
   private samplingPending = 0;
   private samplingShadowDiscovery = 0;
   private samplingLimitRejected = 0;
+  private pendingMintCache: {
+    computedAtMs: number;
+    nextExpiryMs: number;
+    graceMs: number;
+    maxMints: number;
+    all: Set<string>;
+    selected: Set<string>;
+  } | null = null;
 
   constructor(opts: MildDipTapeShadowOptions) {
     this.opts = opts;
+  }
+
+  private invalidatePendingMintCache(): void {
+    this.pendingMintCache = null;
   }
 
   getPairAgeRegistry(): MildDipPairAgeRegistry {
@@ -372,6 +394,7 @@ export class MildDipTapeShadow {
     }
     this.pruneSignalTimes(nowMs);
     this.pending.length = 0;
+    this.invalidatePendingMintCache();
     let pending = 0;
     for (const raw of state.pending ?? []) {
       if (
@@ -414,6 +437,7 @@ export class MildDipTapeShadow {
         emitted,
         sampleUntilMs,
       });
+      this.invalidatePendingMintCache();
       pending += 1;
     }
     if (
@@ -502,6 +526,7 @@ export class MildDipTapeShadow {
           HORIZONS_MS[HORIZONS_MS.length - 1] +
           (this.opts.pendingSampleGraceMs ?? 0),
       });
+      this.invalidatePendingMintCache();
     }
     if (recordedAny) this.lastSignalAt.set(input.mint, input.tsMs);
   }
@@ -544,6 +569,7 @@ export class MildDipTapeShadow {
         this.pending[i]!.sampleUntilMs <= nowMs
       ) {
         this.pending.splice(i, 1);
+        this.invalidatePendingMintCache();
       }
     }
     this.opts.ring.evictIdle(
@@ -646,31 +672,59 @@ export class MildDipTapeShadow {
   }
 
   hasPendingSignal(mint: string, nowMs: number, graceMs = 0): boolean {
-    return this.pending.some(
-      (signal) =>
-        signal.mint === mint &&
-        signal.signalTsMs + HORIZONS_MS[HORIZONS_MS.length - 1] + Math.max(0, graceMs) > nowMs,
-    );
+    return this.pendingMints(nowMs, graceMs, Number.MAX_SAFE_INTEGER, true).has(mint);
   }
 
-  pendingMints(nowMs: number, graceMs: number, maxMints: number): Set<string> {
-    const selected = new Set<string>();
+  pendingMints(
+    nowMs: number,
+    graceMs: number,
+    maxMints: number,
+    all = false,
+  ): Set<string> {
     const max = Math.max(0, Math.floor(maxMints));
-    if (max === 0) return selected;
-    const candidates = this.pending
-      .filter(
-        (signal) =>
-          signal.sampleUntilMs > nowMs &&
-          signal.signalTsMs + HORIZONS_MS[HORIZONS_MS.length - 1] + Math.max(0, graceMs) >
-            nowMs,
-      )
-      .sort((a, b) => a.sampleUntilMs - b.sampleUntilMs);
-    for (const signal of candidates) {
-      if (selected.has(signal.mint)) continue;
-      selected.add(signal.mint);
-      if (selected.size >= max) break;
+    if (max === 0) return new Set();
+    const cached = this.pendingMintCache;
+    const cacheFresh =
+      cached &&
+      cached.graceMs === Math.max(0, graceMs) &&
+      (all || cached.maxMints === max) &&
+      nowMs >= cached.computedAtMs &&
+      nowMs < cached.nextExpiryMs &&
+      nowMs - cached.computedAtMs < 1_000;
+    if (!cacheFresh) {
+      const allMints = new Set<string>();
+      let nextExpiryMs = Number.POSITIVE_INFINITY;
+      for (const signal of this.pending) {
+        const expiresAtMs = Math.max(
+          signal.sampleUntilMs,
+          signal.signalTsMs +
+            HORIZONS_MS[HORIZONS_MS.length - 1] +
+            Math.max(0, graceMs),
+        );
+        if (expiresAtMs <= nowMs) continue;
+        allMints.add(signal.mint);
+        nextExpiryMs = Math.min(nextExpiryMs, expiresAtMs);
+      }
+      const selected = new Set<string>();
+      const candidates = this.pending
+        .filter((signal) => allMints.has(signal.mint))
+        .sort((a, b) => a.sampleUntilMs - b.sampleUntilMs);
+      for (const signal of candidates) {
+        if (selected.has(signal.mint)) continue;
+        selected.add(signal.mint);
+        if (selected.size >= max) break;
+      }
+      this.pendingMintCache = {
+        computedAtMs: nowMs,
+        nextExpiryMs,
+        graceMs: Math.max(0, graceMs),
+        maxMints: max,
+        all: allMints,
+        selected,
+      };
     }
-    return selected;
+    const result = all ? this.pendingMintCache!.all : this.pendingMintCache!.selected;
+    return new Set(result);
   }
 
   selectPairAgeBackfillMints(

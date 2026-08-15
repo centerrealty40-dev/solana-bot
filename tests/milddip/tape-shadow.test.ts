@@ -293,8 +293,32 @@ describe('MildDipTapeShadow', () => {
     );
   });
 
+  it('refreshes pending mint cache after signal mutation and expiry', () => {
+    const shadow = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 }),
+      gates,
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      pendingSampleGraceMs: 0,
+      append: () => {},
+    });
+    const now = 100_000_000;
+    expect(shadow.pendingMints(now, 0, 10)).toEqual(new Set());
+    for (const [offset, price] of [
+      [-60 * 60_000, 100],
+      [-50 * 60_000, 160],
+      [-5 * 60_000, 100],
+      [0, 104],
+    ] as const) {
+      shadow.onPriceSample({ mint, priceUsd: price, tsMs: now + offset, pairAgeHours: 1 });
+    }
+    expect(shadow.pendingMints(now, 0, 10)).toEqual(new Set([mint]));
+    expect(shadow.pendingMints(now + 60 * 60_000, 0, 10)).toEqual(new Set());
+  });
+
   it('enforces bounded shadow-discovery sampling and keeps zero disabled', () => {
     const seen = new Map<string, number>();
+    const cleanup = { lastAtMs: 0 };
     expect(tapeShadowDiscoverySampleDecision('a', 1_000, seen, 2, 15_000, 90_000)).toBe(
       'sample',
     );
@@ -310,9 +334,17 @@ describe('MildDipTapeShadow', () => {
     expect(tapeShadowDiscoverySampleDecision('a', 16_000, seen, 2, 15_000, 90_000)).toBe(
       'sample',
     );
-    expect(tapeShadowDiscoverySampleDecision('c', 100_001, seen, 2, 15_000, 90_000)).toBe(
-      'sample',
-    );
+    expect(
+      tapeShadowDiscoverySampleDecision(
+        'c',
+        100_001,
+        seen,
+        2,
+        15_000,
+        90_000,
+        cleanup,
+      ),
+    ).toBe('sample');
     expect(tapeShadowDiscoverySampleDecision('d', 100_001, seen, 0, 15_000, 90_000)).toBe(
       'skip',
     );
