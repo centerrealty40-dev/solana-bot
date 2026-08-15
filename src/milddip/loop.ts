@@ -76,6 +76,8 @@ import {
   requestOpenMarkJupiterRefresh,
 } from './open-mark-jupiter-refresh.js';
 import {
+  DEXSCREENER_BATCH_MAX,
+  fetchDexScreenerPairCreatedAtMany,
   fetchDexScreenerPairDetails,
   prefetchDexScreenerPairDetailsMany,
 } from '../papertrader/pricing/dexscreener-quote-cache.js';
@@ -117,6 +119,7 @@ import {
   MildDipTapeShadow,
   createMildDipTapeShadowStateSaver,
   loadMildDipTapeShadowState,
+  tapePairAgeBackfillDue,
 } from './tape-shadow.js';
 import {
   HOLDING_DUST_RAW,
@@ -2711,6 +2714,62 @@ export async function runMildDipLoop(
           pairAgeMaxEntries: cfg.tapePairAgeMaxEntries,
         })
       : null;
+  let lastTapePairAgeBackfillMs = 0;
+  let tapePairAgeBackfillInFlight = false;
+  const maybeBackfillTapePairAge = (nowMs: number): void => {
+    if (
+      !tapeShadow ||
+      tapePairAgeBackfillInFlight ||
+      !tapePairAgeBackfillDue(
+        lastTapePairAgeBackfillMs,
+        nowMs,
+        cfg.tapePairAgeBackfillMs,
+      )
+    ) {
+      return;
+    }
+    const mints = tapeShadow.selectPairAgeBackfillMints(
+      nowMs,
+      cfg.tapeWindowMs,
+      cfg.tapePairAgeRetryMs,
+      DEXSCREENER_BATCH_MAX,
+      (mint) =>
+        getStructuralCache(mint, nowMs, cfg.fastPathStructuralStaleMs)?.metrics
+          .pairAgeHours != null,
+    );
+    if (mints.length === 0) return;
+    lastTapePairAgeBackfillMs = nowMs;
+    tapePairAgeBackfillInFlight = true;
+    for (const mint of mints) {
+      mildDipPairAgeRegistry.notePairAgeAttempt(mint, nowMs);
+    }
+    void fetchDexScreenerPairCreatedAtMany(mints, {
+      allowedDexIds: cfg.entry.allowedDexIds,
+    })
+      .then((resolved) => {
+        let resolvedCount = 0;
+        let nullCount = 0;
+        for (const mint of mints) {
+          const pairCreatedAtMs = resolved.get(mint) ?? null;
+          if (
+            pairCreatedAtMs != null &&
+            mildDipPairAgeRegistry.notePairCreatedAt(mint, pairCreatedAtMs, nowMs)
+          ) {
+            resolvedCount += 1;
+          } else {
+            nullCount += 1;
+          }
+        }
+        tapeShadow.notePairAgeBackfill(mints.length, resolvedCount, nullCount);
+        tapeShadowStateSaver?.save();
+      })
+      .catch(() => {
+        tapeShadow.notePairAgeBackfill(mints.length, 0, mints.length);
+      })
+      .finally(() => {
+        tapePairAgeBackfillInFlight = false;
+      });
+  };
   const sampleWatchMs = Math.max(
     cfg.cooldownBounceLookbackMs,
     cfg.mintCooldownMs,
@@ -2986,6 +3045,7 @@ export async function runMildDipLoop(
     const nowMs = Date.now();
     const opens = openCount(state);
     tapeShadow?.tick(nowMs);
+    maybeBackfillTapePairAge(nowMs);
 
     // 1.11.798 — surface dead stream-price tape (hot-mint WS can look fine alone).
     if (priceSampler && nowMs - lastStreamPriceStatsMs >= 30_000) {

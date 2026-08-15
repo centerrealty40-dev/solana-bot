@@ -1,3 +1,21 @@
+## 1.11.963 — 2026-08-15
+
+### Added — tape-shadow pair-age backfill
+
+- Add a rate-gated, chunked DexScreener pair-creation lookup for tape-shadow
+  mints whose structural cache and persisted pair-age registry have no age.
+- Run at most one 30-mint batch from the existing loop tick, off the trading
+  path, with history-priority selection and a persisted six-hour negative retry
+  cache.
+- Report requested, resolved, and null backfill results in tape-shadow
+  summaries without changing thresholds, execution, or journal-only semantics.
+
+### Rollback
+
+- Revert this release commit and redeploy the prior `v2` revision. The
+  backfill is additive shared pricing functionality used only by tape-shadow;
+  it does not alter purchases, execution, or entry gates.
+
 ## 1.11.962 — 2026-08-15
 
 ### Changed — let probe entries follow the liquidity sizing curve
@@ -22,6 +40,7 @@
 ### Rollback
 
 - Set `MILD_DIP_PROBE_BLOCKED_USD` back to `'3'`.
+
 
 ## 1.11.961 — 2026-08-15
 

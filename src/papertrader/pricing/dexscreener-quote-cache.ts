@@ -359,6 +359,14 @@ function parsePairToDetails(
   };
 }
 
+function parsePairCreatedAtMs(
+  pair: Record<string, unknown> | null,
+  mint: string,
+  nowMs: number,
+): number | null {
+  return parsePairToDetails(pair, mint, nowMs)?.pairCreatedAtMs ?? null;
+}
+
 export async function fetchDexScreenerPairDetails(
   mint: string,
   opts?: {
@@ -521,6 +529,48 @@ export async function prefetchDexScreenerPairDetailsMany(
     }
   }
   return calls;
+}
+
+/**
+ * Fetch pair-creation timestamps for up to one chunk per call.
+ *
+ * This deliberately does not populate or read the quote cache: the cache
+ * schema predates pair age and this is a journal-only measurement backfill.
+ */
+export async function fetchDexScreenerPairCreatedAtMany(
+  mints: readonly string[],
+  opts?: {
+    fetchImpl?: typeof fetch;
+    nowMs?: number;
+    allowedDexIds?: string[];
+    bypassGate?: boolean;
+  },
+): Promise<Map<string, number | null>> {
+  const nowMs = opts?.nowMs ?? Date.now();
+  const wanted = [...new Set(mints.filter(Boolean))];
+  const result = new Map<string, number | null>(wanted.map((mint) => [mint, null]));
+  if (wanted.length === 0) return result;
+  const doFetch = opts?.fetchImpl ?? fetch;
+  for (let i = 0; i < wanted.length; i += DEXSCREENER_BATCH_MAX) {
+    const chunk = wanted.slice(i, i + DEXSCREENER_BATCH_MAX);
+    if (opts?.bypassGate !== true) await acquireDexScreenerSlot();
+    try {
+      const res = await doFetch(
+        `https://api.dexscreener.com/latest/dex/tokens/${chunk.map(encodeURIComponent).join(',')}`,
+        { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(12_000) },
+      );
+      if (!res.ok) continue;
+      const j = (await res.json()) as { pairs?: unknown[] };
+      const pairs = Array.isArray(j.pairs) ? j.pairs : [];
+      for (const mint of chunk) {
+        const best = pickBestSolanaPair(pairs, mint, undefined, opts?.allowedDexIds);
+        result.set(mint, parsePairCreatedAtMs(best, mint, nowMs));
+      }
+    } catch {
+      /* leave the chunk as nulls; callers remain fail-soft */
+    }
+  }
+  return result;
 }
 
 /** Test-only — clears in-process L1 cache. */

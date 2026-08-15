@@ -9,6 +9,7 @@ import {
   MildDipTapeShadow,
   createMildDipTapeShadowStateSaver,
   loadMildDipTapeShadowState,
+  tapePairAgeBackfillDue,
 } from '../../src/milddip/tape-shadow.js';
 
 const mint = '7pQYyWKPtxMCzdWDPZKJ7xTnCzFB25SPxp8cM4xJpump';
@@ -57,6 +58,25 @@ describe('mild-dip pair age registry', () => {
     expect(registry.pairAgeHours(mint, nowMs)).toBeNull();
   });
 
+  it('throttles negative attempts and persists the retry cache', () => {
+    const registry = new MildDipPairAgeRegistry();
+    const nowMs = 100 * 3_600_000;
+    expect(registry.canAttemptPairAge(mint, nowMs, 6 * 3_600_000)).toBe(true);
+    registry.notePairAgeAttempt(mint, nowMs);
+    expect(registry.canAttemptPairAge(mint, nowMs + 1, 6 * 3_600_000)).toBe(false);
+    expect(
+      registry.canAttemptPairAge(mint, nowMs + 6 * 3_600_000, 6 * 3_600_000),
+    ).toBe(true);
+    const restored = new MildDipPairAgeRegistry();
+    restored.loadAttemptsJSON(
+      registry.attemptsToJSON(nowMs + 1),
+      nowMs + 1,
+      7 * 24 * 3_600_000,
+      5_000,
+    );
+    expect(restored.canAttemptPairAge(mint, nowMs + 1, 6 * 3_600_000)).toBe(false);
+  });
+
   it('round-trips through tape-shadow state and supplies age on structural-cache miss', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'milddip-pair-age-'));
     try {
@@ -64,6 +84,7 @@ describe('mild-dip pair age registry', () => {
       const nowMs = 300 * 60_000;
       const sourceRegistry = new MildDipPairAgeRegistry();
       sourceRegistry.notePairCreatedAt(mint, nowMs - 2 * 3_600_000, nowMs);
+      sourceRegistry.notePairAgeAttempt(otherMint, nowMs);
       const sourceRing = new MildDipPriceRing({
         maxSamplesPerMint: 1_000,
         ttlMs: 90 * 60_000,
@@ -93,6 +114,9 @@ describe('mild-dip pair age registry', () => {
       const restored = makeShadow(restoredRegistry);
       loadMildDipTapeShadowState(filePath, restored, nowMs);
       expect(restoredRegistry.pairAgeHours(mint, nowMs)).toBeCloseTo(2);
+      expect(restoredRegistry.canAttemptPairAge(otherMint, nowMs, 6 * 3_600_000)).toBe(
+        false,
+      );
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -121,5 +145,39 @@ describe('mild-dip pair age registry', () => {
       (event) => event.kind === 'mild_dip_tape_lane_signal',
     );
     expect(signal).toMatchObject({ lane: 'green', pairAgeHours: 2 });
+  });
+
+  it('prioritizes mints with the longest tape history and skips known or throttled ages', () => {
+    const registry = new MildDipPairAgeRegistry();
+    const nowMs = 500 * 60_000;
+    const longMint = 'A'.repeat(44);
+    const shortMint = 'B'.repeat(44);
+    const knownMint = 'C'.repeat(44);
+    const throttledMint = 'D'.repeat(44);
+    const ring = new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 });
+    for (let i = 0; i < 10; i += 1) {
+      ring.note(longMint, 100 + i, { tsMs: nowMs - i * 60_000, source: 'stream' });
+    }
+    ring.note(shortMint, 100, { tsMs: nowMs, source: 'stream' });
+    ring.note(knownMint, 100, { tsMs: nowMs, source: 'stream' });
+    ring.note(throttledMint, 100, { tsMs: nowMs, source: 'stream' });
+    registry.notePairCreatedAt(knownMint, nowMs - 2 * 3_600_000, nowMs);
+    registry.notePairAgeAttempt(throttledMint, nowMs);
+    const shadow = makeShadow(registry, ring);
+    expect(
+      shadow.selectPairAgeBackfillMints(
+        nowMs,
+        90 * 60_000,
+        6 * 3_600_000,
+        2,
+        () => false,
+      ),
+    ).toEqual([longMint, shortMint]);
+  });
+
+  it('allows the first backfill immediately but throttles subsequent ticks', () => {
+    expect(tapePairAgeBackfillDue(0, 10_000, 30_000)).toBe(true);
+    expect(tapePairAgeBackfillDue(10_000, 39_999, 30_000)).toBe(false);
+    expect(tapePairAgeBackfillDue(10_000, 40_000, 30_000)).toBe(true);
   });
 });
