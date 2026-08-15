@@ -14,7 +14,10 @@
 - `MILD_DIP_PROBE_BLOCKED_USD='0'` now removes only the probe-specific cap;
   probe entries use the same liquidity curve as normal entries. Positive values
   retain the previous cap behavior. First-touch and rug-knife clips remain
-  unchanged at `$3`; the green lane is unchanged.
+  unchanged at `$3`; the green lane is unchanged. Probe exposure is bounded by
+  the hourly probe budget (`MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR=6`) times the
+  curve size (maximum `$30`), rather than a flat `$3` per probe; the `$3` live
+  minimum still applies.
 
 ### Rollback
 

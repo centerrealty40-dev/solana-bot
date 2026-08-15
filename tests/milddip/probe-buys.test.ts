@@ -58,7 +58,7 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
     expect(src).toContain('return \'skip\';');
   });
 
-  it('live env risks $12/h at most', () => {
+  it('live env keeps six curve-sized probes per hour at most', () => {
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED: '1'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_USD: '0'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6'");
