@@ -1,3 +1,18 @@
+## 1.11.940 — 2026-08-15
+
+### Added — journal-only leader-gate shadow candidates
+
+- Journal candidates rejected by the leader-seen gate without changing live entry behavior.
+- Optional deferred leader-gate shadow sampling remains journal-only and uses separate rate-limit configuration.
+- No purchase, submit, or transaction path is enabled by the shadow measurement.
+
+### Rollback
+
+- Revert this commit and reload `ecosystem.config.cjs`; disabling the
+  `MILD_DIP_LEADER_GATE_SHADOW_RECORD` and
+  `MILD_DIP_LEADER_GATE_SHADOW_DEFER` settings stops the journal-only
+  measurement without changing entry gates.
+
 ## 1.11.939 — 2026-08-15
 
 ### Added — journal-only tape lane shadow measurement
