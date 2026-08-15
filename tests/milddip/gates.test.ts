@@ -2080,6 +2080,29 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.fraction).toBe(0.5);
   });
 
+  it('underwater sleeve with loss partial 0 exits the full bag once after reclaim', () => {
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 89.6,
+      peakPriceUsd: 112,
+      armed: true,
+      mfeBankStage: 1,
+      gates: {
+        ...bankGates,
+        lossExitMinBouncePct: 12,
+        mfeBankSleeveGivebackPct: 12,
+        mfeBankSleeveLossPartialFraction: 0,
+      },
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 120_000,
+      nowMs: now,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('mfe_bank_sleeve');
+    expect(v.fraction).toBe(1);
+  });
+
   it('underwater sleeve keeps trough hit and bounce gating with loss bounce enabled', () => {
     const now = 1_000_000;
     const gates: MildDipExitGates = {

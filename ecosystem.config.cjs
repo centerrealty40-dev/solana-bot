@@ -3555,7 +3555,8 @@ const PM2_APPS = [
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
          * trough ≤ −8%, bounce ≥ 8%, trough age ≥ 60s, still ≤ −3% vs entry.
          * 1.11.759 — half on first bounce (8%), runner on bigger bounce (16%).
-         * Underwater mfe_bank_sleeve also half-first; runner waits for bounce.
+         * The armed-runner bounce is off since 1.11.954; loss sleeves now use
+         * one full-bag decision after the configured reclaim.
          */
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_DUMP_PCT: '8',
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_PCT: '8',
@@ -3713,7 +3714,12 @@ const PM2_APPS = [
         MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.05',
         /** Green wants hot names; the dip lane's $40k ceiling does not apply. */
         MILD_DIP_GREEN_MIN_VOL5M_USD: '8000',
-        MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0.5',
+        /**
+         * 1.11.955 — one decision per losing bag: sell the full sleeve after
+         * its qualifying reclaim, avoiding a second same-price fee. Rollback
+         * to '0.5' restores the historical half-first behavior.
+         */
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_LOSS_PARTIAL_FRACTION: '0',
         /** 1.11.755 — freefall off (option-2). */
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_PNL_PCT: '0',
         MILD_DIP_EXIT_NEVER_ARM_FREEFALL_MIN_MS: '0',

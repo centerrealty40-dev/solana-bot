@@ -679,9 +679,7 @@ const MildDipConfigSchema = z.object({
     tpGridMinRemainderFraction: z.coerce.number().min(0).max(1).default(0.2),
     /** 1.11.821 — min hold before the first bank (SPL settle race). 0 = off. */
     mfeBankMinHoldMs: z.coerce.number().int().min(0).max(600_000).default(0),
-    /**
-     * 1.11.759 — underwater sleeve: sell this fraction first (0 = full legacy).
-     */
+    /** 1.11.955 — underwater sleeve fraction; 0 = one full-bag decision. */
     mfeBankSleeveLossPartialFraction: z.coerce.number().min(0).max(1).default(0.5),
     /** 1.11.949 — green sleeve partial; 0 preserves the full-bag exit. */
     mfeBankSleeveGreenPartialFraction: z.coerce.number().min(0).max(1).default(0),
