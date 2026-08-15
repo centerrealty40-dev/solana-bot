@@ -619,9 +619,10 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(freshTrough.shouldExit).toBe(false);
   });
 
-  it('1.11.932 — cliff_dump still fires immediately on deep dump (no bounce wait)', () => {
+  it('1.11.933 — cliff_dump waits for the bounce off the trough', () => {
     const prodLossGates: MildDipExitGates = {
       ...exitGates,
+      hardStopPnlPct: 0,
       lossExitMinBouncePct: 12,
       neverArmBounceMinTroughAgeMs: 60_000,
       neverArmBouncePct: 0,
@@ -629,18 +630,33 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       neverArmTimeRedMinMs: 0,
       neverArmMaxHoldMs: 0,
     };
-    const v = evaluateMildDipPeakGiveback({
+    const now = Date.now();
+    const atTrough = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 45,
       peakPriceUsd: 100,
       armed: false,
       gates: prodLossGates,
       heldMs: 5_000,
+      nowMs: now,
       postEntryTroughPriceUsd: 45,
-      postEntryTroughAtMs: 999_000,
+      postEntryTroughAtMs: now - 90_000,
     });
-    expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('cliff_dump');
+    expect(atTrough.shouldExit).toBe(false);
+
+    const bounced = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 45,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: prodLossGates,
+      heldMs: 5_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 40,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(bounced.shouldExit).toBe(true);
+    expect(bounced.reason).toBe('cliff_dump');
   });
 
   it('hard_stop off when hardStopPnlPct=0', () => {

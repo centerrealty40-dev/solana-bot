@@ -1,3 +1,14 @@
+## 1.11.933 — 2026-08-15
+
+### Changed — cliff_dump no longer sells into the dump (bounce-only loss exits)
+
+- **`cliff_dump`** (−50%) now passes through the same **`mayFireSoftLossExit`** gate as `hard_stop` / `mfe_bank_sleeve` / `never_arm_giveback`: the sell waits for a **≥12% reclaim off the trough** with **60s** trough age (`MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT` / `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS`). Applies to both the staged (`hardStopPartialFraction > 0`) and legacy branches.
+- With this, **no** mild-dip loss exit fires on the red candle itself — every exit is timed by the bounce. The −50% level stays as the deeper floor, so on prod (`hard_stop` −15%) the bounce releases `hard_stop` first.
+
+### Rollback
+
+- Revert the `softLossOk()` guards on the two `cliff_dump` branches in `src/milddip/gates.ts` (back to immediate) + reload PM2.
+
 ## 1.11.932 — 2026-08-15
 
 ### Fixed — hard_stop no longer sells on the red candle (5QdQU8 bounce miss)

@@ -3545,6 +3545,12 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT: '1',
         /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
+        /**
+         * 1.11.933 — cliff floor keeps the level but no longer sells into the
+         * dump: like `hard_stop` / `mfe_bank_sleeve` it waits for the reclaim
+         * off the trough (`MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT`). Every loss exit
+         * is now timed by the bounce.
+         */
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         /**
          * 1.11.751 — never-arm bounce hardened (F1XdRe / AENK1Y stream-wick churn):
