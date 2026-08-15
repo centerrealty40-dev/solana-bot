@@ -1,3 +1,17 @@
+## 1.11.941 — 2026-08-15
+
+### Added — optional loss-exit bounce safety caps
+
+- Added disabled-by-default drawdown and trough-age caps for loss exits waiting
+  on a bounce.
+- With both settings at `0`, the existing bounce-gated behavior is unchanged.
+- The caps are measurement safeguards only; no production values are enabled.
+
+### Rollback
+
+- Leave both `MILD_DIP_EXIT_LOSS_MAX_DRAWDOWN_PCT` and
+  `MILD_DIP_EXIT_LOSS_MAX_TROUGH_AGE_MS` at `0`, or revert this commit.
+
 ## 1.11.940 — 2026-08-15
 
 ### Added — journal-only leader-gate shadow candidates
