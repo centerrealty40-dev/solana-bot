@@ -903,9 +903,13 @@ export async function attemptMildDipEntry(args: {
   const familiarityCapped = firstTouch
     ? Math.min(cfg.firstTouchPositionUsd, laneCapped)
     : laneCapped;
-  const wantUsd = probeReason
+  const requestedUsd = probeReason
     ? Math.min(cfg.probeBlockedUsd, familiarityCapped)
     : familiarityCapped;
+  // 1.11.947 — risk clips may narrow the request, but the live dip lane never
+  // sends a buy below its configured minimum. The stopped green lane keeps its
+  // own position clip unchanged.
+  const wantUsd = isGreen ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd);
   const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wantUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {

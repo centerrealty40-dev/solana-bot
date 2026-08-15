@@ -13,12 +13,11 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
   });
 
   it('a probe is clamped to the probe size, never the normal clip', () => {
-    // 1.11.865 — the green lane caps first, then the probe caps on top, so the
-    // probe is still the floor of the two.
-    // 1.11.898 — the first-touch cap sits between the lane cap and the probe
-    // cap, so the probe is still the floor of them all.
+    // 1.11.947 — these are still nested clip caps, but each production cap is
+    // now $3 so a live first-touch/probe path cannot request a sub-$3 buy.
     expect(src).toContain('Math.min(cfg.probeBlockedUsd, familiarityCapped)');
     expect(src).toContain('Math.min(cfg.green.positionUsd, knifeCapped)');
+    expect(src).toContain('isGreen ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd)');
   });
 
   it('fills are tagged so they never mix into book statistics', () => {
@@ -50,7 +49,7 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
 
   it('live env risks $12/h at most', () => {
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED: '1'");
-    expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_USD: '2'");
+    expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_USD: '3'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6'");
   });
 });
@@ -68,12 +67,21 @@ describe('1.11.898 the first position on a coin is sized down', () => {
     expect(src).toContain('Math.min(cfg.probeBlockedUsd, familiarityCapped)');
   });
 
-  it('live env risks $1 on an unknown coin and uses liq power law when known', () => {
-    // First touch carries -0.2050 USD/position against -0.02 to -0.05 for every
-    // repeat, and -115.82 of a -164 total.
-    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '1'");
+  it('live env keeps first-touch and power-law buys at or above $3', () => {
+    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '3'");
     expect(eco).toContain("MILD_DIP_SIZE_LIQ_POWER_COEF: '0.0004168'");
-    expect(eco).toContain("MILD_DIP_SIZE_MIN_USD: '1'");
+    expect(eco).toContain("MILD_DIP_SIZE_MIN_USD: '3'");
     expect(eco).toContain("MILD_DIP_SIZE_MAX_USD: '30'");
+  });
+
+  it('raises the rug-knife clip without changing the risk gate', () => {
+    expect(eco).toContain("MILD_DIP_RUG_KNIFE_CLIP_USD: '3'");
+    expect(src).toContain('Math.min(cfg.rugKnifeClipUsd, wanted.sizeUsd)');
+  });
+
+  it('wallet-drain partials stop below the configured minimum', () => {
+    const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+    expect(loop).toContain('const minClipUsd = Math.max(MIN_CLIP_USD, cfg.sizeMinUsd)');
+    expect(loop).toContain('leftover + 1e-9 < minClipUsd');
   });
 });

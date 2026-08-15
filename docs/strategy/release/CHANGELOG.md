@@ -1,3 +1,28 @@
+## 1.11.947 — 2026-08-15
+
+### Changed — keep live mild-dip buys at or above $3
+
+- Raise `MILD_DIP_SIZE_MIN_USD` from `'1'` to `'3'`. The liquidity
+  power-law coefficient, exponent, and all sizing formulas are unchanged;
+  low-liquidity results that would have been below $3 now clamp to $3.
+- Raise `MILD_DIP_FIRST_TOUCH_POSITION_USD` from `'1'` to `'3'`,
+  `MILD_DIP_PROBE_BLOCKED_USD` from `'2'` to `'3'`, and
+  `MILD_DIP_RUG_KNIFE_CLIP_USD` from `'2'` to `'3'`, so these risk clips do
+  not request a sub-$3 live buy.
+- The wallet-drain partial clip now uses the larger of the existing $1
+  constant and `MILD_DIP_SIZE_MIN_USD`; when the wallet cannot fund that
+  minimum it still stops with `usdc_exhausted`.
+- `MILD_DIP_GREEN_POSITION_USD` and `MILD_DIP_MARK_JUPITER_PROBE_USD` are
+  unchanged. The green process remains intentionally stopped, and the
+  Jupiter amount is a price probe rather than a buy.
+
+### Rollback
+
+- Restore `MILD_DIP_SIZE_MIN_USD` to `'1'`,
+  `MILD_DIP_FIRST_TOUCH_POSITION_USD` to `'1'`,
+  `MILD_DIP_PROBE_BLOCKED_USD` to `'2'`, and
+  `MILD_DIP_RUG_KNIFE_CLIP_USD` to `'2'`.
+
 ## 1.11.946 — 2026-08-15
 
 ### Changed — keep never-arm bounce exits red-only

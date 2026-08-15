@@ -2091,6 +2091,7 @@ describe('resolveMildDipWantedSizeUsd', () => {
 
 describe('mildDipLiquidityPowerLawSizeUsd', () => {
   const law = { coef: 0.0004168, exp: 0.866, minUsd: 1, maxUsd: 30 };
+  const productionLaw = { ...law, minUsd: 3 };
 
   it('anchors ~$1 at $8k liq (entry floor)', () => {
     expect(mildDipLiquidityPowerLawSizeUsd(8_000, law)).toBeCloseTo(1, 2);
@@ -2105,6 +2106,11 @@ describe('mildDipLiquidityPowerLawSizeUsd', () => {
 
   it('clamps sub-$1 raw values to minUsd', () => {
     expect(mildDipLiquidityPowerLawSizeUsd(1_000, law)).toBe(1);
+  });
+
+  it('clamps the production law to $3 without changing its formula', () => {
+    expect(mildDipLiquidityPowerLawSizeUsd(14_000, productionLaw)).toBe(3);
+    expect(mildDipLiquidityPowerLawSizeUsd(1_000, productionLaw)).toBe(3);
   });
 });
 
