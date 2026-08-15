@@ -61,12 +61,11 @@ export function tapeFeatures(
   const last = finite(lastSample?.priceUsd);
   const observed = ring.windowStats(mint, 90 * 60_000, nowMs);
   const window60 = ring.windowStats(mint, 60 * 60_000, nowMs);
-  const has5m = observed.spanMs >= 5 * 60_000;
-  const has60m = window60.spanMs >= 60 * 60_000;
+  const p5 = ring.priceAtOrBefore(mint, 5 * 60_000, nowMs);
+  const p60 = ring.priceAtOrBefore(mint, 60 * 60_000, nowMs);
+  const has60m = p60 != null;
   const high = has60m ? ring.maxPrice(mint, 60 * 60_000, nowMs) : null;
   const low = has60m ? ring.minPrice(mint, 60 * 60_000, nowMs) : null;
-  const p5 = has5m ? ring.priceAtOrBefore(mint, 5 * 60_000, nowMs) : null;
-  const p60 = has60m ? ring.priceAtOrBefore(mint, 60 * 60_000, nowMs) : null;
   const high60 = finite(high?.priceUsd);
   const low60 = finite(low?.priceUsd);
   const imp5 = last != null && p5 && p5.priceUsd > 0 ? last / p5.priceUsd - 1 : null;
@@ -168,6 +167,35 @@ type PendingSignal = {
   emitted: Set<number>;
 };
 
+type TapeLaneCounters = {
+  conditions: number;
+  recorded: number;
+  suppressedCap: number;
+  suppressedInterval: number;
+  rejectionReasons: Record<string, number>;
+};
+
+function rejectionReasonKeys(
+  lane: MildDipTapeLane,
+  evaluation: MildDipTapeEvaluation,
+): string[] {
+  const keys = new Set<string>();
+  const features = evaluation.features;
+  if (features.imp60 == null) keys.add('no_60m_coverage');
+  if (features.imp5 == null) keys.add('no_5m_coverage');
+  if (features.pairAgeHours == null) keys.add('pairAgeHours=null');
+  for (const reason of evaluation.reasons[lane]) {
+    const key = reason.slice(0, reason.indexOf('='));
+    if (key.endsWith('_age') && features.pairAgeHours == null) continue;
+    if (key === 'imp60' && features.imp60 == null) continue;
+    if (key === 'green_imp5_min' || key === 'green_imp5_max' || key === 'dip_imp5') {
+      if (features.imp5 == null) continue;
+    }
+    if (key && !keys.has(key)) keys.add(key);
+  }
+  return [...keys];
+}
+
 const HORIZONS_MS = [15 * 60_000, 30 * 60_000, 60 * 60_000] as const;
 const HORIZON_SET = new Set<number>(HORIZONS_MS);
 
@@ -194,12 +222,21 @@ export class MildDipTapeShadow {
   private readonly lastSignalAt = new Map<string, number>();
   private readonly signalTimes: number[] = [];
   private readonly pending: PendingSignal[] = [];
-  private readonly counters: Record<
-    MildDipTapeLane,
-    { conditions: number; recorded: number; suppressedCap: number; suppressedInterval: number }
-  > = {
-    green: { conditions: 0, recorded: 0, suppressedCap: 0, suppressedInterval: 0 },
-    dip: { conditions: 0, recorded: 0, suppressedCap: 0, suppressedInterval: 0 },
+  private readonly counters: Record<MildDipTapeLane, TapeLaneCounters> = {
+    green: {
+      conditions: 0,
+      recorded: 0,
+      suppressedCap: 0,
+      suppressedInterval: 0,
+      rejectionReasons: {},
+    },
+    dip: {
+      conditions: 0,
+      recorded: 0,
+      suppressedCap: 0,
+      suppressedInterval: 0,
+      rejectionReasons: {},
+    },
   };
   private summaryWindowStartMs: number | null = null;
   private sequence = 0;
@@ -312,6 +349,14 @@ export class MildDipTapeShadow {
       tapeFeatures(this.opts.ring, input.mint, input.tsMs, input.pairAgeHours, sample),
       this.opts.gates,
     );
+    for (const lane of ['green', 'dip'] as const) {
+      if (!evaluation.matches.includes(lane)) {
+        for (const reason of rejectionReasonKeys(lane, evaluation)) {
+          this.counters[lane].rejectionReasons[reason] =
+            (this.counters[lane].rejectionReasons[reason] ?? 0) + 1;
+        }
+      }
+    }
     if (evaluation.matches.length === 0) return;
     this.pruneSignalTimes(input.tsMs);
     const lastSignalAt = this.lastSignalAt.get(input.mint) ?? 0;
@@ -398,21 +443,48 @@ export class MildDipTapeShadow {
     const summaryIntervalMs = this.opts.summaryIntervalMs ?? 5 * 60_000;
     if (nowMs - this.summaryWindowStartMs >= summaryIntervalMs) {
       const hasActivity =
-        this.counters.green.conditions > 0 || this.counters.dip.conditions > 0;
+        this.counters.green.conditions > 0 ||
+        this.counters.dip.conditions > 0 ||
+        Object.keys(this.counters.green.rejectionReasons).length > 0 ||
+        Object.keys(this.counters.dip.rejectionReasons).length > 0;
       if (hasActivity) {
         this.opts.append({
           kind: 'mild_dip_tape_lane_summary',
           windowStartMs: this.summaryWindowStartMs,
           windowEndMs: nowMs,
           lanes: {
-            green: { ...this.counters.green },
-            dip: { ...this.counters.dip },
+            green: {
+              conditions: this.counters.green.conditions,
+              recorded: this.counters.green.recorded,
+              suppressedCap: this.counters.green.suppressedCap,
+              suppressedInterval: this.counters.green.suppressedInterval,
+              rejectionReasons: { ...this.counters.green.rejectionReasons },
+            },
+            dip: {
+              conditions: this.counters.dip.conditions,
+              recorded: this.counters.dip.recorded,
+              suppressedCap: this.counters.dip.suppressedCap,
+              suppressedInterval: this.counters.dip.suppressedInterval,
+              rejectionReasons: { ...this.counters.dip.rejectionReasons },
+            },
           },
           shadowOnly: true,
         });
       }
-      this.counters.green = { conditions: 0, recorded: 0, suppressedCap: 0, suppressedInterval: 0 };
-      this.counters.dip = { conditions: 0, recorded: 0, suppressedCap: 0, suppressedInterval: 0 };
+      this.counters.green = {
+        conditions: 0,
+        recorded: 0,
+        suppressedCap: 0,
+        suppressedInterval: 0,
+        rejectionReasons: {},
+      };
+      this.counters.dip = {
+        conditions: 0,
+        recorded: 0,
+        suppressedCap: 0,
+        suppressedInterval: 0,
+        rejectionReasons: {},
+      };
       this.summaryWindowStartMs = nowMs;
     }
   }
