@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   bounceFromTroughPct,
+  decideSoftLossExit,
   evaluateFlatMicroDip,
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
@@ -9,6 +10,7 @@ import {
   knifeStabilizeMinMarketCapUsd,
   mildDipLiquidityPowerLawSizeUsd,
   mildDipMicroSizeGatesForSource,
+  mayFireSoftLossExit,
   resolveMildDipWantedSizeUsd,
   type MildDipCandidateMetrics,
   type MildDipEntryGates,
@@ -86,6 +88,8 @@ const exitGates: MildDipExitGates = {
   neverArmTimeRedPnlPct: 5,
   neverArmTimeRedMaxPc5mPct: 0,
   lossExitMinBouncePct: 0,
+  lossExitMaxDrawdownPct: 0,
+  lossExitMaxTroughAgeMs: 0,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -617,6 +621,202 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       postEntryTroughAtMs: now - 30_000,
     });
     expect(freshTrough.shouldExit).toBe(false);
+  });
+
+  it('loss bounce caps default off preserves the trough wait', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossExitMinBouncePct: 12,
+      lossExitMaxDrawdownPct: 0,
+      lossExitMaxTroughAgeMs: 0,
+      neverArmBounceMinTroughAgeMs: 60_000,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates,
+      heldMs: 120_000,
+      nowMs: 1_000_000,
+      postEntryTroughPriceUsd: 75,
+      postEntryTroughAtMs: 910_000,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.lossExitBounceCap).toBeUndefined();
+  });
+
+  it('loss drawdown cap releases the bounce wait only at or below its threshold', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossExitMinBouncePct: 12,
+      lossExitMaxDrawdownPct: 20,
+      lossExitMaxTroughAgeMs: 0,
+      neverArmBounceMinTroughAgeMs: 60_000,
+      neverArmBounceMinDumpPct: 0,
+      neverArmBouncePct: 0,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const args = {
+      entryPriceUsd: 100,
+      peakPriceUsd: 102,
+      armed: false,
+      gates,
+      heldMs: 120_000,
+      nowMs: 1_000_000,
+      postEntryTroughPriceUsd: 75,
+      postEntryTroughAtMs: 910_000,
+    };
+    const above = evaluateMildDipPeakGiveback({ ...args, markPriceUsd: 81 });
+    expect(above.shouldExit).toBe(false);
+
+    const below = evaluateMildDipPeakGiveback({ ...args, markPriceUsd: 79 });
+    expect(below.shouldExit).toBe(true);
+    expect(below.reason).toBe('hard_stop');
+    expect(below.lossExitBounceCap).toBe('drawdown');
+    expect(
+      mayFireSoftLossExit({
+        gates,
+        gainPct: -20,
+        bounceOffTroughPct: 0,
+        troughAgeMs: 60_000,
+      }),
+    ).toBe(true);
+    expect(
+      mayFireSoftLossExit({
+        gates,
+        gainPct: -19.999,
+        bounceOffTroughPct: 0,
+        troughAgeMs: 60_000,
+      }),
+    ).toBe(false);
+  });
+
+  it('loss trough-age cap releases the bounce wait at the age boundary', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossExitMinBouncePct: 12,
+      lossExitMaxDrawdownPct: 0,
+      lossExitMaxTroughAgeMs: 120_000,
+      neverArmBounceMinTroughAgeMs: 60_000,
+      neverArmBounceMinDumpPct: 0,
+      neverArmBouncePct: 0,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const args = {
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates,
+      heldMs: 120_000,
+      nowMs: 1_000_000,
+      postEntryTroughPriceUsd: 75,
+      postEntryTroughAtMs: 880_000,
+    };
+    const before = evaluateMildDipPeakGiveback({
+      ...args,
+      nowMs: 999_999,
+    });
+    expect(before.shouldExit).toBe(false);
+
+    const atBoundary = evaluateMildDipPeakGiveback(args);
+    expect(atBoundary.shouldExit).toBe(true);
+    expect(atBoundary.reason).toBe('hard_stop');
+    expect(atBoundary.lossExitBounceCap).toBe('trough_age');
+  });
+
+  it('a new lower trough resets trough age before the time cap can release', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossExitMinBouncePct: 12,
+      lossExitMaxDrawdownPct: 0,
+      lossExitMaxTroughAgeMs: 120_000,
+      neverArmBounceMinTroughAgeMs: 60_000,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 74,
+      peakPriceUsd: 102,
+      armed: false,
+      gates,
+      heldMs: 300_000,
+      nowMs: 1_000_000,
+      postEntryTroughPriceUsd: 75,
+      postEntryTroughAtMs: 700_000,
+    });
+    expect(v.postEntryTroughPriceUsd).toBe(74);
+    expect(v.postEntryTroughAtMs).toBe(1_000_000);
+    expect(v.shouldExit).toBe(false);
+  });
+
+  it('bounce caps do not alter the already-allowed gain path', () => {
+    expect(
+      mayFireSoftLossExit({
+        gates: {
+          ...exitGates,
+          lossExitMinBouncePct: 12,
+          lossExitMaxDrawdownPct: 20,
+          lossExitMaxTroughAgeMs: 120_000,
+        },
+        gainPct: 1,
+        bounceOffTroughPct: 0,
+        troughAgeMs: 0,
+      }),
+    ).toBe(true);
+  });
+
+  it('soft-loss decision is the source of truth behind the boolean wrapper', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossExitMinBouncePct: 12,
+      lossExitMaxDrawdownPct: 20,
+      lossExitMaxTroughAgeMs: 120_000,
+      neverArmBounceMinTroughAgeMs: 60_000,
+    };
+    const args = {
+      gates,
+      gainPct: -21,
+      bounceOffTroughPct: 0,
+      troughAgeMs: 10_000,
+    };
+    const decision = decideSoftLossExit(args);
+    expect(decision).toEqual({ allowed: true, reason: 'drawdown' });
+    expect(mayFireSoftLossExit(args)).toBe(decision.allowed);
+
+    const blocked = decideSoftLossExit({
+      ...args,
+      gainPct: -10,
+      troughAgeMs: 10_000,
+    });
+    expect(blocked).toEqual({ allowed: false, reason: null });
+    expect(mayFireSoftLossExit({ ...args, gainPct: -10 })).toBe(blocked.allowed);
+  });
+
+  it('does not mark a cap when the legacy bounce already allows the exit', () => {
+    const decision = decideSoftLossExit({
+      gates: {
+        ...exitGates,
+        lossExitMinBouncePct: 12,
+        lossExitMaxDrawdownPct: 20,
+        lossExitMaxTroughAgeMs: 120_000,
+        neverArmBounceMinTroughAgeMs: 60_000,
+      },
+      gainPct: -21,
+      bounceOffTroughPct: 12,
+      troughAgeMs: 60_000,
+    });
+    expect(decision).toEqual({ allowed: true, reason: null });
   });
 
   it('1.11.933 — cliff_dump waits for the bounce off the trough', () => {

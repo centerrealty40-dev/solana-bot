@@ -1455,6 +1455,7 @@ async function executeQueuedSell(args: {
     feeSolBefore: sell.feeSolBefore ?? null,
     feeSolAfter: sell.feeSolAfter ?? null,
     fraction,
+    lossExitBounceCap: decision.lossExitBounceCap ?? null,
     scaleOut: isPartial,
     armed: decision.armed,
     holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
@@ -1485,6 +1486,7 @@ async function executeQueuedSell(args: {
       fillPriceUsd: sell.priceUsd || decision.markPriceUsd,
       markPnlPct: sell.pnlPct ?? decision.pnlPct,
       reason: decision.reason,
+      lossExitBounceCap: decision.lossExitBounceCap ?? null,
       nowMs,
     });
   } catch {
