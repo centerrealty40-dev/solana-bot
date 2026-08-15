@@ -154,6 +154,20 @@ const MildDipConfigSchema = z.object({
   streamPriceConcurrency: z.coerce.number().int().min(1).max(8).default(3),
   /** Journal-only tape lanes; this never enters the execution path. */
   tapeShadowEnabled: z.boolean().default(false),
+  tapePendingSampleMaxMints: z.coerce.number().int().min(1).max(5_000).default(64),
+  tapeShadowSampleMaxMints: z.coerce.number().int().min(0).max(5_000).default(0),
+  tapeShadowSampleMinGapMs: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(86_400_000)
+    .default(15_000),
+  tapePendingSampleGraceMs: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(86_400_000)
+    .default(300_000),
   tapeWindowMs: z.coerce.number().int().min(60 * 60_000).max(3 * 60 * 60_000).default(90 * 60_000),
   tapeGreenImp60MinPct: z.coerce.number().min(-100).max(100).default(0),
   tapeGreenImp5MinPct: z.coerce.number().min(-100).max(100).default(4),
@@ -1230,6 +1244,10 @@ export function loadMildDipConfig(): MildDipConfig {
     streamPriceMinGapMs: process.env.MILD_DIP_STREAM_PRICE_MIN_GAP_MS ?? 500,
     streamPriceConcurrency: process.env.MILD_DIP_STREAM_PRICE_CONCURRENCY ?? 6,
     tapeShadowEnabled: envBool('MILD_DIP_TAPE_SHADOW_ENABLED', false),
+    tapePendingSampleMaxMints: envNum('MILD_DIP_TAPE_PENDING_SAMPLE_MAX_MINTS', 64),
+    tapeShadowSampleMaxMints: envNum('MILD_DIP_TAPE_SHADOW_SAMPLE_MAX_MINTS', 0),
+    tapeShadowSampleMinGapMs: envNum('MILD_DIP_TAPE_SHADOW_SAMPLE_MIN_GAP_MS', 15_000),
+    tapePendingSampleGraceMs: envNum('MILD_DIP_TAPE_PENDING_SAMPLE_GRACE_MS', 300_000),
     tapeWindowMs: envNum('MILD_DIP_TAPE_WINDOW_MS', 5_400_000),
     tapeGreenImp60MinPct: envNum('MILD_DIP_TAPE_GREEN_IMP60_MIN_PCT', 0),
     tapeGreenImp5MinPct: envNum('MILD_DIP_TAPE_GREEN_IMP5_MIN_PCT', 4),

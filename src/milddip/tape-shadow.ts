@@ -159,6 +159,27 @@ export function tapePairAgeBackfillDue(
   return lastRunMs <= 0 || nowMs - lastRunMs >= Math.max(0, intervalMs);
 }
 
+export function tapeShadowDiscoverySampleDecision(
+  mint: string,
+  nowMs: number,
+  lastSampleAt: Map<string, number>,
+  maxMints: number,
+  minGapMs: number,
+  staleMs: number,
+): 'sample' | 'limitRejected' | 'skip' {
+  if (!mint || maxMints <= 0) return 'skip';
+  for (const [seenMint, lastSeenMs] of lastSampleAt) {
+    if (nowMs - lastSeenMs > Math.max(0, staleMs)) lastSampleAt.delete(seenMint);
+  }
+  const lastSampleMs = lastSampleAt.get(mint);
+  if (lastSampleMs != null && nowMs - lastSampleMs < Math.max(0, minGapMs)) return 'skip';
+  if (lastSampleMs == null && lastSampleAt.size >= Math.floor(maxMints)) {
+    return 'limitRejected';
+  }
+  lastSampleAt.set(mint, nowMs);
+  return 'sample';
+}
+
 export type MildDipTapeShadowOptions = {
   ring: MildDipPriceRing;
   pairAgeRegistry?: MildDipPairAgeRegistry;
@@ -170,6 +191,7 @@ export type MildDipTapeShadowOptions = {
   outcomeStaleMs?: number;
   idleEvictMs?: number;
   summaryIntervalMs?: number;
+  pendingSampleGraceMs?: number;
   append: (event: MildDipTapeShadowEvent) => void;
 };
 
@@ -182,6 +204,7 @@ type PendingSignal = {
   maxPriceUsd: number;
   minPriceUsd: number;
   emitted: Set<number>;
+  sampleUntilMs: number;
 };
 
 type TapeLaneCounters = {
@@ -230,6 +253,7 @@ export type MildDipTapeShadowPersistedState = {
     maxPriceUsd?: number;
     minPriceUsd?: number;
     emitted?: number[];
+    sampleUntilMs?: number;
   }>;
   lastSignalAt?: Record<string, number>;
   signalTimes?: number[];
@@ -268,6 +292,9 @@ export class MildDipTapeShadow {
   private pairAgeBackfillRequested = 0;
   private pairAgeBackfillResolved = 0;
   private pairAgeBackfillNull = 0;
+  private samplingPending = 0;
+  private samplingShadowDiscovery = 0;
+  private samplingLimitRejected = 0;
 
   constructor(opts: MildDipTapeShadowOptions) {
     this.opts = opts;
@@ -299,6 +326,7 @@ export class MildDipTapeShadow {
         maxPriceUsd: signal.maxPriceUsd,
         minPriceUsd: signal.minPriceUsd,
         emitted: [...signal.emitted],
+        sampleUntilMs: signal.sampleUntilMs,
       })),
       lastSignalAt: Object.fromEntries(this.lastSignalAt),
       signalTimes: [...this.signalTimes],
@@ -368,7 +396,13 @@ export class MildDipTapeShadow {
           HORIZON_SET.has(h),
         ),
       );
-      if (emitted.size >= HORIZONS_MS.length) continue;
+      const sampleUntilMs =
+        typeof raw.sampleUntilMs === 'number' && Number.isFinite(raw.sampleUntilMs)
+          ? raw.sampleUntilMs
+          : raw.signalTsMs +
+            HORIZONS_MS[HORIZONS_MS.length - 1] +
+            (this.opts.pendingSampleGraceMs ?? 0);
+      if (emitted.size >= HORIZONS_MS.length && sampleUntilMs <= nowMs) continue;
       this.pending.push({
         id: raw.id,
         lane: raw.lane,
@@ -378,6 +412,7 @@ export class MildDipTapeShadow {
         maxPriceUsd: raw.maxPriceUsd,
         minPriceUsd: raw.minPriceUsd,
         emitted,
+        sampleUntilMs,
       });
       pending += 1;
     }
@@ -462,6 +497,10 @@ export class MildDipTapeShadow {
         maxPriceUsd: input.priceUsd,
         minPriceUsd: input.priceUsd,
         emitted: new Set(),
+        sampleUntilMs:
+          input.tsMs +
+          HORIZONS_MS[HORIZONS_MS.length - 1] +
+          (this.opts.pendingSampleGraceMs ?? 0),
       });
     }
     if (recordedAny) this.lastSignalAt.set(input.mint, input.tsMs);
@@ -500,7 +539,12 @@ export class MildDipTapeShadow {
       }
     }
     for (let i = this.pending.length - 1; i >= 0; i -= 1) {
-      if (this.pending[i]!.emitted.size === HORIZONS_MS.length) this.pending.splice(i, 1);
+      if (
+        this.pending[i]!.emitted.size === HORIZONS_MS.length &&
+        this.pending[i]!.sampleUntilMs <= nowMs
+      ) {
+        this.pending.splice(i, 1);
+      }
     }
     this.opts.ring.evictIdle(
       nowMs,
@@ -517,6 +561,9 @@ export class MildDipTapeShadow {
         this.counters.dip.pairAgeKnown > 0 ||
         this.counters.dip.pairAgeUnknown > 0 ||
         this.pairAgeBackfillRequested > 0 ||
+        this.samplingPending > 0 ||
+        this.samplingShadowDiscovery > 0 ||
+        this.samplingLimitRejected > 0 ||
         Object.keys(this.counters.green.rejectionReasons).length > 0 ||
         Object.keys(this.counters.dip.rejectionReasons).length > 0;
       if (hasActivity) {
@@ -549,6 +596,11 @@ export class MildDipTapeShadow {
             resolved: this.pairAgeBackfillResolved,
             null: this.pairAgeBackfillNull,
           },
+          sampling: {
+            pending: this.samplingPending,
+            shadowDiscovery: this.samplingShadowDiscovery,
+            limitRejected: this.samplingLimitRejected,
+          },
           shadowOnly: true,
         });
       }
@@ -573,6 +625,9 @@ export class MildDipTapeShadow {
       this.pairAgeBackfillRequested = 0;
       this.pairAgeBackfillResolved = 0;
       this.pairAgeBackfillNull = 0;
+      this.samplingPending = 0;
+      this.samplingShadowDiscovery = 0;
+      this.samplingLimitRejected = 0;
       this.summaryWindowStartMs = nowMs;
     }
   }
@@ -581,6 +636,41 @@ export class MildDipTapeShadow {
     this.pairAgeBackfillRequested += Math.max(0, Math.floor(requested));
     this.pairAgeBackfillResolved += Math.max(0, Math.floor(resolved));
     this.pairAgeBackfillNull += Math.max(0, Math.floor(nulls));
+  }
+
+  noteSampling(reason: 'pending' | 'shadowDiscovery' | 'limitRejected', count = 1): void {
+    const value = Math.max(0, Math.floor(count));
+    if (reason === 'pending') this.samplingPending += value;
+    else if (reason === 'shadowDiscovery') this.samplingShadowDiscovery += value;
+    else this.samplingLimitRejected += value;
+  }
+
+  hasPendingSignal(mint: string, nowMs: number, graceMs = 0): boolean {
+    return this.pending.some(
+      (signal) =>
+        signal.mint === mint &&
+        signal.signalTsMs + HORIZONS_MS[HORIZONS_MS.length - 1] + Math.max(0, graceMs) > nowMs,
+    );
+  }
+
+  pendingMints(nowMs: number, graceMs: number, maxMints: number): Set<string> {
+    const selected = new Set<string>();
+    const max = Math.max(0, Math.floor(maxMints));
+    if (max === 0) return selected;
+    const candidates = this.pending
+      .filter(
+        (signal) =>
+          signal.sampleUntilMs > nowMs &&
+          signal.signalTsMs + HORIZONS_MS[HORIZONS_MS.length - 1] + Math.max(0, graceMs) >
+            nowMs,
+      )
+      .sort((a, b) => a.sampleUntilMs - b.sampleUntilMs);
+    for (const signal of candidates) {
+      if (selected.has(signal.mint)) continue;
+      selected.add(signal.mint);
+      if (selected.size >= max) break;
+    }
+    return selected;
   }
 
   selectPairAgeBackfillMints(

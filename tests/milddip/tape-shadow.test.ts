@@ -4,6 +4,7 @@ import {
   DEFAULT_MILD_DIP_TAPE_GATES,
   MildDipTapeShadow,
   evaluateMildDipTape,
+  tapeShadowDiscoverySampleDecision,
   tapeFeatures,
 } from '../../src/milddip/tape-shadow.js';
 
@@ -263,6 +264,79 @@ describe('MildDipTapeShadow', () => {
     expect(outcomes.map((e) => e.horizonMinutes)).toEqual([15, 30, 60]);
     expect(outcomes[1]?.maxPriceUsd).toBe(120);
     expect(outcomes[2]?.minPriceUsd).toBe(90);
+  });
+
+  it('keeps a pending signal sampleable through 60m plus grace, then releases it', () => {
+    const shadow = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 }),
+      gates,
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      pendingSampleGraceMs: 5 * 60_000,
+      append: () => {},
+    });
+    const now = 100_000_000;
+    for (const [offset, price] of [
+      [-60 * 60_000, 100],
+      [-50 * 60_000, 160],
+      [-5 * 60_000, 100],
+      [0, 104],
+    ] as const) {
+      shadow.onPriceSample({ mint, priceUsd: price, tsMs: now + offset, pairAgeHours: 1 });
+    }
+    expect(shadow.pendingMints(now + 60 * 60_000 + 5 * 60_000 - 1, 5 * 60_000, 10)).toEqual(
+      new Set([mint]),
+    );
+    shadow.tick(now + 60 * 60_000 + 5 * 60_000);
+    expect(shadow.pendingMints(now + 60 * 60_000 + 5 * 60_000, 5 * 60_000, 10)).toEqual(
+      new Set(),
+    );
+  });
+
+  it('enforces bounded shadow-discovery sampling and keeps zero disabled', () => {
+    const seen = new Map<string, number>();
+    expect(tapeShadowDiscoverySampleDecision('a', 1_000, seen, 2, 15_000, 90_000)).toBe(
+      'sample',
+    );
+    expect(tapeShadowDiscoverySampleDecision('b', 1_000, seen, 2, 15_000, 90_000)).toBe(
+      'sample',
+    );
+    expect(tapeShadowDiscoverySampleDecision('c', 1_000, seen, 2, 15_000, 90_000)).toBe(
+      'limitRejected',
+    );
+    expect(tapeShadowDiscoverySampleDecision('a', 10_000, seen, 2, 15_000, 90_000)).toBe(
+      'skip',
+    );
+    expect(tapeShadowDiscoverySampleDecision('a', 16_000, seen, 2, 15_000, 90_000)).toBe(
+      'sample',
+    );
+    expect(tapeShadowDiscoverySampleDecision('c', 100_001, seen, 2, 15_000, 90_000)).toBe(
+      'sample',
+    );
+    expect(tapeShadowDiscoverySampleDecision('d', 100_001, seen, 0, 15_000, 90_000)).toBe(
+      'skip',
+    );
+  });
+
+  it('includes tape sampling counters in the summary', () => {
+    const events: Record<string, unknown>[] = [];
+    const shadow = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 }),
+      gates,
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      summaryIntervalMs: 60_000,
+      append: (event) => events.push(event),
+    });
+    shadow.noteSampling('pending', 2);
+    shadow.noteSampling('shadowDiscovery', 3);
+    shadow.noteSampling('limitRejected');
+    shadow.tick(1_000);
+    shadow.tick(61_000);
+    expect(events.find((event) => event.kind === 'mild_dip_tape_lane_summary')).toMatchObject({
+      sampling: { pending: 2, shadowDiscovery: 3, limitRejected: 1 },
+      shadowOnly: true,
+    });
   });
 
   it('closes outcomes from the timer without new samples and marks stale prices', () => {
