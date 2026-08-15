@@ -4193,9 +4193,14 @@ const PM2_APPS = [
          * So the first trade is priced as the cost of finding out, not skipped -
          * without it there are no repeats.
          */
-        /** 1.11.947 — first-touch and probe clips now respect the $3 live minimum. */
+        /**
+         * 1.11.962 — probe entries use the same liquidity curve as normal buys;
+         * production journal split: probe n=133, net +$67.20, +$0.505/pos,
+         * 54% win versus normal n=3384, net +$2188.57, +$0.647/pos, 54% win.
+         * The power-law branch already bypasses THICK/MICRO tier clips.
+         */
         MILD_DIP_FIRST_TOUCH_POSITION_USD: '3',
-        MILD_DIP_PROBE_BLOCKED_USD: '3',
+        MILD_DIP_PROBE_BLOCKED_USD: '0',
         MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
         /**
          * 1.11.829 — price rug risk instead of flat-sizing it. Over 774 closed
