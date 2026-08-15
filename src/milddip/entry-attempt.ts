@@ -149,6 +149,7 @@ export function appendLeaderGateShadowOutcome(args: {
   stage: string;
   reason?: string | null;
   wouldBuy: boolean;
+  remainingGatesUnevaluated?: boolean;
   gates?: Record<string, boolean>;
   details?: Record<string, unknown>;
 }): void {
@@ -177,8 +178,9 @@ export function appendLeaderGateShadowOutcome(args: {
     stage: args.stage,
     reason: args.reason ?? null,
     wouldBuy: args.wouldBuy,
+    remainingGatesUnevaluated: args.remainingGatesUnevaluated ?? null,
     gates: args.gates ?? null,
-    ...d,
+    details: d,
   });
 }
 
@@ -267,8 +269,9 @@ export async function attemptMildDipEntry(args: {
       nowMs,
       trigger: opts.trigger,
       lane: opts.lane,
-      stage: 'entry_attempt',
-      wouldBuy: true,
+      stage: 'entry_attempt_reached',
+      wouldBuy: false,
+      remainingGatesUnevaluated: true,
       gates: { fastPathCandidate: true },
     });
     return 'skip';

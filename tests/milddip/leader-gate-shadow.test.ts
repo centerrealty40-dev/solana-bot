@@ -217,8 +217,9 @@ describe('leader-gate shadow candidate journal', () => {
     const event = JSON.parse(readFileSync(file, 'utf8')) as Record<string, unknown>;
     expect(event).toMatchObject({
       kind: 'mild_dip_shadow_entry_candidate',
-      stage: 'entry_attempt',
-      wouldBuy: true,
+      stage: 'entry_attempt_reached',
+      wouldBuy: false,
+      remainingGatesUnevaluated: true,
       reason: null,
       shadowOnly: true,
     });
@@ -245,7 +246,7 @@ describe('leader-gate shadow candidate journal', () => {
       reason: 'structural_fail',
       wouldBuy: false,
       gates: { structural: false, dip: false },
-      structSource: 'dex',
+      details: { structSource: 'dex' },
     });
   });
 

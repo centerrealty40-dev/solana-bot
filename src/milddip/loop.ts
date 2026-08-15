@@ -795,13 +795,8 @@ async function tryFastPathForMint(
   if (buyInFlight.has(mint) || sellInFlight.has(mint)) return false;
 
   if (state.open[mint]) return false;
-  const deferShadowLaneEnabled =
-    cfg.leaderGateShadowRecord && cfg.leaderGateShadowDefer;
-  // Preserve the legacy watchlist timing when deferred shadow mode is off.
-  if (
-    !deferShadowLaneEnabled &&
-    (trigger === 'leader' || trigger === 'stream')
-  ) {
+  // Leader/exit attention → stay on the stream watch list (own tape next).
+  if (trigger === 'leader' || trigger === 'stream') {
     mildDipHotMints.note(mint, nowMs);
   }
   if (onCooldown(state, mint, nowMs)) return false;
@@ -891,16 +886,6 @@ async function tryFastPathForMint(
         takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
       if (!shadowOnly) return false;
     }
-  }
-
-  // Leader/exit attention → stay on the stream watch list (own tape next).
-  // Shadow-only candidates must not mutate the watchlist.
-  if (
-    !shadowOnly &&
-    deferShadowLaneEnabled &&
-    (trigger === 'leader' || trigger === 'stream')
-  ) {
-    mildDipHotMints.note(mint, nowMs);
   }
 
   /**
