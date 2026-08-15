@@ -803,6 +803,22 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(mayFireSoftLossExit({ ...args, gainPct: -10 })).toBe(blocked.allowed);
   });
 
+  it('does not mark a cap when the legacy bounce already allows the exit', () => {
+    const decision = decideSoftLossExit({
+      gates: {
+        ...exitGates,
+        lossExitMinBouncePct: 12,
+        lossExitMaxDrawdownPct: 20,
+        lossExitMaxTroughAgeMs: 120_000,
+        neverArmBounceMinTroughAgeMs: 60_000,
+      },
+      gainPct: -21,
+      bounceOffTroughPct: 12,
+      troughAgeMs: 60_000,
+    });
+    expect(decision).toEqual({ allowed: true, reason: null });
+  });
+
   it('1.11.933 — cliff_dump waits for the bounce off the trough', () => {
     const prodLossGates: MildDipExitGates = {
       ...exitGates,

@@ -797,15 +797,14 @@ export function decideSoftLossExit(args: {
   const minBounce = args.gates.lossExitMinBouncePct > 0 ? args.gates.lossExitMinBouncePct : 0;
   if (!(minBounce > 0)) return { allowed: true, reason: null };
   if (args.gainPct >= 0) return { allowed: true, reason: null };
-  const cap = lossExitBounceCapFor(args);
-  if (cap != null) return { allowed: true, reason: cap };
   const minAge =
     args.gates.neverArmBounceMinTroughAgeMs > 0 ? args.gates.neverArmBounceMinTroughAgeMs : 0;
-  if (minAge > 0 && args.troughAgeMs < minAge) return { allowed: false, reason: null };
-  return {
-    allowed: args.bounceOffTroughPct >= minBounce - 1e-9,
-    reason: null,
-  };
+  const legacyAllowed =
+    (minAge <= 0 || args.troughAgeMs >= minAge) &&
+    args.bounceOffTroughPct >= minBounce - 1e-9;
+  if (legacyAllowed) return { allowed: true, reason: null };
+  const cap = lossExitBounceCapFor(args);
+  return cap != null ? { allowed: true, reason: cap } : { allowed: false, reason: null };
 }
 
 export function mayFireSoftLossExit(args: {
