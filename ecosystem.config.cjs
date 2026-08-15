@@ -3609,8 +3609,14 @@ const PM2_APPS = [
          * outcomes through a ladder turns that mean into −8.17% (+8%×50%),
          * −3.47% (+25%×50%) or +0.66% (+50%×50%) — the rungs cut the only tail
          * that pays. Both ladders off; a single full exit on the trail below.
+         *
+         * 1.11.934 — back to the known-good baseline 1.11.915 (`aa7d7c4c`): the
+         * ladder is ON at +8%. With `TP_GRID_MIN_REMAINDER: 0.6` the first rung
+         * closes the whole bag, so a winner is banked at +8% instead of riding
+         * the trail back down (HXbqtb: +89% MFE → trail fired at +26.66% → the
+         * sell was deferred → out at −33%). 0 = ladder off.
          */
-        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
+        MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
         MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
         /**
          * 1.11.861 — the ladder stops instead of running forever. When the next
