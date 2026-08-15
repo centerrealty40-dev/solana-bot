@@ -1500,6 +1500,9 @@ export function evaluateMildDipPeakGiveback(args: {
 
   if (!armed && bounceBaseOk) {
     if (!scaleOutDone && bounceOffTroughPct >= bounceNeed - 1e-9) {
+      if (bounce2Need > 0 && bounceOffTroughPct >= bounce2Need - 1e-9) {
+        return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' });
+      }
       return {
         ...hold,
         shouldExit: true,
