@@ -53,7 +53,8 @@ describe('cost floor on money-motivated sells', () => {
   it('the floor is cost: the fill, or the mark beside it when that sat higher', () => {
     expect(loop).toContain('const costPriceUsd = Math.max(');
     expect(loop).toContain('MONEY_MOTIVATED_EXIT_REASONS.has(decision.reason) &&');
-    expect(loop).toContain('...(minExitPriceUsd != null ? { minExitPriceUsd } : {})');
+    expect(loop).toContain('guardedMinExitPriceUsd');
+    expect(loop).toContain('minExitPriceGuard');
   });
 
   it('a decision already below cost is a cut, and cuts are never floored', () => {
@@ -70,5 +71,11 @@ describe('cost floor on money-motivated sells', () => {
     expect(guardAt).toBeGreaterThan(0);
     expect(sendAt).toBeGreaterThan(guardAt);
     expect(live).toContain('exitPriceUsd < args.minExitPriceUsd');
+  });
+
+  it('uses a distinct journal kind for a refused profit fill', () => {
+    expect(live).toContain('sell_quote_below_profit_slippage');
+    expect(live).toContain("args.minExitPriceGuard === 'profit_fill_slippage'");
+    expect(loop).toContain("minExitPriceGuard: sell.minExitPriceGuard ?? null");
   });
 });

@@ -128,10 +128,13 @@ export type MildDipExitGates = {
    * 0 or an omitted value preserves the current no-op runner behavior.
    */
   mfeBankSleeveRunnerGivebackPct?: number;
+  /** 1.11.957 — max quote slip below a profit decision; 0 = off. */
+  profitFillMaxSlipPct?: number;
   /**
    * 1.11.849 — Live Oscar's unbounded take-profit ladder, ported to mild-dip.
    *
-   * Rung `k` fires at MFE ≥ k × `tpGridStepPct` and sells `tpGridSellFraction`
+   * Rung 1 fires at `tpGridFirstRungPct` (or `tpGridStepPct` when unset), and
+   * later rungs keep spacing by `tpGridStepPct`; each sells `tpGridSellFraction`
    * of what is *left*, so the bag is never emptied by the ladder and a name that
    * keeps climbing keeps paying. The two-rung bank it replaces sold 40% at +6%
    * and the last 60% at +8%, which capped every winner near +7% while losers ran
@@ -144,6 +147,8 @@ export type MildDipExitGates = {
    * 0 = off, and the mfe-bank ladder owns the armed path as before.
    */
   tpGridStepPct: number;
+  /** First TP-grid rung in gain %, 0/unset = the existing step-sized first rung. */
+  tpGridFirstRungPct?: number;
   /**
    * 1.11.852 — a mark that moves more than this % from the last accepted one is
    * quarantined until a second mark confirms the level. 0 = off.
@@ -1308,7 +1313,14 @@ export function evaluateMildDipPeakGiveback(args: {
      * later at +16.75%. Catching up in one leg avoids selling the same bag twice
      * while the price is already moving down.
      */
-    const maxK = Math.floor((gainPct + 1e-9) / gridStep);
+    const firstRung =
+      gates.tpGridFirstRungPct != null && gates.tpGridFirstRungPct > 0
+        ? gates.tpGridFirstRungPct
+        : gridStep;
+    const maxK =
+      gainPct >= firstRung - 1e-9
+        ? Math.floor((gainPct - firstRung + 1e-9) / gridStep) + 1
+        : 0;
     if (gridReady && maxK > rungsDone) {
       // Remaining share of the original bag, exactly, because every rung takes
       // the same fraction of what is left.

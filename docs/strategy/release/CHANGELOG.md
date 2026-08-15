@@ -1,3 +1,28 @@
+## 1.11.957 — 2026-08-15
+
+### Changed — defer the first TP rung and reject degraded profit fills
+
+- The TP-grid first rung is now configurable. Production uses
+  `MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT='20'`; later rungs remain 8pp apart.
+  A 428-position replay found that moving the first rung from +8% to +20%
+  improved the median result for positions peaking at least +20% from +14.4%
+  to +19.6%, without worsening the all-position median.
+- A TP-grid execution incident sold 34% from a +15.2% decision mark at an
+  actual +3.65% fill after three simulation refusals and a retry on a quote
+  roughly 10pp worse. In the following 24h, 25 of 72 TP-grid sales were at
+  least 5pp below the decision price; median decision was +22.1% versus
+  +16.8% actual. Production now sets
+  `MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT='4'`; materially degraded green
+  profit quotes are refused before send and retried on a later mark, while
+  loss and terminal exits remain unchanged.
+
+### Rollback
+
+- Set `MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT` to `'0'` to restore the
+  step-sized first rung.
+- Set `MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT` to `'0'` to disable the
+  profit-fill guard.
+
 ## 1.11.956 — 2026-08-15
 
 ### Changed — disable the entry-relative hard stop

@@ -437,6 +437,10 @@ export async function executeLiveCopySell(args: {
    * exits pass nothing and always execute.
    */
   minExitPriceUsd?: number;
+  /** Which pre-send quote guard supplied `minExitPriceUsd`, for audit. */
+  minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage';
+  profitFillDecisionPriceUsd?: number;
+  profitFillMaxSlipPct?: number;
 }): Promise<
   {
     ok: boolean;
@@ -448,6 +452,7 @@ export async function executeLiveCopySell(args: {
     /** Amount actually sent to Jupiter. */
     tokenRawSold?: string;
     reason?: string;
+    minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage';
   } & LiveCashFillFields
 > {
   const { cfg, mint, symbol, leaderSignature, fraction, tokenRawBase } = args;
@@ -560,7 +565,10 @@ export async function executeLiveCopySell(args: {
     ) {
       const shortfallPct = (exitPriceUsd / args.minExitPriceUsd - 1) * 100;
       appendCopyEvent(cfg, {
-        kind: 'sell_quote_below_floor',
+        kind:
+          args.minExitPriceGuard === 'profit_fill_slippage'
+            ? 'sell_quote_below_profit_slippage'
+            : 'sell_quote_below_floor',
         mint,
         symbol,
         leaderSignature,
@@ -570,11 +578,26 @@ export async function executeLiveCopySell(args: {
         shortfallPct: Number(shortfallPct.toFixed(2)),
         slippageBps: currentSlippageBps,
         sellSimRetryAttempt: attempt,
+        minExitPriceGuard: args.minExitPriceGuard ?? 'cost_floor',
+        ...(args.profitFillDecisionPriceUsd != null && args.profitFillDecisionPriceUsd > 0
+          ? {
+              profitFillShortfallPct: Number(
+                ((exitPriceUsd / args.profitFillDecisionPriceUsd - 1) * 100).toFixed(2),
+              ),
+            }
+          : {}),
+        ...(args.profitFillDecisionPriceUsd != null
+          ? { profitFillDecisionPriceUsd: args.profitFillDecisionPriceUsd }
+          : {}),
+        ...(args.profitFillMaxSlipPct != null
+          ? { profitFillMaxSlipPct: args.profitFillMaxSlipPct }
+          : {}),
       });
       return {
         ok: false,
         priceUsd: exitPriceUsd,
         reason: `sell_quote_below_floor:${shortfallPct.toFixed(2)}%`,
+        minExitPriceGuard: args.minExitPriceGuard ?? 'cost_floor',
         ...rawFields,
       };
     }
