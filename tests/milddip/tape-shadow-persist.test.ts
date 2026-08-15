@@ -161,6 +161,40 @@ describe('persistent tape-shadow state', () => {
     }
   });
 
+  it('does not restore a pending signal whose persisted sample window already expired', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'milddip-tape-state-sample-expired-'));
+    try {
+      const filePath = path.join(dir, 'tape-shadow-state.json');
+      const nowMs = 550 * 60_000;
+      writeFileSync(
+        filePath,
+        JSON.stringify({
+          ring: {},
+          pending: [
+            {
+              id: 'restored-expired',
+              lane: 'green',
+              mint,
+              signalTsMs: nowMs - 30 * 60_000,
+              signalPriceUsd: 100,
+              maxPriceUsd: 100,
+              minPriceUsd: 100,
+              emitted: [],
+              sampleUntilMs: nowMs - 1,
+            },
+          ],
+        }),
+        'utf8',
+      );
+      const restored = makeShadow([]);
+      const result = loadMildDipTapeShadowState(filePath, restored, nowMs);
+      expect(result.pending).toBe(1);
+      expect(restored.pendingSampleDecision(mint, nowMs, 5 * 60_000, 64)).toBe('none');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   it('writes immediately, throttles subsequent saves, and forces shutdown saves', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'milddip-tape-state-throttle-'));
     try {

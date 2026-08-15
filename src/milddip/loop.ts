@@ -2710,16 +2710,17 @@ export async function runMildDipLoop(
     if (shouldSampleStreamPrice(cfg, state, mint, nowMs, sampleWatchMs)) return true;
     if (!cfg.tapeShadowEnabled || !tapeShadow) return false;
 
-    const pendingMints = tapeShadow.pendingMints(
+    const pendingDecision = tapeShadow.pendingSampleDecision(
+      mint,
       nowMs,
       cfg.tapePendingSampleGraceMs,
       cfg.tapePendingSampleMaxMints,
     );
-    if (pendingMints.has(mint)) {
+    if (pendingDecision === 'pending') {
       tapeShadow.noteSampling('pending');
       return true;
     }
-    if (tapeShadow.hasPendingSignal(mint, nowMs, cfg.tapePendingSampleGraceMs)) {
+    if (pendingDecision === 'limitRejected') {
       tapeShadow.noteSampling('limitRejected');
       return false;
     }
