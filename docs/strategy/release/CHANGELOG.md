@@ -1,3 +1,26 @@
+## 1.11.948 — 2026-08-15
+
+### Changed — move dead-set exits out of ordinary chop
+
+- Raise `MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT` from `'10'` to `'15'` and
+  `MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT` from `'5'` to `'10'`. The dead-set rule
+  remains enabled with the existing volume/turnover fade fractions and hold
+  time; only its loss and reclaim thresholds move.
+- The old −10%/+5% thresholds were justified against a −15% `hard_stop`.
+  Since 1.11.936, `hard_stop` is −30% with an 18% reclaim, so dead-set had
+  become the de-facto floor and could fire inside ordinary chop.
+- `4CmYEygEusR76TpjxUbTjSLjyDbCMjxKhRKNozkrpump` entered at `3.2498e-05`,
+  saw 5m volume fade from `$5155` to `$182`, reached a −16.08% trough at
+  `2.755e-05`, and sold after a 24-minute hold at `2.9313e-05` (−9.8%).
+  Across 119 `dead_set_bounce` exits, median realized PnL was −12.02% and
+  the median lift in the next 30 minutes was only +2.6%; the rule stays.
+  The new +10% reclaim matches the leaders' median lift off losing lows.
+
+### Rollback
+
+- Restore `MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT` to `'10'` and
+  `MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT` to `'5'`.
+
 ## 1.11.947 — 2026-08-15
 
 ### Changed — keep live mild-dip buys at or above $3

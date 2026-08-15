@@ -1401,6 +1401,52 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('hard_stop');
   });
 
+  it('1.11.948 — dead-set waits for a deeper loss and a 10% reclaim', () => {
+    const deadSetGates: MildDipExitGates = {
+      ...exitGates,
+      deadSetVolFadeFrac: 0.25,
+      deadSetTurnFadeFrac: 0.25,
+      deadSetMinDropPct: 15,
+      deadSetBouncePct: 10,
+      deadSetMinHoldMs: 900_000,
+      hardStopPnlPct: 30,
+      lossExitMinBouncePct: 0,
+    };
+    const markAtMinus12 = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 88,
+      peakPriceUsd: 100,
+      armed: true,
+      gates: deadSetGates,
+      heldMs: 1_000_000,
+      volume5mUsd: 2_000,
+      entryVolume5mUsd: 10_000,
+      turnover5mLiq: 0.2,
+      entryTurnover5mLiq: 1,
+      postEntryTroughPriceUsd: 83.0188679245,
+      postEntryTroughAtMs: 1,
+      nowMs: 1_000_001,
+    });
+    expect(markAtMinus12.reason).not.toBe('dead_set_bounce');
+
+    const markAtMinus16 = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 84,
+      peakPriceUsd: 100,
+      armed: true,
+      gates: deadSetGates,
+      heldMs: 1_000_000,
+      volume5mUsd: 2_000,
+      entryVolume5mUsd: 10_000,
+      turnover5mLiq: 0.2,
+      entryTurnover5mLiq: 1,
+      postEntryTroughPriceUsd: 76.3636363636,
+      postEntryTroughAtMs: 1,
+      nowMs: 1_000_001,
+    });
+    expect(markAtMinus16.reason).toBe('dead_set_bounce');
+  });
+
   it('never-arm exits disabled when patience/maxHold/dead/stale are 0 (unsafe — for unit only)', () => {
     const gates: MildDipExitGates = {
       armPct: 8,

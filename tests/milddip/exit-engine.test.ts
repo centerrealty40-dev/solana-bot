@@ -1441,10 +1441,10 @@ describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
     // Not on the red candle: a whale emptying a position takes the price through
     // any fixed level and it comes back without us.
     expect(src).toContain('bounceOffTroughPct >= dsBounce - 1e-9');
-    // 1.11.913 — 5%, not 2%: across 995 losing leader bags the lift off the low
-    // at their exit has a median of +10.17%, and 98.3% of losing bags lift past
-    // 2% at some point, so a 2% release was close to no wait at all.
-    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '5'");
+    // 1.11.948 — ordinary chop at −10%/+5% became the de-facto floor after
+    // hard_stop moved to −30% with an 18% reclaim.
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '10'");
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT: '15'");
   });
 
   it('live env runs it at a quarter of entry volume and turnover', () => {
