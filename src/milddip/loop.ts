@@ -104,6 +104,11 @@ import {
 import { createOneshotDumpGraceTracker } from './oneshot-dump.js';
 import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
+import { MildDipPriceRing } from './price-ring.js';
+import {
+  DEFAULT_MILD_DIP_TAPE_GATES,
+  MildDipTapeShadow,
+} from './tape-shadow.js';
 import {
   HOLDING_DUST_RAW,
   verdictDropEmptyOnNoBalance,
@@ -2525,6 +2530,30 @@ export async function runMildDipLoop(
   const dumpSellTape = createDumpSellTape();
   const givebackDumpGate = createGivebackDumpGate();
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
+  const tapeShadow = cfg.tapeShadowEnabled
+    ? new MildDipTapeShadow({
+        ring: new MildDipPriceRing({
+          maxSamplesPerMint: Math.max(3_600, Math.ceil(cfg.tapeWindowMs / 1_000)),
+          ttlMs: cfg.tapeWindowMs,
+        }),
+        gates: {
+          ...DEFAULT_MILD_DIP_TAPE_GATES,
+          greenImp60MinPct: cfg.tapeGreenImp60MinPct,
+          greenImp5MinPct: cfg.tapeGreenImp5MinPct,
+          greenImp5MaxPct: cfg.tapeGreenImp5MaxPct,
+          greenDd60MaxPct: cfg.tapeGreenDd60MaxPct,
+          greenMinPairAgeHours: cfg.tapeGreenMinPairAgeHours,
+          dipRangePosMaxPct: cfg.tapeDipRangePosMaxPct,
+          dipDd60MaxPct: cfg.tapeDipDd60MaxPct,
+          dipImp5MaxPct: cfg.tapeDipImp5MaxPct,
+          dipMinPairAgeHours: cfg.tapeDipMinPairAgeHours,
+          dipMaxPairAgeHours: cfg.tapeDipMaxPairAgeHours,
+        },
+        minIntervalMs: cfg.tapeMinIntervalMs,
+        maxSignalsPerHour: cfg.tapeMaxSignalsPerHour,
+        append: (event) => appendMildDipJournal(cfg.journalPath, event),
+      })
+    : null;
   const sampleWatchMs = Math.max(
     cfg.cooldownBounceLookbackMs,
     cfg.mintCooldownMs,
@@ -2558,6 +2587,19 @@ export async function runMildDipLoop(
       },
       sellTape: dumpSellTape,
       maxPostResidualFrac: cfg.oneshotDumpMaxPostResidualFrac,
+      onPriceSample: tapeShadow
+        ? (sample) => {
+            const structural = getStructuralCache(
+              sample.mint,
+              sample.tsMs,
+              cfg.fastPathStructuralStaleMs,
+            );
+            tapeShadow.onPriceSample({
+              ...sample,
+              pairAgeHours: structural?.metrics.pairAgeHours ?? null,
+            });
+          }
+        : undefined,
       oneshot:
         cfg.oneshotDumpGraceEnabled && cfg.oneshotDumpGraceMs > 0
           ? {

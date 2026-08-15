@@ -92,6 +92,25 @@ export class MildDipPriceRing {
     return ring.samples[ring.samples.length - 1] ?? null;
   }
 
+  /** Latest sample at or before a lookback boundary. */
+  priceAtOrBefore(
+    mint: string,
+    lookbackMs: number,
+    nowMs = Date.now(),
+  ): MildDipPriceSample | null {
+    this.pruneMint(mint, nowMs);
+    const ring = this.byMint.get(mint);
+    if (!ring || ring.samples.length === 0) return null;
+    const boundary = nowMs - Math.max(0, lookbackMs);
+    let best: MildDipPriceSample | null = null;
+    for (const sample of ring.samples) {
+      if (sample.tsMs <= boundary && (!best || sample.tsMs > best.tsMs)) {
+        best = sample;
+      }
+    }
+    return best;
+  }
+
   /** Most recent sample with `source`, optionally within maxAgeMs. */
   lastPriceBySource(
     mint: string,

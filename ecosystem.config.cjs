@@ -3990,6 +3990,8 @@ const PM2_APPS = [
         MILD_DIP_FAST_PATH_HOT_DEX_PROBE_MAX_PER_MIN: '40',
         MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '250',
         MILD_DIP_STREAM_PRICE_CONCURRENCY: '6',
+        /** Journal-only tape lane denominator; never routes into entry execution. */
+        MILD_DIP_TAPE_SHADOW_ENABLED: '1',
         /**
          * Telegram ALERT [MILD_DIP_DEX] when mark pass is slow / opens high /
          * null-ratio high — signal to move mild-dip to the idle VPS.

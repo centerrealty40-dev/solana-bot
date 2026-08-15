@@ -37,6 +37,13 @@ export type StreamPriceSampler = {
   };
 };
 
+export type StreamPriceSample = {
+  mint: string;
+  priceUsd: number;
+  tsMs: number;
+  source: 'stream';
+};
+
 export function createStreamPriceSampler(args: {
   rpcUrl: string;
   shouldSample: (mint: string, nowMs: number) => boolean;
@@ -55,6 +62,7 @@ export function createStreamPriceSampler(args: {
   sellTape?: DumpSellTape | null;
   maxPostResidualFrac?: number;
   onSellPrints?: (prints: DumpSellPrint[]) => void;
+  onPriceSample?: (sample: StreamPriceSample) => void;
 }): StreamPriceSampler {
   const minGap = Math.max(500, args.minGapMsPerMint ?? 2_000);
   const concurrency = Math.max(1, Math.min(8, args.concurrency ?? 3));
@@ -141,6 +149,7 @@ export function createStreamPriceSampler(args: {
           continue;
         }
         mildDipPriceRing.note(mint, s.priceUsd, { tsMs: ts, source: 'stream' });
+        args.onPriceSample?.({ mint, priceUsd: s.priceUsd, tsMs: ts, source: 'stream' });
         if (mint === job.mint) {
           noted = true;
           if (s.priceUsd > priceHint) priceHint = s.priceUsd;
@@ -161,6 +170,12 @@ export function createStreamPriceSampler(args: {
             lastSkipReason = 'price_outlier';
           } else {
             mildDipPriceRing.note(job.mint, balPx, { tsMs: ts, source: 'stream' });
+            args.onPriceSample?.({
+              mint: job.mint,
+              priceUsd: balPx,
+              tsMs: ts,
+              source: 'stream',
+            });
             noted = true;
             priceHint = balPx;
           }
