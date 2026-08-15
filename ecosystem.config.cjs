@@ -3365,7 +3365,7 @@ const PM2_APPS = [
          * own bag marks, where giveback at exit is a constant ~30% of peak for
          * any peak above 15% (−29.4% / −29.9% / −33.6% across buckets).
          */
-        MILD_DIP_EXIT_GIVEBACK_PCT: '8',
+        MILD_DIP_EXIT_GIVEBACK_PCT: '12',
         /**
          * 1.11.755 — never-arm option-2 (CF vs full stack):
          * bounce 8/8 + time-red 15m if still ≤ −5%. Cliff −50% kept.

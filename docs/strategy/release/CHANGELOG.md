@@ -1,3 +1,15 @@
+## 1.11.937 — 2026-08-15
+
+### Changed — trail giveback back to the baseline 12%
+
+`MILD_DIP_EXIT_GIVEBACK_PCT` `8` → `12`, the value known-good baseline 1.11.915 (`aa7d7c4c`) shipped; `e38d55c5` narrowed it to `8` alongside the TP-grid shutdown that 1.11.934 already reverted. An 8% trail closes a runner on ordinary post-peak noise; 12% is what the leaders' own bag marks support. `tests/milddip/wait-dip.test.ts` already asserted `'12'` and was failing against the config.
+
+Config only; no source change.
+
+### Rollback
+
+- Restore `8` in `ecosystem.config.cjs` + `pm2 reload ecosystem.config.cjs --update-env`.
+
 ## 1.11.936 — 2026-08-15
 
 ### Changed — loss exits stop selling into the dump, and the rebuy after our own stop is reachable
