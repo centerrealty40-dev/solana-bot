@@ -152,7 +152,7 @@ const MildDipConfigSchema = z.object({
   streamPriceConcurrency: z.coerce.number().int().min(1).max(8).default(3),
   /**
    * On open mints: if a stream sell empties a wallet bag (post≈0) and is large,
-   * defer peak_giveback for graceMs. cliff_dump / hard_stop still fire. 0 grace = off.
+   * defer peak_giveback for graceMs. hard_stop still fires. 0 grace = off.
    */
   oneshotDumpGraceEnabled: z.boolean().default(true),
   oneshotDumpGraceMs: z.coerce.number().int().min(0).max(600_000).default(60_000),
@@ -667,7 +667,7 @@ const MildDipConfigSchema = z.object({
     /** Consecutive weak windows required before exit. Default 3. */
     neverArmVolFadeWeakWindows: z.coerce.number().int().min(0).max(48).default(3),
     /** Instant rug / LP-pull cut when pnl ≤ −this % (0=off). Default 50. */
-    cliffDumpPnlPct: z.coerce.number().min(0).max(100).default(50),
+    cliffDumpPnlPct: z.coerce.number().min(0).max(100).default(0),
     dustCloseUsd: z.coerce.number().min(0).max(50).default(0),
     dustCloseMinHoldMs: z.coerce.number().int().min(0).default(1_800_000),
     /**
@@ -855,7 +855,7 @@ export function loadMildDipConfig(): MildDipConfig {
     neverArmVolFadeSampleMs: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_SAMPLE_MS', 300_000),
     neverArmVolFadeWeakWindows: envNum('MILD_DIP_EXIT_NEVER_ARM_VOL_FADE_WEAK_WINDOWS', 3),
     /** 1.11.697 — LP-pull cliff: exit immediately at ≤ −50% mark pnl. */
-    cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 50),
+    cliffDumpPnlPct: envNum('MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT', 0),
     dustCloseUsd: envNum('MILD_DIP_EXIT_DUST_CLOSE_USD', 0),
     dustCloseMinHoldMs: envNum('MILD_DIP_EXIT_DUST_CLOSE_MIN_HOLD_MS', 1_800_000),
     /** 1.11.791 — first loss stage (half). 0 = off. */

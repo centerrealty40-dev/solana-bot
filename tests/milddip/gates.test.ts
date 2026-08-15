@@ -70,7 +70,7 @@ const exitGates: MildDipExitGates = {
   neverArmVolFadeFloorUsd: 300,
   neverArmVolFadeSampleMs: 300_000,
   neverArmVolFadeWeakWindows: 3,
-  cliffDumpPnlPct: 50,
+  cliffDumpPnlPct: 0,
   hardStopPnlPct: 15,
   hardStopPartialFraction: 0,
   neverArmBounceMinDumpPct: 8,
@@ -619,7 +619,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(freshTrough.shouldExit).toBe(false);
   });
 
-  it('1.11.932 — cliff_dump still fires immediately on deep dump (no bounce wait)', () => {
+  it('1.11.932 — cliff_dump removed: deep dump waits for hard_stop bounce gate', () => {
     const prodLossGates: MildDipExitGates = {
       ...exitGates,
       lossExitMinBouncePct: 12,
@@ -639,8 +639,8 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       postEntryTroughPriceUsd: 45,
       postEntryTroughAtMs: 999_000,
     });
-    expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('cliff_dump');
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).not.toBe('cliff_dump');
   });
 
   it('hard_stop off when hardStopPnlPct=0', () => {
@@ -661,7 +661,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('hard_stop wins over cliff when both thresholds are breached', () => {
+  it('hard_stop fires on deep dump (no cliff floor)', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
@@ -679,7 +679,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       ...exitGates,
       hardStopPnlPct: 25,
       hardStopPartialFraction: 0.5,
-      cliffDumpPnlPct: 50,
+      cliffDumpPnlPct: 0,
       neverArmFreefallPnlPct: 0,
       neverArmBouncePct: 0,
       neverArmTimeRedMinMs: 0,
@@ -721,16 +721,16 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 5_000,
     });
     expect(rest.shouldExit).toBe(true);
-    expect(rest.reason).toBe('cliff_dump');
+    expect(rest.reason).toBe('hard_stop');
     expect(rest.fraction).toBe(1);
   });
 
-  it('1.11.791 — staged: gap to −50% full cliff_dump (no orphan half)', () => {
+  it('1.11.791 — staged: deep gap still hard_stop half-first (no cliff)', () => {
     const staged = {
       ...exitGates,
       hardStopPnlPct: 25,
       hardStopPartialFraction: 0.5,
-      cliffDumpPnlPct: 50,
+      cliffDumpPnlPct: 0,
       neverArmFreefallPnlPct: 0,
       neverArmBouncePct: 0,
     };
@@ -743,25 +743,26 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       heldMs: 5_000,
     });
     expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('cliff_dump');
-    expect(v.fraction).toBe(1);
+    expect(v.reason).toBe('hard_stop');
+    expect(v.fraction).toBe(0.5);
   });
 
-  it('cliff_dump exits immediately at ≤ −50% without waiting dead min-hold', () => {
+  it('deep dump without hard_stop falls through to never_arm paths (cliff off)', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
       peakPriceUsd: 103.71,
       armed: false,
       gates: { ...exitGates, hardStopPnlPct: 0 },
-      heldMs: 30_000,
+      heldMs: 90_000,
     });
     expect(v.shouldExit).toBe(true);
-    expect(v.reason).toBe('cliff_dump');
+    expect(v.reason).toBe('never_arm_freefall');
+    expect(v.reason).not.toBe('cliff_dump');
     expect(v.pnlPct).toBeLessThanOrEqual(-50);
   });
 
-  it('cliff_dump off when cliffDumpPnlPct=0', () => {
+  it('cliff_dump never fires even if env pct set (removed 1.11.933)', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 40,
@@ -770,13 +771,16 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
       gates: {
         ...exitGates,
         hardStopPnlPct: 0,
-        cliffDumpPnlPct: 0,
+        cliffDumpPnlPct: 50,
         neverArmFreefallPnlPct: 0,
         neverArmBouncePct: 0,
+        neverArmTimeRedMinMs: 0,
+        neverArmMaxHoldMs: 0,
+        neverArmDeadMinMs: 0,
       },
-      heldMs: 30_000,
+      heldMs: 5_000,
     });
-    expect(v.shouldExit).toBe(false);
+    expect(v.reason).not.toBe('cliff_dump');
   });
 
   it('never_arm_bounce: dump to trough then reclaim ≥8% off trough → half exit', () => {

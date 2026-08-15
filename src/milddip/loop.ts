@@ -2650,7 +2650,7 @@ export async function runMildDipLoop(
         ? `×${cfg.exit.hardStopPartialFraction}`
         : '') +
       ` ` +
-      `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` +
+      (cfg.exit.cliffDumpPnlPct > 0 ? `cliffDump=-${cfg.exit.cliffDumpPnlPct}% ` : '') +
       `neverArmBounce=${cfg.exit.neverArmBouncePct > 0 ? 1 : 0}` +
       `/dump≤-${cfg.exit.neverArmBounceMinDumpPct}%` +
       `/bounce≥${cfg.exit.neverArmBouncePct}%` +

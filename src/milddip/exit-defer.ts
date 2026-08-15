@@ -21,7 +21,7 @@
  * re-enter, the cut achieved nothing but the fee. What makes those exits safe is
  * not firing them early, it is the budget below and the hard floor underneath.
  *
- * Only the true floors stay out: `hard_stop` and `cliff_dump` answer to a hole
+ * Only the true floors stay out: `hard_stop` answers to a hole
  * the entry gate cannot see, and their coherence is enforced on the other side —
  * a mint cut there is barred from re-entry by `rebuy_below_exit`, which since
  * 1.11.876 no probe walks around. Profit exits are never deferred either:

@@ -1,3 +1,14 @@
+## 1.11.933 — 2026-08-15
+
+### Removed — `cliff_dump` (−50% instant exit)
+
+- **`cliff_dump` fully removed** from exit engine — no instant sell at −50%. Deep dumps now follow the same bounce/hard_stop / never-arm paths as everything else (wait for reclaim off trough).
+- Prod: **`MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT=0`**; firing code deleted from `gates.ts` (env value ignored even if set).
+
+### Rollback
+
+- Restore `cliff_dump` blocks in `gates.ts`, set `MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50'` + reload PM2.
+
 ## 1.11.932 — 2026-08-15
 
 ### Fixed — hard_stop no longer sells on the red candle (5QdQU8 bounce miss)
