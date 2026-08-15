@@ -1,3 +1,22 @@
+## 1.11.928 — 2026-08-15
+
+### Removed — anti-churn max entries/mint/24h
+
+- Dropped `mild_dip_max_entries_skip` gate from entry path; prod env `MILD_DIP_MAX_ENTRIES_PER_MINT_24H: '0'`.
+- Re-dips on active leader names (Ezft93-class) no longer hard-blocked after prior entries.
+
+### Removed — wait-dip refloor structural kill
+
+- Ready `wait_dip` seats no longer deleted on `mild_dip_wait_dip_refloor_skip` when live Dex decays between park and fill.
+
+### Fixed — fast-path `structural_fail` on fresh leader context
+
+- When leader seed or `leaderSeenMints` is inside co-buy window, skip redundant Dex floor re-check — observer already validated the print.
+
+### Rollback
+
+- Restore `MILD_DIP_MAX_ENTRIES_PER_MINT_24H: '3'`, re-add refloor block in `loop.ts`, revert `fast-path.ts` leader trust bypass + reload PM2.
+
 ## 1.11.927 — 2026-08-14
 
 ### Fixed — mild-dip boot: allow `MILD_DIP_STREAM_PRICE_MIN_GAP_MS=250`

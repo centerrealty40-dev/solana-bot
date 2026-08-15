@@ -22,10 +22,8 @@ import {
   fastPathChasePct,
   getStructuralCache,
   streamDrawdownPct,
-  streamDumpExtentPct,
   loadStructural,
   leaderCoBuyAlignOk,
-  structuralOk,
 } from './fast-path.js';
 import {
   isKnifeDipPct,
@@ -52,9 +50,7 @@ import {
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
-import { metricsHotDeepDumpOk } from './turn-dump.js';
 import {
-  isLeaderFreshCoBuy,
   leaderSeedHitByMint,
   readLeaderSeedHits,
   type LeaderSeedHit,
@@ -617,12 +613,8 @@ async function tryFireWaitDip(
   }
 
   /**
-   * A seat qualifies once and fires minutes later on `watch.metrics` — the
-   * snapshot from parking time. Live `EvCDdrb`-class case: the floors refused this
-   * mint ~10 times as it decayed (liq $19.1k → $13.1k, vol5m $4.4k → $181), then a
-   * seat parked at 19:15 fired at 19:22 with **liq $2 484 / mcap $2 620** against
-   * $5 000 floors, and it rugged. 6 of 156 filled buys in 4h violated a floor and
-   * all 6 came through this path.
+   * 1.11.928 — refloor gate removed: decayed Dex on fill must not kill a ready
+   * wait-dip seat (leader co-buy / churn were the live blockers on Ezft93).
    */
   const freshStruct = await loadStructural(mint, cfg, nowMs);
   const leaderSeenAtMs = state.leaderSeenMints?.[mint] ?? null;
@@ -636,52 +628,6 @@ async function tryFireWaitDip(
           mint,
         )
       : null;
-  const leaderFreshBuy = isLeaderFreshCoBuy({
-    nowMs,
-    maxAgeMs: cfg.leaderCoBuyAlignMaxMs,
-    trigger: 'scan',
-    seedHit: waitSeedHit,
-    leaderSeenAtMs,
-  });
-  const streamDump = streamDumpExtentPct(mint, cfg.cooldownBounceLookbackMs, nowMs);
-  const hotDeepDump =
-    freshStruct != null
-      ? metricsHotDeepDumpOk(cfg, freshStruct.metrics, streamDump)
-      : false;
-  const leaderSeen = leaderEverSeen(cfg, state, mint, nowMs);
-  // 1.11.915/921/922 — refloor must relax turnover on hot deep dumps (same as fast-path).
-  if (
-    freshStruct &&
-    !structuralOk(freshStruct.metrics, cfg, leaderSeen, leaderFreshBuy, hotDeepDump)
-  ) {
-    const hardOk = structuralOk(freshStruct.metrics, cfg, leaderSeen, true, true);
-    if (!hardOk || !hotDeepDump) {
-      delete state.waitDipWatch![mint];
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_wait_dip_refloor_skip',
-        mint,
-        symbol: watch.symbol,
-        waitMs: nowMs - watch.detectedAtMs,
-        vol5m: freshStruct.metrics.volume5mUsd ?? null,
-        liq: freshStruct.metrics.liquidityUsd ?? null,
-        mcap: freshStruct.metrics.marketCapUsd ?? null,
-        ageH: freshStruct.metrics.pairAgeHours ?? null,
-        parkedLiq: watch.metrics?.liquidityUsd ?? null,
-        parkedVol5m: watch.metrics?.volume5mUsd ?? null,
-        hotDeepDump,
-        streamDumpPct: streamDump,
-        pc5m: freshStruct.metrics.priceChange5mPct ?? null,
-      });
-      console.log(
-        `[mild-dip] SKIP wait-dip refloor ${watch.symbol} mint=${mint.slice(0, 8)}… ` +
-          `liq=${freshStruct.metrics.liquidityUsd} mcap=${freshStruct.metrics.marketCapUsd}`,
-      );
-      return false;
-    }
-    // Hot deep dump with hard floors ok — keep seat; retry next tick (Dex/co-buy blip).
-    return false;
-  }
-
   const metricsForCoBuy = freshStruct?.metrics ?? watch.metrics;
   const coBuy = leaderCoBuyAlignOk(cfg, metricsForCoBuy, {
     nowMs,

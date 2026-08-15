@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { describe, expect, it, beforeEach } from 'vitest';
 import {
   allowHotDexProbe,
@@ -306,6 +308,12 @@ describe('fast-path helpers', () => {
     expect(requireStreamPriceForDipSource('stream')).toBe(true);
     expect(requireStreamPriceForDipSource('mild_stabilize')).toBe(true);
     expect(requireStreamPriceForDipSource(null)).toBe(true);
+  });
+
+  it('1.11.928 leader trust bypasses structural re-check on fast-path', () => {
+    const src = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+    expect(src).toContain('leaderTrustStructural');
+    expect(src).toContain('!leaderTrustStructural');
   });
 
   it('1.11.921 structuralOk relaxes turn on fresh leader co-buy or hot deep dump', () => {
