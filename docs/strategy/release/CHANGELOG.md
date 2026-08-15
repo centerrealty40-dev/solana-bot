@@ -60,6 +60,24 @@ No other app/product configuration changes.
 
 - Restore `MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT` to `'0'`.
 
+## 1.11.944 — 2026-08-15
+
+### Fixed — catch up never-arm bounce exits
+
+- `DTGWeDVPAvr7TdY7sdbfjz2bi4QihVMMn9KhyKH1pump` entered at
+  `0.00026326` and reached a post-entry trough of `0.00023900` (−9.2%).
+  At 19:12:37, the mark was `0.00027749`, already +16.10% above the trough,
+  clearing both the +8% and +16% bounce rungs, but the gate sold only the
+  0.5 partial at +5.72%. At 19:12:52 it sold the remainder at +6.29%,
+  fifteen seconds and two transactions later.
+- A never-armed bag now exits fully in one decision when the bounce already
+  clears both rungs. A bounce clearing only rung 1 keeps the existing partial
+  cut, and the scale-out remainder path is unchanged.
+
+### Rollback
+
+- Revert the never-arm bounce catch-up branch in `src/milddip/gates.ts`.
+
 ## 1.11.941 — 2026-08-15
 
 ### Added — optional loss-exit bounce safety caps

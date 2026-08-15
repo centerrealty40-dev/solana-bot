@@ -1014,6 +1014,43 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.fraction).toBe(0.5);
   });
 
+  it('never_arm_bounce: clears both bounce rungs in one full exit', () => {
+    // trough 80; mark 93 = +16.25% off trough, so both 8% and 16% rungs
+    // are already earned on the same tick.
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 93,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: exitGates,
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('never_arm_bounce');
+    expect(v.fraction).toBe(1);
+  });
+
+  it('never_arm_bounce: zero partial fraction remains a full first exit', () => {
+    const now = 1_000_000;
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 86.5,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: { ...exitGates, neverArmBouncePartialFraction: 0 },
+      heldMs: 180_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(v.reason).toBe('never_arm_bounce');
+    expect(v.fraction).toBe(1);
+  });
+
   it('never_arm_bounce: second cut at ≥16% bounce after scaleOutDone', () => {
     // trough 80; mark 93 = +16.25% off trough; still −7% vs entry
     const now = 1_000_000;
