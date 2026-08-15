@@ -1,3 +1,44 @@
+## 1.11.930 — 2026-08-15
+
+### Fixed — own-tape stream on leader-known mints (6zjL @ 2RFDW1)
+
+- **`shouldSampleStreamPrice`**: mints in `leaderSeenMints` (7d memory) now keep stream price sampling between leader sessions — was only hot/cooldown/open, so names went blind hours after last touch.
+- **`rememberLeaderSeen`**: re-notes hot-mints when leader seed updates.
+- **Leader observer**: priority Dex fetch on leader buys bypasses local 429 backoff (was `throttled_local` / `no_dex` on 2RFDW1 @ 09:44).
+
+### Rollback
+
+- Revert `loop.ts` leader stream watch + `leader-observer.py` priority fetch + reload PM2.
+
+## 1.11.929 — 2026-08-15
+
+### Fixed — fast-path leader seed on stream/scan wakes
+
+- `tryFastPathForMint` now passes the co-buy-window leader seed into `evaluateFastPathCandidate` for **all** triggers, not only `leader`. Fixes Ezft93-class misses where a fresh leader buy was in the seed file but `leaderSeenMints` still held an older stamp → `structural_fail` on turn 0.058 vs 0.06 floor.
+
+### Rollback
+
+- Revert `loop.ts` coBuySeed union + reload PM2.
+
+## 1.11.928 — 2026-08-15
+
+### Removed — anti-churn max entries/mint/24h
+
+- Dropped `mild_dip_max_entries_skip` gate from entry path; prod env `MILD_DIP_MAX_ENTRIES_PER_MINT_24H: '0'`.
+- Re-dips on active leader names (Ezft93-class) no longer hard-blocked after prior entries.
+
+### Removed — wait-dip refloor structural kill
+
+- Ready `wait_dip` seats no longer deleted on `mild_dip_wait_dip_refloor_skip` when live Dex decays between park and fill.
+
+### Fixed — fast-path `structural_fail` on fresh leader context
+
+- When leader seed or `leaderSeenMints` is inside co-buy window, skip redundant Dex floor re-check — observer already validated the print.
+
+### Rollback
+
+- Restore `MILD_DIP_MAX_ENTRIES_PER_MINT_24H: '3'`, re-add refloor block in `loop.ts`, revert `fast-path.ts` leader trust bypass + reload PM2.
+
 ## 1.11.927 — 2026-08-14
 
 ### Fixed — mild-dip boot: allow `MILD_DIP_STREAM_PRICE_MIN_GAP_MS=250`

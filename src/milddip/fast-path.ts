@@ -660,7 +660,19 @@ export async function evaluateFastPathCandidate(
   const hotDeepKnifeOk = metricsHotDeepDumpOk(cfg, struct.metrics, deepestPc);
 
   const leaderSeenForAge = leaderSeenName;
+  /**
+   * 1.11.928 — when a leader just bought (seed / memory), the observer already
+   * passed Dex floors. Re-checking on a later scan/stream tick often fails on
+   * decayed vol/liq and blocks the co-buy we are trying to mirror.
+   */
+  const leaderTrustStructural =
+    leaderFreshBuy ||
+    (trigger === 'leader' && seedHit != null) ||
+    (seedHit != null && nowMs - seedHit.lastSeenAtMs <= cfg.leaderCoBuyAlignMaxMs) ||
+    (leaderSeenAtMs != null && nowMs - leaderSeenAtMs <= cfg.leaderCoBuyAlignMaxMs);
   if (
+    !leaderTrustStructural &&
+    !hotDeepKnifeOk &&
     !structuralOk(
       struct.metrics,
       cfg,
@@ -674,6 +686,7 @@ export async function evaluateFastPathCandidate(
       structAgeMs,
       leaderSeen: leaderSeenForAge,
       leaderFreshBuy,
+      leaderTrustStructural,
       hotDeepKnife: hotDeepKnifeOk,
       vol5m: struct.metrics.volume5mUsd,
       liq: struct.metrics.liquidityUsd,

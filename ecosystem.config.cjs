@@ -3973,7 +3973,7 @@ const PM2_APPS = [
         MILD_DIP_MINT_COOLDOWN_MS: '60000',
         MILD_DIP_LOSS_COOLDOWN_MS: '60000',
         /** Wallet-truth backtest: max 3 entries/mint/24h cuts churn + fees. */
-        MILD_DIP_MAX_ENTRIES_PER_MINT_24H: '3',
+        MILD_DIP_MAX_ENTRIES_PER_MINT_24H: '0',
         /**
          * 1.11.687 — during cooldown keep sampling stream/Dex prices; after
          * cooldown refuse rebuy if mark bounced >N% off the observed trough.
