@@ -298,9 +298,9 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.34'");
     expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '12'");
     expect(eco).toContain("MILD_DIP_EXIT_BREAKEVEN_ARM_PCT: '20'");
-    // 1.11.910 — the floor moved to −50 and stopped being the primary exit; the
+    // 1.11.936 — the floor states where the bounce gate actually fills it; the
     // work is done by dead_set_bounce, which needs three factors and a bounce.
-    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15'");
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30'");
   });
 
   it('1.11.853 admits pairs up to 30 days, not 3', () => {
