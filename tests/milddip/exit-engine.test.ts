@@ -1437,11 +1437,11 @@ describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
     expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000'");
   });
 
-  it('pairs the capped upside with a tight floor (1.11.911)', () => {
-    // With the upside capped at the first rung, our own numbers - 53% win rate,
-    // average win +11.79%, average loss -17.96% - need a 60% win rate to break
-    // even. Clipping losses at -15 is the only level with positive expectancy
-    // (+0.622%); -50 was the worst of six (-1.813%).
-    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15'");
+  it('states the floor where the bounce gate actually fills it (1.11.936)', () => {
+    // -15 was never the fill: since 1.11.932 hard_stop waits for the reclaim off
+    // the trough, and on HXbqtb that reclaim arrived at -41.33%. The floor now
+    // says where the backstop is; dead_set (-10% with the conjunction) is the
+    // earlier exit.
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30'");
   });
 });
