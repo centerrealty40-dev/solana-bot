@@ -354,8 +354,10 @@ export type MildDipExitGates = {
    */
   lossExitMinBouncePct: number;
   /**
-   * Loss-bounce drawdown safety cap. When positive, an underwater gain basis at
-   * or below this loss releases the bounce wait. 0 = off.
+   * Loss-bounce drawdown safety cap. Reads the underwater `gainPct` basis,
+   * whereas `hard_stop` compares `pnlPct`; staged/averaged entries can make
+   * those bases differ. At or below this loss, the bounce wait is released.
+   * 0 = off.
    */
   lossExitMaxDrawdownPct: number;
   /**
@@ -766,6 +768,12 @@ export function isRecoveringFromTrough(args: {
  */
 export type MildDipLossExitBounceCap = 'drawdown' | 'trough_age';
 
+export type MildDipSoftLossExitDecision = {
+  allowed: boolean;
+  /** Why the cap released the bounce wait; null means legacy logic. */
+  reason: MildDipLossExitBounceCap | null;
+};
+
 function lossExitBounceCapFor(args: {
   gates: MildDipExitGates;
   gainPct: number;
@@ -780,20 +788,33 @@ function lossExitBounceCapFor(args: {
   return null;
 }
 
+export function decideSoftLossExit(args: {
+  gates: MildDipExitGates;
+  gainPct: number;
+  bounceOffTroughPct: number;
+  troughAgeMs: number;
+}): MildDipSoftLossExitDecision {
+  const minBounce = args.gates.lossExitMinBouncePct > 0 ? args.gates.lossExitMinBouncePct : 0;
+  if (!(minBounce > 0)) return { allowed: true, reason: null };
+  if (args.gainPct >= 0) return { allowed: true, reason: null };
+  const cap = lossExitBounceCapFor(args);
+  if (cap != null) return { allowed: true, reason: cap };
+  const minAge =
+    args.gates.neverArmBounceMinTroughAgeMs > 0 ? args.gates.neverArmBounceMinTroughAgeMs : 0;
+  if (minAge > 0 && args.troughAgeMs < minAge) return { allowed: false, reason: null };
+  return {
+    allowed: args.bounceOffTroughPct >= minBounce - 1e-9,
+    reason: null,
+  };
+}
+
 export function mayFireSoftLossExit(args: {
   gates: MildDipExitGates;
   gainPct: number;
   bounceOffTroughPct: number;
   troughAgeMs: number;
 }): boolean {
-  const minBounce = args.gates.lossExitMinBouncePct > 0 ? args.gates.lossExitMinBouncePct : 0;
-  if (!(minBounce > 0)) return true;
-  if (args.gainPct >= 0) return true;
-  if (lossExitBounceCapFor(args) != null) return true;
-  const minAge =
-    args.gates.neverArmBounceMinTroughAgeMs > 0 ? args.gates.neverArmBounceMinTroughAgeMs : 0;
-  if (minAge > 0 && args.troughAgeMs < minAge) return false;
-  return args.bounceOffTroughPct >= minBounce - 1e-9;
+  return decideSoftLossExit(args).allowed;
 }
 
 function numOrNull(x: number | null | undefined): number | null {
@@ -1117,17 +1138,9 @@ export function evaluateMildDipPeakGiveback(args: {
     postEntryTroughAtMs,
   };
   const softLossOk = () => {
-    const cap = lossExitBounceCapFor({ gates, gainPct, troughAgeMs });
-    const minBounce = gates.lossExitMinBouncePct > 0 ? gates.lossExitMinBouncePct : 0;
-    const minAge =
-      gates.neverArmBounceMinTroughAgeMs > 0 ? gates.neverArmBounceMinTroughAgeMs : 0;
-    const legacyAllowed =
-      minBounce <= 0 ||
-      gainPct >= 0 ||
-      (minAge <= 0 || troughAgeMs >= minAge) &&
-        bounceOffTroughPct >= minBounce - 1e-9;
-    if (cap != null && !legacyAllowed) lossExitBounceCap = cap;
-    return mayFireSoftLossExit({ gates, gainPct, bounceOffTroughPct, troughAgeMs });
+    const decision = decideSoftLossExit({ gates, gainPct, bounceOffTroughPct, troughAgeMs });
+    if (decision.reason != null) lossExitBounceCap = decision.reason;
+    return decision.allowed;
   };
   const withLossExitCap = <T extends object>(decision: T): T & {
     lossExitBounceCap?: MildDipLossExitBounceCap;

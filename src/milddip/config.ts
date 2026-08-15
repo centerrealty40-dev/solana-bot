@@ -749,9 +749,8 @@ const MildDipConfigSchema = z.object({
      */
     lossExitMinBouncePct: z.coerce.number().min(0).max(100).default(3),
     /**
-     * Loss-bounce safety caps. Positive values release the bounce wait once the
-     * underwater gain basis is at or below the drawdown cap, or once no new
-     * trough has been recorded for the configured age. 0 = off.
+     * Loss-bounce safety caps. Drawdown reads gainPct, while hard_stop reads
+     * pnlPct; staged/averaged entries can make those bases differ. 0 = off.
      */
     lossExitMaxDrawdownPct: z.coerce.number().min(0).max(100).default(0),
     lossExitMaxTroughAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(0),

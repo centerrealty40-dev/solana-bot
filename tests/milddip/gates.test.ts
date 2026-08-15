@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   bounceFromTroughPct,
+  decideSoftLossExit,
   evaluateFlatMicroDip,
   evaluateMildDipEntry,
   evaluateMildDipPeakGiveback,
@@ -773,6 +774,33 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
         troughAgeMs: 0,
       }),
     ).toBe(true);
+  });
+
+  it('soft-loss decision is the source of truth behind the boolean wrapper', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossExitMinBouncePct: 12,
+      lossExitMaxDrawdownPct: 20,
+      lossExitMaxTroughAgeMs: 120_000,
+      neverArmBounceMinTroughAgeMs: 60_000,
+    };
+    const args = {
+      gates,
+      gainPct: -21,
+      bounceOffTroughPct: 0,
+      troughAgeMs: 10_000,
+    };
+    const decision = decideSoftLossExit(args);
+    expect(decision).toEqual({ allowed: true, reason: 'drawdown' });
+    expect(mayFireSoftLossExit(args)).toBe(decision.allowed);
+
+    const blocked = decideSoftLossExit({
+      ...args,
+      gainPct: -10,
+      troughAgeMs: 10_000,
+    });
+    expect(blocked).toEqual({ allowed: false, reason: null });
+    expect(mayFireSoftLossExit({ ...args, gainPct: -10 })).toBe(blocked.allowed);
   });
 
   it('1.11.933 — cliff_dump waits for the bounce off the trough', () => {
