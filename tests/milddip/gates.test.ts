@@ -538,7 +538,7 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.shouldExit).toBe(false);
   });
 
-  it('hard_stop exits immediately at ≤ −15% (before soft exits)', () => {
+  it('hard_stop exits immediately at ≤ −15% when loss bounce off (before soft exits)', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 85,
@@ -551,6 +551,96 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('hard_stop');
     expect(v.fraction).toBe(1);
     expect(v.pnlPct).toBeLessThanOrEqual(-15);
+  });
+
+  it('1.11.932 — hard_stop waits for bounce off trough (prod 12% / 60s)', () => {
+    const prodLossGates: MildDipExitGates = {
+      ...exitGates,
+      lossExitMinBouncePct: 12,
+      neverArmBounceMinTroughAgeMs: 60_000,
+      neverArmBouncePct: 0,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const now = 1_000_000;
+    const trough = 75;
+    const atTrough = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 75,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: prodLossGates,
+      heldMs: 120_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: trough,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(atTrough.shouldExit).toBe(false);
+
+    const smallBounce = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: prodLossGates,
+      heldMs: 120_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: trough,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(smallBounce.shouldExit).toBe(false);
+
+    const bounced = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 84,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: prodLossGates,
+      heldMs: 120_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: trough,
+      postEntryTroughAtMs: now - 90_000,
+    });
+    expect(bounced.shouldExit).toBe(true);
+    expect(bounced.reason).toBe('hard_stop');
+
+    const freshTrough = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 84,
+      peakPriceUsd: 102,
+      armed: false,
+      gates: prodLossGates,
+      heldMs: 30_000,
+      nowMs: now,
+      postEntryTroughPriceUsd: trough,
+      postEntryTroughAtMs: now - 30_000,
+    });
+    expect(freshTrough.shouldExit).toBe(false);
+  });
+
+  it('1.11.932 — cliff_dump still fires immediately on deep dump (no bounce wait)', () => {
+    const prodLossGates: MildDipExitGates = {
+      ...exitGates,
+      lossExitMinBouncePct: 12,
+      neverArmBounceMinTroughAgeMs: 60_000,
+      neverArmBouncePct: 0,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+      neverArmMaxHoldMs: 0,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 45,
+      peakPriceUsd: 100,
+      armed: false,
+      gates: prodLossGates,
+      heldMs: 5_000,
+      postEntryTroughPriceUsd: 45,
+      postEntryTroughAtMs: 999_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('cliff_dump');
   });
 
   it('hard_stop off when hardStopPnlPct=0', () => {

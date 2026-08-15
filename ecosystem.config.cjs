@@ -3763,7 +3763,7 @@ const PM2_APPS = [
          * (5vkZWa never_arm_stale into green candles). cliff/timeout still fire.
          */
         /** 1.11.749 — OFF: blocked peak_giveback while above entry trough (5vkZWa). */
-        MILD_DIP_RECOVER_DEFER: '0',
+        MILD_DIP_RECOVER_DEFER: '1',
         MILD_DIP_RECOVER_DEFER_LOOKBACK_MS: '300000',
         MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT: '3',
         /**

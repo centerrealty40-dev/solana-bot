@@ -1,3 +1,15 @@
+## 1.11.932 — 2026-08-15
+
+### Fixed — hard_stop no longer sells on the red candle (5QdQU8 bounce miss)
+
+- **`hard_stop`** (−15%) now uses the same **`mayFireSoftLossExit`** bounce gate as `mfe_bank_sleeve` / `never_arm_giveback`: wait for **≥12% reclaim off trough** after **60s** minute-candle age (`MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT` / `MILD_DIP_EXIT_NEVER_ARM_BOUNCE_MIN_TROUGH_AGE_MS`). **`cliff_dump`** (−50%) stays immediate.
+- **`never_arm_timeout`** underwater also waits for bounce (same gate).
+- Re-enabled **`MILD_DIP_RECOVER_DEFER=1`** — extra defer on soft giveback while price reclaims off local trough.
+
+### Rollback
+
+- Revert `gates.ts` hard_stop / never_arm_timeout bounce guards; set `MILD_DIP_RECOVER_DEFER: '0'` + reload PM2.
+
 ## 1.11.931 — 2026-08-15
 
 ### Added — hard leader-buy gate at entry (final Jupiter block)
