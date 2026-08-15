@@ -169,6 +169,7 @@ const MildDipConfigSchema = z.object({
   /** Never below the tape window: a dormant mint that wakes up is the pattern we measure. */
   tapeIdleEvictMs: z.coerce.number().int().min(60_000).max(86_400_000).default(5_400_000),
   tapeSummaryIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(300_000),
+  tapeStateSaveMs: z.coerce.number().int().min(1_000).max(86_400_000).default(60_000),
   /**
    * On open mints: if a stream sell empties a wallet bag (post≈0) and is large,
    * defer peak_giveback for graceMs. cliff_dump / hard_stop still fire. 0 grace = off.
@@ -265,6 +266,9 @@ const MildDipConfigSchema = z.object({
   markJournalMs: z.coerce.number().int().min(0).max(3_600_000).default(5_000),
   hotMintsPath: z.string().default(path.join('data', 'milddip', 'hot-mints.json')),
   priceRingPath: z.string().default(path.join('data', 'milddip', 'price-ring.json')),
+  tapeShadowStatePath: z
+    .string()
+    .default(path.join('data', 'milddip', 'tape-shadow-state.json')),
   /** Telegram ALERT when mark pass / opens / null-ratio signal Dex pressure. */
   loadAlertEnabled: z.boolean().default(true),
   loadAlertMarkPassMs: z.coerce.number().int().min(5_000).max(600_000).default(20_000),
@@ -1193,6 +1197,7 @@ export function loadMildDipConfig(): MildDipConfig {
     tapeOutcomeStaleMs: envNum('MILD_DIP_TAPE_OUTCOME_STALE_MS', 300_000),
     tapeIdleEvictMs: envNum('MILD_DIP_TAPE_IDLE_EVICT_MS', 5_400_000),
     tapeSummaryIntervalMs: envNum('MILD_DIP_TAPE_SUMMARY_INTERVAL_MS', 300_000),
+    tapeStateSaveMs: envNum('MILD_DIP_TAPE_STATE_SAVE_MS', 60_000),
     /** 1.11.734 — oneshot emptied-bag dump grace on peak_giveback. */
     oneshotDumpGraceEnabled: envBool('MILD_DIP_ONESHOT_DUMP_GRACE', true),
     oneshotDumpGraceMs: process.env.MILD_DIP_ONESHOT_DUMP_GRACE_MS ?? 60_000,
@@ -1236,6 +1241,9 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:
       process.env.MILD_DIP_PRICE_RING_PATH?.trim() || path.join('data', 'milddip', 'price-ring.json'),
+    tapeShadowStatePath:
+      process.env.MILD_DIP_TAPE_STATE_PATH?.trim() ||
+      path.join('data', 'milddip', 'tape-shadow-state.json'),
     green,
     entry,
     exit,
