@@ -44,6 +44,22 @@ No other app/product configuration changes.
 - Restore `MILD_DIP_EXIT_DUST_CLOSE_USD` to `'0.6'`.
 - Restore `MILD_DIP_EXIT_BREAKEVEN_ARM_PCT` to `'20'` (leave the floor at `'3'`).
 
+### Fixed — profitable exits bypass recover-defer
+
+- `73YcBd9GX…` attempted a profitable `mfe_bank_sleeve` exit nine times at
+  +32–37% pnl while `recover_defer` saw an 11–23% reclaim above the 5-minute
+  trough; forty seconds later the mint rugged −83% and the eventual
+  `hard_stop` was −80.97%. `3EJnCDWV…` showed the same pattern, falling from
+  +33.8% to a −17.93% hard stop.
+- Added `MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT`, default `0` for the existing
+  behavior, and set the mild-dip production cap to `8`. At or above the cap,
+  the defer is bypassed and a throttled `recover_defer_skip` journal event
+  records the would-be reason, pnl, cap, and bounce.
+
+### Rollback
+
+- Restore `MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT` to `'0'`.
+
 ## 1.11.941 — 2026-08-15
 
 ### Added — optional loss-exit bounce safety caps

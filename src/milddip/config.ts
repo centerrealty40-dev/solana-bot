@@ -225,6 +225,8 @@ const MildDipConfigSchema = z.object({
   recoverDeferEnabled: z.boolean().default(false),
   recoverDeferLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(300_000),
   recoverDeferMinBouncePct: z.coerce.number().min(0).max(50).default(3),
+  /** Profit cap for recover-defer; 0 preserves the existing behavior. */
+  recoverDeferMaxPnlPct: z.coerce.number().min(0).max(200).default(0),
   /**
    * 1.11.783 — after our full exit, keep mint on own-tape wake / stream sample
    * / knife enrich for this long (leaders re-hit names over hours; 10m was too short).
@@ -1201,6 +1203,7 @@ export function loadMildDipConfig(): MildDipConfig {
     recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),
     recoverDeferLookbackMs: process.env.MILD_DIP_RECOVER_DEFER_LOOKBACK_MS ?? 300_000,
     recoverDeferMinBouncePct: process.env.MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT ?? 3,
+    recoverDeferMaxPnlPct: process.env.MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT ?? 0,
     /** 1.11.783 — keep own exits on stream/knife wake (default 2h). */
     postExitWakeMs: process.env.MILD_DIP_POST_EXIT_WAKE_MS ?? 7_200_000,
     postExitWakeMax: process.env.MILD_DIP_POST_EXIT_WAKE_MAX ?? 48,

@@ -3796,6 +3796,11 @@ const PM2_APPS = [
         MILD_DIP_RECOVER_DEFER_LOOKBACK_MS: '300000',
         MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT: '3',
         /**
+         * 1.11.943 — 73YcBd9GX… stayed +32–37% above the trough and was
+         * recover-deferred until an −83% rug; profitable exits bypass at +8%.
+         */
+        MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT: '8',
+        /**
          * 1.11.782 — NOT copytrading. Leader-seed does not open buys; align/
          * scale-in OFF. Observer may still log leaders for research only.
          */

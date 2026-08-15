@@ -305,6 +305,16 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
     expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30'");
   });
 
+  it('1.11.943 caps recover-defer only for profitable exits', () => {
+    const src = readFileSync(resolve('src/milddip/config.ts'), 'utf8');
+    const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+    const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+    expect(src).toContain('recoverDeferMaxPnlPct');
+    expect(src).toContain('MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT');
+    expect(loop).toContain("kind: 'recover_defer_skip'");
+    expect(eco).toContain("MILD_DIP_RECOVER_DEFER_MAX_PNL_PCT: '8'");
+  });
+
   it('1.11.853 admits pairs up to 30 days, not 3', () => {
     // 32.7% of leader-bought mints are older than 72h, and 113 of those clear
     // every other floor: 15.6% of their universe was refused on age alone.
