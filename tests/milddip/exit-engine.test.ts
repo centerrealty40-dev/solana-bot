@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   applyMarkDecisionToPosition,
   decideMarkExit,
@@ -792,6 +792,29 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(released.markQuarantineForceReleased).toBe(true);
       expect(released.markQuarantineBlindMs).toBe(11_000);
       expect(released.markQuarantined).not.toBe(true);
+    });
+
+    it('gives a new quarantined value its own confirmation window', () => {
+      const p = armedGreen();
+      const first = quarantine(p, 1_000_000, 118);
+      applyMarkDecisionToPosition(p, first);
+      p.markQuarantineSinceMs = 1_000_000;
+      p.pendingMarkAtMs = 1_000_000;
+
+      const off = { ...g, markQuarantineGreenMaxMs: 0 };
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(1_020_000);
+      try {
+        const newValue = quarantine(p, 1_020_000, 110, off);
+        expect(newValue.markQuarantined).toBe(true);
+        applyMarkDecisionToPosition(p, newValue);
+        expect(p.pendingMarkAtMs).toBe(1_020_000);
+
+        const reread = quarantine(p, 1_021_000, 110, off);
+        expect(reread.markQuarantined).toBe(true);
+        expect(reread.markDiscardStreamOutlier).not.toBe(true);
+      } finally {
+        clock.mockRestore();
+      }
     });
 
     it('still refuses red and never-armed marks', () => {

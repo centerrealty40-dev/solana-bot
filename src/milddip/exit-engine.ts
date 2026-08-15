@@ -524,7 +524,7 @@ export function applyMarkDecisionToPosition(
     // Keep the original timestamp while the same value keeps coming back, so the
     // quarantine clock measures how long we have been refusing it (1.11.919).
     if (pos.pendingMarkPriceUsd !== decision.markPriceUsd || pos.pendingMarkAtMs == null) {
-      pos.pendingMarkAtMs = decision.markQuarantineSinceMs ?? Date.now();
+      pos.pendingMarkAtMs = Date.now();
     }
     pos.pendingMarkPriceUsd = decision.markPriceUsd;
     pos.pendingMarkSource = decision.markSource ?? undefined;
