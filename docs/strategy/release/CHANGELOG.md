@@ -1,3 +1,14 @@
+## 1.11.931 — 2026-08-15
+
+### Added — hard leader-buy gate at entry (final Jupiter block)
+
+- **`MILD_DIP_REQUIRE_LEADER_SEEN=1`** (prod): `attemptMildDipEntry` refuses any buy when mint is absent from `leaderSeenMints` and leader seed — blocks stream/discover solo-buys on names leaders never touched (`mild_dip_not_leader_seen_skip` @ entry).
+- Shared helper `leader-seen-gate.ts` (`leaderBuyGateOk` / `leaderEverSeenInState`).
+
+### Rollback
+
+- `MILD_DIP_REQUIRE_LEADER_SEEN: '0'` + revert `entry-attempt.ts` / `leader-seen-gate.ts` + reload PM2.
+
 ## 1.11.930 — 2026-08-15
 
 ### Fixed — own-tape stream on leader-known mints (6zjL @ 2RFDW1)

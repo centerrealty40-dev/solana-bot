@@ -55,6 +55,7 @@ import {
   readLeaderSeedHits,
   type LeaderSeedHit,
 } from './discover-extra.js';
+import { leaderEverSeenInState } from './leader-seen-gate.js';
 import {
   averageEntryAfterScaleIn,
   evaluateLeaderAlignDefer,
@@ -172,7 +173,7 @@ function shouldSampleStreamPrice(
    * 6zjL @ 09:44: hot-mints TTL expired hours after 04:02; one random pump log at
    * 09:09 hit should_sample_false → no drawdown tape before 8zkg's buy.
    */
-  if (leaderEverSeen(cfg, state, mint, nowMs)) return true;
+  if (leaderEverSeenInState(cfg, state, mint, nowMs)) return true;
   return false;
 }
 
@@ -823,7 +824,7 @@ async function tryFastPathForMint(
     cfg.requireLeaderSeenFirstTouch &&
     isFirstTouchForLeaderGate &&
     !cfg.requireLeaderSeen &&
-    !leaderEverSeen(cfg, state, mint, nowMs)
+    !leaderEverSeenInState(cfg, state, mint, nowMs)
   ) {
     const hit =
       seedHit ??
@@ -1002,13 +1003,6 @@ function rememberLeaderSeen(
   for (const [mint, ts] of Object.entries(mem)) {
     if (nowMs - ts > cfg.leaderSeenMemoryMs) delete mem[mint];
   }
-}
-
-/** True when a leader has traded this mint inside the remembered window. */
-function leaderEverSeen(cfg: MildDipConfig, state: MildDipState, mint: string, nowMs: number): boolean {
-  if (cfg.leaderSeenMemoryMs <= 0) return false;
-  const ts = state.leaderSeenMints?.[mint];
-  return ts != null && nowMs - ts <= cfg.leaderSeenMemoryMs;
 }
 
 async function wakeLeaderSeeds(

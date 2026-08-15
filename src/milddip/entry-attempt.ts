@@ -45,6 +45,7 @@ import {
 } from './state.js';
 import { writeUsBuyFill } from './trade-journal.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
+import { leaderBuyGateOk } from './leader-seen-gate.js';
 
 const HOLDING_DUST_RAW = 1000n;
 
@@ -123,6 +124,18 @@ export async function attemptMildDipEntry(args: {
   if (state.open[c.mint]) return 'skip';
   if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
+
+  if (!leaderBuyGateOk(cfg, state, c.mint, nowMs)) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_not_leader_seen_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      dipSource: c.dipSource,
+      lane: opts.lane,
+      at: 'entry',
+    });
+    return 'skip';
+  }
 
   // 1.11.802 — stream ring only for stream-timed sources; Dex/TD may enter on Dex.
   if (cfg.requireStreamPriceEntry && requireStreamPriceForDipSource(c.dipSource)) {

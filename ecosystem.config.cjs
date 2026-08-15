@@ -4143,7 +4143,7 @@ const PM2_APPS = [
         MILD_DIP_RUG_KNIFE_DUMP_PCT: '-45',
         MILD_DIP_RUG_KNIFE_TURN: '3',
         MILD_DIP_RUG_BLOCK_DUMP_PCT: '0',
-        MILD_DIP_REQUIRE_LEADER_SEEN: '0',
+        MILD_DIP_REQUIRE_LEADER_SEEN: '1',
         /**
          * 1.11.899 — a leader has to have touched a name before we open it for
          * the first time; repeats on names we know are not gated.
