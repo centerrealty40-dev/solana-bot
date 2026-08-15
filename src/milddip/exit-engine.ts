@@ -275,15 +275,11 @@ export function decideMarkExit(args: {
       ) {
         acceptQuarantined = args.markSource !== 'stream';
       }
-      const samePendingMark =
-        pos.pendingMarkPriceUsd === markPriceUsd &&
-        (pos.pendingMarkSource == null || pos.pendingMarkSource === args.markSource);
-      quarantineSinceMs = samePendingMark
-        ? pos.markQuarantineSinceMs ??
-          (pos.pendingMarkAtMs != null && pos.pendingMarkAtMs > 0
-            ? pos.pendingMarkAtMs
-            : seenAtMs)
-        : seenAtMs;
+      quarantineSinceMs =
+        pos.markQuarantineSinceMs ??
+        (pos.pendingMarkAtMs != null && pos.pendingMarkAtMs > 0
+          ? pos.pendingMarkAtMs
+          : seenAtMs);
       quarantineBlindMs = Math.max(0, seenAtMs - quarantineSinceMs);
       forceReleaseGreenQuarantine =
         (args.markQuarantineGreenMaxMs ?? 0) > 0 &&
@@ -520,7 +516,6 @@ export function applyMarkDecisionToPosition(
     pos.pendingMarkPriceUsd = undefined;
     pos.pendingMarkSource = undefined;
     pos.pendingMarkAtMs = undefined;
-    pos.markQuarantineSinceMs = undefined;
     return;
   }
   if (decision.markQuarantined) {

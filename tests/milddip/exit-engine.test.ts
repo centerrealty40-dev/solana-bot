@@ -776,6 +776,24 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(released.pnlPct).toBeCloseTo(18, 6);
     });
 
+    it('keeps the blind clock running across changing quarantined prices', () => {
+      const p = armedGreen();
+      for (const [nowMs, price] of [
+        [1_010_000, 118],
+        [1_013_000, 110],
+        [1_016_000, 104],
+      ] as const) {
+        const d = quarantine(p, nowMs, price);
+        expect(d.markQuarantined).toBe(true);
+        applyMarkDecisionToPosition(p, d);
+      }
+
+      const released = quarantine(p, 1_021_000, 101);
+      expect(released.markQuarantineForceReleased).toBe(true);
+      expect(released.markQuarantineBlindMs).toBe(11_000);
+      expect(released.markQuarantined).not.toBe(true);
+    });
+
     it('still refuses red and never-armed marks', () => {
       const red = armedGreen();
       const firstRed = quarantine(red, 1_010_000, 90);
