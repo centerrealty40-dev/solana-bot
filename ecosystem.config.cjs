@@ -3448,7 +3448,11 @@ const PM2_APPS = [
          * number now says where the backstop really is instead of arming a stop
          * that the gate immediately overrides.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30',
+        /**
+         * 1.11.956 — disable the entry-relative hard stop; losing positions
+         * follow the leader-like reclaim/tail rules instead. Rollback to '30'.
+         */
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '0',
         /**
          * 1.11.910 — condemned by the conjunction, timed by the bounce.
          *
@@ -3468,13 +3472,12 @@ const PM2_APPS = [
         /**
          * 1.11.948 — move the dead-set floor out of ordinary chop.
          *
-         * Since hard_stop moved to −30% with an 18% reclaim, the old −10%/+5%
-         * dead-set thresholds became the de-facto loss floor. `4CmYEygE` held
+         * The old −10%/+5% thresholds fired in ordinary chop. `4CmYEygE` held
          * 24m, faded from $5155 to $182 in 5m volume, and sold at −9.8% after
          * a −16.08% trough. Across 119 dead_set_bounce exits, median realized
          * PnL was −12.02% and the next-30m median lift was only +2.6%, so the
-         * rule stays; it now requires −15% and a +10% reclaim, matching the
-         * leaders' +10% median lift off losing lows.
+         * rule stays out of chop; it requires −15% and a +10% reclaim, matching
+         * the leaders' +10% median lift off losing lows.
          */
         MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '10',
         MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
@@ -3542,13 +3545,13 @@ const PM2_APPS = [
          * price we can actually get.
          */
         MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT: '1',
-        /** 1.11.794 — full hard_stop at −25% (no half-runner limbo until −50). */
+        /** 1.11.794 — no hard-stop partial limbo; the production hard stop is now off. */
         MILD_DIP_EXIT_HARD_STOP_PARTIAL_FRACTION: '0',
         /**
          * 1.11.933 — cliff floor keeps the level but no longer sells into the
-         * dump: like `hard_stop` / `mfe_bank_sleeve` it waits for the reclaim
-         * off the trough (`MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT`). Every loss exit
-         * is now timed by the bounce.
+         * dump: like `mfe_bank_sleeve` it waits for the reclaim off the trough
+         * (`MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT`). Every loss exit is now timed by
+         * the bounce.
          */
         MILD_DIP_EXIT_CLIFF_DUMP_PNL_PCT: '50',
         /**
@@ -3591,7 +3594,7 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
         MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
-        /** 1.11.815 — 8 → 12: same reason as the hard stop (sleeve8 +$1.98 vs sleeve12 +$4.15). */
+        /** 1.11.815 — 8 → 12: sleeve12 retained more value ($4.15 vs $1.98). */
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '8',
         /**
          * 1.11.949 — 121 sleeve exits (median MFE +23.15%, realized +10.82%)

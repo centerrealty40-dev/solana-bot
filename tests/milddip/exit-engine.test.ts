@@ -1443,8 +1443,8 @@ describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
     // Not on the red candle: a whale emptying a position takes the price through
     // any fixed level and it comes back without us.
     expect(src).toContain('bounceOffTroughPct >= dsBounce - 1e-9');
-    // 1.11.948 — ordinary chop at −10%/+5% became the de-facto floor after
-    // hard_stop moved to −30% with an 18% reclaim.
+    // 1.11.948 — ordinary chop at −10%/+5% was moved below the
+    // deeper dead-set floor with an 18% reclaim.
     expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '10'");
     expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT: '15'");
   });
@@ -1462,10 +1462,8 @@ describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
   });
 
   it('states the floor where the bounce gate actually fills it (1.11.936)', () => {
-    // -15 was never the fill: since 1.11.932 hard_stop waits for the reclaim off
-    // the trough, and on HXbqtb that reclaim arrived at -41.33%. The floor now
-    // says where the backstop is; dead_set (-10% with the conjunction) is the
-    // earlier exit.
-    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30'");
+    // 1.11.956 — hard_stop is disabled in production; the reclaim-gated
+    // dead-set / soft-loss rules remain the configured backstops.
+    expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '0'");
   });
 });

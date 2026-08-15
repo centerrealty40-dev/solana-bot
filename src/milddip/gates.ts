@@ -5,8 +5,8 @@
  * Exit: W9.1 peak-giveback — arm on MFE, full exit on giveback from running peak.
  *        Never-armed branch (leaders 8zkg / 7BNax): same giveback width after
  *        patience, plus max-hold if trail never arms.
- *        Hard stop from entry (`hard_stop`) + cliff LP-pull floor, both timed
- *        by the bounce off the trough (1.11.933).
+ *        Optional hard stop from entry (`hard_stop`) + cliff LP-pull floor,
+ *        both timed by the bounce off the trough (1.11.933).
  */
 
 export type MildDipCandidateMetrics = {
@@ -278,7 +278,7 @@ export type MildDipExitGates = {
   dustCloseMinHoldMs: number;
   /**
    * 1.11.765 / 1.11.791 — hard stop from entry when mark pnl ≤ −this %
-   * (live default 25). Fires before soft exits; never deferred by leader-align
+   * (default 25; production may disable it). Fires before soft exits; never deferred by leader-align
    * or oneshot dump grace. 0 = off. Distinct from cliff (second-stage −50%).
    */
   hardStopPnlPct: number;
@@ -965,8 +965,8 @@ export function evaluateMildDipPeakGiveback(args: {
   postEntryTroughAtMs?: number | null;
   /**
    * When true, defer peak_giveback / peak_giveback_partial / never_arm_giveback
-   * / mfe_bank_sleeve (one-shot emptied-bag dump grace). cliff_dump / hard_stop
-   * and MFE banks (sell into strength) still fire.
+   * / mfe_bank_sleeve (one-shot emptied-bag dump grace). Configured cliff_dump /
+   * hard_stop and MFE banks (sell into strength) still fire.
    */
   oneshotDumpGraceActive?: boolean;
   /** 1.11.849 — rungs of the unbounded ladder already filled on this bag. */
