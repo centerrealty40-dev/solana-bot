@@ -1,5 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import {
+  mildDipPairAgeRegistry,
+  type MildDipPairAgeRegistry,
+  type MildDipPairAgeRegistryState,
+} from './pair-age-registry.js';
 import type { MildDipPriceRing, MildDipPriceSample, MildDipPriceSource } from './price-ring.js';
 
 export type MildDipTapeLane = 'green' | 'dip';
@@ -147,6 +152,9 @@ export type MildDipTapeShadowEvent = Record<string, unknown>;
 
 export type MildDipTapeShadowOptions = {
   ring: MildDipPriceRing;
+  pairAgeRegistry?: MildDipPairAgeRegistry;
+  pairAgeMaxStaleMs?: number;
+  pairAgeMaxEntries?: number;
   gates: MildDipTapeGates;
   minIntervalMs: number;
   maxSignalsPerHour: number;
@@ -172,6 +180,8 @@ type TapeLaneCounters = {
   recorded: number;
   suppressedCap: number;
   suppressedInterval: number;
+  pairAgeKnown: number;
+  pairAgeUnknown: number;
   rejectionReasons: Record<string, number>;
 };
 
@@ -215,6 +225,7 @@ export type MildDipTapeShadowPersistedState = {
   lastSignalAt?: Record<string, number>;
   signalTimes?: number[];
   sequence?: number;
+  pairAgeRegistry?: MildDipPairAgeRegistryState;
 };
 
 export class MildDipTapeShadow {
@@ -228,6 +239,8 @@ export class MildDipTapeShadow {
       recorded: 0,
       suppressedCap: 0,
       suppressedInterval: 0,
+      pairAgeKnown: 0,
+      pairAgeUnknown: 0,
       rejectionReasons: {},
     },
     dip: {
@@ -235,6 +248,8 @@ export class MildDipTapeShadow {
       recorded: 0,
       suppressedCap: 0,
       suppressedInterval: 0,
+      pairAgeKnown: 0,
+      pairAgeUnknown: 0,
       rejectionReasons: {},
     },
   };
@@ -243,6 +258,18 @@ export class MildDipTapeShadow {
 
   constructor(opts: MildDipTapeShadowOptions) {
     this.opts = opts;
+  }
+
+  getPairAgeRegistry(): MildDipPairAgeRegistry {
+    return this.opts.pairAgeRegistry ?? mildDipPairAgeRegistry;
+  }
+
+  private pairAgeMaxStaleMs(): number {
+    return this.opts.pairAgeMaxStaleMs ?? 7 * 24 * 3_600_000;
+  }
+
+  private pairAgeMaxEntries(): number {
+    return this.opts.pairAgeMaxEntries ?? 5_000;
   }
 
   toJSON(nowMs = Date.now()): MildDipTapeShadowPersistedState {
@@ -263,6 +290,11 @@ export class MildDipTapeShadow {
       lastSignalAt: Object.fromEntries(this.lastSignalAt),
       signalTimes: [...this.signalTimes],
       sequence: this.sequence,
+      pairAgeRegistry: this.getPairAgeRegistry().toJSON(
+        nowMs,
+        this.pairAgeMaxStaleMs(),
+        this.pairAgeMaxEntries(),
+      ),
     };
   }
 
@@ -270,6 +302,12 @@ export class MildDipTapeShadow {
     if (!data || typeof data !== 'object') return { samples: 0, pending: 0 };
     const state = data as MildDipTapeShadowPersistedState;
     const samples = this.opts.ring.loadJSON(state.ring ?? {}, nowMs);
+    this.getPairAgeRegistry().loadJSON(
+      state.pairAgeRegistry ?? {},
+      nowMs,
+      this.pairAgeMaxStaleMs(),
+      this.pairAgeMaxEntries(),
+    );
     this.lastSignalAt.clear();
     for (const [mint, tsMs] of Object.entries(state.lastSignalAt ?? {})) {
       if (mint && typeof tsMs === 'number' && Number.isFinite(tsMs)) {
@@ -345,11 +383,16 @@ export class MildDipTapeShadow {
     this.opts.ring.note(input.mint, input.priceUsd, { tsMs: input.tsMs, source });
     this.tick(input.tsMs);
 
+    const pairAgeHours =
+      input.pairAgeHours ??
+      this.getPairAgeRegistry().pairAgeHours(input.mint, input.tsMs);
     const evaluation = evaluateMildDipTape(
-      tapeFeatures(this.opts.ring, input.mint, input.tsMs, input.pairAgeHours, sample),
+      tapeFeatures(this.opts.ring, input.mint, input.tsMs, pairAgeHours, sample),
       this.opts.gates,
     );
     for (const lane of ['green', 'dip'] as const) {
+      if (pairAgeHours == null) this.counters[lane].pairAgeUnknown += 1;
+      else this.counters[lane].pairAgeKnown += 1;
       if (!evaluation.matches.includes(lane)) {
         for (const reason of rejectionReasonKeys(lane, evaluation)) {
           this.counters[lane].rejectionReasons[reason] =
@@ -445,6 +488,10 @@ export class MildDipTapeShadow {
       const hasActivity =
         this.counters.green.conditions > 0 ||
         this.counters.dip.conditions > 0 ||
+        this.counters.green.pairAgeKnown > 0 ||
+        this.counters.green.pairAgeUnknown > 0 ||
+        this.counters.dip.pairAgeKnown > 0 ||
+        this.counters.dip.pairAgeUnknown > 0 ||
         Object.keys(this.counters.green.rejectionReasons).length > 0 ||
         Object.keys(this.counters.dip.rejectionReasons).length > 0;
       if (hasActivity) {
@@ -458,6 +505,8 @@ export class MildDipTapeShadow {
               recorded: this.counters.green.recorded,
               suppressedCap: this.counters.green.suppressedCap,
               suppressedInterval: this.counters.green.suppressedInterval,
+              pairAgeKnown: this.counters.green.pairAgeKnown,
+              pairAgeUnknown: this.counters.green.pairAgeUnknown,
               rejectionReasons: { ...this.counters.green.rejectionReasons },
             },
             dip: {
@@ -465,6 +514,8 @@ export class MildDipTapeShadow {
               recorded: this.counters.dip.recorded,
               suppressedCap: this.counters.dip.suppressedCap,
               suppressedInterval: this.counters.dip.suppressedInterval,
+              pairAgeKnown: this.counters.dip.pairAgeKnown,
+              pairAgeUnknown: this.counters.dip.pairAgeUnknown,
               rejectionReasons: { ...this.counters.dip.rejectionReasons },
             },
           },
@@ -476,6 +527,8 @@ export class MildDipTapeShadow {
         recorded: 0,
         suppressedCap: 0,
         suppressedInterval: 0,
+        pairAgeKnown: 0,
+        pairAgeUnknown: 0,
         rejectionReasons: {},
       };
       this.counters.dip = {
@@ -483,6 +536,8 @@ export class MildDipTapeShadow {
         recorded: 0,
         suppressedCap: 0,
         suppressedInterval: 0,
+        pairAgeKnown: 0,
+        pairAgeUnknown: 0,
         rejectionReasons: {},
       };
       this.summaryWindowStartMs = nowMs;
@@ -526,6 +581,8 @@ export function createMildDipTapeShadowStateSaver(opts: {
   ring: MildDipPriceRing;
   saveIntervalMs: number;
   idleEvictMs: number;
+  pairAgeMaxStaleMs?: number;
+  pairAgeMaxEntries?: number;
   now?: () => number;
   log?: (message: string) => void;
 }): { save: (force?: boolean) => boolean } {
@@ -541,6 +598,11 @@ export function createMildDipTapeShadowStateSaver(opts: {
         return false;
       }
       opts.ring.evictIdle(nowMs, opts.idleEvictMs);
+      opts.shadow.getPairAgeRegistry().evict(
+        nowMs,
+        opts.pairAgeMaxStaleMs ?? 7 * 24 * 3_600_000,
+        opts.pairAgeMaxEntries ?? 5_000,
+      );
       saveMildDipTapeShadowState(opts.filePath, opts.shadow, nowMs);
       lastSaveMs = nowMs;
       if (nowMs - lastSizeLogMs >= 10 * 60_000) {

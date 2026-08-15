@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import postgres from 'postgres';
 import { fetch } from 'undici';
+import { mildDipPairAgeRegistry } from './pair-age-registry.js';
 
 export type LeaderSeedHit = {
   mint: string;
@@ -188,6 +189,9 @@ export function upsertLeaderSeedMint(
   opts?: { max?: number; maxAgeMs?: number; nowMs?: number },
 ): void {
   const nowMs = opts?.nowMs ?? Date.now();
+  if (hit.ageHours != null) {
+    mildDipPairAgeRegistry.notePairAgeHours(hit.mint, hit.ageHours, hit.lastSeenAtMs);
+  }
   const max = Math.max(1, Math.floor(opts?.max ?? 40));
   const maxAgeMs = Math.max(0, opts?.maxAgeMs ?? 2 * 3_600_000);
   let hits: LeaderSeedHit[] = [];

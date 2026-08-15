@@ -40,6 +40,7 @@ import {
   type KnifeWatchEntry,
 } from './knife-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
+import { mildDipPairAgeRegistry } from './pair-age-registry.js';
 import { evaluateTurnDumpGate, turnDumpKnifeOrOk } from './turn-dump.js';
 
 function turnDumpGateArgs(cfg: MildDipConfig, metrics: MildDipCandidateMetrics) {
@@ -517,6 +518,9 @@ export async function enrichAndFilterCandidates(
         details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
           ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
           : null;
+      if (details.pairCreatedAtMs != null) {
+        mildDipPairAgeRegistry.notePairCreatedAt(mint, details.pairCreatedAtMs, nowMs);
+      }
 
       const metrics: MildDipCandidateMetrics = {
         priceChange5mPct: details.priceChangeM5Pct,

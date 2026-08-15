@@ -15,6 +15,7 @@ import {
   mildStabilizeLaneAllowed,
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
+import { mildDipPairAgeRegistry } from './pair-age-registry.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { isLeaderFreshCoBuy } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
@@ -59,6 +60,9 @@ function structuralFromLeaderSeed(
   nowMs: number,
 ): StructuralCacheEntry | null {
   if (nowMs - hit.lastSeenAtMs > LEADER_SEED_DEX_MAX_AGE_MS) return null;
+  if (hit.ageHours != null) {
+    mildDipPairAgeRegistry.notePairAgeHours(hit.mint, hit.ageHours, hit.lastSeenAtMs);
+  }
   const priceUsd = hit.priceUsd;
   const vol = hit.vol5m;
   const liq = hit.liq;
@@ -425,6 +429,9 @@ function structuralFromDexDetails(
     details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
       ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
       : null;
+  if (details.pairCreatedAtMs != null) {
+    mildDipPairAgeRegistry.notePairCreatedAt(mint, details.pairCreatedAtMs, nowMs);
+  }
   const metrics: MildDipCandidateMetrics = {
     priceChange5mPct: details.priceChangeM5Pct,
     volume5mUsd: details.volume5mUsd,

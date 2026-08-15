@@ -331,6 +331,8 @@ describe('MildDipTapeShadow', () => {
       recorded: 1,
       suppressedInterval: 1,
       suppressedCap: 1,
+      pairAgeKnown: 9,
+      pairAgeUnknown: 0,
     });
     expect(
       (summary?.lanes as { green: { rejectionReasons: Record<string, number> } }).green
@@ -358,6 +360,8 @@ describe('MildDipTapeShadow', () => {
     expect(greenReasons.no_60m_coverage).toBe(1);
     expect(greenReasons.no_5m_coverage).toBe(1);
     expect(greenReasons['pairAgeHours=null']).toBe(1);
+    expect((summary?.lanes as { green: { pairAgeKnown: number; pairAgeUnknown: number } }).green)
+      .toMatchObject({ pairAgeKnown: 0, pairAgeUnknown: 1 });
   });
 
   it('evicts idle mints and removes completed pending signals', () => {
