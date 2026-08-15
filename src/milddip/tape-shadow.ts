@@ -448,6 +448,44 @@ export function loadMildDipTapeShadowState(
   }
 }
 
+export function createMildDipTapeShadowStateSaver(opts: {
+  filePath: string;
+  shadow: MildDipTapeShadow;
+  ring: MildDipPriceRing;
+  saveIntervalMs: number;
+  idleEvictMs: number;
+  now?: () => number;
+  log?: (message: string) => void;
+}): { save: (force?: boolean) => boolean } {
+  let lastSaveMs: number | null = null;
+  let lastSizeLogMs = Number.NEGATIVE_INFINITY;
+  const now = opts.now ?? Date.now;
+  const log = opts.log ?? console.log;
+
+  return {
+    save(force = false): boolean {
+      const nowMs = now();
+      if (!force && lastSaveMs != null && nowMs - lastSaveMs < opts.saveIntervalMs) {
+        return false;
+      }
+      opts.ring.evictIdle(nowMs, opts.idleEvictMs);
+      saveMildDipTapeShadowState(opts.filePath, opts.shadow, nowMs);
+      lastSaveMs = nowMs;
+      if (nowMs - lastSizeLogMs >= 10 * 60_000) {
+        try {
+          const bytes = fs.statSync(opts.filePath).size;
+          const mints = opts.ring.watchedMints(nowMs).length;
+          log(`[mild-dip] tape-shadow state saved bytes=${bytes} mints=${mints}`);
+          lastSizeLogMs = nowMs;
+        } catch {
+          /* ignore diagnostics failure after a successful state save */
+        }
+      }
+      return true;
+    },
+  };
+}
+
 export const DEFAULT_MILD_DIP_TAPE_GATES: MildDipTapeGates = {
   greenImp60MinPct: 0,
   greenImp5MinPct: 4,

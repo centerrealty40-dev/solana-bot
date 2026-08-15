@@ -113,8 +113,8 @@ import { MildDipPriceRing } from './price-ring.js';
 import {
   DEFAULT_MILD_DIP_TAPE_GATES,
   MildDipTapeShadow,
+  createMildDipTapeShadowStateSaver,
   loadMildDipTapeShadowState,
-  saveMildDipTapeShadowState,
 } from './tape-shadow.js';
 import {
   HOLDING_DUST_RAW,
@@ -2627,9 +2627,16 @@ export async function runMildDipLoop(
       );
     }
   }
-  const saveTapeShadow = (): void => {
-    if (tapeShadow) saveMildDipTapeShadowState(cfg.tapeShadowStatePath, tapeShadow);
-  };
+  const tapeShadowStateSaver =
+    tapeShadow && tapeShadowRing
+      ? createMildDipTapeShadowStateSaver({
+          filePath: cfg.tapeShadowStatePath,
+          shadow: tapeShadow,
+          ring: tapeShadowRing,
+          saveIntervalMs: cfg.tapeStateSaveMs,
+          idleEvictMs: Math.max(cfg.tapeIdleEvictMs, cfg.tapeWindowMs),
+        })
+      : null;
   const sampleWatchMs = Math.max(
     cfg.cooldownBounceLookbackMs,
     cfg.mintCooldownMs,
@@ -3031,7 +3038,7 @@ export async function runMildDipLoop(
         try {
           saveMildDipHotMints(cfg.hotMintsPath);
           saveMildDipPriceRing(cfg.priceRingPath);
-          saveTapeShadow();
+          tapeShadowStateSaver?.save();
         } catch (err) {
           console.warn('[mild-dip] persist hot/price ring failed', err);
         }
@@ -3042,7 +3049,7 @@ export async function runMildDipLoop(
             try {
               saveMildDipHotMints(cfg.hotMintsPath);
               saveMildDipPriceRing(cfg.priceRingPath);
-              saveTapeShadow();
+              tapeShadowStateSaver?.save();
             } catch (err) {
               console.warn('[mild-dip] persist hot/price ring failed', err);
             }
@@ -3070,7 +3077,7 @@ export async function runMildDipLoop(
     try {
       saveMildDipHotMints(cfg.hotMintsPath);
       saveMildDipPriceRing(cfg.priceRingPath);
-      saveTapeShadow();
+      tapeShadowStateSaver?.save(true);
     } catch {
       /* ignore */
     }

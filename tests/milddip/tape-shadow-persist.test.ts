@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -6,6 +6,7 @@ import { MildDipPriceRing } from '../../src/milddip/price-ring.js';
 import {
   DEFAULT_MILD_DIP_TAPE_GATES,
   MildDipTapeShadow,
+  createMildDipTapeShadowStateSaver,
   loadMildDipTapeShadowState,
   saveMildDipTapeShadowState,
 } from '../../src/milddip/tape-shadow.js';
@@ -155,6 +156,73 @@ describe('persistent tape-shadow state', () => {
         signalTsMs + 61 * 60_000,
       );
       expect(result.pending).toBe(0);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('writes immediately, throttles subsequent saves, and forces shutdown saves', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'milddip-tape-state-throttle-'));
+    try {
+      const filePath = path.join(dir, 'tape-shadow-state.json');
+      const events: Record<string, unknown>[] = [];
+      const ring = new MildDipPriceRing({ ttlMs: 90 * 60_000 });
+      const shadow = makeShadow(events, ring);
+      let nowMs = 600 * 60_000;
+      const logs: string[] = [];
+      const saver = createMildDipTapeShadowStateSaver({
+        filePath,
+        shadow,
+        ring,
+        saveIntervalMs: 60_000,
+        idleEvictMs: 90 * 60_000,
+        now: () => nowMs,
+        log: (message) => logs.push(message),
+      });
+
+      expect(saver.save()).toBe(true);
+      const first = readFileSync(filePath, 'utf8');
+      nowMs += 30_000;
+      expect(saver.save()).toBe(false);
+      expect(readFileSync(filePath, 'utf8')).toBe(first);
+      expect(saver.save(true)).toBe(true);
+      expect(readFileSync(filePath, 'utf8')).not.toBe(first);
+      expect(logs).toHaveLength(1);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('evicts idle mints before saving while retaining the tape history mint', () => {
+    const dir = mkdtempSync(path.join(tmpdir(), 'milddip-tape-state-evict-'));
+    try {
+      const filePath = path.join(dir, 'tape-shadow-state.json');
+      const nowMs = 700 * 60_000;
+      const ring = new MildDipPriceRing({ ttlMs: 90 * 60_000 });
+      const shadow = makeShadow([], ring);
+      ring.note('idle-mint', 1, { tsMs: nowMs - 2 * 60 * 60_000, source: 'stream' });
+      for (const [offset, priceUsd] of [
+        [-60 * 60_000, 100],
+        [-30 * 60_000, 120],
+        [-10 * 60_000, 104],
+      ] as const) {
+        ring.note(mint, priceUsd, { tsMs: nowMs + offset, source: 'stream' });
+      }
+      const saver = createMildDipTapeShadowStateSaver({
+        filePath,
+        shadow,
+        ring,
+        saveIntervalMs: 60_000,
+        idleEvictMs: 90 * 60_000,
+        now: () => nowMs,
+      });
+      expect(saver.save()).toBe(true);
+
+      const payload = JSON.parse(readFileSync(filePath, 'utf8')) as {
+        ring: Record<string, unknown[]>;
+      };
+      expect(payload.ring['idle-mint']).toBeUndefined();
+      expect(payload.ring[mint]).toHaveLength(3);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
