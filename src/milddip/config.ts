@@ -368,6 +368,22 @@ const MildDipConfigSchema = z.object({
   requireLeaderSeenFirstTouch: z.boolean().default(false),
   /** 1.11.906 — how long we remember that a leader traded a mint. 0 = off. */
   leaderSeenMemoryMs: z.coerce.number().int().min(0).max(30 * 86_400_000).default(0),
+  /** Journal-only shadow sample for candidates rejected by the leader gate. */
+  leaderGateShadowRecord: z.boolean().default(true),
+  leaderGateShadowMinIntervalMs: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(86_400_000)
+    .default(600_000),
+  leaderGateShadowMaxPerHour: z.coerce.number().int().min(0).max(100_000).default(2_000),
+  leaderGateShadowDefer: z.boolean().default(false),
+  leaderGateShadowDeferMaxPerHour: z.coerce
+    .number()
+    .int()
+    .min(0)
+    .max(10_000)
+    .default(60),
   requireLeaderSeenMaxAgeMs: z.coerce
     .number()
     .int()
@@ -1017,6 +1033,17 @@ export function loadMildDipConfig(): MildDipConfig {
     requireLeaderSeen: envBool('MILD_DIP_REQUIRE_LEADER_SEEN', false),
     requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
     leaderSeenMemoryMs: process.env.MILD_DIP_LEADER_SEEN_MEMORY_MS ?? 0,
+    leaderGateShadowRecord: envBool('MILD_DIP_LEADER_GATE_SHADOW_RECORD', true),
+    leaderGateShadowMinIntervalMs: envNum(
+      'MILD_DIP_LEADER_GATE_SHADOW_MIN_INTERVAL_MS',
+      600_000,
+    ),
+    leaderGateShadowMaxPerHour: envNum('MILD_DIP_LEADER_GATE_SHADOW_MAX_PER_HOUR', 2_000),
+    leaderGateShadowDefer: envBool('MILD_DIP_LEADER_GATE_SHADOW_DEFER', false),
+    leaderGateShadowDeferMaxPerHour: envNum(
+      'MILD_DIP_LEADER_GATE_SHADOW_DEFER_MAX_PER_HOUR',
+      60,
+    ),
     requireLeaderSeenMaxAgeMs: envNum('MILD_DIP_REQUIRE_LEADER_SEEN_MAX_AGE_MS', 7_200_000),
     leaderCoBuyAlignEnabled: envBool('MILD_DIP_LEADER_CO_BUY_ALIGN', false),
     leaderCoBuyAlignMaxMs: envNum('MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS', 120_000),
