@@ -149,8 +149,9 @@ function onCooldown(state: MildDipState, mint: string, nowMs: number): boolean {
   return until > nowMs;
 }
 
-/** Sample stream prices for cooldown / open / post-exit / hot mints (fast-path). */
+/** Sample stream prices for cooldown / open / post-exit / hot / leader-known mints. */
 function shouldSampleStreamPrice(
+  cfg: MildDipConfig,
   state: MildDipState,
   mint: string,
   nowMs: number,
@@ -166,6 +167,12 @@ function shouldSampleStreamPrice(
   if (lastEx > 0 && nowMs - lastEx <= lookbackMs) return true; // 1.11.783 post-exit wake
   // Fast-path needs live stream marks on hot names, not only cooldown.
   if (mildDipHotMints.isRecent(mint, nowMs, 180_000)) return true;
+  /**
+   * 1.11.930 — leader-known names must keep own-tape sampling between sessions.
+   * 6zjL @ 09:44: hot-mints TTL expired hours after 04:02; one random pump log at
+   * 09:09 hit should_sample_false → no drawdown tape before 8zkg's buy.
+   */
+  if (leaderEverSeen(cfg, state, mint, nowMs)) return true;
   return false;
 }
 
@@ -988,7 +995,9 @@ function rememberLeaderSeen(
   if (!state.leaderSeenMints) state.leaderSeenMints = {};
   const mem = state.leaderSeenMints;
   for (const h of hits) {
-    if (h.mint) mem[h.mint] = Math.max(mem[h.mint] ?? 0, h.lastSeenAtMs || nowMs);
+    if (!h.mint) continue;
+    mem[h.mint] = Math.max(mem[h.mint] ?? 0, h.lastSeenAtMs || nowMs);
+    mildDipHotMints.note(h.mint, mem[h.mint]);
   }
   for (const [mint, ts] of Object.entries(mem)) {
     if (nowMs - ts > cfg.leaderSeenMemoryMs) delete mem[mint];
@@ -2533,7 +2542,7 @@ export async function runMildDipLoop(
       rpcUrl: cfg.rpcUrl,
       minGapMsPerMint: cfg.streamPriceMinGapMs,
       concurrency: cfg.streamPriceConcurrency,
-      shouldSample: (mint, t) => shouldSampleStreamPrice(state, mint, t, sampleWatchMs),
+      shouldSample: (mint, t) => shouldSampleStreamPrice(cfg, state, mint, t, sampleWatchMs),
       /**
        * Force-fetch open bags so exit marks stay stream-fed — except green
        * ones, which pay for themselves out of the free Dex tape.

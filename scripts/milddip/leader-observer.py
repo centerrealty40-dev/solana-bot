@@ -181,7 +181,11 @@ def _pick_pair(pairs: list[dict[str, Any]]) -> dict[str, Any] | None:
     return next((x for x in sol if x.get("dexId") == "pumpswap"), sol[0])
 
 
-def fetch_dex_batch(mints: list[str]) -> dict[str, dict[str, Any] | None]:
+def fetch_dex_batch(
+    mints: list[str],
+    *,
+    priority: bool = False,
+) -> dict[str, dict[str, Any] | None]:
     """One HTTP call per ≤30 mints. Returns mint -> snapshot (or error dict)."""
     global _dex_last_call_ms, _dex_backoff_until_ms
     out: dict[str, dict[str, Any] | None] = {}
@@ -195,10 +199,15 @@ def fetch_dex_batch(mints: list[str]) -> dict[str, dict[str, Any] | None]:
             pending.append(m)
     if not pending:
         return out
-    if now_ms < _dex_backoff_until_ms:
+    if now_ms < _dex_backoff_until_ms and not priority:
         for m in pending:
             out[m] = {"error": "throttled_local", "retryInMs": int(_dex_backoff_until_ms - now_ms)}
         return out
+    if now_ms < _dex_backoff_until_ms and priority:
+        wait_s = max(0.0, (_dex_backoff_until_ms - now_ms) / 1000.0)
+        if wait_s > 0:
+            time.sleep(min(wait_s, 5.0))
+        now_ms = time.time() * 1000
 
     for i in range(0, len(pending), _DEX_BATCH_MAX):
         chunk = pending[i : i + _DEX_BATCH_MAX]
@@ -241,8 +250,8 @@ def fetch_dex_batch(mints: list[str]) -> dict[str, dict[str, Any] | None]:
     return out
 
 
-def fetch_dex(mint: str) -> dict[str, Any] | None:
-    return fetch_dex_batch([mint]).get(mint)
+def fetch_dex(mint: str, *, priority: bool = False) -> dict[str, Any] | None:
+    return fetch_dex_batch([mint], priority=priority).get(mint)
 
 
 def fetch_jupiter_prices(mints: list[str], price_url: str) -> dict[str, float]:
@@ -1308,7 +1317,7 @@ class Observer:
                 if side == "sell" and not self.log_sells:
                     continue
 
-                dex = fetch_dex(mint)
+                dex = fetch_dex(mint, priority=True)
                 dex_px = None
                 if isinstance(dex, dict) and not dex.get("error"):
                     try:

@@ -1,3 +1,15 @@
+## 1.11.930 — 2026-08-15
+
+### Fixed — own-tape stream on leader-known mints (6zjL @ 2RFDW1)
+
+- **`shouldSampleStreamPrice`**: mints in `leaderSeenMints` (7d memory) now keep stream price sampling between leader sessions — was only hot/cooldown/open, so names went blind hours after last touch.
+- **`rememberLeaderSeen`**: re-notes hot-mints when leader seed updates.
+- **Leader observer**: priority Dex fetch on leader buys bypasses local 429 backoff (was `throttled_local` / `no_dex` on 2RFDW1 @ 09:44).
+
+### Rollback
+
+- Revert `loop.ts` leader stream watch + `leader-observer.py` priority fetch + reload PM2.
+
 ## 1.11.929 — 2026-08-15
 
 ### Fixed — fast-path leader seed on stream/scan wakes
