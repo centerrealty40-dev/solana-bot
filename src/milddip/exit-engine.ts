@@ -43,6 +43,10 @@ export type MarkExitDecision = {
   tpRungIndex: number | null;
   /** 1.11.852 — mark held back pending confirmation; nothing was decided. */
   markQuarantined?: boolean;
+  /** 1.11.959 — green armed quarantine accepted after the blind-window cap. */
+  markQuarantineForceReleased?: boolean;
+  markQuarantineSinceMs?: number;
+  markQuarantineBlindMs?: number;
   /** 1.11.921 — drop a stream outlier Dex never saw; pending clears, last mark stays. */
   markDiscardStreamOutlier?: boolean;
   /** Which feed this mark came from; a quarantine remembers it (1.11.889). */
@@ -123,6 +127,8 @@ export function decideMarkExit(args: {
   turnover5mLiq?: number | null;
   /** 1.11.919 — how long a refused mark may stand before we accept it. */
   markJumpConfirmMaxMs?: number;
+  /** 1.11.959 — green armed quarantine blind window; 0 = off. */
+  markQuarantineGreenMaxMs?: number;
   /**
    * 1.11.921 — Dex price for cross-checking a stream print before a loss exit.
    * 3J8CiL: stream 1.98e-06 (-93%), Dex 3.124e-05 (+2%), cliff_dump fired anyway.
@@ -201,6 +207,9 @@ export function decideMarkExit(args: {
         : 0;
   const lastMark = pos.lastMarkPriceUsd;
   let armedTrailUsesDex = false;
+  let forceReleaseGreenQuarantine = false;
+  let quarantineSinceMs: number | undefined;
+  let quarantineBlindMs = 0;
   if (jumpLimit > 0 && lastMark != null && lastMark > 0) {
     const jumpPct = Math.abs(markPriceUsd / lastMark - 1) * 100;
     if (jumpPct > jumpLimit) {
@@ -266,6 +275,18 @@ export function decideMarkExit(args: {
       ) {
         acceptQuarantined = args.markSource !== 'stream';
       }
+      quarantineSinceMs =
+        pos.markQuarantineSinceMs ??
+        (pos.pendingMarkAtMs != null && pos.pendingMarkAtMs > 0
+          ? pos.pendingMarkAtMs
+          : seenAtMs);
+      quarantineBlindMs = Math.max(0, seenAtMs - quarantineSinceMs);
+      forceReleaseGreenQuarantine =
+        (args.markQuarantineGreenMaxMs ?? 0) > 0 &&
+        quarantineBlindMs >= (args.markQuarantineGreenMaxMs ?? 0) &&
+        pos.trailArmed === true &&
+        markPriceUsd >= pos.entryPriceUsd;
+      if (forceReleaseGreenQuarantine) acceptQuarantined = true;
       /**
        * 1.11.923 — stream confirmation is not confirmation without Dex.
        *
@@ -275,6 +296,7 @@ export function decideMarkExit(args: {
        * for both expiry and the second-tick confirm path.
        */
       const streamNeedsDex =
+        !forceReleaseGreenQuarantine &&
         args.markSource === 'stream' &&
         (acceptQuarantined ||
           (quarantineExpired &&
@@ -305,6 +327,7 @@ export function decideMarkExit(args: {
               tpRungIndex: null,
               markSource: args.markSource ?? null,
               markDiscardStreamOutlier: true,
+              markQuarantineSinceMs: quarantineSinceMs,
               mfePct: 0,
               givebackPct: 0,
               pnlPct: 0,
@@ -356,6 +379,7 @@ export function decideMarkExit(args: {
             postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
             postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
             markQuarantined: true,
+            markQuarantineSinceMs: quarantineSinceMs,
           };
         }
         // Dmkj4d: stream jumped down below Dex on an armed bag — trail on Dex, not blind.
@@ -473,6 +497,13 @@ export function decideMarkExit(args: {
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,
+    ...(forceReleaseGreenQuarantine
+      ? {
+          markQuarantineForceReleased: true,
+          markQuarantineSinceMs: quarantineSinceMs,
+          markQuarantineBlindMs: quarantineBlindMs,
+        }
+      : {}),
   };
 }
 
@@ -497,6 +528,8 @@ export function applyMarkDecisionToPosition(
     }
     pos.pendingMarkPriceUsd = decision.markPriceUsd;
     pos.pendingMarkSource = decision.markSource ?? undefined;
+    pos.markQuarantineSinceMs =
+      decision.markQuarantineSinceMs ?? pos.markQuarantineSinceMs ?? Date.now();
     return;
   }
   if (pos.lastMarkPriceUsd !== decision.markPriceUsd || pos.markUnchangedSinceMs == null) {
@@ -506,6 +539,7 @@ export function applyMarkDecisionToPosition(
   pos.pendingMarkPriceUsd = undefined;
   pos.pendingMarkSource = undefined;
   pos.pendingMarkAtMs = undefined;
+  pos.markQuarantineSinceMs = undefined;
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;

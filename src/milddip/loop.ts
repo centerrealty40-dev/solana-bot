@@ -294,12 +294,14 @@ function maybeRequestOpenMarkJupiterRefresh(
     | 'markJupiterProbeUsd'
     | 'markJupiterMaxInFlight'
     | 'markJupiterStreamQuietMs'
+    | 'markQuarantineJupiterGapMs'
     | 'slippageBps'
   >,
+  quarantined = false,
 ): void {
-  const gap = cfg.markJupiterRefreshMs;
+  const gap = quarantined ? cfg.markQuarantineJupiterGapMs : cfg.markJupiterRefreshMs;
   if (!(gap > 0)) return;
-  if (!openMarkNeedsJupiterTopUp(mint, nowMs, cfg.markJupiterStreamQuietMs)) return;
+  if (!quarantined && !openMarkNeedsJupiterTopUp(mint, nowMs, cfg.markJupiterStreamQuietMs)) return;
   const snap = mildDipPriceRing.lastPrice(mint, nowMs)?.priceUsd;
   if (!(snap != null && snap > 0)) return;
   requestOpenMarkJupiterRefresh({
@@ -386,7 +388,12 @@ function maybeJournalMark(
   if (cfg.markJournalMs <= 0) return;
   const newPeak = decision.peakPriceUsd > (pos.peakPriceUsd ?? 0);
   const last = lastMarkJournalMs.get(pos.mint) ?? 0;
-  if (!newPeak && !decision.shouldExit && nowMs - last < cfg.markJournalMs) return;
+  if (
+    !newPeak &&
+    !decision.shouldExit &&
+    decision.markQuarantineForceReleased !== true &&
+    nowMs - last < cfg.markJournalMs
+  ) return;
   lastMarkJournalMs.set(pos.mint, nowMs);
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_mark',
@@ -416,6 +423,10 @@ function maybeJournalMark(
     // 1.11.852 — held back pending confirmation. pnl/mfe are not computed for
     // these, so offline analysis must drop them rather than read zeros.
     quarantined: decision.markQuarantined === true,
+    quarantineForceReleased: decision.markQuarantineForceReleased === true,
+    quarantineBlindMs: decision.markQuarantineBlindMs ?? null,
+    quarantineAcceptedSource:
+      decision.markQuarantineForceReleased === true ? source : null,
   });
 }
 
@@ -2124,6 +2135,7 @@ async function tryExits(
       markPriceUsd: px,
       gates: cfg.exit,
       markJumpConfirmMaxMs: cfg.markJumpConfirmMaxMs,
+      markQuarantineGreenMaxMs: cfg.exit.markQuarantineGreenMaxMs,
       dexCrossCheckPx:
         source === 'stream' && px != null
           ? (
@@ -2154,6 +2166,9 @@ async function tryExits(
       },
     });
     if (!decision) continue;
+    if (decision.markQuarantined === true) {
+      maybeRequestOpenMarkJupiterRefresh(mint, nowMs, cfg, true);
+    }
 
     // First usable volume reading becomes the fade baseline for adopted bags.
     if (pos.entryVolume5mUsd == null && volume5mUsd != null && volume5mUsd > 0) {

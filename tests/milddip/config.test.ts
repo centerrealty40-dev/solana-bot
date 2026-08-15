@@ -91,4 +91,23 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT: '20'");
     expect(eco).toContain("MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT: '4'");
   });
+
+  it('loads quarantine refresh and green blind-window settings', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MARK_QUARANTINE_JUPITER_GAP_MS: '2000',
+        MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS: '10000',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.markQuarantineJupiterGapMs).toBe(2000);
+    expect(cfg.exit.markQuarantineGreenMaxMs).toBe(10000);
+  });
+
+  it('keeps production quarantine settings', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_MARK_QUARANTINE_JUPITER_GAP_MS: '2000'");
+    expect(eco).toContain("MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS: '10000'");
+  });
 });

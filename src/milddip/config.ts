@@ -101,6 +101,8 @@ const MildDipConfigSchema = z.object({
    * 1.11.919 — how long a quarantined mark may be refused before we accept it.
    */
   markJumpConfirmMaxMs: z.coerce.number().int().min(0).max(120_000).default(8_000),
+  /** 1.11.959 — immediate Jupiter read after a quarantined mark; 0 = off. */
+  markQuarantineJupiterGapMs: z.coerce.number().int().min(0).max(120_000).default(0),
   /**
    * 1.11.794 — max concurrent background Dex→ring refreshes for open bags
    * (`requestOpenMarkRefresh`). Exit mark reads stay sync from the ring.
@@ -670,6 +672,8 @@ const MildDipConfigSchema = z.object({
     markSellHaircutPct: z.coerce.number().min(0).max(10).default(1),
     /** 1.11.957 — max quote slip below a profit decision; 0 = off. */
     profitFillMaxSlipPct: z.coerce.number().min(0).max(100).default(0),
+    /** 1.11.959 — green armed quarantine blind window; 0 = off. */
+    markQuarantineGreenMaxMs: z.coerce.number().int().min(0).max(120_000).default(0),
     /** 1.11.910 — the dead-set exit: volume, turnover and price all gone. */
     deadSetVolFadeFrac: z.coerce.number().min(0).max(1).default(0),
     deadSetTurnFadeFrac: z.coerce.number().min(0).max(1).default(0),
@@ -879,6 +883,7 @@ export function loadMildDipConfig(): MildDipConfig {
     markJumpConfirmStreamPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT', 8),
     markSellHaircutPct: envNum('MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT', 1),
     profitFillMaxSlipPct: envNum('MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT', 0),
+    markQuarantineGreenMaxMs: envNum('MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS', 0),
     deadSetVolFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC', 0),
     deadSetTurnFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC', 0),
     deadSetMinDropPct: envNum('MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT', 10),
@@ -1013,6 +1018,10 @@ export function loadMildDipConfig(): MildDipConfig {
     markCacheTtlMs: process.env.MILD_DIP_MARK_CACHE_TTL_MS ?? 20_000,
     markArmedMaxAgeMs: process.env.MILD_DIP_MARK_ARMED_MAX_AGE_MS ?? 10_000,
     markJumpConfirmMaxMs: process.env.MILD_DIP_MARK_JUMP_CONFIRM_MAX_MS ?? 8_000,
+    markQuarantineGreenMaxMs:
+      process.env.MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS ?? 0,
+    markQuarantineJupiterGapMs:
+      process.env.MILD_DIP_MARK_QUARANTINE_JUPITER_GAP_MS ?? 0,
     /** 1.11.736 — tighter journal so giveback gaps are visible (was 30s). */
     markJournalMs: process.env.MILD_DIP_MARK_JOURNAL_MS ?? 5_000,
     markConcurrency: process.env.MILD_DIP_MARK_CONCURRENCY ?? 48,

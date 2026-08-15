@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import {
   applyMarkDecisionToPosition,
   decideMarkExit,
@@ -20,6 +20,8 @@ function pos(partial: Partial<MildDipOpenPosition> & { mint: string }): MildDipO
     entryPc5mPct: partial.entryPc5mPct ?? -5,
     buySignature: partial.buySignature ?? null,
     peakPriceUsd: partial.peakPriceUsd,
+    lastMarkPriceUsd: partial.lastMarkPriceUsd,
+    markQuarantineSinceMs: partial.markQuarantineSinceMs,
     trailArmed: partial.trailArmed,
     scaleOutDone: partial.scaleOutDone,
     mint: partial.mint,
@@ -717,6 +719,164 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     it('leaves the −25% stop in charge below that', () => {
       const d = at(bounced, 'b_stop', ENTRY * 0.7);
       expect(d?.reason).toBe('hard_stop');
+    });
+  });
+
+  describe('bounded green quarantine blindness (1.11.959)', () => {
+    const g = {
+      ...gates,
+      markJumpConfirmPct: 10,
+      markJumpConfirmStreamPct: 8,
+      markQuarantineGreenMaxMs: 10_000,
+      mfeBankEnabled: false,
+      partialGivebackPct: 0,
+      givebackPct: 25,
+      hardStopPnlPct: 0,
+    };
+
+    function armedGreen(): MildDipOpenPosition {
+      return pos({
+        mint: 'quarantine-green',
+        entryPriceUsd: 100,
+        peakPriceUsd: 130,
+        trailArmed: true,
+        lastMarkPriceUsd: 130,
+        openedAtMs: 1_000_000,
+      });
+    }
+
+    function quarantine(
+      p: MildDipOpenPosition,
+      nowMs: number,
+      price = 118,
+      gatesOverride = g,
+    ) {
+      return decideMarkExit({
+        mint: p.mint,
+        pos: p,
+        markPriceUsd: price,
+        gates: gatesOverride,
+        markQuarantineGreenMaxMs: gatesOverride.markQuarantineGreenMaxMs,
+        nowMs,
+        markSource: 'stream',
+      })!;
+    }
+
+    it('accepts an armed green mark after the configured blind window', () => {
+      const p = armedGreen();
+      const first = quarantine(p, 1_010_000);
+      expect(first.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, first);
+      expect(p.markQuarantineSinceMs).toBe(1_010_000);
+
+      const released = quarantine(p, 1_021_000);
+      expect(released.markQuarantined).not.toBe(true);
+      expect(released.markQuarantineForceReleased).toBe(true);
+      expect(released.markQuarantineBlindMs).toBe(11_000);
+      expect(released.pnlPct).toBeCloseTo(18, 6);
+    });
+
+    it('keeps the blind clock running across changing quarantined prices', () => {
+      const p = armedGreen();
+      for (const [nowMs, price] of [
+        [1_010_000, 118],
+        [1_013_000, 110],
+        [1_016_000, 104],
+      ] as const) {
+        const d = quarantine(p, nowMs, price);
+        expect(d.markQuarantined).toBe(true);
+        applyMarkDecisionToPosition(p, d);
+      }
+
+      const released = quarantine(p, 1_021_000, 101);
+      expect(released.markQuarantineForceReleased).toBe(true);
+      expect(released.markQuarantineBlindMs).toBe(11_000);
+      expect(released.markQuarantined).not.toBe(true);
+    });
+
+    it('gives a new quarantined value its own confirmation window', () => {
+      const p = armedGreen();
+      const first = quarantine(p, 1_000_000, 118);
+      applyMarkDecisionToPosition(p, first);
+      p.markQuarantineSinceMs = 1_000_000;
+      p.pendingMarkAtMs = 1_000_000;
+
+      const off = { ...g, markQuarantineGreenMaxMs: 0 };
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(1_020_000);
+      try {
+        const newValue = quarantine(p, 1_020_000, 110, off);
+        expect(newValue.markQuarantined).toBe(true);
+        applyMarkDecisionToPosition(p, newValue);
+        expect(p.pendingMarkAtMs).toBe(1_020_000);
+
+        const reread = quarantine(p, 1_021_000, 110, off);
+        expect(reread.markQuarantined).toBe(true);
+        expect(reread.markDiscardStreamOutlier).not.toBe(true);
+      } finally {
+        clock.mockRestore();
+      }
+    });
+
+    it('still refuses red and never-armed marks', () => {
+      const red = armedGreen();
+      const firstRed = quarantine(red, 1_010_000, 90);
+      applyMarkDecisionToPosition(red, firstRed);
+      const redLater = quarantine(red, 1_021_000, 90);
+      expect(redLater.markQuarantined === true || redLater.markDiscardStreamOutlier === true).toBe(
+        true,
+      );
+      expect(redLater.markQuarantineForceReleased).not.toBe(true);
+
+      const unarmed = pos({
+        mint: 'quarantine-unarmed',
+        entryPriceUsd: 100,
+        peakPriceUsd: 130,
+        trailArmed: false,
+        lastMarkPriceUsd: 130,
+        openedAtMs: 1_000_000,
+      });
+      const firstUnarmed = quarantine(unarmed, 1_010_000, 118);
+      applyMarkDecisionToPosition(unarmed, firstUnarmed);
+      const unarmedLater = quarantine(unarmed, 1_021_000, 118);
+      expect(
+        unarmedLater.markQuarantined === true ||
+          unarmedLater.markDiscardStreamOutlier === true,
+      ).toBe(true);
+      expect(unarmedLater.markQuarantineForceReleased).not.toBe(true);
+    });
+
+    it('keeps the current refusal behavior when the threshold is zero', () => {
+      const p = armedGreen();
+      const off = { ...g, markQuarantineGreenMaxMs: 0 };
+      const first = quarantine(p, 1_010_000, 118, off);
+      applyMarkDecisionToPosition(p, first);
+      const later = quarantine(p, 1_021_000, 118, off);
+      expect(later.markQuarantined === true || later.markDiscardStreamOutlier === true).toBe(
+        true,
+      );
+      expect(later.markQuarantineForceReleased).not.toBe(true);
+    });
+
+    it('resets the quarantine counter after an accepted mark', () => {
+      const p = armedGreen();
+      const first = quarantine(p, 1_010_000);
+      applyMarkDecisionToPosition(p, first);
+      const confirmed = decideMarkExit({
+        mint: p.mint,
+        pos: p,
+        markPriceUsd: 117,
+        gates: g,
+        nowMs: 1_012_000,
+        markSource: 'dex',
+      })!;
+      expect(confirmed.markQuarantined).not.toBe(true);
+      applyMarkDecisionToPosition(p, confirmed);
+      expect(p.markQuarantineSinceMs).toBeUndefined();
+
+      const next = quarantine(p, 1_020_000, 105);
+      expect(next.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, next);
+      expect(p.markQuarantineSinceMs).toBe(1_020_000);
     });
   });
 
