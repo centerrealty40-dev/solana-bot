@@ -17,6 +17,15 @@ type MintRing = {
   samples: MildDipPriceSample[];
 };
 
+export type MildDipPriceWindowStats = {
+  sampleCount: number;
+  firstSampleTsMs: number | null;
+  lastSampleTsMs: number | null;
+  spanMs: number;
+  minPriceUsd: number | null;
+  maxPriceUsd: number | null;
+};
+
 export class MildDipPriceRing {
   private readonly byMint = new Map<string, MintRing>();
   private readonly maxSamplesPerMint: number;
@@ -90,6 +99,25 @@ export class MildDipPriceRing {
     const ring = this.byMint.get(mint);
     if (!ring || ring.samples.length === 0) return null;
     return ring.samples[ring.samples.length - 1] ?? null;
+  }
+
+  /** Latest sample at or before a lookback boundary. */
+  priceAtOrBefore(
+    mint: string,
+    lookbackMs: number,
+    nowMs = Date.now(),
+  ): MildDipPriceSample | null {
+    this.pruneMint(mint, nowMs);
+    const ring = this.byMint.get(mint);
+    if (!ring || ring.samples.length === 0) return null;
+    const boundary = nowMs - Math.max(0, lookbackMs);
+    let best: MildDipPriceSample | null = null;
+    for (const sample of ring.samples) {
+      if (sample.tsMs <= boundary && (!best || sample.tsMs > best.tsMs)) {
+        best = sample;
+      }
+    }
+    return best;
   }
 
   /** Most recent sample with `source`, optionally within maxAgeMs. */
@@ -275,6 +303,59 @@ export class MildDipPriceRing {
     return this.samplesInWindow(mint, windowMs, nowMs).length;
   }
 
+  windowStats(
+    mint: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): MildDipPriceWindowStats {
+    const samples = this.samplesInWindow(mint, windowMs, nowMs);
+    return this.statsForSamples(samples);
+  }
+
+  samplesInRange(
+    mint: string,
+    startMs: number,
+    endMs = Date.now(),
+  ): MildDipPriceWindowStats {
+    this.pruneMint(mint, endMs);
+    const ring = this.byMint.get(mint);
+    const samples =
+      ring?.samples.filter((sample) => sample.tsMs >= startMs && sample.tsMs <= endMs) ?? [];
+    return this.statsForSamples(samples);
+  }
+
+  latestAtOrBefore(mint: string, nowMs = Date.now()): MildDipPriceSample | null {
+    this.pruneMint(mint, nowMs);
+    const ring = this.byMint.get(mint);
+    if (!ring) return null;
+    let latest: MildDipPriceSample | null = null;
+    for (const sample of ring.samples) {
+      if (sample.tsMs <= nowMs && (!latest || sample.tsMs > latest.tsMs)) latest = sample;
+    }
+    return latest;
+  }
+
+  evictIdle(
+    nowMs = Date.now(),
+    idleMs = this.ttlMs,
+    protectedMints?: ReadonlySet<string>,
+  ): number {
+    const cutoff = nowMs - Math.max(0, idleMs);
+    let evicted = 0;
+    for (const [mint, ring] of this.byMint) {
+      if (protectedMints?.has(mint)) continue;
+      const latest = ring.samples.reduce<MildDipPriceSample | null>(
+        (best, sample) => (!best || sample.tsMs > best.tsMs ? sample : best),
+        null,
+      );
+      if (!latest || latest.tsMs < cutoff) {
+        this.byMint.delete(mint);
+        evicted += 1;
+      }
+    }
+    return evicted;
+  }
+
   watchedMints(nowMs = Date.now()): string[] {
     this.pruneAll(nowMs);
     return [...this.byMint.keys()];
@@ -290,6 +371,37 @@ export class MildDipPriceRing {
     if (!ring) return [];
     const cut = nowMs - Math.max(0, windowMs);
     return ring.samples.filter((s) => s.tsMs >= cut);
+  }
+
+  private statsForSamples(samples: MildDipPriceSample[]): MildDipPriceWindowStats {
+    if (samples.length === 0) {
+      return {
+        sampleCount: 0,
+        firstSampleTsMs: null,
+        lastSampleTsMs: null,
+        spanMs: 0,
+        minPriceUsd: null,
+        maxPriceUsd: null,
+      };
+    }
+    let first = samples[0]!;
+    let last = samples[0]!;
+    let min = samples[0]!.priceUsd;
+    let max = samples[0]!.priceUsd;
+    for (const sample of samples) {
+      if (sample.tsMs < first.tsMs) first = sample;
+      if (sample.tsMs > last.tsMs) last = sample;
+      if (sample.priceUsd < min) min = sample.priceUsd;
+      if (sample.priceUsd > max) max = sample.priceUsd;
+    }
+    return {
+      sampleCount: samples.length,
+      firstSampleTsMs: first.tsMs,
+      lastSampleTsMs: last.tsMs,
+      spanMs: Math.max(0, last.tsMs - first.tsMs),
+      minPriceUsd: min,
+      maxPriceUsd: max,
+    };
   }
 
   private pruneMint(mint: string, nowMs: number): void {

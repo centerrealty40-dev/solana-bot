@@ -1,3 +1,16 @@
+## 1.11.939 — 2026-08-15
+
+### Added — journal-only tape lane shadow measurement
+
+- Added separate 60–90 minute own-stream tape history for the measured GREEN and DIP lane thresholds, with missing history failing closed.
+- Journal-only `mild_dip_tape_lane_signal` events include all tape features and `shadowOnly: true`; no buy or transaction path is reachable.
+- Journal `mild_dip_tape_lane_outcome` events record price, maximum, and minimum at 15/30/60 minutes after each signal.
+- Enabled `MILD_DIP_TAPE_SHADOW_ENABLED=1` only for `mild-dip-bot`; the schema default remains disabled.
+
+### Rollback
+
+- Revert this commit and reload `ecosystem.config.cjs` with `pm2 reload ecosystem.config.cjs --update-env`; disabling `MILD_DIP_TAPE_SHADOW_ENABLED` stops the journal-only measurement without changing entry behavior.
+
 ## 1.11.938 — 2026-08-15
 
 ### Changed — leave runners, protect real greens, and retry trail sells
