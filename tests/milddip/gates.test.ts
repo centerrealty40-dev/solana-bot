@@ -1890,6 +1890,77 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.tpRungIndex).toBe(1);
   });
 
+  it('tp_grid first rung can wait until +20%', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      tpGridStepPct: 8,
+      tpGridFirstRungPct: 20,
+      tpGridSellFraction: 0.5,
+      tpGridMinRemainderFraction: 0,
+    };
+    const below = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 112,
+      peakPriceUsd: 112,
+      armed: true,
+      gates,
+      tpRungsDone: 0,
+    });
+    expect(below.shouldExit).toBe(false);
+
+    const first = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 120,
+      peakPriceUsd: 120,
+      armed: true,
+      gates,
+      tpRungsDone: 0,
+    });
+    expect(first.reason).toBe('tp_grid');
+    expect(first.tpRungIndex).toBe(1);
+    expect(first.fraction).toBe(0.5);
+  });
+
+  it('tp_grid first rung catches up to rungs 1–3 in one sale', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      tpGridStepPct: 8,
+      tpGridFirstRungPct: 20,
+      tpGridSellFraction: 0.34,
+      tpGridMinRemainderFraction: 0,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 137,
+      peakPriceUsd: 137,
+      armed: true,
+      gates,
+      tpRungsDone: 0,
+    });
+    expect(v.reason).toBe('tp_grid');
+    expect(v.tpRungIndex).toBe(3);
+    expect(v.fraction).toBeCloseTo(1 - 0.66 ** 3, 10);
+  });
+
+  it('tp_grid first rung 0 preserves the step-sized first rung', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      tpGridStepPct: 8,
+      tpGridFirstRungPct: 0,
+      tpGridSellFraction: 0.5,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108,
+      peakPriceUsd: 108,
+      armed: true,
+      gates,
+      tpRungsDone: 0,
+    });
+    expect(v.reason).toBe('tp_grid');
+    expect(v.tpRungIndex).toBe(1);
+  });
+
   it('green sleeve uses live peak retracement when loss bounce is enabled', () => {
     const gates: MildDipExitGates = {
       ...bankGates,

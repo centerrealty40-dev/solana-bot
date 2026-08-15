@@ -3632,6 +3632,13 @@ const PM2_APPS = [
          */
         MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8',
         /**
+         * 1.11.957 — first rung at +20% so the ladder does not sell the bag
+         * into micro-profit; later rungs remain 8pp apart.
+         */
+        MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT: '20',
+        /** 1.11.957 — refuse profit fills more than 4pp below the decision mark. */
+        MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT: '4',
+        /**
          * 1.11.938 — 750 exits reached +8% MFE and 166 ended red; 343 reached
          * +20% and 107 finished below +10%. Sell 34% of the remainder per rung
          * so the sleeve keeps roughly 44% after +8/+16 instead of closing it.

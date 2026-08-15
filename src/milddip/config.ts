@@ -660,12 +660,16 @@ const MildDipConfigSchema = z.object({
     mfeBankSleeveGivebackPct: z.coerce.number().min(0).max(100).default(12),
     /** 1.11.849 — Oscar-style unbounded TP ladder. 0 = off (mfe-bank owns exits). */
     tpGridStepPct: z.coerce.number().min(0).max(500).default(0),
+    /** 1.11.957 — first TP-grid rung; 0 = use tpGridStepPct. */
+    tpGridFirstRungPct: z.coerce.number().min(0).max(500).default(0),
     /** 1.11.852 — confirm single-tick jumps larger than this % before acting. */
     markJumpConfirmPct: z.coerce.number().min(0).max(100).default(25),
     /** 1.11.868 — tighter guard for stream prints; 0 = use markJumpConfirmPct. */
     markJumpConfirmStreamPct: z.coerce.number().min(0).max(100).default(8),
     /** Measured mark-to-fill gap on the sell side; taken off the gain only. */
     markSellHaircutPct: z.coerce.number().min(0).max(10).default(1),
+    /** 1.11.957 — max quote slip below a profit decision; 0 = off. */
+    profitFillMaxSlipPct: z.coerce.number().min(0).max(100).default(0),
     /** 1.11.910 — the dead-set exit: volume, turnover and price all gone. */
     deadSetVolFadeFrac: z.coerce.number().min(0).max(1).default(0),
     deadSetTurnFadeFrac: z.coerce.number().min(0).max(1).default(0),
@@ -870,9 +874,11 @@ export function loadMildDipConfig(): MildDipConfig {
     mfeBank2Fraction: envNum('MILD_DIP_EXIT_MFE_BANK2_FRACTION', 0.4),
     mfeBankSleeveGivebackPct: envNum('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', 12),
     tpGridStepPct: envNum('MILD_DIP_EXIT_TP_GRID_STEP_PCT', 0),
+    tpGridFirstRungPct: envNum('MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT', 0),
     markJumpConfirmPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT', 25),
     markJumpConfirmStreamPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT', 8),
     markSellHaircutPct: envNum('MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT', 1),
+    profitFillMaxSlipPct: envNum('MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT', 0),
     deadSetVolFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC', 0),
     deadSetTurnFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC', 0),
     deadSetMinDropPct: envNum('MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT', 10),

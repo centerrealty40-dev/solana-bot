@@ -67,6 +67,7 @@ import {
   type LeaderAlignHit,
 } from './leader-align.js';
 import { isRunnerPartialExit } from './sell-partial.js';
+import { profitFillMinPriceUsd } from './profit-fill-guard.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import { readOpenMarkMetrics } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
@@ -1431,6 +1432,28 @@ async function executeQueuedSell(args: {
     decision.gainPct >= 0
       ? costPriceUsd
       : undefined;
+  const profitFillMaxSlipPct =
+    cfg.exit.profitFillMaxSlipPct != null && cfg.exit.profitFillMaxSlipPct > 0
+      ? cfg.exit.profitFillMaxSlipPct
+      : 0;
+  const profitFillMinPrice = profitFillMinPriceUsd({
+    reason: decision.reason,
+    gainPct: decision.gainPct,
+    decisionPriceUsd: decision.markPriceUsd,
+    maxSlipPct: profitFillMaxSlipPct,
+  });
+  const profitFillMinPriceUsdValue =
+    profitFillMinPrice != null ? profitFillMinPrice : undefined;
+  const guardedMinExitPriceUsd =
+    minExitPriceUsd != null && profitFillMinPriceUsdValue != null
+      ? Math.max(minExitPriceUsd, profitFillMinPriceUsdValue)
+      : minExitPriceUsd ?? profitFillMinPriceUsdValue;
+  const minExitPriceGuard =
+    profitFillMinPriceUsdValue != null
+      ? 'profit_fill_slippage'
+      : minExitPriceUsd != null
+        ? 'cost_floor'
+        : undefined;
   const sell = await executeCopySell({
     cfg: copyCfg,
     mint,
@@ -1441,7 +1464,14 @@ async function executeQueuedSell(args: {
     fraction,
     leaderSignature: `milddip_exit_${decision.reason}_${nowMs}`,
     sellDelayMs: 0,
-    ...(minExitPriceUsd != null ? { minExitPriceUsd } : {}),
+    ...(guardedMinExitPriceUsd != null ? { minExitPriceUsd: guardedMinExitPriceUsd } : {}),
+    ...(minExitPriceGuard != null ? { minExitPriceGuard } : {}),
+    ...(profitFillMinPriceUsdValue != null
+      ? {
+          profitFillDecisionPriceUsd: decision.markPriceUsd,
+          profitFillMaxSlipPct,
+        }
+      : {}),
     ...(pos.tokenRawSettled && pos.tokenRaw ? { tokenRawBase: pos.tokenRaw } : {}),
   });
 
@@ -1469,6 +1499,7 @@ async function executeQueuedSell(args: {
     holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
     ok: sell.ok,
     sellReason: sell.reason ?? null,
+    minExitPriceGuard: sell.minExitPriceGuard ?? null,
     signature: sell.signature ?? null,
     mode: cfg.executionMode,
   });

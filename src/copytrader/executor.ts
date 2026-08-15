@@ -38,6 +38,7 @@ export type SellExecutionResult = {
   /** Amount actually sent to Jupiter (live only). */
   tokenRawSold?: string;
   reason?: string;
+  minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage';
   /** Jupiter quote USDC received (sell). */
   quoteReceivedUsd?: number;
   usdcBefore?: number;
@@ -149,6 +150,10 @@ export async function executeCopySell(args: {
   tokenRawBase?: string;
   /** 1.11.883 — money exits refuse to fill below cost; risk exits omit it. */
   minExitPriceUsd?: number;
+  /** Which pre-send quote guard supplied `minExitPriceUsd`, for audit. */
+  minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage';
+  profitFillDecisionPriceUsd?: number;
+  profitFillMaxSlipPct?: number;
 }): Promise<SellExecutionResult> {
   const {
     cfg,
@@ -197,6 +202,9 @@ export async function executeCopySell(args: {
       fraction,
       tokenRawBase,
       minExitPriceUsd: args.minExitPriceUsd,
+      minExitPriceGuard: args.minExitPriceGuard,
+      profitFillDecisionPriceUsd: args.profitFillDecisionPriceUsd,
+      profitFillMaxSlipPct: args.profitFillMaxSlipPct,
     });
     const exitPx = live.priceUsd || exitPriceUsd;
     const livePnl = entryPriceUsd > 0 ? ((exitPx / entryPriceUsd - 1) * 100) : pnlPct;
@@ -231,6 +239,7 @@ export async function executeCopySell(args: {
       tokenRawBefore: live.tokenRawBefore,
       tokenRawSold: live.tokenRawSold,
       reason: live.reason,
+      minExitPriceGuard: live.minExitPriceGuard,
       quoteReceivedUsd: live.quoteReceivedUsd,
       usdcBefore: live.usdcBefore,
       usdcAfter: live.usdcAfter,

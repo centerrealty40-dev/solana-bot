@@ -72,4 +72,23 @@ describe('mild-dip config exit schema', () => {
     );
     expect(cfg.exit.neverArmBounceArmedRunner).toBe(false);
   });
+
+  it('loads the first TP rung and profit fill guard from the environment', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT: '20',
+        MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT: '4',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.tpGridFirstRungPct).toBe(20);
+    expect(cfg.exit.profitFillMaxSlipPct).toBe(4);
+  });
+
+  it('keeps the production first rung and profit guard values', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT: '20'");
+    expect(eco).toContain("MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT: '4'");
+  });
 });
