@@ -2,6 +2,7 @@ import { describe, expect, it, beforeEach } from 'vitest';
 import {
   DEXSCREENER_BATCH_MAX,
   __resetDexQuoteCacheForTests,
+  fetchDexScreenerPairCreatedAtMany,
   prefetchDexScreenerPairDetailsMany,
 } from '../../src/papertrader/pricing/dexscreener-quote-cache.js';
 
@@ -90,5 +91,41 @@ describe('1.11.820 DexScreener batch prefetch', () => {
         bypassGate: true,
       }),
     ).resolves.toBe(1);
+  });
+
+  it('returns pair creation times with the same 30-address chunking and pair pick', async () => {
+    const urls: string[] = [];
+    const mints = Array.from({ length: 31 }, (_, i) => mint(i));
+    const now = Date.now();
+    const fetchImpl = (async (url: string) => {
+      urls.push(String(url));
+      const addrs = String(url).split('/tokens/')[1]!.split(',').map(decodeURIComponent);
+      return {
+        ok: true,
+        json: async () => ({
+          pairs: addrs.map((address) => ({
+            chainId: 'solana',
+            dexId: 'pumpswap',
+            pairAddress: `pair-${address.slice(0, 6)}`,
+            priceUsd: '0.00001',
+            baseToken: { address },
+            quoteToken: { address: 'So11111111111111111111111111111111111111112' },
+            liquidity: { usd: 20_000 },
+            pairCreatedAt: now - 7_200_000,
+          })),
+        }),
+      };
+    }) as never;
+
+    const result = await fetchDexScreenerPairCreatedAtMany(mints, {
+      fetchImpl,
+      bypassGate: true,
+    });
+
+    expect(urls).toHaveLength(2);
+    expect(urls[0]!.split(',')).toHaveLength(30);
+    expect(result.size).toBe(31);
+    expect(result.get(mints[0]!)).toBe(now - 7_200_000);
+    expect(result.get(mints[30]!)).toBe(now - 7_200_000);
   });
 });

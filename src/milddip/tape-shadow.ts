@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   mildDipPairAgeRegistry,
+  type MildDipPairAgeAttemptState,
   type MildDipPairAgeRegistry,
   type MildDipPairAgeRegistryState,
 } from './pair-age-registry.js';
@@ -150,6 +151,14 @@ export function evaluateMildDipTape(
 
 export type MildDipTapeShadowEvent = Record<string, unknown>;
 
+export function tapePairAgeBackfillDue(
+  lastRunMs: number,
+  nowMs: number,
+  intervalMs: number,
+): boolean {
+  return lastRunMs <= 0 || nowMs - lastRunMs >= Math.max(0, intervalMs);
+}
+
 export type MildDipTapeShadowOptions = {
   ring: MildDipPriceRing;
   pairAgeRegistry?: MildDipPairAgeRegistry;
@@ -226,6 +235,7 @@ export type MildDipTapeShadowPersistedState = {
   signalTimes?: number[];
   sequence?: number;
   pairAgeRegistry?: MildDipPairAgeRegistryState;
+  pairAgeAttempts?: MildDipPairAgeAttemptState;
 };
 
 export class MildDipTapeShadow {
@@ -255,6 +265,9 @@ export class MildDipTapeShadow {
   };
   private summaryWindowStartMs: number | null = null;
   private sequence = 0;
+  private pairAgeBackfillRequested = 0;
+  private pairAgeBackfillResolved = 0;
+  private pairAgeBackfillNull = 0;
 
   constructor(opts: MildDipTapeShadowOptions) {
     this.opts = opts;
@@ -295,6 +308,11 @@ export class MildDipTapeShadow {
         this.pairAgeMaxStaleMs(),
         this.pairAgeMaxEntries(),
       ),
+      pairAgeAttempts: this.getPairAgeRegistry().attemptsToJSON(
+        nowMs,
+        this.pairAgeMaxStaleMs(),
+        this.pairAgeMaxEntries(),
+      ),
     };
   }
 
@@ -304,6 +322,12 @@ export class MildDipTapeShadow {
     const samples = this.opts.ring.loadJSON(state.ring ?? {}, nowMs);
     this.getPairAgeRegistry().loadJSON(
       state.pairAgeRegistry ?? {},
+      nowMs,
+      this.pairAgeMaxStaleMs(),
+      this.pairAgeMaxEntries(),
+    );
+    this.getPairAgeRegistry().loadAttemptsJSON(
+      state.pairAgeAttempts ?? {},
       nowMs,
       this.pairAgeMaxStaleMs(),
       this.pairAgeMaxEntries(),
@@ -492,6 +516,7 @@ export class MildDipTapeShadow {
         this.counters.green.pairAgeUnknown > 0 ||
         this.counters.dip.pairAgeKnown > 0 ||
         this.counters.dip.pairAgeUnknown > 0 ||
+        this.pairAgeBackfillRequested > 0 ||
         Object.keys(this.counters.green.rejectionReasons).length > 0 ||
         Object.keys(this.counters.dip.rejectionReasons).length > 0;
       if (hasActivity) {
@@ -519,6 +544,11 @@ export class MildDipTapeShadow {
               rejectionReasons: { ...this.counters.dip.rejectionReasons },
             },
           },
+          pairAgeBackfill: {
+            requested: this.pairAgeBackfillRequested,
+            resolved: this.pairAgeBackfillResolved,
+            null: this.pairAgeBackfillNull,
+          },
           shadowOnly: true,
         });
       }
@@ -540,8 +570,40 @@ export class MildDipTapeShadow {
         pairAgeUnknown: 0,
         rejectionReasons: {},
       };
+      this.pairAgeBackfillRequested = 0;
+      this.pairAgeBackfillResolved = 0;
+      this.pairAgeBackfillNull = 0;
       this.summaryWindowStartMs = nowMs;
     }
+  }
+
+  notePairAgeBackfill(requested: number, resolved: number, nulls: number): void {
+    this.pairAgeBackfillRequested += Math.max(0, Math.floor(requested));
+    this.pairAgeBackfillResolved += Math.max(0, Math.floor(resolved));
+    this.pairAgeBackfillNull += Math.max(0, Math.floor(nulls));
+  }
+
+  selectPairAgeBackfillMints(
+    nowMs: number,
+    windowMs: number,
+    retryMs: number,
+    maxMints: number,
+    hasStructuralAge: (mint: string) => boolean,
+  ): string[] {
+    return this.opts.ring
+      .watchedMints(nowMs)
+      .filter(
+        (mint) =>
+          !hasStructuralAge(mint) &&
+          this.getPairAgeRegistry().pairAgeHours(mint, nowMs) == null &&
+          this.getPairAgeRegistry().canAttemptPairAge(mint, nowMs, retryMs),
+      )
+      .sort(
+        (a, b) =>
+          this.opts.ring.sampleCount(b, windowMs, nowMs) -
+          this.opts.ring.sampleCount(a, windowMs, nowMs),
+      )
+      .slice(0, Math.max(0, Math.floor(maxMints)));
   }
 
   private pruneSignalTimes(nowMs: number): void {
