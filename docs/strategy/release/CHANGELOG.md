@@ -1,3 +1,14 @@
+## 1.11.935 — 2026-08-15
+
+### Fixed — sleeve peak trail and first TP-grid rung
+
+- **Sleeve trail:** with `MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT=12`, sleeve width was measured from the post-entry trough (including the entry level), so any bag that moved +8% from entry could be sold in full at its current price. Example `2ptr9a…pump` / tx `2Q7L9DEK…`: peak +8.34% MFE, only −4.17% retracement from peak, full bag sold at +4.89% after 366s. For `gainPct >= 0`, sleeve now measures live retracement from the peak; the underwater side (trough + bounce, 1.11.920) is unchanged.
+- **`tp_grid` works again:** with `SELL_FRACTION 0.5` and `MIN_REMAINDER 0.6`, the first rung crossed the floor and since 1.11.914 fell through to the trail, so the production day had 0 `tp_grid` exits and 0 `mfe_bank_1/2` exits; profit capture was effectively done by the sleeve quirk. When the first rung would leave less than the floor, it now closes the position in full (1.11.897 semantics); later rungs still yield to the trail (1.11.914).
+
+### Rollback
+
+- Revert the commits on this branch + `pm2 reload ecosystem.config.cjs --update-env`. Pre-change behavior is equivalent to `MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT > 0` with the old sleeve condition.
+
 ## 1.11.934 — 2026-08-15
 
 ### Fixed — take-profit ladder back on (+8%), as in baseline 1.11.915

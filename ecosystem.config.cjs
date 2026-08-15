@@ -3647,7 +3647,9 @@ const PM2_APPS = [
          *
          * Better on median, trimmed mean, plain mean and win rate in both
          * windows. It caps a position at the first rung, which is the trade: the
-         * share clearing +25% goes 5% to 4%.
+         * share clearing +25% goes 5% to 4%. In `gates.ts`, the first rung
+         * explicitly closes the full bag when this floor exceeds its remainder;
+         * later floor-breaching rungs fall through to the trail.
          */
         MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.6',
         /**

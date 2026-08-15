@@ -1397,6 +1397,67 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.fraction).toBe(1);
   });
 
+  it('tp_grid closes the first rung fully when the floor exceeds the remainder', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      tpGridStepPct: 8,
+      tpGridSellFraction: 0.5,
+      tpGridMinRemainderFraction: 0.6,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108,
+      peakPriceUsd: 108,
+      armed: true,
+      gates,
+      tpRungsDone: 0,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('tp_grid');
+    expect(v.fraction).toBe(1);
+    expect(v.tpRungIndex).toBe(1);
+  });
+
+  it('tp_grid gives later floor-breaching rungs to the trail', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      tpGridStepPct: 8,
+      tpGridSellFraction: 0.5,
+      tpGridMinRemainderFraction: 0.6,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 116,
+      peakPriceUsd: 116,
+      armed: true,
+      gates,
+      tpRungsDone: 1,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).not.toBe('tp_grid');
+  });
+
+  it('tp_grid keeps its partial first rung when the remainder clears the floor', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      tpGridStepPct: 8,
+      tpGridSellFraction: 0.5,
+      tpGridMinRemainderFraction: 0.2,
+    };
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 108,
+      peakPriceUsd: 108,
+      armed: true,
+      gates,
+      tpRungsDone: 0,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.reason).toBe('tp_grid');
+    expect(v.fraction).toBe(0.5);
+    expect(v.tpRungIndex).toBe(1);
+  });
+
   it('green sleeve uses live peak retracement when loss bounce is enabled', () => {
     const gates: MildDipExitGates = {
       ...bankGates,
