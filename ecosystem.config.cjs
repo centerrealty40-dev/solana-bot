@@ -3443,7 +3443,13 @@ const PM2_APPS = [
          * cannot. `dead_set_bounce` still fires first at −10% with the
          * conjunction, so this is the backstop rather than the usual exit.
          */
-        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '15',
+        /**
+         * 1.11.936 — 30. With the bounce gate above, −15 is not where we exit:
+         * the reclaim only arrives well past it (HXbqtb filled at −41%), so the
+         * number now says where the backstop really is instead of arming a stop
+         * that the gate immediately overrides.
+         */
+        MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '30',
         /**
          * 1.11.910 — condemned by the conjunction, timed by the bounce.
          *
@@ -3486,7 +3492,14 @@ const PM2_APPS = [
          * AzXuLS: half cut at −19.8% giveback / pc5m −18.75%; price reclaimed entry
          * seconds after the fill.
          */
-        MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '12',
+        /**
+         * 1.11.936 — 18: the 12% reclaim fired on the first twitch off the
+         * trough. HXbqtb (17:50–18:06): never armed (peak +1.06%), bled to
+         * −46%, sold at −41.33% into a +9% blip, and the token traded +15% off
+         * that trough two minutes later. A wider reclaim means the loss exit
+         * only fires on an actual recovery leg, not on the dump's own noise.
+         */
+        MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '18',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
@@ -3992,7 +4005,13 @@ const PM2_APPS = [
          * 1.11.687 — during cooldown keep sampling stream/Dex prices; after
          * cooldown refuse rebuy if mark bounced >N% off the observed trough.
          */
-        MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '6',
+        /**
+         * 1.11.936 — 20: 6 blocked exactly the re-entry we want. After the
+         * HXbqtb stop the mint ran 12–15% off the trough and every rebuy was
+         * skipped with `cooldown_bounce=15.41%>max=6`, so the pump after our
+         * own exit was unreachable.
+         */
+        MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '20',
         MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS: '600000',
         /** Stream drawdown can satisfy dip band when Dex pc5m lags (liq/mcap still Dex). */
         MILD_DIP_STREAM_DIP_ENTRY: '1',

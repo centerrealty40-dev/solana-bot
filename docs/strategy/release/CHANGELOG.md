@@ -1,3 +1,19 @@
+## 1.11.936 — 2026-08-15
+
+### Changed — loss exits stop selling into the dump, and the rebuy after our own stop is reachable
+
+Live case `HXbqtbkR…pump`, second entry (17:50:04 → 18:06:13 UTC): filled at `0.00017445`, never armed (peak +1.06%), bled to −46% (`trough 0.00009375` @ 18:05:16), `hard_stop` filled at `0.00010234` = **−41.33%** on a ~+9% lift off that trough. Two minutes later the mint traded 12–15% above the trough and every rebuy was refused with `cooldown_bounce=15.41%>max=6`.
+
+- `MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT` `12` → `18`: the reclaim the loss exit waits for has to look like a recovery leg, not the dump's own twitch.
+- `MILD_DIP_EXIT_HARD_STOP_PNL_PCT` `15` → `30`: the gate releases the stop far below −15% anyway, so the number now states where the backstop actually is. `dead_set` (conjunction, −10%, 15m hold) remains the earlier, evidence-based exit.
+- `MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT` `6` → `20`: stop blocking the re-entry into the move that follows our own stop.
+
+Config only; no source change.
+
+### Rollback
+
+- Restore `12` / `15` / `6` in `ecosystem.config.cjs` + `pm2 reload ecosystem.config.cjs --update-env`.
+
 ## 1.11.935 — 2026-08-15
 
 ### Fixed — sleeve peak trail and first TP-grid rung
