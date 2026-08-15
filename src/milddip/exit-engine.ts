@@ -55,6 +55,8 @@ export type MarkExitDecision = {
   gainPct: number;
   /** Move since the fill — real money, for logging only. */
   pnlPctVsFill: number;
+  /** Safety cap that released the soft-loss bounce wait, if one did. */
+  lossExitBounceCap?: 'drawdown' | 'trough_age';
   /** Updated spaced vol5m ring — caller persists onto the open position. */
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry low-water mark. */
@@ -443,6 +445,9 @@ export function decideMarkExit(args: {
     pnlPct: verdict.pnlPct,
     gainPct: verdict.gainPct,
     pnlPctVsFill: verdict.pnlPctVsFill,
+    ...(verdict.lossExitBounceCap != null
+      ? { lossExitBounceCap: verdict.lossExitBounceCap }
+      : {}),
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,

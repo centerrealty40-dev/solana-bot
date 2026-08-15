@@ -748,6 +748,13 @@ const MildDipConfigSchema = z.object({
      * 1.11.920 — min bounce off trough before soft loss exits (0 = off).
      */
     lossExitMinBouncePct: z.coerce.number().min(0).max(100).default(3),
+    /**
+     * Loss-bounce safety caps. Positive values release the bounce wait once the
+     * underwater gain basis is at or below the drawdown cap, or once no new
+     * trough has been recorded for the configured age. 0 = off.
+     */
+    lossExitMaxDrawdownPct: z.coerce.number().min(0).max(100).default(0),
+    lossExitMaxTroughAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
   }),
 });
 
@@ -931,6 +938,11 @@ export function loadMildDipConfig(): MildDipConfig {
      * 1.11.920 — soft loss exits wait for bounce off trough (AzXuLS mfe_bank_sleeve).
      */
     lossExitMinBouncePct: envNum('MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT', 3),
+    /**
+     * Loss-bounce safety caps; 0 keeps the legacy bounce-only behavior.
+     */
+    lossExitMaxDrawdownPct: envNum('MILD_DIP_EXIT_LOSS_MAX_DRAWDOWN_PCT', 0),
+    lossExitMaxTroughAgeMs: envNum('MILD_DIP_EXIT_LOSS_MAX_TROUGH_AGE_MS', 0),
   };
 
   const raw = {
