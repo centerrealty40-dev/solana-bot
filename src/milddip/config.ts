@@ -265,6 +265,9 @@ const MildDipConfigSchema = z.object({
   markJournalMs: z.coerce.number().int().min(0).max(3_600_000).default(5_000),
   hotMintsPath: z.string().default(path.join('data', 'milddip', 'hot-mints.json')),
   priceRingPath: z.string().default(path.join('data', 'milddip', 'price-ring.json')),
+  tapeShadowStatePath: z
+    .string()
+    .default(path.join('data', 'milddip', 'tape-shadow-state.json')),
   /** Telegram ALERT when mark pass / opens / null-ratio signal Dex pressure. */
   loadAlertEnabled: z.boolean().default(true),
   loadAlertMarkPassMs: z.coerce.number().int().min(5_000).max(600_000).default(20_000),
@@ -1236,6 +1239,9 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_HOT_MINTS_PATH?.trim() || path.join('data', 'milddip', 'hot-mints.json'),
     priceRingPath:
       process.env.MILD_DIP_PRICE_RING_PATH?.trim() || path.join('data', 'milddip', 'price-ring.json'),
+    tapeShadowStatePath:
+      process.env.MILD_DIP_TAPE_STATE_PATH?.trim() ||
+      path.join('data', 'milddip', 'tape-shadow-state.json'),
     green,
     entry,
     exit,

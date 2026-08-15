@@ -1,3 +1,21 @@
+## 1.11.950 — 2026-08-15
+
+### Changed — persist tape-shadow measurement state across restarts
+
+- Persist the journal-only tape-shadow price ring and pending 15/30/60-minute
+  outcomes at the existing mild-dip persistence points.
+- Frequent deploys run `npm ci` and reload the bot, which previously erased the
+  in-memory 60-minute observation window and pending outcomes before the
+  measurement could produce a complete signal.
+- Restore only samples still inside the configured tape window and retain
+  already-emitted horizons so a restart cannot duplicate outcome events.
+
+### Rollback
+
+- Disable `MILD_DIP_TAPE_SHADOW_ENABLED` or remove
+  `MILD_DIP_TAPE_STATE_PATH`; tape-shadow remains journal-only and never enters
+  purchase or execution behavior.
+
 ## 1.11.949 — 2026-08-15
 
 ### Changed — keep a green sleeve runner after the first giveback

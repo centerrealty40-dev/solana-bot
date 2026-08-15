@@ -113,6 +113,8 @@ import { MildDipPriceRing } from './price-ring.js';
 import {
   DEFAULT_MILD_DIP_TAPE_GATES,
   MildDipTapeShadow,
+  loadMildDipTapeShadowState,
+  saveMildDipTapeShadowState,
 } from './tape-shadow.js';
 import {
   HOLDING_DUST_RAW,
@@ -2586,12 +2588,15 @@ export async function runMildDipLoop(
   const dumpSellTape = createDumpSellTape();
   const givebackDumpGate = createGivebackDumpGate();
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
-  const tapeShadow = cfg.tapeShadowEnabled
+  const tapeShadowRing = cfg.tapeShadowEnabled
+    ? new MildDipPriceRing({
+        maxSamplesPerMint: 3_600,
+        ttlMs: cfg.tapeWindowMs,
+      })
+    : null;
+  const tapeShadow = tapeShadowRing
     ? new MildDipTapeShadow({
-        ring: new MildDipPriceRing({
-          maxSamplesPerMint: 3_600,
-          ttlMs: cfg.tapeWindowMs,
-        }),
+        ring: tapeShadowRing,
         gates: {
           ...DEFAULT_MILD_DIP_TAPE_GATES,
           greenImp60MinPct: cfg.tapeGreenImp60MinPct,
@@ -2613,6 +2618,18 @@ export async function runMildDipLoop(
         append: (event) => appendMildDipJournal(cfg.journalPath, event),
       })
     : null;
+  if (tapeShadow) {
+    const restored = loadMildDipTapeShadowState(cfg.tapeShadowStatePath, tapeShadow, Date.now());
+    if (restored.samples > 0 || restored.pending > 0) {
+      console.log(
+        `[mild-dip] restored tape-shadow samples=${restored.samples} ` +
+          `pending=${restored.pending} from ${cfg.tapeShadowStatePath}`,
+      );
+    }
+  }
+  const saveTapeShadow = (): void => {
+    if (tapeShadow) saveMildDipTapeShadowState(cfg.tapeShadowStatePath, tapeShadow);
+  };
   const sampleWatchMs = Math.max(
     cfg.cooldownBounceLookbackMs,
     cfg.mintCooldownMs,
@@ -3014,6 +3031,7 @@ export async function runMildDipLoop(
         try {
           saveMildDipHotMints(cfg.hotMintsPath);
           saveMildDipPriceRing(cfg.priceRingPath);
+          saveTapeShadow();
         } catch (err) {
           console.warn('[mild-dip] persist hot/price ring failed', err);
         }
@@ -3024,6 +3042,7 @@ export async function runMildDipLoop(
             try {
               saveMildDipHotMints(cfg.hotMintsPath);
               saveMildDipPriceRing(cfg.priceRingPath);
+              saveTapeShadow();
             } catch (err) {
               console.warn('[mild-dip] persist hot/price ring failed', err);
             }
@@ -3051,6 +3070,7 @@ export async function runMildDipLoop(
     try {
       saveMildDipHotMints(cfg.hotMintsPath);
       saveMildDipPriceRing(cfg.priceRingPath);
+      saveTapeShadow();
     } catch {
       /* ignore */
     }

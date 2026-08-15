@@ -1,3 +1,5 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import type { MildDipPriceRing, MildDipPriceSample, MildDipPriceSource } from './price-ring.js';
 
 export type MildDipTapeLane = 'green' | 'dip';
@@ -167,6 +169,25 @@ type PendingSignal = {
 };
 
 const HORIZONS_MS = [15 * 60_000, 30 * 60_000, 60 * 60_000] as const;
+const HORIZON_SET = new Set<number>(HORIZONS_MS);
+
+export type MildDipTapeShadowPersistedState = {
+  updatedAtMs?: number;
+  ring?: Record<string, MildDipPriceSample[]>;
+  pending?: Array<{
+    id?: string;
+    lane?: MildDipTapeLane;
+    mint?: string;
+    signalTsMs?: number;
+    signalPriceUsd?: number;
+    maxPriceUsd?: number;
+    minPriceUsd?: number;
+    emitted?: number[];
+  }>;
+  lastSignalAt?: Record<string, number>;
+  signalTimes?: number[];
+  sequence?: number;
+};
 
 export class MildDipTapeShadow {
   private readonly opts: MildDipTapeShadowOptions;
@@ -185,6 +206,90 @@ export class MildDipTapeShadow {
 
   constructor(opts: MildDipTapeShadowOptions) {
     this.opts = opts;
+  }
+
+  toJSON(nowMs = Date.now()): MildDipTapeShadowPersistedState {
+    this.pruneSignalTimes(nowMs);
+    return {
+      updatedAtMs: nowMs,
+      ring: this.opts.ring.toJSON(nowMs),
+      pending: this.pending.map((signal) => ({
+        id: signal.id,
+        lane: signal.lane,
+        mint: signal.mint,
+        signalTsMs: signal.signalTsMs,
+        signalPriceUsd: signal.signalPriceUsd,
+        maxPriceUsd: signal.maxPriceUsd,
+        minPriceUsd: signal.minPriceUsd,
+        emitted: [...signal.emitted],
+      })),
+      lastSignalAt: Object.fromEntries(this.lastSignalAt),
+      signalTimes: [...this.signalTimes],
+      sequence: this.sequence,
+    };
+  }
+
+  loadJSON(data: unknown, nowMs = Date.now()): { samples: number; pending: number } {
+    if (!data || typeof data !== 'object') return { samples: 0, pending: 0 };
+    const state = data as MildDipTapeShadowPersistedState;
+    const samples = this.opts.ring.loadJSON(state.ring ?? {}, nowMs);
+    this.lastSignalAt.clear();
+    for (const [mint, tsMs] of Object.entries(state.lastSignalAt ?? {})) {
+      if (mint && typeof tsMs === 'number' && Number.isFinite(tsMs)) {
+        this.lastSignalAt.set(mint, tsMs);
+      }
+    }
+    this.signalTimes.length = 0;
+    for (const tsMs of state.signalTimes ?? []) {
+      if (typeof tsMs === 'number' && Number.isFinite(tsMs)) this.signalTimes.push(tsMs);
+    }
+    this.pruneSignalTimes(nowMs);
+    this.pending.length = 0;
+    let pending = 0;
+    for (const raw of state.pending ?? []) {
+      if (
+        !raw ||
+        (raw.lane !== 'green' && raw.lane !== 'dip') ||
+        typeof raw.id !== 'string' ||
+        typeof raw.mint !== 'string' ||
+        typeof raw.signalTsMs !== 'number' ||
+        !Number.isFinite(raw.signalTsMs) ||
+        typeof raw.signalPriceUsd !== 'number' ||
+        !Number.isFinite(raw.signalPriceUsd) ||
+        typeof raw.maxPriceUsd !== 'number' ||
+        !Number.isFinite(raw.maxPriceUsd) ||
+        typeof raw.minPriceUsd !== 'number' ||
+        !Number.isFinite(raw.minPriceUsd)
+      ) {
+        continue;
+      }
+      if (raw.signalTsMs + HORIZONS_MS[HORIZONS_MS.length - 1] <= nowMs) continue;
+      const emitted = new Set(
+        (Array.isArray(raw.emitted) ? raw.emitted : []).filter((h): h is number =>
+          HORIZON_SET.has(h),
+        ),
+      );
+      if (emitted.size >= HORIZONS_MS.length) continue;
+      this.pending.push({
+        id: raw.id,
+        lane: raw.lane,
+        mint: raw.mint,
+        signalTsMs: raw.signalTsMs,
+        signalPriceUsd: raw.signalPriceUsd,
+        maxPriceUsd: raw.maxPriceUsd,
+        minPriceUsd: raw.minPriceUsd,
+        emitted,
+      });
+      pending += 1;
+    }
+    if (
+      typeof state.sequence === 'number' &&
+      Number.isInteger(state.sequence) &&
+      state.sequence >= 0
+    ) {
+      this.sequence = state.sequence;
+    }
+    return { samples, pending };
   }
 
   onPriceSample(input: {
@@ -315,6 +420,31 @@ export class MildDipTapeShadow {
   private pruneSignalTimes(nowMs: number): void {
     const cut = nowMs - 60 * 60_000;
     while (this.signalTimes.length > 0 && this.signalTimes[0]! <= cut) this.signalTimes.shift();
+  }
+}
+
+export function saveMildDipTapeShadowState(
+  filePath: string,
+  shadow: MildDipTapeShadow,
+  nowMs = Date.now(),
+): void {
+  const dir = path.dirname(filePath);
+  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+  const tmp = `${filePath}.tmp`;
+  fs.writeFileSync(tmp, `${JSON.stringify(shadow.toJSON(nowMs))}\n`, 'utf8');
+  fs.renameSync(tmp, filePath);
+}
+
+export function loadMildDipTapeShadowState(
+  filePath: string,
+  shadow: MildDipTapeShadow,
+  nowMs = Date.now(),
+): { samples: number; pending: number } {
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, 'utf8')) as unknown;
+    return shadow.loadJSON(raw, nowMs);
+  } catch {
+    return { samples: 0, pending: 0 };
   }
 }
 
