@@ -73,6 +73,17 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.exit.neverArmBounceArmedRunner).toBe(false);
   });
 
+  it('loads a non-positive probe cap for curve-sized probe entries', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_PROBE_BLOCKED_USD: '0',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.probeBlockedUsd).toBe(0);
+  });
+
   it('loads the first TP rung and profit fill guard from the environment', () => {
     const cfg = withConfigEnv(
       {

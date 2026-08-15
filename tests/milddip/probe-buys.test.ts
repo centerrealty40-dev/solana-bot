@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { probeRequestedUsd } from '../../src/milddip/entry-attempt.js';
 
 describe('1.11.827 probe buys on re-entry blocks', () => {
   const src = readFileSync(resolve('src/milddip/entry-attempt.ts'), 'utf8');
@@ -12,12 +13,22 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
     expect(src).toContain('mild_dip_probe_override');
   });
 
-  it('a probe is clamped to the probe size, never the normal clip', () => {
-    // 1.11.947 — these are still nested clip caps, but each production cap is
-    // now $3 so a live first-touch/probe path cannot request a sub-$3 buy.
-    expect(src).toContain('Math.min(cfg.probeBlockedUsd, familiarityCapped)');
+  it('a positive probe cap still clamps the normal request', () => {
+    expect(src).toContain('probeBlockedUsd > 0');
+    expect(src).toContain('Math.min(probeBlockedUsd, familiarityCapped)');
     expect(src).toContain('Math.min(cfg.green.positionUsd, knifeCapped)');
     expect(src).toContain('isGreen ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd)');
+  });
+
+  it('a non-positive probe cap leaves the normal request uncapped', () => {
+    expect(probeRequestedUsd('rebuy_below_exit', 0, 8)).toBe(8);
+    expect(probeRequestedUsd('rebuy_liq_drop', -1, 8)).toBe(8);
+    expect(src).toContain('probeBlockedUsd > 0');
+  });
+
+  it('a positive probe cap applies only to probe requests', () => {
+    expect(probeRequestedUsd('rebuy_below_exit', 3, 8)).toBe(3);
+    expect(probeRequestedUsd(null, 3, 8)).toBe(8);
   });
 
   it('fills are tagged so they never mix into book statistics', () => {
@@ -47,9 +58,9 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
     expect(src).toContain('return \'skip\';');
   });
 
-  it('live env risks $12/h at most', () => {
+  it('live env keeps six curve-sized probes per hour at most', () => {
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED: '1'");
-    expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_USD: '3'");
+    expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_USD: '0'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6'");
   });
 });
@@ -62,9 +73,9 @@ describe('1.11.898 the first position on a coin is sized down', () => {
     expect(src).toContain("cfg.firstTouchPositionUsd > 0 && !state.lastExitByMint?.[c.mint]");
   });
 
-  it('caps the first touch and still lets a probe cap under it', () => {
+  it('caps the first touch while the probe cap remains optional', () => {
     expect(src).toContain('Math.min(cfg.firstTouchPositionUsd, laneCapped)');
-    expect(src).toContain('Math.min(cfg.probeBlockedUsd, familiarityCapped)');
+    expect(src).toContain('probeRequestedUsd(');
   });
 
   it('live env keeps first-touch and power-law buys at or above $3', () => {

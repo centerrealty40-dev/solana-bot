@@ -67,12 +67,22 @@ const leaderGateShadowDeferStamps: number[] = [];
 const leaderGateShadowDeferLastByMint = new Map<string, number>();
 
 function takeProbeSlot(cfg: MildDipConfig, nowMs: number): boolean {
-  if (!cfg.probeBlockedEnabled || !(cfg.probeBlockedUsd > 0)) return false;
+  if (!cfg.probeBlockedEnabled) return false;
   const cutoff = nowMs - 3_600_000;
   while (probeStamps.length > 0 && probeStamps[0]! < cutoff) probeStamps.shift();
   if (probeStamps.length >= cfg.probeBlockedMaxPerHour) return false;
   probeStamps.push(nowMs);
   return true;
+}
+
+export function probeRequestedUsd(
+  probeReason: string | null,
+  probeBlockedUsd: number,
+  familiarityCapped: number,
+): number {
+  return probeReason && probeBlockedUsd > 0
+    ? Math.min(probeBlockedUsd, familiarityCapped)
+    : familiarityCapped;
 }
 
 /** Test helper. */
@@ -903,9 +913,11 @@ export async function attemptMildDipEntry(args: {
   const familiarityCapped = firstTouch
     ? Math.min(cfg.firstTouchPositionUsd, laneCapped)
     : laneCapped;
-  const requestedUsd = probeReason
-    ? Math.min(cfg.probeBlockedUsd, familiarityCapped)
-    : familiarityCapped;
+  const requestedUsd = probeRequestedUsd(
+    probeReason,
+    cfg.probeBlockedUsd,
+    familiarityCapped,
+  );
   // 1.11.947 — risk clips may narrow the request, but the live dip lane never
   // sends a buy below its configured minimum. The stopped green lane keeps its
   // own position clip unchanged.

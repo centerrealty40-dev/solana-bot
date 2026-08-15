@@ -368,6 +368,7 @@ const MildDipConfigSchema = z.object({
    * 0 = off (first touch is sized like any other).
    */
   firstTouchPositionUsd: z.coerce.number().min(0).max(10_000).default(0),
+  /** 1.11.962 — probe cap; <=0 leaves probe entries on the normal sizing curve. */
   probeBlockedUsd: z.coerce.number().min(0).max(50).default(2),
   probeBlockedMaxPerHour: z.coerce.number().int().min(0).max(120).default(6),
   /**
@@ -1087,6 +1088,7 @@ export function loadMildDipConfig(): MildDipConfig {
      * 1.11.773 — forced off when turn-dump gate is enabled.
      */
     probeBlockedEnabled: envBool('MILD_DIP_PROBE_BLOCKED', false),
+    /** 1.11.962 — <=0 disables only the probe-specific cap. */
     probeBlockedUsd: envNum('MILD_DIP_PROBE_BLOCKED_USD', 2),
     probeBlockedMaxPerHour: envNum('MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR', 6),
     rugKnifeClipUsd: envNum('MILD_DIP_RUG_KNIFE_CLIP_USD', 0),

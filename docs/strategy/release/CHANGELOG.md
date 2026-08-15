@@ -1,3 +1,28 @@
+## 1.11.962 — 2026-08-15
+
+### Changed — let probe entries follow the liquidity sizing curve
+
+- Probe-clipped entries performed comparably to normal entries in production
+  journals: probe `n=133`, spend `$237`, net `+$67.20`, `+$0.505/pos`,
+  median `+2.38%`, 54% win, mean clip `$1.78`; normal `n=3384`, spend
+  `$9978`, net `+$2188.57`, `+$0.647/pos`, median `+2.06%`, 54% win, mean
+  clip `$2.95`.
+- Over 48h, 454 of 1202 buys (38%) had a curve above `$3`, and 200 of those
+  were still cut to `≤$3` by flat clips. When the power law is active,
+  `THICK`/`MICRO` tier clips are already bypassed by construction because the
+  law branch returns before the tier branch.
+- `MILD_DIP_PROBE_BLOCKED_USD='0'` now removes only the probe-specific cap;
+  probe entries use the same liquidity curve as normal entries. Positive values
+  retain the previous cap behavior. First-touch and rug-knife clips remain
+  unchanged at `$3`; the green lane is unchanged. Probe exposure is bounded by
+  the hourly probe budget (`MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR=6`) times the
+  curve size (maximum `$30`), rather than a flat `$3` per probe; the `$3` live
+  minimum still applies.
+
+### Rollback
+
+- Set `MILD_DIP_PROBE_BLOCKED_USD` back to `'3'`.
+
 ## 1.11.961 — 2026-08-15
 
 ### Changed — make bounce loss exits one-shot and protect degraded loss fills
