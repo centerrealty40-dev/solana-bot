@@ -384,6 +384,27 @@ export function leaderCoBuyAlignOk(
   return { ok: true, turn, leaderFresh };
 }
 
+export function leaderTrustStructuralOk(args: {
+  nowMs: number;
+  leaderCoBuyAlignMaxMs: number;
+  entryLeaderTrustStructuralMs: number;
+  leaderFreshBuy: boolean;
+  trigger: 'stream' | 'leader' | 'scan';
+  seedHit?: LeaderSeedHit | null;
+  leaderSeenAtMs?: number | null;
+}): boolean {
+  const trustWindowMs =
+    args.entryLeaderTrustStructuralMs > 0
+      ? args.entryLeaderTrustStructuralMs
+      : args.leaderCoBuyAlignMaxMs;
+  return (
+    args.leaderFreshBuy ||
+    (args.trigger === 'leader' && args.seedHit != null) ||
+    (args.seedHit != null && args.nowMs - args.seedHit.lastSeenAtMs <= trustWindowMs) ||
+    (args.leaderSeenAtMs != null && args.nowMs - args.leaderSeenAtMs <= trustWindowMs)
+  );
+}
+
 /**
  * Stale structural reuse when live Dex blips null (not Enrich — same snapshot).
  * Window is configurable because `structural_fetch_null` accounted for 27% of all
@@ -673,11 +694,19 @@ export async function evaluateFastPathCandidate(
    * passed Dex floors. Re-checking on a later scan/stream tick often fails on
    * decayed vol/liq and blocks the co-buy we are trying to mirror.
    */
-  const leaderTrustStructural =
-    leaderFreshBuy ||
-    (trigger === 'leader' && seedHit != null) ||
-    (seedHit != null && nowMs - seedHit.lastSeenAtMs <= cfg.leaderCoBuyAlignMaxMs) ||
-    (leaderSeenAtMs != null && nowMs - leaderSeenAtMs <= cfg.leaderCoBuyAlignMaxMs);
+  const leaderTrustStructuralWindowMs =
+    cfg.entryLeaderTrustStructuralMs > 0
+      ? cfg.entryLeaderTrustStructuralMs
+      : cfg.leaderCoBuyAlignMaxMs;
+  const leaderTrustStructural = leaderTrustStructuralOk({
+    nowMs,
+    leaderCoBuyAlignMaxMs: cfg.leaderCoBuyAlignMaxMs,
+    entryLeaderTrustStructuralMs: cfg.entryLeaderTrustStructuralMs,
+    leaderFreshBuy,
+    trigger,
+    seedHit,
+    leaderSeenAtMs,
+  });
   if (
     !leaderTrustStructural &&
     !hotDeepKnifeOk &&
@@ -695,6 +724,7 @@ export async function evaluateFastPathCandidate(
       leaderSeen: leaderSeenForAge,
       leaderFreshBuy,
       leaderTrustStructural,
+      leaderTrustStructuralWindowMs,
       hotDeepKnife: hotDeepKnifeOk,
       vol5m: struct.metrics.volume5mUsd,
       liq: struct.metrics.liquidityUsd,

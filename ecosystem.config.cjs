@@ -4233,6 +4233,8 @@ const PM2_APPS = [
          */
         MILD_DIP_LEADER_CO_BUY_ALIGN: '1',
         MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS: '120000',
+        /** 1.11.945 — structural trust survives the measured 5–6m leader lag. */
+        MILD_DIP_ENTRY_LEADER_TRUST_STRUCTURAL_MS: '600000',
         MILD_DIP_LEADER_CO_BUY_ALIGN_MIN_TURN: '0.06',
         /** Helius logsSubscribe → hot universe + signature price samples for trough. */
         MILD_DIP_STREAM: '1',

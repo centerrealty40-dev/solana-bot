@@ -12,6 +12,7 @@ import {
   streamOnlyDexDipOk,
   streamOnlyNearTroughOk,
   structuralOk,
+  leaderTrustStructuralOk,
 } from '../../src/milddip/fast-path.js';
 import type { MildDipConfig } from '../../src/milddip/config.js';
 import type { MildDipCandidateMetrics } from '../../src/milddip/gates.js';
@@ -314,6 +315,47 @@ describe('fast-path helpers', () => {
     const src = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
     expect(src).toContain('leaderTrustStructural');
     expect(src).toContain('!leaderTrustStructural');
+  });
+
+  it('1.11.945 defaults structural trust to the co-buy window', () => {
+    const nowMs = 1_000_000;
+    const seedHit = { mint: 'M'.repeat(32), lastSeenAtMs: nowMs - 300_000 };
+    expect(
+      leaderTrustStructuralOk({
+        nowMs,
+        leaderCoBuyAlignMaxMs: 120_000,
+        entryLeaderTrustStructuralMs: 0,
+        leaderFreshBuy: false,
+        trigger: 'stream',
+        seedHit,
+      }),
+    ).toBe(false);
+    expect(
+      leaderTrustStructuralOk({
+        nowMs,
+        leaderCoBuyAlignMaxMs: 120_000,
+        entryLeaderTrustStructuralMs: 600_000,
+        leaderFreshBuy: false,
+        trigger: 'stream',
+        seedHit,
+      }),
+    ).toBe(true);
+  });
+
+  it('1.11.945 leaves unstamped mints to structuralOk', () => {
+    const cfg = stubCfg(50_000);
+    expect(
+      leaderTrustStructuralOk({
+        nowMs: 1_000_000,
+        leaderCoBuyAlignMaxMs: 120_000,
+        entryLeaderTrustStructuralMs: 600_000,
+        leaderFreshBuy: false,
+        trigger: 'stream',
+        seedHit: null,
+        leaderSeenAtMs: null,
+      }),
+    ).toBe(false);
+    expect(structuralOk(stubMetrics(), cfg)).toBe(true);
   });
 
   it('1.11.929 stream/scan passes co-buy seed into evaluateFastPathCandidate', () => {

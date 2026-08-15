@@ -1,3 +1,24 @@
+## 1.11.945 — 2026-08-15
+
+### Changed — widen entry structural trust for recent leader trades
+
+- In 48h production measurement, leaders closed 299 round trips at ≥+30%,
+  but we entered within ±15 minutes of only 77; among the 222 misses,
+  `structural_fail` accounted for 50.5% and `no_dip_source` for 17.1%.
+- The blocking structural ticks near leader winning buys included
+  `turn>0.25` (n=1025), `liq<8000` (n=675), `vol5m>40000` (n=410), and
+  age below floor (n=332). The leader-to-blocking-tick median was 327–396s:
+  only 8.8–20.9% were within 120s, while 73–86% were within 600s.
+- Added `MILD_DIP_ENTRY_LEADER_TRUST_STRUCTURAL_MS`, set to `600000` for
+  mild-dip. A zero value falls back to the existing
+  `MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS` window, preserving today's behavior.
+  This widens only the structural re-check trust window; the co-buy alignment
+  gate remains on its existing 120s window.
+
+### Rollback
+
+- Set `MILD_DIP_ENTRY_LEADER_TRUST_STRUCTURAL_MS` to `0` or remove it.
+
 ## 1.11.944 — 2026-08-15
 
 ### Fixed — catch up never-arm bounce exits
