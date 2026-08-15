@@ -1,3 +1,20 @@
+## 1.11.964 — 2026-08-15
+
+### Fixed — tape-shadow forward sampling coverage
+
+- Keep stream sampling active for bounded pending tape-shadow signals through
+  the 60-minute outcome horizon plus a configurable grace period.
+- Add an opt-in, rate-limited shadow-discovery sampling lane for stream mints
+  outside the existing funnel, disabled by default.
+- Report pending, shadow-discovery, and sampling-limit counters in the existing
+  journal-only tape-shadow summary.
+
+### Rollback
+
+- Revert this release commit and redeploy the prior `v2` revision. Pending and
+  shadow-discovery sampling only affect tape-shadow measurement; thresholds,
+  purchases, execution, and leader gates remain unchanged.
+
 ## 1.11.963 — 2026-08-15
 
 ### Added — tape-shadow pair-age backfill

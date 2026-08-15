@@ -119,6 +119,7 @@ import {
   MildDipTapeShadow,
   createMildDipTapeShadowStateSaver,
   loadMildDipTapeShadowState,
+  tapeShadowDiscoverySampleDecision,
   tapePairAgeBackfillDue,
 } from './tape-shadow.js';
 import {
@@ -2690,6 +2691,7 @@ export async function runMildDipLoop(
         outcomeStaleMs: cfg.tapeOutcomeStaleMs,
         idleEvictMs: Math.max(cfg.tapeIdleEvictMs, cfg.tapeWindowMs),
         summaryIntervalMs: cfg.tapeSummaryIntervalMs,
+        pendingSampleGraceMs: cfg.tapePendingSampleGraceMs,
         append: (event) => appendMildDipJournal(cfg.journalPath, event),
       })
     : null;
@@ -2702,6 +2704,46 @@ export async function runMildDipLoop(
       );
     }
   }
+  const shadowDiscoveryLastSampleAt = new Map<string, number>();
+  const shadowDiscoveryCleanup = { lastAtMs: 0 };
+  const shouldSampleTapeStreamPrice = (mint: string, nowMs: number): boolean => {
+    if (shouldSampleStreamPrice(cfg, state, mint, nowMs, sampleWatchMs)) return true;
+    if (!cfg.tapeShadowEnabled || !tapeShadow) return false;
+
+    const pendingDecision = tapeShadow.pendingSampleDecision(
+      mint,
+      nowMs,
+      cfg.tapePendingSampleGraceMs,
+      cfg.tapePendingSampleMaxMints,
+    );
+    if (pendingDecision === 'pending') {
+      tapeShadow.noteSampling('pending');
+      return true;
+    }
+    if (pendingDecision === 'limitRejected') {
+      tapeShadow.noteSampling('limitRejected');
+      return false;
+    }
+    if (cfg.tapeShadowSampleMaxMints <= 0) return false;
+    const discoveryDecision = tapeShadowDiscoverySampleDecision(
+      mint,
+      nowMs,
+      shadowDiscoveryLastSampleAt,
+      cfg.tapeShadowSampleMaxMints,
+      cfg.tapeShadowSampleMinGapMs,
+      cfg.tapeWindowMs,
+      shadowDiscoveryCleanup,
+    );
+    if (discoveryDecision === 'limitRejected') {
+      tapeShadow.noteSampling('limitRejected');
+      return false;
+    }
+    if (discoveryDecision === 'sample') {
+      tapeShadow.noteSampling('shadowDiscovery');
+      return true;
+    }
+    return false;
+  };
   const tapeShadowStateSaver =
     tapeShadow && tapeShadowRing
       ? createMildDipTapeShadowStateSaver({
@@ -2781,7 +2823,7 @@ export async function runMildDipLoop(
       rpcUrl: cfg.rpcUrl,
       minGapMsPerMint: cfg.streamPriceMinGapMs,
       concurrency: cfg.streamPriceConcurrency,
-      shouldSample: (mint, t) => shouldSampleStreamPrice(cfg, state, mint, t, sampleWatchMs),
+      shouldSample: shouldSampleTapeStreamPrice,
       /**
        * Force-fetch open bags so exit marks stay stream-fed — except green
        * ones, which pay for themselves out of the free Dex tape.
