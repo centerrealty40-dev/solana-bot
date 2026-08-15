@@ -61,6 +61,8 @@ const HOLDING_DUST_RAW = 1000n;
  * into the main book's statistics.
  */
 const probeStamps: number[] = [];
+const leaderGateShadowStamps: number[] = [];
+const leaderGateShadowLastByMint = new Map<string, number>();
 
 function takeProbeSlot(cfg: MildDipConfig, nowMs: number): boolean {
   if (!cfg.probeBlockedEnabled || !(cfg.probeBlockedUsd > 0)) return false;
@@ -76,8 +78,67 @@ export function __resetProbeBudgetForTests(): void {
   probeStamps.length = 0;
 }
 
+function takeLeaderGateShadowSlot(
+  cfg: MildDipConfig,
+  mint: string,
+  nowMs: number,
+): boolean {
+  if (!cfg.leaderGateShadowRecord || !(cfg.leaderGateShadowMaxPerHour > 0)) return false;
+  const minInterval =
+    cfg.leaderGateShadowMinIntervalMs > 0 ? cfg.leaderGateShadowMinIntervalMs : 0;
+  const previous = leaderGateShadowLastByMint.get(mint);
+  if (minInterval > 0 && previous != null && nowMs - previous < minInterval) return false;
+  const cutoff = nowMs - 3_600_000;
+  while (leaderGateShadowStamps.length > 0 && leaderGateShadowStamps[0]! < cutoff) {
+    leaderGateShadowStamps.shift();
+  }
+  if (leaderGateShadowStamps.length >= cfg.leaderGateShadowMaxPerHour) return false;
+  leaderGateShadowStamps.push(nowMs);
+  leaderGateShadowLastByMint.set(mint, nowMs);
+  return true;
+}
+
+/** Test helper. */
+export function __resetLeaderGateShadowBudgetForTests(): void {
+  leaderGateShadowStamps.length = 0;
+  leaderGateShadowLastByMint.clear();
+}
+
+export function recordLeaderGateShadowCandidate(args: {
+  cfg: MildDipConfig;
+  candidate: MildDipCandidate;
+  nowMs: number;
+  trigger: 'stream' | 'leader' | 'scan';
+  lane: 'fast' | 'slow';
+}): boolean {
+  if (!takeLeaderGateShadowSlot(args.cfg, args.candidate.mint, args.nowMs)) return false;
+  const m = args.candidate.metrics;
+  appendMildDipJournal(args.cfg.journalPath, {
+    kind: 'mild_dip_shadow_entry_candidate',
+    ts: args.nowMs,
+    mint: args.candidate.mint,
+    symbol: args.candidate.symbol,
+    trigger: args.trigger,
+    lane: args.lane,
+    dipSource: args.candidate.dipSource,
+    priceUsd: args.candidate.priceUsd,
+    pairAgeHours: m.pairAgeHours,
+    priceChange5mPct: m.priceChange5mPct,
+    priceChange1hPct: m.priceChange1hPct,
+    streamDrawdownPct: null,
+    liquidityUsd: m.liquidityUsd,
+    marketCapUsd: m.marketCapUsd,
+    volume5mUsd: m.volume5mUsd,
+    buys5m: m.buys5m,
+    sells5m: m.sells5m,
+    plannedEntrySizeUsd: null,
+  });
+  return true;
+}
+
 export type EntryAttemptOpts = {
   chasePct: number;
+  trigger: 'stream' | 'leader' | 'scan';
   skipBounce?: boolean;
   skipOnchainAdopt?: boolean;
   /** When false, skip second Dex round-trip — use candidate mark as fresh. */
@@ -133,6 +194,13 @@ export async function attemptMildDipEntry(args: {
       dipSource: c.dipSource,
       lane: opts.lane,
       at: 'entry',
+    });
+    recordLeaderGateShadowCandidate({
+      cfg,
+      candidate: c,
+      nowMs,
+      trigger: opts.trigger,
+      lane: opts.lane,
     });
     return 'skip';
   }

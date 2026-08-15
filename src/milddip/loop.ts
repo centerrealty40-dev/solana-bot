@@ -715,6 +715,7 @@ async function tryFireWaitDip(
     adoptOnChainHolding,
     opts: {
       chasePct: chase,
+      trigger: 'scan',
       skipBounce: true,
       skipOnchainAdopt: true,
       freshDexPrebuy: true,
@@ -942,6 +943,7 @@ async function tryFastPathForMint(
     adoptOnChainHolding,
     opts: {
       chasePct: chase,
+      trigger,
       // Bounce path already confirmed reclaim; don't use dump-skip bounce.
       skipBounce: isMild ? true : cfg.fastPathSkipBounce,
       skipOnchainAdopt: true,
@@ -1178,6 +1180,7 @@ async function wakeOwnTapeKnifeEnrich(
       adoptOnChainHolding,
       opts: {
         chasePct: cfg.maxChasePct,
+        trigger: 'scan',
         skipBounce: false,
         skipOnchainAdopt: false,
         freshDexPrebuy: true,
@@ -1321,6 +1324,7 @@ async function tryEntriesBody(
       adoptOnChainHolding,
       opts: {
         chasePct: cfg.maxChasePct,
+        trigger: 'scan',
         skipBounce: false,
         skipOnchainAdopt: false,
         freshDexPrebuy: true,
