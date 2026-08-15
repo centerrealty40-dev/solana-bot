@@ -18,7 +18,7 @@ export type MildDipOpenPosition = {
   peakPriceUsd?: number;
   /** 1.11.919 — when the quarantined mark first appeared, so it can time out. */
   pendingMarkAtMs?: number;
-  /** 1.11.958 — continuous quarantine start, cleared by the first accepted mark. */
+  /** 1.11.959 — continuous quarantine start, cleared by the first accepted mark. */
   markQuarantineSinceMs?: number;
   /**
    * 1.11.848 — the Dex price the entry decision was made on.

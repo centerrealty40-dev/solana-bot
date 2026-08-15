@@ -722,7 +722,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
-  describe('bounded green quarantine blindness (1.11.958)', () => {
+  describe('bounded green quarantine blindness (1.11.959)', () => {
     const g = {
       ...gates,
       markJumpConfirmPct: 10,

@@ -43,7 +43,7 @@ export type MarkExitDecision = {
   tpRungIndex: number | null;
   /** 1.11.852 — mark held back pending confirmation; nothing was decided. */
   markQuarantined?: boolean;
-  /** 1.11.958 — green armed quarantine accepted after the blind-window cap. */
+  /** 1.11.959 — green armed quarantine accepted after the blind-window cap. */
   markQuarantineForceReleased?: boolean;
   markQuarantineSinceMs?: number;
   markQuarantineBlindMs?: number;
@@ -127,7 +127,7 @@ export function decideMarkExit(args: {
   turnover5mLiq?: number | null;
   /** 1.11.919 — how long a refused mark may stand before we accept it. */
   markJumpConfirmMaxMs?: number;
-  /** 1.11.958 — green armed quarantine blind window; 0 = off. */
+  /** 1.11.959 — green armed quarantine blind window; 0 = off. */
   markQuarantineGreenMaxMs?: number;
   /**
    * 1.11.921 — Dex price for cross-checking a stream print before a loss exit.

@@ -130,7 +130,7 @@ export type MildDipExitGates = {
   mfeBankSleeveRunnerGivebackPct?: number;
   /** 1.11.957 — max quote slip below a profit decision; 0 = off. */
   profitFillMaxSlipPct?: number;
-  /** 1.11.958 — green armed quarantine blind window; 0 = off. */
+  /** 1.11.959 — green armed quarantine blind window; 0 = off. */
   markQuarantineGreenMaxMs?: number;
   /**
    * 1.11.849 — Live Oscar's unbounded take-profit ladder, ported to mild-dip.

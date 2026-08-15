@@ -101,7 +101,7 @@ const MildDipConfigSchema = z.object({
    * 1.11.919 — how long a quarantined mark may be refused before we accept it.
    */
   markJumpConfirmMaxMs: z.coerce.number().int().min(0).max(120_000).default(8_000),
-  /** 1.11.958 — immediate Jupiter read after a quarantined mark; 0 = off. */
+  /** 1.11.959 — immediate Jupiter read after a quarantined mark; 0 = off. */
   markQuarantineJupiterGapMs: z.coerce.number().int().min(0).max(120_000).default(0),
   /**
    * 1.11.794 — max concurrent background Dex→ring refreshes for open bags
@@ -672,7 +672,7 @@ const MildDipConfigSchema = z.object({
     markSellHaircutPct: z.coerce.number().min(0).max(10).default(1),
     /** 1.11.957 — max quote slip below a profit decision; 0 = off. */
     profitFillMaxSlipPct: z.coerce.number().min(0).max(100).default(0),
-    /** 1.11.958 — green armed quarantine blind window; 0 = off. */
+    /** 1.11.959 — green armed quarantine blind window; 0 = off. */
     markQuarantineGreenMaxMs: z.coerce.number().int().min(0).max(120_000).default(0),
     /** 1.11.910 — the dead-set exit: volume, turnover and price all gone. */
     deadSetVolFadeFrac: z.coerce.number().min(0).max(1).default(0),
