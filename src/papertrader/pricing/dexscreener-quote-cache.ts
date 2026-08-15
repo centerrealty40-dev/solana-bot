@@ -4,6 +4,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { fetch } from 'undici';
 import type { DexScreenerMarketSnapshot } from './discovery-market-quote.js';
 import { pickBestSolanaPairForMint } from './dexscreener-pair-pick.js';
 
@@ -361,7 +362,7 @@ function parsePairToDetails(
 export async function fetchDexScreenerPairDetails(
   mint: string,
   opts?: {
-    fetchImpl?: typeof import('undici').fetch;
+    fetchImpl?: typeof fetch;
     cacheTtlMs?: number;
     nowMs?: number;
     preferredDex?: string;
@@ -381,7 +382,7 @@ export async function fetchDexScreenerPairDetails(
   const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
   const bypass = opts?.bypassCache === true;
   const allowedDexIds = opts?.allowedDexIds;
-  const doFetch = opts?.fetchImpl ?? (await import('undici')).fetch;
+  const doFetch = opts?.fetchImpl ?? fetch;
 
   const detailsFromCacheEntry = (cached: CacheEntry): DexScreenerPairDetails | null => {
     if (cached.miss || !cached.pairAddress) return null;
@@ -469,7 +470,7 @@ export const DEXSCREENER_BATCH_MAX = 30;
 export async function prefetchDexScreenerPairDetailsMany(
   mints: readonly string[],
   opts?: {
-    fetchImpl?: typeof import('undici').fetch;
+    fetchImpl?: typeof fetch;
     cacheTtlMs?: number;
     nowMs?: number;
     allowedDexIds?: string[];
@@ -490,7 +491,7 @@ export async function prefetchDexScreenerPairDetailsMany(
   }
   if (wanted.length === 0) return 0;
 
-  const doFetch = opts?.fetchImpl ?? (await import('undici')).fetch;
+  const doFetch = opts?.fetchImpl ?? fetch;
   let calls = 0;
   for (let i = 0; i < wanted.length; i += DEXSCREENER_BATCH_MAX) {
     const chunk = wanted.slice(i, i + DEXSCREENER_BATCH_MAX);
@@ -530,7 +531,7 @@ export function __resetDexQuoteCacheForTests(): void {
 export async function fetchDexScreenerQuoteViaCache(
   mint: string,
   opts?: {
-    fetchImpl?: typeof import('undici').fetch;
+    fetchImpl?: typeof fetch;
     cacheTtlMs?: number;
     nowMs?: number;
   },
@@ -538,7 +539,7 @@ export async function fetchDexScreenerQuoteViaCache(
   if (!mint) return null;
   const nowMs = opts?.nowMs ?? Date.now();
   const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
-  const doFetch = opts?.fetchImpl ?? (await import('undici')).fetch;
+  const doFetch = opts?.fetchImpl ?? fetch;
 
   const mem = inProcess.get(mint);
   if (mem && nowMs - mem.at < ttlMs) return mem.val;
