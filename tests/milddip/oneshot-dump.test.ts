@@ -209,17 +209,32 @@ describe('oneshot dump grace vs exits', () => {
     expect(v.fraction).toBe(1);
   });
 
-  it('hard_stop still fires under grace', () => {
+  it('hard_stop still fires under grace when loss bounce off', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
       markPriceUsd: 85,
       peakPriceUsd: 115,
       armed: true,
-      gates,
+      gates: { ...gates, lossExitMinBouncePct: 0 },
       oneshotDumpGraceActive: true,
     });
     expect(v.shouldExit).toBe(true);
     expect(v.reason).toBe('hard_stop');
+  });
+
+  it('hard_stop waits for bounce under grace when prod loss defer on', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 115,
+      armed: true,
+      gates: { ...gates, lossExitMinBouncePct: 12, neverArmBounceMinTroughAgeMs: 60_000 },
+      oneshotDumpGraceActive: true,
+      postEntryTroughPriceUsd: 80,
+      postEntryTroughAtMs: Date.now() - 90_000,
+      nowMs: Date.now(),
+    });
+    expect(v.shouldExit).toBe(false);
   });
 
   it('cliff_dump still fires under grace when hard stop off', () => {

@@ -1120,7 +1120,7 @@ export function evaluateMildDipPeakGiveback(args: {
     if (cliff > 0 && pnlPct <= -cliff) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' };
     }
-    if (hardStop > 0 && pnlPct <= -hardStop) {
+    if (hardStop > 0 && pnlPct <= -hardStop && softLossOk()) {
       if (!scaleOutDone) {
         return {
           ...hold,
@@ -1133,7 +1133,9 @@ export function evaluateMildDipPeakGiveback(args: {
     }
   } else {
     // Legacy: full hard_stop before cliff (tighter floor wins first).
-    if (hardStop > 0 && pnlPct <= -hardStop) {
+    // 1.11.932 — hard_stop waits for bounce off trough (minute-candle reclaim),
+    // same as mfe_bank_sleeve / never_arm_giveback. cliff_dump stays immediate.
+    if (hardStop > 0 && pnlPct <= -hardStop && softLossOk()) {
       return { ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' };
     }
     if (cliff > 0 && pnlPct <= -cliff) {
@@ -1519,7 +1521,9 @@ export function evaluateMildDipPeakGiveback(args: {
     }
     const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
     if (maxHold > 0 && heldMs >= maxHold) {
-      return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_timeout' };
+      if (gainPct >= 0 || softLossOk()) {
+        return { ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_timeout' };
+      }
     }
   }
 
