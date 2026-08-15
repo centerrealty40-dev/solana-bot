@@ -324,6 +324,35 @@ describe('MildDipTapeShadow', () => {
     expect((shadow as unknown as { pending: unknown[] }).pending).toHaveLength(0);
   });
 
+  it('retains dormant tape history through a short configured eviction interval', () => {
+    const events: Record<string, unknown>[] = [];
+    const shadow = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 }),
+      gates,
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      idleEvictMs: 90 * 60_000,
+      append: (event) => events.push(event),
+    });
+    const now = 95_000_000;
+    for (const [offset, price] of [
+      [-40 * 60_000, 100],
+      [-30 * 60_000, 160],
+      [-5 * 60_000, 100],
+      [0, 104],
+    ] as const) {
+      shadow.onPriceSample({ mint, priceUsd: price, tsMs: now + offset, pairAgeHours: null });
+    }
+    shadow.tick(now + 20 * 60_000);
+    shadow.onPriceSample({
+      mint,
+      priceUsd: 110,
+      tsMs: now + 20 * 60_000,
+      pairAgeHours: 1,
+    });
+    expect(events.filter((event) => event.kind === 'mild_dip_tape_lane_signal')).toHaveLength(1);
+  });
+
   it('is journal-only and never calls an execution function', () => {
     const submit = vi.fn();
     const events: Record<string, unknown>[] = [];

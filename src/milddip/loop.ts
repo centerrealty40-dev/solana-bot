@@ -2552,7 +2552,7 @@ export async function runMildDipLoop(
         minIntervalMs: cfg.tapeMinIntervalMs,
         maxSignalsPerHour: cfg.tapeMaxSignalsPerHour,
         outcomeStaleMs: cfg.tapeOutcomeStaleMs,
-        idleEvictMs: cfg.tapeIdleEvictMs,
+        idleEvictMs: Math.max(cfg.tapeIdleEvictMs, cfg.tapeWindowMs),
         summaryIntervalMs: cfg.tapeSummaryIntervalMs,
         append: (event) => appendMildDipJournal(cfg.journalPath, event),
       })
