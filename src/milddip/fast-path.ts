@@ -423,8 +423,11 @@ export function structuralFromDexDetails(
   mint: string,
   details: NonNullable<Awaited<ReturnType<typeof fetchDexScreenerPairDetails>>>,
   nowMs: number,
+  opts?: { notePriceRing?: boolean },
 ): StructuralCacheEntry {
-  mildDipPriceRing.note(mint, details.priceUsd!, { tsMs: nowMs, source: 'dex' });
+  if (opts?.notePriceRing !== false) {
+    mildDipPriceRing.note(mint, details.priceUsd!, { tsMs: nowMs, source: 'dex' });
+  }
   const pairAgeHours =
     details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
       ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)

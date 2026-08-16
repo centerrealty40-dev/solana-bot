@@ -574,7 +574,10 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
     } catch {
       requestError = true;
     }
-    if (requestError) errorMints.push(...chunk);
+    if (requestError) {
+      errorMints.push(...chunk);
+      continue;
+    }
     if (isDexQuoteCacheEnabled()) await putCachedDexQuotes(entries, nowMs);
     for (const m of chunk) {
       inProcess.set(m, { at: nowMs, val: cacheEntryToSnapshot(entries[m]!) });

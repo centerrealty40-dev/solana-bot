@@ -2847,7 +2847,11 @@ export async function runMildDipLoop(
       tapeShadow.noteStructuralBatchCapHit();
       return;
     }
-    const pending = tapeShadow.pendingMints(nowMs, cfg.tapePendingSampleGraceMs, Number.MAX_SAFE_INTEGER);
+    const pending = tapeShadow.pendingMints(
+      nowMs,
+      cfg.tapePendingSampleGraceMs,
+      cfg.tapePendingSampleMaxMints,
+    );
     const candidates = tapeShadowRing.watchedMints(nowMs)
       .filter((mint) => {
         if ((tapeStructuralRetry.get(mint) ?? 0) > nowMs) return false;
@@ -2873,7 +2877,7 @@ export async function runMildDipLoop(
       .then((result) => {
         tapeShadow.noteStructuralBatchResult(result);
         for (const [mint, details] of result.detailsByMint) {
-          structuralFromDexDetails(mint, details, nowMs);
+          structuralFromDexDetails(mint, details, nowMs, { notePriceRing: false });
         }
         for (const mint of result.requestedMints) {
           const retryMs = result.errorMints.includes(mint)

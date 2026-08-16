@@ -77,6 +77,41 @@ describe('tape shadow arithmetic and lane boundaries', () => {
     const exit = events.find((event) => event.kind === 'mild_dip_tape_lane_exit');
     expect(exit).toMatchObject({ reason: 'trail', shadowOnly: true });
   });
+
+  it('keeps the online path bounded while retaining extrema', () => {
+    const events: Record<string, unknown>[] = [];
+    const ring = new MildDipPriceRing({ maxSamplesPerMint: 10_000, ttlMs: 2 * 60 * 60_000 });
+    const now = 200_000_000;
+    const shadow = new MildDipTapeShadow({
+      ring,
+      gates,
+      greenMeasureAll: true,
+      laneLimits: { green: { minIntervalMs: 1_000_000, maxSignalsPerHour: 10 }, dip: { minIntervalMs: 0, maxSignalsPerHour: 10 } },
+      minIntervalMs: 0,
+      maxSignalsPerHour: 10,
+      pathMaxPoints: 12,
+      pendingSampleGraceMs: 0,
+      append: (event) => events.push(event),
+    });
+    shadow.onPriceSample({ mint, priceUsd: 100, tsMs: now, pairAgeHours: null });
+    for (let i = 1; i <= 500; i += 1) {
+      shadow.onPriceSample({
+        mint,
+        priceUsd: i === 211 ? 999 : i === 377 ? 1 : 100 + i / 100,
+        tsMs: now + i * 10_000,
+        pairAgeHours: null,
+      });
+    }
+    const pending = (shadow as unknown as { pending: Array<{ path: Array<[number, number]> }> }).pending;
+    expect(pending[0]!.path.length).toBeLessThanOrEqual(12);
+    expect(pending.some((signal) => signal.path.some((point) => point[1] === 999))).toBe(true);
+    expect(pending.some((signal) => signal.path.some((point) => point[1] === 1))).toBe(true);
+    for (const signal of pending) {
+      expect(signal.path.map((point) => point[0])).toEqual(
+        [...signal.path].map((point) => point[0]).sort((a, b) => a - b),
+      );
+    }
+  });
   it('calculates the 5m/60m tape window and fails closed without history', () => {
     const now = 10_000_000;
     const ring = greenRing(now);

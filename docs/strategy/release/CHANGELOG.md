@@ -4,6 +4,9 @@
 
 - Journal-only tape measurement now batches DexScreener structural snapshots,
   records ordered price paths, and emits restart-safe simulated trail outcomes.
+- Request-level DexScreener errors no longer write negative entries into the
+  shared quote cache, preventing 429/Cloudflare responses from poisoning the
+  real entry funnel.
 - Pending tape sampling is raised to 400 mints for `mild-dip-bot`; the schema
   default remains 64 for other runtimes.
 
