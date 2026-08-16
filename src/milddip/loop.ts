@@ -25,6 +25,7 @@ import {
   evaluateFastPathCandidate,
   fastPathChasePct,
   getStructuralCache,
+  structuralFromDexDetails,
   streamDrawdownPct,
   loadStructural,
   leaderCoBuyAlignOk,
@@ -117,6 +118,7 @@ import { mildDipPairAgeRegistry } from './pair-age-registry.js';
 import {
   DEFAULT_MILD_DIP_TAPE_GATES,
   MildDipTapeShadow,
+  type MildDipTapeStructuralSnapshot,
   createMildDipTapeShadowStateSaver,
   loadMildDipTapeShadowState,
   tapeShadowDiscoverySampleDecision,
@@ -2667,6 +2669,12 @@ export async function runMildDipLoop(
         ttlMs: cfg.tapeWindowMs,
       })
     : null;
+  const tapeStructuralInFlight = new Map<
+    string,
+    Promise<MildDipTapeStructuralSnapshot | null>
+  >();
+  const tapeStructuralNegativeUntil = new Map<string, number>();
+  const tapeStructuralFetchTimes: number[] = [];
   const tapeShadow = tapeShadowRing
     ? new MildDipTapeShadow({
         ring: tapeShadowRing,
@@ -2688,10 +2696,44 @@ export async function runMildDipLoop(
         },
         minIntervalMs: cfg.tapeMinIntervalMs,
         maxSignalsPerHour: cfg.tapeMaxSignalsPerHour,
+        laneLimits: {
+          green: {
+            minIntervalMs: cfg.tapeGreenMeasureAll
+              ? cfg.tapeGreenMeasureAllMinIntervalMs
+              : cfg.tapeMinIntervalMs,
+            maxSignalsPerHour: cfg.tapeGreenMeasureAll
+              ? cfg.tapeGreenMeasureAllMaxSignalsPerHour
+              : cfg.tapeMaxSignalsPerHour,
+          },
+          dip: {
+            minIntervalMs: cfg.tapeMinIntervalMs,
+            maxSignalsPerHour: cfg.tapeMaxSignalsPerHour,
+          },
+        },
+        greenMeasureAll: cfg.tapeGreenMeasureAll,
         outcomeStaleMs: cfg.tapeOutcomeStaleMs,
         idleEvictMs: Math.max(cfg.tapeIdleEvictMs, cfg.tapeWindowMs),
         summaryIntervalMs: cfg.tapeSummaryIntervalMs,
         pendingSampleGraceMs: cfg.tapePendingSampleGraceMs,
+        structuralSnapshot: resolveTapeStructuralSnapshot,
+        ownFloors: {
+          green: {
+            minLiquidityUsd: cfg.tapeGreenMinLiqUsd,
+            maxLiquidityUsd: cfg.tapeGreenMaxLiqUsd,
+            minMarketCapUsd: cfg.tapeGreenMinMcapUsd,
+            minVolume5mUsd: cfg.tapeGreenMinVol5mUsd,
+            maxTurnover: cfg.tapeGreenMaxTurnover,
+            minPairAgeHours: cfg.tapeGreenMinAgeHours,
+          },
+          dip: {
+            minLiquidityUsd: cfg.tapeDipMinLiqUsd,
+            maxLiquidityUsd: cfg.tapeDipMaxLiqUsd,
+            minMarketCapUsd: cfg.tapeDipMinMcapUsd,
+            minVolume5mUsd: cfg.tapeDipMinVol5mUsd,
+            maxTurnover: cfg.tapeDipMaxTurnover,
+            minPairAgeHours: cfg.tapeDipMinAgeHours,
+          },
+        },
         append: (event) => appendMildDipJournal(cfg.journalPath, event),
       })
     : null;
@@ -2703,6 +2745,73 @@ export async function runMildDipLoop(
           `pending=${restored.pending} from ${cfg.tapeShadowStatePath}`,
       );
     }
+  }
+  async function resolveTapeStructuralSnapshot(
+    mint: string,
+    tsMs: number,
+  ): Promise<MildDipTapeStructuralSnapshot | null> {
+    const toSnapshot = (mintKey: string, metrics: {
+      liquidityUsd: number | null;
+      marketCapUsd: number | null;
+      volume5mUsd: number | null;
+      dexId: string | null;
+      pairAgeHours: number | null;
+    }): MildDipTapeStructuralSnapshot => ({
+      liquidityUsd: metrics.liquidityUsd,
+      marketCapUsd: metrics.marketCapUsd,
+      volume5mUsd: metrics.volume5mUsd,
+      turnover:
+        metrics.liquidityUsd != null &&
+        metrics.liquidityUsd > 0 &&
+        metrics.volume5mUsd != null
+          ? metrics.volume5mUsd / metrics.liquidityUsd
+          : null,
+      dexId: metrics.dexId,
+      pairAgeHours:
+        metrics.pairAgeHours ??
+        mildDipPairAgeRegistry.pairAgeHours(mintKey, tsMs),
+    });
+    const fresh = getStructuralCache(mint, tsMs, cfg.fastPathStructuralCacheMs);
+    if (fresh) return toSnapshot(mint, fresh.metrics);
+    if ((tapeStructuralNegativeUntil.get(mint) ?? 0) > tsMs) return null;
+    const existing = tapeStructuralInFlight.get(mint);
+    if (existing) return existing;
+    const fetchCutoff = tsMs - 60 * 60_000;
+    while (tapeStructuralFetchTimes.length > 0 && tapeStructuralFetchTimes[0]! <= fetchCutoff) {
+      tapeStructuralFetchTimes.shift();
+    }
+    if (
+      cfg.tapeStructuralFetchMaxPerHour > 0 &&
+      tapeStructuralFetchTimes.length >= cfg.tapeStructuralFetchMaxPerHour
+    ) {
+      tapeShadow?.noteStructuralFetchCapped();
+      return null;
+    }
+    tapeStructuralFetchTimes.push(tsMs);
+    const request = (async (): Promise<MildDipTapeStructuralSnapshot | null> => {
+      const details = await fetchDexScreenerPairDetails(mint, {
+        nowMs: tsMs,
+        cacheTtlMs: cfg.fastPathStructuralCacheMs,
+        allowedDexIds: cfg.entry.allowedDexIds,
+      });
+      if (details?.priceUsd != null && details.priceUsd > 0) {
+        const entry = structuralFromDexDetails(mint, details, tsMs);
+        return toSnapshot(mint, entry.metrics);
+      }
+      const stale = getStructuralCache(mint, tsMs, cfg.fastPathStructuralStaleMs);
+      if (stale) return toSnapshot(mint, stale.metrics);
+      tapeStructuralNegativeUntil.set(mint, tsMs + 6 * 3_600_000);
+      return null;
+    })()
+      .catch(() => {
+        tapeStructuralNegativeUntil.set(mint, tsMs + 6 * 3_600_000);
+        return null;
+      })
+      .finally(() => {
+        tapeStructuralInFlight.delete(mint);
+      });
+    tapeStructuralInFlight.set(mint, request);
+    return request;
   }
   const shadowDiscoveryLastSampleAt = new Map<string, number>();
   const shadowDiscoveryCleanup = { lastAtMs: 0 };

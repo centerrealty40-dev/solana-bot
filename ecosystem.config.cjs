@@ -2823,6 +2823,10 @@ const PM2_APPS = [
         NODE_ENV: 'production',
         MILD_DIP_APP_NAME: 'mild-dip-bot',
         MILD_DIP_EXECUTION_MODE: 'live',
+        MILD_DIP_TAPE_GREEN_MEASURE_ALL: '1',
+        MILD_DIP_TAPE_GREEN_MEASURE_ALL_MIN_INTERVAL_MS: '300000',
+        MILD_DIP_TAPE_GREEN_MEASURE_ALL_MAX_SIGNALS_PER_HOUR: '1500',
+        MILD_DIP_TAPE_STRUCTURAL_FETCH_MAX_PER_HOUR: '400',
         MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/live-oscar-micro.keypair.json'),
         MILD_DIP_WALLET_PUBKEY: '2sSu7dSwux8sKUYEgDtchx679YzuWG6Sbq54Db8vzswc',
         /** 1.11.742 — base clip $10 (was $5). */

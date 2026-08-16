@@ -419,7 +419,7 @@ const STRUCTURAL_STALE_FALLBACK_MS = 30_000;
 const STRUCTURAL_FETCH_RETRIES = 2;
 const STRUCTURAL_RETRY_GAP_MS = 80;
 
-function structuralFromDexDetails(
+export function structuralFromDexDetails(
   mint: string,
   details: NonNullable<Awaited<ReturnType<typeof fetchDexScreenerPairDetails>>>,
   nowMs: number,
