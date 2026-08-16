@@ -338,13 +338,7 @@ export function structuralOk(
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
   if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= g.minMarketCapUsd)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
-  if (
-    metrics.pairAgeHours != null &&
-    Number.isFinite(metrics.pairAgeHours) &&
-    metrics.pairAgeHours < minAge
-  ) {
-    return false;
-  }
+  if (metrics.pairAgeHours == null || metrics.pairAgeHours < minAge) return false;
   if (
     (minTurn > 0 || maxTurn > 0) &&
     metrics.volume5mUsd != null &&
@@ -355,14 +349,7 @@ export function structuralOk(
     if (minTurn > 0 && turn < minTurn) return false;
     if (maxTurn > 0 && turn > maxTurn) return false;
   }
-  if (
-    g.maxPairAgeHours > 0 &&
-    metrics.pairAgeHours != null &&
-    Number.isFinite(metrics.pairAgeHours) &&
-    metrics.pairAgeHours > g.maxPairAgeHours
-  ) {
-    return false;
-  }
+  if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
   if (g.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();
     if (!dex || !g.allowedDexIds.includes(dex)) return false;

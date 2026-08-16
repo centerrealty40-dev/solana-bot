@@ -936,21 +936,8 @@ function structuralGatesPass(
   if (metrics.liquidityUsd == null || !(metrics.liquidityUsd >= g.minLiquidityUsd)) return false;
   if (metrics.marketCapUsd == null || !(metrics.marketCapUsd >= minMcap)) return false;
   if (metrics.marketCapUsd > g.maxMarketCapUsd) return false;
-  if (
-    metrics.pairAgeHours != null &&
-    Number.isFinite(metrics.pairAgeHours) &&
-    metrics.pairAgeHours < g.minPairAgeHours
-  ) {
-    return false;
-  }
-  if (
-    g.maxPairAgeHours > 0 &&
-    metrics.pairAgeHours != null &&
-    Number.isFinite(metrics.pairAgeHours) &&
-    metrics.pairAgeHours > g.maxPairAgeHours
-  ) {
-    return false;
-  }
+  if (metrics.pairAgeHours == null || metrics.pairAgeHours < g.minPairAgeHours) return false;
+  if (g.maxPairAgeHours > 0 && metrics.pairAgeHours > g.maxPairAgeHours) return false;
   if (g.allowedDexIds.length > 0) {
     const dex = (metrics.dexId ?? '').toLowerCase();
     if (!dex || !g.allowedDexIds.includes(dex)) return false;

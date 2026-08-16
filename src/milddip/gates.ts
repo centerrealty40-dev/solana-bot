@@ -508,7 +508,9 @@ export function evaluateMildDipEntry(
 
   if (gates.minPairAgeHours > 0 || gates.maxPairAgeHours > 0) {
     const age = metrics.pairAgeHours;
-    if (age != null && Number.isFinite(age)) {
+    if (age == null || !Number.isFinite(age)) {
+      reasons.push('missing_pair_age');
+    } else {
       if (gates.minPairAgeHours > 0 && age < gates.minPairAgeHours) {
         reasons.push(`age_h=${age.toFixed(2)}<${gates.minPairAgeHours}`);
       }
