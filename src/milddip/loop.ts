@@ -84,6 +84,7 @@ import {
   fetchDexScreenerPairCreatedAtMany,
   fetchDexScreenerPairDetails,
   prefetchDexScreenerPairDetailsMany,
+  prefetchDexScreenerPairDetailsManyWithMetadata,
 } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
@@ -126,6 +127,8 @@ import {
   loadMildDipTapeShadowState,
   tapeShadowDiscoverySampleDecision,
   tapePairAgeBackfillDue,
+  resolveTapeStructuralSnapshotFromCache,
+  selectTapeStructuralBatch,
 } from './tape-shadow.js';
 import {
   HOLDING_DUST_RAW,
@@ -2718,12 +2721,10 @@ export async function runMildDipLoop(
         ttlMs: cfg.tapeWindowMs,
       })
     : null;
-  const tapeStructuralInFlight = new Map<
-    string,
-    Promise<MildDipTapeStructuralSnapshot | null>
-  >();
-  const tapeStructuralNegativeUntil = new Map<string, number>();
-  const tapeStructuralFetchTimes: number[] = [];
+  const tapeStructuralRetry = new Map<string, number>();
+  const tapeStructuralBatchTimes: number[] = [];
+  let tapeStructuralBatchInFlight = false;
+  let lastTapeStructuralBatchMs = 0;
   const tapeShadow = tapeShadowRing
     ? new MildDipTapeShadow({
         ring: tapeShadowRing,
@@ -2764,6 +2765,11 @@ export async function runMildDipLoop(
         idleEvictMs: Math.max(cfg.tapeIdleEvictMs, cfg.tapeWindowMs),
         summaryIntervalMs: cfg.tapeSummaryIntervalMs,
         pendingSampleGraceMs: cfg.tapePendingSampleGraceMs,
+        pathMaxPoints: cfg.tapePathMaxPoints,
+        exitArmPct: cfg.tapeExitArmPct,
+        exitTrailPct: cfg.tapeExitTrailPct,
+        exitStopPct: cfg.tapeExitStopPct,
+        exitTimeoutMs: cfg.tapeExitTimeoutMs,
         structuralSnapshot: resolveTapeStructuralSnapshot,
         ownFloors: {
           green: {
@@ -2821,47 +2827,85 @@ export async function runMildDipLoop(
         mildDipPairAgeRegistry.pairAgeHours(mintKey, tsMs),
     });
     const fresh = getStructuralCache(mint, tsMs, cfg.fastPathStructuralCacheMs);
-    if (fresh) return toSnapshot(mint, fresh.metrics);
-    if ((tapeStructuralNegativeUntil.get(mint) ?? 0) > tsMs) return null;
-    const existing = tapeStructuralInFlight.get(mint);
-    if (existing) return existing;
-    const fetchCutoff = tsMs - 60 * 60_000;
-    while (tapeStructuralFetchTimes.length > 0 && tapeStructuralFetchTimes[0]! <= fetchCutoff) {
-      tapeStructuralFetchTimes.shift();
+    const stale = getStructuralCache(mint, tsMs, cfg.fastPathStructuralStaleMs);
+    return resolveTapeStructuralSnapshotFromCache(
+      fresh ? toSnapshot(mint, fresh.metrics) : null,
+      stale ? toSnapshot(mint, stale.metrics) : null,
+    );
+  }
+  const maybePrefetchTapeStructural = (nowMs: number): void => {
+    if (
+      !tapeShadow ||
+      !tapeShadowRing ||
+      tapeStructuralBatchInFlight ||
+      (lastTapeStructuralBatchMs > 0 &&
+        nowMs - lastTapeStructuralBatchMs < cfg.tapeStructuralBatchMs)
+    ) {
+      return;
+    }
+    const cutoff = nowMs - 60 * 60_000;
+    while (tapeStructuralBatchTimes.length > 0 && tapeStructuralBatchTimes[0]! <= cutoff) {
+      tapeStructuralBatchTimes.shift();
     }
     if (
-      cfg.tapeStructuralFetchMaxPerHour > 0 &&
-      tapeStructuralFetchTimes.length >= cfg.tapeStructuralFetchMaxPerHour
+      cfg.tapeStructuralBatchMaxPerHour > 0 &&
+      tapeStructuralBatchTimes.length >= cfg.tapeStructuralBatchMaxPerHour
     ) {
-      tapeShadow?.noteStructuralFetchCapped();
-      return null;
+      tapeShadow.noteStructuralBatchCapHit();
+      return;
     }
-    tapeStructuralFetchTimes.push(tsMs);
-    const request = (async (): Promise<MildDipTapeStructuralSnapshot | null> => {
-      const details = await fetchDexScreenerPairDetails(mint, {
-        nowMs: tsMs,
-        cacheTtlMs: cfg.fastPathStructuralCacheMs,
-        allowedDexIds: cfg.entry.allowedDexIds,
-      });
-      if (details?.priceUsd != null && details.priceUsd > 0) {
-        const entry = structuralFromDexDetails(mint, details, tsMs);
-        return toSnapshot(mint, entry.metrics);
-      }
-      const stale = getStructuralCache(mint, tsMs, cfg.fastPathStructuralStaleMs);
-      if (stale) return toSnapshot(mint, stale.metrics);
-      tapeStructuralNegativeUntil.set(mint, tsMs + 6 * 3_600_000);
-      return null;
-    })()
+    const pending = tapeShadow.pendingMints(
+      nowMs,
+      cfg.tapePendingSampleGraceMs,
+      cfg.tapePendingSampleMaxMints,
+    );
+    const candidates = selectTapeStructuralBatch(
+      tapeShadowRing.watchedMints(nowMs).map((mint) => ({
+        mint,
+        pending: pending.has(mint),
+        sampleCount10m: tapeShadowRing!.sampleCount(mint, 10 * 60_000, nowMs),
+        fresh: Boolean(getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs)),
+        retryUntilMs: tapeStructuralRetry.get(mint) ?? 0,
+      })),
+      nowMs,
+      DEXSCREENER_BATCH_MAX,
+    );
+    if (candidates.length === 0) return;
+    lastTapeStructuralBatchMs = nowMs;
+    tapeStructuralBatchTimes.push(nowMs);
+    tapeStructuralBatchInFlight = true;
+    void prefetchDexScreenerPairDetailsManyWithMetadata(candidates, {
+      nowMs,
+      cacheTtlMs: cfg.fastPathStructuralCacheMs,
+      allowedDexIds: cfg.entry.allowedDexIds,
+    })
+      .then((result) => {
+        tapeShadow.noteStructuralBatchResult(result);
+        for (const [mint, details] of result.detailsByMint) {
+          structuralFromDexDetails(mint, details, nowMs, { notePriceRing: false });
+        }
+        for (const mint of result.requestedMints) {
+          const retryMs = result.errorMints.includes(mint)
+            ? cfg.tapeStructuralErrorRetryMs
+            : result.missedMints.includes(mint)
+              ? cfg.tapeStructuralMissRetryMs
+              : 0;
+          if (retryMs > 0) tapeStructuralRetry.set(mint, nowMs + retryMs);
+          const createdAt = result.pairCreatedAtMs.get(mint);
+          if (createdAt != null) mildDipPairAgeRegistry.notePairCreatedAt(mint, createdAt, nowMs);
+        }
+        tapeShadowStateSaver?.save();
+      })
       .catch(() => {
-        tapeStructuralNegativeUntil.set(mint, tsMs + 6 * 3_600_000);
-        return null;
+        tapeShadow.noteStructuralBatchError(candidates.length);
+        for (const mint of candidates) {
+          tapeStructuralRetry.set(mint, nowMs + cfg.tapeStructuralErrorRetryMs);
+        }
       })
       .finally(() => {
-        tapeStructuralInFlight.delete(mint);
+        tapeStructuralBatchInFlight = false;
       });
-    tapeStructuralInFlight.set(mint, request);
-    return request;
-  }
+  };
   const shadowDiscoveryLastSampleAt = new Map<string, number>();
   const shadowDiscoveryCleanup = { lastAtMs: 0 };
   const shouldSampleTapeStreamPrice = (mint: string, nowMs: number): boolean => {
@@ -3246,6 +3290,7 @@ export async function runMildDipLoop(
     const opens = openCount(state);
     tapeShadow?.tick(nowMs);
     maybeBackfillTapePairAge(nowMs);
+    maybePrefetchTapeStructural(nowMs);
 
     // 1.11.798 — surface dead stream-price tape (hot-mint WS can look fine alone).
     if (priceSampler && nowMs - lastStreamPriceStatsMs >= 30_000) {

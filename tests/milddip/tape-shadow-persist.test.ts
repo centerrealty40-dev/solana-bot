@@ -44,6 +44,56 @@ function makeShadow(
 }
 
 describe('persistent tape-shadow state', () => {
+  it('continues simulated exits across restart and emits a decided exit once', () => {
+    const nowMs = 600 * 60_000;
+    const firstEvents: Record<string, unknown>[] = [];
+    const first = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 2 * 60 * 60_000 }),
+      gates: { ...DEFAULT_MILD_DIP_TAPE_GATES },
+      greenMeasureAll: true,
+      laneLimits: {
+        green: { minIntervalMs: 1_000_000, maxSignalsPerHour: 10 },
+        dip: { minIntervalMs: 0, maxSignalsPerHour: 10 },
+      },
+      minIntervalMs: 0,
+      maxSignalsPerHour: 10,
+      append: (event) => firstEvents.push(event),
+    });
+    first.onPriceSample({ mint, priceUsd: 100, tsMs: nowMs });
+    first.onPriceSample({ mint, priceUsd: 120, tsMs: nowMs + 100 });
+    const state = first.toJSON(nowMs + 200);
+    const restoredEvents: Record<string, unknown>[] = [];
+    const restored = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 2 * 60 * 60_000 }),
+      gates: { ...DEFAULT_MILD_DIP_TAPE_GATES },
+      greenMeasureAll: true,
+      minIntervalMs: 0,
+      maxSignalsPerHour: 10,
+      append: (event) => restoredEvents.push(event),
+    });
+    restored.loadJSON(state, nowMs + 200);
+    restored.onPriceSample({ mint, priceUsd: 100, tsMs: nowMs + 300 });
+    expect(
+      [...firstEvents, ...restoredEvents].filter(
+        (event) => event.kind === 'mild_dip_tape_lane_exit',
+      ),
+    ).toHaveLength(1);
+
+    const pending = state.pending?.[0];
+    expect(pending).toBeDefined();
+    pending!.exit = { reason: 'stop', priceUsd: 70, tsMs: nowMs + 400 };
+    pending!.exitEmitted = false;
+    const decidedEvents: Record<string, unknown>[] = [];
+    const decided = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 2 * 60 * 60_000 }),
+      gates: { ...DEFAULT_MILD_DIP_TAPE_GATES },
+      minIntervalMs: 0,
+      maxSignalsPerHour: 10,
+      append: (event) => decidedEvents.push(event),
+    });
+    decided.loadJSON(state, nowMs + 400);
+    expect(decidedEvents.filter((event) => event.kind === 'mild_dip_tape_lane_exit')).toHaveLength(1);
+  });
   it('round-trips ring, pending state, and already-emitted horizons', () => {
     const dir = mkdtempSync(path.join(tmpdir(), 'milddip-tape-state-'));
     try {
