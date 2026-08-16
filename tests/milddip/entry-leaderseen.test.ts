@@ -29,8 +29,10 @@ describe('leader-seen observability', () => {
 
   it('deduplicates enriched leader-seen skips per mint for one minute', () => {
     resetFastPathStateForTests();
-    expect(shouldJournalLeaderSeenSkip('mint', 1_000)).toBe(true);
-    expect(shouldJournalLeaderSeenSkip('mint', 60_999)).toBe(false);
-    expect(shouldJournalLeaderSeenSkip('mint', 61_000)).toBe(true);
+    expect(shouldJournalLeaderSeenSkip('mint', 'entry', 1_000)).toBe(true);
+    expect(shouldJournalLeaderSeenSkip('mint', 'entry', 60_999)).toBe(false);
+    expect(shouldJournalLeaderSeenSkip('mint', 'entry', 61_000)).toBe(true);
+    expect(shouldJournalLeaderSeenSkip('mint', 'fastpath', 1_000)).toBe(true);
+    expect(shouldJournalLeaderSeenSkip('mint', 'fastpath_first_touch', 1_000)).toBe(true);
   });
 });

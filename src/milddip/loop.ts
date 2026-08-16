@@ -904,7 +904,7 @@ async function tryFastPathForMint(
         mint,
       );
     if (!hit) {
-      if (shouldJournalLeaderSeenSkip(mint, nowMs)) {
+      if (shouldJournalLeaderSeenSkip(mint, 'fastpath_first_touch', nowMs)) {
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_not_leader_seen_skip',
           mint,
@@ -934,7 +934,7 @@ async function tryFastPathForMint(
         mint,
       );
     if (!hit) {
-      if (shouldJournalLeaderSeenSkip(mint, nowMs)) {
+      if (shouldJournalLeaderSeenSkip(mint, 'fastpath', nowMs)) {
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_not_leader_seen_skip',
           mint,

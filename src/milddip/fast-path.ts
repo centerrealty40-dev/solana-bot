@@ -122,10 +122,17 @@ export function shouldJournalGreenVerdict(mint: string, nowMs: number): boolean 
   return true;
 }
 
-export function shouldJournalLeaderSeenSkip(mint: string, nowMs: number): boolean {
-  const previous = lastLeaderSeenSkipJournalMs.get(mint);
+export type LeaderSeenSkipJournalSite = 'entry' | 'fastpath_first_touch' | 'fastpath';
+
+export function shouldJournalLeaderSeenSkip(
+  mint: string,
+  site: LeaderSeenSkipJournalSite,
+  nowMs: number,
+): boolean {
+  const key = `${mint}:${site}`;
+  const previous = lastLeaderSeenSkipJournalMs.get(key);
   if (previous != null && nowMs - previous < 60_000) return false;
-  lastLeaderSeenSkipJournalMs.set(mint, nowMs);
+  lastLeaderSeenSkipJournalMs.set(key, nowMs);
   return true;
 }
 

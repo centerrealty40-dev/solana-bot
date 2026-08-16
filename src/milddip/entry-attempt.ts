@@ -334,7 +334,7 @@ export async function attemptMildDipEntry(args: {
   let probeReason: 'rebuy_below_exit' | 'rebuy_liq_drop' | null = null;
 
   if (!leaderBuyGateOk(cfg, state, c.mint, nowMs)) {
-    if (shouldJournalLeaderSeenSkip(c.mint, nowMs)) {
+    if (shouldJournalLeaderSeenSkip(c.mint, 'entry', nowMs)) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_not_leader_seen_skip',
         mint: c.mint,
