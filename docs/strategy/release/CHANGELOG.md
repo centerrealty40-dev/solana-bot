@@ -1,3 +1,20 @@
+## 1.11.968 — 2026-08-16
+
+### Added — mild-dip mark liquidity telemetry
+
+- Extend `mild_dip_mark` rows with current liquidity, entry liquidity,
+  `liqRatio`, and the price-adjusted `depthDrainRatio` proxy.
+- Reuse liquidity already loaded by the open-mark Dex refresh; no new network
+  requests are added.
+- This release changes telemetry only. Entry, exit, sizing, and other trading
+  decisions are unchanged. The additional history enables later backtests of
+  liquidity-drain exit rules.
+
+### Rollback
+
+Revert this release commit and redeploy the prior `v2` revision. The fields are
+journal-only and do not affect trading behavior.
+
 ## 1.11.967 — 2026-08-15
 
 ### Added — mild-dip young-pair and churn entry gates

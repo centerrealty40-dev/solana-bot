@@ -70,7 +70,10 @@ import {
 import { isRunnerPartialExit } from './sell-partial.js';
 import { profitFillMinPriceUsd } from './profit-fill-guard.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
-import { readOpenMarkMetrics } from './open-mark-metrics.js';
+import {
+  computeMarkLiquidityTelemetry,
+  readOpenMarkMetrics,
+} from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
 import {
   openMarkNeedsJupiterTopUp,
@@ -389,6 +392,7 @@ function maybeJournalMark(
   pos: MildDipOpenPosition,
   decision: MarkExitDecision,
   volume5mUsd: number | null,
+  liquidityUsd: number | null,
   nowMs: number,
   source: 'stream' | 'dex' | null,
 ): void {
@@ -402,6 +406,12 @@ function maybeJournalMark(
     nowMs - last < cfg.markJournalMs
   ) return;
   lastMarkJournalMs.set(pos.mint, nowMs);
+  const liquidityTelemetry = computeMarkLiquidityTelemetry({
+    liquidityUsd,
+    entryLiquidityUsd: pos.entryLiquidityUsd,
+    priceUsd: decision.markPriceUsd,
+    entryPriceUsd: pos.entryPriceUsd,
+  });
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_mark',
     mint: pos.mint,
@@ -425,6 +435,19 @@ function maybeJournalMark(
     heldSec: Math.round(Math.max(0, nowMs - pos.openedAtMs) / 1000),
     vol5m: volume5mUsd,
     entryVol5m: pos.entryVolume5mUsd ?? null,
+    liq: liquidityUsd != null ? +liquidityUsd.toFixed(2) : null,
+    entryLiq:
+      pos.entryLiquidityUsd != null && Number.isFinite(pos.entryLiquidityUsd)
+        ? +pos.entryLiquidityUsd.toFixed(2)
+        : null,
+    liqRatio:
+      liquidityTelemetry.liqRatio != null
+        ? +liquidityTelemetry.liqRatio.toFixed(4)
+        : null,
+    depthDrainRatio:
+      liquidityTelemetry.depthDrainRatio != null
+        ? +liquidityTelemetry.depthDrainRatio.toFixed(4)
+        : null,
     newPeak,
     source,
     // 1.11.852 — held back pending confirmation. pnl/mfe are not computed for
@@ -2048,6 +2071,7 @@ async function tryExits(
       px,
       volume5mUsd: metrics?.volume5mUsd ?? volume5mUsd,
       pc5mPct: metrics?.pc5mPct ?? null,
+      liquidityUsd: metrics?.liquidityUsd ?? null,
       source,
     };
   });
@@ -2072,7 +2096,7 @@ async function tryExits(
       },
     ).catch(() => undefined);
   }
-  for (const { mint, px, volume5mUsd, pc5mPct, source } of markRows) {
+  for (const { mint, px, volume5mUsd, pc5mPct, liquidityUsd, source } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
     /**
@@ -2198,7 +2222,7 @@ async function tryExits(
       pos.entryVolume5mUsd = volume5mUsd;
     }
 
-    maybeJournalMark(cfg, pos, decision, volume5mUsd, nowMs, source);
+    maybeJournalMark(cfg, pos, decision, volume5mUsd, liquidityUsd, nowMs, source);
 
     applyMarkDecisionToPosition(pos, decision);
 
