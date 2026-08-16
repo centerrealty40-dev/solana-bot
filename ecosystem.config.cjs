@@ -3068,7 +3068,7 @@ const PM2_APPS = [
         MILD_DIP_TURN_DUMP_BETA: '6.86',
         MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT: '10',
         MILD_DIP_TURN_DUMP_DEEP_SLACK_PCT: '12',
-        MILD_DIP_TURN_DUMP_SHALLOW_BRANCH: '1',
+        MILD_DIP_TURN_DUMP_SHALLOW_BRANCH: '0',
         MILD_DIP_TURN_DUMP_SHALLOW_ALPHA: '-8.83',
         MILD_DIP_TURN_DUMP_SHALLOW_BETA: '4.23',
         MILD_DIP_TURN_DUMP_SHALLOW_BAND_PCT: '8',
@@ -3329,7 +3329,7 @@ const PM2_APPS = [
         MILD_DIP_MIN_PAIR_AGE_HOURS: '6',
         MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1',
         MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2',
-        MILD_DIP_ENTRY_MIN_LIQ_USD: '4000',
+        MILD_DIP_ENTRY_MIN_LIQ_USD: '15000',
         /**
          * 1.11.905 — one hour instead of six for a name a leader is buying.
          *
