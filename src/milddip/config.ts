@@ -160,6 +160,10 @@ const MildDipConfigSchema = z.object({
   streamPriceSampleEnabled: z.boolean().default(true),
   streamPriceMinGapMs: z.coerce.number().int().min(250).max(60_000).default(2_000),
   streamPriceConcurrency: z.coerce.number().int().min(1).max(8).default(3),
+  greenWatchEnabled: z.boolean().default(false),
+  greenWatchWindowMs: z.coerce.number().int().min(60_000).max(900_000).default(600_000),
+  greenWatchMinHits: z.coerce.number().int().min(1).max(100).default(2),
+  greenWatchMaxMints: z.coerce.number().int().min(0).max(400).default(100),
   /** Journal-only tape lanes; this never enters the execution path. */
   tapeShadowEnabled: z.boolean().default(false),
   tapePendingSampleMaxMints: z.coerce.number().int().min(1).max(5_000).default(64),
@@ -440,6 +444,8 @@ const MildDipConfigSchema = z.object({
   /** pc5m at or below this is refused outright — the dump already happened. */
   rugBlockDumpPct: z.coerce.number().min(-100).max(0).default(0),
   requireLeaderSeen: z.boolean().default(false),
+  /** GREEN-only override; true preserves the global leader-seen requirement. */
+  greenRequireLeaderSeen: z.boolean().default(true),
   /** 1.11.899 — the same requirement, but only for the first touch on a mint. */
   requireLeaderSeenFirstTouch: z.boolean().default(false),
   /** 1.11.906 — how long we remember that a leader traded a mint. 0 = off. */
@@ -1199,6 +1205,7 @@ export function loadMildDipConfig(): MildDipConfig {
     rugKnifeTurn: envNum('MILD_DIP_RUG_KNIFE_TURN', 3),
     rugBlockDumpPct: envNum('MILD_DIP_RUG_BLOCK_DUMP_PCT', 0),
     requireLeaderSeen: envBool('MILD_DIP_REQUIRE_LEADER_SEEN', false),
+    greenRequireLeaderSeen: envBool('MILD_DIP_GREEN_REQUIRE_LEADER_SEEN', true),
     requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
     leaderSeenMemoryMs: process.env.MILD_DIP_LEADER_SEEN_MEMORY_MS ?? 0,
     leaderGateShadowRecord: envBool('MILD_DIP_LEADER_GATE_SHADOW_RECORD', true),
@@ -1328,6 +1335,10 @@ export function loadMildDipConfig(): MildDipConfig {
     })(),
     streamPriceMinGapMs: process.env.MILD_DIP_STREAM_PRICE_MIN_GAP_MS ?? 500,
     streamPriceConcurrency: process.env.MILD_DIP_STREAM_PRICE_CONCURRENCY ?? 6,
+    greenWatchEnabled: envBool('MILD_DIP_GREEN_WATCH_ENABLED', false),
+    greenWatchWindowMs: envNum('MILD_DIP_GREEN_WATCH_WINDOW_MS', 600_000),
+    greenWatchMinHits: envNum('MILD_DIP_GREEN_WATCH_MIN_HITS', 2),
+    greenWatchMaxMints: envNum('MILD_DIP_GREEN_WATCH_MAX_MINTS', 100),
     tapeShadowEnabled: envBool('MILD_DIP_TAPE_SHADOW_ENABLED', false),
     tapePendingSampleMaxMints: envNum('MILD_DIP_TAPE_PENDING_SAMPLE_MAX_MINTS', 64),
     tapeShadowSampleMaxMints: envNum('MILD_DIP_TAPE_SHADOW_SAMPLE_MAX_MINTS', 0),

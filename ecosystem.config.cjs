@@ -3729,6 +3729,11 @@ const PM2_APPS = [
          */
         // Controlled $1 probe: leader snapshots show p10 vol5m $145 and median $1051.
         MILD_DIP_GREEN_ENABLED: '1',
+        MILD_DIP_GREEN_WATCH_ENABLED: '1',
+        MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
+        MILD_DIP_GREEN_WATCH_WINDOW_MS: '600000',
+        MILD_DIP_GREEN_WATCH_MIN_HITS: '3',
+        MILD_DIP_GREEN_WATCH_MAX_MINTS: '60',
         MILD_DIP_GREEN_POSITION_USD: '1',
         /**
          * 1.11.867 — 0.05h (3 min), was 1h. Measured on the sampler with the
