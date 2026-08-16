@@ -448,6 +448,7 @@ function maybeJournalMark(
       liquidityTelemetry.depthDrainRatio != null
         ? +liquidityTelemetry.depthDrainRatio.toFixed(4)
         : null,
+    liqDrainConfirmTicks: decision.liquidityDrainConfirmTicks ?? 0,
     newPeak,
     source,
     // 1.11.852 — held back pending confirmation. pnl/mfe are not computed for
@@ -1550,6 +1551,15 @@ async function executeQueuedSell(args: {
     feeSolBefore: sell.feeSolBefore ?? null,
     feeSolAfter: sell.feeSolAfter ?? null,
     fraction,
+    liq: decision.liquidityUsd != null ? +decision.liquidityUsd.toFixed(2) : null,
+    entryLiq:
+      pos.entryLiquidityUsd != null && Number.isFinite(pos.entryLiquidityUsd)
+        ? +pos.entryLiquidityUsd.toFixed(2)
+        : null,
+    liqRatio: decision.liqRatio != null ? +decision.liqRatio.toFixed(4) : null,
+    depthDrainRatio:
+      decision.depthDrainRatio != null ? +decision.depthDrainRatio.toFixed(4) : null,
+    liqDrainConfirmTicks: decision.liquidityDrainConfirmTicks ?? 0,
     lossExitBounceCap: decision.lossExitBounceCap ?? null,
     scaleOut: isPartial,
     armed: decision.armed,
@@ -2072,6 +2082,7 @@ async function tryExits(
       volume5mUsd: metrics?.volume5mUsd ?? volume5mUsd,
       pc5mPct: metrics?.pc5mPct ?? null,
       liquidityUsd: metrics?.liquidityUsd ?? null,
+      liquidityMetricsTsMs: metrics?.tsMs ?? null,
       source,
     };
   });
@@ -2096,7 +2107,15 @@ async function tryExits(
       },
     ).catch(() => undefined);
   }
-  for (const { mint, px, volume5mUsd, pc5mPct, liquidityUsd, source } of markRows) {
+  for (const {
+    mint,
+    px,
+    volume5mUsd,
+    pc5mPct,
+    liquidityUsd,
+    liquidityMetricsTsMs,
+    source,
+  } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
     /**
@@ -2203,6 +2222,9 @@ async function tryExits(
           ? om.volume5mUsd / om.liquidityUsd
           : null;
       })(),
+      liquidityUsd,
+      liquidityMetricsFresh: liquidityUsd != null,
+      liquidityMetricsTsMs,
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
       markSource: source,

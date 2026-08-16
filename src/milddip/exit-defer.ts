@@ -58,6 +58,7 @@ export const NEVER_DEFER_REASONS: ReadonlySet<string> = new Set([
   'hard_stop',
   'cliff_dump',
   'never_arm_freefall',
+  'liq_drain',
 ]);
 
 /**
