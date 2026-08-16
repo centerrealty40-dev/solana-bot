@@ -3,6 +3,11 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import type { MildDipOpenPosition } from '../../src/milddip/state.js';
+import { evaluateMildDipEntryRisk, evaluateMildDipPreBuy } from '../../src/milddip/gates.js';
+import {
+  resetFastPathStateForTests,
+  shouldJournalGreenVerdict,
+} from '../../src/milddip/fast-path.js';
 import {
   decideGreenExit,
   evaluateGreenLane,
@@ -68,6 +73,52 @@ describe('GREEN exposure caps', () => {
     expect(
       greenExposureCapReason({ openGreen: 1, maxOpen: 8, buysInHour: 30, maxBuysPerHour: 30 }),
     ).toBe('green_max_buys_per_hour');
+  });
+});
+
+describe('GREEN shared entry-risk and chase settings', () => {
+  it('uses GREEN floors for a 0.79h pair and 2.62 volume/liquidity ratio', () => {
+    expect(
+      evaluateMildDipEntryRisk({
+        pairAgeHours: 0.79,
+        volume5mUsd: 10_480,
+        liquidityUsd: 4_000,
+        minPairAgeHours: 0.25,
+        maxVol5mToLiq: 6,
+        minLiquidityUsd: 2_500,
+      }).pass,
+    ).toBe(true);
+    expect(
+      evaluateMildDipEntryRisk({
+        pairAgeHours: 0.79,
+        volume5mUsd: 10_480,
+        liquidityUsd: 4_000,
+        minPairAgeHours: 1,
+        maxVol5mToLiq: 2,
+        minLiquidityUsd: 4_000,
+      }).pass,
+    ).toBe(false);
+  });
+
+  it('allows 12% GREEN chase and preserves the old cap when set to zero', () => {
+    const args = {
+      signalPriceUsd: 1,
+      freshPriceUsd: 1.11,
+      freshPc5mPct: -5,
+      entryGates: { minDipPct: -20, maxDipPct: -1 },
+    };
+    expect(evaluateMildDipPreBuy({ ...args, maxChasePct: 12 }).pass).toBe(true);
+    expect(evaluateMildDipPreBuy({ ...args, maxChasePct: 8 }).pass).toBe(false);
+    expect(evaluateMildDipPreBuy({ ...args, maxChasePct: 0 }).pass).toBe(true);
+  });
+});
+
+describe('GREEN failed verdict journal throttle', () => {
+  it('allows the first event, suppresses repeats for a minute, then allows again', () => {
+    resetFastPathStateForTests();
+    expect(shouldJournalGreenVerdict('mint', 1_000)).toBe(true);
+    expect(shouldJournalGreenVerdict('mint', 60_999)).toBe(false);
+    expect(shouldJournalGreenVerdict('mint', 61_000)).toBe(true);
   });
 });
 
@@ -351,6 +402,6 @@ describe('the green lane keeps its own age floor', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '1'");
     expect(eco).toContain("MILD_DIP_GREEN_POSITION_USD: '1'");
-    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1'");
+    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.25'");
   });
 });
