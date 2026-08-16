@@ -42,6 +42,7 @@ export function evaluateStagedEntryAdd(args: {
   markPx: number | null;
   firstFillPx: number | null;
   triggerPct: number;
+  maxChasePct: number;
   intendedUsd: number;
   alreadyFilledUsd: number;
   addMult: number;
@@ -54,6 +55,10 @@ export function evaluateStagedEntryAdd(args: {
   const triggerPx =
     args.firstFillPx != null && args.firstFillPx > 0
       ? args.firstFillPx * (1 + Math.max(0, args.triggerPct) / 100)
+      : null;
+  const upperPx =
+    triggerPx != null && args.maxChasePct < 100
+      ? args.firstFillPx! * (1 + (Math.max(0, args.triggerPct) + Math.max(0, args.maxChasePct)) / 100)
       : null;
   if (!args.enabled) return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'disabled' };
   if (args.addDone) return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'already_added' };
@@ -73,6 +78,9 @@ export function evaluateStagedEntryAdd(args: {
   if (args.markPx < triggerPx) {
     return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'below_trigger' };
   }
+  if (upperPx != null && args.markPx > upperPx) {
+    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'above_chase_band' };
+  }
   if (args.liquidityUsd == null || args.liquidityUsd < args.minLiquidityUsd) {
     return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'liquidity_below_floor' };
   }
@@ -90,4 +98,42 @@ export function evaluateStagedEntryAdd(args: {
     return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'target_filled' };
   }
   return { shouldAdd: true, addUsd, triggerPx, reason: 'triggered' };
+}
+
+const STAGED_PROFIT_EXIT_REASONS = new Set(['mfe_bank_sleeve', 'tp_grid']);
+
+export function stagedEntryAverageCostPx(pos: {
+  entryPriceUsd: number;
+  stagedEntryAvgCostPriceUsd?: number;
+  stagedEntryTotalCostUsd?: number;
+  stagedEntryTotalTokenAmount?: number;
+}): number {
+  if (pos.stagedEntryAvgCostPriceUsd != null && pos.stagedEntryAvgCostPriceUsd > 0) {
+    return pos.stagedEntryAvgCostPriceUsd;
+  }
+  if (
+    pos.stagedEntryTotalCostUsd != null &&
+    pos.stagedEntryTotalTokenAmount != null &&
+    pos.stagedEntryTotalCostUsd > 0 &&
+    pos.stagedEntryTotalTokenAmount > 0
+  ) {
+    return pos.stagedEntryTotalCostUsd / pos.stagedEntryTotalTokenAmount;
+  }
+  return pos.entryPriceUsd;
+}
+
+export function evaluateStagedProfitExit(args: {
+  reason: string | null;
+  exitPx: number;
+  avgCostPx: number;
+  minOverAvgPct: number;
+}): { allow: boolean; thresholdPx: number; reason: string } {
+  const thresholdPx = args.avgCostPx * (1 + Math.max(0, args.minOverAvgPct) / 100);
+  if (!STAGED_PROFIT_EXIT_REASONS.has(args.reason ?? '')) {
+    return { allow: true, thresholdPx, reason: 'protective_or_other' };
+  }
+  if (args.minOverAvgPct <= 0 || args.exitPx >= thresholdPx) {
+    return { allow: true, thresholdPx, reason: 'above_avg_cost' };
+  }
+  return { allow: false, thresholdPx, reason: 'below_staged_avg_cost' };
 }

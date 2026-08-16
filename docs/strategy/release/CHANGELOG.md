@@ -1,3 +1,29 @@
+## [1.11.986] — 2026-08-16
+
+### Added / Changed
+
+- Capped staged-add chasing to a band from `+8%` through `+12%` above the
+  original first fill. Marks above the band no longer consume an add attempt or
+  backoff; they are journalled as `above_chase_band` and remain eligible after
+  a pullback.
+- Added a weighted-average-cost veto for the `mfe_bank_sleeve` and `tp_grid`
+  profit exits. These exits now require at least `+1%` over the actual weighted
+  add/first-fill cost, while protective exits remain unchanged and can always
+  cut the bag.
+- ASg9yD demonstrated the failure: the `$5` first fill at `0.00012217` had a
+  `+8%` trigger at `0.00013195`, but the add filled at `0.00014345` (`+17.4%`)
+  near the `0.00014541` local peak. The subsequent bank half was journalled
+  `+6.04%` from first fill while losing approximately `$0.88` against the
+  weighted bag cost.
+
+### Rollback
+
+```text
+MILD_DIP_STAGED_ADD_MAX_CHASE_PCT=100
+MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT=0
+MILD_DIP_STAGED_ENTRY_ENABLED=0
+```
+
 ## [1.11.985] — 2026-08-16
 
 ### Added / Changed

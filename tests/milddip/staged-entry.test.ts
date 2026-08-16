@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   evaluateStagedEntryAdd,
+  evaluateStagedProfitExit,
   resolveStagedEntryFirstClip,
+  stagedEntryAverageCostPx,
 } from '../../src/milddip/staged-entry.js';
 
 describe('mild-dip staged entry', () => {
@@ -46,6 +48,7 @@ describe('mild-dip staged entry', () => {
     nowMs: 100_000,
     firstFillPx: 100,
     triggerPct: 8,
+    maxChasePct: 4,
     intendedUsd: 18,
     alreadyFilledUsd: 5,
     addMult: 2,
@@ -61,6 +64,13 @@ describe('mild-dip staged entry', () => {
     const add = evaluateStagedEntryAdd({ ...base, markPx: 108 });
     expect(add.shouldAdd).toBe(true);
     expect(add.addUsd).toBe(31);
+  });
+
+  it('skips above the chase band without consuming attempts, then adds on pullback', () => {
+    const above = evaluateStagedEntryAdd({ ...base, markPx: 113 });
+    expect(above).toMatchObject({ shouldAdd: false, reason: 'above_chase_band' });
+    expect(base.attempts).toBe(0);
+    expect(evaluateStagedEntryAdd({ ...base, markPx: 111.5 }).shouldAdd).toBe(true);
   });
 
   it('caps the one-shot add at $40', () => {
@@ -79,5 +89,33 @@ describe('mild-dip staged entry', () => {
       addUsd: 0,
       reason: 'disabled',
     });
+  });
+
+  it('vetoes profit sleeve and TP exits below weighted average cost', () => {
+    const args = { exitPx: 101, avgCostPx: 100, minOverAvgPct: 1 };
+    expect(evaluateStagedProfitExit({ ...args, reason: 'mfe_bank_sleeve' }).allow).toBe(true);
+    expect(evaluateStagedProfitExit({ ...args, reason: 'tp_grid' }).allow).toBe(true);
+    expect(evaluateStagedProfitExit({ ...args, reason: 'mfe_bank_sleeve', exitPx: 100.9 }).allow).toBe(false);
+    expect(evaluateStagedProfitExit({ ...args, reason: 'tp_grid', exitPx: 100.9 }).allow).toBe(false);
+  });
+
+  it('leaves protective exits unchanged and no-add average cost equals entry', () => {
+    expect(
+      evaluateStagedProfitExit({
+        reason: 'peak_giveback',
+        exitPx: 50,
+        avgCostPx: 100,
+        minOverAvgPct: 1,
+      }).allow,
+    ).toBe(true);
+    expect(
+      evaluateStagedProfitExit({
+        reason: 'hard_stop',
+        exitPx: 50,
+        avgCostPx: 100,
+        minOverAvgPct: 1,
+      }).allow,
+    ).toBe(true);
+    expect(stagedEntryAverageCostPx({ entryPriceUsd: 100 })).toBe(100);
   });
 });

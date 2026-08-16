@@ -112,7 +112,11 @@ import {
 import { hydrateTradeLotsFromOpen, writeUsSellFill } from './trade-journal.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
-import { evaluateStagedEntryAdd } from './staged-entry.js';
+import {
+  evaluateStagedEntryAdd,
+  evaluateStagedProfitExit,
+  stagedEntryAverageCostPx,
+} from './staged-entry.js';
 import {
   createDumpSellTape,
   createGivebackDumpGate,
@@ -2053,6 +2057,7 @@ async function attemptStagedEntryAdd(args: {
     markPx: markPriceUsd,
     firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
     triggerPct: cfg.stagedAddTriggerPct,
+    maxChasePct: cfg.stagedAddMaxChasePct,
     intendedUsd: pos.stagedEntryIntendedUsd ?? 0,
     alreadyFilledUsd: pos.stagedEntryFilledUsd ?? pos.sizeUsd,
     addMult: cfg.stagedAddMult,
@@ -2062,7 +2067,24 @@ async function attemptStagedEntryAdd(args: {
     liquidityDrainActive: (pos.liquidityDrainConfirmTicks ?? 0) > 0,
     rugRiskActive: pos.stagedEntryRugRiskTier === 'knife' || pos.stagedEntryRugRiskTier === 'blocked',
   });
-  if (!verdict.shouldAdd) return;
+  if (!verdict.shouldAdd) {
+    if (verdict.reason === 'above_chase_band') {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_staged_add',
+        mint: pos.mint,
+        symbol: pos.symbol,
+        lane: pos.lane ?? 'dip',
+        firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
+        triggerPx: verdict.triggerPx,
+        mark: markPriceUsd,
+        intendedUsd: pos.stagedEntryIntendedUsd ?? null,
+        addUsd: 0,
+        ok: false,
+        reason: verdict.reason,
+      });
+    }
+    return;
+  }
 
   pos.stagedEntryAddAttempts = (pos.stagedEntryAddAttempts ?? 0) + 1;
   pos.stagedEntryLastAttemptAtMs = nowMs;
@@ -2103,7 +2125,7 @@ async function attemptStagedEntryAdd(args: {
       },
       leaderSignature: `milddip_staged_add_${pos.mint.slice(0, 8)}_${nowMs}`,
       trigger: 'stream',
-      leaderPriceUsd: markPriceUsd,
+      leaderPriceUsd: verdict.triggerPx ?? markPriceUsd,
       leaderBuyTs: nowMs,
     });
     if (!buy.ok) {
@@ -2114,8 +2136,23 @@ async function attemptStagedEntryAdd(args: {
     const live = state.open[pos.mint];
     if (!live) return;
     const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
+    const fillPx = buy.priceUsd || markPriceUsd;
     live.sizeUsd += sized.sizeUsd;
     live.stagedEntryFilledUsd = (live.stagedEntryFilledUsd ?? pos.sizeUsd) + sized.sizeUsd;
+    const addCostUsd = buy.quoteSpentUsd ?? sized.sizeUsd;
+    const priorCost = live.stagedEntryTotalCostUsd ?? pos.sizeUsd;
+    const priorTokens =
+      live.stagedEntryTotalTokenAmount ??
+      ((live.stagedEntryFirstFillPriceUsd ?? live.entryPriceUsd) > 0
+        ? priorCost / (live.stagedEntryFirstFillPriceUsd ?? live.entryPriceUsd)
+        : 0);
+    live.stagedEntryTotalCostUsd = priorCost + addCostUsd;
+    live.stagedEntryTotalTokenAmount =
+      priorTokens + (fillPx > 0 ? addCostUsd / fillPx : 0);
+    live.stagedEntryAvgCostPriceUsd =
+      live.stagedEntryTotalTokenAmount > 0
+        ? live.stagedEntryTotalCostUsd / live.stagedEntryTotalTokenAmount
+        : live.entryPriceUsd;
     live.stagedEntryAddDone = true;
     if (raw && /^\d+$/.test(raw) && BigInt(raw) > 0n) {
       live.tokenRaw = raw;
@@ -2416,6 +2453,29 @@ async function tryExits(
         liquidityUsd,
         nowMs,
       });
+    }
+
+    if (decision.shouldExit && decision.reason) {
+      const avgCostPx = stagedEntryAverageCostPx(pos);
+      const profitGate = evaluateStagedProfitExit({
+        reason: decision.reason,
+        exitPx: decision.markPriceUsd,
+        avgCostPx,
+        minOverAvgPct: cfg.stagedProfitMinOverAvgPct,
+      });
+      if (!profitGate.allow) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_staged_profit_exit_skip',
+          mint,
+          symbol: pos.symbol,
+          reason: decision.reason,
+          exitPx: decision.markPriceUsd,
+          avgCostPx,
+          thresholdPx: profitGate.thresholdPx,
+          rung: decision.tpRungIndex,
+        });
+        continue;
+      }
     }
 
     if (decision.justArmed) {
