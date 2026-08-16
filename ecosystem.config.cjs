@@ -2856,10 +2856,13 @@ const PM2_APPS = [
          * Ours: clamp($1, $30, coef × liq^0.866) with coef = 1 / 8000^0.866
          * so the $8k entry floor maps to ~$1 and deep pools cap at $30 (~500k+ liq).
          * coef ≈ 0.0108 × leader (1.08% of leader notional).
+         * 1.11.976 — coef ×4.5: quote impact is flat between $1 and $10 clips
+         * (4065 live entries), so the curve now maps our median $20k pool to
+         * ~$10, $50k to ~$22 and caps at $30 above ~$100k.
          */
         MILD_DIP_SIZE_LIQ_POWER_COEF: '0.001888',
         MILD_DIP_SIZE_LIQ_POWER_EXP: '0.866',
-        /** 1.11.947 — preserve the sizing law, but never send a live clip below $3. */
+        /** 1.11.976 — preserve the sizing law, but never send a live clip below $5. */
         MILD_DIP_SIZE_MIN_USD: '5',
         MILD_DIP_SIZE_MAX_USD: '30',
         /**
