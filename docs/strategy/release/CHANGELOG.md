@@ -1,3 +1,28 @@
+## [1.11.985] — 2026-08-16
+
+### Added / Changed
+
+- Added mild-dip staged entry for new bags: the first live clip is capped at
+  `$5`, then one add fires at a fresh mark at least `+8%` above the original
+  first fill. The add targets `2×` the intended liquidity-curve notional and
+  is capped at `$40`; probes, GREEN entries, and leader-align scale-ins remain
+  unchanged.
+- The add keeps the original first fill as the exit basis and only increases
+  token quantity. Exit peak, MFE, TP-rung, trail, and loss anchors are not
+  averaged or rewritten.
+- The 8-hour measurement covered 160 closed cycles: bags never above `+8%`
+  lost `$92.9` across 58 cycles, while bags reaching `+40%` made `$60.7`
+  across 28 cycles. The approved counterfactual changed `-$35.8` on `$900`
+  turnover to `+$10` on `$1219`.
+
+### Rollback
+
+Disable staged entry and reload:
+
+```text
+MILD_DIP_STAGED_ENTRY_ENABLED=0
+```
+
 ## [1.11.984] — 2026-08-16
 
 ### Added / Changed

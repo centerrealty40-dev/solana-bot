@@ -29,6 +29,7 @@ import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
 import { takeMildStabilizeAttemptSlot } from './mild-stabilize.js';
 import { greenExposureCapReason } from './green-lane.js';
 import { assessRugRisk } from './rug-risk.js';
+import { resolveStagedEntryFirstClip } from './staged-entry.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 /**
@@ -1113,7 +1114,15 @@ export async function attemptMildDipEntry(args: {
   // sends a buy below its configured minimum. The stopped green lane keeps its
   // own position clip unchanged.
   const wantUsd = isGreen ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd);
-  const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, wantUsd);
+  const stagedClip = resolveStagedEntryFirstClip({
+    enabled: cfg.stagedEntryEnabled,
+    isNewBag: !state.open[c.mint],
+    isProbe: probeReason != null,
+    isGreen,
+    sizeUsd: wantUsd,
+    firstUsd: cfg.stagedFirstUsd,
+  });
+  const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, stagedClip.sizeUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {
       appendMildDipJournal(cfg.journalPath, {
@@ -1183,6 +1192,14 @@ export async function attemptMildDipEntry(args: {
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
     entryMarketCapUsd: c.metrics.marketCapUsd ?? null,
     entryPairAgeHours: c.metrics.pairAgeHours ?? null,
+    ...(stagedClip.active
+      ? {
+          stagedEntryIntendedUsd: stagedClip.intendedUsd ?? undefined,
+          stagedEntryAddDone: false,
+          stagedEntryAddAttempts: 0,
+          stagedEntryRugRiskTier: rugRisk.tier,
+        }
+      : {}),
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
   // Keep waitDipWatch until fill succeeds — quote-premium reject must retry.
@@ -1471,6 +1488,16 @@ export async function attemptMildDipEntry(args: {
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
     entryMarketCapUsd: c.metrics.marketCapUsd ?? null,
     entryPairAgeHours: c.metrics.pairAgeHours ?? null,
+    ...(stagedClip.active
+      ? {
+          stagedEntryIntendedUsd: stagedClip.intendedUsd ?? undefined,
+          stagedEntryFirstFillPriceUsd: fillPx,
+          stagedEntryFilledUsd: sized.sizeUsd,
+          stagedEntryAddDone: false,
+          stagedEntryAddAttempts: 0,
+          stagedEntryRugRiskTier: rugRisk.tier,
+        }
+      : {}),
   };
   // Seed exit mark ring so stream-only marks have a print before first swap decode.
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });

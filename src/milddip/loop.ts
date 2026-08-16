@@ -112,6 +112,7 @@ import {
 import { hydrateTradeLotsFromOpen, writeUsSellFill } from './trade-journal.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
+import { evaluateStagedEntryAdd } from './staged-entry.js';
 import {
   createDumpSellTape,
   createGivebackDumpGate,
@@ -2034,6 +2035,110 @@ async function attemptLeaderAlignScaleIn(args: {
   }
 }
 
+async function attemptStagedEntryAdd(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  pos: MildDipOpenPosition;
+  markPriceUsd: number;
+  liquidityUsd: number | null;
+  nowMs: number;
+}): Promise<void> {
+  const { cfg, state, pos, markPriceUsd, liquidityUsd, nowMs } = args;
+  const verdict = evaluateStagedEntryAdd({
+    enabled: cfg.stagedEntryEnabled,
+    addDone: pos.stagedEntryAddDone === true,
+    attempts: pos.stagedEntryAddAttempts ?? 0,
+    nowMs,
+    lastAttemptAtMs: pos.stagedEntryLastAttemptAtMs,
+    markPx: markPriceUsd,
+    firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
+    triggerPct: cfg.stagedAddTriggerPct,
+    intendedUsd: pos.stagedEntryIntendedUsd ?? 0,
+    alreadyFilledUsd: pos.stagedEntryFilledUsd ?? pos.sizeUsd,
+    addMult: cfg.stagedAddMult,
+    addMaxUsd: cfg.stagedAddMaxUsd,
+    liquidityUsd,
+    minLiquidityUsd: cfg.entryMinLiquidityUsd,
+    liquidityDrainActive: (pos.liquidityDrainConfirmTicks ?? 0) > 0,
+    rugRiskActive: pos.stagedEntryRugRiskTier === 'knife' || pos.stagedEntryRugRiskTier === 'blocked',
+  });
+  if (!verdict.shouldAdd) return;
+
+  pos.stagedEntryAddAttempts = (pos.stagedEntryAddAttempts ?? 0) + 1;
+  pos.stagedEntryLastAttemptAtMs = nowMs;
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
+  const event = {
+    kind: 'mild_dip_staged_add' as const,
+    mint: pos.mint,
+    symbol: pos.symbol,
+    lane: pos.lane ?? 'dip',
+    firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
+    triggerPx: verdict.triggerPx,
+    mark: markPriceUsd,
+    intendedUsd: pos.stagedEntryIntendedUsd ?? null,
+    addUsd: verdict.addUsd,
+  };
+  const journal = (extra: Record<string, unknown>): void => {
+    appendMildDipJournal(cfg.journalPath, { ...event, ...extra });
+  };
+
+  const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, verdict.addUsd);
+  if (sized.stop || !(sized.sizeUsd > 0)) {
+    journal({ ok: false, reason: sized.reason ?? 'no_add_size' });
+    saveMildDipState(cfg.statePath, state);
+    return;
+  }
+  try {
+    const buy = await executeCopyBuy({
+      cfg: copyCfg,
+      mint: pos.mint,
+      symbol: pos.symbol,
+      priceUsd: markPriceUsd,
+      sizeUsd: sized.sizeUsd,
+      kind: 'add',
+      evalResult: {
+        pass: true,
+        reasons: ['mild_dip_staged_entry_trigger'],
+        score: markPriceUsd,
+      },
+      leaderSignature: `milddip_staged_add_${pos.mint.slice(0, 8)}_${nowMs}`,
+      trigger: 'stream',
+      leaderPriceUsd: markPriceUsd,
+      leaderBuyTs: nowMs,
+    });
+    if (!buy.ok) {
+      journal({ ok: false, addUsd: sized.sizeUsd, reason: buy.reason ?? 'buy_failed' });
+      saveMildDipState(cfg.statePath, state);
+      return;
+    }
+    const live = state.open[pos.mint];
+    if (!live) return;
+    const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
+    live.sizeUsd += sized.sizeUsd;
+    live.stagedEntryFilledUsd = (live.stagedEntryFilledUsd ?? pos.sizeUsd) + sized.sizeUsd;
+    live.stagedEntryAddDone = true;
+    if (raw && /^\d+$/.test(raw) && BigInt(raw) > 0n) {
+      live.tokenRaw = raw;
+      live.tokenRawSettled = false;
+    }
+    saveMildDipState(cfg.statePath, state);
+    journal({
+      ok: true,
+      addUsd: sized.sizeUsd,
+      reason: null,
+      fillPx: buy.priceUsd || markPriceUsd,
+      signature: buy.signature ?? null,
+    });
+  } catch (err) {
+    journal({
+      ok: false,
+      addUsd: sized.sizeUsd,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+    saveMildDipState(cfg.statePath, state);
+  }
+}
+
 async function tryExits(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -2296,6 +2401,22 @@ async function tryExits(
     maybeJournalMark(cfg, pos, decision, volume5mUsd, liquidityUsd, nowMs, source);
 
     applyMarkDecisionToPosition(pos, decision);
+
+    if (
+      !decision.markQuarantined &&
+      !decision.shouldExit &&
+      decision.markPriceUsd > 0 &&
+      !sellInFlight.has(mint)
+    ) {
+      await attemptStagedEntryAdd({
+        cfg,
+        state,
+        pos,
+        markPriceUsd: decision.markPriceUsd,
+        liquidityUsd,
+        nowMs,
+      });
+    }
 
     if (decision.justArmed) {
       appendMildDipJournal(cfg.journalPath, {
