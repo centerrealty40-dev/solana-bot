@@ -10,6 +10,14 @@ export type MildDipOpenPosition = {
   symbol: string;
   entryPriceUsd: number;
   sizeUsd: number;
+  /** Intended curve notional and first-fill anchor for the optional staged add. */
+  stagedEntryIntendedUsd?: number;
+  stagedEntryFirstFillPriceUsd?: number;
+  stagedEntryFilledUsd?: number;
+  stagedEntryAddDone?: boolean;
+  stagedEntryAddAttempts?: number;
+  stagedEntryLastAttemptAtMs?: number;
+  stagedEntryRugRiskTier?: 'normal' | 'knife' | 'blocked';
   tokenRaw: string | null;
   openedAtMs: number;
   entryPc5mPct: number | null;

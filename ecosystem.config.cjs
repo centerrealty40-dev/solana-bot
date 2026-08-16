@@ -2866,6 +2866,17 @@ const PM2_APPS = [
         MILD_DIP_SIZE_MIN_USD: '5',
         MILD_DIP_SIZE_MAX_USD: '30',
         /**
+         * 1.11.985 — staged new-bag entry: over 8h / 160 cycles, bags never
+         * above +8% lost $92.9 (58), while +40% bags made $60.7 (28).
+         * Counterfactual first $5 + one +8% add (2× curve, cap $40): +$10
+         * on $1219 vs -$35.8 on $900. Rollback: MILD_DIP_STAGED_ENTRY_ENABLED=0.
+         */
+        MILD_DIP_STAGED_ENTRY_ENABLED: '1',
+        MILD_DIP_STAGED_FIRST_USD: '5',
+        MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8',
+        MILD_DIP_STAGED_ADD_MULT: '2',
+        MILD_DIP_STAGED_ADD_MAX_USD: '40',
+        /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
          * 1.11.841 — same $1 as base.

@@ -104,6 +104,34 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.entryMinLiquidityUsd).toBe(4000);
   });
 
+  it('loads staged-entry defaults and explicit overrides', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.stagedEntryEnabled).toBe(false);
+    expect(defaults.stagedFirstUsd).toBe(5);
+    expect(defaults.stagedAddTriggerPct).toBe(8);
+    expect(defaults.stagedAddMult).toBe(2);
+    expect(defaults.stagedAddMaxUsd).toBe(40);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_STAGED_ENTRY_ENABLED: '1',
+        MILD_DIP_STAGED_FIRST_USD: '6',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.stagedEntryEnabled).toBe(true);
+    expect(cfg.stagedFirstUsd).toBe(6);
+  });
+
+  it('keeps staged-entry production values in the mild-dip app', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_STAGED_ENTRY_ENABLED: '1'");
+    expect(eco).toContain("MILD_DIP_STAGED_FIRST_USD: '5'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_MULT: '2'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_USD: '40'");
+  });
+
   it('keeps the production thin-liquidity and shallow-branch cuts isolated to mild-dip', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
     expect(eco).toContain("MILD_DIP_ENTRY_MIN_LIQ_USD: '15000'");
