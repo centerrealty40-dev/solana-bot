@@ -1,9 +1,13 @@
-import { describe, expect, it, beforeEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import {
   DEXSCREENER_BATCH_MAX,
   __resetDexQuoteCacheForTests,
   fetchDexScreenerPairCreatedAtMany,
   prefetchDexScreenerPairDetailsMany,
+  prefetchDexScreenerPairDetailsManyWithMetadata,
 } from '../../src/papertrader/pricing/dexscreener-quote-cache.js';
 
 function mint(i: number): string {
@@ -32,6 +36,11 @@ describe('1.11.820 DexScreener batch prefetch', () => {
     __resetDexQuoteCacheForTests();
     // Without this the cases share `data/dexscreener-quote-cache.json` and the
     // second one sees the first one's writes as warm cache.
+    process.env.DEX_QUOTE_CACHE_ENABLED = '0';
+  });
+
+  afterEach(() => {
+    delete process.env.DEX_QUOTE_CACHE_PATH;
     process.env.DEX_QUOTE_CACHE_ENABLED = '0';
   });
 
@@ -91,6 +100,30 @@ describe('1.11.820 DexScreener batch prefetch', () => {
         bypassGate: true,
       }),
     ).resolves.toBe(1);
+  });
+
+  it('does not cache a 429 as a negative quote', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-batch-error-'));
+    process.env.DEX_QUOTE_CACHE_PATH = path.join(dir, 'cache.json');
+    process.env.DEX_QUOTE_CACHE_ENABLED = '1';
+    const target = mint(77);
+    const failed = await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
+      fetchImpl: (async () => ({ ok: false, status: 429 })) as never,
+      nowMs: Date.now(),
+      bypassGate: true,
+    });
+    expect(failed.errorMints).toEqual([target]);
+    __resetDexQuoteCacheForTests();
+    const recovered = await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
+      fetchImpl: (async () => ({
+        ok: true,
+        json: async () => ({ pairs: [pairFor(target)] }),
+      })) as never,
+      nowMs: Date.now() + 1_000,
+      bypassGate: true,
+    });
+    expect(recovered.resolvedMints).toEqual([target]);
+    fs.rmSync(dir, { recursive: true, force: true });
   });
 
   it('returns pair creation times with the same 30-address chunking and pair pick', async () => {
