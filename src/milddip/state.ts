@@ -14,6 +14,9 @@ export type MildDipOpenPosition = {
   stagedEntryIntendedUsd?: number;
   stagedEntryFirstFillPriceUsd?: number;
   stagedEntryFilledUsd?: number;
+  stagedEntryTotalCostUsd?: number;
+  stagedEntryTotalTokenAmount?: number;
+  stagedEntryAvgCostPriceUsd?: number;
   stagedEntryAddDone?: boolean;
   stagedEntryAddAttempts?: number;
   stagedEntryLastAttemptAtMs?: number;

@@ -109,8 +109,10 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.stagedEntryEnabled).toBe(false);
     expect(defaults.stagedFirstUsd).toBe(5);
     expect(defaults.stagedAddTriggerPct).toBe(8);
+    expect(defaults.stagedAddMaxChasePct).toBe(4);
     expect(defaults.stagedAddMult).toBe(2);
     expect(defaults.stagedAddMaxUsd).toBe(40);
+    expect(defaults.stagedProfitMinOverAvgPct).toBe(1);
     const cfg = withConfigEnv(
       {
         ...baseEnv,
@@ -128,8 +130,10 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_STAGED_ENTRY_ENABLED: '1'");
     expect(eco).toContain("MILD_DIP_STAGED_FIRST_USD: '5'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '4'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MULT: '2'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_USD: '40'");
+    expect(eco).toContain("MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '1'");
   });
 
   it('keeps the production thin-liquidity and shallow-branch cuts isolated to mild-dip', () => {

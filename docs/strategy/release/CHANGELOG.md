@@ -1,3 +1,29 @@
+## [1.11.987] — 2026-08-16
+
+### Добавлено / Изменено
+
+- Сохранены staged-add ограничения из `v2`: верхняя граница chase-band и
+  weighted-average-cost veto для прибыльных staged exits.
+- Объединены с GREEN strict tape freshness, bounded Jupiter quote-фидом,
+  изоляцией `green_jupiter` и безопасным учётом свежести quote-принтов.
+
+### Rollback
+
+Откат staged-add настроек:
+
+```text
+MILD_DIP_STAGED_ADD_MAX_CHASE_PCT=100
+MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT=0
+MILD_DIP_STAGED_ENTRY_ENABLED=0
+```
+
+Отключение GREEN Jupiter-фида и strict freshness:
+
+```text
+MILD_DIP_GREEN_JUPITER_MINUTE_ENABLED=0
+MILD_DIP_GREEN_TAPE_STRICT_FRESHNESS_ENABLED=0
+```
+
 ## [1.11.989] — 2026-08-16
 
 ### Исправлено
@@ -52,13 +78,21 @@ MILD_DIP_GREEN_TAPE_STRICT_FRESHNESS_ENABLED=0
   требуют свежих отпечатков текущей минуты и prior-5m якоря; причины отказа
   и счётчики квот пишутся в журнал статистики.
 
-### Rollback
+### Added / Changed (staged-add updates from v2)
 
-Отключить GREEN Jupiter-фид и строгий режим свежести через env, затем reload:
+- Capped staged-add chasing to a band from `+8%` through `+12%` above the
+  original first fill; marks above the band remain eligible after pullback.
+- Added weighted-average-cost veto for genuine profitable staged exits; all
+  non-staged bags remain unchanged.
+
+### Rollback
 
 ```text
 MILD_DIP_GREEN_JUPITER_MINUTE_ENABLED=0
 MILD_DIP_GREEN_TAPE_STRICT_FRESHNESS_ENABLED=0
+MILD_DIP_STAGED_ADD_MAX_CHASE_PCT=100
+MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT=0
+MILD_DIP_STAGED_ENTRY_ENABLED=0
 ```
 
 ## [1.11.985] — 2026-08-16
