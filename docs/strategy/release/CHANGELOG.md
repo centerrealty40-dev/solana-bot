@@ -1,3 +1,26 @@
+## [1.11.983] — 2026-08-16
+
+### Added / Changed
+
+- Raised the mild-dip production `MILD_DIP_REBUY_BELOW_EXIT_PCT` floor from
+  `0` to `5`. After a full exit, a rebuy is now allowed only when the current
+  mark is at least 5% below our exit fill; the existing 15-minute age window
+  (`MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS=900000`) is unchanged.
+- The change addresses seven days of journal data covering 945 full-exit to
+  rebuy pairs within 15 minutes: rebuys above our own exit lost `$40.43`
+  across 216 cases, while the `<5%` gap slice lost `$21.28` across 336 cases
+  and was negative on 6 of 8 days. The guard prevents selling and rebuying the
+  same reclaim candle at a loss while preserving materially cheaper re-entry.
+
+### Rollback
+
+Restore the previous rebuy price guard and reload:
+
+```text
+MILD_DIP_REBUY_BELOW_EXIT_PCT=0
+MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS=900000
+```
+
 ## [1.11.982] — 2026-08-16
 
 ### Added / Changed
