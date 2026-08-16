@@ -7,6 +7,8 @@ import {
   tapeShadowDiscoverySampleDecision,
   tapeFeatures,
   decimateTapePath,
+  resolveTapeStructuralSnapshotFromCache,
+  selectTapeStructuralBatch,
 } from '../../src/milddip/tape-shadow.js';
 
 const mint = '7pQYyWKPtxMCzdWDPZKJ7xTnCzFB25SPxp8cM4xJpump';
@@ -40,6 +42,82 @@ function dipRing(nowMs: number, rangePos = 0.1): MildDipPriceRing {
 }
 
 describe('tape shadow arithmetic and lane boundaries', () => {
+  function exitShadow(events: Record<string, unknown>[], overrides = {}): MildDipTapeShadow {
+    return new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 10_000, ttlMs: 2 * 60 * 60_000 }),
+      gates,
+      greenMeasureAll: true,
+      laneLimits: {
+        green: { minIntervalMs: 1_000_000, maxSignalsPerHour: 10 },
+        dip: { minIntervalMs: 0, maxSignalsPerHour: 10 },
+      },
+      minIntervalMs: 0,
+      maxSignalsPerHour: 10,
+      pendingSampleGraceMs: 0,
+      ...overrides,
+      append: (event) => events.push(event),
+    });
+  }
+
+  it('emits a stop exit without arming', () => {
+    const events: Record<string, unknown>[] = [];
+    const shadow = exitShadow(events, { exitStopPct: -30 });
+    shadow.onPriceSample({ mint, priceUsd: 100, tsMs: 1_000_000 });
+    shadow.onPriceSample({ mint, priceUsd: 70, tsMs: 1_000_100 });
+    const exits = events.filter((event) => event.kind === 'mild_dip_tape_lane_exit');
+    expect(exits).toHaveLength(1);
+    expect(exits[0]).toMatchObject({ reason: 'stop', exitPriceUsd: 70, armed: false });
+    expect(exits[0]!.retPct as number).toBeCloseTo(-30, 8);
+  });
+
+  it('emits timeout at the last observed price with stale age', () => {
+    const events: Record<string, unknown>[] = [];
+    const shadow = exitShadow(events, { outcomeStaleMs: 100 });
+    shadow.onPriceSample({ mint, priceUsd: 100, tsMs: 2_000_000 });
+    shadow.onPriceSample({ mint, priceUsd: 105, tsMs: 2_000_100 });
+    shadow.tick(5_600_101);
+    const exit = events.find((event) => event.kind === 'mild_dip_tape_lane_exit');
+    expect(exit).toMatchObject({
+      reason: 'timeout',
+      exitPriceUsd: 105,
+      exitLastSampleAgeMs: 3_600_001,
+      priceStale: true,
+    });
+  });
+
+  it('emits no_data with a fabricated flat return avoided', () => {
+    const events: Record<string, unknown>[] = [];
+    const shadow = exitShadow(events);
+    shadow.onPriceSample({ mint, priceUsd: 100, tsMs: 3_000_000 });
+    shadow.tick(6_600_001);
+    const exit = events.find((event) => event.kind === 'mild_dip_tape_lane_exit');
+    expect(exit).toMatchObject({ reason: 'no_data', exitPriceUsd: 100, retPct: 0 });
+  });
+
+  it('resolves structural snapshots from cache only and prefers fresh', () => {
+    const fresh = { liquidityUsd: 1, marketCapUsd: 2, volume5mUsd: 3, turnover: 4, dexId: 'x', pairAgeHours: 5 };
+    const stale = { ...fresh, liquidityUsd: 9 };
+    expect(resolveTapeStructuralSnapshotFromCache(fresh, stale)).toBe(fresh);
+    expect(resolveTapeStructuralSnapshotFromCache(null, stale)).toBe(stale);
+    expect(resolveTapeStructuralSnapshotFromCache(null, null)).toBeNull();
+  });
+
+  it('selects pending first, then sample count, while honoring cache and backoff', () => {
+    expect(
+      selectTapeStructuralBatch(
+        [
+          { mint: 'old', pending: false, sampleCount10m: 99, fresh: false, retryUntilMs: 0 },
+          { mint: 'pending', pending: true, sampleCount10m: 1, fresh: false, retryUntilMs: 0 },
+          { mint: 'fresh', pending: true, sampleCount10m: 100, fresh: true, retryUntilMs: 0 },
+          { mint: 'backoff', pending: true, sampleCount10m: 100, fresh: false, retryUntilMs: 300 },
+          { mint: 'error-expired', pending: false, sampleCount10m: 50, fresh: false, retryUntilMs: 100 },
+          { mint: 'miss-live', pending: false, sampleCount10m: 80, fresh: false, retryUntilMs: 500 },
+        ],
+        200,
+        3,
+      ),
+    ).toEqual(['pending', 'old', 'error-expired']);
+  });
   it('decimates ordered paths while preserving extrema', () => {
     const path = decimateTapePath(
       Array.from({ length: 100 }, (_, i) => [i, i === 73 ? 500 : i === 21 ? -10 : i] as [number, number]),
@@ -90,7 +168,6 @@ describe('tape shadow arithmetic and lane boundaries', () => {
       minIntervalMs: 0,
       maxSignalsPerHour: 10,
       pathMaxPoints: 12,
-      pendingSampleGraceMs: 0,
       append: (event) => events.push(event),
     });
     shadow.onPriceSample({ mint, priceUsd: 100, tsMs: now, pairAgeHours: null });

@@ -55,6 +55,38 @@ export type MildDipTapeStructuralSnapshot = {
   pairAgeHours: number | null;
 };
 
+export type TapeStructuralBatchCandidate = {
+  mint: string;
+  pending: boolean;
+  sampleCount10m: number;
+  fresh: boolean;
+  retryUntilMs: number;
+};
+
+export function selectTapeStructuralBatch(
+  candidates: readonly TapeStructuralBatchCandidate[],
+  nowMs: number,
+  maxMints: number,
+): string[] {
+  return [...candidates]
+    .filter((candidate) => !candidate.fresh && candidate.retryUntilMs <= nowMs)
+    .sort(
+      (a, b) =>
+        Number(b.pending) - Number(a.pending) ||
+        b.sampleCount10m - a.sampleCount10m ||
+        a.mint.localeCompare(b.mint),
+    )
+    .slice(0, Math.max(0, maxMints))
+    .map((candidate) => candidate.mint);
+}
+
+export function resolveTapeStructuralSnapshotFromCache(
+  fresh: MildDipTapeStructuralSnapshot | null,
+  stale: MildDipTapeStructuralSnapshot | null,
+): MildDipTapeStructuralSnapshot | null {
+  return fresh ?? stale;
+}
+
 export type MildDipTapeOwnFloorGates = {
   minLiquidityUsd: number;
   maxLiquidityUsd: number;
@@ -590,7 +622,6 @@ export class MildDipTapeShadow {
       return;
     }
     const points = [
-      ...signal.path,
       ...signal.pathBuckets.values(),
       [signal.peakTsMs - signal.signalTsMs, signal.peakPriceUsd] as [number, number],
       [
@@ -605,8 +636,9 @@ export class MildDipTapeShadow {
     const offset = tsMs - signal.signalTsMs;
     if (offset < 0 || offset > 60 * 60_000 || (this.opts.pathMaxPoints ?? 60) <= 0) return;
     const maxPoints = this.opts.pathMaxPoints ?? 60;
-    const bucketWidth = (60 * 60_000) / Math.max(1, maxPoints);
-    const bucket = Math.min(maxPoints - 1, Math.floor(offset / bucketWidth));
+    const bucketCount = Math.max(1, maxPoints - 2);
+    const bucketWidth = (60 * 60_000) / bucketCount;
+    const bucket = Math.min(bucketCount - 1, Math.floor(offset / bucketWidth));
     if (!signal.pathBuckets.has(bucket)) signal.pathBuckets.set(bucket, [offset, priceUsd]);
     this.rebuildPath(signal);
   }

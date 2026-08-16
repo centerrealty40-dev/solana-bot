@@ -127,6 +127,8 @@ import {
   loadMildDipTapeShadowState,
   tapeShadowDiscoverySampleDecision,
   tapePairAgeBackfillDue,
+  resolveTapeStructuralSnapshotFromCache,
+  selectTapeStructuralBatch,
 } from './tape-shadow.js';
 import {
   HOLDING_DUST_RAW,
@@ -2822,9 +2824,11 @@ export async function runMildDipLoop(
         mildDipPairAgeRegistry.pairAgeHours(mintKey, tsMs),
     });
     const fresh = getStructuralCache(mint, tsMs, cfg.fastPathStructuralCacheMs);
-    if (fresh) return toSnapshot(mint, fresh.metrics);
     const stale = getStructuralCache(mint, tsMs, cfg.fastPathStructuralStaleMs);
-    return stale ? toSnapshot(mint, stale.metrics) : null;
+    return resolveTapeStructuralSnapshotFromCache(
+      fresh ? toSnapshot(mint, fresh.metrics) : null,
+      stale ? toSnapshot(mint, stale.metrics) : null,
+    );
   }
   const maybePrefetchTapeStructural = (nowMs: number): void => {
     if (
@@ -2852,19 +2856,17 @@ export async function runMildDipLoop(
       cfg.tapePendingSampleGraceMs,
       cfg.tapePendingSampleMaxMints,
     );
-    const candidates = tapeShadowRing.watchedMints(nowMs)
-      .filter((mint) => {
-        if ((tapeStructuralRetry.get(mint) ?? 0) > nowMs) return false;
-        return !getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs);
-      })
-      .sort((a, b) => {
-        const ap = pending.has(a) ? 1 : 0;
-        const bp = pending.has(b) ? 1 : 0;
-        return bp - ap ||
-          tapeShadowRing!.sampleCount(b, 10 * 60_000, nowMs) -
-            tapeShadowRing!.sampleCount(a, 10 * 60_000, nowMs);
-      })
-      .slice(0, DEXSCREENER_BATCH_MAX);
+    const candidates = selectTapeStructuralBatch(
+      tapeShadowRing.watchedMints(nowMs).map((mint) => ({
+        mint,
+        pending: pending.has(mint),
+        sampleCount10m: tapeShadowRing!.sampleCount(mint, 10 * 60_000, nowMs),
+        fresh: Boolean(getStructuralCache(mint, nowMs, cfg.fastPathStructuralCacheMs)),
+        retryUntilMs: tapeStructuralRetry.get(mint) ?? 0,
+      })),
+      nowMs,
+      DEXSCREENER_BATCH_MAX,
+    );
     if (candidates.length === 0) return;
     lastTapeStructuralBatchMs = nowMs;
     tapeStructuralBatchTimes.push(nowMs);
