@@ -1,3 +1,31 @@
+## [1.11.980] — 2026-08-16
+
+### Added / Changed
+
+- Raised the mild-dip production entry liquidity floor from `$4k` to `$15k`
+  (`MILD_DIP_ENTRY_MIN_LIQ_USD=15000`). The seven-day production journal study
+  found the `<$15k` slices persistently loss-making: `<$10k` lost `$44.6`,
+  `$10–15k` lost `$79.1`, and `$15–25k` lost `$71.6`; the `$15–25k` band
+  remains enabled to preserve turnover.
+- Disabled the loss-making shallow `turn_dump` branch with
+  `MILD_DIP_TURN_DUMP_SHALLOW_BRANCH=0`. That branch was negative on 6 of 7
+  days and lost `$55.3` across 252 closed cycles. Together, the two cuts
+  retain 59.6% of cycles and 62.6% of turnover while improving the measured
+  cash result from `-$164.63` (`-$2.27/$100`) to `-$1.70`
+  (`-$0.04/$100`).
+- The existing absolute liquidity exit floor remains
+  `MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD=4000`; this release changes entry filtering
+  only and does not force existing positions to exit.
+
+### Rollback
+
+Restore the prior mild-dip entry profile and reload:
+
+```text
+MILD_DIP_ENTRY_MIN_LIQ_USD=4000
+MILD_DIP_TURN_DUMP_SHALLOW_BRANCH=1
+```
+
 ## [1.11.979] — 2026-08-16
 
 ### Added / Changed

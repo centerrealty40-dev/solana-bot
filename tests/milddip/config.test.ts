@@ -104,6 +104,13 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.entryMinLiquidityUsd).toBe(4000);
   });
 
+  it('keeps the production thin-liquidity and shallow-branch cuts isolated to mild-dip', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_LIQ_USD: '15000'");
+    expect(eco).toContain("MILD_DIP_TURN_DUMP_SHALLOW_BRANCH: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '4000'");
+  });
+
   it('loads GREEN shared gate overrides and preserves their safe defaults', () => {
     const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(defaults.greenTurnDumpGate).toBe(true);
