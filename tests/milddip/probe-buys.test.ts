@@ -78,10 +78,10 @@ describe('1.11.898 the first position on a coin is sized down', () => {
     expect(src).toContain('probeRequestedUsd(');
   });
 
-  it('live env keeps first-touch and power-law buys at or above $3', () => {
+  it('live env keeps first-touch and power-law buys at or above $5', () => {
     expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '3'");
-    expect(eco).toContain("MILD_DIP_SIZE_LIQ_POWER_COEF: '0.0004168'");
-    expect(eco).toContain("MILD_DIP_SIZE_MIN_USD: '3'");
+    expect(eco).toContain("MILD_DIP_SIZE_LIQ_POWER_COEF: '0.001888'");
+    expect(eco).toContain("MILD_DIP_SIZE_MIN_USD: '5'");
     expect(eco).toContain("MILD_DIP_SIZE_MAX_USD: '30'");
   });
 

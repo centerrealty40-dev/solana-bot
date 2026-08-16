@@ -2856,11 +2856,14 @@ const PM2_APPS = [
          * Ours: clamp($1, $30, coef × liq^0.866) with coef = 1 / 8000^0.866
          * so the $8k entry floor maps to ~$1 and deep pools cap at $30 (~500k+ liq).
          * coef ≈ 0.0108 × leader (1.08% of leader notional).
+         * 1.11.976 — coef ×4.5: quote impact is flat between $1 and $10 clips
+         * (4065 live entries), so the curve now maps our median $20k pool to
+         * ~$10, $50k to ~$22 and caps at $30 above ~$100k.
          */
-        MILD_DIP_SIZE_LIQ_POWER_COEF: '0.0004168',
+        MILD_DIP_SIZE_LIQ_POWER_COEF: '0.001888',
         MILD_DIP_SIZE_LIQ_POWER_EXP: '0.866',
-        /** 1.11.947 — preserve the sizing law, but never send a live clip below $3. */
-        MILD_DIP_SIZE_MIN_USD: '3',
+        /** 1.11.976 — preserve the sizing law, but never send a live clip below $5. */
+        MILD_DIP_SIZE_MIN_USD: '5',
         MILD_DIP_SIZE_MAX_USD: '30',
         /**
          * 1.11.742 — thick size-up when structural name
@@ -3708,7 +3711,7 @@ const PM2_APPS = [
          * leave 0.287496 below the 0.3 floor and stands down for the trail.
          * `tp_grid` fired 26 times at median +10.87%, always closing the whole bag.
          */
-        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.3',
+        MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.1',
         /**
          * 1.11.865 — green lane on, at its own $1 clip. Momentum entries with
          * their own floors and their own exit (+30% / −6% / 10 min); see
