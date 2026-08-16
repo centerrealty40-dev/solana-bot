@@ -1,3 +1,27 @@
+## [1.11.974] — 2026-08-16
+
+### Added / Changed
+
+- Added GREEN-specific shared entry-risk floors and chase handling so the
+  momentum lane is not rejected by dip-only age, liquidity, turnover, or chase
+  settings.
+- Added throttled `mild_dip_green_lane_skip` verdict journals with the GREEN
+  feature values and rejection reasons for visibility into failed candidates.
+- Production GREEN tuning now uses a 0.25h age floor, 60 pc5m ceiling, 6
+  volume/liquidity ceiling, and 12% chase cap based on the observed leader
+  entry.
+
+### Rollback
+
+Restore:
+
+```text
+MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS='1'
+MILD_DIP_GREEN_MAX_PC5M_PCT='40'
+MILD_DIP_GREEN_ENTRY_MAX_VOL5M_TO_LIQ='0'
+MILD_DIP_GREEN_CHASE_PCT='0'
+```
+
 ## [1.11.973] — 2026-08-16
 
 ### Added / Changed

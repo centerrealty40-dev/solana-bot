@@ -3748,7 +3748,8 @@ const PM2_APPS = [
          * whole dex object came back empty.
          */
         // Leader p5 age is 1.64h; sub-hour entries were negative (−2.2%).
-        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1',
+        // The observed leader buy was at pair age 0.79h; allow mature-enough 0.25h.
+        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.25',
         // p10 vol5m $145; keep a $150 floor while avoiding the old $8000 rejection.
         MILD_DIP_GREEN_MIN_VOL5M_USD: '150',
         // pc1h/buys5m/vol1h are absent from leader seed snapshots.
@@ -3758,7 +3759,12 @@ const PM2_APPS = [
         MILD_DIP_GREEN_MIN_TURNOVER: '0.03',
         MILD_DIP_GREEN_MIN_PC5M_PCT: '4',
         // Vertical imp5 >= +40% had median 60m return around −21%.
-        MILD_DIP_GREEN_MAX_PC5M_PCT: '40',
+        // The observed entry was pc5m=46.67%; trail/−30% stop remain risk controls.
+        MILD_DIP_GREEN_MAX_PC5M_PCT: '60',
+        // The same example had vol/liquidity=2.62; GREEN permits up to 6 vs dip 2.
+        MILD_DIP_GREEN_ENTRY_MAX_VOL5M_TO_LIQ: '6',
+        // The live prebuy moved >4%; allow the measured green chase envelope of 12%.
+        MILD_DIP_GREEN_CHASE_PCT: '12',
         MILD_DIP_GREEN_MIN_PC1H_PCT: '0',
         MILD_DIP_GREEN_REQUIRE_PC1H: '0',
         MILD_DIP_GREEN_MIN_BUYS5M: '0',

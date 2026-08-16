@@ -367,6 +367,7 @@ export async function attemptMildDipEntry(args: {
   const isKnife = c.dipSource === 'knife_stabilize';
   const isTurnDumpKnife = c.dipSource === 'turn_dump_knife';
   const isWaitDip = c.dipSource === 'wait_dip';
+  const isGreen = c.dipSource === 'green_momentum';
   const isH1RedShallow = c.dipSource === 'h1_red_shallow';
   const isFlatMicro = c.dipSource === 'flat_micro_dip';
   let sizeMetrics = {
@@ -492,7 +493,7 @@ export async function attemptMildDipEntry(args: {
                 freshPriceUsd: freshPx,
                 freshPc5mPct: freshPc,
                 entryGates: branchEntryGates,
-                maxChasePct: opts.chasePct,
+                maxChasePct: isGreen && cfg.green.chasePct > 0 ? cfg.green.chasePct : opts.chasePct,
               });
       if (!pre.pass) {
         appendMildDipJournal(cfg.journalPath, {
@@ -563,11 +564,12 @@ export async function attemptMildDipEntry(args: {
       const last = mildDipPriceRing.lastPrice(c.mint, freshNow);
       if (last && last.priceUsd > 0) {
         freshPx = last.priceUsd;
+        const chasePct = isGreen && cfg.green.chasePct > 0 ? cfg.green.chasePct : opts.chasePct;
         const chase =
-          opts.chasePct > 0 && c.priceUsd > 0
+          chasePct > 0 && c.priceUsd > 0
             ? ((freshPx - c.priceUsd) / c.priceUsd) * 100
             : 0;
-        if (chase > opts.chasePct) {
+        if (chase > chasePct) {
           appendMildDipJournal(cfg.journalPath, {
             kind: 'mild_dip_prebuy_skip',
             mint: c.mint,
@@ -576,7 +578,7 @@ export async function attemptMildDipEntry(args: {
             lane: opts.lane,
             signalPriceUsd: c.priceUsd,
             freshPriceUsd: freshPx,
-            reasons: [`prebuy_chase=${chase.toFixed(2)}%>max=${opts.chasePct}`],
+            reasons: [`prebuy_chase=${chase.toFixed(2)}%>max=${chasePct}`],
           });
           state.cooldownUntilMs[c.mint] = nowMs + softCd;
           return 'skip';
@@ -590,9 +592,12 @@ export async function attemptMildDipEntry(args: {
     pairAgeHours: sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours,
     volume5mUsd: entryVol5m,
     liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
-    minPairAgeHours: cfg.entryMinPairAgeHours,
-    maxVol5mToLiq: cfg.entryMaxVol5mToLiq,
-    minLiquidityUsd: cfg.entryMinLiquidityUsd,
+    minPairAgeHours: isGreen ? cfg.green.minPairAgeHours : cfg.entryMinPairAgeHours,
+    maxVol5mToLiq:
+      isGreen && cfg.green.entryMaxVol5mToLiq > 0
+        ? cfg.green.entryMaxVol5mToLiq
+        : cfg.entryMaxVol5mToLiq,
+    minLiquidityUsd: isGreen ? cfg.green.minLiquidityUsd : cfg.entryMinLiquidityUsd,
   });
   if (!entryRisk.pass) {
     appendMildDipJournal(cfg.journalPath, {
@@ -604,6 +609,7 @@ export async function attemptMildDipEntry(args: {
       pairAgeHours: sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours,
       volume5mUsd: entryVol5m,
       liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
+      entryRiskLane: isGreen ? 'green' : 'dip',
       reasons: entryRisk.reasons,
     });
     state.cooldownUntilMs[c.mint] = nowMs + softCd;
@@ -894,7 +900,6 @@ export async function attemptMildDipEntry(args: {
    * ten-minute ceiling, so it runs at its own small clip rather than the dip
    * lane's, and the rug-risk and probe caps still apply on top.
    */
-  const isGreen = c.dipSource === 'green_momentum';
   if (isGreen) {
     const greenBuyStamps = pruneGreenBuyStamps(state, nowMs);
     const openGreen = Object.values(state.open).filter(

@@ -108,8 +108,17 @@ const lastFastAttemptMs = new Map<string, number>();
 const lastHotDexProbeMs = new Map<string, number>();
 /** Rate-limit leader fast-path skip journals (wake is every 2s). */
 const lastLeaderSkipJournalMs = new Map<string, number>();
+/** Rate-limit failed GREEN verdict journals to one event per mint/minute. */
+const lastGreenSkipJournalMs = new Map<string, number>();
 let hotDexProbeWindowStartMs = 0;
 let hotDexProbeCount = 0;
+
+export function shouldJournalGreenVerdict(mint: string, nowMs: number): boolean {
+  const previous = lastGreenSkipJournalMs.get(mint);
+  if (previous != null && nowMs - previous < 60_000) return false;
+  lastGreenSkipJournalMs.set(mint, nowMs);
+  return true;
+}
 
 /** Test helper. */
 export function resetFastPathStateForTests(): void {
@@ -117,6 +126,7 @@ export function resetFastPathStateForTests(): void {
   lastFastAttemptMs.clear();
   lastHotDexProbeMs.clear();
   lastLeaderSkipJournalMs.clear();
+  lastGreenSkipJournalMs.clear();
   hotDexProbeWindowStartMs = 0;
   hotDexProbeCount = 0;
 }
@@ -684,6 +694,20 @@ export async function evaluateFastPathCandidate(
         metrics: struct.metrics,
         dipSource: 'green_momentum',
       };
+    }
+    if (shouldJournalGreenVerdict(mint, nowMs)) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_green_lane_skip',
+        mint,
+        reasons: g.reasons,
+        pc5m: struct.metrics.priceChange5mPct,
+        pc1h: struct.metrics.priceChange1hPct,
+        vol5m: struct.metrics.volume5mUsd,
+        liq: struct.metrics.liquidityUsd,
+        turnover: g.turnover,
+        ageH: struct.metrics.pairAgeHours,
+        buyShare: g.buyShare,
+      });
     }
   }
 
