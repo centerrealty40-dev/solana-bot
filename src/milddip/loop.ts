@@ -2961,6 +2961,7 @@ export async function runMildDipLoop(
   const shadowDiscoveryLastSampleAt = new Map<string, number>();
   const shadowDiscoveryCleanup = { lastAtMs: 0 };
   let greenWatchSampled = 0;
+  let greenWatchAdmitted = 0;
   const greenWatchPending = new Map<string, number>();
   const shouldSampleTapeStreamPrice = (mint: string, nowMs: number): boolean => {
     if (
@@ -2971,7 +2972,10 @@ export async function runMildDipLoop(
         nowMs,
         sampleWatchMs,
         mildDipHotMints,
-        (greenWatchMint) => greenWatchPending.set(greenWatchMint, nowMs),
+        (greenWatchMint) => {
+          greenWatchAdmitted += 1;
+          greenWatchPending.set(greenWatchMint, nowMs);
+        },
       )
     ) {
       return true;
@@ -3091,6 +3095,10 @@ export async function runMildDipLoop(
       rpcUrl: cfg.rpcUrl,
       minGapMsPerMint: cfg.streamPriceMinGapMs,
       concurrency: cfg.streamPriceConcurrency,
+      txRetryEnabled: cfg.streamPriceTxRetryEnabled,
+      txRetryMaxAttempts: cfg.streamPriceTxRetryMaxAttempts,
+      txRetryDelayMs: cfg.streamPriceTxRetryDelayMs,
+      txRetryMaxAgeMs: cfg.streamPriceTxRetryMaxAgeMs,
       shouldSample: shouldSampleTapeStreamPrice,
       /**
        * Force-fetch open bags so exit marks stay stream-fed — except green
@@ -3374,6 +3382,9 @@ export async function runMildDipLoop(
         skipped: st.skipped,
         lastSampleAtMs: st.lastSampleAtMs,
         lastSkipReason: st.lastSkipReason,
+        skipReasonCounts: st.skipReasonCounts,
+        txRetryAttempts: st.txRetryAttempts,
+        txRetrySucceeded: st.txRetrySucceeded,
         greenWatchSize:
           cfg.green.enabled && cfg.greenWatchEnabled
             ? mildDipHotMints.greenWatchList(
@@ -3384,6 +3395,7 @@ export async function runMildDipLoop(
               ).length
             : 0,
         greenWatchSampled,
+        greenWatchAdmitted,
         ringStreamN: mildDipPriceRing
           .watchedMints(nowMs)
           .filter((m) => mildDipPriceRing.lastPrice(m, nowMs)?.source === 'stream').length,

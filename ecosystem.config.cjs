@@ -4081,6 +4081,10 @@ const PM2_APPS = [
         MILD_DIP_FAST_PATH_HOT_DEX_PROBE_MAX_PER_MIN: '40',
         MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '250',
         MILD_DIP_STREAM_PRICE_CONCURRENCY: '6',
+        MILD_DIP_STREAM_PRICE_TX_RETRY_ENABLED: '1',
+        MILD_DIP_STREAM_PRICE_TX_RETRY_MAX_ATTEMPTS: '2',
+        MILD_DIP_STREAM_PRICE_TX_RETRY_DELAY_MS: '400',
+        MILD_DIP_STREAM_PRICE_TX_RETRY_MAX_AGE_MS: '30000',
         /** Journal-only tape lane denominator; never routes into entry execution. */
         MILD_DIP_TAPE_SHADOW_ENABLED: '1',
         /**
