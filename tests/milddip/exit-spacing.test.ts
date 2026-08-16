@@ -52,7 +52,7 @@ describe('1.11.938 the ladder leaves a runner', () => {
     // 750 exits reached +8% MFE and 166 ended red; 343 reached +20% and 107
     // finished below +10%. Two 34% rungs leave ~44% for the sleeve to trail.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.3'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.1'");
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.34'");
   });

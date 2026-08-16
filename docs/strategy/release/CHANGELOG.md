@@ -1,3 +1,28 @@
+## [1.11.976] — 2026-08-16
+
+### Added / Changed
+
+- Updated the mild-dip liquidity sizing curve from
+  `MILD_DIP_SIZE_LIQ_POWER_COEF=0.0004168` to `0.001888` and raised
+  `MILD_DIP_SIZE_MIN_USD` from `$3` to `$5`. With the existing
+  `liq^0.866` law and `$30` cap, this produces approximately `$10` at
+  `$20k` liquidity, `$22` at `$50k`, `$4–5` in `$5–10k` pools, and reaches
+  the cap above roughly `$100k`.
+- The larger clip is supported by seven days of Jupiter quote measurements
+  across 4,065 live entries: median impact remained 1.7% in `$5–10k` pools
+  and 1.1–1.5% in `$20k+` pools, while realized buy fill versus signal was
+  better at `$10` (+1.38%) than at `$2–3` (+2.5%).
+- Lowered `MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER` from `0.3` to `0.1` so the
+  take-profit ladder can continue banking rungs instead of freezing after
+  two rungs with 43.6% remainder. This is intended to preserve more of the
+  runner while retaining the existing ladder and trail behavior.
+
+### Rollback
+
+1. Restore `MILD_DIP_SIZE_LIQ_POWER_COEF='0.0004168'`.
+2. Restore `MILD_DIP_SIZE_MIN_USD='3'`.
+3. Restore `MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER='0.3'`.
+
 ## [1.11.975] — 2026-08-16
 
 ### Added / Changed
