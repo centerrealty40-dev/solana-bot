@@ -120,6 +120,7 @@ export function tapeFeatures(
 export function evaluateMildDipTape(
   features: MildDipTapeFeatures,
   gates: MildDipTapeGates,
+  greenMeasureAll = false,
 ): MildDipTapeEvaluation {
   const greenReasons: string[] = [];
   const dipReasons: string[] = [];
@@ -160,7 +161,7 @@ export function evaluateMildDipTape(
   return {
     features,
     matches: [
-      ...(greenReasons.length === 0 ? (['green'] as const) : []),
+      ...(greenMeasureAll || greenReasons.length === 0 ? (['green'] as const) : []),
       ...(dipReasons.length === 0 ? (['dip'] as const) : []),
     ],
     reasons,
@@ -216,6 +217,11 @@ export type MildDipTapeShadowOptions = {
   gates: MildDipTapeGates;
   minIntervalMs: number;
   maxSignalsPerHour: number;
+  laneLimits?: Record<
+    MildDipTapeLane,
+    { minIntervalMs: number; maxSignalsPerHour: number }
+  >;
+  greenMeasureAll?: boolean;
   outcomeStaleMs?: number;
   idleEvictMs?: number;
   summaryIntervalMs?: number;
@@ -329,6 +335,8 @@ export type MildDipTapeShadowPersistedState = {
   }>;
   lastSignalAt?: Record<string, number>;
   signalTimes?: number[];
+  lastSignalAtByLane?: Record<MildDipTapeLane, Record<string, number>>;
+  signalTimesByLane?: Record<MildDipTapeLane, number[]>;
   sequence?: number;
   pairAgeRegistry?: MildDipPairAgeRegistryState;
   pairAgeAttempts?: MildDipPairAgeAttemptState;
@@ -336,8 +344,14 @@ export type MildDipTapeShadowPersistedState = {
 
 export class MildDipTapeShadow {
   private readonly opts: MildDipTapeShadowOptions;
-  private readonly lastSignalAt = new Map<string, number>();
-  private readonly signalTimes: number[] = [];
+  private readonly lastSignalAt = new Map<MildDipTapeLane, Map<string, number>>([
+    ['green', new Map()],
+    ['dip', new Map()],
+  ]);
+  private readonly signalTimes = new Map<MildDipTapeLane, number[]>([
+    ['green', []],
+    ['dip', []],
+  ]);
   private readonly pending: PendingSignal[] = [];
   private readonly counters: Record<MildDipTapeLane, TapeLaneCounters> = {
     green: {
@@ -375,6 +389,7 @@ export class MildDipTapeShadow {
   private samplingPending = 0;
   private samplingShadowDiscovery = 0;
   private samplingLimitRejected = 0;
+  private structuralFetchCapped = 0;
   private pendingMintCache: {
     computedAtMs: number;
     nextExpiryMs: number;
@@ -402,6 +417,7 @@ export class MildDipTapeShadow {
       source: MildDipPriceSource;
     },
     features: MildDipTapeFeatures,
+    formulaGateFailures: string[],
     snapshot: MildDipTapeStructuralSnapshot | null,
   ): void {
     const floor = evaluateOwnFloors(lane, snapshot, this.opts.ownFloors?.[lane]);
@@ -429,6 +445,8 @@ export class MildDipTapeShadow {
       source: input.source,
       ownFloorsPass: floor.pass,
       ownFloorsFail: floor.fail,
+      formulaGateFailures,
+      measureAll: lane === 'green' && this.opts.greenMeasureAll === true,
       shadowOnly: true,
     });
   }
@@ -490,7 +508,8 @@ export class MildDipTapeShadow {
   }
 
   toJSON(nowMs = Date.now()): MildDipTapeShadowPersistedState {
-    this.pruneSignalTimes(nowMs);
+    this.pruneSignalTimes('green', nowMs);
+    this.pruneSignalTimes('dip', nowMs);
     return {
       updatedAtMs: nowMs,
       ring: this.opts.ring.toJSON(nowMs),
@@ -505,8 +524,16 @@ export class MildDipTapeShadow {
         emitted: [...signal.emitted],
         sampleUntilMs: signal.sampleUntilMs,
       })),
-      lastSignalAt: Object.fromEntries(this.lastSignalAt),
-      signalTimes: [...this.signalTimes],
+      lastSignalAt: Object.fromEntries(this.lastSignalAt.get('dip')!),
+      signalTimes: [...this.signalTimes.get('dip')!],
+      lastSignalAtByLane: {
+        green: Object.fromEntries(this.lastSignalAt.get('green')!),
+        dip: Object.fromEntries(this.lastSignalAt.get('dip')!),
+      },
+      signalTimesByLane: {
+        green: [...this.signalTimes.get('green')!],
+        dip: [...this.signalTimes.get('dip')!],
+      },
       sequence: this.sequence,
       pairAgeRegistry: this.getPairAgeRegistry().toJSON(
         nowMs,
@@ -537,17 +564,22 @@ export class MildDipTapeShadow {
       this.pairAgeMaxStaleMs(),
       this.pairAgeMaxEntries(),
     );
-    this.lastSignalAt.clear();
-    for (const [mint, tsMs] of Object.entries(state.lastSignalAt ?? {})) {
-      if (mint && typeof tsMs === 'number' && Number.isFinite(tsMs)) {
-        this.lastSignalAt.set(mint, tsMs);
+    for (const lane of ['green', 'dip'] as const) {
+      this.lastSignalAt.get(lane)!.clear();
+      const source = state.lastSignalAtByLane?.[lane] ?? state.lastSignalAt;
+      for (const [mint, tsMs] of Object.entries(source ?? {})) {
+        if (mint && typeof tsMs === 'number' && Number.isFinite(tsMs)) {
+          this.lastSignalAt.get(lane)!.set(mint, tsMs);
+        }
+      }
+      const times = this.signalTimes.get(lane)!;
+      times.length = 0;
+      for (const tsMs of state.signalTimesByLane?.[lane] ?? state.signalTimes ?? []) {
+        if (typeof tsMs === 'number' && Number.isFinite(tsMs)) times.push(tsMs);
       }
     }
-    this.signalTimes.length = 0;
-    for (const tsMs of state.signalTimes ?? []) {
-      if (typeof tsMs === 'number' && Number.isFinite(tsMs)) this.signalTimes.push(tsMs);
-    }
-    this.pruneSignalTimes(nowMs);
+    this.pruneSignalTimes('green', nowMs);
+    this.pruneSignalTimes('dip', nowMs);
     this.pending.length = 0;
     this.invalidatePendingMintCache();
     let pending = 0;
@@ -627,6 +659,7 @@ export class MildDipTapeShadow {
     const evaluation = evaluateMildDipTape(
       tapeFeatures(this.opts.ring, input.mint, input.tsMs, pairAgeHours, sample),
       this.opts.gates,
+      this.opts.greenMeasureAll ?? false,
     );
     for (const lane of ['green', 'dip'] as const) {
       if (pairAgeHours == null) this.counters[lane].pairAgeUnknown += 1;
@@ -639,22 +672,28 @@ export class MildDipTapeShadow {
       }
     }
     if (evaluation.matches.length === 0) return;
-    this.pruneSignalTimes(input.tsMs);
-    const lastSignalAt = this.lastSignalAt.get(input.mint) ?? 0;
     let recordedAny = false;
+    const recordedLanes = new Set<MildDipTapeLane>();
     for (const lane of evaluation.matches) {
       this.counters[lane].conditions += 1;
-      if (input.tsMs - lastSignalAt < this.opts.minIntervalMs) {
+      const limits = this.opts.laneLimits?.[lane] ?? {
+        minIntervalMs: this.opts.minIntervalMs,
+        maxSignalsPerHour: this.opts.maxSignalsPerHour,
+      };
+      this.pruneSignalTimes(lane, input.tsMs);
+      const lastSignalAt = this.lastSignalAt.get(lane)!.get(input.mint) ?? 0;
+      if (input.tsMs - lastSignalAt < limits.minIntervalMs) {
         this.counters[lane].suppressedInterval += 1;
         continue;
       }
-      if (this.signalTimes.length >= this.opts.maxSignalsPerHour) {
+      if (this.signalTimes.get(lane)!.length >= limits.maxSignalsPerHour) {
         this.counters[lane].suppressedCap += 1;
         continue;
       }
-      this.signalTimes.push(input.tsMs);
+      this.signalTimes.get(lane)!.push(input.tsMs);
       this.counters[lane].recorded += 1;
       recordedAny = true;
+      recordedLanes.add(lane);
       const id = `${input.mint}:${input.tsMs}:${lane}:${this.sequence++}`;
       const emitSignal = (snapshot: MildDipTapeStructuralSnapshot | null): void =>
         this.appendSignal(
@@ -667,6 +706,7 @@ export class MildDipTapeShadow {
             source,
           },
           evaluation.features,
+          evaluation.reasons[lane],
           snapshot,
         );
       if (this.opts.structuralSnapshot) {
@@ -693,7 +733,11 @@ export class MildDipTapeShadow {
       });
       this.invalidatePendingMintCache();
     }
-    if (recordedAny) this.lastSignalAt.set(input.mint, input.tsMs);
+    if (recordedAny) {
+      for (const lane of recordedLanes) {
+        this.lastSignalAt.get(lane)!.set(input.mint, input.tsMs);
+      }
+    }
   }
 
   tick(nowMs: number): void {
@@ -757,6 +801,7 @@ export class MildDipTapeShadow {
         this.samplingPending > 0 ||
         this.samplingShadowDiscovery > 0 ||
         this.samplingLimitRejected > 0 ||
+        this.structuralFetchCapped > 0 ||
         Object.keys(this.counters.green.rejectionReasons).length > 0 ||
         Object.keys(this.counters.dip.rejectionReasons).length > 0;
       if (hasActivity) {
@@ -806,6 +851,8 @@ export class MildDipTapeShadow {
             shadowDiscovery: this.samplingShadowDiscovery,
             limitRejected: this.samplingLimitRejected,
           },
+          structuralFetchCapped: this.structuralFetchCapped,
+          measureAll: this.opts.greenMeasureAll === true,
           shadowOnly: true,
         });
       }
@@ -841,6 +888,7 @@ export class MildDipTapeShadow {
       this.samplingPending = 0;
       this.samplingShadowDiscovery = 0;
       this.samplingLimitRejected = 0;
+      this.structuralFetchCapped = 0;
       this.summaryWindowStartMs = nowMs;
     }
   }
@@ -856,6 +904,10 @@ export class MildDipTapeShadow {
     if (reason === 'pending') this.samplingPending += value;
     else if (reason === 'shadowDiscovery') this.samplingShadowDiscovery += value;
     else this.samplingLimitRejected += value;
+  }
+
+  noteStructuralFetchCapped(count = 1): void {
+    this.structuralFetchCapped += Math.max(0, Math.floor(count));
   }
 
   hasPendingSignal(mint: string, nowMs: number, graceMs = 0): boolean {
@@ -903,9 +955,10 @@ export class MildDipTapeShadow {
       .slice(0, Math.max(0, Math.floor(maxMints)));
   }
 
-  private pruneSignalTimes(nowMs: number): void {
+  private pruneSignalTimes(lane: MildDipTapeLane, nowMs: number): void {
     const cut = nowMs - 60 * 60_000;
-    while (this.signalTimes.length > 0 && this.signalTimes[0]! <= cut) this.signalTimes.shift();
+    const times = this.signalTimes.get(lane)!;
+    while (times.length > 0 && times[0]! <= cut) times.shift();
   }
 }
 

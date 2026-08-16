@@ -2674,6 +2674,7 @@ export async function runMildDipLoop(
     Promise<MildDipTapeStructuralSnapshot | null>
   >();
   const tapeStructuralNegativeUntil = new Map<string, number>();
+  const tapeStructuralFetchTimes: number[] = [];
   const tapeShadow = tapeShadowRing
     ? new MildDipTapeShadow({
         ring: tapeShadowRing,
@@ -2695,6 +2696,21 @@ export async function runMildDipLoop(
         },
         minIntervalMs: cfg.tapeMinIntervalMs,
         maxSignalsPerHour: cfg.tapeMaxSignalsPerHour,
+        laneLimits: {
+          green: {
+            minIntervalMs: cfg.tapeGreenMeasureAll
+              ? cfg.tapeGreenMeasureAllMinIntervalMs
+              : cfg.tapeMinIntervalMs,
+            maxSignalsPerHour: cfg.tapeGreenMeasureAll
+              ? cfg.tapeGreenMeasureAllMaxSignalsPerHour
+              : cfg.tapeMaxSignalsPerHour,
+          },
+          dip: {
+            minIntervalMs: cfg.tapeMinIntervalMs,
+            maxSignalsPerHour: cfg.tapeMaxSignalsPerHour,
+          },
+        },
+        greenMeasureAll: cfg.tapeGreenMeasureAll,
         outcomeStaleMs: cfg.tapeOutcomeStaleMs,
         idleEvictMs: Math.max(cfg.tapeIdleEvictMs, cfg.tapeWindowMs),
         summaryIntervalMs: cfg.tapeSummaryIntervalMs,
@@ -2760,6 +2776,18 @@ export async function runMildDipLoop(
     if ((tapeStructuralNegativeUntil.get(mint) ?? 0) > tsMs) return null;
     const existing = tapeStructuralInFlight.get(mint);
     if (existing) return existing;
+    const fetchCutoff = tsMs - 60 * 60_000;
+    while (tapeStructuralFetchTimes.length > 0 && tapeStructuralFetchTimes[0]! <= fetchCutoff) {
+      tapeStructuralFetchTimes.shift();
+    }
+    if (
+      cfg.tapeStructuralFetchMaxPerHour > 0 &&
+      tapeStructuralFetchTimes.length >= cfg.tapeStructuralFetchMaxPerHour
+    ) {
+      tapeShadow?.noteStructuralFetchCapped();
+      return null;
+    }
+    tapeStructuralFetchTimes.push(tsMs);
     const request = (async (): Promise<MildDipTapeStructuralSnapshot | null> => {
       const details = await fetchDexScreenerPairDetails(mint, {
         nowMs: tsMs,

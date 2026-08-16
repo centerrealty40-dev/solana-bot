@@ -168,6 +168,10 @@ const MildDipConfigSchema = z.object({
     .min(0)
     .max(86_400_000)
     .default(300_000),
+  tapeGreenMeasureAll: z.boolean().default(false),
+  tapeGreenMeasureAllMinIntervalMs: z.coerce.number().int().min(0).default(300_000),
+  tapeGreenMeasureAllMaxSignalsPerHour: z.coerce.number().int().min(0).default(1_500),
+  tapeStructuralFetchMaxPerHour: z.coerce.number().int().min(0).default(400),
   tapeGreenMinLiqUsd: z.coerce.number().min(0).default(1_700),
   tapeGreenMaxLiqUsd: z.coerce.number().min(0).default(20_000),
   tapeGreenMinMcapUsd: z.coerce.number().min(0).default(2_000),
@@ -1260,6 +1264,19 @@ export function loadMildDipConfig(): MildDipConfig {
     tapeShadowSampleMaxMints: envNum('MILD_DIP_TAPE_SHADOW_SAMPLE_MAX_MINTS', 0),
     tapeShadowSampleMinGapMs: envNum('MILD_DIP_TAPE_SHADOW_SAMPLE_MIN_GAP_MS', 15_000),
     tapePendingSampleGraceMs: envNum('MILD_DIP_TAPE_PENDING_SAMPLE_GRACE_MS', 300_000),
+    tapeGreenMeasureAll: envBool('MILD_DIP_TAPE_GREEN_MEASURE_ALL', false),
+    tapeGreenMeasureAllMinIntervalMs: envNum(
+      'MILD_DIP_TAPE_GREEN_MEASURE_ALL_MIN_INTERVAL_MS',
+      300_000,
+    ),
+    tapeGreenMeasureAllMaxSignalsPerHour: envNum(
+      'MILD_DIP_TAPE_GREEN_MEASURE_ALL_MAX_SIGNALS_PER_HOUR',
+      1_500,
+    ),
+    tapeStructuralFetchMaxPerHour: envNum(
+      'MILD_DIP_TAPE_STRUCTURAL_FETCH_MAX_PER_HOUR',
+      400,
+    ),
     tapeGreenMinLiqUsd: envNum('MILD_DIP_TAPE_GREEN_MIN_LIQ_USD', 1_700),
     tapeGreenMaxLiqUsd: envNum('MILD_DIP_TAPE_GREEN_MAX_LIQ_USD', 20_000),
     tapeGreenMinMcapUsd: envNum('MILD_DIP_TAPE_GREEN_MIN_MCAP_USD', 2_000),

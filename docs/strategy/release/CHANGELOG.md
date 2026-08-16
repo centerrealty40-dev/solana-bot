@@ -1,3 +1,22 @@
+## 1.11.966 — 2026-08-15
+
+### Added — journal-only GREEN measure-all tape lane
+
+- Add an opt-in GREEN tape-shadow measure-all mode that records every eligible
+  stream sample, including incomplete feature coverage, while preserving the
+  formula gate failures for offline replay.
+- Separate GREEN and DIP tape signal caps and per-mint intervals, with bounded
+  GREEN measure-all defaults and explicit production configuration only for the
+  `mild-dip-bot` journal lane.
+- Add a configurable hourly ceiling for tape structural fetches; capped
+  snapshots remain unavailable and never fail open own-floor verdicts.
+
+### Rollback
+
+- Revert this release commit and redeploy the prior `v2` revision. Measure-all
+  signals, structural snapshots, and counters are journal-only; they do not
+  alter purchases, execution, shared floors, or leader gates.
+
 ## 1.11.965 — 2026-08-15
 
 ### Added — tape-shadow lane structural floor measurement

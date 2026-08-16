@@ -499,6 +499,76 @@ describe('MildDipTapeShadow', () => {
     });
   });
 
+  it('measure-all emits green with null features and preserves gate failures', async () => {
+    const events: Record<string, unknown>[] = [];
+    const shadow = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 }),
+      gates,
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      greenMeasureAll: true,
+      laneLimits: {
+        green: { minIntervalMs: 300_000, maxSignalsPerHour: 1_500 },
+        dip: { minIntervalMs: 60_000, maxSignalsPerHour: 60 },
+      },
+      structuralSnapshot: async () => null,
+      append: (event) => events.push(event),
+    });
+    const now = 130_000_000;
+    shadow.onPriceSample({ mint, priceUsd: 100, tsMs: now, pairAgeHours: null });
+    shadow.onPriceSample({ mint, priceUsd: 101, tsMs: now + 60_000, pairAgeHours: null });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const signals = events.filter((event) => event.kind === 'mild_dip_tape_lane_signal');
+    expect(signals).toHaveLength(1);
+    expect(signals[0]).toMatchObject({
+      lane: 'green',
+      measureAll: true,
+      imp60: null,
+      imp5: null,
+      ownFloorsPass: null,
+      ownFloorsFail: ['no_structural_snapshot'],
+    });
+    expect((signals[0]!.formulaGateFailures as string[]).length).toBeGreaterThan(0);
+  });
+
+  it('keeps dip formula gating independent from green measure-all', () => {
+    const features = tapeFeatures(
+      new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 }),
+      mint,
+      140_000_000,
+      null,
+    );
+    const evaluation = evaluateMildDipTape(features, gates, true);
+    expect(evaluation.matches).toEqual(['green']);
+    expect(evaluation.reasons.dip.length).toBeGreaterThan(0);
+  });
+
+  it('records capped structural fetches as unavailable floor verdicts', async () => {
+    const events: Record<string, unknown>[] = [];
+    const now = 150_000_000;
+    const shadow = new MildDipTapeShadow({
+      ring: new MildDipPriceRing({ maxSamplesPerMint: 1_000, ttlMs: 90 * 60_000 }),
+      gates,
+      minIntervalMs: 60_000,
+      maxSignalsPerHour: 60,
+      greenMeasureAll: true,
+      structuralSnapshot: async () => null,
+      append: (event) => events.push(event),
+      summaryIntervalMs: 60_000,
+    });
+    shadow.noteStructuralFetchCapped();
+    shadow.onPriceSample({ mint, priceUsd: 100, tsMs: now, pairAgeHours: null });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(events.find((event) => event.kind === 'mild_dip_tape_lane_signal')).toMatchObject({
+      ownFloorsPass: null,
+      ownFloorsFail: ['no_structural_snapshot'],
+    });
+    shadow.tick(now + 60_000);
+    expect(events.find((event) => event.kind === 'mild_dip_tape_lane_summary')).toMatchObject({
+      structuralFetchCapped: 1,
+    });
+  });
+
   it('enforces bounded shadow-discovery sampling and keeps zero disabled', () => {
     const seen = new Map<string, number>();
     const cleanup = { lastAtMs: 0 };
