@@ -9,6 +9,58 @@
 
 import type { MildDipPriceRing } from './price-ring.js';
 
+export const MILD_STABILIZE_HOURLY_WINDOW_MS = 3_600_000;
+const mildStabilizeAttemptStamps: number[] = [];
+const mildStabilizeSkipTelemetryStamps: number[] = [];
+
+function pruneStamps(stamps: number[], nowMs: number): void {
+  const cutoff = nowMs - MILD_STABILIZE_HOURLY_WINDOW_MS;
+  while (stamps.length > 0 && stamps[0]! < cutoff) stamps.shift();
+}
+
+/**
+ * Reserve the slot immediately before the lane's buy call. A slot is counted
+ * for every attempted buy, including a transaction that later fails.
+ */
+export function takeMildStabilizeAttemptSlot(
+  maxPerHour: number,
+  nowMs: number,
+): { allowed: boolean; count: number; limit: number } {
+  if (!(maxPerHour > 0)) return { allowed: true, count: 0, limit: 0 };
+  pruneStamps(mildStabilizeAttemptStamps, nowMs);
+  if (mildStabilizeAttemptStamps.length >= maxPerHour) {
+    return {
+      allowed: false,
+      count: mildStabilizeAttemptStamps.length,
+      limit: maxPerHour,
+    };
+  }
+  mildStabilizeAttemptStamps.push(nowMs);
+  return {
+    allowed: true,
+    count: mildStabilizeAttemptStamps.length,
+    limit: maxPerHour,
+  };
+}
+
+/** Reserve one global skip-telemetry event inside the rolling hour. */
+export function takeMildStabilizeSkipTelemetrySlot(
+  maxPerHour: number,
+  nowMs: number,
+): boolean {
+  if (!(maxPerHour > 0)) return false;
+  pruneStamps(mildStabilizeSkipTelemetryStamps, nowMs);
+  if (mildStabilizeSkipTelemetryStamps.length >= maxPerHour) return false;
+  mildStabilizeSkipTelemetryStamps.push(nowMs);
+  return true;
+}
+
+/** Test helper. */
+export function __resetMildStabilizeBudgetsForTests(): void {
+  mildStabilizeAttemptStamps.length = 0;
+  mildStabilizeSkipTelemetryStamps.length = 0;
+}
+
 /** Whether fast-path may evaluate mild_stabilize for this candidate pass. */
 export function mildStabilizeLaneAllowed(args: {
   enabled: boolean;
