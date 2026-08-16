@@ -72,6 +72,8 @@ export type MarkExitDecision = {
   troughAgeMs: number;
   /** Updated liquidity-drain confirmation count. */
   liquidityDrainConfirmTicks?: number;
+  /** Last counted liquidity sample timestamp. */
+  liquidityDrainSampleTsMs?: number;
   liquidityUsd?: number | null;
   liqRatio?: number | null;
   depthDrainRatio?: number | null;
@@ -136,6 +138,8 @@ export function decideMarkExit(args: {
   liquidityMetricsFresh?: boolean;
   /** Prior accepted marks confirming liquidity drain. */
   liquidityDrainConfirmTicks?: number | null;
+  /** Timestamp of the current open-mark metrics sample. */
+  liquidityMetricsTsMs?: number | null;
   /** 1.11.919 — how long a refused mark may stand before we accept it. */
   markJumpConfirmMaxMs?: number;
   /** 1.11.959 — green armed quarantine blind window; 0 = off. */
@@ -445,8 +449,10 @@ export function decideMarkExit(args: {
     turnover5mLiq: args.turnover5mLiq ?? null,
     liquidityUsd: args.liquidityUsd ?? null,
     liquidityMetricsFresh: args.liquidityMetricsFresh === true,
+    liquidityMetricsTsMs: args.liquidityMetricsTsMs ?? null,
     entryLiquidityUsd: pos.entryLiquidityUsd ?? null,
     liquidityDrainConfirmTicks: pos.liquidityDrainConfirmTicks ?? 0,
+    liquidityDrainSampleTsMs: pos.liquidityDrainSampleTsMs ?? null,
     entryTurnover5mLiq:
       pos.entryVolume5mUsd != null &&
       pos.entryLiquidityUsd != null &&
@@ -513,6 +519,7 @@ export function decideMarkExit(args: {
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,
     liquidityDrainConfirmTicks: verdict.liquidityDrainConfirmTicks,
+    liquidityDrainSampleTsMs: verdict.liquidityDrainSampleTsMs,
     liquidityUsd: verdict.liquidityUsd,
     liqRatio: verdict.liqRatio,
     depthDrainRatio: verdict.depthDrainRatio,
@@ -565,6 +572,7 @@ export function applyMarkDecisionToPosition(
   if (decision.liquidityDrainConfirmTicks != null) {
     pos.liquidityDrainConfirmTicks = decision.liquidityDrainConfirmTicks;
   }
+  pos.liquidityDrainSampleTsMs = decision.liquidityDrainSampleTsMs;
   if (decision.postEntryTroughPriceUsd > 0) {
     pos.postEntryTroughUsd = decision.postEntryTroughPriceUsd;
   }

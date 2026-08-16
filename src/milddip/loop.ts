@@ -2082,6 +2082,7 @@ async function tryExits(
       volume5mUsd: metrics?.volume5mUsd ?? volume5mUsd,
       pc5mPct: metrics?.pc5mPct ?? null,
       liquidityUsd: metrics?.liquidityUsd ?? null,
+      liquidityMetricsTsMs: metrics?.tsMs ?? null,
       source,
     };
   });
@@ -2106,7 +2107,15 @@ async function tryExits(
       },
     ).catch(() => undefined);
   }
-  for (const { mint, px, volume5mUsd, pc5mPct, liquidityUsd, source } of markRows) {
+  for (const {
+    mint,
+    px,
+    volume5mUsd,
+    pc5mPct,
+    liquidityUsd,
+    liquidityMetricsTsMs,
+    source,
+  } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
     /**
@@ -2215,6 +2224,7 @@ async function tryExits(
       })(),
       liquidityUsd,
       liquidityMetricsFresh: liquidityUsd != null,
+      liquidityMetricsTsMs,
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
       markSource: source,

@@ -1016,8 +1016,12 @@ export function evaluateMildDipPeakGiveback(args: {
   entryLiquidityUsd?: number | null;
   /** Freshness of the current liquidity reading; stale metrics fail closed. */
   liquidityMetricsFresh?: boolean;
+  /** Timestamp of the current open-mark metrics sample. */
+  liquidityMetricsTsMs?: number | null;
   /** Prior confirmed liquidity-drain marks on this position. */
   liquidityDrainConfirmTicks?: number | null;
+  /** Timestamp of the last liquidity sample counted by the confirmer. */
+  liquidityDrainSampleTsMs?: number | null;
   /** Prior spaced vol5m samples on this position (mutated via return value). */
   volFadeSamples?: readonly MildDipVolFadeSample[] | null;
   /** Wall clock for spacing samples; defaults to held-relative when omitted. */
@@ -1067,6 +1071,8 @@ export function evaluateMildDipPeakGiveback(args: {
   troughAgeMs: number;
   /** Updated liquidity-drain confirmation count. */
   liquidityDrainConfirmTicks?: number;
+  /** Last counted liquidity sample timestamp. */
+  liquidityDrainSampleTsMs?: number;
   liquidityUsd?: number | null;
   liqRatio?: number | null;
   depthDrainRatio?: number | null;
@@ -1229,6 +1235,7 @@ export function evaluateMildDipPeakGiveback(args: {
     postEntryTroughPriceUsd,
     postEntryTroughAtMs,
     liquidityDrainConfirmTicks: 0,
+    liquidityDrainSampleTsMs: undefined as number | undefined,
     liquidityUsd: null as number | null,
     liqRatio: null as number | null,
     depthDrainRatio: null as number | null,
@@ -1244,11 +1251,31 @@ export function evaluateMildDipPeakGiveback(args: {
     args.liquidityDrainConfirmTicks > 0
       ? Math.floor(args.liquidityDrainConfirmTicks)
       : 0;
+  const liqTelemetry =
+    args.liquidityUsd != null &&
+    Number.isFinite(args.liquidityUsd) &&
+    args.entryLiquidityUsd != null &&
+    Number.isFinite(args.entryLiquidityUsd) &&
+    args.entryLiquidityUsd > 0
+      ? computeMarkLiquidityTelemetry({
+          liquidityUsd: args.liquidityUsd,
+          entryLiquidityUsd: args.entryLiquidityUsd,
+          priceUsd: markPriceUsd,
+          entryPriceUsd,
+        })
+      : { liqRatio: null, depthDrainRatio: null };
+  const liqSampleTsMs =
+    args.liquidityMetricsTsMs != null &&
+    Number.isFinite(args.liquidityMetricsTsMs) &&
+    args.liquidityMetricsTsMs > 0
+      ? args.liquidityMetricsTsMs
+      : null;
   const liqDrainEligible =
     (liqDrainRatio > 0 || liqAbsFloorUsd > 0) &&
     liqDrainConfirmTicksRequired > 0 &&
     heldMs >= liqDrainMinAgeMs &&
     args.liquidityMetricsFresh === true &&
+    liqSampleTsMs != null &&
     args.liquidityUsd != null &&
     Number.isFinite(args.liquidityUsd) &&
     args.liquidityUsd > 0 &&
@@ -1257,14 +1284,6 @@ export function evaluateMildDipPeakGiveback(args: {
     args.entryLiquidityUsd > 0 &&
     gainPct < 0 &&
     !(liqDrainSkipArmedRunner && armed && gainPct > 0);
-  const liqTelemetry = liqDrainEligible
-    ? computeMarkLiquidityTelemetry({
-        liquidityUsd: args.liquidityUsd,
-        entryLiquidityUsd: args.entryLiquidityUsd,
-        priceUsd: markPriceUsd,
-        entryPriceUsd,
-      })
-    : { liqRatio: null, depthDrainRatio: null };
   const ratioHit =
     liqDrainRatio > 0 &&
     liqTelemetry.depthDrainRatio != null &&
@@ -1274,8 +1293,23 @@ export function evaluateMildDipPeakGiveback(args: {
     args.liquidityUsd != null &&
     args.liquidityUsd < liqAbsFloorUsd;
   const liqDrainHit = liqDrainEligible && (ratioHit || absFloorHit);
-  const liquidityDrainConfirmTicks = liqDrainHit ? priorLiqDrainTicks + 1 : 0;
+  const priorLiqSampleTsMs =
+    args.liquidityDrainSampleTsMs != null &&
+    Number.isFinite(args.liquidityDrainSampleTsMs) &&
+    args.liquidityDrainSampleTsMs > 0
+      ? args.liquidityDrainSampleTsMs
+      : null;
+  const sameLiqSample = liqSampleTsMs != null && liqSampleTsMs === priorLiqSampleTsMs;
+  const liquidityDrainConfirmTicks = liqDrainHit
+    ? sameLiqSample
+      ? priorLiqDrainTicks
+      : priorLiqDrainTicks + 1
+    : 0;
+  const liquidityDrainSampleTsMs = liqDrainHit && liquidityDrainConfirmTicks > 0
+    ? liqSampleTsMs ?? undefined
+    : undefined;
   hold.liquidityDrainConfirmTicks = liquidityDrainConfirmTicks;
+  hold.liquidityDrainSampleTsMs = liquidityDrainSampleTsMs;
   hold.liquidityUsd = args.liquidityUsd ?? null;
   hold.liqRatio = liqTelemetry.liqRatio;
   hold.depthDrainRatio = liqTelemetry.depthDrainRatio;
