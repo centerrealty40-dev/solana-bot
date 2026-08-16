@@ -1493,6 +1493,10 @@ export async function attemptMildDipEntry(args: {
           stagedEntryIntendedUsd: stagedClip.intendedUsd ?? undefined,
           stagedEntryFirstFillPriceUsd: fillPx,
           stagedEntryFilledUsd: sized.sizeUsd,
+          stagedEntryTotalCostUsd: buy.quoteSpentUsd ?? sized.sizeUsd,
+          stagedEntryTotalTokenAmount:
+            fillPx > 0 ? (buy.quoteSpentUsd ?? sized.sizeUsd) / fillPx : undefined,
+          stagedEntryAvgCostPriceUsd: fillPx,
           stagedEntryAddDone: false,
           stagedEntryAddAttempts: 0,
           stagedEntryRugRiskTier: rugRisk.tier,

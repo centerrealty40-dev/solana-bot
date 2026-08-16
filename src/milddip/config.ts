@@ -48,8 +48,10 @@ const MildDipConfigSchema = z.object({
   stagedEntryEnabled: z.boolean().default(false),
   stagedFirstUsd: z.coerce.number().min(0).max(10_000).default(5),
   stagedAddTriggerPct: z.coerce.number().min(0).max(100).default(8),
+  stagedAddMaxChasePct: z.coerce.number().min(0).max(100).default(4),
   stagedAddMult: z.coerce.number().min(0).max(100).default(2),
   stagedAddMaxUsd: z.coerce.number().min(0).max(10_000).default(40),
+  stagedProfitMinOverAvgPct: z.coerce.number().min(0).max(100).default(1),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
    * 1.11.841 — same $1 as base (flat book).
@@ -1141,8 +1143,10 @@ export function loadMildDipConfig(): MildDipConfig {
     stagedEntryEnabled: envBool('MILD_DIP_STAGED_ENTRY_ENABLED', false),
     stagedFirstUsd: envNum('MILD_DIP_STAGED_FIRST_USD', 5),
     stagedAddTriggerPct: envNum('MILD_DIP_STAGED_ADD_TRIGGER_PCT', 8),
+    stagedAddMaxChasePct: envNum('MILD_DIP_STAGED_ADD_MAX_CHASE_PCT', 4),
     stagedAddMult: envNum('MILD_DIP_STAGED_ADD_MULT', 2),
     stagedAddMaxUsd: envNum('MILD_DIP_STAGED_ADD_MAX_USD', 40),
+    stagedProfitMinOverAvgPct: envNum('MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT', 1),
     thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 1,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,
