@@ -11,6 +11,50 @@ export type MildDipOpenMarkMetrics = {
   liquidityUsd: number | null;
 };
 
+export type MildDipMarkLiquidityTelemetry = {
+  liqRatio: number | null;
+  depthDrainRatio: number | null;
+};
+
+export function computeMarkLiquidityTelemetry(args: {
+  liquidityUsd: number | null | undefined;
+  entryLiquidityUsd: number | null | undefined;
+  priceUsd: number | null | undefined;
+  entryPriceUsd: number | null | undefined;
+}): MildDipMarkLiquidityTelemetry {
+  const liq = args.liquidityUsd;
+  const entryLiq = args.entryLiquidityUsd;
+  const px = args.priceUsd;
+  const entryPx = args.entryPriceUsd;
+  if (
+    liq == null ||
+    !Number.isFinite(liq) ||
+    entryLiq == null ||
+    !Number.isFinite(entryLiq) ||
+    entryLiq <= 0
+  ) {
+    return { liqRatio: null, depthDrainRatio: null };
+  }
+  const liqRatio = liq / entryLiq;
+  if (
+    !Number.isFinite(liqRatio) ||
+    px == null ||
+    !Number.isFinite(px) ||
+    px <= 0 ||
+    entryPx == null ||
+    !Number.isFinite(entryPx) ||
+    entryPx <= 0
+  ) {
+    return { liqRatio, depthDrainRatio: null };
+  }
+  const priceRatio = px / entryPx;
+  const depthDrainRatio = liqRatio / priceRatio;
+  return {
+    liqRatio,
+    depthDrainRatio: Number.isFinite(depthDrainRatio) ? depthDrainRatio : null,
+  };
+}
+
 const byMint = new Map<string, MildDipOpenMarkMetrics>();
 
 /** Max age for metrics used by never-arm HELD+PC+SL (stale Dex → fail closed). */
