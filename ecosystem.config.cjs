@@ -3999,7 +3999,7 @@ const PM2_APPS = [
          * kept falling, and the ordering holds in all three windows. The gate was
          * steering us into the worse half by construction.
          *
-         * 1.11.982 — back on at 5%, measured on the exit we take rather than on
+         * 1.11.983 — back on at 5%, measured on the exit we take rather than on
          * our first entry. Over 7 days, 945 of our buys (24%) were the same mint
          * inside 15 minutes of our own full exit: the 216 that paid more than we
          * had just sold for lost $40.43, and the whole slice cheaper by less than
@@ -4089,6 +4089,10 @@ const PM2_APPS = [
         MILD_DIP_FAST_PATH_HOT_DEX_PROBE_MAX_PER_MIN: '40',
         MILD_DIP_STREAM_PRICE_MIN_GAP_MS: '250',
         MILD_DIP_STREAM_PRICE_CONCURRENCY: '6',
+        MILD_DIP_STREAM_PRICE_TX_RETRY_ENABLED: '1',
+        MILD_DIP_STREAM_PRICE_TX_RETRY_MAX_ATTEMPTS: '2',
+        MILD_DIP_STREAM_PRICE_TX_RETRY_DELAY_MS: '400',
+        MILD_DIP_STREAM_PRICE_TX_RETRY_MAX_AGE_MS: '30000',
         /** Journal-only tape lane denominator; never routes into entry execution. */
         MILD_DIP_TAPE_SHADOW_ENABLED: '1',
         /**

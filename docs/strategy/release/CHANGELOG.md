@@ -1,4 +1,4 @@
-## [1.11.982] — 2026-08-16
+## [1.11.983] — 2026-08-16
 
 ### Added / Changed
 
@@ -21,6 +21,25 @@ MILD_DIP_REBUY_BELOW_EXIT_PCT=0
 MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS=900000
 ```
 
+## [1.11.982] — 2026-08-16
+
+### Added / Changed
+
+- Added cumulative stream-price skip-reason counters and bounded
+  `get_tx_null` retries with attempt, success, and job-freshness telemetry.
+- Added GREEN-watch admission counts to distinguish admission from successful
+  stream sample materialization.
+- Production retry settings: enabled, two additional attempts, 400 ms delay,
+  and a 30 s maximum job age.
+
+### Rollback
+
+Disable the retry probe and reload:
+
+```text
+MILD_DIP_STREAM_PRICE_TX_RETRY_ENABLED=0
+```
+
 ## [1.11.981] — 2026-08-16
 
 ### Added / Changed
@@ -38,6 +57,10 @@ MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS=900000
 - Memoized GREEN watch ranking for one second and invalidate it on hot-mint
   updates and buffer pruning to bound stream-event CPU work without stale
   membership.
+- Added stream-price skip-reason counters and an opt-in bounded retry for
+  `get_tx_null`, with retry attempt/success telemetry and GREEN-watch
+  admission counts. Production retry settings are enabled with two additional
+  attempts, a 400 ms delay, and a 30 s job-age limit.
 
 ### Rollback
 
@@ -46,6 +69,7 @@ Disable both runtime features and reload:
 ```text
 MILD_DIP_GREEN_WATCH_ENABLED=0
 MILD_DIP_GREEN_REQUIRE_LEADER_SEEN=1
+MILD_DIP_STREAM_PRICE_TX_RETRY_ENABLED=0
 ```
 
 ## [1.11.980] — 2026-08-16
