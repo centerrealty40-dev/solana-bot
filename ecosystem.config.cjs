@@ -3765,6 +3765,10 @@ const PM2_APPS = [
         MILD_DIP_GREEN_ENTRY_MAX_VOL5M_TO_LIQ: '6',
         // The live prebuy moved >4%; allow the measured green chase envelope of 12%.
         MILD_DIP_GREEN_CHASE_PCT: '12',
+        // 29/30 post-deploy GREEN candidates hit turn_dump_not_red_pc5m; GREEN momentum is not a red-dip signal.
+        MILD_DIP_GREEN_TURN_DUMP_GATE: '0',
+        // Impulsive GREEN entries do not use the dip-lane bounce ceiling; allow the full measured range.
+        MILD_DIP_GREEN_MAX_COOLDOWN_BOUNCE_PCT: '100',
         MILD_DIP_GREEN_MIN_PC1H_PCT: '0',
         MILD_DIP_GREEN_REQUIRE_PC1H: '0',
         MILD_DIP_GREEN_MIN_BUYS5M: '0',

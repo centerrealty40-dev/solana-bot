@@ -123,6 +123,8 @@ const MildDipConfigSchema = z.object({
    * 0 = off. Default 6 — refuse buying a “good” bounce off the wick.
    */
   maxCooldownBouncePct: z.coerce.number().min(0).max(100).default(6),
+  /** GREEN override for cooldown-bounce; 0 = use maxCooldownBouncePct. */
+  greenMaxCooldownBouncePct: z.coerce.number().min(0).max(100).default(0),
   /** Lookback window for trough / stream drawdown (default = 5m cooldown). */
   cooldownBounceLookbackMs: z.coerce.number().int().min(60_000).max(3_600_000).default(300_000),
   /**
@@ -502,6 +504,8 @@ const MildDipConfigSchema = z.object({
    * 1.11.777 — optional SHALLOW OR-branch (flatter curve) for scrapes.
    */
   turnDumpGateEnabled: z.boolean().default(false),
+  /** GREEN override for the shared turn→dump choke; true preserves the shared gate. */
+  greenTurnDumpGate: z.boolean().default(true),
   turnDumpAlpha: z.coerce.number().default(-5.08),
   turnDumpBeta: z.coerce.number().default(6.86),
   /** MAIN: reject when dump < pred − slack (pp). 1.11.774 default 10 (slip). */
@@ -1224,6 +1228,7 @@ export function loadMildDipConfig(): MildDipConfig {
     waitDipMaxChasePct: envNum('MILD_DIP_WAIT_DIP_MAX_CHASE_PCT', 3),
     waitDipQuotePremiumPct: envNum('MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT', 1),
     turnDumpGateEnabled: envBool('MILD_DIP_TURN_DUMP_GATE', false),
+    greenTurnDumpGate: envBool('MILD_DIP_GREEN_TURN_DUMP_GATE', true),
     turnDumpAlpha: envNum('MILD_DIP_TURN_DUMP_ALPHA', -5.08),
     turnDumpBeta: envNum('MILD_DIP_TURN_DUMP_BETA', 6.86),
     turnDumpShallowSlackPct: envNum('MILD_DIP_TURN_DUMP_SHALLOW_SLACK_PCT', 10),
@@ -1235,6 +1240,10 @@ export function loadMildDipConfig(): MildDipConfig {
     turnDumpKnifeBranchEnabled: envBool('MILD_DIP_TURN_DUMP_KNIFE_BRANCH', false),
     turnDumpKnifeMinDumpPct: envNum('MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT', 30),
     turnDumpKnifeMinTurn: envNum('MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN', 0.3),
+    greenMaxCooldownBouncePct: envNum(
+      'MILD_DIP_GREEN_MAX_COOLDOWN_BOUNCE_PCT',
+      0,
+    ),
     mildStabilizeEnabled: envBool('MILD_DIP_MILD_STABILIZE_ENABLED', false),
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),

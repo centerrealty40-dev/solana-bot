@@ -104,6 +104,22 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.entryMinLiquidityUsd).toBe(4000);
   });
 
+  it('loads GREEN shared gate overrides and preserves their safe defaults', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.greenTurnDumpGate).toBe(true);
+    expect(defaults.greenMaxCooldownBouncePct).toBe(0);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_GREEN_TURN_DUMP_GATE: '0',
+        MILD_DIP_GREEN_MAX_COOLDOWN_BOUNCE_PCT: '100',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.greenTurnDumpGate).toBe(false);
+    expect(cfg.greenMaxCooldownBouncePct).toBe(100);
+  });
+
   it('loads mild-stabilize live lane budgets and trough settings', () => {
     const cfg = withConfigEnv(
       {
