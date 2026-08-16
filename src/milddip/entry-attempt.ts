@@ -463,6 +463,8 @@ export async function attemptMildDipEntry(args: {
           greenExitArmPct: cfg.green.fastExitArmPct,
           greenExitTrailPct: cfg.green.fastExitTrailPct,
           greenExitMaxHoldMs: cfg.green.fastExitMaxHoldMs,
+          greenExitNoMoveCutMs: cfg.green.noMoveCutMs,
+          greenExitNoMoveMinMfePct: cfg.green.noMoveMinMfePct,
         }
       : {
           greenExitProfile,
@@ -472,6 +474,8 @@ export async function attemptMildDipEntry(args: {
           greenExitArmPct: cfg.green.exitArmPct,
           greenExitTrailPct: cfg.green.exitTrailPct,
           greenExitMaxHoldMs: cfg.green.exitTrailEnabled ? cfg.green.exitMaxHoldMs : cfg.green.maxHoldMs,
+          greenExitNoMoveCutMs: cfg.green.noMoveCutMs,
+          greenExitNoMoveMinMfePct: cfg.green.noMoveMinMfePct,
         }
     : {};
   const isH1RedShallow = c.dipSource === 'h1_red_shallow';

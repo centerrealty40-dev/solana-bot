@@ -370,6 +370,56 @@ describe('decideGreenExit', () => {
     expect(decideGreenExit(12, 3_600_001, trail, 12, 0)).toEqual({ shouldExit: true, reason: 'green_max_hold' });
   });
 
+  it('cuts a position that has not moved by the no-move deadline', () => {
+    const noMove: GreenExitGates = {
+      ...g,
+      noMoveCutMs: 900_000,
+      noMoveMinMfePct: 3,
+    };
+    expect(decideGreenExit(1, 900_000, noMove, 2)).toEqual({
+      shouldExit: true,
+      reason: 'green_no_move',
+    });
+  });
+
+  it('keeps a position whose MFE cleared the no-move threshold', () => {
+    const noMove: GreenExitGates = {
+      ...g,
+      noMoveCutMs: 900_000,
+      noMoveMinMfePct: 3,
+    };
+    expect(decideGreenExit(1, 599_999, noMove, 3)).toEqual({
+      shouldExit: false,
+      reason: null,
+    });
+  });
+
+  it('gives the stop and trail priority over the no-move cut', () => {
+    const noMoveTrail: GreenExitGates = {
+      ...g,
+      noMoveCutMs: 900_000,
+      noMoveMinMfePct: 3,
+      trailEnabled: true,
+      armPct: 3,
+      trailPct: 6,
+    };
+    expect(decideGreenExit(-6, 900_000, noMoveTrail, 2)).toEqual({
+      shouldExit: true,
+      reason: 'green_stop',
+    });
+    expect(decideGreenExit(1, 900_000, noMoveTrail, 10, 6)).toEqual({
+      shouldExit: true,
+      reason: 'green_trail',
+    });
+  });
+
+  it('disables the no-move cut when either setting is zero', () => {
+    expect(decideGreenExit(1, 599_999, { ...g, noMoveCutMs: 0, noMoveMinMfePct: 3 }, 0))
+      .toEqual({ shouldExit: false, reason: null });
+    expect(decideGreenExit(1, 599_999, { ...g, noMoveCutMs: 900_000, noMoveMinMfePct: 0 }, 0))
+      .toEqual({ shouldExit: false, reason: null });
+  });
+
   it('trails nine percent from peak price, not nine pnl points', () => {
     // Basis 1.0, peak 1.40, arm at +40%. Mark 1.30 is −7.14% from peak;
     // mark 1.274 is −9.0% from peak and exits.

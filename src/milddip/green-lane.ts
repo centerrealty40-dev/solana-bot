@@ -231,6 +231,9 @@ export type GreenExitGates = {
   /** Positive number; the stop fires at −this. */
   stopPct: number;
   maxHoldMs: number;
+  /** Exit stale green positions that never reached a meaningful MFE. */
+  noMoveCutMs?: number;
+  noMoveMinMfePct?: number;
   trailEnabled?: boolean;
   armPct?: number;
   trailPct?: number;
@@ -241,6 +244,7 @@ export type GreenExitReason =
   | 'green_stop'
   | 'green_max_hold'
   | 'green_trail'
+  | 'green_no_move'
   | null;
 
 /**
@@ -268,6 +272,14 @@ export function decideGreenExit(
     peakDrawdownPct + 1e-9 >= gates.trailPct
   ) {
     return { shouldExit: true, reason: 'green_trail' };
+  }
+  if (
+    (gates.noMoveCutMs ?? 0) > 0 &&
+    (gates.noMoveMinMfePct ?? 0) > 0 &&
+    heldMs >= gates.noMoveCutMs! &&
+    peakPnlPct < gates.noMoveMinMfePct!
+  ) {
+    return { shouldExit: true, reason: 'green_no_move' };
   }
   if (gates.takeProfitPct > 0 && pnlPct >= gates.takeProfitPct) {
     return { shouldExit: true, reason: 'green_tp' };
