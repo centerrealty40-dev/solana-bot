@@ -135,6 +135,29 @@ describe('MildDipPriceRing', () => {
     expect(metrics.tapeRet1mPct).toBeCloseTo((115 / 110 - 1) * 100, 6);
   });
 
+  it('keeps a mint alive on fresh GREEN Jupiter prints but evicts stale mints', () => {
+    const ring = new MildDipPriceRing({ ttlMs: 600_000 });
+    const now = 2_000_000;
+    const greenOnly = 'GreenOnlyFreshMintxxxxxxxxxxxxxxxxxxxxxxxxx1';
+    const stale = 'AllSourcesStaleMintxxxxxxxxxxxxxxxxxxxxxxxx1';
+    ring.note(greenOnly, 100, {
+      tsMs: now - 1_000,
+      source: 'green_jupiter',
+    });
+    ring.note(stale, 100, {
+      tsMs: now - 120_000,
+      source: 'stream',
+    });
+    ring.note(stale, 101, {
+      tsMs: now - 90_000,
+      source: 'dex',
+    });
+
+    expect(ring.evictIdle(now, 60_000)).toBe(1);
+    expect(ring.watchedMints(now)).toContain(greenOnly);
+    expect(ring.watchedMints(now)).not.toContain(stale);
+  });
+
   it('returns null tape returns when stream coverage is insufficient', () => {
     const ring = new MildDipPriceRing();
     const mint = 'TapeMinuteCoverageMintxxxxxxxxxxxxxxxxxxxxxx1';

@@ -632,13 +632,10 @@ export class MildDipPriceRing {
     let evicted = 0;
     for (const [mint, ring] of this.byMint) {
       if (protectedMints?.has(mint)) continue;
+      // Green quote prints keep a mint alive (they are its minute tape) even
+      // though price helpers ignore them.
       const latest = ring.samples.reduce<MildDipPriceSample | null>(
-        (best, sample) =>
-          sample.source === 'green_jupiter'
-            ? best
-            : !best || sample.tsMs > best.tsMs
-              ? sample
-              : best,
+        (best, sample) => (!best || sample.tsMs > best.tsMs ? sample : best),
         null,
       );
       if (!latest || latest.tsMs < cutoff) {
