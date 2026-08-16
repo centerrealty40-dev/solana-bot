@@ -1,3 +1,24 @@
+## [1.11.987] — 2026-08-16
+
+### Fixed
+
+- GREEN strict tape freshness теперь использует высокое разрешение только
+  для текущей минуты, а prior-5m якорь может приходить из любого источника
+  ринга, включая `dex`; отдельное требование покрытия 180 секунд в strict
+  режиме убрано.
+- GREEN Jupiter admission дополнен импульсом собственного stream-тейпа,
+  polling ограничен grace-периодом после последней регистрации кандидата,
+  а известные token decimals передаются в quote с fallback на `6`.
+
+### Rollback
+
+Отключить GREEN Jupiter-фид и строгий режим свежести через env, затем reload:
+
+```text
+MILD_DIP_GREEN_JUPITER_MINUTE_ENABLED=0
+MILD_DIP_GREEN_TAPE_STRICT_FRESHNESS_ENABLED=0
+```
+
 ## [1.11.986] — 2026-08-16
 
 ### Added / Changed

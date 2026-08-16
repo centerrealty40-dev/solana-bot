@@ -665,7 +665,9 @@ export async function evaluateFastPathCandidate(
   const lookbackMs = cfg.cooldownBounceLookbackMs;
   const streamCurrentDd = streamDrawdownPct(mint, lookbackMs, nowMs);
   const streamDump = streamDumpExtentPct(mint, lookbackMs, nowMs);
-  const streamRally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
+  const streamRally = mildDipPriceRing
+    .streamWindowMetrics(mint, lookbackMs, nowMs)
+    .rallyIntoPeakPct;
   const tapeOptions = greenTapeMinuteOptions(cfg);
   const tapeMinute = mildDipPriceRing.tapeMinuteMetrics(
     mint,
@@ -752,10 +754,13 @@ export async function evaluateFastPathCandidate(
    * on dip P&L.
    */
   if (cfg.green.enabled) {
-    if (
+    const dexImpulse =
       struct.metrics.priceChange5mPct != null &&
-      struct.metrics.priceChange5mPct >= cfg.green.minPc5mPct
-    ) {
+      struct.metrics.priceChange5mPct >= cfg.green.minPc5mPct;
+    const streamImpulse =
+      streamRally != null &&
+      streamRally >= cfg.green.jupiterMinuteStreamImpulsePct;
+    if (dexImpulse || streamImpulse) {
       requestGreenMinuteJupiterRefresh({
         mint,
         nowMs,
@@ -770,6 +775,7 @@ export async function evaluateFastPathCandidate(
         maxInFlight: cfg.green.jupiterMinuteMaxInFlight,
         probeUsd: cfg.green.jupiterMinuteProbeUsd,
         slippageBps: cfg.green.jupiterMinuteSlippageBps,
+        tokenDecimals: mildDipPriceRing.mintDecimals(mint) ?? undefined,
       });
     }
     const g = evaluateGreenLane(

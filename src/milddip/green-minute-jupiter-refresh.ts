@@ -11,6 +11,7 @@ import { mildDipPriceRing } from './price-ring.js';
 type QuoteFn = (args: {
   mint: string;
   snapshotPriceUsd: number;
+  tokenDecimals: number;
   probeUsd: number;
   slippageBps: number;
 }) => Promise<number | null>;
@@ -21,6 +22,7 @@ type ActiveCandidate = {
   snapshotPriceUsd: number;
   probeUsd: number;
   slippageBps: number;
+  tokenDecimals: number;
   quote?: QuoteFn;
 };
 
@@ -76,6 +78,7 @@ function prune(nowMs: number, ttlMs: number): void {
 async function defaultQuote(args: {
   mint: string;
   snapshotPriceUsd: number;
+  tokenDecimals: number;
   probeUsd: number;
   slippageBps: number;
 }): Promise<number | null> {
@@ -83,7 +86,7 @@ async function defaultQuote(args: {
   if (!(solUsd > 0)) return null;
   const verdict = await jupiterQuoteSellPriceUsd({
     mint: args.mint,
-    tokenDecimals: 6,
+    tokenDecimals: args.tokenDecimals,
     usdNotional: args.probeUsd,
     solUsd,
     snapshotPriceUsd: args.snapshotPriceUsd,
@@ -110,6 +113,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
   maxInFlight: number;
   probeUsd: number;
   slippageBps: number;
+  tokenDecimals?: number;
   quote?: QuoteFn;
 }): boolean {
   if (!args.enabled || !args.mint || args.mint.length < 32) return false;
@@ -127,6 +131,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
       snapshotPriceUsd: args.snapshotPriceUsd,
       probeUsd: args.probeUsd,
       slippageBps: args.slippageBps,
+      tokenDecimals: args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? 6,
       quote: args.quote,
     };
     active.set(args.mint, candidate);
@@ -136,6 +141,8 @@ export function requestGreenMinuteJupiterRefresh(args: {
   candidate.snapshotPriceUsd = args.snapshotPriceUsd;
   candidate.probeUsd = args.probeUsd;
   candidate.slippageBps = args.slippageBps;
+  candidate.tokenDecimals =
+    args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? candidate.tokenDecimals;
   candidate.quote = args.quote;
   stats.activeMints = active.size;
 
@@ -148,10 +155,12 @@ export function tickGreenMinuteJupiterRefresh(args: {
   minGapMs: number;
   ttlMs: number;
   maxInFlight: number;
+  graceMs: number;
 }): void {
   if (!args.enabled) return;
   prune(args.nowMs, args.ttlMs);
   for (const [mint, candidate] of active) {
+    if (args.nowMs - candidate.lastCandidateAtMs > Math.max(0, args.graceMs)) continue;
     startQuote(mint, candidate, args.minGapMs, args.maxInFlight, args.nowMs);
   }
 }
@@ -179,6 +188,7 @@ function startQuote(
   void quote({
     mint,
     snapshotPriceUsd: candidate.snapshotPriceUsd,
+    tokenDecimals: candidate.tokenDecimals,
     probeUsd: candidate.probeUsd,
     slippageBps: candidate.slippageBps,
   })

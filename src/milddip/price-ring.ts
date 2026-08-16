@@ -63,6 +63,7 @@ export type MildDipTapeMinuteOptions = {
 
 export class MildDipPriceRing {
   private readonly byMint = new Map<string, MintRing>();
+  private readonly decimalsByMint = new Map<string, number>();
   private readonly tapeMinuteFailureCounts = new Map<
     MildDipTapeMinuteFailureReason,
     number
@@ -77,6 +78,15 @@ export class MildDipPriceRing {
 
   tapeMinuteFailureStats(): Record<string, number> {
     return Object.fromEntries(this.tapeMinuteFailureCounts.entries());
+  }
+
+  noteMintDecimals(mint: string, decimals: number): void {
+    if (!mint || !Number.isInteger(decimals) || decimals < 0 || decimals > 24) return;
+    this.decimalsByMint.set(mint, decimals);
+  }
+
+  mintDecimals(mint: string): number | null {
+    return this.decimalsByMint.get(mint) ?? null;
   }
 
   note(
@@ -367,6 +377,11 @@ export class MildDipPriceRing {
     const samples = this.samplesInWindow(mint, windowMs, nowMs).filter(
       (sample) => sample.source === 'stream' || sample.source === 'green_jupiter',
     );
+    const allSamples = this.samplesInWindow(
+      mint,
+      Math.max(windowMs, options?.priorAnchorMaxAgeMs ?? 390_000),
+      nowMs,
+    );
     if (samples.length === 0) {
       if (options?.strictFreshness) {
         this.tapeMinuteFailureCounts.set(
@@ -425,6 +440,9 @@ export class MildDipPriceRing {
         ) {
           boundary = sample;
         }
+      }
+      for (const sample of allSamples) {
+        const ageMs = Math.max(0, nowMs - sample.tsMs);
         if (
           ageMs >= priorAnchorMinAgeMs &&
           ageMs <= priorAnchorMaxAgeMs &&
@@ -451,7 +469,7 @@ export class MildDipPriceRing {
       failureReason = 'tape_minute_boundary_missing';
     } else if (strict && !priorAnchor) {
       failureReason = 'tape_minute_prior_anchor_missing';
-    } else if (coverageMs < Math.max(0, minCoverageMs)) {
+    } else if (!strict && coverageMs < Math.max(0, minCoverageMs)) {
       failureReason = 'tape_minute_coverage_insufficient';
     }
     if (
@@ -459,7 +477,7 @@ export class MildDipPriceRing {
       (!strict && latestSampleAgeMs > Math.max(0, boundaryMs)) ||
       (boundaryAgeMs != null &&
         (!strict && boundaryAgeMs > Math.max(0, boundaryMs) + 60_000)) ||
-      coverageMs < Math.max(0, minCoverageMs) ||
+      (!strict && coverageMs < Math.max(0, minCoverageMs)) ||
       (strict && (recentSampleCount < minRecentSamples || !priorAnchor)) ||
       !(oldest.priceUsd > 0) ||
       !(boundary.priceUsd > 0) ||

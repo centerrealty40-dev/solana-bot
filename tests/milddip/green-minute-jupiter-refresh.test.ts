@@ -3,6 +3,7 @@ import {
   __resetGreenMinuteJupiterRefreshForTests,
   greenMinuteJupiterStats,
   requestGreenMinuteJupiterRefresh,
+  tickGreenMinuteJupiterRefresh,
 } from '../../src/milddip/green-minute-jupiter-refresh.js';
 import { mildDipPriceRing } from '../../src/milddip/price-ring.js';
 
@@ -113,5 +114,41 @@ describe('GREEN Jupiter minute refresh', () => {
     ).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(greenMinuteJupiterStats(2_000_000).quoteErrors).toBe(1);
+  });
+
+  it('uses known mint decimals and stops polling after candidate grace', async () => {
+    const mint = 'GreenJupiterGraceMintxxxxxxxxxxxxxxxxxxxxxxx1';
+    mildDipPriceRing.noteMintDecimals(mint, 9);
+    let seenDecimals: number | null = null;
+    const quote = async (args: { tokenDecimals: number }) => {
+      seenDecimals = args.tokenDecimals;
+      return 0.002;
+    };
+    expect(
+      requestGreenMinuteJupiterRefresh({
+        mint,
+        nowMs: 3_000_000,
+        snapshotPriceUsd: 0.001,
+        enabled: true,
+        minGapMs: 3_000,
+        ttlMs: 600_000,
+        maxMints: 2,
+        maxInFlight: 1,
+        probeUsd: 1,
+        slippageBps: 150,
+        quote,
+      }),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(seenDecimals).toBe(9);
+    tickGreenMinuteJupiterRefresh({
+      nowMs: 3_090_001,
+      enabled: true,
+      minGapMs: 3_000,
+      ttlMs: 600_000,
+      maxInFlight: 1,
+      graceMs: 90_000,
+    });
+    expect(greenMinuteJupiterStats(3_090_001).quoteAttempts).toBe(1);
   });
 });

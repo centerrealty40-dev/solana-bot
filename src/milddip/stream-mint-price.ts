@@ -36,6 +36,26 @@ function decimalsFor(balances: TokenBal[] | null | undefined, mint: string): num
   return mint === WSOL ? 9 : 6;
 }
 
+export function mintDecimalsFromTxMeta(
+  tx: TxJsonParsed | null | undefined,
+  mint: string,
+): number | null {
+  if (!tx || !mint) return null;
+  const post = tx.meta?.postTokenBalances ?? [];
+  const pre = tx.meta?.preTokenBalances ?? [];
+  for (const balances of [post, pre]) {
+    for (const b of balances) {
+      if (b?.mint === mint && typeof b.uiTokenAmount?.decimals === 'number') {
+        const decimals = b.uiTokenAmount.decimals;
+        if (Number.isInteger(decimals) && decimals >= 0 && decimals <= 24) {
+          return decimals;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function walletLamportsDelta(tx: TxJsonParsed, wallet: string): bigint | null {
   const keysRaw = tx.transaction?.message?.accountKeys;
   const keys: unknown[] = Array.isArray(keysRaw) ? keysRaw : [];

@@ -130,6 +130,38 @@ describe('MildDipPriceRing', () => {
     expect(metrics.failureReason).toBeNull();
   });
 
+  it('uses a DEX anchor for strict prior5m without requiring 180s tape coverage', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'StrictTapeDexAnchorMintxxxxxxxxxxxxxxxxxxxx1';
+    const now = 2_500_000;
+    ring.note(mint, 100, { tsMs: now - 300_000, source: 'dex' });
+    ring.note(mint, 110, { tsMs: now - 60_000, source: 'green_jupiter' });
+    ring.note(mint, 111, { tsMs: now - 50_000, source: 'stream' });
+    ring.note(mint, 112, { tsMs: now - 30_000, source: 'green_jupiter' });
+    ring.note(mint, 115, { tsMs: now - 10_000, source: 'stream' });
+    const metrics = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
+      strictFreshness: true,
+    });
+    expect(metrics.tapePrior5mPct).toBeCloseTo(10, 6);
+    expect(metrics.failureReason).toBeNull();
+  });
+
+  it('prefers the 4.5–6.5 minute anchor over an older arbitrary sample', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'StrictTapeAnchorWindowMintxxxxxxxxxxxxxxxxx1';
+    const now = 2_600_000;
+    ring.note(mint, 1, { tsMs: now - 630_000, source: 'dex' });
+    ring.note(mint, 100, { tsMs: now - 300_000, source: 'dex' });
+    ring.note(mint, 110, { tsMs: now - 60_000, source: 'stream' });
+    ring.note(mint, 111, { tsMs: now - 50_000, source: 'stream' });
+    ring.note(mint, 112, { tsMs: now - 30_000, source: 'stream' });
+    ring.note(mint, 115, { tsMs: now - 10_000, source: 'stream' });
+    const metrics = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
+      strictFreshness: true,
+    });
+    expect(metrics.tapePrior5mPct).toBeCloseTo(10, 6);
+  });
+
   it.each([
     ['boundary', 'tape_minute_boundary_missing'],
     ['latest', 'tape_minute_latest_stale'],

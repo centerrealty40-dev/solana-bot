@@ -3502,6 +3502,7 @@ export async function runMildDipLoop(
       ),
       ttlMs: cfg.green.jupiterMinuteTtlMs,
       maxInFlight: cfg.green.jupiterMinuteMaxInFlight,
+      graceMs: cfg.green.jupiterMinuteGraceMs,
     });
     const opens = openCount(state);
     tapeShadow?.tick(nowMs);
