@@ -463,6 +463,16 @@ export async function fetchDexScreenerPairDetails(
 /** DexScreener accepts up to 30 comma-separated addresses per request. */
 export const DEXSCREENER_BATCH_MAX = 30;
 
+export type DexScreenerBatchPrefetchResult = {
+  requests: number;
+  requestedMints: string[];
+  resolvedMints: string[];
+  missedMints: string[];
+  errorMints: string[];
+  pairCreatedAtMs: Map<string, number | null>;
+  detailsByMint: Map<string, DexScreenerPairDetails>;
+};
+
 /**
  * 1.11.820 — warm the shared cache for a list of mints with one HTTP call per
  * 30 addresses and one gate slot per call.
@@ -485,6 +495,23 @@ export async function prefetchDexScreenerPairDetailsMany(
     bypassGate?: boolean;
   },
 ): Promise<number> {
+  return (await prefetchDexScreenerPairDetailsManyWithMetadata(mints, opts)).requests;
+}
+
+/**
+ * Batch quote warm-up with pair-age metadata.  This is additive to the
+ * historical numeric-returning helper so existing callers remain unchanged.
+ */
+export async function prefetchDexScreenerPairDetailsManyWithMetadata(
+  mints: readonly string[],
+  opts?: {
+    fetchImpl?: typeof fetch;
+    cacheTtlMs?: number;
+    nowMs?: number;
+    allowedDexIds?: string[];
+    bypassGate?: boolean;
+  },
+): Promise<DexScreenerBatchPrefetchResult> {
   const nowMs = opts?.nowMs ?? Date.now();
   const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
   const wanted: string[] = [];
@@ -497,16 +524,32 @@ export async function prefetchDexScreenerPairDetailsMany(
     if (isDexQuoteCacheEnabled() && getCachedDexQuote(m, nowMs, ttlMs).hit) continue;
     wanted.push(m);
   }
-  if (wanted.length === 0) return 0;
+  if (wanted.length === 0) {
+    return {
+      requests: 0,
+      requestedMints: [],
+      resolvedMints: [],
+      missedMints: [],
+      errorMints: [],
+      pairCreatedAtMs: new Map(),
+      detailsByMint: new Map(),
+    };
+  }
 
   const doFetch = opts?.fetchImpl ?? fetch;
   let calls = 0;
+  const resolvedMints: string[] = [];
+  const missedMints: string[] = [];
+  const errorMints: string[] = [];
+  const pairCreatedAtMs = new Map<string, number | null>();
+  const detailsByMint = new Map<string, DexScreenerPairDetails>();
   for (let i = 0; i < wanted.length; i += DEXSCREENER_BATCH_MAX) {
     const chunk = wanted.slice(i, i + DEXSCREENER_BATCH_MAX);
     if (opts?.bypassGate !== true) await acquireDexScreenerSlot();
     calls += 1;
     const entries: Record<string, CacheEntry> = {};
     for (const m of chunk) entries[m] = { miss: true, fetchedAtMs: nowMs };
+    let requestError = false;
     try {
       const res = await doFetch(
         `https://api.dexscreener.com/latest/dex/tokens/${chunk.map(encodeURIComponent).join(',')}`,
@@ -518,17 +561,34 @@ export async function prefetchDexScreenerPairDetailsMany(
         for (const m of chunk) {
           const best = pickBestSolanaPair(pairs, m, undefined, opts?.allowedDexIds);
           entries[m] = parsePairToCacheEntry(best, m, nowMs);
+          const details = parsePairToDetails(best, m, nowMs);
+          if (details) detailsByMint.set(m, details);
+          const createdAt = parsePairCreatedAtMs(best, m, nowMs);
+          pairCreatedAtMs.set(m, createdAt);
+          if (!entries[m]!.miss) resolvedMints.push(m);
+          else missedMints.push(m);
         }
+      } else {
+        requestError = true;
       }
     } catch {
-      /* leave the chunk as misses; callers fall back to their own retry */
+      requestError = true;
     }
+    if (requestError) errorMints.push(...chunk);
     if (isDexQuoteCacheEnabled()) await putCachedDexQuotes(entries, nowMs);
     for (const m of chunk) {
       inProcess.set(m, { at: nowMs, val: cacheEntryToSnapshot(entries[m]!) });
     }
   }
-  return calls;
+  return {
+    requests: calls,
+    requestedMints: wanted,
+    resolvedMints,
+    missedMints,
+    errorMints,
+    pairCreatedAtMs,
+    detailsByMint,
+  };
 }
 
 /**

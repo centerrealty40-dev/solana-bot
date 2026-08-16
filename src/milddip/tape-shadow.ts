@@ -226,6 +226,11 @@ export type MildDipTapeShadowOptions = {
   idleEvictMs?: number;
   summaryIntervalMs?: number;
   pendingSampleGraceMs?: number;
+  pathMaxPoints?: number;
+  exitArmPct?: number;
+  exitTrailPct?: number;
+  exitStopPct?: number;
+  exitTimeoutMs?: number;
   structuralSnapshot?: (
     mint: string,
     tsMs: number,
@@ -244,6 +249,14 @@ type PendingSignal = {
   minPriceUsd: number;
   emitted: Set<number>;
   sampleUntilMs: number;
+  path: Array<[number, number]>;
+  peakPriceUsd: number;
+  peakTsMs: number;
+  troughPriceUsd: number;
+  armed: boolean;
+  lastSimTsMs: number | null;
+  simSampleCount: number;
+  exit?: { reason: 'trail' | 'stop' | 'timeout' | 'no_data'; priceUsd: number; tsMs: number };
 };
 
 type TapeLaneCounters = {
@@ -258,6 +271,8 @@ type TapeLaneCounters = {
   structuralPass: number;
   structuralNull: number;
   structuralRejectionReasons: Record<string, number>;
+  snapshotSignals: number;
+  snapshotMissing: number;
 };
 
 function rejectionReasonKeys(
@@ -319,6 +334,43 @@ function evaluateOwnFloors(
 const HORIZONS_MS = [15 * 60_000, 30 * 60_000, 60 * 60_000] as const;
 const HORIZON_SET = new Set<number>(HORIZONS_MS);
 
+export function decimateTapePath(
+  samples: readonly [number, number][],
+  maxPoints: number,
+): Array<[number, number]> {
+  const ordered = [...samples].sort((a, b) => a[0] - b[0]);
+  if (maxPoints <= 0 || ordered.length <= maxPoints) return ordered;
+  const bucketCount = Math.max(1, maxPoints);
+  const firstByBucket = new Map<number, [number, number]>();
+  const max = ordered.reduce((a, b) => (b[1] > a[1] ? b : a), ordered[0]!);
+  const min = ordered.reduce((a, b) => (b[1] < a[1] ? b : a), ordered[0]!);
+  const span = Math.max(1, ordered[ordered.length - 1]![0] - ordered[0]![0]);
+  for (const point of ordered) {
+    const bucket = Math.min(
+      bucketCount - 1,
+      Math.floor(((point[0] - ordered[0]![0]) * bucketCount) / (span + 1)),
+    );
+    if (!firstByBucket.has(bucket)) firstByBucket.set(bucket, point);
+  }
+  const bucketPoints = [...firstByBucket.values()];
+  const result = [...new Map(
+    [...bucketPoints, max, min].map((p) => [`${p[0]}:${p[1]}`, p]),
+  ).values()].sort((a, b) => a[0] - b[0]);
+  if (result.length <= maxPoints) return result;
+  const required = new Map([
+    [`${max[0]}:${max[1]}`, max],
+    [`${min[0]}:${min[1]}`, min],
+  ]);
+  const remaining = result.filter((p) => !required.has(`${p[0]}:${p[1]}`));
+  const slots = Math.max(0, maxPoints - required.size);
+  for (let i = 0; i < slots; i += 1) {
+    const index = Math.floor((i * remaining.length) / Math.max(1, slots));
+    const point = remaining[Math.min(index, remaining.length - 1)];
+    if (point) required.set(`${point[0]}:${point[1]}`, point);
+  }
+  return [...required.values()].sort((a, b) => a[0] - b[0]);
+}
+
 export type MildDipTapeShadowPersistedState = {
   updatedAtMs?: number;
   ring?: Record<string, MildDipPriceSample[]>;
@@ -332,6 +384,14 @@ export type MildDipTapeShadowPersistedState = {
     minPriceUsd?: number;
     emitted?: number[];
     sampleUntilMs?: number;
+    path?: Array<[number, number]>;
+    peakPriceUsd?: number;
+    peakTsMs?: number;
+    troughPriceUsd?: number;
+    armed?: boolean;
+    lastSimTsMs?: number | null;
+    simSampleCount?: number;
+    exit?: PendingSignal['exit'];
   }>;
   lastSignalAt?: Record<string, number>;
   signalTimes?: number[];
@@ -366,6 +426,8 @@ export class MildDipTapeShadow {
       structuralPass: 0,
       structuralNull: 0,
       structuralRejectionReasons: {},
+      snapshotSignals: 0,
+      snapshotMissing: 0,
     },
     dip: {
       conditions: 0,
@@ -379,6 +441,8 @@ export class MildDipTapeShadow {
       structuralPass: 0,
       structuralNull: 0,
       structuralRejectionReasons: {},
+      snapshotSignals: 0,
+      snapshotMissing: 0,
     },
   };
   private summaryWindowStartMs: number | null = null;
@@ -390,6 +454,12 @@ export class MildDipTapeShadow {
   private samplingShadowDiscovery = 0;
   private samplingLimitRejected = 0;
   private structuralFetchCapped = 0;
+  private structuralBatchRequests = 0;
+  private structuralMintsRequested = 0;
+  private structuralMintsResolved = 0;
+  private structuralMintsMissed = 0;
+  private structuralErrorBackoffs = 0;
+  private structuralBatchCapHits = 0;
   private pendingMintCache: {
     computedAtMs: number;
     nextExpiryMs: number;
@@ -423,6 +493,8 @@ export class MildDipTapeShadow {
     const floor = evaluateOwnFloors(lane, snapshot, this.opts.ownFloors?.[lane]);
     const counters = this.counters[lane];
     counters.structuralSignals += 1;
+    if (snapshot) counters.snapshotSignals += 1;
+    else counters.snapshotMissing += 1;
     if (floor.pass === true) counters.structuralPass += 1;
     else if (floor.pass == null) counters.structuralNull += 1;
     for (const reason of floor.fail) {
@@ -523,6 +595,14 @@ export class MildDipTapeShadow {
         minPriceUsd: signal.minPriceUsd,
         emitted: [...signal.emitted],
         sampleUntilMs: signal.sampleUntilMs,
+        path: signal.path,
+        peakPriceUsd: signal.peakPriceUsd,
+        peakTsMs: signal.peakTsMs,
+        troughPriceUsd: signal.troughPriceUsd,
+        armed: signal.armed,
+        lastSimTsMs: signal.lastSimTsMs,
+        simSampleCount: signal.simSampleCount,
+        exit: signal.exit,
       })),
       lastSignalAt: Object.fromEntries(this.lastSignalAt.get('dip')!),
       signalTimes: [...this.signalTimes.get('dip')!],
@@ -613,6 +693,17 @@ export class MildDipTapeShadow {
             HORIZONS_MS[HORIZONS_MS.length - 1] +
             (this.opts.pendingSampleGraceMs ?? 0);
       if (emitted.size >= HORIZONS_MS.length && sampleUntilMs <= nowMs) continue;
+      const path = Array.isArray(raw.path)
+        ? raw.path.filter(
+            (p): p is [number, number] =>
+              Array.isArray(p) &&
+              p.length === 2 &&
+              typeof p[0] === 'number' &&
+              typeof p[1] === 'number' &&
+              Number.isFinite(p[0]) &&
+              Number.isFinite(p[1]),
+          )
+        : [[0, raw.signalPriceUsd] as [number, number]];
       this.pending.push({
         id: raw.id,
         lane: raw.lane,
@@ -623,6 +714,19 @@ export class MildDipTapeShadow {
         minPriceUsd: raw.minPriceUsd,
         emitted,
         sampleUntilMs,
+        path,
+        peakPriceUsd:
+          typeof raw.peakPriceUsd === 'number' ? raw.peakPriceUsd : raw.signalPriceUsd,
+        peakTsMs:
+          typeof raw.peakTsMs === 'number' ? raw.peakTsMs : raw.signalTsMs,
+        troughPriceUsd:
+          typeof raw.troughPriceUsd === 'number' ? raw.troughPriceUsd : raw.signalPriceUsd,
+        armed: raw.armed === true,
+        lastSimTsMs:
+          typeof raw.lastSimTsMs === 'number' ? raw.lastSimTsMs : null,
+        simSampleCount:
+          typeof raw.simSampleCount === 'number' ? raw.simSampleCount : 0,
+        exit: raw.exit,
       });
       this.invalidatePendingMintCache();
       pending += 1;
@@ -651,6 +755,10 @@ export class MildDipTapeShadow {
       source,
     };
     this.opts.ring.note(input.mint, input.priceUsd, { tsMs: input.tsMs, source });
+    for (const signal of this.pending) {
+      if (signal.mint !== input.mint || input.tsMs <= signal.signalTsMs) continue;
+      this.simulateSample(signal, input.tsMs, input.priceUsd);
+    }
     this.tick(input.tsMs);
 
     const pairAgeHours =
@@ -730,6 +838,13 @@ export class MildDipTapeShadow {
           input.tsMs +
           HORIZONS_MS[HORIZONS_MS.length - 1] +
           (this.opts.pendingSampleGraceMs ?? 0),
+        path: [[0, input.priceUsd]],
+        peakPriceUsd: input.priceUsd,
+        peakTsMs: input.tsMs,
+        troughPriceUsd: input.priceUsd,
+        armed: false,
+        lastSimTsMs: null,
+        simSampleCount: 0,
       });
       this.invalidatePendingMintCache();
     }
@@ -740,9 +855,127 @@ export class MildDipTapeShadow {
     }
   }
 
+  private simulateSample(signal: PendingSignal, tsMs: number, priceUsd: number): void {
+    if (signal.exit || !Number.isFinite(priceUsd) || priceUsd <= 0) return;
+    if (tsMs > signal.signalTsMs + (this.opts.exitTimeoutMs ?? 3_600_000)) {
+      signal.exit = {
+        reason: signal.simSampleCount > 0 ? 'timeout' : 'no_data',
+        priceUsd:
+          signal.simSampleCount > 0
+            ? this.opts.ring.latestAtOrBefore(signal.mint, signal.lastSimTsMs!)?.priceUsd ??
+              signal.signalPriceUsd
+            : signal.signalPriceUsd,
+        tsMs: signal.lastSimTsMs ?? signal.signalTsMs,
+      };
+      return;
+    }
+    const offset = tsMs - signal.signalTsMs;
+    if (offset >= 0 && offset <= 60 * 60_000) signal.path.push([offset, priceUsd]);
+    signal.maxPriceUsd = Math.max(signal.maxPriceUsd, priceUsd);
+    signal.minPriceUsd = Math.min(signal.minPriceUsd, priceUsd);
+    signal.troughPriceUsd = Math.min(signal.troughPriceUsd, priceUsd);
+    signal.simSampleCount += 1;
+    signal.lastSimTsMs = tsMs;
+    if (priceUsd > signal.peakPriceUsd) {
+      signal.peakPriceUsd = priceUsd;
+      signal.peakTsMs = tsMs;
+    }
+    const entry = signal.signalPriceUsd;
+    if (priceUsd / entry - 1 >= (this.opts.exitArmPct ?? 10) / 100) signal.armed = true;
+    const stop = priceUsd <= entry * (1 + (this.opts.exitStopPct ?? -30) / 100);
+    const trail =
+      signal.armed &&
+      priceUsd <= signal.peakPriceUsd * (1 - (this.opts.exitTrailPct ?? 9) / 100);
+    if (stop || trail) {
+      signal.exit = {
+        reason: trail ? 'trail' : 'stop',
+        priceUsd,
+        tsMs,
+      };
+    }
+  }
+
+  private emitCompletion(signal: PendingSignal, nowMs: number): void {
+    if (!signal.exit) {
+      if (signal.simSampleCount === 0) {
+        signal.exit = { reason: 'no_data', priceUsd: signal.signalPriceUsd, tsMs: signal.signalTsMs };
+      } else if (nowMs >= signal.signalTsMs + (this.opts.exitTimeoutMs ?? 3_600_000)) {
+        signal.exit = {
+          reason: 'timeout',
+          priceUsd: signal.lastSimTsMs
+            ? this.opts.ring.latestAtOrBefore(signal.mint, signal.lastSimTsMs)?.priceUsd ??
+              signal.signalPriceUsd
+            : signal.signalPriceUsd,
+          tsMs: signal.lastSimTsMs ?? signal.signalTsMs,
+        };
+      }
+    }
+    if (!signal.exit) return;
+    const exit = signal.exit;
+    const lastTs = signal.lastSimTsMs ?? signal.signalTsMs;
+    const exitPrice = exit.priceUsd;
+    this.opts.append({
+      kind: 'mild_dip_tape_lane_path',
+      signalId: signal.id,
+      lane: signal.lane,
+      mint: signal.mint,
+      signalTsMs: signal.signalTsMs,
+      signalPriceUsd: signal.signalPriceUsd,
+      path:
+        (this.opts.pathMaxPoints ?? 60) === 0
+          ? []
+          : decimateTapePath(signal.path, this.opts.pathMaxPoints ?? 60),
+      pointsTotal: signal.path.length,
+      firstTsMs: signal.signalTsMs + (signal.path[0]?.[0] ?? 0),
+      lastTsMs: signal.signalTsMs + (signal.path[signal.path.length - 1]?.[0] ?? 0),
+      shadowOnly: true,
+    });
+    this.opts.append({
+      kind: 'mild_dip_tape_lane_exit',
+      signalId: signal.id,
+      lane: signal.lane,
+      mint: signal.mint,
+      signalTsMs: signal.signalTsMs,
+      signalPriceUsd: signal.signalPriceUsd,
+      reason: exit.reason,
+      exitPriceUsd: exitPrice,
+      exitTsMs: exit.tsMs,
+      holdMs: Math.max(0, exit.tsMs - signal.signalTsMs),
+      retPct: signal.signalPriceUsd > 0 ? (exitPrice / signal.signalPriceUsd - 1) * 100 : 0,
+      mfePct:
+        signal.signalPriceUsd > 0
+          ? (signal.peakPriceUsd / signal.signalPriceUsd - 1) * 100
+          : 0,
+      maePct:
+        signal.signalPriceUsd > 0
+          ? (signal.troughPriceUsd / signal.signalPriceUsd - 1) * 100
+          : 0,
+      peakTsMs: signal.peakTsMs,
+      peakToExitMs: Math.max(0, exit.tsMs - signal.peakTsMs),
+      sampleCount: signal.simSampleCount,
+      priceStale:
+        Math.max(0, nowMs - lastTs) > (this.opts.outcomeStaleMs ?? 300_000),
+      armed: signal.armed,
+      shadowOnly: true,
+    });
+  }
+
   tick(nowMs: number): void {
     if (this.summaryWindowStartMs == null) this.summaryWindowStartMs = nowMs;
     for (const signal of this.pending) {
+      if (
+        !signal.exit &&
+        nowMs >= signal.signalTsMs + (this.opts.exitTimeoutMs ?? 3_600_000) &&
+        signal.simSampleCount > 0
+      ) {
+        signal.exit = {
+          reason: 'timeout',
+          priceUsd:
+            this.opts.ring.latestAtOrBefore(signal.mint, signal.lastSimTsMs!)?.priceUsd ??
+            signal.signalPriceUsd,
+          tsMs: signal.lastSimTsMs!,
+        };
+      }
       const latest = this.opts.ring.latestAtOrBefore(signal.mint, nowMs);
       if (!latest || latest.tsMs < signal.signalTsMs) continue;
       for (const horizonMs of HORIZONS_MS) {
@@ -777,6 +1010,7 @@ export class MildDipTapeShadow {
         this.pending[i]!.emitted.size === HORIZONS_MS.length &&
         this.pending[i]!.sampleUntilMs <= nowMs
       ) {
+        this.emitCompletion(this.pending[i]!, nowMs);
         this.pending.splice(i, 1);
         this.invalidatePendingMintCache();
       }
@@ -802,6 +1036,8 @@ export class MildDipTapeShadow {
         this.samplingShadowDiscovery > 0 ||
         this.samplingLimitRejected > 0 ||
         this.structuralFetchCapped > 0 ||
+        this.structuralBatchRequests > 0 ||
+        this.structuralBatchCapHits > 0 ||
         Object.keys(this.counters.green.rejectionReasons).length > 0 ||
         Object.keys(this.counters.dip.rejectionReasons).length > 0;
       if (hasActivity) {
@@ -823,6 +1059,8 @@ export class MildDipTapeShadow {
                 ownFloorsPass: this.counters.green.structuralPass,
                 ownFloorsNull: this.counters.green.structuralNull,
                 rejectionReasons: { ...this.counters.green.structuralRejectionReasons },
+                withSnapshot: this.counters.green.snapshotSignals,
+                withoutSnapshot: this.counters.green.snapshotMissing,
               },
             },
             dip: {
@@ -838,6 +1076,8 @@ export class MildDipTapeShadow {
                 ownFloorsPass: this.counters.dip.structuralPass,
                 ownFloorsNull: this.counters.dip.structuralNull,
                 rejectionReasons: { ...this.counters.dip.structuralRejectionReasons },
+                withSnapshot: this.counters.dip.snapshotSignals,
+                withoutSnapshot: this.counters.dip.snapshotMissing,
               },
             },
           },
@@ -852,6 +1092,12 @@ export class MildDipTapeShadow {
             limitRejected: this.samplingLimitRejected,
           },
           structuralFetchCapped: this.structuralFetchCapped,
+          structuralBatchRequests: this.structuralBatchRequests,
+          structuralMintsRequested: this.structuralMintsRequested,
+          structuralMintsResolved: this.structuralMintsResolved,
+          structuralMintsMissed: this.structuralMintsMissed,
+          structuralErrorBackoffs: this.structuralErrorBackoffs,
+          structuralBatchCapHits: this.structuralBatchCapHits,
           measureAll: this.opts.greenMeasureAll === true,
           shadowOnly: true,
         });
@@ -868,6 +1114,8 @@ export class MildDipTapeShadow {
         structuralPass: 0,
         structuralNull: 0,
         structuralRejectionReasons: {},
+        snapshotSignals: 0,
+        snapshotMissing: 0,
       };
       this.counters.dip = {
         conditions: 0,
@@ -881,6 +1129,8 @@ export class MildDipTapeShadow {
         structuralPass: 0,
         structuralNull: 0,
         structuralRejectionReasons: {},
+        snapshotSignals: 0,
+        snapshotMissing: 0,
       };
       this.pairAgeBackfillRequested = 0;
       this.pairAgeBackfillResolved = 0;
@@ -889,6 +1139,12 @@ export class MildDipTapeShadow {
       this.samplingShadowDiscovery = 0;
       this.samplingLimitRejected = 0;
       this.structuralFetchCapped = 0;
+      this.structuralBatchRequests = 0;
+      this.structuralMintsRequested = 0;
+      this.structuralMintsResolved = 0;
+      this.structuralMintsMissed = 0;
+      this.structuralErrorBackoffs = 0;
+      this.structuralBatchCapHits = 0;
       this.summaryWindowStartMs = nowMs;
     }
   }
@@ -908,6 +1164,30 @@ export class MildDipTapeShadow {
 
   noteStructuralFetchCapped(count = 1): void {
     this.structuralFetchCapped += Math.max(0, Math.floor(count));
+  }
+
+  noteStructuralBatchResult(result: {
+    requests: number;
+    requestedMints: readonly string[];
+    resolvedMints: readonly string[];
+    missedMints: readonly string[];
+    errorMints: readonly string[];
+  }): void {
+    this.structuralBatchRequests += result.requests;
+    this.structuralMintsRequested += result.requestedMints.length;
+    this.structuralMintsResolved += result.resolvedMints.length;
+    this.structuralMintsMissed += result.missedMints.length;
+    this.structuralErrorBackoffs += result.errorMints.length;
+  }
+
+  noteStructuralBatchError(mints: number): void {
+    this.structuralBatchRequests += 1;
+    this.structuralMintsRequested += Math.max(0, mints);
+    this.structuralErrorBackoffs += Math.max(0, mints);
+  }
+
+  noteStructuralBatchCapHit(count = 1): void {
+    this.structuralBatchCapHits += Math.max(0, count);
   }
 
   hasPendingSignal(mint: string, nowMs: number, graceMs = 0): boolean {

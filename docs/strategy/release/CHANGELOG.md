@@ -1,3 +1,21 @@
+## [1.11.971] — 2026-08-16
+
+### Добавлено
+
+- Journal-only tape measurement now batches DexScreener structural snapshots,
+  records ordered price paths, and emits restart-safe simulated trail outcomes.
+- Pending tape sampling is raised to 400 mints for `mild-dip-bot`; the schema
+  default remains 64 for other runtimes.
+
+### Откат
+
+1. Удалить `MILD_DIP_TAPE_STRUCTURAL_BATCH_MS` либо вернуть его к безопасному
+   интервалу; установить `MILD_DIP_TAPE_STRUCTURAL_BATCH_MAX_PER_HOUR=0`,
+   если нужен unlimited batch budget (signal-time lookup остаётся cache-only).
+2. Установить `MILD_DIP_TAPE_PATH_MAX_POINTS=0`, чтобы отключить path capture.
+3. Вернуть `MILD_DIP_TAPE_EXIT_*` к значениям по умолчанию либо удалить их.
+4. Вернуть `MILD_DIP_TAPE_PENDING_SAMPLE_MAX_MINTS=64` для старого sampling cap.
+
 ## [1.11.970] — 2026-08-16
 
 ### Добавлено / Изменено

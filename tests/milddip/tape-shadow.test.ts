@@ -6,6 +6,7 @@ import {
   evaluateMildDipTape,
   tapeShadowDiscoverySampleDecision,
   tapeFeatures,
+  decimateTapePath,
 } from '../../src/milddip/tape-shadow.js';
 
 const mint = '7pQYyWKPtxMCzdWDPZKJ7xTnCzFB25SPxp8cM4xJpump';
@@ -39,6 +40,43 @@ function dipRing(nowMs: number, rangePos = 0.1): MildDipPriceRing {
 }
 
 describe('tape shadow arithmetic and lane boundaries', () => {
+  it('decimates ordered paths while preserving extrema', () => {
+    const path = decimateTapePath(
+      Array.from({ length: 100 }, (_, i) => [i, i === 73 ? 500 : i === 21 ? -10 : i] as [number, number]),
+      10,
+    );
+    expect(path.length).toBeLessThanOrEqual(10);
+    expect(path).toContainEqual([73, 500]);
+    expect(path).toContainEqual([21, -10]);
+    expect(path.map((p) => p[0])).toEqual([...path].map((p) => p[0]).sort((a, b) => a - b));
+  });
+
+  it('emits restart-safe path and simulated exit events', () => {
+    const events: Record<string, unknown>[] = [];
+    const ring = greenRing(100_000_000);
+    const shadow = new MildDipTapeShadow({
+      ring,
+      gates,
+      greenMeasureAll: true,
+      minIntervalMs: 0,
+      maxSignalsPerHour: 60,
+      pathMaxPoints: 5,
+      exitArmPct: 10,
+      exitTrailPct: 9,
+      exitStopPct: -30,
+      exitTimeoutMs: 3_600_000,
+      pendingSampleGraceMs: 0,
+      append: (event) => events.push(event),
+    });
+    shadow.onPriceSample({ mint, priceUsd: 100, tsMs: 100_000_000, pairAgeHours: null });
+    shadow.onPriceSample({ mint, priceUsd: 112, tsMs: 100_000_100, pairAgeHours: null });
+    shadow.onPriceSample({ mint, priceUsd: 101, tsMs: 100_000_200, pairAgeHours: null });
+    expect((shadow as unknown as { pending: unknown[] }).pending.length).toBeGreaterThan(0);
+    shadow.tick(103_600_000);
+    expect(events.some((event) => event.kind === 'mild_dip_tape_lane_path')).toBe(true);
+    const exit = events.find((event) => event.kind === 'mild_dip_tape_lane_exit');
+    expect(exit).toMatchObject({ reason: 'trail', shadowOnly: true });
+  });
   it('calculates the 5m/60m tape window and fails closed without history', () => {
     const now = 10_000_000;
     const ring = greenRing(now);
