@@ -1,3 +1,17 @@
+## [1.11.988] — 2026-08-16
+
+### Fixed
+
+- GREEN Jupiter-сэмплы изолированы от общих ценовых helper-ов price ring:
+  dip-гейты не видят их в trough/peak/rally/bounce расчётах, тогда как
+  `tapeMinuteMetrics` продолжает использовать их для текущей минутки.
+- Восстановлен прежний `streamRally` для dip-логики; stream-only rally
+  применяется только для admission GREEN Jupiter-фида.
+
+### Rollback
+
+Откатить изменение через возврат ветки к предыдущей версии и reload.
+
 ## [1.11.987] — 2026-08-16
 
 ### Fixed

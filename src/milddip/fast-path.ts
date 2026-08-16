@@ -665,7 +665,8 @@ export async function evaluateFastPathCandidate(
   const lookbackMs = cfg.cooldownBounceLookbackMs;
   const streamCurrentDd = streamDrawdownPct(mint, lookbackMs, nowMs);
   const streamDump = streamDumpExtentPct(mint, lookbackMs, nowMs);
-  const streamRally = mildDipPriceRing
+  const streamRally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
+  const greenStreamRally = mildDipPriceRing
     .streamWindowMetrics(mint, lookbackMs, nowMs)
     .rallyIntoPeakPct;
   const tapeOptions = greenTapeMinuteOptions(cfg);
@@ -758,8 +759,8 @@ export async function evaluateFastPathCandidate(
       struct.metrics.priceChange5mPct != null &&
       struct.metrics.priceChange5mPct >= cfg.green.minPc5mPct;
     const streamImpulse =
-      streamRally != null &&
-      streamRally >= cfg.green.jupiterMinuteStreamImpulsePct;
+      greenStreamRally != null &&
+      greenStreamRally >= cfg.green.jupiterMinuteStreamImpulsePct;
     if (dexImpulse || streamImpulse) {
       requestGreenMinuteJupiterRefresh({
         mint,

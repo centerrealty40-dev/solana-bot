@@ -170,7 +170,11 @@ export class MildDipPriceRing {
     const boundary = nowMs - Math.max(0, lookbackMs);
     let best: MildDipPriceSample | null = null;
     for (const sample of ring.samples) {
-      if (sample.tsMs <= boundary && (!best || sample.tsMs > best.tsMs)) {
+      if (
+        sample.source !== 'green_jupiter' &&
+        sample.tsMs <= boundary &&
+        (!best || sample.tsMs > best.tsMs)
+      ) {
         best = sample;
       }
     }
@@ -374,13 +378,14 @@ export class MildDipPriceRing {
     minCoverageMs = 180_000,
     options?: MildDipTapeMinuteOptions,
   ): MildDipTapeMinuteMetrics {
-    const samples = this.samplesInWindow(mint, windowMs, nowMs).filter(
+    const samples = this.samplesInWindow(mint, windowMs, nowMs, true).filter(
       (sample) => sample.source === 'stream' || sample.source === 'green_jupiter',
     );
     const allSamples = this.samplesInWindow(
       mint,
       Math.max(windowMs, options?.priorAnchorMaxAgeMs ?? 390_000),
       nowMs,
+      true,
     );
     if (samples.length === 0) {
       if (options?.strictFreshness) {
@@ -592,7 +597,12 @@ export class MildDipPriceRing {
     this.pruneMint(mint, endMs);
     const ring = this.byMint.get(mint);
     const samples =
-      ring?.samples.filter((sample) => sample.tsMs >= startMs && sample.tsMs <= endMs) ?? [];
+      ring?.samples.filter(
+        (sample) =>
+          sample.source !== 'green_jupiter' &&
+          sample.tsMs >= startMs &&
+          sample.tsMs <= endMs,
+      ) ?? [];
     return this.statsForSamples(samples);
   }
 
@@ -602,7 +612,13 @@ export class MildDipPriceRing {
     if (!ring) return null;
     let latest: MildDipPriceSample | null = null;
     for (const sample of ring.samples) {
-      if (sample.tsMs <= nowMs && (!latest || sample.tsMs > latest.tsMs)) latest = sample;
+      if (
+        sample.source !== 'green_jupiter' &&
+        sample.tsMs <= nowMs &&
+        (!latest || sample.tsMs > latest.tsMs)
+      ) {
+        latest = sample;
+      }
     }
     return latest;
   }
@@ -617,7 +633,12 @@ export class MildDipPriceRing {
     for (const [mint, ring] of this.byMint) {
       if (protectedMints?.has(mint)) continue;
       const latest = ring.samples.reduce<MildDipPriceSample | null>(
-        (best, sample) => (!best || sample.tsMs > best.tsMs ? sample : best),
+        (best, sample) =>
+          sample.source === 'green_jupiter'
+            ? best
+            : !best || sample.tsMs > best.tsMs
+              ? sample
+              : best,
         null,
       );
       if (!latest || latest.tsMs < cutoff) {
@@ -637,12 +658,15 @@ export class MildDipPriceRing {
     mint: string,
     windowMs: number,
     nowMs: number,
+    includeGreenJupiter = false,
   ): MildDipPriceSample[] {
     this.pruneMint(mint, nowMs);
     const ring = this.byMint.get(mint);
     if (!ring) return [];
     const cut = nowMs - Math.max(0, windowMs);
-    return ring.samples.filter((s) => s.tsMs >= cut);
+    return ring.samples.filter(
+      (s) => s.tsMs >= cut && (includeGreenJupiter || s.source !== 'green_jupiter'),
+    );
   }
 
   private statsForSamples(samples: MildDipPriceSample[]): MildDipPriceWindowStats {

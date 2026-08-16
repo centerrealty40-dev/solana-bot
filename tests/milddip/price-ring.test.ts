@@ -100,6 +100,41 @@ describe('MildDipPriceRing', () => {
     expect(ring.lastPriceBySource(mint, 'green_jupiter', 2_000)?.priceUsd).toBe(120);
   });
 
+  it('isolates GREEN Jupiter from generic dip helpers while tape metrics include it', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'GreenJupiterDipIsolationMintxxxxxxxxxxxxxx1';
+    const now = 1_000_000;
+    ring.note(mint, 100, { tsMs: now - 120_000, source: 'stream' });
+    ring.note(mint, 120, { tsMs: now - 90_000, source: 'stream' });
+    ring.note(mint, 110, { tsMs: now - 60_000, source: 'stream' });
+    ring.note(mint, 115, { tsMs: now - 30_000, source: 'stream' });
+    ring.note(mint, 118, { tsMs: now, source: 'stream' });
+    const before = {
+      max: ring.maxPrice(mint, 180_000, now)?.priceUsd,
+      trough: ring.troughAfterPeak(mint, 180_000, now),
+      rally: ring.rallyIntoPeakPct(mint, 180_000, now),
+      bounce: ring.bounceFromPostPeakTroughPct(mint, 118, 180_000, now),
+    };
+    ring.note(mint, 10_000, { tsMs: now - 45_000, source: 'green_jupiter' });
+    expect(ring.maxPrice(mint, 180_000, now)?.priceUsd).toBe(before.max);
+    expect(ring.troughAfterPeak(mint, 180_000, now)).toEqual(before.trough);
+    expect(ring.rallyIntoPeakPct(mint, 180_000, now)).toBe(before.rally);
+    expect(ring.bounceFromPostPeakTroughPct(mint, 118, 180_000, now)).toBe(
+      before.bounce,
+    );
+
+    const tape = new MildDipPriceRing();
+    tape.note(mint, 100, { tsMs: now - 300_000, source: 'dex' });
+    tape.note(mint, 110, { tsMs: now - 60_000, source: 'stream' });
+    tape.note(mint, 111, { tsMs: now - 50_000, source: 'green_jupiter' });
+    tape.note(mint, 112, { tsMs: now - 30_000, source: 'stream' });
+    tape.note(mint, 115, { tsMs: now - 10_000, source: 'green_jupiter' });
+    const metrics = tape.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
+      strictFreshness: true,
+    });
+    expect(metrics.tapeRet1mPct).toBeCloseTo((115 / 110 - 1) * 100, 6);
+  });
+
   it('returns null tape returns when stream coverage is insufficient', () => {
     const ring = new MildDipPriceRing();
     const mint = 'TapeMinuteCoverageMintxxxxxxxxxxxxxxxxxxxxxx1';
