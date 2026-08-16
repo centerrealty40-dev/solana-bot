@@ -125,23 +125,36 @@ describe('evaluateRebuyBelowExit', () => {
       lastExitPriceUsd: 0.00009,
       lastExitAtMs: now - 60_000,
       nowMs: now,
-      minBelowExitPct: 20,
+      minBelowExitPct: 5,
       maxAgeMs: 900_000,
     });
     expect(v.pass).toBe(false);
     expect(v.reasons[0]).toContain('rebuy_below_exit');
   });
 
-  it('allows rebuy when mark is ≥20% below exit', () => {
+  it('allows rebuy when mark is 6% below exit with a 5% floor', () => {
     const v = evaluateRebuyBelowExit({
-      freshPriceUsd: 0.000072,
+      freshPriceUsd: 0.0000846,
       lastExitPriceUsd: 0.00009,
       lastExitAtMs: now - 60_000,
       nowMs: now,
-      minBelowExitPct: 20,
+      minBelowExitPct: 5,
       maxAgeMs: 900_000,
     });
     expect(v.pass).toBe(true);
+  });
+
+  it('blocks rebuy at a price above the last exit within the age window', () => {
+    const v = evaluateRebuyBelowExit({
+      freshPriceUsd: 0.000091,
+      lastExitPriceUsd: 0.00009,
+      lastExitAtMs: now - 60_000,
+      nowMs: now,
+      minBelowExitPct: 5,
+      maxAgeMs: 900_000,
+    });
+    expect(v.pass).toBe(false);
+    expect(v.reasons.join(' ')).toContain('rebuy_below_exit');
   });
 
   it('ignores stale exits past maxAge', () => {

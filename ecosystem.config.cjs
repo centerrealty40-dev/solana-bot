@@ -3999,7 +3999,7 @@ const PM2_APPS = [
          * kept falling, and the ordering holds in all three windows. The gate was
          * steering us into the worse half by construction.
          */
-        MILD_DIP_REBUY_BELOW_EXIT_PCT: '0',
+        MILD_DIP_REBUY_BELOW_EXIT_PCT: '5',
         MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
         /** 1.11.797 — after loss exit: skip rebuy when Dex liq fell vs exit. */
         MILD_DIP_REBUY_LIQ_DROP: '1',

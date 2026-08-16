@@ -116,10 +116,10 @@ describe('1.11.907/908 turnover ceiling and the re-entry price rule', () => {
     expect(fast).toContain('maxTurn > 0 && turn > maxTurn');
   });
 
-  it('no longer demands a cheaper re-entry than our last exit', () => {
-    // Priced against our own first entry on the coin, re-entering above it is
-    // four times better per position than re-entering below it, in all windows.
-    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
+  it('requires a materially cheaper re-entry than our last exit', () => {
+    // Avoid selling and rebuying the same reclaim candle; the production floor
+    // requires the next entry to be at least 5% below our exit fill.
+    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '5'");
   });
 });
 
