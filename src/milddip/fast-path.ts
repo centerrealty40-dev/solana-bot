@@ -110,6 +110,8 @@ const lastHotDexProbeMs = new Map<string, number>();
 const lastLeaderSkipJournalMs = new Map<string, number>();
 /** Rate-limit failed GREEN verdict journals to one event per mint/minute. */
 const lastGreenSkipJournalMs = new Map<string, number>();
+/** Rate-limit enriched leader-seen skip journals to one event per mint/minute. */
+const lastLeaderSeenSkipJournalMs = new Map<string, number>();
 let hotDexProbeWindowStartMs = 0;
 let hotDexProbeCount = 0;
 
@@ -120,6 +122,39 @@ export function shouldJournalGreenVerdict(mint: string, nowMs: number): boolean 
   return true;
 }
 
+export type LeaderSeenSkipJournalSite = 'entry' | 'fastpath_first_touch' | 'fastpath';
+
+export function shouldJournalLeaderSeenSkip(
+  mint: string,
+  site: LeaderSeenSkipJournalSite,
+  nowMs: number,
+): boolean {
+  const key = `${mint}:${site}`;
+  const previous = lastLeaderSeenSkipJournalMs.get(key);
+  if (previous != null && nowMs - previous < 60_000) return false;
+  lastLeaderSeenSkipJournalMs.set(key, nowMs);
+  return true;
+}
+
+export function streamObservabilitySnapshot(
+  mint: string,
+  lookbackMs: number,
+  nowMs: number,
+  pairAgeHours?: number | null,
+): Record<string, unknown> {
+  const stream = mildDipPriceRing.streamWindowMetrics(mint, lookbackMs, nowMs);
+  return {
+    streamPriceUsd: stream.freshPriceUsd,
+    streamBounceFromTroughPct: stream.bounceFromTroughPct,
+    streamRallyIntoPeakPct: stream.rallyIntoPeakPct,
+    streamDumpExtentFromPeakPct: stream.dumpExtentFromPeakPct,
+    streamSampleCount: stream.sampleCount,
+    streamOldestSampleAgeMs: stream.oldestSampleAgeMs,
+    pairAgeHours:
+      pairAgeHours ?? mildDipPairAgeRegistry.pairAgeHours(mint, nowMs),
+  };
+}
+
 /** Test helper. */
 export function resetFastPathStateForTests(): void {
   structuralCache.clear();
@@ -127,6 +162,7 @@ export function resetFastPathStateForTests(): void {
   lastHotDexProbeMs.clear();
   lastLeaderSkipJournalMs.clear();
   lastGreenSkipJournalMs.clear();
+  lastLeaderSeenSkipJournalMs.clear();
   hotDexProbeWindowStartMs = 0;
   hotDexProbeCount = 0;
 }
@@ -700,6 +736,12 @@ export async function evaluateFastPathCandidate(
         kind: 'mild_dip_green_lane_skip',
         mint,
         trigger,
+        ...streamObservabilitySnapshot(
+          mint,
+          cfg.cooldownBounceLookbackMs,
+          nowMs,
+          struct.metrics.pairAgeHours,
+        ),
         reasons: g.reasons,
         pc5m: struct.metrics.priceChange5mPct,
         pc1h: struct.metrics.priceChange1hPct,

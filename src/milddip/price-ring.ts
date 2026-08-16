@@ -26,6 +26,15 @@ export type MildDipPriceWindowStats = {
   maxPriceUsd: number | null;
 };
 
+export type MildDipStreamWindowMetrics = {
+  freshPriceUsd: number | null;
+  bounceFromTroughPct: number | null;
+  rallyIntoPeakPct: number | null;
+  dumpExtentFromPeakPct: number | null;
+  sampleCount: number;
+  oldestSampleAgeMs: number | null;
+};
+
 export class MildDipPriceRing {
   private readonly byMint = new Map<string, MintRing>();
   private readonly maxSamplesPerMint: number;
@@ -301,6 +310,71 @@ export class MildDipPriceRing {
 
   sampleCount(mint: string, windowMs: number, nowMs = Date.now()): number {
     return this.samplesInWindow(mint, windowMs, nowMs).length;
+  }
+
+  streamWindowMetrics(
+    mint: string,
+    windowMs: number,
+    nowMs = Date.now(),
+  ): MildDipStreamWindowMetrics {
+    const samples = this.samplesInWindow(mint, windowMs, nowMs).filter(
+      (sample) => sample.source === 'stream',
+    );
+    if (samples.length === 0) {
+      return {
+        freshPriceUsd: null,
+        bounceFromTroughPct: null,
+        rallyIntoPeakPct: null,
+        dumpExtentFromPeakPct: null,
+        sampleCount: 0,
+        oldestSampleAgeMs: null,
+      };
+    }
+
+    let fresh = samples[0]!;
+    let trough = samples[0]!;
+    let peak = samples[0]!;
+    for (const sample of samples) {
+      if (sample.tsMs > fresh.tsMs) fresh = sample;
+      if (sample.priceUsd < trough.priceUsd) trough = sample;
+      if (
+        sample.priceUsd > peak.priceUsd ||
+        (sample.priceUsd === peak.priceUsd && sample.tsMs > peak.tsMs)
+      ) {
+        peak = sample;
+      }
+    }
+
+    let postPeakTrough = peak;
+    let prePeakBase: MildDipPriceSample | null = null;
+    for (const sample of samples) {
+      if (sample.tsMs >= peak.tsMs) {
+        if (sample.priceUsd < postPeakTrough.priceUsd) postPeakTrough = sample;
+      } else if (!prePeakBase || sample.priceUsd < prePeakBase.priceUsd) {
+        prePeakBase = sample;
+      }
+    }
+
+    const freshPriceUsd = fresh.priceUsd;
+    return {
+      freshPriceUsd,
+      bounceFromTroughPct:
+        trough.priceUsd > 0 ? (freshPriceUsd / trough.priceUsd - 1) * 100 : null,
+      rallyIntoPeakPct:
+        prePeakBase && prePeakBase.priceUsd > 0
+          ? (peak.priceUsd / prePeakBase.priceUsd - 1) * 100
+          : 0,
+      dumpExtentFromPeakPct:
+        peak.priceUsd > 0 ? (postPeakTrough.priceUsd / peak.priceUsd - 1) * 100 : null,
+      sampleCount: samples.length,
+      oldestSampleAgeMs: Math.max(
+        0,
+        nowMs -
+          samples.reduce(
+            (oldest, sample) => (sample.tsMs < oldest.tsMs ? sample : oldest),
+          ).tsMs,
+      ),
+    };
   }
 
   windowStats(

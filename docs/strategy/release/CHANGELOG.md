@@ -1,3 +1,16 @@
+## [1.11.979] — 2026-08-16
+
+### Added / Changed
+
+- Added throttled stream-price observability to leader-seen skips and GREEN lane
+  skips, including stream price, trough bounce, rally, dump extent, sample age,
+  sample count, and cached pair age. Trading behavior and gates are unchanged.
+
+### Rollback
+
+- Revert the leader-seen and GREEN skip journal observability fields; no runtime
+  threshold rollback is required.
+
 ## [1.11.978] — 2026-08-16
 
 ### Added / Changed

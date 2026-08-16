@@ -27,6 +27,8 @@ import {
   getStructuralCache,
   structuralFromDexDetails,
   streamDrawdownPct,
+  shouldJournalLeaderSeenSkip,
+  streamObservabilitySnapshot,
   loadStructural,
   leaderCoBuyAlignOk,
 } from './fast-path.js';
@@ -902,13 +904,16 @@ async function tryFastPathForMint(
         mint,
       );
     if (!hit) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_not_leader_seen_skip',
-        mint,
-        trigger,
-        firstTouch: true,
-        maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
-      });
+      if (shouldJournalLeaderSeenSkip(mint, 'fastpath_first_touch', nowMs)) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_not_leader_seen_skip',
+          mint,
+          trigger,
+          firstTouch: true,
+          maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+          ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
+        });
+      }
       shadowOnly =
         cfg.leaderGateShadowDefer &&
         takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
@@ -929,12 +934,15 @@ async function tryFastPathForMint(
         mint,
       );
     if (!hit) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_not_leader_seen_skip',
-        mint,
-        trigger,
-        maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
-      });
+      if (shouldJournalLeaderSeenSkip(mint, 'fastpath', nowMs)) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_not_leader_seen_skip',
+          mint,
+          trigger,
+          maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+          ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
+        });
+      }
       shadowOnly =
         cfg.leaderGateShadowDefer &&
         takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
