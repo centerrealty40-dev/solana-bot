@@ -422,6 +422,7 @@ export function evaluateMildDipEntryRisk(args: {
   liquidityUsd: number | null | undefined;
   minPairAgeHours: number;
   maxVol5mToLiq: number;
+  minLiquidityUsd?: number;
 }): MildDipGateVerdict {
   const reasons: string[] = [];
   if (
@@ -448,6 +449,15 @@ export function evaluateMildDipEntryRisk(args: {
         `vol_liq_churn_too_high=${ratio.toFixed(2)}>=${args.maxVol5mToLiq}`,
       );
     }
+  }
+  if (
+    (args.minLiquidityUsd ?? 0) > 0 &&
+    args.liquidityUsd != null &&
+    Number.isFinite(args.liquidityUsd) &&
+    args.liquidityUsd > 0 &&
+    args.liquidityUsd < (args.minLiquidityUsd ?? 0)
+  ) {
+    reasons.push(`liq_too_thin=${args.liquidityUsd.toFixed(2)}<${args.minLiquidityUsd}`);
   }
   return { pass: reasons.length === 0, reasons };
 }

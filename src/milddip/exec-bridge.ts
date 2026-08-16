@@ -86,6 +86,8 @@ export function mildDipToCopyTraderConfig(cfg: MildDipConfig): CopyTraderConfig 
     minLeaderPriorSessions: 0,
     minLeaderPriorAvgPct: 0,
     entryMinPairAgeHours: 0,
+    // 1.11.970 — neutral bridge value; mild-dip applies the risk gate before execution.
+    ...{ entryMinLiquidityUsd: 0 },
     entryMaxPairAgeHours: 0,
     entryMinBuySellRatio5m: 0,
     entryMaxChase5mPct: 0,

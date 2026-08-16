@@ -581,6 +581,7 @@ export async function attemptMildDipEntry(args: {
     liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
     minPairAgeHours: cfg.entryMinPairAgeHours,
     maxVol5mToLiq: cfg.entryMaxVol5mToLiq,
+    minLiquidityUsd: cfg.entryMinLiquidityUsd,
   });
   if (!entryRisk.pass) {
     appendMildDipJournal(cfg.journalPath, {

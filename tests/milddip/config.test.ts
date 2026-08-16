@@ -90,11 +90,18 @@ describe('mild-dip config exit schema', () => {
         ...baseEnv,
         MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1.25',
         MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2.5',
+        MILD_DIP_ENTRY_MIN_LIQ_USD: '4500',
       },
       () => loadMildDipConfig(),
     );
     expect(cfg.entryMinPairAgeHours).toBe(1.25);
     expect(cfg.entryMaxVol5mToLiq).toBe(2.5);
+    expect(cfg.entryMinLiquidityUsd).toBe(4500);
+  });
+
+  it('defaults the entry minimum liquidity threshold to $4000', () => {
+    const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(cfg.entryMinLiquidityUsd).toBe(4000);
   });
 
   it('preserves non-positive entry thresholds through Zod for rollback', () => {
@@ -152,11 +159,11 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.exit.liqDrainSkipArmedRunner).toBe(true);
     expect(cfg.exit.liqAbsFloorUsd).toBe(0);
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
-    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_RATIO: '0.7'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_RATIO: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_MIN_AGE_MIN: '10'");
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_CONFIRM_TICKS: '2'");
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_SKIP_ARMED_RUNNER: '1'");
-    expect(eco).toContain("MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '4000'");
   });
 
   it('loads quarantine refresh and green blind-window settings', () => {

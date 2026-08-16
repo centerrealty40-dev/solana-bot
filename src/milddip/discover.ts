@@ -544,6 +544,7 @@ export async function enrichAndFilterCandidates(
         liquidityUsd: metrics.liquidityUsd,
         minPairAgeHours: cfg.entryMinPairAgeHours,
         maxVol5mToLiq: cfg.entryMaxVol5mToLiq,
+        minLiquidityUsd: cfg.entryMinLiquidityUsd,
       });
       if (!entryRisk.pass) {
         appendMildDipJournal(cfg.journalPath, {
