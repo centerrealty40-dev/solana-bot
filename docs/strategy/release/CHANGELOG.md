@@ -1,3 +1,15 @@
+## [1.11.978] — 2026-08-16
+
+### Added / Changed
+
+- Tightened the production GREEN late-entry thresholds using the n=22 live-trade
+  study: cap `pc5m` at 20% and 5m buy-share at 0.65.
+
+### Rollback
+
+- Restore `MILD_DIP_GREEN_MAX_PC5M_PCT='60'`.
+- Restore `MILD_DIP_GREEN_MAX_BUY_SHARE='0.85'`.
+
 ## [1.11.977] — 2026-08-16
 
 ### Added / Changed
