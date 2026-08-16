@@ -30,9 +30,14 @@ import {
   shouldJournalGreenLeaderSeenBypass,
   shouldJournalLeaderSeenSkip,
   streamObservabilitySnapshot,
+  greenTapeMinuteOptions,
   loadStructural,
   leaderCoBuyAlignOk,
 } from './fast-path.js';
+import {
+  greenMinuteJupiterStats,
+  tickGreenMinuteJupiterRefresh,
+} from './green-minute-jupiter-refresh.js';
 import {
   isKnifeDipPct,
   upsertKnifeWatch,
@@ -367,7 +372,11 @@ function markPriceUsd(
   const resolved = resolveExitMarkFromRing({
     last:
       last && !staleVsEntry
-        ? { priceUsd: last.priceUsd, tsMs: last.tsMs, source: last.source }
+        ? {
+            priceUsd: last.priceUsd,
+            tsMs: last.tsMs,
+            source: last.source === 'stream' ? 'stream' : 'dex',
+          }
         : null,
     nowMs,
     maxAgeMs: cfg.markStreamMaxAgeMs > 0 ? cfg.markStreamMaxAgeMs : 0,
@@ -880,7 +889,13 @@ async function tryFastPathForMint(
       stage: site,
       greenOnly: true,
       maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
-      ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
+      ...streamObservabilitySnapshot(
+        mint,
+        cfg.cooldownBounceLookbackMs,
+        nowMs,
+        undefined,
+        greenTapeMinuteOptions(cfg),
+      ),
     });
   };
 
@@ -934,7 +949,13 @@ async function tryFastPathForMint(
             trigger,
             firstTouch: true,
             maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
-            ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
+            ...streamObservabilitySnapshot(
+              mint,
+              cfg.cooldownBounceLookbackMs,
+              nowMs,
+              undefined,
+              greenTapeMinuteOptions(cfg),
+            ),
           });
         }
         shadowOnly =
@@ -968,7 +989,13 @@ async function tryFastPathForMint(
             mint,
             trigger,
             maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
-            ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
+            ...streamObservabilitySnapshot(
+              mint,
+              cfg.cooldownBounceLookbackMs,
+              nowMs,
+              undefined,
+              greenTapeMinuteOptions(cfg),
+            ),
           });
         }
         shadowOnly =
@@ -3466,6 +3493,16 @@ export async function runMildDipLoop(
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+    tickGreenMinuteJupiterRefresh({
+      nowMs,
+      enabled: cfg.green.jupiterMinuteEnabled,
+      minGapMs: Math.max(
+        cfg.green.jupiterMinuteMinGapMs,
+        cfg.green.jupiterMinuteIntervalMs,
+      ),
+      ttlMs: cfg.green.jupiterMinuteTtlMs,
+      maxInFlight: cfg.green.jupiterMinuteMaxInFlight,
+    });
     const opens = openCount(state);
     tapeShadow?.tick(nowMs);
     maybeBackfillTapePairAge(nowMs);
@@ -3475,6 +3512,10 @@ export async function runMildDipLoop(
     if (priceSampler && nowMs - lastStreamPriceStatsMs >= 30_000) {
       lastStreamPriceStatsMs = nowMs;
       const st = priceSampler.stats();
+      const greenJupiter = greenMinuteJupiterStats(
+        nowMs,
+        cfg.green.jupiterMinuteTtlMs,
+      );
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_stream_price_stats',
         queued: st.queued,
@@ -3486,6 +3527,13 @@ export async function runMildDipLoop(
         skipReasonCounts: st.skipReasonCounts,
         txRetryAttempts: st.txRetryAttempts,
         txRetrySucceeded: st.txRetrySucceeded,
+        greenJupiterQuoteAttempts: greenJupiter.quoteAttempts,
+        greenJupiterQuoteSuccesses: greenJupiter.quoteSuccesses,
+        greenJupiterQuoteErrors: greenJupiter.quoteErrors,
+        greenJupiterCapRejected: greenJupiter.capRejected,
+        greenJupiterActiveMints: greenJupiter.activeMints,
+        greenJupiterInFlight: greenJupiter.inFlight,
+        greenTapeMinuteFailureCounts: mildDipPriceRing.tapeMinuteFailureStats(),
         ringStreamN: mildDipPriceRing
           .watchedMints(nowMs)
           .filter((m) => mildDipPriceRing.lastPrice(m, nowMs)?.source === 'stream').length,
@@ -3672,10 +3720,13 @@ export async function runMildDipLoop(
       }
       // Tight sleep while bags are open so stream marks hit ≤ markInterval.
       const opensNow = openCount(state);
+      const greenFeedTickMs = cfg.green.jupiterMinuteEnabled
+        ? cfg.green.jupiterMinuteIntervalMs
+        : Number.POSITIVE_INFINITY;
       await sleep(
         opensNow > 0
-          ? Math.min(cfg.markIntervalMs, 1_000)
-          : Math.min(cfg.markIntervalMs, 5_000),
+          ? Math.min(cfg.markIntervalMs, 1_000, greenFeedTickMs)
+          : Math.min(cfg.markIntervalMs, 5_000, greenFeedTickMs),
       );
     }
   } finally {

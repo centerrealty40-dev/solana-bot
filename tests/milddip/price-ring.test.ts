@@ -91,6 +91,15 @@ describe('MildDipPriceRing', () => {
     expect(metrics.coverageMs).toBe(360_000);
   });
 
+  it('keeps GREEN Jupiter samples out of legacy last-price consumers', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'GreenJupiterSourceIsolationMintxxxxxxxxxxxx1';
+    ring.note(mint, 100, { tsMs: 1_000, source: 'stream' });
+    ring.note(mint, 120, { tsMs: 2_000, source: 'green_jupiter' });
+    expect(ring.lastPrice(mint, 2_000)?.source).toBe('stream');
+    expect(ring.lastPriceBySource(mint, 'green_jupiter', 2_000)?.priceUsd).toBe(120);
+  });
+
   it('returns null tape returns when stream coverage is insufficient', () => {
     const ring = new MildDipPriceRing();
     const mint = 'TapeMinuteCoverageMintxxxxxxxxxxxxxxxxxxxxxx1';
@@ -102,6 +111,74 @@ describe('MildDipPriceRing', () => {
     expect(metrics.tapePrior5mPct).toBeNull();
     expect(metrics.sampleCount).toBe(2);
     expect(metrics.coverageMs).toBe(120_000);
+  });
+
+  it('forms a strict minute from stream and GREEN Jupiter samples', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'StrictTapeMinuteMintxxxxxxxxxxxxxxxxxxxxxxx1';
+    const now = 2_000_000;
+    ring.note(mint, 100, { tsMs: now - 300_000, source: 'stream' });
+    ring.note(mint, 110, { tsMs: now - 60_000, source: 'green_jupiter' });
+    ring.note(mint, 111, { tsMs: now - 50_000, source: 'stream' });
+    ring.note(mint, 112, { tsMs: now - 30_000, source: 'green_jupiter' });
+    ring.note(mint, 115, { tsMs: now - 10_000, source: 'stream' });
+    const metrics = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
+      strictFreshness: true,
+    });
+    expect(metrics.tapeRet1mPct).toBeCloseTo((115 / 110 - 1) * 100, 6);
+    expect(metrics.tapePrior5mPct).toBeCloseTo(10, 6);
+    expect(metrics.failureReason).toBeNull();
+  });
+
+  it.each([
+    ['boundary', 'tape_minute_boundary_missing'],
+    ['latest', 'tape_minute_latest_stale'],
+    ['recent samples', 'tape_minute_samples_insufficient'],
+    ['prior anchor', 'tape_minute_prior_anchor_missing'],
+  ] as const)('fails closed when the strict %s requirement is missing', (missing, reason) => {
+    const ring = new MildDipPriceRing();
+    const mint = `StrictTape${missing}xxxxxxxxxxxxxxxxxxxxxxxx1`;
+    const now = 3_000_000;
+    if (missing !== 'prior anchor') {
+      ring.note(mint, 100, { tsMs: now - 300_000, source: 'stream' });
+    }
+    if (missing !== 'boundary') {
+      ring.note(mint, 110, { tsMs: now - 60_000, source: 'stream' });
+    }
+    const recentAges =
+      missing === 'boundary'
+        ? [30_000, 20_000, 10_000]
+        : missing === 'recent samples'
+          ? [30_000, 20_000]
+          : missing === 'latest'
+            ? [50_000, 30_000, 20_000]
+            : [50_000, 30_000, 10_000];
+    recentAges.forEach((age, index) => {
+      ring.note(mint, 111 + index, { tsMs: now - age, source: 'stream' });
+    });
+    const metrics = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
+      strictFreshness: true,
+    });
+    expect(metrics.tapeRet1mPct).toBeNull();
+    expect(metrics.tapePrior5mPct).toBeNull();
+    expect(metrics.failureReason).toBe(reason);
+  });
+
+  it('does not use an arbitrary stale sample as the prior anchor', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'StrictTapeStaleAnchorxxxxxxxxxxxxxxxxxxxxxx1';
+    const now = 4_000_000;
+    ring.note(mint, 100, { tsMs: now - 600_000, source: 'stream' });
+    ring.note(mint, 110, { tsMs: now - 60_000, source: 'stream' });
+    ring.note(mint, 111, { tsMs: now - 50_000, source: 'stream' });
+    ring.note(mint, 112, { tsMs: now - 30_000, source: 'stream' });
+    ring.note(mint, 115, { tsMs: now - 10_000, source: 'stream' });
+    const metrics = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
+      strictFreshness: true,
+    });
+    expect(metrics.tapeRet1mPct).toBeNull();
+    expect(metrics.tapePrior5mPct).toBeNull();
+    expect(metrics.failureReason).toBe('tape_minute_prior_anchor_missing');
   });
 
   it('isPlausiblePrice rejects 1000× decode outliers', () => {

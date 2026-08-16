@@ -5,7 +5,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export type MildDipPriceSource = 'dex' | 'stream';
+export type MildDipPriceSource = 'dex' | 'stream' | 'green_jupiter';
 
 export type MildDipPriceSample = {
   tsMs: number;
@@ -41,16 +41,42 @@ export type MildDipTapeMinuteMetrics = {
   sampleCount: number;
   coverageMs: number | null;
   latestSampleAgeMs: number | null;
+  failureReason: MildDipTapeMinuteFailureReason | null;
+};
+
+export type MildDipTapeMinuteFailureReason =
+  | 'tape_minute_samples_insufficient'
+  | 'tape_minute_latest_stale'
+  | 'tape_minute_boundary_missing'
+  | 'tape_minute_prior_anchor_missing'
+  | 'tape_minute_coverage_insufficient';
+
+export type MildDipTapeMinuteOptions = {
+  strictFreshness?: boolean;
+  minRecentSamples?: number;
+  latestMaxAgeMs?: number;
+  boundaryMinAgeMs?: number;
+  boundaryMaxAgeMs?: number;
+  priorAnchorMinAgeMs?: number;
+  priorAnchorMaxAgeMs?: number;
 };
 
 export class MildDipPriceRing {
   private readonly byMint = new Map<string, MintRing>();
+  private readonly tapeMinuteFailureCounts = new Map<
+    MildDipTapeMinuteFailureReason,
+    number
+  >();
   private readonly maxSamplesPerMint: number;
   private readonly ttlMs: number;
 
   constructor(opts?: { maxSamplesPerMint?: number; ttlMs?: number }) {
     this.maxSamplesPerMint = opts?.maxSamplesPerMint ?? 180;
     this.ttlMs = opts?.ttlMs ?? 15 * 60_000;
+  }
+
+  tapeMinuteFailureStats(): Record<string, number> {
+    return Object.fromEntries(this.tapeMinuteFailureCounts.entries());
   }
 
   note(
@@ -115,7 +141,11 @@ export class MildDipPriceRing {
     this.pruneMint(mint, nowMs);
     const ring = this.byMint.get(mint);
     if (!ring || ring.samples.length === 0) return null;
-    return ring.samples[ring.samples.length - 1] ?? null;
+    for (let i = ring.samples.length - 1; i >= 0; i--) {
+      const sample = ring.samples[i]!;
+      if (sample.source !== 'green_jupiter') return sample;
+    }
+    return null;
   }
 
   /** Latest sample at or before a lookback boundary. */
@@ -332,22 +362,47 @@ export class MildDipPriceRing {
     boundaryMs = 60_000,
     windowMs = 360_000,
     minCoverageMs = 180_000,
+    options?: MildDipTapeMinuteOptions,
   ): MildDipTapeMinuteMetrics {
     const samples = this.samplesInWindow(mint, windowMs, nowMs).filter(
-      (sample) => sample.source === 'stream',
+      (sample) => sample.source === 'stream' || sample.source === 'green_jupiter',
     );
     if (samples.length === 0) {
+      if (options?.strictFreshness) {
+        this.tapeMinuteFailureCounts.set(
+          'tape_minute_samples_insufficient',
+          (this.tapeMinuteFailureCounts.get('tape_minute_samples_insufficient') ?? 0) + 1,
+        );
+      }
       return {
         tapeRet1mPct: null,
         tapePrior5mPct: null,
         sampleCount: 0,
         coverageMs: null,
         latestSampleAgeMs: null,
+        failureReason: 'tape_minute_samples_insufficient',
       };
     }
+    const strict = options?.strictFreshness === true;
+    const minRecentSamples = Math.max(1, options?.minRecentSamples ?? 3);
+    const latestMaxAgeMs = Math.max(0, options?.latestMaxAgeMs ?? 15_000);
+    const boundaryMinAgeMs = Math.max(0, options?.boundaryMinAgeMs ?? 50_000);
+    const boundaryMaxAgeMs = Math.max(
+      boundaryMinAgeMs,
+      options?.boundaryMaxAgeMs ?? 75_000,
+    );
+    const priorAnchorMinAgeMs = Math.max(
+      0,
+      options?.priorAnchorMinAgeMs ?? 270_000,
+    );
+    const priorAnchorMaxAgeMs = Math.max(
+      priorAnchorMinAgeMs,
+      options?.priorAnchorMaxAgeMs ?? 390_000,
+    );
     let oldest = samples[0]!;
     let latest = samples[0]!;
     let boundary: MildDipPriceSample | null = null;
+    let priorAnchor: MildDipPriceSample | null = null;
     const boundaryTs = nowMs - Math.max(0, boundaryMs);
     for (const sample of samples) {
       if (sample.tsMs < oldest.tsMs) oldest = sample;
@@ -356,33 +411,84 @@ export class MildDipPriceRing {
         boundary = sample;
       }
     }
+    if (strict) {
+      boundary = null;
+      priorAnchor = null;
+      for (const sample of samples) {
+        const ageMs = Math.max(0, nowMs - sample.tsMs);
+        if (
+          ageMs >= boundaryMinAgeMs &&
+          ageMs <= boundaryMaxAgeMs &&
+          (!boundary ||
+            Math.abs(ageMs - boundaryMs) <
+              Math.abs(nowMs - boundary.tsMs - boundaryMs))
+        ) {
+          boundary = sample;
+        }
+        if (
+          ageMs >= priorAnchorMinAgeMs &&
+          ageMs <= priorAnchorMaxAgeMs &&
+          (!priorAnchor ||
+            Math.abs(ageMs - 300_000) <
+              Math.abs(nowMs - priorAnchor.tsMs - 300_000))
+        ) {
+          priorAnchor = sample;
+        }
+      }
+    }
     const coverageMs = Math.max(0, latest.tsMs - oldest.tsMs);
     const latestSampleAgeMs = Math.max(0, nowMs - latest.tsMs);
     const boundaryAgeMs = boundary ? Math.max(0, nowMs - boundary.tsMs) : null;
+    const recentSampleCount = samples.filter(
+      (sample) => nowMs - sample.tsMs < 60_000,
+    ).length;
+    let failureReason: MildDipTapeMinuteFailureReason | null = null;
+    if (strict && recentSampleCount < minRecentSamples) {
+      failureReason = 'tape_minute_samples_insufficient';
+    } else if (strict && latestSampleAgeMs > latestMaxAgeMs) {
+      failureReason = 'tape_minute_latest_stale';
+    } else if (strict && !boundary) {
+      failureReason = 'tape_minute_boundary_missing';
+    } else if (strict && !priorAnchor) {
+      failureReason = 'tape_minute_prior_anchor_missing';
+    } else if (coverageMs < Math.max(0, minCoverageMs)) {
+      failureReason = 'tape_minute_coverage_insufficient';
+    }
     if (
       !boundary ||
-      latestSampleAgeMs > Math.max(0, boundaryMs) ||
+      (!strict && latestSampleAgeMs > Math.max(0, boundaryMs)) ||
       (boundaryAgeMs != null &&
-        boundaryAgeMs > Math.max(0, boundaryMs) + 60_000) ||
+        (!strict && boundaryAgeMs > Math.max(0, boundaryMs) + 60_000)) ||
       coverageMs < Math.max(0, minCoverageMs) ||
+      (strict && (recentSampleCount < minRecentSamples || !priorAnchor)) ||
       !(oldest.priceUsd > 0) ||
       !(boundary.priceUsd > 0) ||
-      !(latest.priceUsd > 0)
+      !(latest.priceUsd > 0) ||
+      (strict && latestSampleAgeMs > latestMaxAgeMs)
     ) {
+      if (strict && failureReason) {
+        this.tapeMinuteFailureCounts.set(
+          failureReason,
+          (this.tapeMinuteFailureCounts.get(failureReason) ?? 0) + 1,
+        );
+      }
       return {
         tapeRet1mPct: null,
         tapePrior5mPct: null,
         sampleCount: samples.length,
         coverageMs,
         latestSampleAgeMs,
+        failureReason,
       };
     }
     return {
       tapeRet1mPct: (latest.priceUsd / boundary.priceUsd - 1) * 100,
-      tapePrior5mPct: (boundary.priceUsd / oldest.priceUsd - 1) * 100,
+      tapePrior5mPct:
+        (boundary.priceUsd / (strict ? priorAnchor!.priceUsd : oldest.priceUsd) - 1) * 100,
       sampleCount: samples.length,
       coverageMs,
       latestSampleAgeMs,
+      failureReason: null,
     };
   }
 
@@ -586,7 +692,12 @@ export class MildDipPriceRing {
         if (!raw || typeof raw !== 'object') continue;
         const s = raw as Partial<MildDipPriceSample>;
         if (typeof s.priceUsd !== 'number' || typeof s.tsMs !== 'number') continue;
-        const source: MildDipPriceSource = s.source === 'stream' ? 'stream' : 'dex';
+        const source: MildDipPriceSource =
+          s.source === 'stream'
+            ? 'stream'
+            : s.source === 'green_jupiter'
+              ? 'green_jupiter'
+              : 'dex';
         this.note(mint, s.priceUsd, { tsMs: s.tsMs, source });
         n += 1;
       }
