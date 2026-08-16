@@ -110,13 +110,21 @@ describe('mild-dip config exit schema', () => {
         ...baseEnv,
         MILD_DIP_MILD_STABILIZE_MAX_PER_HOUR: '12',
         MILD_DIP_MILD_STABILIZE_SKIP_MAX_PER_HOUR: '30',
+        MILD_DIP_MILD_STABILIZE_SKIP_MIN_DUMP_PCT: '-4',
         MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '60000',
       },
       () => loadMildDipConfig(),
     );
     expect(cfg.mildStabilizeMaxPerHour).toBe(12);
     expect(cfg.mildStabilizeSkipMaxPerHour).toBe(30);
+    expect(cfg.mildStabilizeSkipMinDumpPct).toBe(-4);
     expect(cfg.mildStabilizeTroughMinAgeMs).toBe(60_000);
+  });
+
+  it('defaults mild-stabilize telemetry to a usable budget and dump floor', () => {
+    const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(cfg.mildStabilizeSkipMaxPerHour).toBe(240);
+    expect(cfg.mildStabilizeSkipMinDumpPct).toBe(-3);
   });
 
   it('keeps the live mild-stabilize profile isolated to mild-dip', () => {
@@ -125,6 +133,8 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-6'");
     expect(eco).toContain("MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '60000'");
     expect(eco).toContain("MILD_DIP_MILD_STABILIZE_MAX_PER_HOUR: '12'");
+    expect(eco).toContain("MILD_DIP_MILD_STABILIZE_SKIP_MAX_PER_HOUR: '240'");
+    expect(eco).toContain("MILD_DIP_MILD_STABILIZE_SKIP_MIN_DUMP_PCT: '-3'");
   });
 
   it('preserves non-positive entry thresholds through Zod for rollback', () => {

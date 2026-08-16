@@ -13,6 +13,7 @@ import {
   evaluateMildStabilizeFromRing,
   mildStabilizeDexDipOk,
   mildStabilizeLaneAllowed,
+  mildStabilizeSkipTelemetryEligible,
   takeMildStabilizeSkipTelemetrySlot,
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
@@ -909,9 +910,16 @@ export async function evaluateFastPathCandidate(
       lookbackMs: cfg.cooldownBounceLookbackMs,
       minBelowPeakPct: cfg.mildStabilizeMinBelowPeakPct,
     });
+    const mildTroughAgeMs =
+      mild.troughAtMs != null ? Math.max(0, nowMs - mild.troughAtMs) : null;
     if (
-      !mild.pass &&
-      !mild.reasons.includes('mild_stabilize_missing_ring') &&
+      mildStabilizeSkipTelemetryEligible({
+        pass: mild.pass,
+        reasons: mild.reasons,
+        dumpPct: mild.dumpPct,
+        troughAgeMs: mildTroughAgeMs,
+        minDumpPct: cfg.mildStabilizeSkipMinDumpPct,
+      }) &&
       takeMildStabilizeSkipTelemetrySlot(cfg.mildStabilizeSkipMaxPerHour, nowMs)
     ) {
       appendMildDipJournal(cfg.journalPath, {
@@ -920,8 +928,7 @@ export async function evaluateFastPathCandidate(
         dumpPct: mild.dumpPct,
         bouncePct: mild.bouncePct,
         troughAtMs: mild.troughAtMs,
-        troughAgeMs:
-          mild.troughAtMs != null ? Math.max(0, nowMs - mild.troughAtMs) : null,
+        troughAgeMs: mildTroughAgeMs,
         lastPriceUsd: mild.lastPriceUsd,
         peakPriceUsd: mild.peakPriceUsd,
         reasons: mild.reasons,

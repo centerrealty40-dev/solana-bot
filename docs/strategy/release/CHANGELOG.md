@@ -1,3 +1,26 @@
+## [1.11.972] — 2026-08-16
+
+### Added / Changed
+
+- Raised the default `mild_stabilize` failed-verdict journal budget to 240
+  events per rolling hour and exposed the same value in the production
+  `mild-dip-bot` environment block for rollback visibility.
+- Filtered skip telemetry to retain only failed ring verdicts with a
+  configurable dump of at least 3% (`MILD_DIP_MILD_STABILIZE_SKIP_MIN_DUMP_PCT=-3`).
+  Missing-ring verdicts remain excluded, as do implausible near-total dumps
+  reported at zero trough age. These filters run before reserving the hourly
+  telemetry budget, keeping the journal useful without changing any entry
+  thresholds or lane decisions.
+
+### Rollback
+
+1. Restore the prior telemetry budget:
+   `MILD_DIP_MILD_STABILIZE_SKIP_MAX_PER_HOUR=24`.
+2. Disable the shallow-dump filter:
+   `MILD_DIP_MILD_STABILIZE_SKIP_MIN_DUMP_PCT=0`.
+3. The release is telemetry-only; entry, exit, and other lane behavior are
+   unchanged.
+
 ## [1.11.971] — 2026-08-16
 
 ### Добавлено
