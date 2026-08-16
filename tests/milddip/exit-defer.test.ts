@@ -59,7 +59,13 @@ describe('shouldDeferSoftExit', () => {
   });
 
   it('never defers a floor', () => {
-    for (const reason of ['hard_stop', 'cliff_dump', 'never_arm_freefall'] as const) {
+    for (const reason of [
+      'hard_stop',
+      'cliff_dump',
+      'never_arm_freefall',
+      'green_max_hold',
+      'green_no_move',
+    ] as const) {
       expect(shouldDeferSoftExit({ ...base, reason }).defer).toBe(false);
     }
   });

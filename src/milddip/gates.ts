@@ -789,6 +789,7 @@ export type MildDipExitReason =
   | 'green_stop'
   | 'green_max_hold'
   | 'green_trail'
+  | 'green_no_move'
   | null;
 
 /** True when MFE-bank ladder is configured and should own the armed exit path. */

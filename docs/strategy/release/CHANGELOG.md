@@ -1,3 +1,20 @@
+## [1.11.991] — 2026-08-16
+
+### Изменено
+
+- GREEN-позиции без движения закрываются после 15 минут, если максимальный
+  MFE не достиг `+3%`; стоп и трейл сохраняют приоритет над этим тайм-катом.
+- Стандартный GREEN-трейл теперь армится с `+3%` и закрывает при откате `6%`;
+  fast-профиль и DIP-путь не менялись.
+
+### Rollback
+
+```text
+MILD_DIP_GREEN_NO_MOVE_CUT_MS=0
+MILD_DIP_GREEN_EXIT_ARM_PCT=10
+MILD_DIP_GREEN_EXIT_TRAIL_PCT=9
+```
+
 ## [1.11.990] — 2026-08-16
 
 ### Добавлено / Изменено
@@ -24,72 +41,27 @@ MILD_DIP_GREEN_JUPITER_MINUTE_ENABLED=0
 MILD_DIP_GREEN_TAPE_STRICT_FRESHNESS_ENABLED=0
 ```
 
-## [1.11.989] — 2026-08-16
-
-### Исправлено
-
-- Свежесть минта при вытеснении price ring снова определяется по всем
-  источникам, включая `green_jupiter`. Это сохраняет активную минутную ленту
-  зелёного quote-фида, не меняя изоляцию источника в ценовых helper-ах.
-
-## [1.11.988] — 2026-08-16
-
-### Fixed
-
-- GREEN Jupiter-сэмплы изолированы от общих ценовых helper-ов price ring:
-  dip-гейты не видят их в trough/peak/rally/bounce расчётах, тогда как
-  `tapeMinuteMetrics` продолжает использовать их для текущей минутки.
-- Восстановлен прежний `streamRally` для dip-логики; stream-only rally
-  применяется только для admission GREEN Jupiter-фида.
-
-### Rollback
-
-Откатить изменение через возврат ветки к предыдущей версии и reload.
-
-## [1.11.987] — 2026-08-16
-
-### Fixed
-
-- GREEN strict tape freshness теперь использует высокое разрешение только
-  для текущей минуты, а prior-5m якорь может приходить из любого источника
-  ринга, включая `dex`; отдельное требование покрытия 180 секунд в strict
-  режиме убрано.
-- GREEN Jupiter admission дополнен импульсом собственного stream-тейпа,
-  polling ограничен grace-периодом после последней регистрации кандидата,
-  а известные token decimals передаются в quote с fallback на `6`.
-
-### Rollback
-
-Отключить GREEN Jupiter-фид и строгий режим свежести через env, затем reload:
-
-```text
-MILD_DIP_GREEN_JUPITER_MINUTE_ENABLED=0
-MILD_DIP_GREEN_TAPE_STRICT_FRESHNESS_ENABLED=0
-```
-
 ## [1.11.986] — 2026-08-16
 
 ### Added / Changed
 
-- Добавлен ограниченный GREEN-фид исполнимых Jupiter-квот с отдельным
-  источником `green_jupiter`: он опрашивает только импульсные кандидаты,
-  ограничивает число минтов, in-flight запросов, частоту и TTL.
-- GREEN минутные метрики теперь могут объединять stream и Jupiter-сэмплы и
-  требуют свежих отпечатков текущей минуты и prior-5m якоря; причины отказа
-  и счётчики квот пишутся в журнал статистики.
-
-### Added / Changed (staged-add updates from v2)
-
 - Capped staged-add chasing to a band from `+8%` through `+12%` above the
-  original first fill; marks above the band remain eligible after pullback.
-- Added weighted-average-cost veto for genuine profitable staged exits; all
-  non-staged bags remain unchanged.
+  original first fill. Marks above the band no longer consume an add attempt or
+  backoff; they are journalled as `above_chase_band` and remain eligible after
+  a pullback.
+- Added a weighted-average-cost veto for genuine profitable `mfe_bank_sleeve`
+  and `tp_grid` exits after a staged add. The mark must be above the original
+  first-fill anchor and at least `+1%` over the actual weighted add/first-fill
+  cost. Underwater sleeve loss cuts and all non-staged bags remain unchanged.
+- ASg9yD demonstrated the failure: the `$5` first fill at `0.00012217` had a
+  `+8%` trigger at `0.00013195`, but the add filled at `0.00014345` (`+17.4%`)
+  near the `0.00014541` local peak. The subsequent bank half was journalled
+  `+6.04%` from first fill while losing approximately `$0.88` against the
+  weighted bag cost.
 
 ### Rollback
 
 ```text
-MILD_DIP_GREEN_JUPITER_MINUTE_ENABLED=0
-MILD_DIP_GREEN_TAPE_STRICT_FRESHNESS_ENABLED=0
 MILD_DIP_STAGED_ADD_MAX_CHASE_PCT=100
 MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT=0
 MILD_DIP_STAGED_ENTRY_ENABLED=0

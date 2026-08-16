@@ -60,6 +60,8 @@ export type MildDipOpenPosition = {
   greenExitArmPct?: number;
   greenExitTrailPct?: number;
   greenExitMaxHoldMs?: number;
+  greenExitNoMoveCutMs?: number;
+  greenExitNoMoveMinMfePct?: number;
   /**
    * 1.11.852 — last mark accepted for this bag, and a quarantined one awaiting
    * confirmation. A single stream print collapsed 5.6420e-04 to 3.2402e-04

@@ -3820,12 +3820,14 @@ const PM2_APPS = [
         MILD_DIP_GREEN_MIN_BUYS5M: '0',
         // n=22 live GREEN trades: buy-share>0.65 median −31.2% (n=5), <=0.65 median −6.3% (n=17).
         MILD_DIP_GREEN_MAX_BUY_SHARE: '0.65',
-        // Leader exit study: arm +10%, trail 9%; stop −30%, max hold 60m.
+        // GREEN exit probe: arm +3%, trail 6%, no-move cut at 15m; stop −30%, max hold 60m.
         MILD_DIP_GREEN_EXIT_TRAIL_ENABLED: '1',
-        MILD_DIP_GREEN_EXIT_ARM_PCT: '10',
-        MILD_DIP_GREEN_EXIT_TRAIL_PCT: '9',
+        MILD_DIP_GREEN_EXIT_ARM_PCT: '3',
+        MILD_DIP_GREEN_EXIT_TRAIL_PCT: '6',
         MILD_DIP_GREEN_EXIT_STOP_PCT: '30',
         MILD_DIP_GREEN_EXIT_MAX_HOLD_MS: '3600000',
+        MILD_DIP_GREEN_NO_MOVE_CUT_MS: '900000',
+        MILD_DIP_GREEN_NO_MOVE_MIN_MFE_PCT: '3',
         // The 30/hour cap cut live GREEN entries when buysInHour reached 30.
         MILD_DIP_GREEN_MAX_OPEN: '8',
         MILD_DIP_GREEN_MAX_BUYS_PER_HOUR: '60',

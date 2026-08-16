@@ -2447,6 +2447,8 @@ async function tryExits(
         maxHoldMs:
           pos.greenExitMaxHoldMs ??
           (cfg.green.exitTrailEnabled ? cfg.green.exitMaxHoldMs : cfg.green.maxHoldMs),
+        noMoveCutMs: pos.greenExitNoMoveCutMs ?? cfg.green.noMoveCutMs,
+        noMoveMinMfePct: pos.greenExitNoMoveMinMfePct ?? cfg.green.noMoveMinMfePct,
         trailEnabled: pos.greenExitTrailEnabled ?? cfg.green.exitTrailEnabled,
         armPct: pos.greenExitArmPct ?? cfg.green.exitArmPct,
         trailPct: pos.greenExitTrailPct ?? cfg.green.exitTrailPct,
