@@ -662,6 +662,7 @@ export async function attemptMildDipEntry(args: {
       symbol: c.symbol,
       dipSource: c.dipSource,
       lane: opts.lane,
+      trigger: opts.trigger,
       reason: 'green_turn_dump_gate_disabled',
     });
   }
@@ -1123,6 +1124,7 @@ export async function attemptMildDipEntry(args: {
     priceUsd: entryPriceUsd,
     dipSource: c.dipSource,
     lane: opts.lane,
+    trigger: opts.trigger,
     waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
     waitDipMaxPriceUsd: waitDipCeilingPx,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
@@ -1165,6 +1167,7 @@ export async function attemptMildDipEntry(args: {
         score: Math.abs(entryPc5m ?? c.mildStabilizeBouncePct ?? 0),
       },
       leaderSignature: leaderSig,
+      trigger: opts.trigger,
       leaderPriceUsd: buyLeaderPriceUsd,
       leaderBuyTs: nowMs,
     });
@@ -1199,6 +1202,7 @@ export async function attemptMildDipEntry(args: {
       pc5m: entryPc5m,
       dipSource: c.dipSource,
       lane: opts.lane,
+      trigger: opts.trigger,
       waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
       waitDipMaxPriceUsd: waitDipCeilingPx,
       ok: false,
@@ -1232,6 +1236,7 @@ export async function attemptMildDipEntry(args: {
     liquidityUsd: sizeMetrics.liquidityUsd,
     marketCapUsd: sizeMetrics.marketCapUsd,
     dipSource: c.dipSource,
+    trigger: opts.trigger,
     waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
     waitDipOriginalSource: c.waitDipOriginalSource ?? null,
     waitDipDumpFromSignalPct: c.waitDipDumpFromSignalPct ?? null,

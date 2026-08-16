@@ -699,6 +699,7 @@ export async function evaluateFastPathCandidate(
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_green_lane_skip',
         mint,
+        trigger,
         reasons: g.reasons,
         pc5m: struct.metrics.priceChange5mPct,
         pc1h: struct.metrics.priceChange1hPct,

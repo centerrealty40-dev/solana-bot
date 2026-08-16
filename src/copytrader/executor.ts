@@ -56,12 +56,14 @@ export async function executeCopyBuy(args: {
   kind: 'entry' | 'add';
   evalResult: EvalResult;
   leaderSignature: string;
+  /** Origin of a mild-dip fast-path signal, when applicable. */
+  trigger?: 'stream' | 'leader' | 'scan';
   /** Leader fill price — anchor for the post-quote premium guard. */
   leaderPriceUsd?: number;
   /** Leader buy timestamp — selects first-shot vs steady premium cap. */
   leaderBuyTs?: number;
 }): Promise<BuyExecutionResult> {
-  const { cfg, mint, symbol, priceUsd, sizeUsd, kind, evalResult, leaderSignature } = args;
+  const { cfg, mint, symbol, priceUsd, sizeUsd, kind, evalResult, leaderSignature, trigger } = args;
 
   if (cfg.executionMode === 'paper' || cfg.executionMode === 'dry_run') {
     const tokenRaw =
@@ -78,6 +80,7 @@ export async function executeCopyBuy(args: {
       priceUsd,
       eval: evalResult,
       leaderSignature,
+      trigger,
       tokenRaw: tokenRaw ?? null,
       simulated: true,
     });
@@ -97,6 +100,7 @@ export async function executeCopyBuy(args: {
       sizeUsd,
       kind,
       leaderSignature,
+      trigger,
       leaderPriceUsd: args.leaderPriceUsd ?? 0,
       leaderBuyTs: args.leaderBuyTs ?? 0,
     });
@@ -110,6 +114,7 @@ export async function executeCopyBuy(args: {
       priceUsd: live.priceUsd || priceUsd,
       eval: evalResult,
       leaderSignature,
+      trigger,
       tokenRaw: live.tokenRaw ?? null,
       txSignature: live.signature ?? null,
       ok: live.ok,
