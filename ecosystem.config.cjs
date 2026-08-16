@@ -3313,6 +3313,8 @@ const PM2_APPS = [
          * we lose money on them.
          */
         MILD_DIP_MIN_PAIR_AGE_HOURS: '6',
+        MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1',
+        MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2',
         /**
          * 1.11.905 — one hour instead of six for a name a leader is buying.
          *
