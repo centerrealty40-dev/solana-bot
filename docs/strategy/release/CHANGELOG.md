@@ -1,3 +1,25 @@
+## 1.11.967 — 2026-08-15
+
+### Added — mild-dip young-pair and churn entry gates
+
+- Reject known pairs younger than one hour with
+  `MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS=1`.
+- Reject known entries whose 5-minute volume is at or above twice pool
+  liquidity with `MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ=2`.
+- Missing or unknown age, volume, and liquidity data does not trigger these
+  new checks; a non-positive threshold independently disables its check.
+- Production analysis found pairs younger than 1h at median `-14.9%` / 31%
+  win rate and `vol5m/liq >= 2` at median `-20.4%` / 26% win rate. Both cohorts
+  remained money-losing after removing their single best trade.
+- Rejections are journaled with distinct `pair_too_young` and
+  `vol_liq_churn_too_high` reasons across mild-dip entry paths.
+
+### Rollback
+
+Set `MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS=0` and
+`MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ=0` to disable the gates independently, then
+reload the mild-dip process.
+
 ## 1.11.966 — 2026-08-15
 
 ### Added — journal-only GREEN measure-all tape lane

@@ -84,6 +84,32 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.probeBlockedUsd).toBe(0);
   });
 
+  it('loads the entry age and volume/liquidity thresholds', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1.25',
+        MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2.5',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.entryMinPairAgeHours).toBe(1.25);
+    expect(cfg.entryMaxVol5mToLiq).toBe(2.5);
+  });
+
+  it('preserves non-positive entry thresholds through Zod for rollback', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '-1',
+        MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '-1',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.entryMinPairAgeHours).toBe(-1);
+    expect(cfg.entryMaxVol5mToLiq).toBe(-1);
+  });
+
   it('loads the first TP rung and profit fill guard from the environment', () => {
     const cfg = withConfigEnv(
       {
@@ -125,5 +151,11 @@ describe('mild-dip config exit schema', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
     expect(eco).toContain("MILD_DIP_MARK_QUARANTINE_JUPITER_GAP_MS: '2000'");
     expect(eco).toContain("MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS: '10000'");
+  });
+
+  it('keeps production entry age and churn thresholds', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1'");
+    expect(eco).toContain("MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2'");
   });
 });

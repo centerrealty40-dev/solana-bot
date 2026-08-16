@@ -16,6 +16,7 @@ import {
 import {
   evaluateCooldownBounce,
   evaluateMildDipPreBuy,
+  evaluateMildDipEntryRisk,
   evaluateRebuyBelowExit,
   evaluateRebuyLiquidityDrop,
   mildDipMicroSizeGatesForSource,
@@ -572,6 +573,29 @@ export async function attemptMildDipEntry(args: {
         entryPriceUsd = freshPx;
       }
     }
+  }
+
+  const entryRisk = evaluateMildDipEntryRisk({
+    pairAgeHours: sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours,
+    volume5mUsd: entryVol5m,
+    liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
+    minPairAgeHours: cfg.entryMinPairAgeHours,
+    maxVol5mToLiq: cfg.entryMaxVol5mToLiq,
+  });
+  if (!entryRisk.pass) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_entry_gate_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      dipSource: c.dipSource,
+      lane: opts.lane,
+      pairAgeHours: sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours,
+      volume5mUsd: entryVol5m,
+      liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
+      reasons: entryRisk.reasons,
+    });
+    state.cooldownUntilMs[c.mint] = nowMs + softCd;
+    return 'skip';
   }
 
   // 1.11.773 — final turn→dump choke (fresh vol/liq/pc5m when available).

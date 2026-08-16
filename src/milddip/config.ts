@@ -39,6 +39,10 @@ const MildDipConfigSchema = z.object({
   sizeLiqPowerExp: z.coerce.number().min(0).max(2).default(0.866),
   sizeMinUsd: z.coerce.number().min(0).max(10_000).default(1),
   sizeMaxUsd: z.coerce.number().min(0).max(10_000).default(30),
+  /** 1.11.967 — reject only known pairs younger than this age; 0 = off. */
+  entryMinPairAgeHours: z.coerce.number().max(10_000).default(1),
+  /** 1.11.967 — reject known vol5m/liquidity ratios at or above this; 0 = off. */
+  entryMaxVol5mToLiq: z.coerce.number().max(100_000).default(2),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
    * 1.11.841 — same $1 as base (flat book).
@@ -1050,6 +1054,8 @@ export function loadMildDipConfig(): MildDipConfig {
     sizeLiqPowerExp: process.env.MILD_DIP_SIZE_LIQ_POWER_EXP ?? 0.866,
     sizeMinUsd: process.env.MILD_DIP_SIZE_MIN_USD ?? 1,
     sizeMaxUsd: process.env.MILD_DIP_SIZE_MAX_USD ?? 30,
+    entryMinPairAgeHours: envNum('MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS', 1),
+    entryMaxVol5mToLiq: envNum('MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ', 2),
     thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 1,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,

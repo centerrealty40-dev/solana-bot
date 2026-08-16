@@ -28,6 +28,7 @@ import { mapPool } from './exit-engine.js';
 import {
   evaluateFlatMicroDip,
   evaluateMildDipEntry,
+  evaluateMildDipEntryRisk,
   knifeStabilizeMinMarketCapUsd,
   type MildDipCandidateMetrics,
 } from './gates.js';
@@ -41,6 +42,7 @@ import {
 } from './knife-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 import { mildDipPairAgeRegistry } from './pair-age-registry.js';
+import { appendMildDipJournal } from './state.js';
 import { evaluateTurnDumpGate, turnDumpKnifeOrOk } from './turn-dump.js';
 
 function turnDumpGateArgs(cfg: MildDipConfig, metrics: MildDipCandidateMetrics) {
@@ -535,6 +537,26 @@ export async function enrichAndFilterCandidates(
         priceChange1hPct: details.priceChangeH1Pct,
       };
       noteStructuralCache(mint, details.priceUsd, metrics, nowMs);
+
+      const entryRisk = evaluateMildDipEntryRisk({
+        pairAgeHours: metrics.pairAgeHours,
+        volume5mUsd: metrics.volume5mUsd,
+        liquidityUsd: metrics.liquidityUsd,
+        minPairAgeHours: cfg.entryMinPairAgeHours,
+        maxVol5mToLiq: cfg.entryMaxVol5mToLiq,
+      });
+      if (!entryRisk.pass) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_entry_gate_skip',
+          mint,
+          symbol: mint.slice(0, 8),
+          reasons: entryRisk.reasons,
+          pairAgeHours: metrics.pairAgeHours,
+          volume5mUsd: metrics.volume5mUsd,
+          liquidityUsd: metrics.liquidityUsd,
+        });
+        return null;
+      }
 
       const dexVerdict = evaluateMildDipEntry(metrics, cfg.entry);
       const stream = streamDipInBand(cfg, mint, nowMs);

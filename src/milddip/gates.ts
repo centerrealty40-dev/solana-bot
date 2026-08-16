@@ -405,6 +405,42 @@ export type MildDipGateVerdict = {
   reasons: string[];
 };
 
+export function evaluateMildDipEntryRisk(args: {
+  pairAgeHours: number | null | undefined;
+  volume5mUsd: number | null | undefined;
+  liquidityUsd: number | null | undefined;
+  minPairAgeHours: number;
+  maxVol5mToLiq: number;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  if (
+    args.minPairAgeHours > 0 &&
+    args.pairAgeHours != null &&
+    Number.isFinite(args.pairAgeHours) &&
+    args.pairAgeHours < args.minPairAgeHours
+  ) {
+    reasons.push(
+      `pair_too_young=${args.pairAgeHours.toFixed(2)}<${args.minPairAgeHours}`,
+    );
+  }
+  if (
+    args.maxVol5mToLiq > 0 &&
+    args.volume5mUsd != null &&
+    Number.isFinite(args.volume5mUsd) &&
+    args.liquidityUsd != null &&
+    Number.isFinite(args.liquidityUsd) &&
+    args.liquidityUsd > 0
+  ) {
+    const ratio = args.volume5mUsd / args.liquidityUsd;
+    if (ratio >= args.maxVol5mToLiq) {
+      reasons.push(
+        `vol_liq_churn_too_high=${ratio.toFixed(2)}>=${args.maxVol5mToLiq}`,
+      );
+    }
+  }
+  return { pass: reasons.length === 0, reasons };
+}
+
 export function evaluateMildDipEntry(
   metrics: MildDipCandidateMetrics,
   gates: MildDipEntryGates,

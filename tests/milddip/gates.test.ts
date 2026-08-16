@@ -4,6 +4,7 @@ import {
   decideSoftLossExit,
   evaluateFlatMicroDip,
   evaluateMildDipEntry,
+  evaluateMildDipEntryRisk,
   evaluateMildDipPeakGiveback,
   evaluateMildDipPreBuy,
   isRecoveringFromTrough,
@@ -53,6 +54,86 @@ const mfeBankOff = {
   mfeBank2Fraction: 0.4,
   mfeBankSleeveGivebackPct: 12,
 } as const;
+
+describe('mild-dip entry age and churn gates', () => {
+  const gate = {
+    minPairAgeHours: 1,
+    maxVol5mToLiq: 2,
+  };
+
+  it('rejects young pairs and accepts old pairs', () => {
+    expect(
+      evaluateMildDipEntryRisk({
+        ...metrics({ pairAgeHours: 0.99 }),
+        ...gate,
+      }).reasons,
+    ).toContainEqual(expect.stringContaining('pair_too_young'));
+    expect(
+      evaluateMildDipEntryRisk({
+        ...metrics({ pairAgeHours: 1 }),
+        ...gate,
+      }).pass,
+    ).toBe(true);
+  });
+
+  it('rejects churn at and above the configured ratio', () => {
+    expect(
+      evaluateMildDipEntryRisk({
+        ...metrics({ volume5mUsd: 80_000, liquidityUsd: 40_000 }),
+        ...gate,
+      }).reasons,
+    ).toContainEqual(expect.stringContaining('vol_liq_churn_too_high'));
+    expect(
+      evaluateMildDipEntryRisk({
+        ...metrics({ volume5mUsd: 80_001, liquidityUsd: 40_000 }),
+        ...gate,
+      }).pass,
+    ).toBe(false);
+    expect(
+      evaluateMildDipEntryRisk({
+        ...metrics({ volume5mUsd: 79_999, liquidityUsd: 40_000 }),
+        ...gate,
+      }).pass,
+    ).toBe(true);
+  });
+
+  it('fails open for missing metrics and non-positive liquidity', () => {
+    for (const partial of [
+      { pairAgeHours: null },
+      { volume5mUsd: null },
+      { liquidityUsd: null },
+      { liquidityUsd: 0 },
+    ]) {
+      expect(
+        evaluateMildDipEntryRisk({
+          ...metrics(partial),
+          ...gate,
+        }).pass,
+      ).toBe(true);
+    }
+  });
+
+  it('disables each check independently at zero or below', () => {
+    for (const minPairAgeHours of [0, -1]) {
+      expect(
+        evaluateMildDipEntryRisk({
+          ...metrics({ pairAgeHours: 0.1 }),
+          minPairAgeHours,
+          maxVol5mToLiq: 0,
+        }).pass,
+      ).toBe(true);
+    }
+    for (const maxVol5mToLiq of [0, -1]) {
+      expect(
+        evaluateMildDipEntryRisk({
+          ...metrics({ volume5mUsd: 80_000, liquidityUsd: 40_000 }),
+          minPairAgeHours: 0,
+          maxVol5mToLiq,
+        }).pass,
+      ).toBe(true);
+    }
+  });
+});
 
 const exitGates: MildDipExitGates = {
   armPct: 5,
