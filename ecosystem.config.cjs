@@ -3583,6 +3583,11 @@ const PM2_APPS = [
         MILD_DIP_EXIT_NEVER_ARM_BOUNCE_2_PCT: '16',
         /** 1.11.961 — refuse materially degraded bounce-based loss fills. */
         MILD_DIP_EXIT_LOSS_FILL_MAX_SLIP_PCT: '8',
+        MILD_DIP_EXIT_LIQ_DRAIN_RATIO: '0.7',
+        MILD_DIP_EXIT_LIQ_DRAIN_MIN_AGE_MIN: '10',
+        MILD_DIP_EXIT_LIQ_DRAIN_CONFIRM_TICKS: '2',
+        MILD_DIP_EXIT_LIQ_DRAIN_SKIP_ARMED_RUNNER: '1',
+        MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '0',
         /**
          * 1.11.810 — bank earlier and finish sooner on the deep-entry profile.
          * Free-form grid on 49 post-1.11.808 trades put `tp8 / sl15` on top and

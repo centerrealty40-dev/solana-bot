@@ -728,6 +728,12 @@ const MildDipConfigSchema = z.object({
     profitFillMaxSlipPct: z.coerce.number().min(0).max(100).default(0),
     /** 1.11.961 — max quote slip below a bounce-based loss decision; 0 = off. */
     lossFillMaxSlipPct: z.coerce.number().min(0).max(100).default(0),
+    /** 1.11.969 — liquidity-drain exit; 0 = off. */
+    liqDrainRatio: z.coerce.number().min(0).max(10).default(0.7),
+    liqDrainMinAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
+    liqDrainConfirmTicks: z.coerce.number().int().min(0).max(48).default(2),
+    liqDrainSkipArmedRunner: z.boolean().default(true),
+    liqAbsFloorUsd: z.coerce.number().min(0).max(10_000_000).default(0),
     /** 1.11.959 — green armed quarantine blind window; 0 = off. */
     markQuarantineGreenMaxMs: z.coerce.number().int().min(0).max(120_000).default(0),
     /** 1.11.910 — the dead-set exit: volume, turnover and price all gone. */
@@ -940,6 +946,11 @@ export function loadMildDipConfig(): MildDipConfig {
     markSellHaircutPct: envNum('MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT', 1),
     profitFillMaxSlipPct: envNum('MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT', 0),
     lossFillMaxSlipPct: envNum('MILD_DIP_EXIT_LOSS_FILL_MAX_SLIP_PCT', 0),
+    liqDrainRatio: envNum('MILD_DIP_EXIT_LIQ_DRAIN_RATIO', 0.7),
+    liqDrainMinAgeMs: envNum('MILD_DIP_EXIT_LIQ_DRAIN_MIN_AGE_MIN', 10) * 60_000,
+    liqDrainConfirmTicks: envNum('MILD_DIP_EXIT_LIQ_DRAIN_CONFIRM_TICKS', 2),
+    liqDrainSkipArmedRunner: envBool('MILD_DIP_EXIT_LIQ_DRAIN_SKIP_ARMED_RUNNER', true),
+    liqAbsFloorUsd: envNum('MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD', 0),
     markQuarantineGreenMaxMs: envNum('MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS', 0),
     deadSetVolFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC', 0),
     deadSetTurnFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC', 0),

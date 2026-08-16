@@ -70,6 +70,11 @@ export type MarkExitDecision = {
   bounceOffTroughPct: number;
   /** Elapsed time since the updated post-entry trough. */
   troughAgeMs: number;
+  /** Updated liquidity-drain confirmation count. */
+  liquidityDrainConfirmTicks?: number;
+  liquidityUsd?: number | null;
+  liqRatio?: number | null;
+  depthDrainRatio?: number | null;
 };
 
 /** Armed positions first (trail can fire), then older opens. */
@@ -125,6 +130,12 @@ export function decideMarkExit(args: {
   markSource?: 'stream' | 'dex' | null;
   /** 1.11.910 — live 5m volume over pool liquidity, for the dead-set exit. */
   turnover5mLiq?: number | null;
+  /** 1.11.969 — current fresh Dex liquidity for the drain exit. */
+  liquidityUsd?: number | null;
+  /** Stale open-mark metrics fail closed for liquidity-drain. */
+  liquidityMetricsFresh?: boolean;
+  /** Prior accepted marks confirming liquidity drain. */
+  liquidityDrainConfirmTicks?: number | null;
   /** 1.11.919 — how long a refused mark may stand before we accept it. */
   markJumpConfirmMaxMs?: number;
   /** 1.11.959 — green armed quarantine blind window; 0 = off. */
@@ -432,6 +443,10 @@ export function decideMarkExit(args: {
     volume5mUsd: args.volume5mUsd ?? null,
     entryVolume5mUsd: pos.entryVolume5mUsd ?? null,
     turnover5mLiq: args.turnover5mLiq ?? null,
+    liquidityUsd: args.liquidityUsd ?? null,
+    liquidityMetricsFresh: args.liquidityMetricsFresh === true,
+    entryLiquidityUsd: pos.entryLiquidityUsd ?? null,
+    liquidityDrainConfirmTicks: pos.liquidityDrainConfirmTicks ?? 0,
     entryTurnover5mLiq:
       pos.entryVolume5mUsd != null &&
       pos.entryLiquidityUsd != null &&
@@ -497,6 +512,10 @@ export function decideMarkExit(args: {
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,
+    liquidityDrainConfirmTicks: verdict.liquidityDrainConfirmTicks,
+    liquidityUsd: verdict.liquidityUsd,
+    liqRatio: verdict.liqRatio,
+    depthDrainRatio: verdict.depthDrainRatio,
     ...(forceReleaseGreenQuarantine
       ? {
           markQuarantineForceReleased: true,
@@ -543,6 +562,9 @@ export function applyMarkDecisionToPosition(
   pos.peakPriceUsd = decision.peakPriceUsd;
   pos.trailArmed = decision.armed;
   pos.volFadeSamples = decision.volFadeSamples;
+  if (decision.liquidityDrainConfirmTicks != null) {
+    pos.liquidityDrainConfirmTicks = decision.liquidityDrainConfirmTicks;
+  }
   if (decision.postEntryTroughPriceUsd > 0) {
     pos.postEntryTroughUsd = decision.postEntryTroughPriceUsd;
   }

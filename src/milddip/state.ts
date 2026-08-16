@@ -75,6 +75,8 @@ export type MildDipOpenPosition = {
   entryVolume5mUsd?: number | null;
   /** Dex liquidity at entry — fallback baseline for exit → rebuy liq-drop. */
   entryLiquidityUsd?: number | null;
+  /** 1.11.969 — consecutive accepted marks confirming liquidity drain. */
+  liquidityDrainConfirmTicks?: number;
   /**
    * 1.11.874 — carried so the exit path can ask the entry gate whether it would
    * open this position now. Market cap is scaled by the price move since entry,

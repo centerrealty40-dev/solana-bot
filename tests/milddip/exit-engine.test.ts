@@ -20,6 +20,8 @@ function pos(partial: Partial<MildDipOpenPosition> & { mint: string }): MildDipO
     entryPc5mPct: partial.entryPc5mPct ?? -5,
     buySignature: partial.buySignature ?? null,
     peakPriceUsd: partial.peakPriceUsd,
+    entryLiquidityUsd: partial.entryLiquidityUsd,
+    liquidityDrainConfirmTicks: partial.liquidityDrainConfirmTicks,
     lastMarkPriceUsd: partial.lastMarkPriceUsd,
     markQuarantineSinceMs: partial.markQuarantineSinceMs,
     trailArmed: partial.trailArmed,
@@ -1625,5 +1627,134 @@ describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
     // 1.11.956 — hard_stop is disabled in production; the reclaim-gated
     // dead-set / soft-loss rules remain the configured backstops.
     expect(eco).toContain("MILD_DIP_EXIT_HARD_STOP_PNL_PCT: '0'");
+  });
+});
+
+describe('1.11.969 liquidity-drain exit', () => {
+  const drainGates = {
+    ...gatesForDust,
+    liqDrainRatio: 0.7,
+    liqDrainMinAgeMs: 600_000,
+    liqDrainConfirmTicks: 2,
+    liqDrainSkipArmedRunner: true,
+    liqAbsFloorUsd: 0,
+    hardStopPnlPct: 0,
+    cliffDumpPnlPct: 0,
+    neverArmStaleMinMs: 0,
+  };
+
+  function drainPos(extra: Partial<MildDipOpenPosition> = {}) {
+    return pos({
+      mint: 'drain',
+      entryPriceUsd: 100,
+      openedAtMs: 1_000_000,
+      peakPriceUsd: 100,
+      entryLiquidityUsd: 100_000,
+      ...extra,
+    });
+  }
+
+  it('requires two consecutive below-threshold marks and exits the full position', () => {
+    const first = decideMarkExit({
+      mint: 'drain',
+      pos: drainPos(),
+      markPriceUsd: 80,
+      gates: drainGates,
+      nowMs: 1_700_000,
+      liquidityUsd: 50_000,
+      liquidityMetricsFresh: true,
+    });
+    expect(first?.shouldExit).toBe(false);
+    expect(first?.liquidityDrainConfirmTicks).toBe(1);
+
+    const p = drainPos({ liquidityDrainConfirmTicks: first?.liquidityDrainConfirmTicks });
+    const second = decideMarkExit({
+      mint: 'drain',
+      pos: p,
+      markPriceUsd: 80,
+      gates: drainGates,
+      nowMs: 1_710_000,
+      liquidityUsd: 50_000,
+      liquidityMetricsFresh: true,
+    });
+    expect(second?.reason).toBe('liq_drain');
+    expect(second?.fraction).toBe(1);
+  });
+
+  it('resets confirmation when the ratio recovers, blocks young/stale/missing data, and skips armed profit', () => {
+    const base = drainPos({ liquidityDrainConfirmTicks: 1 });
+    const recovered = decideMarkExit({
+      mint: 'drain',
+      pos: base,
+      markPriceUsd: 80,
+      gates: drainGates,
+      nowMs: 1_700_000,
+      liquidityUsd: 90_000,
+      liquidityMetricsFresh: true,
+    });
+    expect(recovered?.liquidityDrainConfirmTicks).toBe(0);
+
+    for (const args of [
+      { nowMs: 1_500_000, liquidityUsd: 50_000, liquidityMetricsFresh: true },
+      { nowMs: 1_700_000, liquidityUsd: 50_000, liquidityMetricsFresh: false },
+      { nowMs: 1_700_000, liquidityUsd: null, liquidityMetricsFresh: false },
+      { nowMs: 1_700_000, liquidityUsd: 50_000, liquidityMetricsFresh: true, entryLiquidityUsd: 0 },
+    ]) {
+      const d = decideMarkExit({
+        mint: 'drain',
+        pos: drainPos({ trailArmed: true, entryLiquidityUsd: args.entryLiquidityUsd ?? 100_000 }),
+        markPriceUsd: 80,
+        gates: drainGates,
+        ...args,
+      });
+      expect(d?.reason).not.toBe('liq_drain');
+    }
+
+    const runner = decideMarkExit({
+      mint: 'drain',
+      pos: drainPos({ trailArmed: true }),
+      markPriceUsd: 110,
+      gates: drainGates,
+      nowMs: 1_700_000,
+      liquidityUsd: 50_000,
+      liquidityMetricsFresh: true,
+    });
+    expect(runner?.reason).not.toBe('liq_drain');
+  });
+
+  it('supports the optional absolute liquidity floor and keeps it disabled at zero', () => {
+    const floorGates = { ...drainGates, liqDrainRatio: 0, liqAbsFloorUsd: 40_000 };
+    const first = decideMarkExit({
+      mint: 'floor',
+      pos: drainPos({ mint: 'floor' }),
+      markPriceUsd: 95,
+      gates: floorGates,
+      nowMs: 1_700_000,
+      liquidityUsd: 30_000,
+      liquidityMetricsFresh: true,
+    });
+    const second = decideMarkExit({
+      mint: 'floor',
+      pos: drainPos({ mint: 'floor', liquidityDrainConfirmTicks: 1 }),
+      markPriceUsd: 95,
+      gates: floorGates,
+      nowMs: 1_710_000,
+      liquidityUsd: 30_000,
+      liquidityMetricsFresh: true,
+    });
+    expect(first?.reason).not.toBe('liq_drain');
+    expect(second?.reason).toBe('liq_drain');
+    expect(second?.fraction).toBe(1);
+
+    const disabled = decideMarkExit({
+      mint: 'floor-off',
+      pos: drainPos({ mint: 'floor-off' }),
+      markPriceUsd: 80,
+      gates: { ...drainGates, liqDrainRatio: 0, liqAbsFloorUsd: 0 },
+      nowMs: 1_700_000,
+      liquidityUsd: 1,
+      liquidityMetricsFresh: true,
+    });
+    expect(disabled?.reason).not.toBe('liq_drain');
   });
 });

@@ -13,6 +13,7 @@ const LOSS_FILL_GUARD_REASONS: ReadonlySet<MildDipExitReason> = new Set([
   'cliff_dump',
   'dead_set_bounce',
   'mfe_bank_sleeve',
+  'liq_drain',
 ]);
 
 /**

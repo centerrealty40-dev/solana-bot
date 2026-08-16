@@ -8,6 +8,7 @@
  *        Optional hard stop from entry (`hard_stop`) + cliff LP-pull floor,
  *        both timed by the bounce off the trough (1.11.933).
  */
+import { computeMarkLiquidityTelemetry } from './open-mark-metrics.js';
 
 export type MildDipCandidateMetrics = {
   priceChange5mPct: number | null;
@@ -132,6 +133,16 @@ export type MildDipExitGates = {
   profitFillMaxSlipPct?: number;
   /** 1.11.961 — max quote slip below a bounce-based loss decision; 0 = off. */
   lossFillMaxSlipPct?: number;
+  /** 1.11.969 — price-adjusted liquidity drain threshold; 0 = off. */
+  liqDrainRatio?: number;
+  /** Minimum hold before liquidity-drain exits; 0 = off. */
+  liqDrainMinAgeMs?: number;
+  /** Consecutive accepted marks required for liquidity-drain exit; 0 = off. */
+  liqDrainConfirmTicks?: number;
+  /** Skip liquidity-drain exits for armed profitable runners. */
+  liqDrainSkipArmedRunner?: boolean;
+  /** Absolute current-liquidity floor; 0 = off. */
+  liqAbsFloorUsd?: number;
   /** 1.11.959 — green armed quarantine blind window; 0 = off. */
   markQuarantineGreenMaxMs?: number;
   /**
@@ -759,6 +770,8 @@ export type MildDipExitReason =
   | 'breakeven_stop'
   /** 1.11.910 — volume, turnover and price all gone, sold into a bounce. */
   | 'dead_set_bounce'
+  /** 1.11.969 — liquidity drained faster than price. */
+  | 'liq_drain'
   /** 1.11.832 — bank/bounce remnant too small to manage; frees mark bandwidth. */
   | 'dust_close'
   /** 1.11.860 — green lane: fixed target, tight stop, short ceiling. */
@@ -997,6 +1010,14 @@ export function evaluateMildDipPeakGiveback(args: {
   /** 1.11.910 — turnover now and at entry, for the dead-set conjunction. */
   turnover5mLiq?: number | null;
   entryTurnover5mLiq?: number | null;
+  /** 1.11.969 — current liquidity used by the drain exit. */
+  liquidityUsd?: number | null;
+  /** Entry liquidity baseline used by the drain ratio. */
+  entryLiquidityUsd?: number | null;
+  /** Freshness of the current liquidity reading; stale metrics fail closed. */
+  liquidityMetricsFresh?: boolean;
+  /** Prior confirmed liquidity-drain marks on this position. */
+  liquidityDrainConfirmTicks?: number | null;
   /** Prior spaced vol5m samples on this position (mutated via return value). */
   volFadeSamples?: readonly MildDipVolFadeSample[] | null;
   /** Wall clock for spacing samples; defaults to held-relative when omitted. */
@@ -1044,6 +1065,11 @@ export function evaluateMildDipPeakGiveback(args: {
   bounceOffTroughPct: number;
   /** Elapsed time since the updated post-entry trough. */
   troughAgeMs: number;
+  /** Updated liquidity-drain confirmation count. */
+  liquidityDrainConfirmTicks?: number;
+  liquidityUsd?: number | null;
+  liqRatio?: number | null;
+  depthDrainRatio?: number | null;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
   const scaleOutDone = args.scaleOutDone === true;
@@ -1202,7 +1228,66 @@ export function evaluateMildDipPeakGiveback(args: {
     volFadeSamples,
     postEntryTroughPriceUsd,
     postEntryTroughAtMs,
+    liquidityDrainConfirmTicks: 0,
+    liquidityUsd: null as number | null,
+    liqRatio: null as number | null,
+    depthDrainRatio: null as number | null,
   };
+  const liqDrainRatio = gates.liqDrainRatio ?? 0;
+  const liqDrainMinAgeMs = gates.liqDrainMinAgeMs ?? 0;
+  const liqDrainConfirmTicksRequired = gates.liqDrainConfirmTicks ?? 0;
+  const liqDrainSkipArmedRunner = gates.liqDrainSkipArmedRunner === true;
+  const liqAbsFloorUsd = gates.liqAbsFloorUsd ?? 0;
+  const priorLiqDrainTicks =
+    args.liquidityDrainConfirmTicks != null &&
+    Number.isFinite(args.liquidityDrainConfirmTicks) &&
+    args.liquidityDrainConfirmTicks > 0
+      ? Math.floor(args.liquidityDrainConfirmTicks)
+      : 0;
+  const liqDrainEligible =
+    (liqDrainRatio > 0 || liqAbsFloorUsd > 0) &&
+    liqDrainConfirmTicksRequired > 0 &&
+    heldMs >= liqDrainMinAgeMs &&
+    args.liquidityMetricsFresh === true &&
+    args.liquidityUsd != null &&
+    Number.isFinite(args.liquidityUsd) &&
+    args.liquidityUsd > 0 &&
+    args.entryLiquidityUsd != null &&
+    Number.isFinite(args.entryLiquidityUsd) &&
+    args.entryLiquidityUsd > 0 &&
+    gainPct < 0 &&
+    !(liqDrainSkipArmedRunner && armed && gainPct > 0);
+  const liqTelemetry = liqDrainEligible
+    ? computeMarkLiquidityTelemetry({
+        liquidityUsd: args.liquidityUsd,
+        entryLiquidityUsd: args.entryLiquidityUsd,
+        priceUsd: markPriceUsd,
+        entryPriceUsd,
+      })
+    : { liqRatio: null, depthDrainRatio: null };
+  const ratioHit =
+    liqDrainRatio > 0 &&
+    liqTelemetry.depthDrainRatio != null &&
+    liqTelemetry.depthDrainRatio < liqDrainRatio;
+  const absFloorHit =
+    liqAbsFloorUsd > 0 &&
+    args.liquidityUsd != null &&
+    args.liquidityUsd < liqAbsFloorUsd;
+  const liqDrainHit = liqDrainEligible && (ratioHit || absFloorHit);
+  const liquidityDrainConfirmTicks = liqDrainHit ? priorLiqDrainTicks + 1 : 0;
+  hold.liquidityDrainConfirmTicks = liquidityDrainConfirmTicks;
+  hold.liquidityUsd = args.liquidityUsd ?? null;
+  hold.liqRatio = liqTelemetry.liqRatio;
+  hold.depthDrainRatio = liqTelemetry.depthDrainRatio;
+  if (liqDrainHit && liquidityDrainConfirmTicks >= liqDrainConfirmTicksRequired) {
+    return {
+      ...hold,
+      shouldExit: true,
+      fraction: 1,
+      reason: 'liq_drain',
+      liquidityDrainConfirmTicks,
+    };
+  }
   const softLossOk = () => {
     const decision = decideSoftLossExit({ gates, gainPct, bounceOffTroughPct, troughAgeMs });
     if (decision.reason != null) lossExitBounceCap = decision.reason;

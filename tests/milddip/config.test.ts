@@ -134,6 +134,31 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_EXIT_LOSS_FILL_MAX_SLIP_PCT: '8'");
   });
 
+  it('loads liquidity-drain exit settings and production defaults', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_LIQ_DRAIN_RATIO: '0.7',
+        MILD_DIP_EXIT_LIQ_DRAIN_MIN_AGE_MIN: '10',
+        MILD_DIP_EXIT_LIQ_DRAIN_CONFIRM_TICKS: '2',
+        MILD_DIP_EXIT_LIQ_DRAIN_SKIP_ARMED_RUNNER: '1',
+        MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '0',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.liqDrainRatio).toBe(0.7);
+    expect(cfg.exit.liqDrainMinAgeMs).toBe(600_000);
+    expect(cfg.exit.liqDrainConfirmTicks).toBe(2);
+    expect(cfg.exit.liqDrainSkipArmedRunner).toBe(true);
+    expect(cfg.exit.liqAbsFloorUsd).toBe(0);
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_RATIO: '0.7'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_MIN_AGE_MIN: '10'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_CONFIRM_TICKS: '2'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_SKIP_ARMED_RUNNER: '1'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '0'");
+  });
+
   it('loads quarantine refresh and green blind-window settings', () => {
     const cfg = withConfigEnv(
       {
