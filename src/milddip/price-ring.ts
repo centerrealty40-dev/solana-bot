@@ -35,6 +35,14 @@ export type MildDipStreamWindowMetrics = {
   oldestSampleAgeMs: number | null;
 };
 
+export type MildDipTapeMinuteMetrics = {
+  tapeRet1mPct: number | null;
+  tapePrior5mPct: number | null;
+  sampleCount: number;
+  coverageMs: number | null;
+  latestSampleAgeMs: number | null;
+};
+
 export class MildDipPriceRing {
   private readonly byMint = new Map<string, MintRing>();
   private readonly maxSamplesPerMint: number;
@@ -310,6 +318,72 @@ export class MildDipPriceRing {
 
   sampleCount(mint: string, windowMs: number, nowMs = Date.now()): number {
     return this.samplesInWindow(mint, windowMs, nowMs).length;
+  }
+
+  /**
+   * Own stream tape around the current minute. The current-minute return is
+   * latest print versus the latest print at/before the 60s boundary. The
+   * preceding return is the 60s-boundary print versus the oldest print in the
+   * preceding 5m window. Both require at least 3m of stream coverage.
+   */
+  tapeMinuteMetrics(
+    mint: string,
+    nowMs = Date.now(),
+    boundaryMs = 60_000,
+    windowMs = 360_000,
+    minCoverageMs = 180_000,
+  ): MildDipTapeMinuteMetrics {
+    const samples = this.samplesInWindow(mint, windowMs, nowMs).filter(
+      (sample) => sample.source === 'stream',
+    );
+    if (samples.length === 0) {
+      return {
+        tapeRet1mPct: null,
+        tapePrior5mPct: null,
+        sampleCount: 0,
+        coverageMs: null,
+        latestSampleAgeMs: null,
+      };
+    }
+    let oldest = samples[0]!;
+    let latest = samples[0]!;
+    let boundary: MildDipPriceSample | null = null;
+    const boundaryTs = nowMs - Math.max(0, boundaryMs);
+    for (const sample of samples) {
+      if (sample.tsMs < oldest.tsMs) oldest = sample;
+      if (sample.tsMs > latest.tsMs) latest = sample;
+      if (sample.tsMs <= boundaryTs && (!boundary || sample.tsMs > boundary.tsMs)) {
+        boundary = sample;
+      }
+    }
+    const coverageMs = Math.max(0, latest.tsMs - oldest.tsMs);
+    const latestSampleAgeMs = Math.max(0, nowMs - latest.tsMs);
+    const boundaryAgeMs = boundary ? Math.max(0, nowMs - boundary.tsMs) : null;
+    if (
+      !boundary ||
+      latestSampleAgeMs > Math.max(0, boundaryMs) ||
+      (boundaryAgeMs != null &&
+        boundaryAgeMs > Math.max(0, boundaryMs) + 60_000) ||
+      coverageMs < Math.max(0, minCoverageMs) ||
+      !(oldest.priceUsd > 0) ||
+      !(boundary.priceUsd > 0) ||
+      !(latest.priceUsd > 0)
+    ) {
+      return {
+        tapeRet1mPct: null,
+        tapePrior5mPct: null,
+        sampleCount: samples.length,
+        coverageMs,
+        latestSampleAgeMs,
+      };
+    }
+    return {
+      tapeRet1mPct: (latest.priceUsd / boundary.priceUsd - 1) * 100,
+      tapePrior5mPct: (boundary.priceUsd / oldest.priceUsd - 1) * 100,
+      sampleCount: samples.length,
+      coverageMs,
+      latestSampleAgeMs,
+    };
   }
 
   streamWindowMetrics(

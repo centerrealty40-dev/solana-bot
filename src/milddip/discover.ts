@@ -107,6 +107,10 @@ export type MildDipCandidate = {
   waitDipSignalPriceUsd?: number | null;
   waitDipOriginalSource?: string | null;
   waitDipDumpFromSignalPct?: number | null;
+  tapeRet1mPct?: number | null;
+  tapePrior5mPct?: number | null;
+  tapeSampleCount?: number;
+  tapeCoverageMs?: number | null;
 };
 
 const SOLANA_CHAIN = 'solana';

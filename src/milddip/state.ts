@@ -41,6 +41,14 @@ export type MildDipOpenPosition = {
    * names are done within minutes either way, so a trail would only donate.
    */
   lane?: 'dip' | 'green';
+  /** GREEN exit profile fixed when the position was opened. */
+  greenExitProfile?: 'standard' | 'fast';
+  greenExitTrailEnabled?: boolean;
+  greenExitTakeProfitPct?: number;
+  greenExitStopPct?: number;
+  greenExitArmPct?: number;
+  greenExitTrailPct?: number;
+  greenExitMaxHoldMs?: number;
   /**
    * 1.11.852 — last mark accepted for this bag, and a quarantined one awaiting
    * confirmation. A single stream print collapsed 5.6420e-04 to 3.2402e-04

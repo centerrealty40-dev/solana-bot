@@ -51,6 +51,10 @@ export type GreenLaneGates = {
   minPc5mPct: number;
   /** 0 disables the upper bound; reject vertical moves at or above this value. */
   maxPc5mPct: number;
+  /** Use own stream minute returns instead of Dex pc5m bounds. */
+  tapeMinuteGatesEnabled?: boolean;
+  minTapeRet1mPct?: number;
+  maxTapePrior5mPct?: number;
   /** Keep the historical fail-closed behavior for missing 1h change by default. */
   requirePc1h: boolean;
   minPc1hPct: number;
@@ -85,6 +89,8 @@ export type GreenLaneInput = {
   pairAgeHours: number | null | undefined;
   /** Optional; skipped when absent. */
   ret1mPct?: number | null;
+  tapeRet1mPct?: number | null;
+  tapePrior5mPct?: number | null;
 };
 
 export type GreenLaneVerdict = {
@@ -149,13 +155,32 @@ export function evaluateGreenLane(
   const liq = num(input.liquidityUsd);
   const buys = num(input.buys5m);
   const ret1m = num(input.ret1mPct);
+  const tapeGatesEnabled = gates.tapeMinuteGatesEnabled === true;
+  const tapeRet1m = num(input.tapeRet1mPct);
+  const tapePrior5m = num(input.tapePrior5mPct);
 
-  // A missing field is a fail, not a pass: the lane must know what it is buying.
-  if (pc5m == null || pc5m < gates.minPc5mPct) fail.push(`pc5m=${pc5m ?? 'null'}`);
-  // Vertical moves (imp5 >= +40%) were the worst tape subset (median 60m
-  // return −21%); keep the ceiling opt-in so existing defaults do not change.
-  if (gates.maxPc5mPct > 0 && pc5m != null && pc5m >= gates.maxPc5mPct) {
-    fail.push(`pc5m_max=${pc5m}`);
+  if (tapeGatesEnabled) {
+    if (
+      tapeRet1m == null ||
+      tapePrior5m == null
+    ) {
+      fail.push('green_tape_insufficient');
+    } else {
+      if (tapeRet1m < (gates.minTapeRet1mPct ?? 0)) {
+        fail.push(`tapeRet1m=${tapeRet1m}`);
+      }
+      if (tapePrior5m > (gates.maxTapePrior5mPct ?? 0)) {
+        fail.push(`tapePrior5m=${tapePrior5m}`);
+      }
+    }
+  } else {
+    // A missing field is a fail, not a pass: the lane must know what it is buying.
+    if (pc5m == null || pc5m < gates.minPc5mPct) fail.push(`pc5m=${pc5m ?? 'null'}`);
+    // Vertical moves (imp5 >= +40%) were the worst tape subset (median 60m
+    // return −21%); keep the ceiling opt-in so existing defaults do not change.
+    if (gates.maxPc5mPct > 0 && pc5m != null && pc5m >= gates.maxPc5mPct) {
+      fail.push(`pc5m_max=${pc5m}`);
+    }
   }
   if (
     pc1h == null
@@ -182,13 +207,17 @@ export function evaluateGreenLane(
   if (gates.maxBuyShare5m > 0 && buyShare != null && buyShare > gates.maxBuyShare5m) {
     fail.push(`buyShare=${buyShare.toFixed(3)}`);
   }
-  if (ret1m != null && ret1m > gates.maxRet1mPct) fail.push(`ret1m=${ret1m.toFixed(2)}`);
+  if (!tapeGatesEnabled && ret1m != null && ret1m > gates.maxRet1mPct) {
+    fail.push(`ret1m=${ret1m.toFixed(2)}`);
+  }
 
   if (fail.length > 0) return { pass: false, reasons: fail, turnover, buyShare };
   return {
     pass: true,
     reasons: [
-      `pc5m=${pc5m!.toFixed(1)}`,
+      ...(tapeGatesEnabled
+        ? [`tapeRet1m=${tapeRet1m!.toFixed(1)}`, `tapePrior5m=${tapePrior5m!.toFixed(1)}`]
+        : [`pc5m=${pc5m!.toFixed(1)}`]),
       ...(pc1h == null ? [] : [`pc1h=${pc1h.toFixed(1)}`]),
       `turnover=${turnover!.toFixed(2)}`,
     ],

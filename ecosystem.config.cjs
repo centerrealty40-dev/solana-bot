@@ -3729,12 +3729,16 @@ const PM2_APPS = [
          */
         // Controlled $1 probe: leader snapshots show p10 vol5m $145 and median $1051.
         MILD_DIP_GREEN_ENABLED: '1',
-        MILD_DIP_GREEN_WATCH_ENABLED: '1',
         MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
-        MILD_DIP_GREEN_WATCH_WINDOW_MS: '600000',
-        MILD_DIP_GREEN_WATCH_MIN_HITS: '3',
-        MILD_DIP_GREEN_WATCH_MAX_MINTS: '60',
         MILD_DIP_GREEN_POSITION_USD: '1',
+        MILD_DIP_GREEN_TAPE_GATES_ENABLED: '1',
+        MILD_DIP_GREEN_MIN_RET1M_PCT: '5',
+        MILD_DIP_GREEN_MAX_PRIOR5M_PCT: '10',
+        MILD_DIP_GREEN_FAST_EXIT_ENABLED: '1',
+        MILD_DIP_GREEN_STRONG_RET1M_PCT: '40',
+        MILD_DIP_GREEN_FAST_EXIT_ARM_PCT: '5',
+        MILD_DIP_GREEN_FAST_EXIT_TRAIL_PCT: '6',
+        MILD_DIP_GREEN_FAST_EXIT_MAX_HOLD_MS: '900000',
         /**
          * 1.11.867 — 0.05h (3 min), was 1h. Measured on the sampler with the
          * green exit (+30% / −6% / 10 min):

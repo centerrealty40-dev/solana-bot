@@ -157,6 +157,7 @@ export function streamObservabilitySnapshot(
   pairAgeHours?: number | null,
 ): Record<string, unknown> {
   const stream = mildDipPriceRing.streamWindowMetrics(mint, lookbackMs, nowMs);
+  const tape = mildDipPriceRing.tapeMinuteMetrics(mint, nowMs);
   return {
     streamPriceUsd: stream.freshPriceUsd,
     streamBounceFromTroughPct: stream.bounceFromTroughPct,
@@ -164,6 +165,11 @@ export function streamObservabilitySnapshot(
     streamDumpExtentFromPeakPct: stream.dumpExtentFromPeakPct,
     streamSampleCount: stream.sampleCount,
     streamOldestSampleAgeMs: stream.oldestSampleAgeMs,
+    tapeRet1mPct: tape.tapeRet1mPct,
+    tapePrior5mPct: tape.tapePrior5mPct,
+    tapeSampleCount: tape.sampleCount,
+    tapeCoverageMs: tape.coverageMs,
+    tapeLatestSampleAgeMs: tape.latestSampleAgeMs,
     pairAgeHours:
       pairAgeHours ?? mildDipPairAgeRegistry.pairAgeHours(mint, nowMs),
   };
@@ -634,6 +640,7 @@ export async function evaluateFastPathCandidate(
   const streamCurrentDd = streamDrawdownPct(mint, lookbackMs, nowMs);
   const streamDump = streamDumpExtentPct(mint, lookbackMs, nowMs);
   const streamRally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
+  const tapeMinute = mildDipPriceRing.tapeMinuteMetrics(mint, nowMs);
   // Journal / turn-dump prefer true dump extent; fall back to mark-vs-peak.
   const streamDd = streamDump ?? streamCurrentDd;
   /**
@@ -715,6 +722,8 @@ export async function evaluateFastPathCandidate(
       {
         pc5mPct: struct.metrics.priceChange5mPct,
         pc1hPct: struct.metrics.priceChange1hPct,
+        tapeRet1mPct: tapeMinute.tapeRet1mPct,
+        tapePrior5mPct: tapeMinute.tapePrior5mPct,
         volume5mUsd: struct.metrics.volume5mUsd,
         volume1hUsd: struct.metrics.volume1hUsd,
         liquidityUsd: struct.metrics.liquidityUsd,
@@ -729,6 +738,9 @@ export async function evaluateFastPathCandidate(
         minVolume1hUsd: cfg.green.minVolume1hUsd,
         minPc5mPct: cfg.green.minPc5mPct,
         maxPc5mPct: cfg.green.maxPc5mPct,
+        tapeMinuteGatesEnabled: cfg.green.tapeMinuteGatesEnabled,
+        minTapeRet1mPct: cfg.green.minTapeRet1mPct,
+        maxTapePrior5mPct: cfg.green.maxTapePrior5mPct,
         requirePc1h: cfg.green.requirePc1h,
         minPc1hPct: cfg.green.minPc1hPct,
         minBuys5m: cfg.green.minBuys5m,
@@ -745,6 +757,10 @@ export async function evaluateFastPathCandidate(
         priceUsd: struct.priceUsd,
         metrics: struct.metrics,
         dipSource: 'green_momentum',
+        tapeRet1mPct: tapeMinute.tapeRet1mPct,
+        tapePrior5mPct: tapeMinute.tapePrior5mPct,
+        tapeSampleCount: tapeMinute.sampleCount,
+        tapeCoverageMs: tapeMinute.coverageMs,
       };
     }
     if (shouldJournalGreenVerdict(mint, nowMs)) {

@@ -187,7 +187,6 @@ export function shouldSampleStreamPrice(
   nowMs: number,
   lookbackMs: number,
   hotMints = mildDipHotMints,
-  onGreenWatch: ((mint: string) => void) | undefined = undefined,
 ): boolean {
   const until = state.cooldownUntilMs[mint] ?? 0;
   if (until > nowMs) return true; // actively cooling — record the trough
@@ -199,20 +198,6 @@ export function shouldSampleStreamPrice(
   if (lastEx > 0 && nowMs - lastEx <= lookbackMs) return true; // 1.11.783 post-exit wake
   // Fast-path needs live stream marks on hot names, not only cooldown.
   if (hotMints.isRecent(mint, nowMs, 180_000)) return true;
-  if (
-    cfg.green.enabled &&
-    cfg.greenWatchEnabled &&
-    hotMints.isGreenWatchCandidate(
-      mint,
-      nowMs,
-      cfg.greenWatchWindowMs,
-      cfg.greenWatchMinHits,
-      cfg.greenWatchMaxMints,
-    )
-  ) {
-    onGreenWatch?.(mint);
-    return true;
-  }
   /**
    * 1.11.930 — leader-known names must keep own-tape sampling between sessions.
    * 6zjL @ 09:44: hot-mints TTL expired hours after 04:02; one random pump log at
@@ -2284,12 +2269,18 @@ async function tryExits(
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
       markSource: source,
       greenGates: {
-        takeProfitPct: cfg.green.exitTrailEnabled ? 0 : cfg.green.takeProfitPct,
-        stopPct: cfg.green.exitTrailEnabled ? cfg.green.exitStopPct : cfg.green.stopPct,
-        maxHoldMs: cfg.green.exitTrailEnabled ? cfg.green.exitMaxHoldMs : cfg.green.maxHoldMs,
-        trailEnabled: cfg.green.exitTrailEnabled,
-        armPct: cfg.green.exitArmPct,
-        trailPct: cfg.green.exitTrailPct,
+        takeProfitPct:
+          pos.greenExitTakeProfitPct ??
+          (cfg.green.exitTrailEnabled ? 0 : cfg.green.takeProfitPct),
+        stopPct:
+          pos.greenExitStopPct ??
+          (cfg.green.exitTrailEnabled ? cfg.green.exitStopPct : cfg.green.stopPct),
+        maxHoldMs:
+          pos.greenExitMaxHoldMs ??
+          (cfg.green.exitTrailEnabled ? cfg.green.exitMaxHoldMs : cfg.green.maxHoldMs),
+        trailEnabled: pos.greenExitTrailEnabled ?? cfg.green.exitTrailEnabled,
+        armPct: pos.greenExitArmPct ?? cfg.green.exitArmPct,
+        trailPct: pos.greenExitTrailPct ?? cfg.green.exitTrailPct,
       },
     });
     if (!decision) continue;
@@ -2960,9 +2951,6 @@ export async function runMildDipLoop(
   };
   const shadowDiscoveryLastSampleAt = new Map<string, number>();
   const shadowDiscoveryCleanup = { lastAtMs: 0 };
-  let greenWatchSampled = 0;
-  let greenWatchAdmitted = 0;
-  const greenWatchPending = new Map<string, number>();
   const shouldSampleTapeStreamPrice = (mint: string, nowMs: number): boolean => {
     if (
       shouldSampleStreamPrice(
@@ -2972,10 +2960,6 @@ export async function runMildDipLoop(
         nowMs,
         sampleWatchMs,
         mildDipHotMints,
-        (greenWatchMint) => {
-          greenWatchAdmitted += 1;
-          greenWatchPending.set(greenWatchMint, nowMs);
-        },
       )
     ) {
       return true;
@@ -3122,7 +3106,6 @@ export async function runMildDipLoop(
       sellTape: dumpSellTape,
       maxPostResidualFrac: cfg.oneshotDumpMaxPostResidualFrac,
       onPriceSample: (sample) => {
-        if (greenWatchPending.delete(sample.mint)) greenWatchSampled += 1;
         if (tapeShadow) {
           const structural = getStructuralCache(
             sample.mint,
@@ -3370,9 +3353,6 @@ export async function runMildDipLoop(
     // 1.11.798 — surface dead stream-price tape (hot-mint WS can look fine alone).
     if (priceSampler && nowMs - lastStreamPriceStatsMs >= 30_000) {
       lastStreamPriceStatsMs = nowMs;
-      for (const [mint, markedAtMs] of greenWatchPending) {
-        if (nowMs - markedAtMs > cfg.greenWatchWindowMs) greenWatchPending.delete(mint);
-      }
       const st = priceSampler.stats();
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_stream_price_stats',
@@ -3385,17 +3365,6 @@ export async function runMildDipLoop(
         skipReasonCounts: st.skipReasonCounts,
         txRetryAttempts: st.txRetryAttempts,
         txRetrySucceeded: st.txRetrySucceeded,
-        greenWatchSize:
-          cfg.green.enabled && cfg.greenWatchEnabled
-            ? mildDipHotMints.greenWatchList(
-                nowMs,
-                cfg.greenWatchWindowMs,
-                cfg.greenWatchMinHits,
-                cfg.greenWatchMaxMints,
-              ).length
-            : 0,
-        greenWatchSampled,
-        greenWatchAdmitted,
         ringStreamN: mildDipPriceRing
           .watchedMints(nowMs)
           .filter((m) => mildDipPriceRing.lastPrice(m, nowMs)?.source === 'stream').length,
