@@ -22,7 +22,10 @@ import {
   type OneshotDumpEvent,
 } from './oneshot-dump.js';
 import { mildDipPriceRing } from './price-ring.js';
-import { mintPriceUsdFromTxMeta } from './stream-mint-price.js';
+import {
+  mintDecimalsFromTxMeta,
+  mintPriceUsdFromTxMeta,
+} from './stream-mint-price.js';
 
 export type StreamPriceSampler = {
   enqueue: (mint: string, signature: string, tsMs?: number) => void;
@@ -180,6 +183,10 @@ export function createStreamPriceSampler(args: {
       noteSkip('get_tx_null');
       retryJob(job, nowMs);
       return;
+    }
+    const knownDecimals = mintDecimalsFromTxMeta(tx, job.mint);
+    if (knownDecimals != null) {
+      mildDipPriceRing.noteMintDecimals(job.mint, knownDecimals);
     }
     if (isRetry) txRetrySucceeded += 1;
 
