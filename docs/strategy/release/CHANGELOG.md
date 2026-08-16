@@ -1,3 +1,25 @@
+## [1.11.975] — 2026-08-16
+
+### Added / Changed
+
+- Added a GREEN-specific switch for the shared turn→dump gate. GREEN keeps the
+  existing gate by default, while the production probe disables it because
+  `turn_dump_not_red_pc5m` rejected 29 of 30 post-deploy GREEN candidates.
+- GREEN prebuy revalidation now retains only the chase check and does not apply
+  the dip lane's negative `pc5m` window.
+- Added an optional GREEN cooldown-bounce ceiling; the default `0` preserves
+  the shared DIP value.
+- Journaled `mild_dip_turn_dump_bypass` when the GREEN turn-dump gate is skipped.
+
+### Rollback
+
+Restore:
+
+```text
+MILD_DIP_GREEN_TURN_DUMP_GATE='1'
+MILD_DIP_GREEN_MAX_COOLDOWN_BOUNCE_PCT='0'
+```
+
 ## [1.11.974] — 2026-08-16
 
 ### Added / Changed

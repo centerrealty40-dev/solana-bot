@@ -5,6 +5,12 @@ import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import type { MildDipOpenPosition } from '../../src/milddip/state.js';
 import { evaluateMildDipEntryRisk, evaluateMildDipPreBuy } from '../../src/milddip/gates.js';
 import {
+  cooldownBouncePctForSource,
+  preBuyEntryGatesForSource,
+  shouldApplyGreenTurnDumpGate,
+} from '../../src/milddip/entry-attempt.js';
+import { evaluateTurnDumpGate } from '../../src/milddip/turn-dump.js';
+import {
   resetFastPathStateForTests,
   shouldJournalGreenVerdict,
 } from '../../src/milddip/fast-path.js';
@@ -110,6 +116,75 @@ describe('GREEN shared entry-risk and chase settings', () => {
     expect(evaluateMildDipPreBuy({ ...args, maxChasePct: 12 }).pass).toBe(true);
     expect(evaluateMildDipPreBuy({ ...args, maxChasePct: 8 }).pass).toBe(false);
     expect(evaluateMildDipPreBuy({ ...args, maxChasePct: 0 }).pass).toBe(true);
+  });
+});
+
+describe('GREEN shared gate bypasses', () => {
+  it('skips turn-dump only for GREEN when explicitly disabled', () => {
+    expect(shouldApplyGreenTurnDumpGate(true, false)).toBe(false);
+    expect(shouldApplyGreenTurnDumpGate(true, true)).toBe(true);
+    expect(shouldApplyGreenTurnDumpGate(false, false)).toBe(true);
+    expect(
+      evaluateTurnDumpGate({
+        enabled: true,
+        pc5m: 15,
+        volume5mUsd: 10_000,
+        liquidityUsd: 10_000,
+        alpha: -5.08,
+        beta: 6.86,
+        shallowSlackPct: 10,
+        deepSlackPct: 12,
+      }).pass,
+    ).toBe(false);
+  });
+
+  it('removes the DIP prebuy window for GREEN but keeps it for DIP', () => {
+    const dipWindow = { minDipPct: -20, maxDipPct: -1 };
+    const green = preBuyEntryGatesForSource(true, dipWindow);
+    const dip = preBuyEntryGatesForSource(false, dipWindow);
+    expect(
+      evaluateMildDipPreBuy({
+        signalPriceUsd: 1,
+        freshPriceUsd: 1.1,
+        freshPc5mPct: 18,
+        entryGates: green,
+        maxChasePct: 12,
+      }).pass,
+    ).toBe(true);
+    expect(
+      evaluateMildDipPreBuy({
+        signalPriceUsd: 1,
+        freshPriceUsd: 1.1,
+        freshPc5mPct: 18,
+        entryGates: dip,
+        maxChasePct: 12,
+      }).pass,
+    ).toBe(false);
+  });
+
+  it('uses the GREEN cooldown-bounce cap only when it is positive', () => {
+    const base = {
+      isGreen: true,
+      isKnife: false,
+      knifeMaxPct: 8,
+      sharedMaxPct: 6,
+    };
+    expect(cooldownBouncePctForSource({ ...base, greenMaxPct: 100 })).toBe(100);
+    expect(cooldownBouncePctForSource({ ...base, greenMaxPct: 0 })).toBe(6);
+    expect(
+      cooldownBouncePctForSource({
+        ...base,
+        isGreen: false,
+        greenMaxPct: 100,
+      }),
+    ).toBe(6);
+    expect(
+      cooldownBouncePctForSource({
+        ...base,
+        isKnife: true,
+        greenMaxPct: 100,
+      }),
+    ).toBe(8);
   });
 });
 

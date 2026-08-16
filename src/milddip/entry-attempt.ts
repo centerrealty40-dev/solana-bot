@@ -61,6 +61,34 @@ import { leaderBuyGateOk } from './leader-seen-gate.js';
 
 const HOLDING_DUST_RAW = 1000n;
 
+export function shouldApplyGreenTurnDumpGate(
+  isGreen: boolean,
+  greenTurnDumpGate: boolean,
+): boolean {
+  return !isGreen || greenTurnDumpGate;
+}
+
+export function preBuyEntryGatesForSource(
+  isGreen: boolean,
+  entryGates: { minDipPct: number; maxDipPct: number },
+): { minDipPct: number; maxDipPct: number } {
+  return isGreen
+    ? { minDipPct: Number.NEGATIVE_INFINITY, maxDipPct: Number.POSITIVE_INFINITY }
+    : entryGates;
+}
+
+export function cooldownBouncePctForSource(args: {
+  isGreen: boolean;
+  isKnife: boolean;
+  greenMaxPct: number;
+  knifeMaxPct: number;
+  sharedMaxPct: number;
+}): number {
+  if (args.isKnife) return args.knifeMaxPct;
+  if (args.isGreen && args.greenMaxPct > 0) return args.greenMaxPct;
+  return args.sharedMaxPct;
+}
+
 /**
  * 1.11.827 — probe buys on re-entry blocks.
  *
@@ -492,7 +520,7 @@ export async function attemptMildDipEntry(args: {
                 signalPriceUsd: c.priceUsd,
                 freshPriceUsd: freshPx,
                 freshPc5mPct: freshPc,
-                entryGates: branchEntryGates,
+                entryGates: preBuyEntryGatesForSource(isGreen, branchEntryGates),
                 maxChasePct: isGreen && cfg.green.chasePct > 0 ? cfg.green.chasePct : opts.chasePct,
               });
       if (!pre.pass) {
@@ -625,7 +653,19 @@ export async function attemptMildDipEntry(args: {
     resid: number | null;
     branch: string | null;
   } | null = null;
-  if (cfg.turnDumpGateEnabled) {
+  const applyTurnDumpGate =
+    cfg.turnDumpGateEnabled && shouldApplyGreenTurnDumpGate(isGreen, cfg.greenTurnDumpGate);
+  if (cfg.turnDumpGateEnabled && isGreen && !cfg.greenTurnDumpGate) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_turn_dump_bypass',
+      mint: c.mint,
+      symbol: c.symbol,
+      dipSource: c.dipSource,
+      lane: opts.lane,
+      reason: 'green_turn_dump_gate_disabled',
+    });
+  }
+  if (applyTurnDumpGate) {
     const td = evaluateTurnDumpGate({
       enabled: true,
       pc5m: entryPc5m,
@@ -806,7 +846,13 @@ export async function attemptMildDipEntry(args: {
     const bounce = evaluateCooldownBounce({
       freshPriceUsd: freshPx ?? entryPriceUsd,
       troughPriceUsd: trough?.priceUsd ?? null,
-      maxBouncePct: isKnife ? cfg.knifeStabilizeMaxBouncePct : cfg.maxCooldownBouncePct,
+      maxBouncePct: cooldownBouncePctForSource({
+        isGreen,
+        isKnife,
+        greenMaxPct: cfg.greenMaxCooldownBouncePct,
+        knifeMaxPct: cfg.knifeStabilizeMaxBouncePct,
+        sharedMaxPct: cfg.maxCooldownBouncePct,
+      }),
       requireTrough: false,
     });
     if (!bounce.pass) {
