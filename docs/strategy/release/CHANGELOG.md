@@ -3,7 +3,7 @@
 ### Added / Changed
 
 - Enabled the leader-style `mild_stabilize` fresh-entry lane for real-money
-  mild-dip entries. The production profile now requires a $6–25% ring dump,
+  mild-dip entries. The production profile now requires a 6–25% ring dump,
   a 1.5–8% reclaim, and a trough held for at least 60 seconds while retaining
   the existing Dex-red and below-peak safeguards.
 - Added `MILD_DIP_MILD_STABILIZE_MAX_PER_HOUR=12`, counting only attempted

@@ -3098,7 +3098,7 @@ const PM2_APPS = [
          * knife_stabilize (−50,−20] wait+bounce — unchanged.
          */
         MILD_DIP_MILD_STABILIZE_ENABLED: '1',
-        /** 1.11.800 — off: EjD5Y9 green-candle reclaim via ring bounce. */
+        /** 1.11.971 — on: leader-style reclaim entries, trough must hold 60s. */
         MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '1',
         MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-6',
