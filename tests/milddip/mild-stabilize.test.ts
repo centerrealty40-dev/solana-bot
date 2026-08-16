@@ -3,6 +3,7 @@ import {
   evaluateMildStabilizeFromRing,
   mildStabilizeDexDipOk,
   mildStabilizeLaneAllowed,
+  mildStabilizeSkipTelemetryEligible,
   __resetMildStabilizeBudgetsForTests,
   takeMildStabilizeAttemptSlot,
   takeMildStabilizeSkipTelemetrySlot,
@@ -111,6 +112,44 @@ describe('mild_stabilize skip telemetry budget', () => {
     expect(takeMildStabilizeSkipTelemetrySlot(2, t0 + 1)).toBe(true);
     expect(takeMildStabilizeSkipTelemetrySlot(2, t0 + 2)).toBe(false);
     expect(takeMildStabilizeSkipTelemetrySlot(2, t0 + 3_600_002)).toBe(true);
+    __resetMildStabilizeBudgetsForTests();
+  });
+});
+
+describe('mild_stabilize skip telemetry filters', () => {
+  it('drops shallow and implausible ring verdicts before reserving a slot', () => {
+    __resetMildStabilizeBudgetsForTests();
+    const filter = (dumpPct: number, troughAgeMs: number | null) =>
+      mildStabilizeSkipTelemetryEligible({
+        pass: false,
+        reasons: ['mild_stabilize_bounce=0.00_outside'],
+        dumpPct,
+        troughAgeMs,
+        minDumpPct: -3,
+      });
+    const reserveIfEligible = (dumpPct: number, troughAgeMs: number | null) =>
+      filter(dumpPct, troughAgeMs) &&
+      takeMildStabilizeSkipTelemetrySlot(1, 1_700_000_000_000);
+
+    expect(reserveIfEligible(-0.97, 30_000)).toBe(false);
+    expect(reserveIfEligible(-96.8, 0)).toBe(false);
+    expect(takeMildStabilizeSkipTelemetrySlot(1, 1_700_000_000_000)).toBe(true);
+    __resetMildStabilizeBudgetsForTests();
+  });
+
+  it('retains genuine failed verdicts and reserves their journal slot', () => {
+    __resetMildStabilizeBudgetsForTests();
+    expect(
+      mildStabilizeSkipTelemetryEligible({
+        pass: false,
+        reasons: ['mild_stabilize_bounce=0.00_outside'],
+        dumpPct: -12,
+        troughAgeMs: 30_000,
+        minDumpPct: -3,
+      }),
+    ).toBe(true);
+    expect(takeMildStabilizeSkipTelemetrySlot(1, 1_700_000_000_000)).toBe(true);
+    expect(takeMildStabilizeSkipTelemetrySlot(1, 1_700_000_000_001)).toBe(false);
     __resetMildStabilizeBudgetsForTests();
   });
 });

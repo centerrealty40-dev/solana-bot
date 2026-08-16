@@ -55,6 +55,21 @@ export function takeMildStabilizeSkipTelemetrySlot(
   return true;
 }
 
+/** Keep the skip journal focused on plausible, non-trivial ring verdicts. */
+export function mildStabilizeSkipTelemetryEligible(args: {
+  pass: boolean;
+  reasons: string[];
+  dumpPct: number | null;
+  troughAgeMs: number | null;
+  minDumpPct: number;
+}): boolean {
+  if (args.pass || args.reasons.includes('mild_stabilize_missing_ring')) return false;
+  if (args.dumpPct == null || !Number.isFinite(args.dumpPct)) return false;
+  if (!(args.dumpPct <= args.minDumpPct)) return false;
+  if (args.troughAgeMs === 0 && args.dumpPct <= -90) return false;
+  return true;
+}
+
 /** Test helper. */
 export function __resetMildStabilizeBudgetsForTests(): void {
   mildStabilizeAttemptStamps.length = 0;
