@@ -166,8 +166,11 @@ export function decideMarkExit(args: {
     const pnl = (markPriceUsd / basis - 1) * 100;
     const peakPriceUsd = Math.max(pos.peakPriceUsd ?? basis, markPriceUsd);
     const peakPnl = (peakPriceUsd / basis - 1) * 100;
+    const peakDrawdown = peakPriceUsd > 0
+      ? (1 - markPriceUsd / peakPriceUsd) * 100
+      : 0;
     const wasArmed = pos.trailArmed === true;
-    const g = decideGreenExit(pnl, heldMsGreen, args.greenGates, peakPnl);
+    const g = decideGreenExit(pnl, heldMsGreen, args.greenGates, peakPnl, peakDrawdown);
     const armed =
       args.greenGates.trailEnabled === true &&
       (wasArmed || peakPnl >= (args.greenGates.armPct ?? 10));

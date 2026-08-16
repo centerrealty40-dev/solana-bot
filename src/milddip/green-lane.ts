@@ -223,6 +223,7 @@ export function decideGreenExit(
   heldMs: number,
   gates: GreenExitGates,
   peakPnlPct = 0,
+  peakDrawdownPct = 0,
 ): { shouldExit: boolean; reason: GreenExitReason } {
   if (!Number.isFinite(pnlPct)) return { shouldExit: false, reason: null };
   const trailEnabled = gates.trailEnabled === true;
@@ -235,7 +236,7 @@ export function decideGreenExit(
     armed &&
     gates.trailPct != null &&
     gates.trailPct > 0 &&
-    pnlPct <= peakPnlPct - gates.trailPct
+    peakDrawdownPct + 1e-9 >= gates.trailPct
   ) {
     return { shouldExit: true, reason: 'green_trail' };
   }

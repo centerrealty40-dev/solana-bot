@@ -43,9 +43,6 @@ function pruneGreenBuyStamps(state: MildDipState, nowMs: number): number[] {
   return greenBuyStamps;
 }
 
-export function __resetGreenBuyBudgetForTests(): void {
-  // Kept for compatibility with focused entry tests; timestamps live in state.
-}
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
   dumpFromSignalPct,
@@ -900,8 +897,11 @@ export async function attemptMildDipEntry(args: {
   const isGreen = c.dipSource === 'green_momentum';
   if (isGreen) {
     const greenBuyStamps = pruneGreenBuyStamps(state, nowMs);
+    const openGreen = Object.values(state.open).filter(
+      (position) => position.lane === 'green',
+    ).length;
     const capReason = greenExposureCapReason({
-      openGreen: Object.values(state.open).filter((position) => position.lane === 'green').length,
+      openGreen,
       maxOpen: cfg.green.maxOpen,
       buysInHour: greenBuyStamps.length,
       maxBuysPerHour: cfg.green.maxBuysPerHour,
@@ -912,7 +912,7 @@ export async function attemptMildDipEntry(args: {
         mint: c.mint,
         symbol: c.symbol,
         reason: capReason,
-        openGreen: Object.values(state.open).filter((position) => position.lane === 'green').length,
+        openGreen,
         buysInHour: greenBuyStamps.length,
         maxOpen: cfg.green.maxOpen,
         maxBuysPerHour: cfg.green.maxBuysPerHour,

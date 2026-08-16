@@ -179,11 +179,32 @@ describe('decideGreenExit', () => {
       armPct: 10,
       trailPct: 9,
     };
-    expect(decideGreenExit(10, 60_000, trail, 10)).toEqual({ shouldExit: false, reason: null });
-    expect(decideGreenExit(12, 60_000, trail, 20)).toEqual({ shouldExit: false, reason: null });
-    expect(decideGreenExit(10, 60_000, trail, 20)).toEqual({ shouldExit: true, reason: 'green_trail' });
-    expect(decideGreenExit(-30, 60_000, trail, 20)).toEqual({ shouldExit: true, reason: 'green_stop' });
-    expect(decideGreenExit(12, 3_600_001, trail, 12)).toEqual({ shouldExit: true, reason: 'green_max_hold' });
+    expect(decideGreenExit(10, 60_000, trail, 10, 0)).toEqual({ shouldExit: false, reason: null });
+    expect(decideGreenExit(12, 60_000, trail, 20, 0)).toEqual({ shouldExit: false, reason: null });
+    expect(decideGreenExit(10, 60_000, trail, 20, 9)).toEqual({ shouldExit: true, reason: 'green_trail' });
+    expect(decideGreenExit(-30, 60_000, trail, 20, 9)).toEqual({ shouldExit: true, reason: 'green_stop' });
+    expect(decideGreenExit(12, 3_600_001, trail, 12, 0)).toEqual({ shouldExit: true, reason: 'green_max_hold' });
+  });
+
+  it('trails nine percent from peak price, not nine pnl points', () => {
+    // Basis 1.0, peak 1.40, arm at +40%. Mark 1.30 is −7.14% from peak;
+    // mark 1.274 is −9.0% from peak and exits.
+    const trail: GreenExitGates = {
+      takeProfitPct: 0,
+      stopPct: 30,
+      maxHoldMs: 3_600_000,
+      trailEnabled: true,
+      armPct: 10,
+      trailPct: 9,
+    };
+    expect(decideGreenExit(30, 60_000, trail, 40, (1 - 1.30 / 1.40) * 100)).toEqual({
+      shouldExit: false,
+      reason: null,
+    });
+    expect(decideGreenExit(27.4, 60_000, trail, 40, (1 - 1.274 / 1.40) * 100)).toEqual({
+      shouldExit: true,
+      reason: 'green_trail',
+    });
   });
 
   it('does not ride a drawdown the way the dip lane does', () => {
