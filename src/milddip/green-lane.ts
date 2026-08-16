@@ -49,6 +49,10 @@ export type GreenLaneGates = {
   minVolume5mUsd: number;
   minVolume1hUsd: number;
   minPc5mPct: number;
+  /** 0 disables the upper bound; reject vertical moves at or above this value. */
+  maxPc5mPct: number;
+  /** Keep the historical fail-closed behavior for missing 1h change by default. */
+  requirePc1h: boolean;
   minPc1hPct: number;
   minBuys5m: number;
   /** Reject a one-sided tape: buys / (buys + sells) above this. */
@@ -90,6 +94,19 @@ export type GreenLaneVerdict = {
   turnover: number | null;
   buyShare: number | null;
 };
+
+export function greenExposureCapReason(args: {
+  openGreen: number;
+  maxOpen: number;
+  buysInHour: number;
+  maxBuysPerHour: number;
+}): 'green_max_open' | 'green_max_buys_per_hour' | null {
+  if (args.maxOpen > 0 && args.openGreen >= args.maxOpen) return 'green_max_open';
+  if (args.maxBuysPerHour > 0 && args.buysInHour >= args.maxBuysPerHour) {
+    return 'green_max_buys_per_hour';
+  }
+  return null;
+}
 
 function num(v: number | null | undefined): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
@@ -135,7 +152,18 @@ export function evaluateGreenLane(
 
   // A missing field is a fail, not a pass: the lane must know what it is buying.
   if (pc5m == null || pc5m < gates.minPc5mPct) fail.push(`pc5m=${pc5m ?? 'null'}`);
-  if (pc1h == null || pc1h < gates.minPc1hPct) fail.push(`pc1h=${pc1h ?? 'null'}`);
+  // Vertical moves (imp5 >= +40%) were the worst tape subset (median 60m
+  // return −21%); keep the ceiling opt-in so existing defaults do not change.
+  if (gates.maxPc5mPct > 0 && pc5m != null && pc5m >= gates.maxPc5mPct) {
+    fail.push(`pc5m_max=${pc5m}`);
+  }
+  if (
+    pc1h == null
+      ? gates.requirePc1h
+      : pc1h < gates.minPc1hPct
+  ) {
+    fail.push(`pc1h=${pc1h ?? 'null'}`);
+  }
   if (vol5m == null || vol5m < gates.minVolume5mUsd) fail.push(`vol5m=${vol5m ?? 'null'}`);
   if (gates.minVolume1hUsd > 0 && (vol1h == null || vol1h < gates.minVolume1hUsd)) {
     fail.push(`vol1h=${vol1h ?? 'null'}`);
@@ -161,7 +189,7 @@ export function evaluateGreenLane(
     pass: true,
     reasons: [
       `pc5m=${pc5m!.toFixed(1)}`,
-      `pc1h=${pc1h!.toFixed(1)}`,
+      ...(pc1h == null ? [] : [`pc1h=${pc1h.toFixed(1)}`]),
       `turnover=${turnover!.toFixed(2)}`,
     ],
     turnover,
@@ -174,9 +202,17 @@ export type GreenExitGates = {
   /** Positive number; the stop fires at −this. */
   stopPct: number;
   maxHoldMs: number;
+  trailEnabled?: boolean;
+  armPct?: number;
+  trailPct?: number;
 };
 
-export type GreenExitReason = 'green_tp' | 'green_stop' | 'green_max_hold' | null;
+export type GreenExitReason =
+  | 'green_tp'
+  | 'green_stop'
+  | 'green_max_hold'
+  | 'green_trail'
+  | null;
 
 /**
  * The whole green exit. No ladder, no trail, no breakeven — the tape says the
@@ -186,10 +222,22 @@ export function decideGreenExit(
   pnlPct: number,
   heldMs: number,
   gates: GreenExitGates,
+  peakPnlPct = 0,
 ): { shouldExit: boolean; reason: GreenExitReason } {
   if (!Number.isFinite(pnlPct)) return { shouldExit: false, reason: null };
+  const trailEnabled = gates.trailEnabled === true;
+  const armed = trailEnabled && peakPnlPct >= (gates.armPct ?? 10);
   if (gates.stopPct > 0 && pnlPct <= -gates.stopPct) {
     return { shouldExit: true, reason: 'green_stop' };
+  }
+  if (
+    trailEnabled &&
+    armed &&
+    gates.trailPct != null &&
+    gates.trailPct > 0 &&
+    pnlPct <= peakPnlPct - gates.trailPct
+  ) {
+    return { shouldExit: true, reason: 'green_trail' };
   }
   if (gates.takeProfitPct > 0 && pnlPct >= gates.takeProfitPct) {
     return { shouldExit: true, reason: 'green_tp' };

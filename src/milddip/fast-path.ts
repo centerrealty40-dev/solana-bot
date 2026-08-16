@@ -663,6 +663,8 @@ export async function evaluateFastPathCandidate(
         minVolume5mUsd: cfg.green.minVolume5mUsd,
         minVolume1hUsd: cfg.green.minVolume1hUsd,
         minPc5mPct: cfg.green.minPc5mPct,
+        maxPc5mPct: cfg.green.maxPc5mPct,
+        requirePc1h: cfg.green.requirePc1h,
         minPc1hPct: cfg.green.minPc1hPct,
         minBuys5m: cfg.green.minBuys5m,
         maxBuyShare5m: cfg.green.maxBuyShare5m,

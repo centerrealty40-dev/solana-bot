@@ -3712,12 +3712,12 @@ const PM2_APPS = [
          * At 1h we keep 39% of signals, roughly 57 a day.
          */
         /**
-         * 1.11.876 — off. Zero `green_momentum` buys across 7098 buy attempts
-         * since it shipped, so it has produced no trades and no data, while its
-         * lane still spends the shared DexScreener budget the dip lane is short
-         * of (`structural_fetch_null` is a standing top-two skip).
+         * 1.11.973 — controlled $1 execution probe. The old fitted floors
+         * rejected ~85% on vol5m and >50% on liquidity in 145 leader-entry
+         * snapshots, so the probe uses the measured leader-compatible floors below.
          */
-        MILD_DIP_GREEN_ENABLED: '0',
+        // Controlled $1 probe: leader snapshots show p10 vol5m $145 and median $1051.
+        MILD_DIP_GREEN_ENABLED: '1',
         MILD_DIP_GREEN_POSITION_USD: '1',
         /**
          * 1.11.867 — 0.05h (3 min), was 1h. Measured on the sampler with the
@@ -3739,9 +3739,32 @@ const PM2_APPS = [
          * Cmgg6FUi was 88 seconds old when a leader took it and the observer's
          * whole dex object came back empty.
          */
-        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.05',
-        /** Green wants hot names; the dip lane's $40k ceiling does not apply. */
-        MILD_DIP_GREEN_MIN_VOL5M_USD: '8000',
+        // Leader p5 age is 1.64h; sub-hour entries were negative (−2.2%).
+        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1',
+        // p10 vol5m $145; keep a $150 floor while avoiding the old $8000 rejection.
+        MILD_DIP_GREEN_MIN_VOL5M_USD: '150',
+        // pc1h/buys5m/vol1h are absent from leader seed snapshots.
+        MILD_DIP_GREEN_MIN_VOL1H_USD: '0',
+        MILD_DIP_GREEN_MIN_LIQUIDITY_USD: '2500',
+        // Turnover p10 is 0.033; median is 0.209.
+        MILD_DIP_GREEN_MIN_TURNOVER: '0.03',
+        MILD_DIP_GREEN_MIN_PC5M_PCT: '4',
+        // Vertical imp5 >= +40% had median 60m return around −21%.
+        MILD_DIP_GREEN_MAX_PC5M_PCT: '40',
+        MILD_DIP_GREEN_MIN_PC1H_PCT: '0',
+        MILD_DIP_GREEN_REQUIRE_PC1H: '0',
+        MILD_DIP_GREEN_MIN_BUYS5M: '0',
+        // Preserve the existing one-sided tape ceiling of 85%.
+        MILD_DIP_GREEN_MAX_BUY_SHARE: '0.85',
+        // Leader exit study: arm +10%, trail 9%; stop −30%, max hold 60m.
+        MILD_DIP_GREEN_EXIT_TRAIL_ENABLED: '1',
+        MILD_DIP_GREEN_EXIT_ARM_PCT: '10',
+        MILD_DIP_GREEN_EXIT_TRAIL_PCT: '9',
+        MILD_DIP_GREEN_EXIT_STOP_PCT: '30',
+        MILD_DIP_GREEN_EXIT_MAX_HOLD_MS: '3600000',
+        // Exposure probe caps: at most 8 open and 30 attempts per rolling hour.
+        MILD_DIP_GREEN_MAX_OPEN: '8',
+        MILD_DIP_GREEN_MAX_BUYS_PER_HOUR: '30',
         /**
          * 1.11.955 — one decision per losing bag: sell the full sleeve after
          * its qualifying reclaim, avoiding a second same-price fee. Rollback

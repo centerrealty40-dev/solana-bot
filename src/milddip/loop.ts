@@ -2229,9 +2229,12 @@ async function tryExits(
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
       markSource: source,
       greenGates: {
-        takeProfitPct: cfg.green.takeProfitPct,
-        stopPct: cfg.green.stopPct,
-        maxHoldMs: cfg.green.maxHoldMs,
+        takeProfitPct: cfg.green.exitTrailEnabled ? 0 : cfg.green.takeProfitPct,
+        stopPct: cfg.green.exitTrailEnabled ? cfg.green.exitStopPct : cfg.green.stopPct,
+        maxHoldMs: cfg.green.exitTrailEnabled ? cfg.green.exitMaxHoldMs : cfg.green.maxHoldMs,
+        trailEnabled: cfg.green.exitTrailEnabled,
+        armPct: cfg.green.exitArmPct,
+        trailPct: cfg.green.exitTrailPct,
       },
     });
     if (!decision) continue;

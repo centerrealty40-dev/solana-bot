@@ -1,3 +1,22 @@
+## [1.11.973] — 2026-08-16
+
+### Added / Changed
+
+- Enabled a controlled `$1` GREEN execution probe in the `mild-dip-bot`
+  production profile using leader-entry-compatible structural floors, an
+  opt-in `pc5m` ceiling, and optional missing-`pc1h` tolerance.
+- Added GREEN-only exposure caps and journaled `green_max_open` /
+  `green_max_buys_per_hour` skips.
+- Added an opt-in GREEN peak trail: arm at +10%, trail 9% from peak, stop at
+  −30%, and exit after 60 minutes. Existing fixed-target GREEN exits remain
+  the default when trail mode is disabled.
+
+### Rollback
+
+1. Set `MILD_DIP_GREEN_ENABLED='0'` to disable the execution probe.
+2. Set `MILD_DIP_GREEN_EXIT_TRAIL_ENABLED='0'` to restore fixed-target GREEN
+   exit behavior while leaving the lane available.
+
 ## [1.11.972] — 2026-08-16
 
 ### Added / Changed
