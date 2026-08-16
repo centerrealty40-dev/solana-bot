@@ -12,6 +12,8 @@ import {
   noteStructuralCache,
   requireStreamPriceForDipSource,
   streamDumpExtentPct,
+  shouldJournalLeaderSeenSkip,
+  streamObservabilitySnapshot,
 } from './fast-path.js';
 import {
   evaluateCooldownBounce,
@@ -332,14 +334,23 @@ export async function attemptMildDipEntry(args: {
   let probeReason: 'rebuy_below_exit' | 'rebuy_liq_drop' | null = null;
 
   if (!leaderBuyGateOk(cfg, state, c.mint, nowMs)) {
-    appendMildDipJournal(cfg.journalPath, {
-      kind: 'mild_dip_not_leader_seen_skip',
-      mint: c.mint,
-      symbol: c.symbol,
-      dipSource: c.dipSource,
-      lane: opts.lane,
-      at: 'entry',
-    });
+    if (shouldJournalLeaderSeenSkip(c.mint, nowMs)) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_not_leader_seen_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        dipSource: c.dipSource,
+        lane: opts.lane,
+        trigger: opts.trigger,
+        at: 'entry',
+        ...streamObservabilitySnapshot(
+          c.mint,
+          cfg.cooldownBounceLookbackMs,
+          nowMs,
+          c.metrics.pairAgeHours,
+        ),
+      });
+    }
     recordLeaderGateShadowCandidate({
       cfg,
       candidate: c,
