@@ -1,3 +1,29 @@
+## [1.11.971] — 2026-08-16
+
+### Added / Changed
+
+- Enabled the leader-style `mild_stabilize` fresh-entry lane for real-money
+  mild-dip entries. The production profile now requires a $6–25% ring dump,
+  a 1.5–8% reclaim, and a trough held for at least 60 seconds while retaining
+  the existing Dex-red and below-peak safeguards.
+- Added `MILD_DIP_MILD_STABILIZE_MAX_PER_HOUR=12`, counting only attempted
+  `mild_stabilize` buys in a rolling hour. The cap has its own journal skip
+  event and does not change the other entry lanes.
+- Added rate-limited `mild_dip_mild_stabilize_skip` telemetry for failed
+  ring verdicts (default budget 24 per hour), excluding missing-ring noise.
+  Existing pair-age, liquidity, and volume/liquidity entry gates still apply
+  at the shared entry-attempt boundary.
+
+### Rollback
+
+1. Disable fresh mild-stabilize entries:
+   `MILD_DIP_MILD_STABILIZE_FRESH_ENTRY=0`.
+2. Restore the prior profile:
+   `MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT=-8` and
+   `MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS=15000`.
+3. Disable the lane cap if required:
+   `MILD_DIP_MILD_STABILIZE_MAX_PER_HOUR=0`.
+
 ## [1.11.970] — 2026-08-16
 
 ### Добавлено / Изменено

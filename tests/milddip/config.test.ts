@@ -104,6 +104,29 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.entryMinLiquidityUsd).toBe(4000);
   });
 
+  it('loads mild-stabilize live lane budgets and trough settings', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MILD_STABILIZE_MAX_PER_HOUR: '12',
+        MILD_DIP_MILD_STABILIZE_SKIP_MAX_PER_HOUR: '30',
+        MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '60000',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.mildStabilizeMaxPerHour).toBe(12);
+    expect(cfg.mildStabilizeSkipMaxPerHour).toBe(30);
+    expect(cfg.mildStabilizeTroughMinAgeMs).toBe(60_000);
+  });
+
+  it('keeps the live mild-stabilize profile isolated to mild-dip', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '1'");
+    expect(eco).toContain("MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-6'");
+    expect(eco).toContain("MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS: '60000'");
+    expect(eco).toContain("MILD_DIP_MILD_STABILIZE_MAX_PER_HOUR: '12'");
+  });
+
   it('preserves non-positive entry thresholds through Zod for rollback', () => {
     const cfg = withConfigEnv(
       {
