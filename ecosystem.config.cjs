@@ -3783,9 +3783,9 @@ const PM2_APPS = [
         MILD_DIP_GREEN_EXIT_TRAIL_PCT: '9',
         MILD_DIP_GREEN_EXIT_STOP_PCT: '30',
         MILD_DIP_GREEN_EXIT_MAX_HOLD_MS: '3600000',
-        // Exposure probe caps: at most 8 open and 30 attempts per rolling hour.
+        // The 30/hour cap cut live GREEN entries when buysInHour reached 30.
         MILD_DIP_GREEN_MAX_OPEN: '8',
-        MILD_DIP_GREEN_MAX_BUYS_PER_HOUR: '30',
+        MILD_DIP_GREEN_MAX_BUYS_PER_HOUR: '60',
         /**
          * 1.11.955 — one decision per losing bag: sell the full sleeve after
          * its qualifying reclaim, avoiding a second same-price fee. Rollback

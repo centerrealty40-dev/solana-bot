@@ -1,3 +1,16 @@
+## [1.11.977] — 2026-08-16
+
+### Added / Changed
+
+- Journal `trigger` (`stream`/`leader`/`scan`) on GREEN diagnostics and successful
+  mild-dip buy/copy events so entries can be attributed to their signal source.
+- Raised the `mild-dip-bot` GREEN hourly cap from 30 to 60 because the 30/hour
+  cap cut live GREEN entries when the rolling count reached 30.
+
+### Rollback
+
+- Restore `MILD_DIP_GREEN_MAX_BUYS_PER_HOUR='30'`.
+
 ## [1.11.976] — 2026-08-16
 
 ### Added / Changed

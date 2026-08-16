@@ -132,6 +132,7 @@ export async function executeLiveCopyBuy(args: {
   sizeUsd: number;
   kind: 'entry' | 'add';
   leaderSignature: string;
+  trigger?: 'stream' | 'leader' | 'scan';
   /** Leader fill price for the post-quote premium guard (0 = guard off). */
   leaderPriceUsd?: number;
   /** Leader buy timestamp — selects first-shot vs steady premium cap. */
@@ -152,6 +153,7 @@ export async function executeLiveCopyBuy(args: {
     sizeUsd,
     kind,
     leaderSignature,
+    trigger,
     leaderPriceUsd = 0,
     leaderBuyTs = 0,
   } = args;
@@ -344,6 +346,7 @@ export async function executeLiveCopyBuy(args: {
       symbol,
       sizeUsd,
       kind,
+      trigger,
       leaderSignature,
       quoteAsset: quoteSpec.asset,
       quoteSnapshot: {
