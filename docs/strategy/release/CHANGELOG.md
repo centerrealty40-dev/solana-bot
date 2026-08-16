@@ -1,3 +1,34 @@
+## [1.11.984] — 2026-08-16
+
+### Added / Changed
+
+- Added stream-only GREEN minute tape metrics: the current one-minute return,
+  the preceding five-minute return, sample count, and coverage.
+- Added opt-in tape GREEN gates. Production enables
+  `MILD_DIP_GREEN_TAPE_GATES_ENABLED=1` with
+  `MILD_DIP_GREEN_MIN_RET1M_PCT=5` and
+  `MILD_DIP_GREEN_MAX_PRIOR5M_PCT=10`; insufficient own-tape coverage rejects
+  the candidate as `green_tape_insufficient`, and the legacy `maxRet1mPct`
+  gate is not applied in this mode.
+- Added a fixed strong-minute GREEN exit profile. Production enables
+  `MILD_DIP_GREEN_FAST_EXIT_ENABLED=1` with
+  `MILD_DIP_GREEN_STRONG_RET1M_PCT=40`,
+  `MILD_DIP_GREEN_FAST_EXIT_ARM_PCT=5`,
+  `MILD_DIP_GREEN_FAST_EXIT_TRAIL_PCT=6`, and
+  `MILD_DIP_GREEN_FAST_EXIT_MAX_HOLD_MS=900000`. The selected profile is
+  persisted at entry; its stop remains 30%.
+- Removed the unreachable GREEN-watch selection, sampling metrics, and
+  configuration. The GREEN-only leader-seen bypass remains unchanged.
+
+### Rollback
+
+Disable the new GREEN tape behavior and reload:
+
+```text
+MILD_DIP_GREEN_TAPE_GATES_ENABLED=0
+MILD_DIP_GREEN_FAST_EXIT_ENABLED=0
+```
+
 ## [1.11.983] — 2026-08-16
 
 ### Added / Changed

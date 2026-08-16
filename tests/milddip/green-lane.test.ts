@@ -6,10 +6,12 @@ import type { MildDipOpenPosition } from '../../src/milddip/state.js';
 import { evaluateMildDipEntryRisk, evaluateMildDipPreBuy } from '../../src/milddip/gates.js';
 import {
   cooldownBouncePctForSource,
+  greenExitProfileForTape,
   preBuyEntryGatesForSource,
   shouldApplyGreenTurnDumpGate,
 } from '../../src/milddip/entry-attempt.js';
 import { evaluateTurnDumpGate } from '../../src/milddip/turn-dump.js';
+import type { MildDipConfig } from '../../src/milddip/config.js';
 import {
   resetFastPathStateForTests,
   shouldJournalGreenVerdict,
@@ -261,6 +263,62 @@ describe('evaluateGreenLane', () => {
   it('supports an opt-in upper pc5m bound', () => {
     expect(evaluateGreenLane({ ...ok, pc5mPct: 40 }, { ...gates, maxPc5mPct: 40 }).pass).toBe(false);
     expect(evaluateGreenLane({ ...ok, pc5mPct: 39.9 }, { ...gates, maxPc5mPct: 40 }).pass).toBe(true);
+  });
+
+  it('uses own tape minute gates and ignores Dex pc5m and maxRet1m', () => {
+    const tapeGates = {
+      ...gates,
+      tapeMinuteGatesEnabled: true,
+      minTapeRet1mPct: 5,
+      maxTapePrior5mPct: 10,
+      maxRet1mPct: 0,
+    };
+    const v = evaluateGreenLane(
+      {
+        ...ok,
+        pc5mPct: null,
+        ret1mPct: 20,
+        tapeRet1mPct: 8,
+        tapePrior5mPct: 9,
+      },
+      tapeGates,
+    );
+    expect(v.pass).toBe(true);
+  });
+
+  it('rejects missing tape coverage with a distinct reason', () => {
+    const v = evaluateGreenLane(
+      { ...ok, tapeRet1mPct: null, tapePrior5mPct: null },
+      { ...gates, tapeMinuteGatesEnabled: true },
+    );
+    expect(v.pass).toBe(false);
+    expect(v.reasons).toContain('green_tape_insufficient');
+  });
+
+  it('rejects tape thresholds independently', () => {
+    const v = evaluateGreenLane(
+      { ...ok, tapeRet1mPct: 4, tapePrior5mPct: 11 },
+      {
+        ...gates,
+        tapeMinuteGatesEnabled: true,
+        minTapeRet1mPct: 5,
+        maxTapePrior5mPct: 10,
+      },
+    );
+    expect(v.pass).toBe(false);
+    expect(v.reasons).toEqual(expect.arrayContaining(['tapeRet1m=4', 'tapePrior5m=11']));
+  });
+
+  it('selects the strong-minute profile only at the entry threshold', () => {
+    const cfg = {
+      green: { fastExitEnabled: true, strongRet1mPct: 40 },
+    } as Pick<MildDipConfig, 'green'>;
+    expect(greenExitProfileForTape(cfg, 40)).toBe('fast');
+    expect(greenExitProfileForTape(cfg, 39.9)).toBe('standard');
+    expect(greenExitProfileForTape(cfg, null)).toBe('standard');
+    expect(greenExitProfileForTape({ green: { ...cfg.green, fastExitEnabled: false } }, 80)).toBe(
+      'standard',
+    );
   });
 
   it('allows missing pc1h only when explicitly configured', () => {

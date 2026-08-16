@@ -76,6 +76,34 @@ describe('MildDipPriceRing', () => {
     expect(ring.lastPriceBySource(mint, 'stream', t0 + 200_000, 120_000)).toBeNull();
   });
 
+  it('calculates current and prior minute returns from stream samples only', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'TapeMinuteMetricsMintxxxxxxxxxxxxxxxxxxxxxxx1';
+    const now = 1_000_000;
+    ring.note(mint, 100, { tsMs: now - 360_000, source: 'stream' });
+    ring.note(mint, 110, { tsMs: now - 60_000, source: 'stream' });
+    ring.note(mint, 121, { tsMs: now, source: 'stream' });
+    ring.note(mint, 1, { tsMs: now - 30_000, source: 'dex' });
+    const metrics = ring.tapeMinuteMetrics(mint, now);
+    expect(metrics.tapeRet1mPct).toBeCloseTo(10, 6);
+    expect(metrics.tapePrior5mPct).toBeCloseTo(10, 6);
+    expect(metrics.sampleCount).toBe(3);
+    expect(metrics.coverageMs).toBe(360_000);
+  });
+
+  it('returns null tape returns when stream coverage is insufficient', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'TapeMinuteCoverageMintxxxxxxxxxxxxxxxxxxxxxx1';
+    const now = 1_000_000;
+    ring.note(mint, 100, { tsMs: now - 120_000, source: 'stream' });
+    ring.note(mint, 121, { tsMs: now, source: 'stream' });
+    const metrics = ring.tapeMinuteMetrics(mint, now);
+    expect(metrics.tapeRet1mPct).toBeNull();
+    expect(metrics.tapePrior5mPct).toBeNull();
+    expect(metrics.sampleCount).toBe(2);
+    expect(metrics.coverageMs).toBe(120_000);
+  });
+
   it('isPlausiblePrice rejects 1000× decode outliers', () => {
     const ring = new MildDipPriceRing();
     const mint = 'EeqYr8QfLNEWfUEFEw71noCA85k73qtxGEaLsC9ipump';

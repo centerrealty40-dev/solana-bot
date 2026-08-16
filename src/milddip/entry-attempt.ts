@@ -64,6 +64,17 @@ import { leaderBuyGateOk } from './leader-seen-gate.js';
 
 const HOLDING_DUST_RAW = 1000n;
 
+export function greenExitProfileForTape(
+  cfg: Pick<MildDipConfig, 'green'>,
+  tapeRet1mPct: number | null | undefined,
+): 'standard' | 'fast' {
+  return cfg.green.fastExitEnabled &&
+    tapeRet1mPct != null &&
+    tapeRet1mPct >= cfg.green.strongRet1mPct
+    ? 'fast'
+    : 'standard';
+}
+
 export function shouldApplyGreenTurnDumpGate(
   isGreen: boolean,
   greenTurnDumpGate: boolean,
@@ -438,6 +449,30 @@ export async function attemptMildDipEntry(args: {
   const isTurnDumpKnife = c.dipSource === 'turn_dump_knife';
   const isWaitDip = c.dipSource === 'wait_dip';
   const isGreen = c.dipSource === 'green_momentum';
+  const greenExitProfile: 'standard' | 'fast' = isGreen
+    ? greenExitProfileForTape(cfg, c.tapeRet1mPct)
+    : 'standard';
+  const fixedGreenExit = isGreen
+    ? greenExitProfile === 'fast'
+      ? {
+          greenExitProfile,
+          greenExitTrailEnabled: true,
+          greenExitTakeProfitPct: 0,
+          greenExitStopPct: cfg.green.exitStopPct,
+          greenExitArmPct: cfg.green.fastExitArmPct,
+          greenExitTrailPct: cfg.green.fastExitTrailPct,
+          greenExitMaxHoldMs: cfg.green.fastExitMaxHoldMs,
+        }
+      : {
+          greenExitProfile,
+          greenExitTrailEnabled: cfg.green.exitTrailEnabled,
+          greenExitTakeProfitPct: cfg.green.exitTrailEnabled ? 0 : cfg.green.takeProfitPct,
+          greenExitStopPct: cfg.green.exitTrailEnabled ? cfg.green.exitStopPct : cfg.green.stopPct,
+          greenExitArmPct: cfg.green.exitArmPct,
+          greenExitTrailPct: cfg.green.exitTrailPct,
+          greenExitMaxHoldMs: cfg.green.exitTrailEnabled ? cfg.green.exitMaxHoldMs : cfg.green.maxHoldMs,
+        }
+    : {};
   const isH1RedShallow = c.dipSource === 'h1_red_shallow';
   const isFlatMicro = c.dipSource === 'flat_micro_dip';
   let sizeMetrics = {
@@ -1142,6 +1177,7 @@ export async function attemptMildDipEntry(args: {
     peakPriceUsd: entryPriceUsd,
     entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
+    ...fixedGreenExit,
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,
@@ -1171,6 +1207,11 @@ export async function attemptMildDipEntry(args: {
     waitDipMaxPriceUsd: waitDipCeilingPx,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
+    tapeRet1mPct: c.tapeRet1mPct ?? null,
+    tapePrior5mPct: c.tapePrior5mPct ?? null,
+    tapeSampleCount: c.tapeSampleCount ?? null,
+    tapeCoverageMs: c.tapeCoverageMs ?? null,
+    greenExitProfile: isGreen ? greenExitProfile : null,
   });
 
   const leaderSig = `milddip_${opts.lane}_${c.mint.slice(0, 8)}_${nowMs}`;
@@ -1289,6 +1330,11 @@ export async function attemptMildDipEntry(args: {
     probe: probeReason,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
+    tapeRet1mPct: c.tapeRet1mPct ?? null,
+    tapePrior5mPct: c.tapePrior5mPct ?? null,
+    tapeSampleCount: c.tapeSampleCount ?? null,
+    tapeCoverageMs: c.tapeCoverageMs ?? null,
+    greenExitProfile: isGreen ? greenExitProfile : null,
     // 1.11.803 — full decision snapshot; without it post-hoc entry analysis
     // cannot separate a good dip from a bad one.
     entrySnapshot: {
@@ -1317,6 +1363,11 @@ export async function attemptMildDipEntry(args: {
         cfg.cooldownBounceLookbackMs,
         nowMs,
       ),
+      tapeRet1mPct: c.tapeRet1mPct ?? null,
+      tapePrior5mPct: c.tapePrior5mPct ?? null,
+      tapeSampleCount: c.tapeSampleCount ?? null,
+      tapeCoverageMs: c.tapeCoverageMs ?? null,
+      greenExitProfile: isGreen ? greenExitProfile : null,
     },
     ok: buy.ok,
     reason: buy.reason ?? null,
@@ -1373,12 +1424,21 @@ export async function attemptMildDipEntry(args: {
         pc5m: entryPc5m,
         nowMs,
       });
+      if (isGreen && state.open[c.mint]) {
+        Object.assign(state.open[c.mint], { lane: 'green', ...fixedGreenExit });
+        saveMildDipState(cfg.statePath, state);
+      }
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_buy_fail_adopt',
         mint: c.mint,
         symbol: c.symbol,
         reason: buy.reason ?? null,
         tokenRaw: onchainAfterFail.toString(),
+        tapeRet1mPct: c.tapeRet1mPct ?? null,
+        tapePrior5mPct: c.tapePrior5mPct ?? null,
+        tapeSampleCount: c.tapeSampleCount ?? null,
+        tapeCoverageMs: c.tapeCoverageMs ?? null,
+        greenExitProfile: isGreen ? greenExitProfile : null,
       });
     } else {
       delete state.open[c.mint];
@@ -1405,6 +1465,7 @@ export async function attemptMildDipEntry(args: {
     peakPriceUsd: fillPx,
     entryMarkPriceUsd,
     lane: isGreen ? 'green' : 'dip',
+    ...fixedGreenExit,
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
     entryLiquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd ?? null,

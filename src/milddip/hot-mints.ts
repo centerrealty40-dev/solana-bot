@@ -16,11 +16,6 @@ export class MildDipHotMintBuffer {
   private readonly byMint = new Map<string, HotMintHit>();
   private readonly maxMints: number;
   private readonly ttlMs: number;
-  private readonly greenWatchCacheTtlMs = 1_000;
-  private readonly greenWatchCache = new Map<
-    string,
-    { atMs: number; hits: HotMintHit[] }
-  >();
 
   constructor(opts?: { maxMints?: number; ttlMs?: number }) {
     this.maxMints = opts?.maxMints ?? 400;
@@ -36,7 +31,6 @@ export class MildDipHotMintBuffer {
     } else {
       this.byMint.set(mint, { mint, lastSeenAtMs: nowMs, hits: Math.max(1, hitsInc) });
     }
-    this.greenWatchCache.clear();
     this.prune(nowMs);
   }
 
@@ -61,56 +55,6 @@ export class MildDipHotMintBuffer {
     return nowMs - hit.lastSeenAtMs <= maxAgeMs;
   }
 
-  greenWatchList(
-    nowMs = Date.now(),
-    maxAgeMs = 600_000,
-    minHits = 2,
-    maxMints = 100,
-  ): HotMintHit[] {
-    this.prune(nowMs);
-    if (maxMints <= 0) return [];
-    const key = `${maxAgeMs}:${Math.max(1, Math.floor(minHits))}:${Math.floor(maxMints)}`;
-    const cached = this.greenWatchCache.get(key);
-    if (cached && nowMs >= cached.atMs && nowMs - cached.atMs < this.greenWatchCacheTtlMs) {
-      return cached.hits.map((hit) => ({ ...hit }));
-    }
-    const minFreshHits = Math.max(1, Math.floor(minHits));
-    const ranked = [...this.byMint.values()]
-      .filter(
-        (hit) =>
-          nowMs - hit.lastSeenAtMs <= maxAgeMs &&
-          hit.hits >= minFreshHits,
-      )
-      .sort((a, b) => {
-        const score = (hit: HotMintHit): number =>
-          hit.hits / (1 + Math.max(0, nowMs - hit.lastSeenAtMs) / 60_000);
-        return (
-          score(b) - score(a) ||
-          b.lastSeenAtMs - a.lastSeenAtMs ||
-          b.hits - a.hits ||
-          a.mint.localeCompare(b.mint)
-        );
-      })
-      .slice(0, Math.floor(maxMints));
-    this.greenWatchCache.set(key, {
-      atMs: nowMs,
-      hits: ranked.map((hit) => ({ ...hit })),
-    });
-    return ranked;
-  }
-
-  isGreenWatchCandidate(
-    mint: string,
-    nowMs = Date.now(),
-    maxAgeMs = 600_000,
-    minHits = 2,
-    maxMints = 100,
-  ): boolean {
-    return this.greenWatchList(nowMs, maxAgeMs, minHits, maxMints).some(
-      (hit) => hit.mint === mint,
-    );
-  }
-
   lastSeenAtMs(mint: string): number | null {
     const hit = this.byMint.get(mint);
     return hit ? hit.lastSeenAtMs : null;
@@ -133,24 +77,19 @@ export class MildDipHotMintBuffer {
   }
 
   private prune(nowMs: number): void {
-    let changed = false;
     for (const [mint, hit] of this.byMint) {
       if (nowMs - hit.lastSeenAtMs > this.ttlMs) {
         this.byMint.delete(mint);
-        changed = true;
       }
     }
     if (this.byMint.size <= this.maxMints) {
-      if (changed) this.greenWatchCache.clear();
       return;
     }
     const ordered = [...this.byMint.values()].sort((a, b) => a.lastSeenAtMs - b.lastSeenAtMs);
     const drop = ordered.length - this.maxMints;
     for (let i = 0; i < drop; i++) {
       this.byMint.delete(ordered[i]!.mint);
-      changed = true;
     }
-    if (changed) this.greenWatchCache.clear();
   }
 }
 
