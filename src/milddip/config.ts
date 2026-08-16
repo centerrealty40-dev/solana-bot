@@ -534,6 +534,10 @@ const MildDipConfigSchema = z.object({
   mildStabilizeMinDumpPct: z.coerce.number().max(0).default(-25),
   /** Shallowest dump allowed (more negative = require deeper). Was −5. */
   mildStabilizeMaxDumpPct: z.coerce.number().max(0).default(-8),
+  /** 1.11.971 — max attempted fresh mild_stabilize buys per rolling hour; 0 = unlimited. */
+  mildStabilizeMaxPerHour: z.coerce.number().int().min(0).max(1_000).default(0),
+  /** 1.11.971 — global mild_stabilize verdict skip journal budget per hour. */
+  mildStabilizeSkipMaxPerHour: z.coerce.number().int().min(0).max(1_000).default(24),
   mildStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   mildStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(8),
   mildStabilizeTroughMinAgeMs: z.coerce.number().int().min(0).max(600_000).default(15_000),
@@ -1211,6 +1215,8 @@ export function loadMildDipConfig(): MildDipConfig {
     mildStabilizeFreshEntryEnabled: envBool('MILD_DIP_MILD_STABILIZE_FRESH_ENTRY', false),
     mildStabilizeMinDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT', -25),
     mildStabilizeMaxDumpPct: envNum('MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT', -8),
+    mildStabilizeMaxPerHour: envNum('MILD_DIP_MILD_STABILIZE_MAX_PER_HOUR', 0),
+    mildStabilizeSkipMaxPerHour: envNum('MILD_DIP_MILD_STABILIZE_SKIP_MAX_PER_HOUR', 24),
     mildStabilizeMinBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     mildStabilizeMaxBouncePct: envNum('MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT', 8),
     mildStabilizeTroughMinAgeMs: envNum('MILD_DIP_MILD_STABILIZE_TROUGH_MIN_AGE_MS', 15_000),

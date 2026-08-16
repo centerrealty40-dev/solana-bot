@@ -3,6 +3,9 @@ import {
   evaluateMildStabilizeFromRing,
   mildStabilizeDexDipOk,
   mildStabilizeLaneAllowed,
+  __resetMildStabilizeBudgetsForTests,
+  takeMildStabilizeAttemptSlot,
+  takeMildStabilizeSkipTelemetrySlot,
 } from '../../src/milddip/mild-stabilize.js';
 import { MildDipPriceRing } from '../../src/milddip/price-ring.js';
 
@@ -42,6 +45,18 @@ describe('evaluateMildStabilizeFromRing', () => {
     expect(v.reasons.some((x) => x.startsWith('mild_stabilize_trough_age='))).toBe(true);
   });
 
+  it('accepts a trough held for the configured live minute', () => {
+    const r = new MildDipPriceRing({ maxSamplesPerMint: 60, ttlMs: 3_600_000 });
+    r.note(mint, 1.0, { tsMs: t0, source: 'stream' });
+    r.note(mint, 0.9, { tsMs: t0 + 90_000, source: 'stream' });
+    r.note(mint, 0.945, { tsMs: t0 + 150_000, source: 'stream' });
+    const v = evaluateMildStabilizeFromRing(r, mint, t0 + 150_000, {
+      ...gates,
+      troughMinAgeMs: 60_000,
+    });
+    expect(v.pass).toBe(true);
+  });
+
   it('rejects chase bounce > max', () => {
     const r = new MildDipPriceRing({ maxSamplesPerMint: 60, ttlMs: 3_600_000 });
     r.note(mint, 1.0, { tsMs: t0, source: 'stream' });
@@ -65,6 +80,38 @@ describe('evaluateMildStabilizeFromRing', () => {
         (x) => x.startsWith('mild_stabilize_dump=') || x.startsWith('mild_stabilize_below_peak='),
       ),
     ).toBe(true);
+  });
+});
+
+describe('mild_stabilize rolling hourly buy cap', () => {
+  it('allows under the cap, blocks at the cap, and allows after the window rolls', () => {
+    __resetMildStabilizeBudgetsForTests();
+    const t0 = 1_700_000_000_000;
+    expect(takeMildStabilizeAttemptSlot(2, t0).allowed).toBe(true);
+    expect(takeMildStabilizeAttemptSlot(2, t0 + 1).allowed).toBe(true);
+    expect(takeMildStabilizeAttemptSlot(2, t0 + 2)).toMatchObject({
+      allowed: false,
+      count: 2,
+      limit: 2,
+    });
+    expect(takeMildStabilizeAttemptSlot(2, t0 + 3_600_002)).toMatchObject({
+      allowed: true,
+      count: 1,
+      limit: 2,
+    });
+    __resetMildStabilizeBudgetsForTests();
+  });
+});
+
+describe('mild_stabilize skip telemetry budget', () => {
+  it('rate-limits failed-verdict telemetry in a rolling hour', () => {
+    __resetMildStabilizeBudgetsForTests();
+    const t0 = 1_700_000_000_000;
+    expect(takeMildStabilizeSkipTelemetrySlot(2, t0)).toBe(true);
+    expect(takeMildStabilizeSkipTelemetrySlot(2, t0 + 1)).toBe(true);
+    expect(takeMildStabilizeSkipTelemetrySlot(2, t0 + 2)).toBe(false);
+    expect(takeMildStabilizeSkipTelemetrySlot(2, t0 + 3_600_002)).toBe(true);
+    __resetMildStabilizeBudgetsForTests();
   });
 });
 

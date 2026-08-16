@@ -23,6 +23,7 @@ import {
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
+import { takeMildStabilizeAttemptSlot } from './mild-stabilize.js';
 import { assessRugRisk } from './rug-risk.js';
 import { mildDipPriceRing } from './price-ring.js';
 
@@ -970,6 +971,24 @@ export async function attemptMildDipEntry(args: {
       return 'skip';
     }
     return 'stop';
+  }
+
+  if (isMildStabilize) {
+    const slot = takeMildStabilizeAttemptSlot(cfg.mildStabilizeMaxPerHour, nowMs);
+    if (!slot.allowed) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_mild_stabilize_cap_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        dipSource: c.dipSource,
+        lane: opts.lane,
+        reason: 'mild_stabilize_max_per_hour',
+        count: slot.count,
+        limit: slot.limit,
+      });
+      state.cooldownUntilMs[c.mint] = nowMs + softCd;
+      return 'skip';
+    }
   }
 
   if (buyInFlight.has(c.mint)) return 'skip';

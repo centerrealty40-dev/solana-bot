@@ -13,6 +13,7 @@ import {
   evaluateMildStabilizeFromRing,
   mildStabilizeDexDipOk,
   mildStabilizeLaneAllowed,
+  takeMildStabilizeSkipTelemetrySlot,
 } from './mild-stabilize.js';
 import { mildDipPriceRing } from './price-ring.js';
 import { mildDipPairAgeRegistry } from './pair-age-registry.js';
@@ -908,6 +909,24 @@ export async function evaluateFastPathCandidate(
       lookbackMs: cfg.cooldownBounceLookbackMs,
       minBelowPeakPct: cfg.mildStabilizeMinBelowPeakPct,
     });
+    if (
+      !mild.pass &&
+      !mild.reasons.includes('mild_stabilize_missing_ring') &&
+      takeMildStabilizeSkipTelemetrySlot(cfg.mildStabilizeSkipMaxPerHour, nowMs)
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_mild_stabilize_skip',
+        mint,
+        dumpPct: mild.dumpPct,
+        bouncePct: mild.bouncePct,
+        troughAtMs: mild.troughAtMs,
+        troughAgeMs:
+          mild.troughAtMs != null ? Math.max(0, nowMs - mild.troughAtMs) : null,
+        lastPriceUsd: mild.lastPriceUsd,
+        peakPriceUsd: mild.peakPriceUsd,
+        reasons: mild.reasons,
+      });
+    }
     if (mild.pass) {
       // 1.11.800 — do not accept bounce while Dex m5 is already green/flat.
       // Also never overwrite Dex pc5m with ring dump (lied to turn-dump on EjD5Y9).
