@@ -6,6 +6,7 @@ import type { MildDipOpenPosition } from '../../src/milddip/state.js';
 import {
   decideGreenExit,
   evaluateGreenLane,
+  greenExposureCapReason,
   greenBuyShare,
   greenTurnover,
   type GreenExitGates,
@@ -19,6 +20,8 @@ const gates: GreenLaneGates = {
   minVolume5mUsd: 8_000,
   minVolume1hUsd: 60_000,
   minPc5mPct: 14,
+  maxPc5mPct: 0,
+  requirePc1h: true,
   minPc1hPct: 20,
   minBuys5m: 43,
   maxBuyShare5m: 0.85,
@@ -51,6 +54,20 @@ describe('greenTurnover / greenBuyShare', () => {
   it('buy share is buys over both sides', () => {
     expect(greenBuyShare(60, 40)).toBeCloseTo(0.6, 6);
     expect(greenBuyShare(0, 0)).toBeNull();
+  });
+});
+
+describe('GREEN exposure caps', () => {
+  it('rejects when open GREEN positions reach the cap', () => {
+    expect(
+      greenExposureCapReason({ openGreen: 8, maxOpen: 8, buysInHour: 0, maxBuysPerHour: 30 }),
+    ).toBe('green_max_open');
+  });
+
+  it('rejects when hourly GREEN buys reach the cap', () => {
+    expect(
+      greenExposureCapReason({ openGreen: 1, maxOpen: 8, buysInHour: 30, maxBuysPerHour: 30 }),
+    ).toBe('green_max_buys_per_hour');
   });
 });
 
@@ -114,6 +131,16 @@ describe('evaluateGreenLane', () => {
     // Five minutes up hard, the hour still down: not their pattern.
     expect(evaluateGreenLane({ ...ok, pc1hPct: -5 }, gates).pass).toBe(false);
   });
+
+  it('supports an opt-in upper pc5m bound', () => {
+    expect(evaluateGreenLane({ ...ok, pc5mPct: 40 }, { ...gates, maxPc5mPct: 40 }).pass).toBe(false);
+    expect(evaluateGreenLane({ ...ok, pc5mPct: 39.9 }, { ...gates, maxPc5mPct: 40 }).pass).toBe(true);
+  });
+
+  it('allows missing pc1h only when explicitly configured', () => {
+    expect(evaluateGreenLane({ ...ok, pc1hPct: null }, { ...gates, requirePc1h: false }).pass).toBe(true);
+    expect(evaluateGreenLane({ ...ok, pc1hPct: -5 }, { ...gates, requirePc1h: false }).pass).toBe(false);
+  });
 });
 
 describe('decideGreenExit', () => {
@@ -141,6 +168,43 @@ describe('decideGreenExit', () => {
   it('holds in between', () => {
     expect(decideGreenExit(12, 120_000, g).shouldExit).toBe(false);
     expect(decideGreenExit(-3, 120_000, g).shouldExit).toBe(false);
+  });
+
+  it('arms and trails from the peak when enabled', () => {
+    const trail: GreenExitGates = {
+      takeProfitPct: 0,
+      stopPct: 30,
+      maxHoldMs: 3_600_000,
+      trailEnabled: true,
+      armPct: 10,
+      trailPct: 9,
+    };
+    expect(decideGreenExit(10, 60_000, trail, 10, 0)).toEqual({ shouldExit: false, reason: null });
+    expect(decideGreenExit(12, 60_000, trail, 20, 0)).toEqual({ shouldExit: false, reason: null });
+    expect(decideGreenExit(10, 60_000, trail, 20, 9)).toEqual({ shouldExit: true, reason: 'green_trail' });
+    expect(decideGreenExit(-30, 60_000, trail, 20, 9)).toEqual({ shouldExit: true, reason: 'green_stop' });
+    expect(decideGreenExit(12, 3_600_001, trail, 12, 0)).toEqual({ shouldExit: true, reason: 'green_max_hold' });
+  });
+
+  it('trails nine percent from peak price, not nine pnl points', () => {
+    // Basis 1.0, peak 1.40, arm at +40%. Mark 1.30 is −7.14% from peak;
+    // mark 1.274 is −9.0% from peak and exits.
+    const trail: GreenExitGates = {
+      takeProfitPct: 0,
+      stopPct: 30,
+      maxHoldMs: 3_600_000,
+      trailEnabled: true,
+      armPct: 10,
+      trailPct: 9,
+    };
+    expect(decideGreenExit(30, 60_000, trail, 40, (1 - 1.30 / 1.40) * 100)).toEqual({
+      shouldExit: false,
+      reason: null,
+    });
+    expect(decideGreenExit(27.4, 60_000, trail, 40, (1 - 1.274 / 1.40) * 100)).toEqual({
+      shouldExit: true,
+      reason: 'green_trail',
+    });
   });
 
   it('does not ride a drawdown the way the dip lane does', () => {
@@ -264,7 +328,7 @@ describe('the green lane costs nothing extra on the paid RPC', () => {
   });
 });
 
-describe('the green lane keeps its own age floor (1.11.865)', () => {
+describe('the green lane keeps its own age floor', () => {
   it('admits a launch, and only waits for a readable snapshot', () => {
     // Age does not move per-trade quality here: mean +3.39 with no floor
     // against +2.75 at 1h, while the signal count falls 153 -> 60. The floor
@@ -283,13 +347,10 @@ describe('the green lane keeps its own age floor (1.11.865)', () => {
     expect(evaluateGreenLane({ ...ok, pairAgeHours: 0.001 }, g).pass).toBe(true);
   });
 
-  it('live env keeps the lane off (1.11.876)', () => {
-    // Zero green_momentum buys across 7098 attempts, so the lane produced no
-    // trades and no data while spending the shared DexScreener budget. The
-    // parameters stay put for when there is budget to test it again.
+  it('live env enables the controlled probe', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '0'");
+    expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '1'");
     expect(eco).toContain("MILD_DIP_GREEN_POSITION_USD: '1'");
-    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.05'");
+    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1'");
   });
 });

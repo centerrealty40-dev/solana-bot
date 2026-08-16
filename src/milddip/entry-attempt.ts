@@ -24,6 +24,7 @@ import {
 } from './gates.js';
 import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
 import { takeMildStabilizeAttemptSlot } from './mild-stabilize.js';
+import { greenExposureCapReason } from './green-lane.js';
 import { assessRugRisk } from './rug-risk.js';
 import { mildDipPriceRing } from './price-ring.js';
 
@@ -33,6 +34,15 @@ import { mildDipPriceRing } from './price-ring.js';
  * still excluding a stale `wait_dip` signal.
  */
 const ENTRY_MARK_MAX_AGE_MS = 30_000;
+const GREEN_BUY_WINDOW_MS = 3_600_000;
+
+function pruneGreenBuyStamps(state: MildDipState, nowMs: number): number[] {
+  const greenBuyStamps = state.recentGreenBuyMs ?? (state.recentGreenBuyMs = []);
+  const cutoff = nowMs - GREEN_BUY_WINDOW_MS;
+  while (greenBuyStamps.length > 0 && greenBuyStamps[0]! < cutoff) greenBuyStamps.shift();
+  return greenBuyStamps;
+}
+
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
   dumpFromSignalPct,
@@ -885,6 +895,32 @@ export async function attemptMildDipEntry(args: {
    * lane's, and the rug-risk and probe caps still apply on top.
    */
   const isGreen = c.dipSource === 'green_momentum';
+  if (isGreen) {
+    const greenBuyStamps = pruneGreenBuyStamps(state, nowMs);
+    const openGreen = Object.values(state.open).filter(
+      (position) => position.lane === 'green',
+    ).length;
+    const capReason = greenExposureCapReason({
+      openGreen,
+      maxOpen: cfg.green.maxOpen,
+      buysInHour: greenBuyStamps.length,
+      maxBuysPerHour: cfg.green.maxBuysPerHour,
+    });
+    if (capReason) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_green_cap_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: capReason,
+        openGreen,
+        buysInHour: greenBuyStamps.length,
+        maxOpen: cfg.green.maxOpen,
+        maxBuysPerHour: cfg.green.maxBuysPerHour,
+        lane: opts.lane,
+      });
+      return 'skip';
+    }
+  }
   /**
    * Movement baseline for the exit engine: the Dex mark standing next to the
    * fill, not the price that first qualified the candidate.
@@ -994,6 +1030,10 @@ export async function attemptMildDipEntry(args: {
   if (buyInFlight.has(c.mint)) return 'skip';
   if (state.open[c.mint]) return 'skip';
   buyInFlight.add(c.mint);
+  if (isGreen) {
+    const greenBuyStamps = pruneGreenBuyStamps(state, nowMs);
+    greenBuyStamps.push(nowMs);
+  }
   state.open[c.mint] = {
     mint: c.mint,
     symbol: c.symbol,
