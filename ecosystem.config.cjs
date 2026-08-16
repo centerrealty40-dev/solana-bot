@@ -3998,6 +3998,14 @@ const PM2_APPS = [
          * population, four times better per position than re-entering one that has
          * kept falling, and the ordering holds in all three windows. The gate was
          * steering us into the worse half by construction.
+         *
+         * 1.11.982 — back on at 5%, measured on the exit we take rather than on
+         * our first entry. Over 7 days, 945 of our buys (24%) were the same mint
+         * inside 15 minutes of our own full exit: the 216 that paid more than we
+         * had just sold for lost $40.43, and the whole slice cheaper by less than
+         * 5% lost $21.28 on 6 of 8 days, while the slice ≥5% cheaper was flat.
+         * 92vgKc went out on peak_giveback at +35.4% and the green lane bought it
+         * back 61 seconds later 0.9% higher.
          */
         MILD_DIP_REBUY_BELOW_EXIT_PCT: '5',
         MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
