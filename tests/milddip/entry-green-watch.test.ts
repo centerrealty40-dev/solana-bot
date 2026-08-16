@@ -73,6 +73,23 @@ describe('GREEN own-tape watch', () => {
       ),
     ).toBe(false);
   });
+
+  it('invalidates ranked membership after notes and TTL pruning', () => {
+    const nowMs = 1_000_000;
+    const hot = new MildDipHotMintBuffer({ maxMints: 20, ttlMs: 900_000 });
+    const first = mint('first');
+    const second = mint('second');
+    hot.note(first, nowMs - 200_000, 3);
+    expect(hot.isGreenWatchCandidate(first, nowMs, 600_000, 2, 1)).toBe(true);
+
+    hot.note(second, nowMs, 3);
+    expect(hot.isGreenWatchCandidate(second, nowMs, 600_000, 2, 1)).toBe(true);
+    expect(hot.isGreenWatchCandidate(first, nowMs, 600_000, 2, 1)).toBe(false);
+
+    expect(hot.isGreenWatchCandidate(second, nowMs + 901_000, 600_000, 2, 1)).toBe(
+      false,
+    );
+  });
 });
 
 describe('GREEN-only leader-seen bypass', () => {
