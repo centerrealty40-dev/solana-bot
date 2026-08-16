@@ -111,6 +111,7 @@ export type MildDipCandidate = {
   tapePrior5mPct?: number | null;
   tapeSampleCount?: number;
   tapeCoverageMs?: number | null;
+  tapeMinuteFailureReason?: string | null;
 };
 
 const SOLANA_CHAIN = 'solana';

@@ -15,6 +15,32 @@ MILD_DIP_GREEN_EXIT_ARM_PCT=10
 MILD_DIP_GREEN_EXIT_TRAIL_PCT=9
 ```
 
+## [1.11.990] — 2026-08-16
+
+### Добавлено / Изменено
+
+- Сохранены staged-add ограничения из `v2`: верхняя граница chase-band и
+  weighted-average-cost veto для прибыльных staged exits.
+- Объединены с GREEN strict tape freshness, bounded Jupiter quote-фидом,
+  изоляцией `green_jupiter` и безопасным учётом свежести quote-принтов.
+
+### Rollback
+
+Откат staged-add настроек:
+
+```text
+MILD_DIP_STAGED_ADD_MAX_CHASE_PCT=100
+MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT=0
+MILD_DIP_STAGED_ENTRY_ENABLED=0
+```
+
+Отключение GREEN Jupiter-фида и strict freshness:
+
+```text
+MILD_DIP_GREEN_JUPITER_MINUTE_ENABLED=0
+MILD_DIP_GREEN_TAPE_STRICT_FRESHNESS_ENABLED=0
+```
+
 ## [1.11.986] — 2026-08-16
 
 ### Added / Changed

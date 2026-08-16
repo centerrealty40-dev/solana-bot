@@ -6,6 +6,7 @@
  */
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { evaluateGreenLane } from './green-lane.js';
+import { requestGreenMinuteJupiterRefresh } from './green-minute-jupiter-refresh.js';
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
 import { evaluateFlatMicroDip, type MildDipCandidateMetrics } from './gates.js';
@@ -155,9 +156,17 @@ export function streamObservabilitySnapshot(
   lookbackMs: number,
   nowMs: number,
   pairAgeHours?: number | null,
+  tapeOptions?: Parameters<typeof mildDipPriceRing.tapeMinuteMetrics>[5],
 ): Record<string, unknown> {
   const stream = mildDipPriceRing.streamWindowMetrics(mint, lookbackMs, nowMs);
-  const tape = mildDipPriceRing.tapeMinuteMetrics(mint, nowMs);
+  const tape = mildDipPriceRing.tapeMinuteMetrics(
+    mint,
+    nowMs,
+    60_000,
+    360_000,
+    180_000,
+    tapeOptions,
+  );
   return {
     streamPriceUsd: stream.freshPriceUsd,
     streamBounceFromTroughPct: stream.bounceFromTroughPct,
@@ -170,9 +179,26 @@ export function streamObservabilitySnapshot(
     tapeSampleCount: tape.sampleCount,
     tapeCoverageMs: tape.coverageMs,
     tapeLatestSampleAgeMs: tape.latestSampleAgeMs,
+    tapeMinuteFailureReason: tape.failureReason,
     pairAgeHours:
       pairAgeHours ?? mildDipPairAgeRegistry.pairAgeHours(mint, nowMs),
   };
+}
+
+export function greenTapeMinuteOptions(
+  cfg: MildDipConfig,
+): Parameters<typeof mildDipPriceRing.tapeMinuteMetrics>[5] {
+  return cfg.green.tapeMinuteStrictFreshnessEnabled
+    ? {
+        strictFreshness: true,
+        minRecentSamples: cfg.green.tapeMinuteMinRecentSamples,
+        latestMaxAgeMs: cfg.green.tapeMinuteLatestMaxAgeMs,
+        boundaryMinAgeMs: cfg.green.tapeMinuteBoundaryMinAgeMs,
+        boundaryMaxAgeMs: cfg.green.tapeMinuteBoundaryMaxAgeMs,
+        priorAnchorMinAgeMs: cfg.green.tapeMinutePriorAnchorMinAgeMs,
+        priorAnchorMaxAgeMs: cfg.green.tapeMinutePriorAnchorMaxAgeMs,
+      }
+    : { strictFreshness: false };
 }
 
 /** Test helper. */
@@ -640,7 +666,18 @@ export async function evaluateFastPathCandidate(
   const streamCurrentDd = streamDrawdownPct(mint, lookbackMs, nowMs);
   const streamDump = streamDumpExtentPct(mint, lookbackMs, nowMs);
   const streamRally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
-  const tapeMinute = mildDipPriceRing.tapeMinuteMetrics(mint, nowMs);
+  const greenStreamRally = mildDipPriceRing
+    .streamWindowMetrics(mint, lookbackMs, nowMs)
+    .rallyIntoPeakPct;
+  const tapeOptions = greenTapeMinuteOptions(cfg);
+  const tapeMinute = mildDipPriceRing.tapeMinuteMetrics(
+    mint,
+    nowMs,
+    60_000,
+    360_000,
+    180_000,
+    tapeOptions,
+  );
   // Journal / turn-dump prefer true dump extent; fall back to mark-vs-peak.
   const streamDd = streamDump ?? streamCurrentDd;
   /**
@@ -718,6 +755,30 @@ export async function evaluateFastPathCandidate(
    * on dip P&L.
    */
   if (cfg.green.enabled) {
+    const dexImpulse =
+      struct.metrics.priceChange5mPct != null &&
+      struct.metrics.priceChange5mPct >= cfg.green.minPc5mPct;
+    const streamImpulse =
+      greenStreamRally != null &&
+      greenStreamRally >= cfg.green.jupiterMinuteStreamImpulsePct;
+    if (dexImpulse || streamImpulse) {
+      requestGreenMinuteJupiterRefresh({
+        mint,
+        nowMs,
+        snapshotPriceUsd: struct.priceUsd,
+        enabled: cfg.green.jupiterMinuteEnabled,
+        minGapMs: Math.max(
+          cfg.green.jupiterMinuteMinGapMs,
+          cfg.green.jupiterMinuteIntervalMs,
+        ),
+        ttlMs: cfg.green.jupiterMinuteTtlMs,
+        maxMints: cfg.green.jupiterMinuteMaxMints,
+        maxInFlight: cfg.green.jupiterMinuteMaxInFlight,
+        probeUsd: cfg.green.jupiterMinuteProbeUsd,
+        slippageBps: cfg.green.jupiterMinuteSlippageBps,
+        tokenDecimals: mildDipPriceRing.mintDecimals(mint) ?? undefined,
+      });
+    }
     const g = evaluateGreenLane(
       {
         pc5mPct: struct.metrics.priceChange5mPct,
@@ -761,6 +822,7 @@ export async function evaluateFastPathCandidate(
         tapePrior5mPct: tapeMinute.tapePrior5mPct,
         tapeSampleCount: tapeMinute.sampleCount,
         tapeCoverageMs: tapeMinute.coverageMs,
+        tapeMinuteFailureReason: tapeMinute.failureReason,
       };
     }
     if (shouldJournalGreenVerdict(mint, nowMs)) {
@@ -773,6 +835,7 @@ export async function evaluateFastPathCandidate(
           cfg.cooldownBounceLookbackMs,
           nowMs,
           struct.metrics.pairAgeHours,
+          tapeOptions,
         ),
         reasons: g.reasons,
         pc5m: struct.metrics.priceChange5mPct,

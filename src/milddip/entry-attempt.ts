@@ -15,6 +15,7 @@ import {
   shouldJournalGreenLeaderSeenBypass,
   shouldJournalLeaderSeenSkip,
   streamObservabilitySnapshot,
+  greenTapeMinuteOptions,
 } from './fast-path.js';
 import {
   evaluateCooldownBounce,
@@ -372,6 +373,7 @@ export async function attemptMildDipEntry(args: {
           cfg.cooldownBounceLookbackMs,
           nowMs,
           c.metrics.pairAgeHours,
+          greenTapeMinuteOptions(cfg),
         ),
       });
     }
@@ -391,6 +393,7 @@ export async function attemptMildDipEntry(args: {
           cfg.cooldownBounceLookbackMs,
           nowMs,
           c.metrics.pairAgeHours,
+          greenTapeMinuteOptions(cfg),
         ),
       });
     }
@@ -1232,6 +1235,7 @@ export async function attemptMildDipEntry(args: {
     tapePrior5mPct: c.tapePrior5mPct ?? null,
     tapeSampleCount: c.tapeSampleCount ?? null,
     tapeCoverageMs: c.tapeCoverageMs ?? null,
+    tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
     greenExitProfile: isGreen ? greenExitProfile : null,
   });
 
@@ -1355,6 +1359,7 @@ export async function attemptMildDipEntry(args: {
     tapePrior5mPct: c.tapePrior5mPct ?? null,
     tapeSampleCount: c.tapeSampleCount ?? null,
     tapeCoverageMs: c.tapeCoverageMs ?? null,
+    tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
     greenExitProfile: isGreen ? greenExitProfile : null,
     // 1.11.803 — full decision snapshot; without it post-hoc entry analysis
     // cannot separate a good dip from a bad one.
@@ -1388,6 +1393,7 @@ export async function attemptMildDipEntry(args: {
       tapePrior5mPct: c.tapePrior5mPct ?? null,
       tapeSampleCount: c.tapeSampleCount ?? null,
       tapeCoverageMs: c.tapeCoverageMs ?? null,
+      tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
       greenExitProfile: isGreen ? greenExitProfile : null,
     },
     ok: buy.ok,
@@ -1459,6 +1465,7 @@ export async function attemptMildDipEntry(args: {
         tapePrior5mPct: c.tapePrior5mPct ?? null,
         tapeSampleCount: c.tapeSampleCount ?? null,
         tapeCoverageMs: c.tapeCoverageMs ?? null,
+        tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
         greenExitProfile: isGreen ? greenExitProfile : null,
       });
     } else {
