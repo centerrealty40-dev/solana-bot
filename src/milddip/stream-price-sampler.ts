@@ -34,6 +34,9 @@ export type StreamPriceSampler = {
     skipped: number;
     lastSampleAtMs: number | null;
     lastSkipReason: string | null;
+    skipReasonCounts: Record<string, number>;
+    txRetryAttempts: number;
+    txRetrySucceeded: number;
   };
 };
 
@@ -43,6 +46,11 @@ export type StreamPriceSample = {
   tsMs: number;
   source: 'stream';
 };
+
+type FetchParsedTransactionFn = (
+  rpcUrl: string,
+  signature: string,
+) => Promise<unknown | null>;
 
 export function createStreamPriceSampler(args: {
   rpcUrl: string;
@@ -63,18 +71,70 @@ export function createStreamPriceSampler(args: {
   maxPostResidualFrac?: number;
   onSellPrints?: (prints: DumpSellPrint[]) => void;
   onPriceSample?: (sample: StreamPriceSample) => void;
+  fetchParsedTransactionFn?: FetchParsedTransactionFn;
+  txRetryEnabled?: boolean;
+  txRetryMaxAttempts?: number;
+  txRetryDelayMs?: number;
+  txRetryMaxAgeMs?: number;
 }): StreamPriceSampler {
   const minGap = Math.max(500, args.minGapMsPerMint ?? 2_000);
   const concurrency = Math.max(1, Math.min(8, args.concurrency ?? 3));
+  const txRetryEnabled = args.txRetryEnabled === true;
+  const txRetryMaxAttempts = Math.max(0, Math.floor(args.txRetryMaxAttempts ?? 2));
+  const txRetryDelayMs = Math.max(0, Math.floor(args.txRetryDelayMs ?? 400));
+  const txRetryMaxAgeMs = Math.max(0, Math.floor(args.txRetryMaxAgeMs ?? 30_000));
+  const fetchTx = args.fetchParsedTransactionFn ?? fetchParsedTransaction;
   const lastFetchAt = new Map<string, number>();
   const seenSig = new Set<string>();
-  const queue: Array<{ mint: string; signature: string; tsMs: number }> = [];
+  const queue: Array<{
+    mint: string;
+    signature: string;
+    tsMs: number;
+    retryAttempt?: number;
+  }> = [];
+  const retryTimers = new Set<ReturnType<typeof setTimeout>>();
+  const skipReasonCounts = new Map<string, number>();
   let inFlight = 0;
   let sampled = 0;
   let skipped = 0;
   let lastSampleAtMs: number | null = null;
   let lastSkipReason: string | null = null;
+  let txRetryAttempts = 0;
+  let txRetrySucceeded = 0;
   let stopped = false;
+
+  const noteSkip = (reason: string): void => {
+    skipped += 1;
+    lastSkipReason = reason;
+    skipReasonCounts.set(reason, (skipReasonCounts.get(reason) ?? 0) + 1);
+  };
+
+  const retryJob = (
+    job: {
+      mint: string;
+      signature: string;
+      tsMs: number;
+      retryAttempt?: number;
+    },
+    nowMs: number,
+  ): void => {
+    const attempt = job.retryAttempt ?? 0;
+    if (
+      !txRetryEnabled ||
+      attempt >= txRetryMaxAttempts ||
+      nowMs - job.tsMs > txRetryMaxAgeMs ||
+      stopped
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      retryTimers.delete(timer);
+      if (stopped) return;
+      queue.push({ ...job, retryAttempt: attempt + 1 });
+      pump();
+    }, txRetryDelayMs);
+    retryTimers.add(timer);
+  };
 
   const pump = (): void => {
     if (stopped) return;
@@ -96,32 +156,36 @@ export function createStreamPriceSampler(args: {
     mint: string;
     signature: string;
     tsMs: number;
+    retryAttempt?: number;
   }): Promise<void> => {
     const nowMs = Date.now();
-    if (!args.shouldSample(job.mint, nowMs)) {
-      skipped += 1;
-      lastSkipReason = 'should_sample_false';
+    const isRetry = (job.retryAttempt ?? 0) > 0;
+    if (isRetry && nowMs - job.tsMs > txRetryMaxAgeMs) return;
+    if (!isRetry && !args.shouldSample(job.mint, nowMs)) {
+      noteSkip('should_sample_false');
       return;
     }
     const forced = args.forceFetch?.(job.mint) === true;
     const last = lastFetchAt.get(job.mint) ?? 0;
-    if (!forced && nowMs - last < minGap) {
-      skipped += 1;
-      lastSkipReason = 'min_gap';
+    if (!isRetry && !forced && nowMs - last < minGap) {
+      noteSkip('min_gap');
       return;
     }
     lastFetchAt.set(job.mint, nowMs);
+    if (isRetry) txRetryAttempts += 1;
 
     const solUsd = getSolUsd();
-    const tx = (await fetchParsedTransaction(args.rpcUrl, job.signature)) as TxJsonParsed | null;
+    const tx = (await fetchTx(args.rpcUrl, job.signature)) as TxJsonParsed | null;
     if (!tx) {
-      skipped += 1;
-      lastSkipReason = 'get_tx_null';
+      noteSkip('get_tx_null');
+      retryJob(job, nowMs);
       return;
     }
+    if (isRetry) txRetrySucceeded += 1;
 
     let noted = false;
     let priceHint = 0;
+    let sampleSkipReason: string | null = null;
     const ts = job.tsMs || nowMs;
 
     // Price decode needs SOL/USD; sell-balance classify does not.
@@ -145,7 +209,7 @@ export function createStreamPriceSampler(args: {
             maxRatio: 20,
           })
         ) {
-          if (mint === job.mint) lastSkipReason = 'price_outlier';
+          if (mint === job.mint) sampleSkipReason = 'price_outlier';
           continue;
         }
         mildDipPriceRing.note(mint, s.priceUsd, { tsMs: ts, source: 'stream' });
@@ -167,7 +231,7 @@ export function createStreamPriceSampler(args: {
               maxRatio: 20,
             })
           ) {
-            lastSkipReason = 'price_outlier';
+            sampleSkipReason = 'price_outlier';
           } else {
             mildDipPriceRing.note(job.mint, balPx, { tsMs: ts, source: 'stream' });
             args.onPriceSample?.({
@@ -182,7 +246,7 @@ export function createStreamPriceSampler(args: {
         }
       }
     } else {
-      lastSkipReason = 'sol_usd_zero';
+      sampleSkipReason = 'sol_usd_zero';
     }
 
     const ringPx = mildDipPriceRing.lastPrice(job.mint, nowMs)?.priceUsd ?? 0;
@@ -224,10 +288,7 @@ export function createStreamPriceSampler(args: {
       lastSampleAtMs = nowMs;
       lastSkipReason = null;
     } else {
-      skipped += 1;
-      if (!lastSkipReason || lastSkipReason === 'sol_usd_zero') {
-        lastSkipReason = solUsd > 0 ? 'no_price_decode' : 'sol_usd_zero';
-      }
+      noteSkip(sampleSkipReason ?? (solUsd > 0 ? 'no_price_decode' : 'sol_usd_zero'));
     }
   };
 
@@ -260,6 +321,8 @@ export function createStreamPriceSampler(args: {
     stop() {
       stopped = true;
       queue.length = 0;
+      for (const timer of retryTimers) clearTimeout(timer);
+      retryTimers.clear();
     },
     stats: () => ({
       queued: queue.length,
@@ -268,6 +331,9 @@ export function createStreamPriceSampler(args: {
       skipped,
       lastSampleAtMs,
       lastSkipReason,
+      skipReasonCounts: Object.fromEntries(skipReasonCounts),
+      txRetryAttempts,
+      txRetrySucceeded,
     }),
   };
 }
