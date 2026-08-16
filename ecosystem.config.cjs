@@ -3761,9 +3761,8 @@ const PM2_APPS = [
         // Turnover p10 is 0.033; median is 0.209.
         MILD_DIP_GREEN_MIN_TURNOVER: '0.03',
         MILD_DIP_GREEN_MIN_PC5M_PCT: '4',
-        // Vertical imp5 >= +40% had median 60m return around −21%.
-        // The observed entry was pc5m=46.67%; trail/−30% stop remain risk controls.
-        MILD_DIP_GREEN_MAX_PC5M_PCT: '60',
+        // n=22 live GREEN trades: pc5m<20 median −2.0% (n=13), pc5m>=20 median −22.5% (n=9).
+        MILD_DIP_GREEN_MAX_PC5M_PCT: '20',
         // The same example had vol/liquidity=2.62; GREEN permits up to 6 vs dip 2.
         MILD_DIP_GREEN_ENTRY_MAX_VOL5M_TO_LIQ: '6',
         // The live prebuy moved >4%; allow the measured green chase envelope of 12%.
@@ -3775,8 +3774,8 @@ const PM2_APPS = [
         MILD_DIP_GREEN_MIN_PC1H_PCT: '0',
         MILD_DIP_GREEN_REQUIRE_PC1H: '0',
         MILD_DIP_GREEN_MIN_BUYS5M: '0',
-        // Preserve the existing one-sided tape ceiling of 85%.
-        MILD_DIP_GREEN_MAX_BUY_SHARE: '0.85',
+        // n=22 live GREEN trades: buy-share>0.65 median −31.2% (n=5), <=0.65 median −6.3% (n=17).
+        MILD_DIP_GREEN_MAX_BUY_SHARE: '0.65',
         // Leader exit study: arm +10%, trail 9%; stop −30%, max hold 60m.
         MILD_DIP_GREEN_EXIT_TRAIL_ENABLED: '1',
         MILD_DIP_GREEN_EXIT_ARM_PCT: '10',
