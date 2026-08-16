@@ -137,6 +137,8 @@ export type MildDipState = {
   cooldownUntilMs: Record<string, number>;
   /** mint → successful entry timestamps (rolling 24h anti-churn). */
   recentEntryMsByMint?: Record<string, number[]>;
+  /** GREEN buy attempts in the rolling one-hour exposure window. */
+  recentGreenBuyMs?: number[];
   /** mint → last full-exit fill/mark price for same-price rebuy guard. */
   lastExitByMint?: Record<string, MildDipLastExit>;
   /**

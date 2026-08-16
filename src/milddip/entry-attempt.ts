@@ -35,15 +35,16 @@ import { mildDipPriceRing } from './price-ring.js';
  */
 const ENTRY_MARK_MAX_AGE_MS = 30_000;
 const GREEN_BUY_WINDOW_MS = 3_600_000;
-const greenBuyStamps: number[] = [];
 
-function pruneGreenBuyStamps(nowMs: number): void {
+function pruneGreenBuyStamps(state: MildDipState, nowMs: number): number[] {
+  const greenBuyStamps = state.recentGreenBuyMs ?? (state.recentGreenBuyMs = []);
   const cutoff = nowMs - GREEN_BUY_WINDOW_MS;
   while (greenBuyStamps.length > 0 && greenBuyStamps[0]! < cutoff) greenBuyStamps.shift();
+  return greenBuyStamps;
 }
 
 export function __resetGreenBuyBudgetForTests(): void {
-  greenBuyStamps.length = 0;
+  // Kept for compatibility with focused entry tests; timestamps live in state.
 }
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
 import {
@@ -898,7 +899,7 @@ export async function attemptMildDipEntry(args: {
    */
   const isGreen = c.dipSource === 'green_momentum';
   if (isGreen) {
-    pruneGreenBuyStamps(nowMs);
+    const greenBuyStamps = pruneGreenBuyStamps(state, nowMs);
     const capReason = greenExposureCapReason({
       openGreen: Object.values(state.open).filter((position) => position.lane === 'green').length,
       maxOpen: cfg.green.maxOpen,
@@ -1030,7 +1031,7 @@ export async function attemptMildDipEntry(args: {
   if (state.open[c.mint]) return 'skip';
   buyInFlight.add(c.mint);
   if (isGreen) {
-    pruneGreenBuyStamps(nowMs);
+    const greenBuyStamps = pruneGreenBuyStamps(state, nowMs);
     greenBuyStamps.push(nowMs);
   }
   state.open[c.mint] = {
