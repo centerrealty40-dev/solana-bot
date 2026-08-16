@@ -2455,15 +2455,19 @@ async function tryExits(
       });
     }
 
+    let profitExitVetoed = false;
     if (decision.shouldExit && decision.reason) {
       const avgCostPx = stagedEntryAverageCostPx(pos);
       const profitGate = evaluateStagedProfitExit({
         reason: decision.reason,
         exitPx: decision.markPriceUsd,
+        entryPriceUsd: pos.entryPriceUsd,
+        stagedAddDone: pos.stagedEntryAddDone === true,
         avgCostPx,
         minOverAvgPct: cfg.stagedProfitMinOverAvgPct,
       });
       if (!profitGate.allow) {
+        profitExitVetoed = true;
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_staged_profit_exit_skip',
           mint,
@@ -2474,7 +2478,6 @@ async function tryExits(
           thresholdPx: profitGate.thresholdPx,
           rung: decision.tpRungIndex,
         });
-        continue;
       }
     }
 
@@ -2493,7 +2496,7 @@ async function tryExits(
       );
     }
 
-    if (decision.shouldExit && decision.reason) {
+    if (decision.shouldExit && decision.reason && !profitExitVetoed) {
       /**
        * 1.11.874 — would the entry side buy this right now? Then do not sell it
        * to buy it back. GCa9TZ went out on `breakeven_stop` at −10.48% and the

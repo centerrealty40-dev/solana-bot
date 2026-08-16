@@ -6,10 +6,10 @@
   original first fill. Marks above the band no longer consume an add attempt or
   backoff; they are journalled as `above_chase_band` and remain eligible after
   a pullback.
-- Added a weighted-average-cost veto for the `mfe_bank_sleeve` and `tp_grid`
-  profit exits. These exits now require at least `+1%` over the actual weighted
-  add/first-fill cost, while protective exits remain unchanged and can always
-  cut the bag.
+- Added a weighted-average-cost veto for genuine profitable `mfe_bank_sleeve`
+  and `tp_grid` exits after a staged add. The mark must be above the original
+  first-fill anchor and at least `+1%` over the actual weighted add/first-fill
+  cost. Underwater sleeve loss cuts and all non-staged bags remain unchanged.
 - ASg9yD demonstrated the failure: the `$5` first fill at `0.00012217` had a
   `+8%` trigger at `0.00013195`, but the add filled at `0.00014345` (`+17.4%`)
   near the `0.00014541` local peak. The subsequent bank half was journalled

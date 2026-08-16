@@ -125,12 +125,20 @@ export function stagedEntryAverageCostPx(pos: {
 export function evaluateStagedProfitExit(args: {
   reason: string | null;
   exitPx: number;
+  entryPriceUsd: number;
+  stagedAddDone: boolean;
   avgCostPx: number;
   minOverAvgPct: number;
 }): { allow: boolean; thresholdPx: number; reason: string } {
   const thresholdPx = args.avgCostPx * (1 + Math.max(0, args.minOverAvgPct) / 100);
-  if (!STAGED_PROFIT_EXIT_REASONS.has(args.reason ?? '')) {
-    return { allow: true, thresholdPx, reason: 'protective_or_other' };
+  if (!args.stagedAddDone) {
+    return { allow: true, thresholdPx, reason: 'no_staged_add' };
+  }
+  if (
+    !STAGED_PROFIT_EXIT_REASONS.has(args.reason ?? '') ||
+    args.exitPx <= args.entryPriceUsd
+  ) {
+    return { allow: true, thresholdPx, reason: 'protective_or_underwater' };
   }
   if (args.minOverAvgPct <= 0 || args.exitPx >= thresholdPx) {
     return { allow: true, thresholdPx, reason: 'above_avg_cost' };

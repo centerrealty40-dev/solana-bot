@@ -92,7 +92,13 @@ describe('mild-dip staged entry', () => {
   });
 
   it('vetoes profit sleeve and TP exits below weighted average cost', () => {
-    const args = { exitPx: 101, avgCostPx: 100, minOverAvgPct: 1 };
+    const args = {
+      exitPx: 101,
+      entryPriceUsd: 100,
+      stagedAddDone: true,
+      avgCostPx: 100,
+      minOverAvgPct: 1,
+    };
     expect(evaluateStagedProfitExit({ ...args, reason: 'mfe_bank_sleeve' }).allow).toBe(true);
     expect(evaluateStagedProfitExit({ ...args, reason: 'tp_grid' }).allow).toBe(true);
     expect(evaluateStagedProfitExit({ ...args, reason: 'mfe_bank_sleeve', exitPx: 100.9 }).allow).toBe(false);
@@ -104,6 +110,8 @@ describe('mild-dip staged entry', () => {
       evaluateStagedProfitExit({
         reason: 'peak_giveback',
         exitPx: 50,
+        entryPriceUsd: 100,
+        stagedAddDone: true,
         avgCostPx: 100,
         minOverAvgPct: 1,
       }).allow,
@@ -112,10 +120,38 @@ describe('mild-dip staged entry', () => {
       evaluateStagedProfitExit({
         reason: 'hard_stop',
         exitPx: 50,
+        entryPriceUsd: 100,
+        stagedAddDone: true,
         avgCostPx: 100,
         minOverAvgPct: 1,
       }).allow,
     ).toBe(true);
     expect(stagedEntryAverageCostPx({ entryPriceUsd: 100 })).toBe(100);
+  });
+
+  it('keeps an underwater sleeve protective and only vetoes between entry and average cost', () => {
+    const args = {
+      reason: 'mfe_bank_sleeve',
+      entryPriceUsd: 100,
+      stagedAddDone: true,
+      avgCostPx: 110,
+      minOverAvgPct: 1,
+    };
+    expect(evaluateStagedProfitExit({ ...args, exitPx: 90 }).allow).toBe(true);
+    expect(evaluateStagedProfitExit({ ...args, exitPx: 105 }).allow).toBe(false);
+    expect(evaluateStagedProfitExit({ ...args, exitPx: 111.1 }).allow).toBe(true);
+  });
+
+  it('never vetoes a bag without a staged add', () => {
+    expect(
+      evaluateStagedProfitExit({
+        reason: 'mfe_bank_sleeve',
+        exitPx: 100.5,
+        entryPriceUsd: 100,
+        stagedAddDone: false,
+        avgCostPx: 110,
+        minOverAvgPct: 1,
+      }).allow,
+    ).toBe(true);
   });
 });
