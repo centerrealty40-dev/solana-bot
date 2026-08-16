@@ -112,6 +112,8 @@ const lastLeaderSkipJournalMs = new Map<string, number>();
 const lastGreenSkipJournalMs = new Map<string, number>();
 /** Rate-limit enriched leader-seen skip journals to one event per mint/minute. */
 const lastLeaderSeenSkipJournalMs = new Map<string, number>();
+/** Rate-limit explicit GREEN leader-gate bypass journals by write site. */
+const lastGreenLeaderBypassJournalMs = new Map<string, number>();
 let hotDexProbeWindowStartMs = 0;
 let hotDexProbeCount = 0;
 
@@ -133,6 +135,18 @@ export function shouldJournalLeaderSeenSkip(
   const previous = lastLeaderSeenSkipJournalMs.get(key);
   if (previous != null && nowMs - previous < 60_000) return false;
   lastLeaderSeenSkipJournalMs.set(key, nowMs);
+  return true;
+}
+
+export function shouldJournalGreenLeaderSeenBypass(
+  mint: string,
+  site: LeaderSeenSkipJournalSite,
+  nowMs: number,
+): boolean {
+  const key = `${mint}:${site}`;
+  const previous = lastGreenLeaderBypassJournalMs.get(key);
+  if (previous != null && nowMs - previous < 60_000) return false;
+  lastGreenLeaderBypassJournalMs.set(key, nowMs);
   return true;
 }
 
@@ -163,6 +177,7 @@ export function resetFastPathStateForTests(): void {
   lastLeaderSkipJournalMs.clear();
   lastGreenSkipJournalMs.clear();
   lastLeaderSeenSkipJournalMs.clear();
+  lastGreenLeaderBypassJournalMs.clear();
   hotDexProbeWindowStartMs = 0;
   hotDexProbeCount = 0;
 }
@@ -575,6 +590,7 @@ export async function evaluateFastPathCandidate(
    * age-floor relax and, when fresh, turnover co-buy align.
    */
   leaderSeenAtMs?: number | null,
+  greenOnly = false,
   shadow?: {
     onSkip: (reason: string, details?: Record<string, unknown>) => void;
   },
@@ -752,6 +768,7 @@ export async function evaluateFastPathCandidate(
         buyShare: g.buyShare,
       });
     }
+    if (greenOnly) return null;
   }
 
   // A name a leader is buying gets the younger age floor (1.11.905).

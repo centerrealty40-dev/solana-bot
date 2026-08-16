@@ -12,6 +12,7 @@ import {
   noteStructuralCache,
   requireStreamPriceForDipSource,
   streamDumpExtentPct,
+  shouldJournalGreenLeaderSeenBypass,
   shouldJournalLeaderSeenSkip,
   streamObservabilitySnapshot,
 } from './fast-path.js';
@@ -68,6 +69,13 @@ export function shouldApplyGreenTurnDumpGate(
   greenTurnDumpGate: boolean,
 ): boolean {
   return !isGreen || greenTurnDumpGate;
+}
+
+export function greenLeaderGateBypassAllowed(
+  cfg: MildDipConfig,
+  dipSource: MildDipCandidate['dipSource'],
+): boolean {
+  return cfg.green.enabled && !cfg.greenRequireLeaderSeen && dipSource === 'green_momentum';
 }
 
 export function preBuyEntryGatesForSource(
@@ -333,7 +341,30 @@ export async function attemptMildDipEntry(args: {
   /** Set when a re-entry gate was overridden by a probe (tiny research buy). */
   let probeReason: 'rebuy_below_exit' | 'rebuy_liq_drop' | null = null;
 
-  if (!leaderBuyGateOk(cfg, state, c.mint, nowMs)) {
+  const leaderGateOk = leaderBuyGateOk(cfg, state, c.mint, nowMs);
+  const greenLeaderGateBypass =
+    !leaderGateOk && greenLeaderGateBypassAllowed(cfg, c.dipSource);
+  if (!leaderGateOk && greenLeaderGateBypass) {
+    if (shouldJournalGreenLeaderSeenBypass(c.mint, 'entry', nowMs)) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_green_leader_seen_bypass',
+        mint: c.mint,
+        symbol: c.symbol,
+        dipSource: c.dipSource,
+        lane: opts.lane,
+        trigger: opts.trigger,
+        at: 'entry',
+        greenOnly: true,
+        ...streamObservabilitySnapshot(
+          c.mint,
+          cfg.cooldownBounceLookbackMs,
+          nowMs,
+          c.metrics.pairAgeHours,
+        ),
+      });
+    }
+  }
+  if (!leaderGateOk && !greenLeaderGateBypass) {
     if (shouldJournalLeaderSeenSkip(c.mint, 'entry', nowMs)) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_not_leader_seen_skip',

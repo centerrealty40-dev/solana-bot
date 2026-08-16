@@ -27,6 +27,7 @@ import {
   getStructuralCache,
   structuralFromDexDetails,
   streamDrawdownPct,
+  shouldJournalGreenLeaderSeenBypass,
   shouldJournalLeaderSeenSkip,
   streamObservabilitySnapshot,
   loadStructural,
@@ -179,12 +180,14 @@ function onCooldown(state: MildDipState, mint: string, nowMs: number): boolean {
 }
 
 /** Sample stream prices for cooldown / open / post-exit / hot / leader-known mints. */
-function shouldSampleStreamPrice(
+export function shouldSampleStreamPrice(
   cfg: MildDipConfig,
   state: MildDipState,
   mint: string,
   nowMs: number,
   lookbackMs: number,
+  hotMints = mildDipHotMints,
+  onGreenWatch: ((mint: string) => void) | undefined = undefined,
 ): boolean {
   const until = state.cooldownUntilMs[mint] ?? 0;
   if (until > nowMs) return true; // actively cooling — record the trough
@@ -195,7 +198,21 @@ function shouldSampleStreamPrice(
   const lastEx = state.lastExitByMint?.[mint]?.atMs ?? 0;
   if (lastEx > 0 && nowMs - lastEx <= lookbackMs) return true; // 1.11.783 post-exit wake
   // Fast-path needs live stream marks on hot names, not only cooldown.
-  if (mildDipHotMints.isRecent(mint, nowMs, 180_000)) return true;
+  if (hotMints.isRecent(mint, nowMs, 180_000)) return true;
+  if (
+    cfg.green.enabled &&
+    cfg.greenWatchEnabled &&
+    hotMints.isGreenWatchCandidate(
+      mint,
+      nowMs,
+      cfg.greenWatchWindowMs,
+      cfg.greenWatchMinHits,
+      cfg.greenWatchMaxMints,
+    )
+  ) {
+    onGreenWatch?.(mint);
+    return true;
+  }
   /**
    * 1.11.930 — leader-known names must keep own-tape sampling between sessions.
    * 6zjL @ 09:44: hot-mints TTL expired hours after 04:02; one random pump log at
@@ -864,6 +881,22 @@ async function tryFastPathForMint(
   if (await tryFireWaitDip(cfg, state, mint, nowMs)) return true;
 
   let shadowOnly = false;
+  let greenOnly = false;
+  const greenLeaderGateBypassEnabled = cfg.green.enabled && !cfg.greenRequireLeaderSeen;
+  const journalGreenLeaderBypass = (
+    site: 'fastpath_first_touch' | 'fastpath',
+  ): void => {
+    if (!shouldJournalGreenLeaderSeenBypass(mint, site, nowMs)) return;
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_green_leader_seen_bypass',
+      mint,
+      trigger,
+      stage: site,
+      greenOnly: true,
+      maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+      ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
+    });
+  };
 
   /**
    * 1.11.899 — a leader has to have touched a name before we open it for the
@@ -904,26 +937,31 @@ async function tryFastPathForMint(
         mint,
       );
     if (!hit) {
-      if (shouldJournalLeaderSeenSkip(mint, 'fastpath_first_touch', nowMs)) {
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_not_leader_seen_skip',
-          mint,
-          trigger,
-          firstTouch: true,
-          maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
-          ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
-        });
+      if (greenLeaderGateBypassEnabled) {
+        greenOnly = true;
+        journalGreenLeaderBypass('fastpath_first_touch');
+      } else {
+        if (shouldJournalLeaderSeenSkip(mint, 'fastpath_first_touch', nowMs)) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mild_dip_not_leader_seen_skip',
+            mint,
+            trigger,
+            firstTouch: true,
+            maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+            ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
+          });
+        }
+        shadowOnly =
+          cfg.leaderGateShadowDefer &&
+          takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
+        if (!shadowOnly) return false;
       }
-      shadowOnly =
-        cfg.leaderGateShadowDefer &&
-        takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
-      if (!shadowOnly) return false;
     }
   }
 
   // 1.11.816 — names no leader has touched are the losing half of the book.
   // Checked before the Dex round-trip so it also saves the rate budget.
-  if (cfg.requireLeaderSeen) {
+  if (cfg.requireLeaderSeen && !greenOnly) {
     const hit =
       seedHit ??
       leaderSeedHitByMint(
@@ -934,19 +972,24 @@ async function tryFastPathForMint(
         mint,
       );
     if (!hit) {
-      if (shouldJournalLeaderSeenSkip(mint, 'fastpath', nowMs)) {
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_not_leader_seen_skip',
-          mint,
-          trigger,
-          maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
-          ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
-        });
+      if (greenLeaderGateBypassEnabled) {
+        greenOnly = true;
+        journalGreenLeaderBypass('fastpath');
+      } else {
+        if (shouldJournalLeaderSeenSkip(mint, 'fastpath', nowMs)) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mild_dip_not_leader_seen_skip',
+            mint,
+            trigger,
+            maxAgeMs: cfg.requireLeaderSeenMaxAgeMs,
+            ...streamObservabilitySnapshot(mint, cfg.cooldownBounceLookbackMs, nowMs),
+          });
+        }
+        shadowOnly =
+          cfg.leaderGateShadowDefer &&
+          takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
+        if (!shadowOnly) return false;
       }
-      shadowOnly =
-        cfg.leaderGateShadowDefer &&
-        takeLeaderGateShadowDeferSlot(cfg, mint, nowMs);
-      if (!shadowOnly) return false;
     }
   }
 
@@ -973,6 +1016,7 @@ async function tryFastPathForMint(
     trigger,
     coBuySeed,
     state.leaderSeenMints?.[mint] ?? null,
+    greenOnly,
     shadowOnly
       ? {
           onSkip: (reason, details) =>
@@ -2916,8 +2960,22 @@ export async function runMildDipLoop(
   };
   const shadowDiscoveryLastSampleAt = new Map<string, number>();
   const shadowDiscoveryCleanup = { lastAtMs: 0 };
+  let greenWatchSampled = 0;
+  const greenWatchPending = new Map<string, number>();
   const shouldSampleTapeStreamPrice = (mint: string, nowMs: number): boolean => {
-    if (shouldSampleStreamPrice(cfg, state, mint, nowMs, sampleWatchMs)) return true;
+    if (
+      shouldSampleStreamPrice(
+        cfg,
+        state,
+        mint,
+        nowMs,
+        sampleWatchMs,
+        mildDipHotMints,
+        (greenWatchMint) => greenWatchPending.set(greenWatchMint, nowMs),
+      )
+    ) {
+      return true;
+    }
     if (!cfg.tapeShadowEnabled || !tapeShadow) return false;
 
     const pendingDecision = tapeShadow.pendingSampleDecision(
@@ -3055,21 +3113,22 @@ export async function runMildDipLoop(
       },
       sellTape: dumpSellTape,
       maxPostResidualFrac: cfg.oneshotDumpMaxPostResidualFrac,
-      onPriceSample: tapeShadow
-        ? (sample) => {
-            const structural = getStructuralCache(
-              sample.mint,
-              sample.tsMs,
-              cfg.fastPathStructuralStaleMs,
-            );
-            tapeShadow.onPriceSample({
-              ...sample,
-              pairAgeHours:
-                structural?.metrics.pairAgeHours ??
-                mildDipPairAgeRegistry.pairAgeHours(sample.mint, sample.tsMs),
-            });
-          }
-        : undefined,
+      onPriceSample: (sample) => {
+        if (greenWatchPending.delete(sample.mint)) greenWatchSampled += 1;
+        if (tapeShadow) {
+          const structural = getStructuralCache(
+            sample.mint,
+            sample.tsMs,
+            cfg.fastPathStructuralStaleMs,
+          );
+          tapeShadow.onPriceSample({
+            ...sample,
+            pairAgeHours:
+              structural?.metrics.pairAgeHours ??
+              mildDipPairAgeRegistry.pairAgeHours(sample.mint, sample.tsMs),
+          });
+        }
+      },
       oneshot:
         cfg.oneshotDumpGraceEnabled && cfg.oneshotDumpGraceMs > 0
           ? {
@@ -3303,6 +3362,9 @@ export async function runMildDipLoop(
     // 1.11.798 — surface dead stream-price tape (hot-mint WS can look fine alone).
     if (priceSampler && nowMs - lastStreamPriceStatsMs >= 30_000) {
       lastStreamPriceStatsMs = nowMs;
+      for (const [mint, markedAtMs] of greenWatchPending) {
+        if (nowMs - markedAtMs > cfg.greenWatchWindowMs) greenWatchPending.delete(mint);
+      }
       const st = priceSampler.stats();
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_stream_price_stats',
@@ -3312,6 +3374,16 @@ export async function runMildDipLoop(
         skipped: st.skipped,
         lastSampleAtMs: st.lastSampleAtMs,
         lastSkipReason: st.lastSkipReason,
+        greenWatchSize:
+          cfg.green.enabled && cfg.greenWatchEnabled
+            ? mildDipHotMints.greenWatchList(
+                nowMs,
+                cfg.greenWatchWindowMs,
+                cfg.greenWatchMinHits,
+                cfg.greenWatchMaxMints,
+              ).length
+            : 0,
+        greenWatchSampled,
         ringStreamN: mildDipPriceRing
           .watchedMints(nowMs)
           .filter((m) => mildDipPriceRing.lastPrice(m, nowMs)?.source === 'stream').length,

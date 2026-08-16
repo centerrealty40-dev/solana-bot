@@ -1,3 +1,21 @@
+## [1.11.981] — 2026-08-16
+
+### Added / Changed
+
+- Added a bounded GREEN own-tape watch over free stream-log hot-mint activity,
+  with freshness, hit-count, and deterministic ranked top-N controls.
+- Added a GREEN-only leader-seen bypass switch. DIP sources remain leader-gated,
+  and bypass decisions are journaled explicitly for outcome measurement.
+
+### Rollback
+
+Disable both runtime features and reload:
+
+```text
+MILD_DIP_GREEN_WATCH_ENABLED=0
+MILD_DIP_GREEN_REQUIRE_LEADER_SEEN=1
+```
+
 ## [1.11.980] — 2026-08-16
 
 ### Added / Changed

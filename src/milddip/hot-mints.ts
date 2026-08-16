@@ -55,6 +55,46 @@ export class MildDipHotMintBuffer {
     return nowMs - hit.lastSeenAtMs <= maxAgeMs;
   }
 
+  greenWatchList(
+    nowMs = Date.now(),
+    maxAgeMs = 600_000,
+    minHits = 2,
+    maxMints = 100,
+  ): HotMintHit[] {
+    this.prune(nowMs);
+    if (maxMints <= 0) return [];
+    const minFreshHits = Math.max(1, Math.floor(minHits));
+    return [...this.byMint.values()]
+      .filter(
+        (hit) =>
+          nowMs - hit.lastSeenAtMs <= maxAgeMs &&
+          hit.hits >= minFreshHits,
+      )
+      .sort((a, b) => {
+        const score = (hit: HotMintHit): number =>
+          hit.hits / (1 + Math.max(0, nowMs - hit.lastSeenAtMs) / 60_000);
+        return (
+          score(b) - score(a) ||
+          b.lastSeenAtMs - a.lastSeenAtMs ||
+          b.hits - a.hits ||
+          a.mint.localeCompare(b.mint)
+        );
+      })
+      .slice(0, Math.floor(maxMints));
+  }
+
+  isGreenWatchCandidate(
+    mint: string,
+    nowMs = Date.now(),
+    maxAgeMs = 600_000,
+    minHits = 2,
+    maxMints = 100,
+  ): boolean {
+    return this.greenWatchList(nowMs, maxAgeMs, minHits, maxMints).some(
+      (hit) => hit.mint === mint,
+    );
+  }
+
   lastSeenAtMs(mint: string): number | null {
     const hit = this.byMint.get(mint);
     return hit ? hit.lastSeenAtMs : null;
