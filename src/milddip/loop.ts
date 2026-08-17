@@ -95,6 +95,11 @@ import { profitFillMinPriceUsd } from './profit-fill-guard.js';
 import { retrySlippageBpsForAttempt } from './exit-retry.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import {
+  evaluateLeaderStyleEntry,
+  shouldJournalLeaderStyleSkip,
+} from './leader-style.js';
+import { validateStreamDexPrice } from './price-sanity.js';
+import {
   computeMarkLiquidityTelemetry,
   readOpenMarkMetrics,
 } from './open-mark-metrics.js';
@@ -1451,6 +1456,35 @@ function streamWakeMintList(cfg: MildDipConfig, state: MildDipState, nowMs: numb
 /** Single-flight: overlapping wakes each reserved Dex gate slots → multi-minute backlog. */
 let wakeStreamHotMintsInFlight = false;
 let tryEntriesInFlight = false;
+const leaderStyleBuyMs: number[] = [];
+const leaderStyleSkipAtMs = new Map<string, number>();
+const leaderStyleSkipHourMs: number[] = [];
+
+function journalLeaderStyleSkip(
+  cfg: MildDipConfig,
+  mint: string,
+  payload: Record<string, unknown>,
+  nowMs: number,
+): void {
+  const last = leaderStyleSkipAtMs.get(mint) ?? 0;
+  while (leaderStyleSkipHourMs.length > 0 && leaderStyleSkipHourMs[0]! < nowMs - 3_600_000) {
+    leaderStyleSkipHourMs.shift();
+  }
+  if (!shouldJournalLeaderStyleSkip({
+    lastAtMs: last,
+    nowMs,
+    intervalMs: cfg.leaderStyle.skipJournalIntervalMs,
+    hourCount: leaderStyleSkipHourMs.length,
+    maxPerHour: cfg.leaderStyle.skipJournalMaxPerHour,
+  })) return;
+  leaderStyleSkipAtMs.set(mint, nowMs);
+  leaderStyleSkipHourMs.push(nowMs);
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mild_dip_lstyle_skip',
+    mint,
+    ...payload,
+  });
+}
 
 /** 1.11.779/781 — re-check watch set even while bags are open (not only onMint). */
 async function wakeStreamHotMints(
@@ -1571,6 +1605,96 @@ async function tryEntriesBody(
 ): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
   await wakeLeaderMirrors(cfg, state, nowMs);
+  if (cfg.leaderStyle.enabled) {
+    const lstyleMints = await collectCandidateMints(cfg, { nowMs });
+    const lstylePass = await enrichAndFilterCandidates(cfg, lstyleMints, {
+      nowMs,
+      maxEnrich: cfg.leaderStyle.maxEnrich,
+      enrichConcurrency: cfg.leaderStyle.enrichConcurrency,
+      bypassCache: false,
+      cacheTtlMs: 3_000,
+      leaderStyle: true,
+    });
+    const copyCfg = mildDipToCopyTraderConfig(cfg);
+    const cutoff = nowMs - 3_600_000;
+    while (leaderStyleBuyMs.length > 0 && leaderStyleBuyMs[0]! < cutoff) leaderStyleBuyMs.shift();
+    for (const c of lstylePass.candidates) {
+      if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
+      if (state.open[c.mint] || buyInFlight.has(c.mint)) continue;
+      const openLstyle = Object.values(state.open).filter((p) => p.lane === 'leader_style').length;
+      if (cfg.leaderStyle.maxOpen > 0 && openLstyle >= cfg.leaderStyle.maxOpen) {
+        journalLeaderStyleSkip(cfg, c.mint, { reason: 'max_open' }, nowMs);
+        continue;
+      }
+      if (cfg.leaderStyle.maxBuysPerHour > 0 && leaderStyleBuyMs.length >= cfg.leaderStyle.maxBuysPerHour) {
+        journalLeaderStyleSkip(cfg, c.mint, { reason: 'buys_per_hour' }, nowMs);
+        continue;
+      }
+      const stats = mildDipPriceRing.windowStats(c.mint, cfg.leaderStyle.pullbackWindowMs, nowMs);
+      const pairAgeMs =
+        c.pairCreatedAtMs != null ? Math.max(0, nowMs - c.pairCreatedAtMs) : null;
+      const verdict = evaluateLeaderStyleEntry({
+        enabled: true,
+        dataAgeMs: stats.spanMs,
+        minDataAgeMs: cfg.leaderStyle.pullbackWindowMs,
+        volume5mUsd: c.metrics.volume5mUsd,
+        liquidityUsd: c.metrics.liquidityUsd,
+        minVol5mToLiq: cfg.leaderStyle.minVol5mToLiq,
+        minLiquidityUsd: cfg.leaderStyle.minLiquidityUsd,
+        maxLiquidityUsd: cfg.leaderStyle.maxLiquidityUsd,
+        currentPriceUsd: c.priceUsd,
+        localHighUsd: stats.maxPriceUsd,
+        localLowUsd: stats.minPriceUsd,
+        pullbackPct: cfg.leaderStyle.pullbackPct,
+      });
+      if (stats.spanMs < cfg.leaderStyle.pullbackWindowMs) {
+        journalLeaderStyleSkip(cfg, c.mint, {
+          reason: 'insufficient_data_age',
+          pairAgeMs,
+          ringSpanMs: stats.spanMs,
+        }, nowMs);
+        continue;
+      }
+      if (pairAgeMs == null || pairAgeMs < cfg.leaderStyle.minPairAgeMs) {
+        journalLeaderStyleSkip(cfg, c.mint, { reason: 'insufficient_data_age', pairAgeMs, ringSpanMs: stats.spanMs }, nowMs);
+        continue;
+      }
+      if (!verdict.pass) {
+        journalLeaderStyleSkip(cfg, c.mint, {
+          reason: verdict.reason,
+          pairAgeMs,
+          ringSpanMs: stats.spanMs,
+          turnover: verdict.turnover,
+          liquidityUsd: c.metrics.liquidityUsd,
+          pc5m: c.metrics.priceChange5mPct,
+          pullbackPct: verdict.pullbackPct,
+        }, nowMs);
+        continue;
+      }
+      const result = await attemptMildDipEntry({
+        cfg, state, candidate: c, copyCfg, nowMs, buyInFlight,
+        resolveEntrySizeUsd, adoptOnChainHolding,
+        opts: {
+          chasePct: 0, trigger: 'scan', skipBounce: true,
+          skipOnchainAdopt: false, freshDexPrebuy: false,
+          softSkipCooldownMs: 1_500, lane: 'slow', leaderStyle: true,
+        },
+      });
+      if (result === 'filled') {
+        leaderStyleBuyMs.push(nowMs);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_lstyle_buy', mint: c.mint, symbol: c.symbol,
+          pairAgeMs, ringSpanMs: stats.spanMs, turnover: verdict.turnover,
+          liquidityUsd: c.metrics.liquidityUsd, pc5m: c.metrics.priceChange5mPct,
+          pullbackPct: verdict.pullbackPct, localHighUsd: stats.maxPriceUsd,
+          localLowUsd: stats.minPriceUsd, priceUsd: c.priceUsd,
+          sizeUsd: cfg.leaderStyle.positionUsd, trigger: 'lstyle_scan',
+        });
+      } else {
+        journalLeaderStyleSkip(cfg, c.mint, { reason: 'execution_skip' }, nowMs);
+      }
+    }
+  }
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
 
@@ -2704,6 +2828,34 @@ async function tryExits(
       continue;
     }
 
+    const dexCrossCheckPx =
+      source === 'stream' && px != null
+        ? (
+            await fetchDexScreenerPairDetails(mint, {
+              nowMs,
+              allowedDexIds: cfg.entry.allowedDexIds,
+              cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+              bypassGate: true,
+            })
+          )?.priceUsd ?? null
+        : null;
+    const priceSanity = validateStreamDexPrice({
+      streamPriceUsd: source === 'stream' ? px : null,
+      dexPriceUsd: dexCrossCheckPx,
+      maxDivergenceFactor: cfg.streamDexMaxDivergenceFactor,
+    });
+    if (!priceSanity.valid) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_stream_dex_price_sanity_skip',
+        mint,
+        streamPriceUsd: px,
+        dexPriceUsd: dexCrossCheckPx,
+        divergenceFactor: priceSanity.divergence,
+        source,
+        at: 'exit',
+      });
+      continue;
+    }
     const decision = decideMarkExit({
       mint,
       pos,
@@ -2711,17 +2863,7 @@ async function tryExits(
       gates: cfg.exit,
       markJumpConfirmMaxMs: cfg.markJumpConfirmMaxMs,
       markQuarantineGreenMaxMs: cfg.exit.markQuarantineGreenMaxMs,
-      dexCrossCheckPx:
-        source === 'stream' && px != null
-          ? (
-              await fetchDexScreenerPairDetails(mint, {
-                nowMs,
-                allowedDexIds: cfg.entry.allowedDexIds,
-                cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
-                bypassGate: true,
-              })
-            )?.priceUsd ?? null
-          : null,
+      dexCrossCheckPx,
       nowMs,
       pc5mPct,
       volume5mUsd,
@@ -2763,6 +2905,15 @@ async function tryExits(
         armPct: pos.mirrorExitArmPct ?? cfg.leaderMirror.exitArmPct,
         trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
       },
+      leaderStyleGates: pos.lane === 'leader_style'
+        ? {
+            profitReboundPct: cfg.leaderStyle.profitReboundPct,
+            pnlTpPct: cfg.leaderStyle.pnlTpPct,
+            volFadeRatio: cfg.leaderStyle.volFadeRatio,
+            depthDrainMax: cfg.leaderStyle.depthDrainMax,
+            maxHoldMs: cfg.leaderStyle.maxHoldMs,
+          }
+        : undefined,
     });
     if (!decision) continue;
     if (decision.markQuarantined === true) {

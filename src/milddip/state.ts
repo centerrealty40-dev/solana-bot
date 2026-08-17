@@ -63,7 +63,7 @@ export type MildDipOpenPosition = {
    * managed by `decideGreenExit`, not by the dip ladder: the tape says those
    * names are done within minutes either way, so a trail would only donate.
    */
-  lane?: 'dip' | 'green' | 'leader_mirror';
+  lane?: 'dip' | 'green' | 'leader_mirror' | 'leader_style';
   mirrorExitArmPct?: number;
   mirrorExitTrailPct?: number;
   mirrorExitStopPct?: number;

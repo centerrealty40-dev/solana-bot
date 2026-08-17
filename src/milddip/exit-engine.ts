@@ -3,9 +3,14 @@
  * Keep I/O (Dex / Jupiter / ATA) out of this module so unit tests stay offline.
  */
 import type { MildDipExitGates, MildDipVolFadeSample } from './gates.js';
-import { evaluateMildDipPeakGiveback, type MildDipExitReason } from './gates.js';
+import {
+  evaluateMildDipPeakGiveback,
+  sustainedVolFade,
+  type MildDipExitReason,
+} from './gates.js';
 import type { MildDipOpenPosition } from './state.js';
 import { decideGreenExit, type GreenExitGates } from './green-lane.js';
+import { evaluateLeaderStyleExit } from './leader-style.js';
 
 /** How far the mark taken at entry may sit from the fill and still be a basis. */
 const ENTRY_MARK_MAX_GAP_FRAC = 0.25;
@@ -136,6 +141,13 @@ export function decideMarkExit(args: {
   /** Required for `lane === 'green'` bags; ignored otherwise. */
   greenGates?: GreenExitGates;
   mirrorGates?: GreenExitGates;
+  leaderStyleGates?: {
+    profitReboundPct: number;
+    pnlTpPct: number;
+    volFadeRatio: number;
+    depthDrainMax: number;
+    maxHoldMs: number;
+  };
   /** Which feed produced this mark; stream prints are held to a tighter jump guard. */
   markSource?: 'stream' | 'dex' | null;
   /** 1.11.910 — live 5m volume over pool liquidity, for the dead-set exit. */
@@ -525,6 +537,49 @@ export function decideMarkExit(args: {
     lossReclaimWaitStartedAtMs: pos.lossReclaimWaitStartedAtMs ?? null,
     lossReclaimWaitDone: pos.lossReclaimWaitDone === true,
   });
+  if (pos.lane === 'leader_style' && args.leaderStyleGates) {
+    const protectedReason =
+      verdict.reason === 'hard_stop' ||
+      verdict.reason === 'cliff_dump' ||
+      verdict.reason === 'liq_drain';
+    if (!protectedReason) {
+      const lstyle = evaluateLeaderStyleExit({
+        heldMs,
+        maxHoldMs: args.leaderStyleGates.maxHoldMs,
+        pnlPct: verdict.pnlPct,
+        pnlTpPct: args.leaderStyleGates.pnlTpPct,
+        bounceOffTroughPct: verdict.bounceOffTroughPct,
+        profitReboundPct: args.leaderStyleGates.profitReboundPct,
+        liqRatio: verdict.liqRatio ?? null,
+        volumeFade: sustainedVolFade(
+          verdict.volFadeSamples,
+          gates.neverArmVolFadeWeakWindows,
+          pos.entryVolume5mUsd,
+          args.leaderStyleGates.volFadeRatio,
+          0,
+        ),
+        depthDrainRatio: verdict.depthDrainRatio ?? null,
+        depthDrainMax: args.leaderStyleGates.depthDrainMax,
+      });
+      if (lstyle.shouldExit) {
+        return {
+          ...verdict,
+          mint,
+          markPriceUsd: decisionMark,
+          entryMarketPriceUsd,
+          gainBasisPriceUsd: pos.entryPriceUsd,
+          shouldExit: true,
+          fraction: 1,
+          reason: lstyle.reason,
+          tpRungIndex: null,
+        };
+      }
+      verdict.shouldExit = false;
+      verdict.fraction = 0;
+      verdict.reason = null;
+      verdict.tpRungIndex = null;
+    }
+  }
   /**
    * Dust close — operational, not strategic. Bank/bounce ladders leave $1–2
    * remnants that no price move can make matter (±1.3% of $1.20 is ±$0.02), and

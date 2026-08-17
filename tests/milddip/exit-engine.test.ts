@@ -105,6 +105,61 @@ const gatesForDust = {
 };
 
 describe('decideMarkExit / applyMarkDecisionToPosition', () => {
+  it('does not let breakeven_stop veto a leader-style exit decision', () => {
+    const d = decideMarkExit({
+      mint: 'lstyle-be',
+      pos: pos({
+        mint: 'lstyle-be',
+        lane: 'leader_style',
+        entryPriceUsd: 100,
+        peakPriceUsd: 102,
+        trailArmed: true,
+        openedAtMs: 1_000_000,
+      }),
+      markPriceUsd: 100,
+      gates: {
+        ...gatesForDust,
+        armPct: 1,
+        givebackPct: 1,
+        hardStopPnlPct: 50,
+      },
+      nowMs: 1_060_000,
+      leaderStyleGates: {
+        profitReboundPct: 25,
+        pnlTpPct: 20,
+        volFadeRatio: 0.35,
+        depthDrainMax: 1.06,
+        maxHoldMs: 14_400_000,
+      },
+    });
+    expect(d?.reason).not.toBe('breakeven_stop');
+  });
+
+  it('keeps operational dust-close active for leader-style positions', () => {
+    const d = decideMarkExit({
+      mint: 'lstyle-dust',
+      pos: pos({
+        mint: 'lstyle-dust',
+        lane: 'leader_style',
+        sizeUsd: 1,
+        scaleOutDone: true,
+        openedAtMs: 1_000_000,
+      }),
+      markPriceUsd: 100,
+      gates: { ...gatesForDust, dustCloseUsd: 2 },
+      nowMs: 3_000_000,
+      leaderStyleGates: {
+        profitReboundPct: 25,
+        pnlTpPct: 20,
+        volFadeRatio: 0.35,
+        depthDrainMax: 1.06,
+        maxHoldMs: 14_400_000,
+      },
+    });
+    expect(d?.reason).toBe('dust_close');
+    expect(d?.fraction).toBe(1);
+  });
+
   const gates = {
     armPct: 5,
     partialGivebackPct: 3,
