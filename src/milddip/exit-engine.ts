@@ -57,6 +57,8 @@ export type MarkExitDecision = {
   pnlPct: number;
   /** Gain on the profit basis — what the ladder and banks compared. */
   gainPct: number;
+  /** Price basis used for gainPct, needed to translate a real fill into rungs. */
+  gainBasisPriceUsd: number;
   /** Move since the fill — real money, for logging only. */
   pnlPctVsFill: number;
   /** Safety cap that released the soft-loss bounce wait, if one did. */
@@ -189,6 +191,7 @@ export function decideMarkExit(args: {
       givebackPct: 0,
       pnlPct: pnl,
       gainPct: pnl,
+      gainBasisPriceUsd: basis,
       pnlPctVsFill: pnl,
       volFadeSamples: [...(pos.volFadeSamples ?? [])],
       postEntryTroughPriceUsd: Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd),
@@ -356,6 +359,7 @@ export function decideMarkExit(args: {
               givebackPct: 0,
               pnlPct: 0,
               gainPct: 0,
+              gainBasisPriceUsd: pos.entryPriceUsd,
               pnlPctVsFill: 0,
               bounceOffTroughPct: 0,
               troughAgeMs: 0,
@@ -396,6 +400,7 @@ export function decideMarkExit(args: {
             givebackPct: 0,
             pnlPct: 0,
             gainPct: 0,
+            gainBasisPriceUsd: pos.entryPriceUsd,
             pnlPctVsFill: 0,
             bounceOffTroughPct: 0,
             troughAgeMs: 0,
@@ -473,6 +478,7 @@ export function decideMarkExit(args: {
     postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
     tpRungsDone: pos.tpRungsDone ?? 0,
+    lastTpGridFillAtMs: pos.lastTpGridFillAtMs,
   });
   /**
    * Dust close — operational, not strategic. Bank/bounce ladders leave $1–2
@@ -518,6 +524,9 @@ export function decideMarkExit(args: {
     givebackPct: verdict.givebackPct,
     pnlPct: verdict.pnlPct,
     gainPct: verdict.gainPct,
+    gainBasisPriceUsd:
+      (verdict as { gainBasisPriceUsd?: number }).gainBasisPriceUsd ??
+      pos.entryPriceUsd,
     pnlPctVsFill: verdict.pnlPctVsFill,
     bounceOffTroughPct: verdict.bounceOffTroughPct,
     troughAgeMs: verdict.troughAgeMs,

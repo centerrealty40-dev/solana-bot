@@ -13,10 +13,12 @@ import {
   mildDipMicroSizeGatesForSource,
   mayFireSoftLossExit,
   resolveMildDipWantedSizeUsd,
+  tpRungsCoveredByGainPct,
   type MildDipCandidateMetrics,
   type MildDipEntryGates,
   type MildDipExitGates,
 } from '../../src/milddip/gates.js';
+import { retrySlippageBpsForAttempt } from '../../src/milddip/exit-retry.js';
 
 function metrics(partial: Partial<MildDipCandidateMetrics>): MildDipCandidateMetrics {
   return {
@@ -56,6 +58,26 @@ const mfeBankOff = {
 } as const;
 
 describe('mild-dip entry age and churn gates', () => {
+  it('retry slippage increments by step and never exceeds cap', () => {
+    expect(
+      retrySlippageBpsForAttempt({
+        eligible: true,
+        baseSlippageBps: 100,
+        priorRetryCount: 2,
+        stepBps: 100,
+        maxBps: 250,
+      }),
+    ).toBe(250);
+    expect(
+      retrySlippageBpsForAttempt({
+        eligible: true,
+        baseSlippageBps: 100,
+        priorRetryCount: 1,
+        stepBps: 100,
+        maxBps: 800,
+      }),
+    ).toBe(200);
+  });
   const gate = {
     minPairAgeHours: 1,
     maxVol5mToLiq: 2,
@@ -2056,6 +2078,55 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
     expect(v.reason).toBe('tp_grid');
     expect(v.tpRungIndex).toBe(3);
     expect(v.fraction).toBeCloseTo(1 - 0.66 ** 3, 10);
+  });
+
+  it('fill coverage helper makes +58.8% cover rung 5, leaving +60% next', () => {
+    const gates = { tpGridStepPct: 8, tpGridFirstRungPct: 20 };
+    expect(tpRungsCoveredByGainPct(gates, 58.8)).toBe(5);
+    expect(tpRungsCoveredByGainPct(gates, 59.99)).toBe(5);
+    expect(tpRungsCoveredByGainPct(gates, 60)).toBe(6);
+  });
+
+  it('disabled TP-grid gap preserves the next rung decision', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 120,
+      peakPriceUsd: 120,
+      armed: true,
+      gates: { ...exitGates, tpGridStepPct: 8, tpGridMinGapMs: 0 },
+      tpRungsDone: 0,
+      nowMs: 20_000,
+      lastTpGridFillAtMs: 19_999,
+    });
+    expect(v.reason).toBe('tp_grid');
+  });
+
+  it('exhausted TP-grid runner uses the tighter giveback', () => {
+    const base = {
+      entryPriceUsd: 100,
+      markPriceUsd: 170,
+      peakPriceUsd: 200,
+      armed: true,
+      scaleOutDone: true,
+      tpRungsDone: 5,
+      gates: {
+        ...exitGates,
+        tpGridStepPct: 8,
+        tpGridSellFraction: 0.34,
+        tpGridMinRemainderFraction: 0.1,
+        mfeBankSleeveGivebackPct: 0,
+        mfeBankSleeveGreenPartialFraction: 0.2,
+        mfeBankSleeveRunnerGivebackPct: 25,
+        mfeBankSleeveRunnerGivebackExhaustedPct: 10,
+      },
+    };
+    const tight = evaluateMildDipPeakGiveback(base);
+    expect(tight.reason).toBe('peak_giveback');
+    const ordinary = evaluateMildDipPeakGiveback({
+      ...base,
+      gates: { ...base.gates, mfeBankSleeveRunnerGivebackExhaustedPct: 0 },
+    });
+    expect(ordinary.shouldExit).toBe(false);
   });
 
   it('tp_grid first rung 0 preserves the step-sized first rung', () => {

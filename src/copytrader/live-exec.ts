@@ -444,6 +444,7 @@ export async function executeLiveCopySell(args: {
   minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage' | 'loss_fill_slippage';
   fillGuardDecisionPriceUsd?: number;
   fillGuardMaxSlipPct?: number;
+  slippageBpsOverride?: number;
 }): Promise<
   {
     ok: boolean;
@@ -515,7 +516,10 @@ export async function executeLiveCopySell(args: {
   const maxAttempts = 1 + liveCfg.liveSellSimRetryAttempts;
   const slippageCap = 1 + liveCfg.liveSellSimSlippageRetryAttempts;
   let slippageClassAttempts = 0;
-  let currentSlippageBps = liveCfg.liveDefaultSlippageBps;
+  let currentSlippageBps =
+    args.slippageBpsOverride != null && Number.isFinite(args.slippageBpsOverride)
+      ? Math.max(1, Math.min(5000, Math.floor(args.slippageBpsOverride)))
+      : liveCfg.liveDefaultSlippageBps;
   let lastReason = 'jupiter_sell_quote_failed';
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
