@@ -60,7 +60,7 @@ describe('1.11.816 leader-seen entry gate', () => {
 
   it('live env keeps the gate on; seed caps still sized for it', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '1'");
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '0'");
     expect(eco).toContain("MILD_DIP_LEADER_SEED_MAX: '250'");
     expect(eco).toContain("LEADER_OBSERVER_SEED_MAX: '250'");
   });

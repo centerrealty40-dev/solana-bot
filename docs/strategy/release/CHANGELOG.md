@@ -1,3 +1,23 @@
+## [1.11.997] — 2026-08-17
+
+### Изменено
+
+- В mild-dip временно снята зависимость входа от факта покупки лидером:
+  `MILD_DIP_REQUIRE_LEADER_SEEN=0` и
+  `MILD_DIP_LEADER_CO_BUY_ALIGN=0`. Собственные пороги входа, включая
+  ликвидность, turnover, dip-band, возраст пары и churn, не менялись.
+- Основание за 3 суток: `mild_dip_not_leader_seen_skip` отсёк 13 487 разных
+  минтов (186 810 событий) при 1 203 наших покупках;
+  `mild_dip_leader_co_buy_skip` — 186 минтов и 2 693 события, медиана
+  turnover `0.0338` при floor `0.06`.
+
+### Откат
+
+```text
+MILD_DIP_REQUIRE_LEADER_SEEN=1
+MILD_DIP_LEADER_CO_BUY_ALIGN=1
+```
+
 ## [1.11.996] — 2026-08-17
 
 ### Изменено

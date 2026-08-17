@@ -4362,7 +4362,13 @@ const PM2_APPS = [
         MILD_DIP_RUG_KNIFE_DUMP_PCT: '-45',
         MILD_DIP_RUG_KNIFE_TURN: '3',
         MILD_DIP_RUG_BLOCK_DUMP_PCT: '0',
-        MILD_DIP_REQUIRE_LEADER_SEEN: '1',
+        /**
+         * 1.11.997 — temporary owner-requested measure: remove the leader-seen
+         * entry veto while we trade on our own thresholds. Over 3d,
+         * mild_dip_not_leader_seen_skip blocked 13,487 mints / 186,810 events
+         * versus 1,203 own buys; rollback by restoring both leader gates to '1'.
+         */
+        MILD_DIP_REQUIRE_LEADER_SEEN: '0',
         /**
          * 1.11.899 — a leader has to have touched a name before we open it for
          * the first time; repeats on names we know are not gated.
@@ -4401,7 +4407,12 @@ const PM2_APPS = [
          * Requires fresh leader co-buy when turnover is below floor; age relax
          * from leaderSeen memory unchanged.
          */
-        MILD_DIP_LEADER_CO_BUY_ALIGN: '1',
+        /**
+         * 1.11.997 — temporary owner-requested measure: 2,693 co-buy skips
+         * across 186 mints over 3d (median turnover 0.0338 vs 0.06 floor);
+         * rollback by restoring both leader gates to '1'.
+         */
+        MILD_DIP_LEADER_CO_BUY_ALIGN: '0',
         MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS: '120000',
         /** 1.11.945 — structural trust survives the measured 5–6m leader lag. */
         MILD_DIP_ENTRY_LEADER_TRUST_STRUCTURAL_MS: '600000',
