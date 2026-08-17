@@ -32,6 +32,7 @@ import { greenExposureCapReason } from './green-lane.js';
 import { assessRugRisk } from './rug-risk.js';
 import { resolveStagedEntryFirstClip } from './staged-entry.js';
 import { mildDipPriceRing } from './price-ring.js';
+import { validateStreamDexPrice } from './price-sanity.js';
 
 /**
  * How fresh a ring sample must be to serve as the movement baseline. Dex marks
@@ -300,6 +301,7 @@ export type EntryAttemptOpts = {
   /** Short cooldown after soft skip (prebuy/bounce). */
   softSkipCooldownMs?: number;
   lane: 'fast' | 'slow';
+  leaderStyle?: boolean;
   mirror?: boolean;
   mirrorExit?: {
     armPct: number;
@@ -343,7 +345,7 @@ export async function attemptMildDipEntry(args: {
 
   if (buyInFlight.has(c.mint)) return 'skip';
   if (state.open[c.mint]) return 'skip';
-  if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
+  if (!opts.leaderStyle && (state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
   if (c.dipSource === 'green_momentum' && !cfg.green.enabled) {
     appendMildDipJournal(cfg.journalPath, {
@@ -375,7 +377,8 @@ export async function attemptMildDipEntry(args: {
   let probeReason: 'rebuy_below_exit' | 'rebuy_liq_drop' | null = null;
 
   const isMirror = opts.mirror === true;
-  const leaderGateOk = isMirror || leaderBuyGateOk(cfg, state, c.mint, nowMs);
+  const isLeaderStyle = opts.leaderStyle === true;
+  const leaderGateOk = isMirror || isLeaderStyle || leaderBuyGateOk(cfg, state, c.mint, nowMs);
   const greenLeaderGateBypass =
     !leaderGateOk && greenLeaderGateBypassAllowed(cfg, c.dipSource);
   if (!leaderGateOk && greenLeaderGateBypass) {
@@ -447,6 +450,27 @@ export async function attemptMildDipEntry(args: {
       return 'skip';
     }
   }
+  const streamForSanity = mildDipPriceRing.lastPriceBySource(c.mint, 'stream', nowMs, 60_000);
+  if (streamForSanity) {
+    const dexForSanity = c.priceUsd > 0 ? c.priceUsd : null;
+    const sanity = validateStreamDexPrice({
+      streamPriceUsd: streamForSanity.priceUsd,
+      dexPriceUsd: dexForSanity,
+      maxDivergenceFactor: cfg.streamDexMaxDivergenceFactor,
+    });
+    if (!sanity.valid) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_stream_dex_price_sanity_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        streamPriceUsd: streamForSanity.priceUsd,
+        dexPriceUsd: dexForSanity,
+        divergenceFactor: sanity.divergence,
+        at: 'entry',
+      });
+      return 'skip';
+    }
+  }
 
   if (!opts.skipOnchainAdopt && !isMirror) {
     const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);
@@ -473,7 +497,7 @@ export async function attemptMildDipEntry(args: {
   const isKnife = c.dipSource === 'knife_stabilize';
   const isTurnDumpKnife = c.dipSource === 'turn_dump_knife';
   const isWaitDip = c.dipSource === 'wait_dip';
-  const isGreen = c.dipSource === 'green_momentum' && !isMirror;
+  const isGreen = c.dipSource === 'green_momentum' && !isMirror && !isLeaderStyle;
   const greenExitProfile: 'standard' | 'fast' = isGreen
     ? greenExitProfileForTape(cfg, c.tapeRet1mPct)
     : 'standard';
@@ -530,7 +554,7 @@ export async function attemptMildDipEntry(args: {
           }
         : cfg.entry;
 
-  if (cfg.preBuyRevalidate && !isMirror) {
+  if (cfg.preBuyRevalidate && !isMirror && !isLeaderStyle) {
     const freshNow = Date.now();
     if (opts.freshDexPrebuy !== false) {
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
@@ -772,16 +796,22 @@ export async function attemptMildDipEntry(args: {
     liquidityUsd: liveLiquidityUsd,
     minPairAgeHours: isMirror
       ? cfg.leaderMirror.minPairAgeHours
+      : isLeaderStyle
+        ? 0
       : isGreen
         ? cfg.green.minPairAgeHours
         : cfg.entryMinPairAgeHours,
     maxVol5mToLiq: isMirror
       ? cfg.leaderMirror.maxVol5mToLiq
+      : isLeaderStyle
+        ? 0
       : isGreen && cfg.green.entryMaxVol5mToLiq > 0
         ? cfg.green.entryMaxVol5mToLiq
         : cfg.entryMaxVol5mToLiq,
     minLiquidityUsd: isMirror
       ? cfg.leaderMirror.minLiquidityUsd
+      : isLeaderStyle
+        ? 0
       : isGreen
         ? cfg.green.minLiquidityUsd
         : cfg.entryMinLiquidityUsd,
@@ -825,6 +855,7 @@ export async function attemptMildDipEntry(args: {
   } | null = null;
   const applyTurnDumpGate =
     !isMirror &&
+    !isLeaderStyle &&
     cfg.turnDumpGateEnabled && shouldApplyGreenTurnDumpGate(isGreen, cfg.greenTurnDumpGate);
   if (cfg.turnDumpGateEnabled && isGreen && !cfg.greenTurnDumpGate) {
     appendMildDipJournal(cfg.journalPath, {
@@ -888,7 +919,7 @@ export async function attemptMildDipEntry(args: {
   }
 
   // Always on (incl. fast-path): do not rebuy near last exit USD price.
-  if (cfg.rebuyBelowExitPct > 0) {
+  if (!isLeaderStyle && cfg.rebuyBelowExitPct > 0) {
     const last = state.lastExitByMint?.[c.mint];
     const markPx = freshPx ?? entryPriceUsd;
     const rebuy = evaluateRebuyBelowExit({
@@ -948,7 +979,7 @@ export async function attemptMildDipEntry(args: {
   }
 
   // 1.11.797 — after loss exit: skip if Dex liq fell vs exit snapshot.
-  if (cfg.rebuyLiqDropEnabled) {
+  if (!isLeaderStyle && cfg.rebuyLiqDropEnabled) {
     const last = state.lastExitByMint?.[c.mint];
     const curLiq = sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd;
     const liqDrop = evaluateRebuyLiquidityDrop({
@@ -1000,7 +1031,7 @@ export async function attemptMildDipEntry(args: {
     }
   }
 
-  if (!opts.skipBounce) {
+  if (!isLeaderStyle && !opts.skipBounce) {
     const bounceLookbackMs = Math.max(
       cfg.cooldownBounceLookbackMs,
       cfg.mintCooldownMs,
@@ -1167,7 +1198,9 @@ export async function attemptMildDipEntry(args: {
       ? entryMarkSample.priceUsd
       : undefined;
   const laneCapped =
-    isMirror && cfg.leaderMirror.positionUsd > 0
+    isLeaderStyle && cfg.leaderStyle.positionUsd > 0
+      ? Math.min(cfg.leaderStyle.positionUsd, knifeCapped)
+      : isMirror && cfg.leaderMirror.positionUsd > 0
       ? Math.min(cfg.leaderMirror.positionUsd, knifeCapped)
       : isGreen && cfg.green.positionUsd > 0
         ? Math.min(cfg.green.positionUsd, knifeCapped)
@@ -1217,7 +1250,12 @@ export async function attemptMildDipEntry(args: {
     sizeUsd: wantUsd,
     firstUsd: cfg.stagedFirstUsd,
   });
-  const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, stagedClip.sizeUsd);
+  const sized = await args.resolveEntrySizeUsd(
+    cfg,
+    copyCfg,
+    nowMs,
+    isLeaderStyle ? cfg.leaderStyle.positionUsd : stagedClip.sizeUsd,
+  );
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {
       appendMildDipJournal(cfg.journalPath, {
@@ -1280,7 +1318,7 @@ export async function attemptMildDipEntry(args: {
     // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
     peakPriceUsd: entryPriceUsd,
     entryMarkPriceUsd,
-    lane: isMirror ? 'leader_mirror' : isGreen ? 'green' : 'dip',
+    lane: isMirror ? 'leader_mirror' : isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
     ...(isMirror && opts.mirrorExit
       ? {
           mirrorExitArmPct: opts.mirrorExit.armPct,
@@ -1323,7 +1361,7 @@ export async function attemptMildDipEntry(args: {
     sizeUsd: sized.sizeUsd,
     priceUsd: entryPriceUsd,
     dipSource: c.dipSource,
-    lane: isMirror ? 'leader_mirror' : opts.lane,
+    lane: isMirror ? 'leader_mirror' : isLeaderStyle ? 'leader_style' : opts.lane,
     trigger: opts.trigger,
     waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
     waitDipMaxPriceUsd: waitDipCeilingPx,
@@ -1590,7 +1628,7 @@ export async function attemptMildDipEntry(args: {
     buySignature: buy.signature ?? null,
     peakPriceUsd: fillPx,
     entryMarkPriceUsd,
-    lane: isMirror ? 'leader_mirror' : isGreen ? 'green' : 'dip',
+    lane: isMirror ? 'leader_mirror' : isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
     ...(isMirror && opts.mirrorExit
       ? {
           mirrorExitArmPct: opts.mirrorExit.armPct,

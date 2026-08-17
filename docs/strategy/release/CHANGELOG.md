@@ -1,4 +1,4 @@
-## [1.11.1003] — 2026-08-20
+## [1.11.1004] — 2026-08-20
 
 ### Изменено
 
@@ -16,6 +16,23 @@ MILD_DIP_MIRROR_TICK_INTERVAL_MS=2000
 MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS=4
 MILD_DIP_MIRROR_STRUCTURAL_GAP_MS=5000
 ```
+
+## [1.11.1003] — 2026-08-19
+
+### Изменено
+
+- Добавлена независимая own-signal `leader-style` lane с фиксированным клипом
+  `$5`, входом на откате внутри молодого высокооборотного пула и полными
+  выходами по rebound / PnL / fade / depth drain / max hold.
+- Для всех веток добавлена санитарная проверка stream/DEX цены при расхождении
+  более `2x`; stream print не используется в решении и попадает в журнал.
+- Rollback: `MILD_DIP_LSTYLE_ENABLED='0'`;
+  `MILD_DIP_STREAM_DEX_MAX_DIVERGENCE_FACTOR='2'`.
+- Существующий `leader_mirror` lane и его env не изменялись.
+- Leader-style использует собственный путь кандидатов, обходящий общие
+  entry-risk и dip-band фильтры.
+- Выходы leader-style изолированы и не пересекаются с обычными выходными
+  ветками.
 
 ## [1.11.1002] — 2026-08-19
 

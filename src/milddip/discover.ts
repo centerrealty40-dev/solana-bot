@@ -77,6 +77,7 @@ export type MildDipCandidate = {
   mint: string;
   symbol: string;
   priceUsd: number;
+  pairCreatedAtMs?: number | null;
   /** Candidate is for journal-only funnel measurement; never submit a buy. */
   shadowOnly?: boolean;
   metrics: MildDipCandidateMetrics;
@@ -467,6 +468,7 @@ export async function enrichAndFilterCandidates(
     cacheTtlMs?: number;
     /** Always enrich these even past maxEnrich (cooldown / knife watch). */
     forceEnrich?: string[];
+    leaderStyle?: boolean;
     /** Prior knife watches (mutated copy returned). */
     knifeWatch?: Record<string, KnifeWatchEntry>;
   },
@@ -477,6 +479,7 @@ export async function enrichAndFilterCandidates(
   const bypassCache = opts?.bypassCache ?? false;
   const cacheTtlMs = opts?.cacheTtlMs ?? 3_000;
   const knifeGates = knifeGatesFromConfig(cfg);
+  const leaderStyle = opts?.leaderStyle === true;
   const knifeWatchIn: Record<string, KnifeWatchEntry> = {
     ...(opts?.knifeWatch ?? {}),
   };
@@ -544,7 +547,19 @@ export async function enrichAndFilterCandidates(
         priceChange1hPct: details.priceChangeH1Pct,
       };
       noteStructuralCache(mint, details.priceUsd, metrics, nowMs);
-
+      if (leaderStyle) {
+        return {
+          kind: 'candidate',
+          candidate: {
+            mint,
+            symbol: mint.slice(0, 8),
+            priceUsd: details.priceUsd,
+            pairCreatedAtMs: details.pairCreatedAtMs ?? null,
+            metrics,
+            dipSource: 'dex',
+          },
+        };
+      }
       const entryRisk = evaluateMildDipEntryRisk({
         pairAgeHours: metrics.pairAgeHours,
         volume5mUsd: metrics.volume5mUsd,
