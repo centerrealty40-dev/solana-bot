@@ -124,6 +124,8 @@ export type MildDipOpenPosition = {
   exitDeferredMs?: number;
   /** Wall clock of the last such deferral, for accumulating the budget. */
   exitDeferredAtMs?: number;
+  /** 1.11.994 — start of the small-loss reclaim wait, if active. */
+  lossReclaimWaitStartedAtMs?: number;
   /**
    * Spaced Dex vol5m samples (≥5m apart) for sustained `never_arm_vol_fade`.
    * A single weak tick must not sell — need N consecutive weak windows.

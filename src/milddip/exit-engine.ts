@@ -61,6 +61,10 @@ export type MarkExitDecision = {
   pnlPctVsFill: number;
   /** Safety cap that released the soft-loss bounce wait, if one did. */
   lossExitBounceCap?: 'drawdown' | 'trough_age';
+  /** 1.11.994 — persisted small-loss reclaim wait transition. */
+  lossReclaimWaitStartedAtMs?: number;
+  lossReclaimWaitClearedReason?: 'target' | 'stop' | 'timeout' | 'protective_exit';
+  lossReclaimWaitMs?: number;
   /** Updated spaced vol5m ring — caller persists onto the open position. */
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry low-water mark. */
@@ -473,6 +477,7 @@ export function decideMarkExit(args: {
     postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
     oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
     tpRungsDone: pos.tpRungsDone ?? 0,
+    lossReclaimWaitStartedAtMs: pos.lossReclaimWaitStartedAtMs ?? null,
   });
   /**
    * Dust close — operational, not strategic. Bank/bounce ladders leave $1–2
@@ -524,6 +529,13 @@ export function decideMarkExit(args: {
     ...(verdict.lossExitBounceCap != null
       ? { lossExitBounceCap: verdict.lossExitBounceCap }
       : {}),
+    ...(verdict.lossReclaimWaitStartedAtMs != null
+      ? { lossReclaimWaitStartedAtMs: verdict.lossReclaimWaitStartedAtMs }
+      : {}),
+    ...(verdict.lossReclaimWaitClearedReason != null
+      ? { lossReclaimWaitClearedReason: verdict.lossReclaimWaitClearedReason }
+      : {}),
+    ...(verdict.lossReclaimWaitMs != null ? { lossReclaimWaitMs: verdict.lossReclaimWaitMs } : {}),
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,
@@ -587,6 +599,11 @@ export function applyMarkDecisionToPosition(
   }
   if (decision.postEntryTroughAtMs > 0) {
     pos.postEntryTroughAtMs = decision.postEntryTroughAtMs;
+  }
+  if (decision.lossReclaimWaitClearedReason != null) {
+    pos.lossReclaimWaitStartedAtMs = undefined;
+  } else if (decision.lossReclaimWaitStartedAtMs != null) {
+    pos.lossReclaimWaitStartedAtMs = decision.lossReclaimWaitStartedAtMs;
   }
 }
 

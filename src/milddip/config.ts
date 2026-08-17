@@ -911,6 +911,11 @@ const MildDipConfigSchema = z.object({
      */
     lossExitMaxDrawdownPct: z.coerce.number().min(0).max(100).default(0),
     lossExitMaxTroughAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+    /** 1.11.994 — small-loss reclaim wait; 0 = off. */
+    lossReclaimMaxLossPct: z.coerce.number().min(0).max(100).default(0),
+    lossReclaimTargetPct: z.coerce.number().min(0).max(100).default(2),
+    lossReclaimStopPct: z.coerce.number().min(0).max(100).default(25),
+    lossReclaimMaxWaitMs: z.coerce.number().int().min(0).max(86_400_000).default(3_600_000),
   }),
 });
 
@@ -1170,6 +1175,10 @@ export function loadMildDipConfig(): MildDipConfig {
      */
     lossExitMaxDrawdownPct: envNum('MILD_DIP_EXIT_LOSS_MAX_DRAWDOWN_PCT', 0),
     lossExitMaxTroughAgeMs: envNum('MILD_DIP_EXIT_LOSS_MAX_TROUGH_AGE_MS', 0),
+    lossReclaimMaxLossPct: envNum('MILD_DIP_EXIT_LOSS_RECLAIM_MAX_LOSS_PCT', 0),
+    lossReclaimTargetPct: envNum('MILD_DIP_EXIT_LOSS_RECLAIM_TARGET_PCT', 2),
+    lossReclaimStopPct: envNum('MILD_DIP_EXIT_LOSS_RECLAIM_STOP_PCT', 25),
+    lossReclaimMaxWaitMs: envNum('MILD_DIP_EXIT_LOSS_RECLAIM_MAX_WAIT_MS', 3_600_000),
   };
 
   const raw = {
