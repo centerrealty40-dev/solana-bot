@@ -1,3 +1,19 @@
+## [1.11.1009] — 2026-08-20
+
+### Изменено
+
+- Mirror теперь запрашивает собственный клип `MILD_DIP_MIRROR_POSITION_USD`
+  напрямую, без общего first-touch/staged-кэпа. DIP, GREEN и `leader_style`
+  сохраняют прежнюю sizing-цепочку.
+
+### Откат
+
+```text
+MILD_DIP_MIRROR_POSITION_USD=0
+```
+
+(нулевой клип возвращает ветку в общую staged/first-touch цепочку размера)
+
 ## [1.11.1008] — 2026-08-20
 
 ### Изменено
