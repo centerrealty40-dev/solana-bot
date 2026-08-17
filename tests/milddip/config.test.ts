@@ -99,6 +99,11 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.entryMinLiquidityUsd).toBe(4500);
   });
 
+  it('defaults the wait-dip signal-depth floor to off', () => {
+    const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(cfg.waitDipMaxDumpFromSignalPct).toBe(0);
+  });
+
   it('defaults the entry minimum liquidity threshold to $4000', () => {
     const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(cfg.entryMinLiquidityUsd).toBe(4000);
@@ -223,6 +228,22 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_ENTRY_MIN_LIQ_USD: '15000'");
     expect(eco).toContain("MILD_DIP_TURN_DUMP_SHALLOW_BRANCH: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '4000'");
+  });
+
+  it('keeps the wait-dip signal-depth floor at the live value', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT: '10'");
+    const value = eco.match(
+      /MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT:\s*'([^']+)'/,
+    )?.[1];
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT: value!,
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.waitDipMaxDumpFromSignalPct).toBe(10);
   });
 
   it('loads GREEN shared gate overrides and preserves their safe defaults', () => {

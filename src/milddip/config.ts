@@ -511,6 +511,8 @@ const MildDipConfigSchema = z.object({
   waitDipWithTurnDump: z.boolean().default(false),
   waitDipPct: z.coerce.number().max(0).default(-10),
   waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
+  /** Maximum wait-dip dump from the original signal; 0 = off. */
+  waitDipMaxDumpFromSignalPct: z.coerce.number().min(0).max(100).default(0),
   /**
    * 1.11.753 — after ready, allow at most this many pp of dump edge to erode
    * before abort (wait −7% + overshoot 2 → fill/quote must stay ≤ −5% vs signal).
@@ -1334,6 +1336,10 @@ export function loadMildDipConfig(): MildDipConfig {
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
+    waitDipMaxDumpFromSignalPct: envNum(
+      'MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT',
+      0,
+    ),
     waitDipMaxOvershootPct: envNum('MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT', 2),
     waitDipMaxChasePct: envNum('MILD_DIP_WAIT_DIP_MAX_CHASE_PCT', 3),
     waitDipQuotePremiumPct: envNum('MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT', 1),

@@ -3071,6 +3071,14 @@ const PM2_APPS = [
         MILD_DIP_WAIT_DIP_PCT: '-5',
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
         /**
+         * 1.11.998 — the ceiling existed, but there was no depth floor:
+         * 7d seats filled at −7.68% median / −12.85% p75 / −19.07% p90.
+         * P&L per $100 by fill depth: −3…−10% +$0.09/+0.93,
+         * −10…−20% −$3.34 (418, −$70), below −20% −$6.67 (129, −$43).
+         * Rollback: MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT=0.
+         */
+        MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT: '10',
+        /**
          * 3, not 5: with a −5% target an overshoot of 5 sums to zero and
          * `waitDipMaxPriceUsd` collapses the ceiling back onto the target,
          * leaving no room for any reclaim at all. At 3 the window runs from

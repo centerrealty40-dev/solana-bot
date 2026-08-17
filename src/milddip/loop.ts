@@ -50,6 +50,8 @@ import {
   priorityMintsFromWaitDipWatch,
   shouldParkWaitDip,
   upsertWaitDipWatch,
+  waitDipDumpTooDeep,
+  waitDipTooDeepJournalAllowed,
   type WaitDipGates,
 } from './wait-dip.js';
 import {
@@ -279,6 +281,7 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
     enabled: cfg.waitDipEnabled === true,
     waitDipPct: cfg.waitDipPct,
     maxWatchMs: cfg.waitDipMaxWatchMs,
+    maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
   };
 }
 
@@ -700,6 +703,22 @@ async function tryFireWaitDip(
     return false;
   }
   if (!verdict.ready) {
+    return false;
+  }
+  if (waitDipDumpTooDeep(verdict.dumpFromSignalPct, cfg.waitDipMaxDumpFromSignalPct)) {
+    delete state.waitDipWatch![mint];
+    if (waitDipTooDeepJournalAllowed(mint, nowMs)) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_wait_dip_too_deep',
+        mint,
+        symbol: watch.symbol,
+        signalPriceUsd: watch.signalPriceUsd,
+        priceUsd: px,
+        dumpFromSignalPct: verdict.dumpFromSignalPct,
+        maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
+      });
+    }
+    saveMildDipState(cfg.statePath, state);
     return false;
   }
 
