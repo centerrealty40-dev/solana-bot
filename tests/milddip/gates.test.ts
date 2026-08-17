@@ -171,6 +171,10 @@ const exitGates: MildDipExitGates = {
   lossExitMinBouncePct: 0,
   lossExitMaxDrawdownPct: 0,
   lossExitMaxTroughAgeMs: 0,
+  lossReclaimMaxLossPct: 0,
+  lossReclaimTargetPct: 2,
+  lossReclaimStopPct: 25,
+  lossReclaimMaxWaitMs: 3_600_000,
 };
 
 /** Legacy early-knife gates — only for testing never_arm_giveback still works when enabled. */
@@ -882,6 +886,252 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     });
     expect(blocked).toEqual({ allowed: false, reason: null });
     expect(mayFireSoftLossExit({ ...args, gainPct: -10 })).toBe(blocked.allowed);
+  });
+
+  it('1.11.994 — small-loss reclaim reaches target as a full exit', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossReclaimMaxLossPct: 10,
+      lossReclaimTargetPct: 2,
+      lossReclaimStopPct: 25,
+      lossReclaimMaxWaitMs: 3_600_000,
+      lossExitMinBouncePct: 0,
+      neverArmBounceMinDumpPct: 0,
+      neverArmBouncePct: 0,
+      neverArmMaxHoldMs: 1_000,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+    };
+    const waiting = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 95,
+      peakPriceUsd: 100,
+      gates,
+      heldMs: 2_000,
+      nowMs: 2_000,
+    });
+    expect(waiting.shouldExit).toBe(false);
+    expect(waiting.lossReclaimWaitStartedAtMs).toBe(2_000);
+    const reclaimed = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 102,
+      peakPriceUsd: 102,
+      gates,
+      heldMs: 3_000,
+      nowMs: 3_000,
+      lossReclaimWaitStartedAtMs: waiting.lossReclaimWaitStartedAtMs,
+    });
+    expect(reclaimed.shouldExit).toBe(true);
+    expect(reclaimed.fraction).toBe(1);
+    expect(reclaimed.reason).toBe('loss_reclaim');
+    expect(reclaimed.lossReclaimWaitClearedReason).toBe('target');
+  });
+
+  it('1.11.994 — stop and timeout clear reclaim wait before old loss exits', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossReclaimMaxLossPct: 10,
+      lossReclaimTargetPct: 2,
+      lossReclaimStopPct: 25,
+      lossReclaimMaxWaitMs: 1_000,
+      hardStopPnlPct: 0,
+      lossExitMinBouncePct: 0,
+      neverArmBounceMinDumpPct: 0,
+      neverArmBouncePct: 0,
+      neverArmMaxHoldMs: 1_000,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+    };
+    const stop = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 74,
+      peakPriceUsd: 100,
+      gates,
+      heldMs: 3_000,
+      nowMs: 3_000,
+      lossReclaimWaitStartedAtMs: 1_000,
+    });
+    expect(stop.lossReclaimWaitClearedReason).toBe('stop');
+    expect(stop.shouldExit).toBe(true);
+    expect(stop.reason).toBe('never_arm_timeout');
+
+    const timeout = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 95,
+      peakPriceUsd: 100,
+      gates,
+      heldMs: 2_000,
+      nowMs: 2_000,
+      lossReclaimWaitStartedAtMs: 1_000,
+    });
+    expect(timeout.lossReclaimWaitClearedReason).toBe('timeout');
+    expect(timeout.shouldExit).toBe(true);
+    expect(timeout.reason).toBe('never_arm_timeout');
+
+    const afterTimeout = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 95,
+      peakPriceUsd: 100,
+      gates,
+      heldMs: 4_000,
+      nowMs: 4_000,
+      lossReclaimWaitDone: true,
+    });
+    expect(afterTimeout.shouldExit).toBe(true);
+    expect(afterTimeout.reason).toBe('never_arm_timeout');
+    expect(afterTimeout.lossReclaimWaitStartedAtMs).toBeUndefined();
+  });
+
+  it('1.11.994 — deep losses and disabled reclaim preserve the old path', () => {
+    const base = {
+      ...exitGates,
+      lossReclaimMaxLossPct: 10,
+      lossReclaimTargetPct: 2,
+      lossReclaimStopPct: 25,
+      lossReclaimMaxWaitMs: 3_600_000,
+      hardStopPnlPct: 0,
+      lossExitMinBouncePct: 0,
+      neverArmBounceMinDumpPct: 0,
+      neverArmBouncePct: 0,
+      neverArmMaxHoldMs: 1_000,
+      neverArmFreefallPnlPct: 0,
+      neverArmTimeRedMinMs: 0,
+    } satisfies MildDipExitGates;
+    const deep = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 80,
+      peakPriceUsd: 100,
+      gates: base,
+      heldMs: 2_000,
+      nowMs: 2_000,
+    });
+    expect(deep.shouldExit).toBe(true);
+    expect(deep.reason).toBe('never_arm_timeout');
+
+    const disabled = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 95,
+      peakPriceUsd: 100,
+      gates: { ...base, lossReclaimMaxLossPct: 0 },
+      heldMs: 2_000,
+      nowMs: 2_000,
+    });
+    expect(disabled.shouldExit).toBe(true);
+    expect(disabled.reason).toBe('never_arm_timeout');
+    expect(disabled.lossReclaimWaitStartedAtMs).toBeUndefined();
+  });
+
+  it.each(['timeout', 'stop'] as const)(
+    '1.11.994 — %s cancellation persists one-shot state through a hold',
+    (cancellation) => {
+      const gates: MildDipExitGates = {
+        ...exitGates,
+        lossReclaimMaxLossPct: 10,
+        lossReclaimTargetPct: 2,
+        lossReclaimStopPct: 25,
+        lossReclaimMaxWaitMs: 1_000,
+        hardStopPnlPct: 0,
+        neverArmMaxHoldMs: 0,
+        neverArmBouncePct: 18,
+        neverArmBounceMinDumpPct: 1,
+        neverArmBounceMinPnlPct: -100,
+        neverArmBounceRequireRedPct: 0,
+        deadSetMinDropPct: 1,
+        deadSetBouncePct: 18,
+        deadSetVolFadeFrac: 0.5,
+        deadSetTurnFadeFrac: 0.5,
+        deadSetMinHoldMs: 0,
+      };
+      const cancelled = evaluateMildDipPeakGiveback({
+        entryPriceUsd: 100,
+        markPriceUsd: cancellation === 'timeout' ? 95 : 74,
+        peakPriceUsd: 100,
+        postEntryTroughPriceUsd: 80,
+        postEntryTroughAtMs: 1_000,
+        gates,
+        heldMs: 3_000,
+        nowMs: 3_000,
+        lossReclaimWaitStartedAtMs: 1_000,
+      });
+      expect(cancelled.shouldExit).toBe(false);
+      expect(cancelled.lossReclaimWaitDone).toBe(true);
+      expect(cancelled.lossReclaimWaitStartedAtMs).toBeUndefined();
+
+      const rebound = evaluateMildDipPeakGiveback({
+        entryPriceUsd: 100,
+        markPriceUsd: 99,
+        peakPriceUsd: 100,
+        postEntryTroughPriceUsd: 80,
+        postEntryTroughAtMs: 1_000,
+        volume5mUsd: 1,
+        entryVolume5mUsd: 100,
+        turnover5mLiq: 1,
+        entryTurnover5mLiq: 100,
+        gates,
+        heldMs: 4_000,
+        nowMs: 4_000,
+        lossReclaimWaitDone: cancelled.lossReclaimWaitDone,
+      });
+      expect(rebound.shouldExit).toBe(true);
+      expect(rebound.reason).toBe('dead_set_bounce');
+      expect(rebound.lossReclaimWaitStartedAtMs).toBeUndefined();
+    },
+  );
+
+  it.each(['hard_stop', 'cliff_dump'] as const)(
+    '1.11.994 — %s remains live during reclaim wait',
+    (reason) => {
+      const gates: MildDipExitGates = {
+        ...exitGates,
+        hardStopPnlPct: reason === 'hard_stop' ? 15 : 0,
+        cliffDumpPnlPct: reason === 'cliff_dump' ? 50 : 0,
+        lossExitMinBouncePct: 18,
+        lossReclaimMaxLossPct: 10,
+        lossReclaimTargetPct: 2,
+        lossReclaimStopPct: 25,
+        lossReclaimMaxWaitMs: 3_600_000,
+        neverArmFreefallPnlPct: 0,
+        neverArmMaxHoldMs: 0,
+      };
+      const decision = evaluateMildDipPeakGiveback({
+        entryPriceUsd: 100,
+        markPriceUsd: reason === 'hard_stop' ? 84 : 49,
+        peakPriceUsd: 100,
+        gates,
+        nowMs: 2_000,
+        lossReclaimWaitStartedAtMs: 1_000,
+      });
+      expect(decision.shouldExit).toBe(true);
+      expect(decision.reason).toBe(reason);
+    },
+  );
+
+  it('1.11.994 — liquidity drain remains live during reclaim wait', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      lossReclaimMaxLossPct: 10,
+      lossReclaimTargetPct: 2,
+      lossReclaimStopPct: 25,
+      lossReclaimMaxWaitMs: 3_600_000,
+      liqDrainRatio: 0.7,
+      liqDrainMinAgeMs: 0,
+      liqDrainConfirmTicks: 1,
+    };
+    const decision = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 90,
+      peakPriceUsd: 100,
+      gates,
+      nowMs: 2_000,
+      liquidityUsd: 50,
+      entryLiquidityUsd: 100,
+      liquidityMetricsFresh: true,
+      liquidityMetricsTsMs: 2_000,
+      liquidityDrainConfirmTicks: 0,
+      lossReclaimWaitStartedAtMs: 1_000,
+    });
+    expect(decision.shouldExit).toBe(true);
+    expect(decision.reason).toBe('liq_drain');
   });
 
   it('does not mark a cap when the legacy bounce already allows the exit', () => {

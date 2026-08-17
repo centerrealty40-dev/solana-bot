@@ -1633,6 +1633,8 @@ async function executeQueuedSell(args: {
       decision.depthDrainRatio != null ? +decision.depthDrainRatio.toFixed(4) : null,
     liqDrainConfirmTicks: decision.liquidityDrainConfirmTicks ?? 0,
     lossExitBounceCap: decision.lossExitBounceCap ?? null,
+    lossReclaimWaitMs: decision.lossReclaimWaitMs ?? null,
+    lossReclaimTargetPct: cfg.exit.lossReclaimTargetPct,
     scaleOut: isPartial,
     armed: decision.armed,
     holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
@@ -1665,6 +1667,8 @@ async function executeQueuedSell(args: {
       markPnlPct: sell.pnlPct ?? decision.pnlPct,
       reason: decision.reason,
       lossExitBounceCap: decision.lossExitBounceCap ?? null,
+      lossReclaimWaitMs: decision.lossReclaimWaitMs ?? null,
+      lossReclaimTargetPct: cfg.exit.lossReclaimTargetPct,
       nowMs,
     });
   } catch {
@@ -2466,7 +2470,37 @@ async function tryExits(
 
     maybeJournalMark(cfg, pos, decision, volume5mUsd, liquidityUsd, nowMs, source);
 
+    const priorLossReclaimWaitStartedAtMs = pos.lossReclaimWaitStartedAtMs;
     applyMarkDecisionToPosition(pos, decision);
+    if (
+      decision.lossReclaimWaitStartedAtMs != null &&
+      priorLossReclaimWaitStartedAtMs !== decision.lossReclaimWaitStartedAtMs
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_loss_reclaim_wait',
+        mint,
+        symbol: pos.symbol,
+        action: 'start',
+        startedAtMs: decision.lossReclaimWaitStartedAtMs,
+        maxLossPct: cfg.exit.lossReclaimMaxLossPct,
+        targetPct: cfg.exit.lossReclaimTargetPct,
+        maxWaitMs: cfg.exit.lossReclaimMaxWaitMs,
+      });
+    }
+    if (decision.lossReclaimWaitClearedReason != null) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_loss_reclaim_wait',
+        mint,
+        symbol: pos.symbol,
+        action: 'clear',
+        reason: decision.lossReclaimWaitClearedReason,
+        waitMs:
+          priorLossReclaimWaitStartedAtMs != null
+            ? Math.max(0, nowMs - priorLossReclaimWaitStartedAtMs)
+            : 0,
+        targetPct: cfg.exit.lossReclaimTargetPct,
+      });
+    }
 
     if (
       !decision.markQuarantined &&
