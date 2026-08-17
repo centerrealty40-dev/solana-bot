@@ -1,3 +1,27 @@
+## [1.11.993] — 2026-08-17
+
+### Изменено
+
+- В mild-dip отключён только production veto по weighted-average cost:
+  `MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT=0`. Сами average-cost tracking,
+  узкий protective-safe profit-veto код и staged-entry логика остаются без
+  изменений; конфигурация больше не отклоняет profit legs из-за этого veto.
+- Верхняя граница staged-add chase сужена с `+12%` до `+10%` от original
+  first fill: `MILD_DIP_STAGED_ADD_MAX_CHASE_PCT=2`, при сохранении trigger
+  `+8%`.
+- Бэктест 72h на 1605 закрытых циклах: включённый average-cost veto менял
+  `+$345` cash на `-$325`, отклоняя 184 profit legs на `$671` proceeds;
+  позднейший protective exit происходил хуже. Для add premium результаты были
+  `+$407` при `+8%`, `+$345` при фактических live `+10.2%` и `+$296` при
+  `+12%`, поэтому более узкий band оставляет более дешёвые fills.
+
+### Rollback
+
+```text
+MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT=1
+MILD_DIP_STAGED_ADD_MAX_CHASE_PCT=4
+```
+
 ## [1.11.992] — 2026-08-17
 
 ### Изменено

@@ -2874,15 +2874,17 @@ const PM2_APPS = [
         MILD_DIP_STAGED_ENTRY_ENABLED: '1',
         MILD_DIP_STAGED_FIRST_USD: '5',
         MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8',
-        MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '4',
+        MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '2',
         MILD_DIP_STAGED_ADD_MULT: '2',
         MILD_DIP_STAGED_ADD_MAX_USD: '40',
         /**
          * 1.11.986 — ASg9yD add filled +17.4% over first fill at the local
-         * peak; require profit sleeves/rungs to clear weighted average cost.
-         * Rollback: chase=100, avg veto=0.
+         * peak; chase band caps the add premium.
+         * 1.11.993 — the average-cost veto is off: on 72h/1605 cycles it
+         * declined 184 profit legs ($671) and turned +$345 into -$325.
+         * Rollback: chase=4, avg veto=1.
          */
-        MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '1',
+        MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
