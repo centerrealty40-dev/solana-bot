@@ -110,6 +110,16 @@ describe('mild-dip staged entry', () => {
     expect(add.addUsd).toBe(40);
   });
 
+  it('returns target_filled without an add when the add cap is zero', () => {
+    expect(
+      evaluateStagedEntryAdd({
+        ...base,
+        markPx: 108,
+        addMaxUsd: 0,
+      }),
+    ).toMatchObject({ shouldAdd: false, addUsd: 0, reason: 'target_filled' });
+  });
+
   it('disabled staged entry reproduces the no-add behavior', () => {
     expect(evaluateStagedEntryAdd({ ...base, enabled: false, markPx: 200 })).toMatchObject({
       shouldAdd: false,

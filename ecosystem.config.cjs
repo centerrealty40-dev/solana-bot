@@ -2866,10 +2866,10 @@ const PM2_APPS = [
         MILD_DIP_SIZE_MIN_USD: '5',
         MILD_DIP_SIZE_MAX_USD: '30',
         /**
-         * 1.11.985 — staged new-bag entry: over 8h / 160 cycles, bags never
-         * above +8% lost $92.9 (58), while +40% bags made $60.7 (28).
-         * Counterfactual first $5 + one +8% add (2× curve, cap $40): +$10
-         * on $1219 vs -$35.8 on $900. Rollback: MILD_DIP_STAGED_ENTRY_ENABLED=0.
+         * 1.11.985 — staged new-bag entry keeps the first clip at $5.
+         * Do not disable staged entry: that would buy the whole liquidity-curve
+         * clip (up to MILD_DIP_SIZE_MAX_USD=$30) in one shot — the losing size
+         * band in the current measurement.
          */
         MILD_DIP_STAGED_ENTRY_ENABLED: '1',
         MILD_DIP_STAGED_FIRST_USD: '5',
@@ -2880,7 +2880,15 @@ const PM2_APPS = [
         MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT: '4',
         MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS: '60000',
         MILD_DIP_STAGED_ADD_MULT: '2',
-        MILD_DIP_STAGED_ADD_MAX_USD: '40',
+        /**
+         * 1.11.999 — cut adds while retaining the $5 first clip. Factual-dollar
+         * 7d cycles: $0–4 −$242.6, $4–6 +$669.0, $6–12 −$18.5,
+         * $12–25 −$55.2, $25+ −$28.6; leader clips $75–200 +5.42/$100,
+         * $600–5000 −4.95/$100. stagedAddMaxUsd=0 returns target_filled,
+         * so no add is sent and target_filled telemetry remains budget-free.
+         * Rollback: MILD_DIP_STAGED_ADD_MAX_USD=40.
+         */
+        MILD_DIP_STAGED_ADD_MAX_USD: '0',
         /**
          * 1.11.986 — ASg9yD add filled +17.4% over first fill at the local
          * peak; chase band caps the add premium.

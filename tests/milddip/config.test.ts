@@ -120,7 +120,7 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.stagedAddTroughBandPct).toBe(4);
     expect(defaults.stagedAddMinTroughAgeMs).toBe(60_000);
     expect(defaults.stagedAddMult).toBe(2);
-    expect(defaults.stagedAddMaxUsd).toBe(40);
+    expect(defaults.stagedAddMaxUsd).toBe(0);
     expect(defaults.stagedProfitMinOverAvgPct).toBe(1);
     const cfg = withConfigEnv(
       {
@@ -183,7 +183,7 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT: '4'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS: '60000'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MULT: '2'");
-    expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_USD: '40'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_USD: '0'");
     expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '0'");
     expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN: '0'");
     expect(eco).toContain("MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0'");
