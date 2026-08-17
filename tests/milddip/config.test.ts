@@ -431,3 +431,22 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '0'");
   });
 });
+
+describe('mild-dip mirror-only configuration', () => {
+  const baseEnv = {
+    MILD_DIP_EXECUTION_MODE: 'paper',
+    MILD_DIP_RPC_URL: 'https://example.invalid',
+  };
+
+  it('defaults mirror-only off and loads the explicit fail-safe flag', () => {
+    expect(withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror.mirrorOnly).toBe(
+      false,
+    );
+    expect(
+      withConfigEnv(
+        { ...baseEnv, MILD_DIP_MIRROR_ONLY: '1' },
+        () => loadMildDipConfig(),
+      ).leaderMirror.mirrorOnly,
+    ).toBe(true);
+  });
+});
