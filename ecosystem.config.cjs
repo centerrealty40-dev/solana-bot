@@ -3520,7 +3520,14 @@ const PM2_APPS = [
          * rule stays out of chop; it requires −15% and a +10% reclaim, matching
          * the leaders' +10% median lift off losing lows.
          */
-        MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '10',
+        /**
+         * 1.11.995 — disable the remaining measured red-side branches:
+         * dead_set_bounce (−$114/227 exits), never_arm_time_red (−$93/7d),
+         * and the GREEN line (−$6.53/101 cycles over 11d). The minus side
+         * keeps only the 18% trough reclaim plus reclaim wait, cliff dump, and
+         * liquidity-drain floor. Rollback: 10 / 900000 / 1.
+         */
+        MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '0',
         MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
         /**
          * 1.11.920 — soft loss exits (mfe_bank_sleeve, never_arm_*, breakeven_stop)
@@ -3751,8 +3758,8 @@ const PM2_APPS = [
          * rejected ~85% on vol5m and >50% on liquidity in 145 leader-entry
          * snapshots, so the probe uses the measured leader-compatible floors below.
          */
-        // Controlled $1 probe: leader snapshots show p10 vol5m $145 and median $1051.
-        MILD_DIP_GREEN_ENABLED: '1',
+        // 1.11.995 — disable the measured GREEN line; rollback: '1'.
+        MILD_DIP_GREEN_ENABLED: '0',
         MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
         MILD_DIP_GREEN_POSITION_USD: '1',
         MILD_DIP_GREEN_TAPE_GATES_ENABLED: '1',
@@ -3872,7 +3879,8 @@ const PM2_APPS = [
          * 1200s nothing. It still helps the typical position on a trimmed mean
          * at every setting, so it stays - it just stops firing at five minutes.
          */
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
+        // 1.11.995 — disable the −$93/7d time-red branch; rollback: '900000'.
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT: '5',
         /**

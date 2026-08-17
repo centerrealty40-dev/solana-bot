@@ -1606,9 +1606,9 @@ describe('1.11.910 dead-set exit: three factors, then a bounce', () => {
     // Not on the red candle: a whale emptying a position takes the price through
     // any fixed level and it comes back without us.
     expect(src).toContain('bounceOffTroughPct >= dsBounce - 1e-9');
-    // 1.11.948 — ordinary chop at −10%/+5% was moved below the
-    // deeper dead-set floor with an 18% reclaim.
-    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '10'");
+    // 1.11.995 — the measured dead-set branch is disabled; the gate code
+    // remains covered independently above.
+    expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_DEAD_SET_MIN_DROP_PCT: '15'");
   });
 
