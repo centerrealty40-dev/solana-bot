@@ -331,6 +331,10 @@ export type EntryAttemptOpts = {
 
 export type EntryAttemptResult = 'filled' | 'skip' | 'stop';
 
+export function mirrorOnlyEntryAllowed(mirrorOnly: boolean, mirror: boolean): boolean {
+  return !mirrorOnly || mirror;
+}
+
 export async function attemptMildDipEntry(args: {
   cfg: MildDipConfig;
   state: MildDipState;
@@ -359,6 +363,18 @@ export async function attemptMildDipEntry(args: {
   const { cfg, state, copyCfg, nowMs, buyInFlight, opts } = args;
   const c = args.candidate;
 
+  if (!mirrorOnlyEntryAllowed(cfg.leaderMirror.mirrorOnly, opts.mirror === true)) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_mirror_only_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      dipSource: c.dipSource,
+      lane: opts.lane,
+      trigger: opts.trigger,
+      reason: 'non_mirror_entry_disabled',
+    });
+    return 'skip';
+  }
   if (buyInFlight.has(c.mint)) return 'skip';
   if (state.open[c.mint]) return 'skip';
   if (!opts.leaderStyle && (state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';

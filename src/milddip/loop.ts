@@ -1704,6 +1704,7 @@ async function tryEntriesBody(
   state: MildDipState,
   nowMs: number,
 ): Promise<void> {
+  if (cfg.leaderMirror.mirrorOnly) return;
   const unlimited = cfg.maxOpenPositions <= 0;
   if (cfg.leaderStyle.enabled) {
     const lstyleMints = await collectCandidateMints(cfg, { nowMs });
@@ -3071,6 +3072,7 @@ async function tryExits(
       decision.markPriceUsd > 0 &&
       !sellInFlight.has(mint)
     ) {
+      if (cfg.leaderMirror.mirrorOnly) continue;
       await attemptStagedEntryAdd({
         cfg,
         state,
@@ -3656,7 +3658,7 @@ export async function runMildDipLoop(
   const dumpSellTape = createDumpSellTape();
   const givebackDumpGate = createGivebackDumpGate();
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
-  const tapeShadowRing = cfg.tapeShadowEnabled
+  const tapeShadowRing = cfg.tapeShadowEnabled && !cfg.leaderMirror.mirrorOnly
     ? new MildDipPriceRing({
         maxSamplesPerMint: 3_600,
         ttlMs: cfg.tapeWindowMs,
@@ -3972,7 +3974,7 @@ export async function runMildDipLoop(
     cfg.lossCooldownMs,
     cfg.postExitWakeMs,
   );
-  if (cfg.streamPriceSampleEnabled) {
+  if (cfg.streamPriceSampleEnabled && !cfg.leaderMirror.mirrorOnly) {
     priceSampler = createStreamPriceSampler({
       rpcUrl: cfg.rpcUrl,
       minGapMsPerMint: cfg.streamPriceMinGapMs,
@@ -4051,7 +4053,7 @@ export async function runMildDipLoop(
   }
 
   let streamHandle: { stop: () => void } | null = null;
-  if (cfg.streamEnabled) {
+  if (cfg.streamEnabled && !cfg.leaderMirror.mirrorOnly) {
     streamHandle = startMildDipHotMintStream({
       wsUrl: cfg.streamWsUrl || null,
       priceSampler,
@@ -4247,7 +4249,7 @@ export async function runMildDipLoop(
     const nowMs = Date.now();
     tickGreenMinuteJupiterRefresh({
       nowMs,
-      enabled: cfg.green.jupiterMinuteEnabled,
+      enabled: cfg.green.jupiterMinuteEnabled && !cfg.leaderMirror.mirrorOnly,
       minGapMs: Math.max(
         cfg.green.jupiterMinuteMinGapMs,
         cfg.green.jupiterMinuteIntervalMs,
@@ -4335,7 +4337,11 @@ export async function runMildDipLoop(
      * Do not await — marks stay on cadence. Slow enrich/scan still only when flat;
      * post-exit knife enrich is a separate throttled wake.
      */
-    if (cfg.fastPathEnabled && nowMs - lastLeaderWakeMs >= 2_000) {
+    if (
+      !cfg.leaderMirror.mirrorOnly &&
+      cfg.fastPathEnabled &&
+      nowMs - lastLeaderWakeMs >= 2_000
+    ) {
       lastLeaderWakeMs = nowMs;
       void wakeStreamHotMints(cfg, state, nowMs)
         .then(() =>
@@ -4355,6 +4361,7 @@ export async function runMildDipLoop(
       });
     }
     if (
+      !cfg.leaderMirror.mirrorOnly &&
       cfg.knifeStabilizeEnabled &&
       cfg.postExitWakeMs > 0 &&
       nowMs - lastOwnTapeKnifeMs >= 8_000
@@ -4431,7 +4438,7 @@ export async function runMildDipLoop(
       opens === 0
         ? cfg.scanIntervalMs
         : Math.max(cfg.scanIntervalMs, cfg.scanIntervalWithOpensMs);
-    if (nowMs - lastScan >= scanGapMs) {
+    if (!cfg.leaderMirror.mirrorOnly && nowMs - lastScan >= scanGapMs) {
       lastScan = nowMs;
       stats.lastScanAtMs = lastScan;
       if (opens === 0) {

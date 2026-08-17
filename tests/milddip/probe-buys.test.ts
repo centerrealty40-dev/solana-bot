@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   laneEntryRequestUsd,
+  mirrorOnlyEntryAllowed,
   probeRequestedUsd,
 } from '../../src/milddip/entry-attempt.js';
 
@@ -118,5 +119,29 @@ describe('1.11.898 the first position on a coin is sized down', () => {
     const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
     expect(loop).toContain('const minClipUsd = Math.max(MIN_CLIP_USD, cfg.sizeMinUsd)');
     expect(loop).toContain('leftover + 1e-9 < minClipUsd');
+  });
+});
+
+describe('mirror-only mode', () => {
+  it('allows mirror entries but blocks every non-mirror entry', () => {
+    expect(mirrorOnlyEntryAllowed(true, true)).toBe(true);
+    expect(mirrorOnlyEntryAllowed(true, false)).toBe(false);
+    expect(mirrorOnlyEntryAllowed(false, false)).toBe(true);
+  });
+
+  it('records the quiet non-mirror skip at the shared entry boundary', () => {
+    const src = readFileSync(resolve('src/milddip/entry-attempt.ts'), 'utf8');
+    expect(src).toContain("kind: 'mild_dip_mirror_only_skip'");
+    expect(src).toContain("reason: 'non_mirror_entry_disabled'");
+    expect(src).toContain('mirrorOnlyEntryAllowed(cfg.leaderMirror.mirrorOnly');
+  });
+
+  it('does not gate the independent exit path', () => {
+    const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+    expect(loop).toContain('async function tryExits(');
+    expect(loop).toContain('if (cfg.leaderMirror.mirrorOnly) continue;');
+    expect(loop.indexOf('async function tryExits(')).toBeLessThan(
+      loop.indexOf('if (cfg.leaderMirror.mirrorOnly) continue;'),
+    );
   });
 });
