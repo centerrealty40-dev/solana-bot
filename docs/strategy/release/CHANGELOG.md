@@ -9,8 +9,10 @@
 ### Откат
 
 ```text
-MILD_DIP_MIRROR_POSITION_USD=2
+MILD_DIP_MIRROR_POSITION_USD=0
 ```
+
+(нулевой клип возвращает ветку в общую staged/first-touch цепочку размера)
 
 ## [1.11.1008] — 2026-08-20
 
