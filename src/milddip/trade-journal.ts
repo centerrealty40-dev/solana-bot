@@ -42,6 +42,8 @@ export type TradeFillEvent = {
   fraction?: number | null;
   reason?: string | null;
   lossExitBounceCap?: 'drawdown' | 'trough_age' | null;
+  lossReclaimWaitMs?: number | null;
+  lossReclaimTargetPct?: number | null;
   dipSource?: string | null;
   source: 'mild_dip' | 'leader_observer';
   leader?: string | null;
@@ -348,6 +350,8 @@ export function writeUsSellFill(args: {
   markPnlPct?: number | null;
   reason?: string | null;
   lossExitBounceCap?: 'drawdown' | 'trough_age' | null;
+  lossReclaimWaitMs?: number | null;
+  lossReclaimTargetPct?: number | null;
   nowMs?: number;
 }): { fill: TradeFillEvent; roundtrip: TradeRoundtripEvent | null } {
   const cash = resolveSellCash({
@@ -411,6 +415,8 @@ export function writeUsSellFill(args: {
     fraction: args.fraction,
     reason: args.reason ?? null,
     lossExitBounceCap: args.lossExitBounceCap ?? null,
+    lossReclaimWaitMs: args.lossReclaimWaitMs ?? null,
+    lossReclaimTargetPct: args.lossReclaimTargetPct ?? null,
     dipSource: null,
     source: 'mild_dip',
     leader: null,

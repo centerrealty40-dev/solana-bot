@@ -19,6 +19,12 @@ function envBool(name: string, fallback: boolean): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
+function stagedAddAnchorFromEnv(): 'fill' | 'trough' {
+  return process.env.MILD_DIP_STAGED_ADD_ANCHOR?.trim().toLowerCase() === 'fill'
+    ? 'fill'
+    : 'trough';
+}
+
 const MildDipConfigSchema = z.object({
   executionMode: ExecutionModeSchema,
   rpcUrl: z.string().min(8),
@@ -49,8 +55,12 @@ const MildDipConfigSchema = z.object({
   stagedFirstUsd: z.coerce.number().min(0).max(10_000).default(5),
   stagedAddTriggerPct: z.coerce.number().min(0).max(100).default(8),
   stagedAddMaxChasePct: z.coerce.number().min(0).max(100).default(4),
+  stagedAddAnchor: z.enum(['fill', 'trough']).default('trough'),
+  stagedAddTroughTriggerPct: z.coerce.number().min(0).max(100).default(8),
+  stagedAddTroughBandPct: z.coerce.number().min(0).max(100).default(4),
+  stagedAddMinTroughAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
   stagedAddMult: z.coerce.number().min(0).max(100).default(2),
-  stagedAddMaxUsd: z.coerce.number().min(0).max(10_000).default(40),
+  stagedAddMaxUsd: z.coerce.number().min(0).max(10_000).default(0),
   stagedProfitMinOverAvgPct: z.coerce.number().min(0).max(100).default(1),
   /** 1.11.993 — maximum staged-profit veto duration; 0 = unlimited. */
   stagedProfitVetoMaxMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
@@ -506,6 +516,8 @@ const MildDipConfigSchema = z.object({
   waitDipWithTurnDump: z.boolean().default(false),
   waitDipPct: z.coerce.number().max(0).default(-10),
   waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
+  /** Maximum wait-dip dump from the original signal; 0 = off. */
+  waitDipMaxDumpFromSignalPct: z.coerce.number().min(0).max(100).default(0),
   /**
    * 1.11.753 — after ready, allow at most this many pp of dump edge to erode
    * before abort (wait −7% + overshoot 2 → fill/quote must stay ≤ −5% vs signal).
@@ -920,6 +932,11 @@ const MildDipConfigSchema = z.object({
      */
     lossExitMaxDrawdownPct: z.coerce.number().min(0).max(100).default(0),
     lossExitMaxTroughAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+    /** 1.11.994 — small-loss reclaim wait; 0 = off. */
+    lossReclaimMaxLossPct: z.coerce.number().min(0).max(100).default(0),
+    lossReclaimTargetPct: z.coerce.number().min(0).max(100).default(2),
+    lossReclaimStopPct: z.coerce.number().min(0).max(100).default(25),
+    lossReclaimMaxWaitMs: z.coerce.number().int().min(0).max(86_400_000).default(3_600_000),
   }),
 });
 
@@ -1184,6 +1201,10 @@ export function loadMildDipConfig(): MildDipConfig {
      */
     lossExitMaxDrawdownPct: envNum('MILD_DIP_EXIT_LOSS_MAX_DRAWDOWN_PCT', 0),
     lossExitMaxTroughAgeMs: envNum('MILD_DIP_EXIT_LOSS_MAX_TROUGH_AGE_MS', 0),
+    lossReclaimMaxLossPct: envNum('MILD_DIP_EXIT_LOSS_RECLAIM_MAX_LOSS_PCT', 0),
+    lossReclaimTargetPct: envNum('MILD_DIP_EXIT_LOSS_RECLAIM_TARGET_PCT', 2),
+    lossReclaimStopPct: envNum('MILD_DIP_EXIT_LOSS_RECLAIM_STOP_PCT', 25),
+    lossReclaimMaxWaitMs: envNum('MILD_DIP_EXIT_LOSS_RECLAIM_MAX_WAIT_MS', 3_600_000),
   };
 
   const raw = {
@@ -1208,8 +1229,12 @@ export function loadMildDipConfig(): MildDipConfig {
     stagedFirstUsd: envNum('MILD_DIP_STAGED_FIRST_USD', 5),
     stagedAddTriggerPct: envNum('MILD_DIP_STAGED_ADD_TRIGGER_PCT', 8),
     stagedAddMaxChasePct: envNum('MILD_DIP_STAGED_ADD_MAX_CHASE_PCT', 4),
+    stagedAddAnchor: stagedAddAnchorFromEnv(),
+    stagedAddTroughTriggerPct: envNum('MILD_DIP_STAGED_ADD_TROUGH_TRIGGER_PCT', 8),
+    stagedAddTroughBandPct: envNum('MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT', 4),
+    stagedAddMinTroughAgeMs: envNum('MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS', 60_000),
     stagedAddMult: envNum('MILD_DIP_STAGED_ADD_MULT', 2),
-    stagedAddMaxUsd: envNum('MILD_DIP_STAGED_ADD_MAX_USD', 40),
+    stagedAddMaxUsd: envNum('MILD_DIP_STAGED_ADD_MAX_USD', 0),
     stagedProfitMinOverAvgPct: envNum('MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT', 1),
     stagedProfitVetoMaxMs: envNum('MILD_DIP_STAGED_PROFIT_VETO_MAX_MS', 0),
     exitRetrySlippageStepBps: envNum('MILD_DIP_EXIT_RETRY_SLIPPAGE_STEP_BPS', 0),
@@ -1328,6 +1353,10 @@ export function loadMildDipConfig(): MildDipConfig {
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
+    waitDipMaxDumpFromSignalPct: envNum(
+      'MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT',
+      0,
+    ),
     waitDipMaxOvershootPct: envNum('MILD_DIP_WAIT_DIP_MAX_OVERSHOOT_PCT', 2),
     waitDipMaxChasePct: envNum('MILD_DIP_WAIT_DIP_MAX_CHASE_PCT', 3),
     waitDipQuotePremiumPct: envNum('MILD_DIP_WAIT_DIP_QUOTE_PREMIUM_PCT', 1),

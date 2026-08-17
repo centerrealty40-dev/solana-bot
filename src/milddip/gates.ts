@@ -407,6 +407,15 @@ export type MildDipExitGates = {
    * 0 = off.
    */
   lossExitMaxTroughAgeMs: number;
+  /**
+   * 1.11.994 — when the money-basis loss is shallower than this, bounce-like
+   * soft exits wait for a reclaim target instead of selling the bounce.
+   * 0 = off.
+   */
+  lossReclaimMaxLossPct?: number;
+  lossReclaimTargetPct?: number;
+  lossReclaimStopPct?: number;
+  lossReclaimMaxWaitMs?: number;
 };
 
 /** One spaced Dex vol5m reading used by the sustained fade exit. */
@@ -782,6 +791,7 @@ export type MildDipExitReason =
   | 'hard_stop'
   /** 1.11.855 — was meaningfully green, came back to the floor. */
   | 'breakeven_stop'
+  | 'loss_reclaim'
   /** 1.11.910 — volume, turnover and price all gone, sold into a bounce. */
   | 'dead_set_bounce'
   /** 1.11.969 — liquidity drained faster than price. */
@@ -811,6 +821,24 @@ export function tpRungsCoveredByGainPct(
     : 0;
 }
 
+const LOSS_RECLAIM_REASONS: ReadonlySet<MildDipExitReason> = new Set([
+  'never_arm_bounce',
+  'dead_set_bounce',
+  'never_arm_time_red',
+  'never_arm_stale',
+  'never_arm_timeout',
+  'breakeven_stop',
+]);
+
+const LOSS_RECLAIM_PROTECTIVE_REASONS: ReadonlySet<MildDipExitReason> = new Set([
+  'hard_stop',
+  'cliff_dump',
+  'never_arm_freefall',
+  'never_arm_dead',
+  'never_arm_vol_fade',
+  'never_arm_giveback',
+  'max_hold_underwater',
+]);
 /** True when MFE-bank ladder is configured and should own the armed exit path. */
 export function isMfeBankEnabled(gates: MildDipExitGates): boolean {
   return (
@@ -1074,6 +1102,10 @@ export function evaluateMildDipPeakGiveback(args: {
   oneshotDumpGraceActive?: boolean;
   /** 1.11.849 — rungs of the unbounded ladder already filled on this bag. */
   tpRungsDone?: number | null;
+  /** 1.11.994 — persisted start of the small-loss reclaim wait. */
+  lossReclaimWaitStartedAtMs?: number | null;
+  /** 1.11.994 — prevents a cancelled wait from restarting on later ticks. */
+  lossReclaimWaitDone?: boolean;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -1109,6 +1141,10 @@ export function evaluateMildDipPeakGiveback(args: {
   liquidityUsd?: number | null;
   liqRatio?: number | null;
   depthDrainRatio?: number | null;
+  lossReclaimWaitStartedAtMs?: number;
+  lossReclaimWaitClearedReason?: 'target' | 'stop' | 'timeout' | 'protective_exit';
+  lossReclaimWaitMs?: number;
+  lossReclaimWaitDone?: boolean;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
   const scaleOutDone = args.scaleOutDone === true;
@@ -1241,6 +1277,30 @@ export function evaluateMildDipPeakGiveback(args: {
     bounceFromTroughPct(markPriceUsd, postEntryTroughPriceUsd) ?? 0;
   const lossExitMin = gates.lossExitMinBouncePct > 0 ? gates.lossExitMinBouncePct : 0;
   let lossExitBounceCap: MildDipLossExitBounceCap | null = null;
+  const reclaimMaxLoss =
+    (gates.lossReclaimMaxLossPct ?? 0) > 0 ? (gates.lossReclaimMaxLossPct ?? 0) : 0;
+  const reclaimTarget =
+    (gates.lossReclaimTargetPct ?? 0) > 0 ? (gates.lossReclaimTargetPct ?? 0) : 0;
+  const reclaimStop =
+    (gates.lossReclaimStopPct ?? 0) > 0 ? (gates.lossReclaimStopPct ?? 0) : 0;
+  const reclaimWaitMs =
+    (gates.lossReclaimMaxWaitMs ?? 0) > 0 ? (gates.lossReclaimMaxWaitMs ?? 0) : 0;
+  let lossReclaimWaitStartedAtMs =
+    args.lossReclaimWaitStartedAtMs != null &&
+    Number.isFinite(args.lossReclaimWaitStartedAtMs) &&
+    args.lossReclaimWaitStartedAtMs > 0
+      ? Number(args.lossReclaimWaitStartedAtMs)
+      : undefined;
+  let lossReclaimWaitClearedReason:
+    | 'target'
+    | 'stop'
+    | 'timeout'
+    | 'protective_exit'
+    | undefined;
+  let lossReclaimWaitWasActive = lossReclaimWaitStartedAtMs != null;
+  let lossReclaimWaitCancelled = false;
+  let lossReclaimWaitDone = args.lossReclaimWaitDone === true;
+  let lossReclaimWaitMs: number | undefined;
 
   let armed = args.armed === true;
   let justArmed = false;
@@ -1273,6 +1333,10 @@ export function evaluateMildDipPeakGiveback(args: {
     liquidityUsd: null as number | null,
     liqRatio: null as number | null,
     depthDrainRatio: null as number | null,
+    lossReclaimWaitStartedAtMs: lossReclaimWaitStartedAtMs,
+    lossReclaimWaitClearedReason,
+    lossReclaimWaitMs,
+    lossReclaimWaitDone,
   };
   const liqDrainRatio = gates.liqDrainRatio ?? 0;
   const liqDrainMinAgeMs = gates.liqDrainMinAgeMs ?? 0;
@@ -1347,7 +1411,33 @@ export function evaluateMildDipPeakGiveback(args: {
   hold.liquidityUsd = args.liquidityUsd ?? null;
   hold.liqRatio = liqTelemetry.liqRatio;
   hold.depthDrainRatio = liqTelemetry.depthDrainRatio;
+  const reclaimEnabled = reclaimMaxLoss > 0 && reclaimTarget > 0;
+  const reclaimCandidateOk = (candidateReason: MildDipExitReason): boolean => {
+    if (
+      reclaimEnabled &&
+      !lossReclaimWaitCancelled &&
+      LOSS_RECLAIM_REASONS.has(candidateReason) &&
+      gainPct < 0 &&
+      gainPct >= -reclaimMaxLoss - 1e-9
+    ) {
+      if (lossReclaimWaitStartedAtMs == null) {
+        if (lossReclaimWaitDone) return true;
+        lossReclaimWaitStartedAtMs = nowMs;
+        hold.lossReclaimWaitStartedAtMs = nowMs;
+      }
+      return false;
+    }
+    return true;
+  };
   if (liqDrainHit && liquidityDrainConfirmTicks >= liqDrainConfirmTicksRequired) {
+    if (lossReclaimWaitStartedAtMs != null) {
+      lossReclaimWaitStartedAtMs = undefined;
+      lossReclaimWaitDone = true;
+      lossReclaimWaitClearedReason = 'protective_exit';
+      hold.lossReclaimWaitStartedAtMs = undefined;
+      hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+      hold.lossReclaimWaitDone = true;
+    }
     return {
       ...hold,
       shouldExit: true,
@@ -1356,10 +1446,57 @@ export function evaluateMildDipPeakGiveback(args: {
       liquidityDrainConfirmTicks,
     };
   }
-  const softLossOk = () => {
+  if (
+    reclaimEnabled &&
+    lossReclaimWaitStartedAtMs != null &&
+    gainPct >= reclaimTarget - 1e-9
+  ) {
+    lossReclaimWaitMs = Math.max(0, nowMs - lossReclaimWaitStartedAtMs);
+    lossReclaimWaitStartedAtMs = undefined;
+    lossReclaimWaitDone = true;
+    lossReclaimWaitClearedReason = 'target';
+    hold.lossReclaimWaitStartedAtMs = undefined;
+    hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+    hold.lossReclaimWaitDone = true;
+    return {
+      ...hold,
+      shouldExit: true,
+      fraction: 1,
+      reason: 'loss_reclaim',
+      lossReclaimWaitMs,
+    };
+  }
+  if (reclaimEnabled && lossReclaimWaitStartedAtMs != null) {
+    const stopHit = reclaimStop > 0 && gainPct <= -reclaimStop + 1e-9;
+    const timeoutHit =
+      reclaimWaitMs > 0 && nowMs - lossReclaimWaitStartedAtMs >= reclaimWaitMs;
+    if (stopHit || timeoutHit) {
+      lossReclaimWaitClearedReason = stopHit ? 'stop' : 'timeout';
+      lossReclaimWaitStartedAtMs = undefined;
+      lossReclaimWaitWasActive = true;
+      lossReclaimWaitCancelled = true;
+      lossReclaimWaitDone = true;
+      hold.lossReclaimWaitStartedAtMs = undefined;
+      hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+      hold.lossReclaimWaitDone = true;
+    }
+  }
+  const softLossOk = (candidateReason: MildDipExitReason) => {
     const decision = decideSoftLossExit({ gates, gainPct, bounceOffTroughPct, troughAgeMs });
     if (decision.reason != null) lossExitBounceCap = decision.reason;
-    return decision.allowed;
+    if (
+      lossReclaimWaitWasActive &&
+      LOSS_RECLAIM_PROTECTIVE_REASONS.has(candidateReason)
+    ) {
+      lossReclaimWaitStartedAtMs = undefined;
+      lossReclaimWaitDone = true;
+      lossReclaimWaitClearedReason = 'protective_exit';
+      hold.lossReclaimWaitStartedAtMs = undefined;
+      hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+      hold.lossReclaimWaitDone = true;
+      return true;
+    }
+    return reclaimCandidateOk(candidateReason) && decision.allowed;
   };
   const withLossExitCap = <T extends object>(decision: T): T & {
     lossExitBounceCap?: MildDipLossExitBounceCap;
@@ -1385,7 +1522,11 @@ export function evaluateMildDipPeakGiveback(args: {
     const volGone = v != null && v0 != null && v0 > 0 && v <= v0 * dsVol;
     const turnGone = t != null && t0 != null && t0 > 0 && t <= t0 * dsTurn;
     const priceGone = gainPct <= -gates.deadSetMinDropPct;
-    if (volGone && turnGone && priceGone && bounceOffTroughPct >= dsBounce - 1e-9) {
+    if (
+      volGone && turnGone && priceGone &&
+      bounceOffTroughPct >= dsBounce - 1e-9 &&
+      (!reclaimEnabled || reclaimCandidateOk('dead_set_bounce'))
+    ) {
       return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'dead_set_bounce' });
     }
   }
@@ -1402,10 +1543,10 @@ export function evaluateMildDipPeakGiveback(args: {
     // 1.11.791 / 1.11.794 — staged: half @ hardStop; if still ≤ −hardStop after
     // that cut → full hard_stop (no −25…−50 runner limbo). Gap past cliff →
     // full cliff_dump.
-    if (cliff > 0 && pnlPct <= -cliff && softLossOk()) {
+    if (cliff > 0 && pnlPct <= -cliff && softLossOk('cliff_dump')) {
       return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' });
     }
-    if (hardStop > 0 && pnlPct <= -hardStop && softLossOk()) {
+    if (hardStop > 0 && pnlPct <= -hardStop && softLossOk('hard_stop')) {
       if (!scaleOutDone) {
         return withLossExitCap({
           ...hold,
@@ -1422,10 +1563,10 @@ export function evaluateMildDipPeakGiveback(args: {
     // same as mfe_bank_sleeve / never_arm_giveback.
     // 1.11.933 — cliff_dump waits for the same bounce: no loss exit sells into
     // the dump, we never hand a whale the bottom tick.
-    if (hardStop > 0 && pnlPct <= -hardStop && softLossOk()) {
+    if (hardStop > 0 && pnlPct <= -hardStop && softLossOk('hard_stop')) {
       return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'hard_stop' });
     }
-    if (cliff > 0 && pnlPct <= -cliff && softLossOk()) {
+    if (cliff > 0 && pnlPct <= -cliff && softLossOk('cliff_dump')) {
       return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' });
     }
   }
@@ -1448,7 +1589,7 @@ export function evaluateMildDipPeakGiveback(args: {
   const beArm = gates.breakevenArmPct > 0 ? gates.breakevenArmPct : 0;
   // Both halves are about money: it was green and it came back (1.11.878).
   if (beArm > 0 && mfePct >= beArm && gainPct <= gates.breakevenFloorPct + 1e-9) {
-    if (softLossOk()) {
+    if (softLossOk('breakeven_stop')) {
       return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'breakeven_stop' });
     }
   }
@@ -1459,7 +1600,7 @@ export function evaluateMildDipPeakGiveback(args: {
   const maxHoldCeil = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
   // "Underwater" is money, so it reads the gain basis (1.11.881).
   if (armed && maxHoldCeil > 0 && heldMs >= maxHoldCeil && gainPct <= 0) {
-    if (softLossOk()) {
+    if (softLossOk('max_hold_underwater')) {
       return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'max_hold_underwater' });
     }
   }
@@ -1712,7 +1853,7 @@ export function evaluateMildDipPeakGiveback(args: {
       !scaleOutDone &&
       (partialGivebackHit || fullGivebackHit)
     ) {
-      if (softLossOk()) {
+      if (softLossOk('peak_giveback_partial')) {
         return {
           ...hold,
           shouldExit: true,
@@ -1722,7 +1863,7 @@ export function evaluateMildDipPeakGiveback(args: {
       }
     }
     if (armed && fullGivebackHit) {
-      if (softLossOk()) {
+      if (softLossOk('peak_giveback')) {
         return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'peak_giveback' });
       }
     }
@@ -1772,21 +1913,27 @@ export function evaluateMildDipPeakGiveback(args: {
   if (!armed && bounceBaseOk) {
     if (!scaleOutDone && bounceOffTroughPct >= bounceNeed - 1e-9) {
       if (bounce2Need > 0 && bounceOffTroughPct >= bounce2Need - 1e-9) {
-        return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' });
+        if (!reclaimEnabled || reclaimCandidateOk('never_arm_bounce')) {
+          return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' });
+        }
       }
-      return {
-        ...hold,
-        shouldExit: true,
-        fraction: bouncePartialFrac > 0 ? bouncePartialFrac : 1,
-        reason: 'never_arm_bounce',
-      };
+      if (!reclaimEnabled || reclaimCandidateOk('never_arm_bounce')) {
+        return {
+          ...hold,
+          shouldExit: true,
+          fraction: bouncePartialFrac > 0 ? bouncePartialFrac : 1,
+          reason: 'never_arm_bounce',
+        };
+      }
     }
     if (
       scaleOutDone &&
       bounce2Need > 0 &&
       bounceOffTroughPct >= bounce2Need - 1e-9
     ) {
-      return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' });
+      if (!reclaimEnabled || reclaimCandidateOk('never_arm_bounce')) {
+        return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' });
+      }
     }
   }
   // Armed runner after underwater sleeve half: sell remainder on bounce reclaim.
@@ -1798,7 +1945,9 @@ export function evaluateMildDipPeakGiveback(args: {
     bounceBaseOk &&
     bounceOffTroughPct >= bounceNeed - 1e-9
   ) {
-    return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' });
+    if (!reclaimEnabled || reclaimCandidateOk('never_arm_bounce')) {
+      return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_bounce' });
+    }
   }
 
   // Never-armed branch — must always have a finite exit (no infinite hold).
@@ -1816,7 +1965,7 @@ export function evaluateMildDipPeakGiveback(args: {
     }
     const patience = gates.neverArmPatienceMs > 0 ? gates.neverArmPatienceMs : 0;
     if (!oneshotGrace && patience > 0 && heldMs >= patience && givebackHit) {
-      if (softLossOk()) {
+      if (softLossOk('never_arm_giveback')) {
         return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_giveback' });
       }
     }
@@ -1838,7 +1987,7 @@ export function evaluateMildDipPeakGiveback(args: {
         // 1.11.794 — fail open when pc5m missing; when present require ≤ −N.
         pcOk = pc == null || pc <= -timeRedPc + 1e-9;
       }
-      if (pcOk && softLossOk()) {
+      if (pcOk && softLossOk('never_arm_time_red')) {
         return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_time_red' });
       }
     }
@@ -1853,14 +2002,14 @@ export function evaluateMildDipPeakGiveback(args: {
       mfePct <= staleMaxMfe + 1e-9 &&
       pnlPct <= -stalePnl
     ) {
-      if (softLossOk()) {
+      if (softLossOk('never_arm_stale')) {
         return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_stale' });
       }
     }
     const deadMin = gates.neverArmDeadMinMs > 0 ? gates.neverArmDeadMinMs : 0;
     const deadPnl = gates.neverArmDeadPnlPct > 0 ? gates.neverArmDeadPnlPct : 0;
     if (deadMin > 0 && deadPnl > 0 && heldMs >= deadMin && pnlPct <= -deadPnl) {
-      if (softLossOk()) {
+      if (softLossOk('never_arm_dead')) {
         return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_dead' });
       }
     }
@@ -1877,14 +2026,14 @@ export function evaluateMildDipPeakGiveback(args: {
           floor,
         )
       ) {
-        if (softLossOk()) {
+        if (softLossOk('never_arm_vol_fade')) {
           return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_vol_fade' });
         }
       }
     }
     const maxHold = gates.neverArmMaxHoldMs > 0 ? gates.neverArmMaxHoldMs : 0;
     if (maxHold > 0 && heldMs >= maxHold) {
-      if (gainPct >= 0 || softLossOk()) {
+      if (gainPct >= 0 || softLossOk('never_arm_timeout')) {
         return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'never_arm_timeout' });
       }
     }

@@ -63,6 +63,11 @@ export type MarkExitDecision = {
   pnlPctVsFill: number;
   /** Safety cap that released the soft-loss bounce wait, if one did. */
   lossExitBounceCap?: 'drawdown' | 'trough_age';
+  /** 1.11.994 — persisted small-loss reclaim wait transition. */
+  lossReclaimWaitStartedAtMs?: number;
+  lossReclaimWaitClearedReason?: 'target' | 'stop' | 'timeout' | 'protective_exit';
+  lossReclaimWaitMs?: number;
+  lossReclaimWaitDone?: boolean;
   /** Updated spaced vol5m ring — caller persists onto the open position. */
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry low-water mark. */
@@ -479,6 +484,8 @@ export function decideMarkExit(args: {
     oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
     tpRungsDone: pos.tpRungsDone ?? 0,
     lastTpGridFillAtMs: pos.lastTpGridFillAtMs,
+    lossReclaimWaitStartedAtMs: pos.lossReclaimWaitStartedAtMs ?? null,
+    lossReclaimWaitDone: pos.lossReclaimWaitDone === true,
   });
   /**
    * Dust close — operational, not strategic. Bank/bounce ladders leave $1–2
@@ -533,6 +540,14 @@ export function decideMarkExit(args: {
     ...(verdict.lossExitBounceCap != null
       ? { lossExitBounceCap: verdict.lossExitBounceCap }
       : {}),
+    ...(verdict.lossReclaimWaitStartedAtMs != null
+      ? { lossReclaimWaitStartedAtMs: verdict.lossReclaimWaitStartedAtMs }
+      : {}),
+    ...(verdict.lossReclaimWaitClearedReason != null
+      ? { lossReclaimWaitClearedReason: verdict.lossReclaimWaitClearedReason }
+      : {}),
+    ...(verdict.lossReclaimWaitMs != null ? { lossReclaimWaitMs: verdict.lossReclaimWaitMs } : {}),
+    ...(verdict.lossReclaimWaitDone === true ? { lossReclaimWaitDone: true } : {}),
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,
@@ -596,6 +611,17 @@ export function applyMarkDecisionToPosition(
   }
   if (decision.postEntryTroughAtMs > 0) {
     pos.postEntryTroughAtMs = decision.postEntryTroughAtMs;
+  }
+  if (decision.lossReclaimWaitClearedReason != null) {
+    pos.lossReclaimWaitStartedAtMs = undefined;
+  }
+  if (decision.lossReclaimWaitDone === true) {
+    pos.lossReclaimWaitDone = true;
+  } else if (
+    decision.lossReclaimWaitClearedReason == null &&
+    decision.lossReclaimWaitStartedAtMs != null
+  ) {
+    pos.lossReclaimWaitStartedAtMs = decision.lossReclaimWaitStartedAtMs;
   }
 }
 

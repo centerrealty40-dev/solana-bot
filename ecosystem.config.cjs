@@ -2866,23 +2866,37 @@ const PM2_APPS = [
         MILD_DIP_SIZE_MIN_USD: '5',
         MILD_DIP_SIZE_MAX_USD: '30',
         /**
-         * 1.11.985 — staged new-bag entry: over 8h / 160 cycles, bags never
-         * above +8% lost $92.9 (58), while +40% bags made $60.7 (28).
-         * Counterfactual first $5 + one +8% add (2× curve, cap $40): +$10
-         * on $1219 vs -$35.8 on $900. Rollback: MILD_DIP_STAGED_ENTRY_ENABLED=0.
+         * 1.11.985 — staged new-bag entry keeps the first clip at $5.
+         * Do not disable staged entry: that would buy the whole liquidity-curve
+         * clip (up to MILD_DIP_SIZE_MAX_USD=$30) in one shot — the losing size
+         * band in the current measurement.
          */
         MILD_DIP_STAGED_ENTRY_ENABLED: '1',
         MILD_DIP_STAGED_FIRST_USD: '5',
         MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8',
-        MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '4',
+        MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '2',
+        MILD_DIP_STAGED_ADD_ANCHOR: 'trough',
+        MILD_DIP_STAGED_ADD_TROUGH_TRIGGER_PCT: '8',
+        MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT: '4',
+        MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS: '60000',
         MILD_DIP_STAGED_ADD_MULT: '2',
-        MILD_DIP_STAGED_ADD_MAX_USD: '40',
+        /**
+         * 1.11.999 — cut adds while retaining the $5 first clip. Factual-dollar
+         * 7d cycles: $0–4 −$242.6, $4–6 +$669.0, $6–12 −$18.5,
+         * $12–25 −$55.2, $25+ −$28.6; leader clips $75–200 +5.42/$100,
+         * $600–5000 −4.95/$100. stagedAddMaxUsd=0 returns target_filled,
+         * so no add is sent and target_filled telemetry remains budget-free.
+         * Rollback: MILD_DIP_STAGED_ADD_MAX_USD=40.
+         */
+        MILD_DIP_STAGED_ADD_MAX_USD: '0',
         /**
          * 1.11.986 — ASg9yD add filled +17.4% over first fill at the local
-         * peak; require profit sleeves/rungs to clear weighted average cost.
-         * Rollback: chase=100, avg veto=0.
+         * peak; chase band caps the add premium.
+         * 1.11.993 — the average-cost veto is off: on 72h/1605 cycles it
+         * declined 184 profit legs ($671) and turned +$345 into -$325.
+         * Rollback: chase=4, avg veto=1.
          */
-        MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '1',
+        MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0',
         MILD_DIP_STAGED_PROFIT_VETO_MAX_MS: '1800000',
         /**
          * 1.11.742 — thick size-up when structural name
@@ -3064,7 +3078,22 @@ const PM2_APPS = [
          * still never pay above the price that qualified the seat.
          */
         MILD_DIP_WAIT_DIP_PCT: '-5',
-        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
+        /**
+         * 1.11.998 — 7d factual-dollar timing recheck: 600s retains
+         * n=1593 and +$229.1 of +$231.9 seat cash (+4.36/$100); 300s
+         * keeps only n=1024 and +$136.9, dropping about $94. Waiting time
+         * does not predict fill depth (median fill −11.5/−10.5/−10.8/−11.9%
+         * for 0–60s/60–300s/300–600s/>600s). Rollback: 1200000.
+         */
+        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '600000',
+        /**
+         * 1.11.998 — the ceiling existed, but there was no depth floor.
+         * The old 10% value came from a fixed-$5 per-$100 tape reconstruction
+         * and was disproved by factual dollars: 7d/2227 seats, $7107 turnover,
+         * +$230.5 cash; only fills deeper than −20% were negative
+         * (−$2.69/$100, −$27.3). Rollback: 0.
+         */
+        MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT: '25',
         /**
          * 3, not 5: with a −5% target an overshoot of 5 sums to zero and
          * `waitDipMaxPriceUsd` collapses the ceiling back onto the target,
@@ -3519,7 +3548,14 @@ const PM2_APPS = [
          * rule stays out of chop; it requires −15% and a +10% reclaim, matching
          * the leaders' +10% median lift off losing lows.
          */
-        MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '10',
+        /**
+         * 1.11.995 — disable the remaining measured red-side branches:
+         * dead_set_bounce (−$114/227 exits), never_arm_time_red (−$93/7d),
+         * and the GREEN line (−$6.53/101 cycles over 11d). The minus side
+         * keeps only the 18% trough reclaim plus reclaim wait, cliff dump, and
+         * liquidity-drain floor. Rollback: 10 / 900000 / 1.
+         */
+        MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT: '0',
         MILD_DIP_EXIT_DEAD_SET_MIN_HOLD_MS: '900000',
         /**
          * 1.11.920 — soft loss exits (mfe_bank_sleeve, never_arm_*, breakeven_stop)
@@ -3535,6 +3571,10 @@ const PM2_APPS = [
          * only fires on an actual recovery leg, not on the dump's own noise.
          */
         MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '18',
+        MILD_DIP_EXIT_LOSS_RECLAIM_MAX_LOSS_PCT: '10',
+        MILD_DIP_EXIT_LOSS_RECLAIM_TARGET_PCT: '2',
+        MILD_DIP_EXIT_LOSS_RECLAIM_STOP_PCT: '25',
+        MILD_DIP_EXIT_LOSS_RECLAIM_MAX_WAIT_MS: '3600000',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
@@ -3750,8 +3790,8 @@ const PM2_APPS = [
          * rejected ~85% on vol5m and >50% on liquidity in 145 leader-entry
          * snapshots, so the probe uses the measured leader-compatible floors below.
          */
-        // Controlled $1 probe: leader snapshots show p10 vol5m $145 and median $1051.
-        MILD_DIP_GREEN_ENABLED: '1',
+        // 1.11.995 — disable the measured GREEN line; rollback: '1'.
+        MILD_DIP_GREEN_ENABLED: '0',
         MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
         MILD_DIP_GREEN_POSITION_USD: '1',
         MILD_DIP_GREEN_TAPE_GATES_ENABLED: '1',
@@ -3871,7 +3911,8 @@ const PM2_APPS = [
          * 1200s nothing. It still helps the typical position on a trimmed mean
          * at every setting, so it stays - it just stops firing at five minutes.
          */
-        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000',
+        // 1.11.995 — disable the −$93/7d time-red branch; rollback: '900000'.
+        MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '0',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15',
         MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MAX_PC5M_PCT: '5',
         /**
@@ -4349,7 +4390,13 @@ const PM2_APPS = [
         MILD_DIP_RUG_KNIFE_DUMP_PCT: '-45',
         MILD_DIP_RUG_KNIFE_TURN: '3',
         MILD_DIP_RUG_BLOCK_DUMP_PCT: '0',
-        MILD_DIP_REQUIRE_LEADER_SEEN: '1',
+        /**
+         * 1.11.997 — temporary owner-requested measure: remove the leader-seen
+         * entry veto while we trade on our own thresholds. Over 3d,
+         * mild_dip_not_leader_seen_skip blocked 13,487 mints / 186,810 events
+         * versus 1,203 own buys; rollback by restoring both leader gates to '1'.
+         */
+        MILD_DIP_REQUIRE_LEADER_SEEN: '0',
         /**
          * 1.11.899 — a leader has to have touched a name before we open it for
          * the first time; repeats on names we know are not gated.
@@ -4388,7 +4435,12 @@ const PM2_APPS = [
          * Requires fresh leader co-buy when turnover is below floor; age relax
          * from leaderSeen memory unchanged.
          */
-        MILD_DIP_LEADER_CO_BUY_ALIGN: '1',
+        /**
+         * 1.11.997 — temporary owner-requested measure: 2,693 co-buy skips
+         * across 186 mints over 3d (median turnover 0.0338 vs 0.06 floor);
+         * rollback by restoring both leader gates to '1'.
+         */
+        MILD_DIP_LEADER_CO_BUY_ALIGN: '0',
         MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS: '120000',
         /** 1.11.945 — structural trust survives the measured 5–6m leader lag. */
         MILD_DIP_ENTRY_LEADER_TRUST_STRUCTURAL_MS: '600000',

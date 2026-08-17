@@ -50,6 +50,8 @@ import {
   priorityMintsFromWaitDipWatch,
   shouldParkWaitDip,
   upsertWaitDipWatch,
+  waitDipDumpTooDeep,
+  waitDipTooDeepJournalAllowed,
   type WaitDipGates,
 } from './wait-dip.js';
 import {
@@ -284,6 +286,7 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
     enabled: cfg.waitDipEnabled === true,
     waitDipPct: cfg.waitDipPct,
     maxWatchMs: cfg.waitDipMaxWatchMs,
+    maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
   };
 }
 
@@ -407,6 +410,8 @@ const lastMarkJournalMs = new Map<string, number>();
  */
 const lastWaitDipReadyJournalMs = new Map<string, number>();
 const WAIT_DIP_READY_JOURNAL_GAP_MS = 15_000;
+const lastStagedAddSkipJournalMs = new Map<string, number>();
+const STAGED_ADD_SKIP_JOURNAL_GAP_MS = 15_000;
 
 /**
  * Sample the mark path of an open position into the journal so trail widths can
@@ -703,6 +708,22 @@ async function tryFireWaitDip(
     return false;
   }
   if (!verdict.ready) {
+    return false;
+  }
+  if (waitDipDumpTooDeep(verdict.dumpFromSignalPct, cfg.waitDipMaxDumpFromSignalPct)) {
+    delete state.waitDipWatch![mint];
+    if (waitDipTooDeepJournalAllowed(mint, nowMs)) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_wait_dip_too_deep',
+        mint,
+        symbol: watch.symbol,
+        signalPriceUsd: watch.signalPriceUsd,
+        priceUsd: px,
+        dumpFromSignalPct: verdict.dumpFromSignalPct,
+        maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
+      });
+    }
+    saveMildDipState(cfg.statePath, state);
     return false;
   }
 
@@ -1671,6 +1692,8 @@ async function executeQueuedSell(args: {
       decision.depthDrainRatio != null ? +decision.depthDrainRatio.toFixed(4) : null,
     liqDrainConfirmTicks: decision.liquidityDrainConfirmTicks ?? 0,
     lossExitBounceCap: decision.lossExitBounceCap ?? null,
+    lossReclaimWaitMs: decision.lossReclaimWaitMs ?? null,
+    lossReclaimTargetPct: cfg.exit.lossReclaimTargetPct,
     scaleOut: isPartial,
     armed: decision.armed,
     holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
@@ -1703,6 +1726,8 @@ async function executeQueuedSell(args: {
       markPnlPct: sell.pnlPct ?? decision.pnlPct,
       reason: decision.reason,
       lossExitBounceCap: decision.lossExitBounceCap ?? null,
+      lossReclaimWaitMs: decision.lossReclaimWaitMs ?? null,
+      lossReclaimTargetPct: cfg.exit.lossReclaimTargetPct,
       nowMs,
     });
   } catch {
@@ -2133,8 +2158,10 @@ async function attemptStagedEntryAdd(args: {
   markPriceUsd: number;
   liquidityUsd: number | null;
   nowMs: number;
+  troughPriceUsd: number | null;
+  troughAtMs: number | null;
 }): Promise<void> {
-  const { cfg, state, pos, markPriceUsd, liquidityUsd, nowMs } = args;
+  const { cfg, state, pos, markPriceUsd, liquidityUsd, nowMs, troughPriceUsd, troughAtMs } = args;
   const verdict = evaluateStagedEntryAdd({
     enabled: cfg.stagedEntryEnabled,
     addDone: pos.stagedEntryAddDone === true,
@@ -2143,8 +2170,14 @@ async function attemptStagedEntryAdd(args: {
     lastAttemptAtMs: pos.stagedEntryLastAttemptAtMs,
     markPx: markPriceUsd,
     firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
+    anchorMode: cfg.stagedAddAnchor,
+    troughPx: troughPriceUsd,
+    troughAtMs,
     triggerPct: cfg.stagedAddTriggerPct,
     maxChasePct: cfg.stagedAddMaxChasePct,
+    troughTriggerPct: cfg.stagedAddTroughTriggerPct,
+    troughBandPct: cfg.stagedAddTroughBandPct,
+    minTroughAgeMs: cfg.stagedAddMinTroughAgeMs,
     intendedUsd: pos.stagedEntryIntendedUsd ?? 0,
     alreadyFilledUsd: pos.stagedEntryFilledUsd ?? pos.sizeUsd,
     addMult: cfg.stagedAddMult,
@@ -2155,20 +2188,29 @@ async function attemptStagedEntryAdd(args: {
     rugRiskActive: pos.stagedEntryRugRiskTier === 'knife' || pos.stagedEntryRugRiskTier === 'blocked',
   });
   if (!verdict.shouldAdd) {
-    if (verdict.reason === 'above_chase_band') {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_staged_add',
-        mint: pos.mint,
-        symbol: pos.symbol,
-        lane: pos.lane ?? 'dip',
-        firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
-        triggerPx: verdict.triggerPx,
-        mark: markPriceUsd,
-        intendedUsd: pos.stagedEntryIntendedUsd ?? null,
-        addUsd: 0,
-        ok: false,
-        reason: verdict.reason,
-      });
+    if (verdict.reason === 'above_chase_band' || verdict.reason === 'above_trough_band') {
+      const previous = lastStagedAddSkipJournalMs.get(pos.mint) ?? 0;
+      if (nowMs - previous >= STAGED_ADD_SKIP_JOURNAL_GAP_MS) {
+        lastStagedAddSkipJournalMs.set(pos.mint, nowMs);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_staged_add',
+          mint: pos.mint,
+          symbol: pos.symbol,
+          lane: pos.lane ?? 'dip',
+          firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
+          triggerPx: verdict.triggerPx,
+          mark: markPriceUsd,
+          intendedUsd: pos.stagedEntryIntendedUsd ?? null,
+          addUsd: 0,
+          anchorMode: cfg.stagedAddAnchor,
+          postEntryTroughPriceUsd: verdict.anchorPx,
+          postEntryTroughAtMs: verdict.anchorAtMs,
+          bounceOffTroughPct: verdict.bounceOffAnchorPct,
+          pnlPctVsFill: verdict.markVsFirstFillPct,
+          ok: false,
+          reason: verdict.reason,
+        });
+      }
     }
     return;
   }
@@ -2186,6 +2228,11 @@ async function attemptStagedEntryAdd(args: {
     mark: markPriceUsd,
     intendedUsd: pos.stagedEntryIntendedUsd ?? null,
     addUsd: verdict.addUsd,
+    anchorMode: cfg.stagedAddAnchor,
+    postEntryTroughPriceUsd: verdict.anchorPx,
+    postEntryTroughAtMs: verdict.anchorAtMs,
+    bounceOffTroughPct: verdict.bounceOffAnchorPct,
+    pnlPctVsFill: verdict.markVsFirstFillPct,
   };
   const journal = (extra: Record<string, unknown>): void => {
     appendMildDipJournal(cfg.journalPath, { ...event, ...extra });
@@ -2527,7 +2574,37 @@ async function tryExits(
 
     maybeJournalMark(cfg, pos, decision, volume5mUsd, liquidityUsd, nowMs, source);
 
+    const priorLossReclaimWaitStartedAtMs = pos.lossReclaimWaitStartedAtMs;
     applyMarkDecisionToPosition(pos, decision);
+    if (
+      decision.lossReclaimWaitStartedAtMs != null &&
+      priorLossReclaimWaitStartedAtMs !== decision.lossReclaimWaitStartedAtMs
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_loss_reclaim_wait',
+        mint,
+        symbol: pos.symbol,
+        action: 'start',
+        startedAtMs: decision.lossReclaimWaitStartedAtMs,
+        maxLossPct: cfg.exit.lossReclaimMaxLossPct,
+        targetPct: cfg.exit.lossReclaimTargetPct,
+        maxWaitMs: cfg.exit.lossReclaimMaxWaitMs,
+      });
+    }
+    if (decision.lossReclaimWaitClearedReason != null) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_loss_reclaim_wait',
+        mint,
+        symbol: pos.symbol,
+        action: 'clear',
+        reason: decision.lossReclaimWaitClearedReason,
+        waitMs:
+          priorLossReclaimWaitStartedAtMs != null
+            ? Math.max(0, nowMs - priorLossReclaimWaitStartedAtMs)
+            : 0,
+        targetPct: cfg.exit.lossReclaimTargetPct,
+      });
+    }
 
     if (
       !decision.markQuarantined &&
@@ -2542,6 +2619,8 @@ async function tryExits(
         markPriceUsd: decision.markPriceUsd,
         liquidityUsd,
         nowMs,
+        troughPriceUsd: decision.postEntryTroughPriceUsd,
+        troughAtMs: decision.postEntryTroughAtMs,
       });
     }
 
