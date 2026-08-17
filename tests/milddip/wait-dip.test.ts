@@ -10,6 +10,8 @@ import {
   waitDipAppliesToSource,
   waitDipMaxPriceUsd,
   waitDipTargetPriceUsd,
+  waitDipDumpTooDeep,
+  waitDipTooDeepJournalAllowed,
   type WaitDipGates,
 } from '../../src/milddip/wait-dip.js';
 import type { MildDipCandidateMetrics } from '../../src/milddip/gates.js';
@@ -197,6 +199,41 @@ describe('upsertWaitDipWatch / evaluateWaitDipReady', () => {
 });
 
 describe('waitDipMaxPriceUsd / evaluateWaitDipPreBuy', () => {
+  it('enforces the optional signal-depth floor while preserving zero-off behavior', () => {
+    expect(waitDipDumpTooDeep(-7, 25)).toBe(false);
+    expect(waitDipDumpTooDeep(-20, 25)).toBe(false);
+    expect(waitDipDumpTooDeep(-30, 25)).toBe(true);
+    expect(waitDipDumpTooDeep(-30, 0)).toBe(false);
+    const accepted = evaluateWaitDipPreBuy({
+      signalPriceUsd: 100,
+      readyMarkPriceUsd: 93,
+      freshPriceUsd: 93,
+      waitDipPct: -7,
+      maxOvershootPct: 2,
+      maxChaseFromReadyPct: 3,
+      maxDumpFromSignalPct: 0,
+    });
+    expect(accepted.pass).toBe(true);
+    const rejected = evaluateWaitDipPreBuy({
+      signalPriceUsd: 100,
+      readyMarkPriceUsd: 70,
+      freshPriceUsd: 70,
+      waitDipPct: -7,
+      maxOvershootPct: 2,
+      maxChaseFromReadyPct: 3,
+      maxDumpFromSignalPct: 25,
+    });
+    expect(rejected.pass).toBe(false);
+    expect(rejected.reasons.some((r) => r.startsWith('wait_dip_too_deep='))).toBe(true);
+  });
+
+  it('rate-limits too-deep telemetry per mint for 15 seconds', () => {
+    const mint = `depth-test-${Date.now()}`;
+    expect(waitDipTooDeepJournalAllowed(mint, 100_000)).toBe(true);
+    expect(waitDipTooDeepJournalAllowed(mint, 114_999)).toBe(false);
+    expect(waitDipTooDeepJournalAllowed(mint, 115_000)).toBe(true);
+  });
+
   it('ceiling is waitDipPct + overshoot vs signal', () => {
     // −7% + 2pp → max dump −5% → 95
     expect(waitDipMaxPriceUsd(100, -7, 2)).toBeCloseTo(95, 8);

@@ -33,6 +33,8 @@ export type WaitDipGates = {
   waitDipPct: number;
   /** Expire watch if never filled. */
   maxWatchMs: number;
+  /** Maximum allowed dump from signal before removing the watch; 0 = off. */
+  maxDumpFromSignalPct?: number;
 };
 
 export type WaitDipReadyVerdict = {
@@ -141,6 +143,29 @@ export function dumpFromSignalPct(
   return (priceUsd / signalPriceUsd - 1) * 100;
 }
 
+export function waitDipDumpTooDeep(
+  dumpPct: number | null,
+  maxDumpFromSignalPct: number,
+): boolean {
+  return (
+    maxDumpFromSignalPct > 0 &&
+    dumpPct != null &&
+    dumpPct < -maxDumpFromSignalPct - 1e-12
+  );
+}
+
+const lastWaitDipTooDeepJournalMs = new Map<string, number>();
+const WAIT_DIP_TOO_DEEP_JOURNAL_GAP_MS = 15_000;
+
+export function waitDipTooDeepJournalAllowed(mint: string, nowMs: number): boolean {
+  const previous = lastWaitDipTooDeepJournalMs.get(mint);
+  if (previous != null && nowMs - previous < WAIT_DIP_TOO_DEEP_JOURNAL_GAP_MS) {
+    return false;
+  }
+  lastWaitDipTooDeepJournalMs.set(mint, nowMs);
+  return true;
+}
+
 /**
  * Pre-send gate for wait_dip: keep the wait-dip edge after mark→quote drift.
  * Anchors to the original park signal (not the ready mark).
@@ -154,6 +179,8 @@ export function evaluateWaitDipPreBuy(args: {
   maxOvershootPct: number;
   /** Extra chase vs ready mark only (default 3). */
   maxChaseFromReadyPct: number;
+  /** Maximum dump from signal before removing the watch; 0 = off. */
+  maxDumpFromSignalPct?: number;
 }): {
   pass: boolean;
   reasons: string[];
@@ -167,6 +194,7 @@ export function evaluateWaitDipPreBuy(args: {
     waitDipPct,
     maxOvershootPct,
     maxChaseFromReadyPct,
+    maxDumpFromSignalPct = 0,
   } = args;
   const reasons: string[] = [];
   if (freshPriceUsd == null || !(freshPriceUsd > 0)) {
@@ -186,6 +214,11 @@ export function evaluateWaitDipPreBuy(args: {
       dumpFromSignalPct: dumpPct,
       maxPriceUsd,
     };
+  }
+  if (waitDipDumpTooDeep(dumpPct, maxDumpFromSignalPct)) {
+    reasons.push(
+      `wait_dip_too_deep=${dumpPct.toFixed(2)}%<max=-${maxDumpFromSignalPct}%`,
+    );
   }
   if (freshPriceUsd > maxPriceUsd + 1e-15) {
     reasons.push(

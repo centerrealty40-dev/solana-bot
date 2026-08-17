@@ -3069,7 +3069,22 @@ const PM2_APPS = [
          * still never pay above the price that qualified the seat.
          */
         MILD_DIP_WAIT_DIP_PCT: '-5',
-        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '1200000',
+        /**
+         * 1.11.998 — 7d factual-dollar timing recheck: 600s retains
+         * n=1593 and +$229.1 of +$231.9 seat cash (+4.36/$100); 300s
+         * keeps only n=1024 and +$136.9, dropping about $94. Waiting time
+         * does not predict fill depth (median fill −11.5/−10.5/−10.8/−11.9%
+         * for 0–60s/60–300s/300–600s/>600s). Rollback: 1200000.
+         */
+        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '600000',
+        /**
+         * 1.11.998 — the ceiling existed, but there was no depth floor.
+         * The old 10% value came from a fixed-$5 per-$100 tape reconstruction
+         * and was disproved by factual dollars: 7d/2227 seats, $7107 turnover,
+         * +$230.5 cash; only fills deeper than −20% were negative
+         * (−$2.69/$100, −$27.3). Rollback: 0.
+         */
+        MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT: '25',
         /**
          * 3, not 5: with a −5% target an overshoot of 5 sums to zero and
          * `waitDipMaxPriceUsd` collapses the ceiling back onto the target,

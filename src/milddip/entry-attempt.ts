@@ -53,6 +53,8 @@ import {
   dumpFromSignalPct,
   evaluateWaitDipPreBuy,
   waitDipMaxPriceUsd,
+  waitDipDumpTooDeep,
+  waitDipTooDeepJournalAllowed,
 } from './wait-dip.js';
 import { evaluateTurnDumpGate, turnDumpKnifeBranchLive } from './turn-dump.js';
 import {
@@ -600,6 +602,7 @@ export async function attemptMildDipEntry(args: {
                 waitDipPct: cfg.waitDipPct,
                 maxOvershootPct: cfg.waitDipMaxOvershootPct,
                 maxChaseFromReadyPct: cfg.waitDipMaxChasePct,
+                maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
               })
             : evaluateMildDipPreBuy({
                 signalPriceUsd: c.priceUsd,
@@ -609,6 +612,29 @@ export async function attemptMildDipEntry(args: {
                 maxChasePct: isGreen && cfg.green.chasePct > 0 ? cfg.green.chasePct : opts.chasePct,
               });
       if (!pre.pass) {
+        if (
+          isWaitDip &&
+          'dumpFromSignalPct' in pre &&
+          waitDipDumpTooDeep(
+            pre.dumpFromSignalPct as number | null,
+            cfg.waitDipMaxDumpFromSignalPct,
+          )
+        ) {
+          delete state.waitDipWatch?.[c.mint];
+          if (waitDipTooDeepJournalAllowed(c.mint, nowMs)) {
+            appendMildDipJournal(cfg.journalPath, {
+              kind: 'mild_dip_wait_dip_too_deep',
+              mint: c.mint,
+              symbol: c.symbol,
+              signalPriceUsd: c.waitDipSignalPriceUsd ?? c.priceUsd,
+              priceUsd: freshPx,
+              dumpFromSignalPct: pre.dumpFromSignalPct,
+              maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
+            });
+          }
+          saveMildDipState(cfg.statePath, state);
+          return 'skip';
+        }
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_prebuy_skip',
           mint: c.mint,
@@ -650,8 +676,25 @@ export async function attemptMildDipEntry(args: {
         waitDipPct: cfg.waitDipPct,
         maxOvershootPct: cfg.waitDipMaxOvershootPct,
         maxChaseFromReadyPct: cfg.waitDipMaxChasePct,
+        maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
       });
       if (!pre.pass) {
+        if (waitDipDumpTooDeep(pre.dumpFromSignalPct, cfg.waitDipMaxDumpFromSignalPct)) {
+          delete state.waitDipWatch?.[c.mint];
+          if (waitDipTooDeepJournalAllowed(c.mint, nowMs)) {
+            appendMildDipJournal(cfg.journalPath, {
+              kind: 'mild_dip_wait_dip_too_deep',
+              mint: c.mint,
+              symbol: c.symbol,
+              signalPriceUsd: c.waitDipSignalPriceUsd ?? c.priceUsd,
+              priceUsd: freshPx,
+              dumpFromSignalPct: pre.dumpFromSignalPct,
+              maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
+            });
+          }
+          saveMildDipState(cfg.statePath, state);
+          return 'skip';
+        }
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_prebuy_skip',
           mint: c.mint,
