@@ -1,3 +1,27 @@
+## [1.11.1000] — 2026-08-17
+
+### Изменено
+
+- DIP/copy-leader TP-grid advances from the actual sell fill, spaces successful
+  rungs, records rung numbers, and uses a tighter runner giveback after the
+  remainder floor exhausts the ladder.
+- Full giveback/stop exits increase slippage across persisted failed attempts,
+  capped at the configured maximum. The current copytrader sell transport does
+  not expose a priority-fee parameter, so priority-fee escalation is not
+  included.
+- Staged-profit vetoes expire after a bounded timeout and repeated veto journal
+  rows are rate-limited.
+
+### Rollback
+
+```text
+MILD_DIP_EXIT_TP_GRID_MIN_GAP_MS=0
+MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_EXHAUSTED_PCT=0
+MILD_DIP_EXIT_RETRY_SLIPPAGE_STEP_BPS=0
+MILD_DIP_EXIT_RETRY_SLIPPAGE_MAX_BPS=800
+MILD_DIP_STAGED_PROFIT_VETO_MAX_MS=0
+```
+
 ## [1.11.999] — 2026-08-18
 
 ### Изменено

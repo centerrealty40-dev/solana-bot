@@ -64,7 +64,11 @@ import {
 } from './exit-engine.js';
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import { recoverDeferIsCapped } from './recover-defer.js';
-import { bounceFromTroughPct, isRecoveringFromTrough } from './gates.js';
+import {
+  bounceFromTroughPct,
+  isRecoveringFromTrough,
+  tpRungsCoveredByGainPct,
+} from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
   leaderSeedHitByMint,
@@ -79,6 +83,7 @@ import {
 } from './leader-align.js';
 import { isRunnerPartialExit } from './sell-partial.js';
 import { profitFillMinPriceUsd } from './profit-fill-guard.js';
+import { retrySlippageBpsForAttempt } from './exit-retry.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import {
   computeMarkLiquidityTelemetry,
@@ -1528,6 +1533,37 @@ async function executeQueuedSell(args: {
   // never_arm_bounce half-cuts → state deleted while ~50% remained on-chain
   // (GZudMdxm orphan −80%).
   const isPartial = isRunnerPartialExit(fraction);
+  const retryableFullExitReasons = new Set([
+    'hard_stop',
+    'cliff_dump',
+    'peak_giveback',
+    'mfe_bank_sleeve',
+    'never_arm_giveback',
+    'never_arm_bounce',
+    'never_arm_freefall',
+    'never_arm_time_red',
+    'never_arm_stale',
+    'never_arm_dead',
+    'never_arm_vol_fade',
+    'never_arm_timeout',
+    'max_hold_underwater',
+    'breakeven_stop',
+    'dead_set_bounce',
+    'liq_drain',
+  ]);
+  const retryEligible = !isPartial && retryableFullExitReasons.has(decision.reason);
+  const retryReason = retryEligible ? decision.reason : undefined;
+  const priorRetryCount =
+    retryReason != null && pos.exitRetryReason === retryReason
+      ? Math.max(0, pos.exitRetryCount ?? 0)
+      : 0;
+  const retrySlippageBps = retrySlippageBpsForAttempt({
+    eligible: retryEligible,
+    baseSlippageBps: cfg.slippageBps,
+    priorRetryCount,
+    stepBps: cfg.exitRetrySlippageStepBps,
+    maxBps: cfg.exitRetrySlippageMaxBps,
+  });
 
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   /**
@@ -1624,6 +1660,7 @@ async function executeQueuedSell(args: {
         }
       : {}),
     ...(pos.tokenRawSettled && pos.tokenRaw ? { tokenRawBase: pos.tokenRaw } : {}),
+    ...(retrySlippageBps != null ? { slippageBpsOverride: retrySlippageBps } : {}),
   });
 
   appendMildDipJournal(cfg.journalPath, {
@@ -1644,6 +1681,7 @@ async function executeQueuedSell(args: {
     feeSolBefore: sell.feeSolBefore ?? null,
     feeSolAfter: sell.feeSolAfter ?? null,
     fraction,
+    tpRung: decision.reason === 'tp_grid' ? decision.tpRungIndex : null,
     liq: decision.liquidityUsd != null ? +decision.liquidityUsd.toFixed(2) : null,
     entryLiq:
       pos.entryLiquidityUsd != null && Number.isFinite(pos.entryLiquidityUsd)
@@ -1766,8 +1804,19 @@ async function executeQueuedSell(args: {
       if (decision.reason === 'mfe_bank_1') live.mfeBankStage = 1;
       else if (decision.reason === 'mfe_bank_2') live.mfeBankStage = 2;
       else if (decision.reason === 'tp_grid' && decision.tpRungIndex != null) {
-        live.tpRungsDone = decision.tpRungIndex;
+        const fillPx = sell.priceUsd || decision.markPriceUsd;
+        const achievedGainPct =
+          decision.gainBasisPriceUsd > 0 && fillPx > 0
+            ? (fillPx / decision.gainBasisPriceUsd - 1) * 100
+            : decision.gainPct;
+        live.tpRungsDone = Math.max(
+          decision.tpRungIndex,
+          tpRungsCoveredByGainPct(cfg.exit, achievedGainPct),
+        );
+        live.lastTpGridFillAtMs = nowMs;
       }
+      live.exitRetryCount = undefined;
+      live.exitRetryReason = undefined;
       if (isPartial) {
         live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
       }
@@ -1835,6 +1884,17 @@ async function executeQueuedSell(args: {
   }
 
   const reason = sell.reason ?? 'unknown';
+  if (state.open[mint]) {
+    const live = state.open[mint]!;
+    if (retryEligible) {
+      live.exitRetryReason = retryReason;
+      live.exitRetryCount = priorRetryCount + 1;
+    } else {
+      live.exitRetryReason = undefined;
+      live.exitRetryCount = undefined;
+    }
+    saveMildDipState(cfg.statePath, state);
+  }
   if (reason === 'no_token_balance') {
     // Re-read chain before dropping — sell path races RPC right after buy
     // (CkTFDN: false empty → drop_empty → unmanaged −80% bag).
@@ -2440,6 +2500,7 @@ async function tryExits(
           givebackPct: 0,
           pnlPct: 0,
           gainPct: 0,
+          gainBasisPriceUsd: pos.entryPriceUsd,
           pnlPctVsFill: 0,
           bounceOffTroughPct: 0,
           troughAgeMs: 0,
@@ -2566,6 +2627,7 @@ async function tryExits(
     let profitExitVetoed = false;
     if (decision.shouldExit && decision.reason) {
       const avgCostPx = stagedEntryAverageCostPx(pos);
+      const vetoSinceMs = pos.stagedProfitVetoSinceMs;
       const profitGate = evaluateStagedProfitExit({
         reason: decision.reason,
         exitPx: decision.markPriceUsd,
@@ -2573,19 +2635,61 @@ async function tryExits(
         stagedAddDone: pos.stagedEntryAddDone === true,
         avgCostPx,
         minOverAvgPct: cfg.stagedProfitMinOverAvgPct,
+        vetoSinceMs,
+        nowMs,
+        vetoMaxMs: cfg.stagedProfitVetoMaxMs,
       });
       if (!profitGate.allow) {
         profitExitVetoed = true;
+        let vetoStateChanged = false;
+        if (pos.stagedProfitVetoSinceMs == null) {
+          pos.stagedProfitVetoSinceMs = nowMs;
+          vetoStateChanged = true;
+        }
+        const repeatDue =
+          pos.stagedProfitVetoLastJournalAtMs == null ||
+          nowMs - pos.stagedProfitVetoLastJournalAtMs >= 60_000;
+        const sameVeto =
+          pos.stagedProfitVetoLastReason === decision.reason &&
+          pos.stagedProfitVetoLastThresholdPx === profitGate.thresholdPx;
+        if (!sameVeto || repeatDue) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mild_dip_staged_profit_exit_skip',
+            mint,
+            symbol: pos.symbol,
+            reason: decision.reason,
+            vetoReason: profitGate.reason,
+            exitPx: decision.markPriceUsd,
+            avgCostPx,
+            thresholdPx: profitGate.thresholdPx,
+            rung: decision.tpRungIndex,
+          });
+          pos.stagedProfitVetoLastJournalAtMs = nowMs;
+          pos.stagedProfitVetoLastReason = decision.reason;
+          pos.stagedProfitVetoLastThresholdPx = profitGate.thresholdPx;
+          vetoStateChanged = true;
+        }
+        if (vetoStateChanged) {
+          saveMildDipState(cfg.statePath, state);
+        }
+      } else if (profitGate.reason === 'veto_expired') {
         appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_staged_profit_exit_skip',
+          kind: 'mild_dip_staged_profit_veto_expired',
           mint,
           symbol: pos.symbol,
           reason: decision.reason,
+          vetoReason: profitGate.reason,
           exitPx: decision.markPriceUsd,
           avgCostPx,
           thresholdPx: profitGate.thresholdPx,
           rung: decision.tpRungIndex,
+          allowed: true,
         });
+        pos.stagedProfitVetoSinceMs = undefined;
+        pos.stagedProfitVetoLastJournalAtMs = undefined;
+        pos.stagedProfitVetoLastReason = undefined;
+        pos.stagedProfitVetoLastThresholdPx = undefined;
+        saveMildDipState(cfg.statePath, state);
       }
     }
 

@@ -62,6 +62,11 @@ const MildDipConfigSchema = z.object({
   stagedAddMult: z.coerce.number().min(0).max(100).default(2),
   stagedAddMaxUsd: z.coerce.number().min(0).max(10_000).default(0),
   stagedProfitMinOverAvgPct: z.coerce.number().min(0).max(100).default(1),
+  /** 1.11.993 — maximum staged-profit veto duration; 0 = unlimited. */
+  stagedProfitVetoMaxMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
+  /** 1.11.993 — outer full-exit retry slippage step; 0 = disabled. */
+  exitRetrySlippageStepBps: z.coerce.number().int().min(0).max(5_000).default(0),
+  exitRetrySlippageMaxBps: z.coerce.number().int().min(1).max(5_000).default(800),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
    * 1.11.841 — same $1 as base (flat book).
@@ -802,6 +807,8 @@ const MildDipConfigSchema = z.object({
     tpGridStepPct: z.coerce.number().min(0).max(500).default(0),
     /** 1.11.957 — first TP-grid rung; 0 = use tpGridStepPct. */
     tpGridFirstRungPct: z.coerce.number().min(0).max(500).default(0),
+    /** 1.11.993 — minimum spacing between successful TP-grid fills. */
+    tpGridMinGapMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /** 1.11.852 — confirm single-tick jumps larger than this % before acting. */
     markJumpConfirmPct: z.coerce.number().min(0).max(100).default(25),
     /** 1.11.868 — tighter guard for stream prints; 0 = use markJumpConfirmPct. */
@@ -840,6 +847,8 @@ const MildDipConfigSchema = z.object({
     mfeBankSleeveGreenPartialFraction: z.coerce.number().min(0).max(1).default(0),
     /** 1.11.953 — wide green sleeve runner trail; 0 keeps the no-op default. */
     mfeBankSleeveRunnerGivebackPct: z.coerce.number().min(0).max(100).default(0),
+    /** 1.11.993 — tighter runner giveback after the remainder floor exhausts the ladder. */
+    mfeBankSleeveRunnerGivebackExhaustedPct: z.coerce.number().min(0).max(100).default(0),
     /** Never-armed soft giveback after this many ms (0=off). Default off. */
     neverArmPatienceMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /**
@@ -1080,6 +1089,7 @@ export function loadMildDipConfig(): MildDipConfig {
     mfeBankSleeveGivebackPct: envNum('MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT', 12),
     tpGridStepPct: envNum('MILD_DIP_EXIT_TP_GRID_STEP_PCT', 0),
     tpGridFirstRungPct: envNum('MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT', 0),
+    tpGridMinGapMs: envNum('MILD_DIP_EXIT_TP_GRID_MIN_GAP_MS', 0),
     markJumpConfirmPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_PCT', 25),
     markJumpConfirmStreamPct: envNum('MILD_DIP_EXIT_MARK_JUMP_CONFIRM_STREAM_PCT', 8),
     markSellHaircutPct: envNum('MILD_DIP_EXIT_MARK_SELL_HAIRCUT_PCT', 1),
@@ -1111,6 +1121,10 @@ export function loadMildDipConfig(): MildDipConfig {
     ),
     mfeBankSleeveRunnerGivebackPct: envNum(
       'MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_PCT',
+      0,
+    ),
+    mfeBankSleeveRunnerGivebackExhaustedPct: envNum(
+      'MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_EXHAUSTED_PCT',
       0,
     ),
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
@@ -1222,6 +1236,9 @@ export function loadMildDipConfig(): MildDipConfig {
     stagedAddMult: envNum('MILD_DIP_STAGED_ADD_MULT', 2),
     stagedAddMaxUsd: envNum('MILD_DIP_STAGED_ADD_MAX_USD', 0),
     stagedProfitMinOverAvgPct: envNum('MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT', 1),
+    stagedProfitVetoMaxMs: envNum('MILD_DIP_STAGED_PROFIT_VETO_MAX_MS', 0),
+    exitRetrySlippageStepBps: envNum('MILD_DIP_EXIT_RETRY_SLIPPAGE_STEP_BPS', 0),
+    exitRetrySlippageMaxBps: envNum('MILD_DIP_EXIT_RETRY_SLIPPAGE_MAX_BPS', 800),
     thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 1,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,

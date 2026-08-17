@@ -129,6 +129,8 @@ export type MildDipExitGates = {
    * 0 or an omitted value preserves the current no-op runner behavior.
    */
   mfeBankSleeveRunnerGivebackPct?: number;
+  /** 1.11.993 — tighter runner giveback after the TP-grid remainder floor. */
+  mfeBankSleeveRunnerGivebackExhaustedPct?: number;
   /** 1.11.957 — max quote slip below a profit decision; 0 = off. */
   profitFillMaxSlipPct?: number;
   /** 1.11.961 — max quote slip below a bounce-based loss decision; 0 = off. */
@@ -164,6 +166,8 @@ export type MildDipExitGates = {
   tpGridStepPct: number;
   /** First TP-grid rung in gain %, 0/unset = the existing step-sized first rung. */
   tpGridFirstRungPct?: number;
+  /** 1.11.993 — minimum ms between successful TP-grid fills; 0 = off. */
+  tpGridMinGapMs?: number;
   /**
    * 1.11.852 — a mark that moves more than this % from the last accepted one is
    * quarantined until a second mark confirms the level. 0 = off.
@@ -802,6 +806,21 @@ export type MildDipExitReason =
   | 'green_no_move'
   | null;
 
+export function tpRungsCoveredByGainPct(
+  gates: Pick<MildDipExitGates, 'tpGridStepPct' | 'tpGridFirstRungPct'>,
+  gainPct: number,
+): number {
+  const gridStep = gates.tpGridStepPct > 0 ? gates.tpGridStepPct : 0;
+  if (!(gridStep > 0) || !Number.isFinite(gainPct)) return 0;
+  const firstRung =
+    gates.tpGridFirstRungPct != null && gates.tpGridFirstRungPct > 0
+      ? gates.tpGridFirstRungPct
+      : gridStep;
+  return gainPct >= firstRung - 1e-9
+    ? Math.floor((gainPct - firstRung + 1e-9) / gridStep) + 1
+    : 0;
+}
+
 const LOSS_RECLAIM_REASONS: ReadonlySet<MildDipExitReason> = new Set([
   'never_arm_bounce',
   'dead_set_bounce',
@@ -820,7 +839,6 @@ const LOSS_RECLAIM_PROTECTIVE_REASONS: ReadonlySet<MildDipExitReason> = new Set(
   'never_arm_giveback',
   'max_hold_underwater',
 ]);
-
 /** True when MFE-bank ladder is configured and should own the armed exit path. */
 export function isMfeBankEnabled(gates: MildDipExitGates): boolean {
   return (
@@ -1040,6 +1058,8 @@ export function evaluateMildDipPeakGiveback(args: {
    * When omitted, falls back to `scaleOutDone ? 1 : 0` for live migration.
    */
   mfeBankStage?: number;
+  /** Timestamp of the last successful TP-grid fill. */
+  lastTpGridFillAtMs?: number;
   /** Elapsed ms since entry; required for never-arm exits. */
   heldMs?: number;
   /** Live Dex/stream pc5m % — required when neverArmTimeRedMaxPc5mPct > 0. */
@@ -1301,6 +1321,7 @@ export function evaluateMildDipPeakGiveback(args: {
     tpRungIndex: null as number | null,
     pnlPct,
     gainPct,
+    gainBasisPriceUsd,
     pnlPctVsFill,
     bounceOffTroughPct,
     troughAgeMs,
@@ -1608,11 +1629,19 @@ export function evaluateMildDipPeakGiveback(args: {
     args.tpRungsDone != null && Number.isFinite(args.tpRungsDone)
       ? Math.max(0, Math.floor(Number(args.tpRungsDone)))
       : 0;
+  const gridFrac =
+    gates.tpGridSellFraction > 0 && gates.tpGridSellFraction < 1
+      ? gates.tpGridSellFraction
+      : 0.5;
+  const gridFloor =
+    gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
+  const ladderExhausted =
+    gridStep > 0 &&
+    rungsDone >= 1 &&
+    gridFloor > 0 &&
+    Math.pow(1 - gridFrac, rungsDone + 1) < gridFloor - 1e-9;
   if (gridStep > 0) {
-    const gridFrac =
-      gates.tpGridSellFraction > 0 && gates.tpGridSellFraction < 1
-        ? gates.tpGridSellFraction
-        : 0.5;
+    const floor = gridFloor;
     const gridMinHold = gates.mfeBankMinHoldMs > 0 ? gates.mfeBankMinHoldMs : 0;
     const gridReady = gridMinHold <= 0 || heldMs >= gridMinHold;
     /**
@@ -1626,20 +1655,15 @@ export function evaluateMildDipPeakGiveback(args: {
      * later at +16.75%. Catching up in one leg avoids selling the same bag twice
      * while the price is already moving down.
      */
-    const firstRung =
-      gates.tpGridFirstRungPct != null && gates.tpGridFirstRungPct > 0
-        ? gates.tpGridFirstRungPct
-        : gridStep;
-    const maxK =
-      gainPct >= firstRung - 1e-9
-        ? Math.floor((gainPct - firstRung + 1e-9) / gridStep) + 1
-        : 0;
-    if (gridReady && maxK > rungsDone) {
+    const maxK = tpRungsCoveredByGainPct(gates, gainPct);
+    const gridGapReady =
+      (gates.tpGridMinGapMs ?? 0) <= 0 ||
+      args.lastTpGridFillAtMs == null ||
+      nowMs - args.lastTpGridFillAtMs >= (gates.tpGridMinGapMs ?? 0);
+    if (gridReady && gridGapReady && maxK > rungsDone) {
       // Remaining share of the original bag, exactly, because every rung takes
       // the same fraction of what is left.
       const remainingBefore = Math.pow(1 - gridFrac, rungsDone);
-      const floor =
-        gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
       const owedRungs = maxK - rungsDone;
       let settledRungs = owedRungs;
       let remainingAfter =
@@ -1663,7 +1687,6 @@ export function evaluateMildDipPeakGiveback(args: {
             tpRungIndex: rungsDone + 1,
           };
         }
-        // fall through to the trail
       } else {
         return {
           ...hold,
@@ -1688,11 +1711,16 @@ export function evaluateMildDipPeakGiveback(args: {
     const lvl2 = gates.mfeBank2Pct > lvl1 ? gates.mfeBank2Pct : 0;
     const sleeveGb =
       gates.mfeBankSleeveGivebackPct > 0 ? gates.mfeBankSleeveGivebackPct : 0;
-    const runnerGb =
+    const configuredRunnerGb =
       gates.mfeBankSleeveRunnerGivebackPct != null &&
       gates.mfeBankSleeveRunnerGivebackPct > 0
         ? gates.mfeBankSleeveRunnerGivebackPct
         : 0;
+    const runnerGb =
+      ladderExhausted &&
+      (gates.mfeBankSleeveRunnerGivebackExhaustedPct ?? 0) > 0
+        ? gates.mfeBankSleeveRunnerGivebackExhaustedPct!
+        : configuredRunnerGb;
 
     // Bank into strength (not deferred by oneshot grace — this is take-profit).
     // One level per mark tick (same half-first discipline as classic scale-out).

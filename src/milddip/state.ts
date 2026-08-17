@@ -46,6 +46,16 @@ export type MildDipOpenPosition = {
    * `mfeBankStage` this is not capped: rung 9 is +72% MFE at an 8% step.
    */
   tpRungsDone?: number;
+  /** 1.11.993 — successful TP-grid fill timestamp for rung spacing. */
+  lastTpGridFillAtMs?: number;
+  /** 1.11.993 — consecutive failed full-exit attempts for the current reason. */
+  exitRetryCount?: number;
+  exitRetryReason?: string;
+  /** 1.11.993 — first staged-profit veto timestamp. */
+  stagedProfitVetoSinceMs?: number;
+  stagedProfitVetoLastJournalAtMs?: number;
+  stagedProfitVetoLastReason?: string;
+  stagedProfitVetoLastThresholdPx?: number;
   /**
    * 1.11.860 — which lane opened this bag. `green` is a momentum entry and is
    * managed by `decideGreenExit`, not by the dip ladder: the tape says those

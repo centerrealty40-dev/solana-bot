@@ -203,6 +203,9 @@ export function evaluateStagedProfitExit(args: {
   stagedAddDone: boolean;
   avgCostPx: number;
   minOverAvgPct: number;
+  vetoSinceMs?: number;
+  nowMs?: number;
+  vetoMaxMs?: number;
 }): { allow: boolean; thresholdPx: number; reason: string } {
   const thresholdPx = args.avgCostPx * (1 + Math.max(0, args.minOverAvgPct) / 100);
   if (!args.stagedAddDone) {
@@ -216,6 +219,15 @@ export function evaluateStagedProfitExit(args: {
   }
   if (args.minOverAvgPct <= 0 || args.exitPx >= thresholdPx) {
     return { allow: true, thresholdPx, reason: 'above_avg_cost' };
+  }
+  if (
+    args.vetoMaxMs != null &&
+    args.vetoMaxMs > 0 &&
+    args.vetoSinceMs != null &&
+    args.nowMs != null &&
+    args.nowMs - args.vetoSinceMs >= args.vetoMaxMs
+  ) {
+    return { allow: true, thresholdPx, reason: 'veto_expired' };
   }
   return { allow: false, thresholdPx, reason: 'below_staged_avg_cost' };
 }

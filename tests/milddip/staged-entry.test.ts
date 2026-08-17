@@ -251,4 +251,23 @@ describe('mild-dip staged entry', () => {
       }).allow,
     ).toBe(true);
   });
+
+  it('expires a staged-profit veto at the configured cap', () => {
+    const result = evaluateStagedProfitExit({
+      reason: 'mfe_bank_sleeve',
+      exitPx: 105,
+      entryPriceUsd: 100,
+      stagedAddDone: true,
+      avgCostPx: 110,
+      minOverAvgPct: 1,
+      vetoSinceMs: 1_000,
+      nowMs: 1_800_000,
+      vetoMaxMs: 1_799_000,
+    });
+    expect(result).toEqual({
+      allow: true,
+      thresholdPx: 111.1,
+      reason: 'veto_expired',
+    });
+  });
 });

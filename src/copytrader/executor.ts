@@ -159,6 +159,7 @@ export async function executeCopySell(args: {
   minExitPriceGuard?: 'cost_floor' | 'profit_fill_slippage' | 'loss_fill_slippage';
   fillGuardDecisionPriceUsd?: number;
   fillGuardMaxSlipPct?: number;
+  slippageBpsOverride?: number;
 }): Promise<SellExecutionResult> {
   const {
     cfg,
@@ -210,6 +211,7 @@ export async function executeCopySell(args: {
       minExitPriceGuard: args.minExitPriceGuard,
       fillGuardDecisionPriceUsd: args.fillGuardDecisionPriceUsd,
       fillGuardMaxSlipPct: args.fillGuardMaxSlipPct,
+      slippageBpsOverride: args.slippageBpsOverride,
     });
     const exitPx = live.priceUsd || exitPriceUsd;
     const livePnl = entryPriceUsd > 0 ? ((exitPx / entryPriceUsd - 1) * 100) : pnlPct;

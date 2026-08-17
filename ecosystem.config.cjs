@@ -2897,6 +2897,7 @@ const PM2_APPS = [
          * Rollback: chase=4, avg veto=1.
          */
         MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0',
+        MILD_DIP_STAGED_PROFIT_VETO_MAX_MS: '1800000',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
@@ -3723,6 +3724,10 @@ const PM2_APPS = [
          * into micro-profit; later rungs remain 8pp apart.
          */
         MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT: '20',
+        MILD_DIP_EXIT_TP_GRID_MIN_GAP_MS: '15000',
+        MILD_DIP_EXIT_SLEEVE_RUNNER_GIVEBACK_EXHAUSTED_PCT: '10',
+        MILD_DIP_EXIT_RETRY_SLIPPAGE_STEP_BPS: '100',
+        MILD_DIP_EXIT_RETRY_SLIPPAGE_MAX_BPS: '800',
         /** 1.11.957 — refuse profit fills more than 4pp below the decision mark. */
         MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT: '4',
         /**
