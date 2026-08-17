@@ -300,6 +300,15 @@ export type EntryAttemptOpts = {
   /** Short cooldown after soft skip (prebuy/bounce). */
   softSkipCooldownMs?: number;
   lane: 'fast' | 'slow';
+  mirror?: boolean;
+  mirrorExit?: {
+    armPct: number;
+    trailPct: number;
+    stopPct: number;
+    maxHoldMs: number;
+    noMoveCutMs: number;
+    noMoveMinMfePct: number;
+  };
 };
 
 export type EntryAttemptResult = 'filled' | 'skip' | 'stop';
@@ -336,6 +345,15 @@ export async function attemptMildDipEntry(args: {
   if (state.open[c.mint]) return 'skip';
   if ((state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
+  if (c.dipSource === 'green_momentum' && !cfg.green.enabled) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_green_disabled_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      reason: 'green_disabled',
+    });
+    return 'skip';
+  }
   if (c.shadowOnly) {
     appendLeaderGateShadowOutcome({
       cfg,
@@ -356,7 +374,8 @@ export async function attemptMildDipEntry(args: {
   /** Set when a re-entry gate was overridden by a probe (tiny research buy). */
   let probeReason: 'rebuy_below_exit' | 'rebuy_liq_drop' | null = null;
 
-  const leaderGateOk = leaderBuyGateOk(cfg, state, c.mint, nowMs);
+  const isMirror = opts.mirror === true;
+  const leaderGateOk = isMirror || leaderBuyGateOk(cfg, state, c.mint, nowMs);
   const greenLeaderGateBypass =
     !leaderGateOk && greenLeaderGateBypassAllowed(cfg, c.dipSource);
   if (!leaderGateOk && greenLeaderGateBypass) {
@@ -429,7 +448,7 @@ export async function attemptMildDipEntry(args: {
     }
   }
 
-  if (!opts.skipOnchainAdopt) {
+  if (!opts.skipOnchainAdopt && !isMirror) {
     const onchain = await fetchMintBalanceRaw(copyCfg, c.mint);
     const onchainRaw = onchain && /^\d+$/.test(onchain) ? BigInt(onchain) : 0n;
     if (onchainRaw > HOLDING_DUST_RAW) {
@@ -454,7 +473,7 @@ export async function attemptMildDipEntry(args: {
   const isKnife = c.dipSource === 'knife_stabilize';
   const isTurnDumpKnife = c.dipSource === 'turn_dump_knife';
   const isWaitDip = c.dipSource === 'wait_dip';
-  const isGreen = c.dipSource === 'green_momentum';
+  const isGreen = c.dipSource === 'green_momentum' && !isMirror;
   const greenExitProfile: 'standard' | 'fast' = isGreen
     ? greenExitProfileForTape(cfg, c.tapeRet1mPct)
     : 'standard';
@@ -511,7 +530,7 @@ export async function attemptMildDipEntry(args: {
           }
         : cfg.entry;
 
-  if (cfg.preBuyRevalidate) {
+  if (cfg.preBuyRevalidate && !isMirror) {
     const freshNow = Date.now();
     if (opts.freshDexPrebuy !== false) {
       const fresh = await fetchDexScreenerPairDetails(c.mint, {
@@ -744,17 +763,40 @@ export async function attemptMildDipEntry(args: {
     }
   }
 
+  const liveLiquidityUsd = sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd;
+  const livePairAgeHours = sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours;
+  const liveVolume5mUsd = entryVol5m;
   const entryRisk = evaluateMildDipEntryRisk({
-    pairAgeHours: sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours,
-    volume5mUsd: entryVol5m,
-    liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
-    minPairAgeHours: isGreen ? cfg.green.minPairAgeHours : cfg.entryMinPairAgeHours,
-    maxVol5mToLiq:
-      isGreen && cfg.green.entryMaxVol5mToLiq > 0
+    pairAgeHours: livePairAgeHours,
+    volume5mUsd: liveVolume5mUsd,
+    liquidityUsd: liveLiquidityUsd,
+    minPairAgeHours: isMirror
+      ? cfg.leaderMirror.minPairAgeHours
+      : isGreen
+        ? cfg.green.minPairAgeHours
+        : cfg.entryMinPairAgeHours,
+    maxVol5mToLiq: isMirror
+      ? cfg.leaderMirror.maxVol5mToLiq
+      : isGreen && cfg.green.entryMaxVol5mToLiq > 0
         ? cfg.green.entryMaxVol5mToLiq
         : cfg.entryMaxVol5mToLiq,
-    minLiquidityUsd: isGreen ? cfg.green.minLiquidityUsd : cfg.entryMinLiquidityUsd,
+    minLiquidityUsd: isMirror
+      ? cfg.leaderMirror.minLiquidityUsd
+      : isGreen
+        ? cfg.green.minLiquidityUsd
+        : cfg.entryMinLiquidityUsd,
   });
+  if (isMirror) {
+    if (
+      liveLiquidityUsd == null ||
+      !Number.isFinite(liveLiquidityUsd) ||
+      liveVolume5mUsd == null ||
+      !Number.isFinite(liveVolume5mUsd)
+    ) {
+      entryRisk.pass = false;
+      entryRisk.reasons.push('mirror_missing_live_structural_data');
+    }
+  }
   if (!entryRisk.pass) {
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_entry_gate_skip',
@@ -782,6 +824,7 @@ export async function attemptMildDipEntry(args: {
     branch: string | null;
   } | null = null;
   const applyTurnDumpGate =
+    !isMirror &&
     cfg.turnDumpGateEnabled && shouldApplyGreenTurnDumpGate(isGreen, cfg.greenTurnDumpGate);
   if (cfg.turnDumpGateEnabled && isGreen && !cfg.greenTurnDumpGate) {
     appendMildDipJournal(cfg.journalPath, {
@@ -1124,9 +1167,11 @@ export async function attemptMildDipEntry(args: {
       ? entryMarkSample.priceUsd
       : undefined;
   const laneCapped =
-    isGreen && cfg.green.positionUsd > 0
-      ? Math.min(cfg.green.positionUsd, knifeCapped)
-      : knifeCapped;
+    isMirror && cfg.leaderMirror.positionUsd > 0
+      ? Math.min(cfg.leaderMirror.positionUsd, knifeCapped)
+      : isGreen && cfg.green.positionUsd > 0
+        ? Math.min(cfg.green.positionUsd, knifeCapped)
+        : knifeCapped;
   /**
    * 1.11.898 — the first position on a coin is sized down.
    *
@@ -1235,7 +1280,17 @@ export async function attemptMildDipEntry(args: {
     // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
     peakPriceUsd: entryPriceUsd,
     entryMarkPriceUsd,
-    lane: isGreen ? 'green' : 'dip',
+    lane: isMirror ? 'leader_mirror' : isGreen ? 'green' : 'dip',
+    ...(isMirror && opts.mirrorExit
+      ? {
+          mirrorExitArmPct: opts.mirrorExit.armPct,
+          mirrorExitTrailPct: opts.mirrorExit.trailPct,
+          mirrorExitStopPct: opts.mirrorExit.stopPct,
+          mirrorExitMaxHoldMs: opts.mirrorExit.maxHoldMs,
+          mirrorExitNoMoveCutMs: opts.mirrorExit.noMoveCutMs,
+          mirrorExitNoMoveMinMfePct: opts.mirrorExit.noMoveMinMfePct,
+        }
+      : {}),
     ...fixedGreenExit,
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,
@@ -1268,7 +1323,7 @@ export async function attemptMildDipEntry(args: {
     sizeUsd: sized.sizeUsd,
     priceUsd: entryPriceUsd,
     dipSource: c.dipSource,
-    lane: opts.lane,
+    lane: isMirror ? 'leader_mirror' : opts.lane,
     trigger: opts.trigger,
     waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
     waitDipMaxPriceUsd: waitDipCeilingPx,
@@ -1352,7 +1407,7 @@ export async function attemptMildDipEntry(args: {
       priceUsd: entryPriceUsd,
       pc5m: entryPc5m,
       dipSource: c.dipSource,
-      lane: opts.lane,
+      lane: isMirror ? 'leader_mirror' : opts.lane,
       trigger: opts.trigger,
       waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
       waitDipMaxPriceUsd: waitDipCeilingPx,
@@ -1394,7 +1449,7 @@ export async function attemptMildDipEntry(args: {
     waitDipMarkDumpFromSignalPct: waitDipMarkDump,
     waitDipFillDumpFromSignalPct: waitDipFillDump,
     waitDipMaxPriceUsd: waitDipCeilingPx,
-    lane: opts.lane,
+    lane: isMirror ? 'leader_mirror' : opts.lane,
     probe: probeReason,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
@@ -1535,7 +1590,17 @@ export async function attemptMildDipEntry(args: {
     buySignature: buy.signature ?? null,
     peakPriceUsd: fillPx,
     entryMarkPriceUsd,
-    lane: isGreen ? 'green' : 'dip',
+    lane: isMirror ? 'leader_mirror' : isGreen ? 'green' : 'dip',
+    ...(isMirror && opts.mirrorExit
+      ? {
+          mirrorExitArmPct: opts.mirrorExit.armPct,
+          mirrorExitTrailPct: opts.mirrorExit.trailPct,
+          mirrorExitStopPct: opts.mirrorExit.stopPct,
+          mirrorExitMaxHoldMs: opts.mirrorExit.maxHoldMs,
+          mirrorExitNoMoveCutMs: opts.mirrorExit.noMoveCutMs,
+          mirrorExitNoMoveMinMfePct: opts.mirrorExit.noMoveMinMfePct,
+        }
+      : {}),
     ...fixedGreenExit,
     trailArmed: false,
     entryVolume5mUsd: c.metrics.volume5mUsd ?? null,

@@ -36,8 +36,15 @@ import {
 } from './fast-path.js';
 import {
   greenMinuteJupiterStats,
+  requestGreenMinuteJupiterRefresh,
   tickGreenMinuteJupiterRefresh,
 } from './green-minute-jupiter-refresh.js';
+import {
+  evaluateLeaderMirrorObservation,
+  leaderMirrorDecisionSuppressed,
+  leaderMirrorHitKey,
+  leaderMirrorQuoteMintsCap,
+} from './leader-mirror.js';
 import {
   isKnifeDipPct,
   upsertKnifeWatch,
@@ -1193,6 +1200,179 @@ function rememberLeaderSeen(
   }
 }
 
+async function wakeLeaderMirrors(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<number> {
+  const gates = cfg.leaderMirror;
+  if (!gates.enabled) return 0;
+  const hits = readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
+    maxAgeMs: Math.min(gates.hitMaxAgeMs, 600_000),
+    max: cfg.leaderSeedMax,
+  });
+  for (const hit of hits) {
+    if (state.open[hit.mint]) continue;
+    const hitKey = leaderMirrorHitKey(hit);
+    const existing = leaderMirrorWatches.get(hit.mint);
+    if (existing && existing.hitKey !== hitKey) {
+      leaderMirrorWatches.set(hit.mint, { hit, hitKey, startedAtMs: nowMs });
+      leaderMirrorDecisions.delete(hit.mint);
+    } else if (!existing) {
+      const prior = leaderMirrorDecisions.get(hit.mint);
+      if (
+        prior &&
+        leaderMirrorDecisionSuppressed({
+          hit,
+          hitKey: prior.hitKey,
+          decidedAtMs: prior.decidedAtMs,
+          nowMs,
+          cooldownMs: gates.cooldownMs,
+        })
+      ) {
+        continue;
+      }
+      leaderMirrorWatches.set(hit.mint, { hit, hitKey, startedAtMs: nowMs });
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_observe_start',
+        mint: hit.mint,
+        leader: hit.leader,
+        leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        pc5m: hit.pc5m ?? null,
+        observeMs: gates.observeMs,
+      });
+    }
+  }
+  let filled = 0;
+  for (const [mint, watch] of leaderMirrorWatches) {
+    if (state.open[mint]) {
+      leaderMirrorWatches.delete(mint);
+      continue;
+    }
+    const hit = watch.hit;
+    requestGreenMinuteJupiterRefresh({
+      mint,
+      nowMs,
+      snapshotPriceUsd: hit.fillPriceUsd ?? 0,
+      enabled: true,
+      minGapMs: gates.quoteIntervalMs,
+      ttlMs: gates.observeMs + gates.quoteMaxAgeMs,
+      maxMints: leaderMirrorQuoteMintsCap(
+        leaderMirrorWatches.size,
+        gates.maxQuoteMints,
+      ),
+      maxInFlight: 2,
+      probeUsd: gates.positionUsd,
+      slippageBps: cfg.slippageBps,
+      source: 'leader_mirror_jupiter',
+    });
+    const quote = mildDipPriceRing.lastPriceBySource(
+      mint,
+      'leader_mirror_jupiter',
+      nowMs,
+      gates.quoteMaxAgeMs,
+    );
+    const decision = evaluateLeaderMirrorObservation({
+      hit,
+      quotePriceUsd: quote?.priceUsd,
+      quoteTsMs: quote?.tsMs,
+      nowMs,
+      watchStartedAtMs: watch.startedAtMs,
+      gates,
+    });
+    if (decision.action === 'wait') continue;
+    if (decision.action === 'skip') {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint,
+        leader: hit.leader,
+        reason: decision.reason,
+        quotePriceUsd: quote?.priceUsd ?? null,
+        leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        pc5m: hit.pc5m ?? null,
+      });
+      leaderMirrorDecisions.set(mint, {
+        hitKey: watch.hitKey,
+        decidedAtMs: nowMs,
+        reason: decision.reason,
+      });
+      leaderMirrorWatches.delete(mint);
+      continue;
+    }
+    const openMirror = Object.values(state.open).filter(
+      (position) => position.lane === 'leader_mirror',
+    ).length;
+    if (gates.maxOpen > 0 && openMirror >= gates.maxOpen) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint,
+        reason: 'leader_mirror_exposure_cap',
+        openMirror,
+        maxOpen: gates.maxOpen,
+      });
+      leaderMirrorDecisions.set(mint, {
+        hitKey: watch.hitKey,
+        decidedAtMs: nowMs,
+        reason: 'leader_mirror_exposure_cap',
+      });
+      leaderMirrorWatches.delete(mint);
+      continue;
+    }
+    const candidate: MildDipCandidate = {
+      mint,
+      symbol: null,
+      priceUsd: decision.quotePriceUsd,
+      dipSource: 'leader_mirror',
+      metrics: {
+        priceChange5mPct: hit.pc5m ?? null,
+        volume5mUsd: hit.vol5m ?? null,
+        liquidityUsd: hit.liq ?? null,
+        marketCapUsd: hit.mcap ?? null,
+        pairAgeHours: hit.ageHours ?? null,
+        dexId: hit.dexId ?? null,
+        buys5m: null,
+        sells5m: null,
+        volume1hUsd: null,
+        priceChange1hPct: hit.pc1h ?? null,
+      },
+    };
+    const result = await attemptMildDipEntry({
+      cfg,
+      state,
+      candidate,
+      copyCfg: mildDipToCopyTraderConfig(cfg),
+      nowMs,
+      buyInFlight,
+      resolveEntrySizeUsd,
+      adoptOnChainHolding,
+      opts: {
+        chasePct: 0,
+        trigger: 'leader',
+        skipBounce: true,
+        skipOnchainAdopt: true,
+        freshDexPrebuy: false,
+        softSkipCooldownMs: 1_500,
+        lane: 'fast',
+        mirror: true,
+        mirrorExit: {
+          armPct: gates.exitArmPct,
+          trailPct: gates.exitTrailPct,
+          stopPct: gates.exitStopPct,
+          maxHoldMs: gates.maxHoldMs,
+          noMoveCutMs: gates.noMoveCutMs,
+          noMoveMinMfePct: gates.noMoveMinMfePct,
+        },
+      },
+    });
+    leaderMirrorWatches.delete(mint);
+    if (result === 'filled') {
+      state.cooldownUntilMs[mint] = nowMs + gates.cooldownMs;
+      filled += 1;
+    }
+  }
+  return filled;
+}
+
 async function wakeLeaderSeeds(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -1390,6 +1570,7 @@ async function tryEntriesBody(
   nowMs: number,
 ): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
+  await wakeLeaderMirrors(cfg, state, nowMs);
   const slots = unlimited ? Number.POSITIVE_INFINITY : cfg.maxOpenPositions - openCount(state);
   if (!unlimited && slots <= 0) return;
 
@@ -1668,6 +1849,7 @@ async function executeQueuedSell(args: {
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_sell',
     reason: decision.reason,
+    lane: pos.lane ?? 'dip',
     mint,
     symbol: pos.symbol,
     entryPx: pos.entryPriceUsd,
@@ -1995,6 +2177,14 @@ const lastDumpClassifyJournalMs = new Map<string, number>();
 const lastRecoverDeferJournalMs = new Map<string, number>();
 /** mint → last time the leader-seed lane looked at it (Dex budget guard). */
 const leaderSeedLookedAtMs = new Map<string, number>();
+const leaderMirrorWatches = new Map<
+  string,
+  { hit: LeaderSeedHit; hitKey: string; startedAtMs: number }
+>();
+const leaderMirrorDecisions = new Map<
+  string,
+  { hitKey: string; decidedAtMs: number; reason: string }
+>();
 /** mint → last exit_defer_would_buy journal ts (throttle). */
 const lastExitDeferJournalMs = new Map<string, number>();
 /** mint → last leader_align_defer journal ts (throttle). */
@@ -2562,6 +2752,16 @@ async function tryExits(
         trailEnabled: pos.greenExitTrailEnabled ?? cfg.green.exitTrailEnabled,
         armPct: pos.greenExitArmPct ?? cfg.green.exitArmPct,
         trailPct: pos.greenExitTrailPct ?? cfg.green.exitTrailPct,
+      },
+      mirrorGates: {
+        trailEnabled: true,
+        takeProfitPct: 0,
+        stopPct: pos.mirrorExitStopPct ?? cfg.leaderMirror.exitStopPct,
+        maxHoldMs: pos.mirrorExitMaxHoldMs ?? cfg.leaderMirror.maxHoldMs,
+        noMoveCutMs: pos.mirrorExitNoMoveCutMs ?? cfg.leaderMirror.noMoveCutMs,
+        noMoveMinMfePct: pos.mirrorExitNoMoveMinMfePct ?? cfg.leaderMirror.noMoveMinMfePct,
+        armPct: pos.mirrorExitArmPct ?? cfg.leaderMirror.exitArmPct,
+        trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
       },
     });
     if (!decision) continue;
