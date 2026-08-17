@@ -306,6 +306,7 @@ describe('fast-path helpers', () => {
     expect(requireStreamPriceForDipSource('turn_dump_knife')).toBe(false);
     // Parked seat is anchored to its own signal (ceiling + chase caps).
     expect(requireStreamPriceForDipSource('wait_dip')).toBe(false);
+    expect(requireStreamPriceForDipSource('leader_mirror')).toBe(false);
     expect(requireStreamPriceForDipSource('stream')).toBe(true);
     expect(requireStreamPriceForDipSource('mild_stabilize')).toBe(true);
     expect(requireStreamPriceForDipSource(null)).toBe(true);

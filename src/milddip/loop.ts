@@ -1456,6 +1456,21 @@ async function wakeLeaderMirrors(
     if (result === 'filled') {
       state.cooldownUntilMs[mint] = nowMs + gates.cooldownMs;
       filled += 1;
+    } else {
+      leaderMirrorDecisions.set(mint, {
+        hitKey: watch.hitKey,
+        decidedAtMs: nowMs,
+        reason: 'leader_mirror_execution_skip',
+      });
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint,
+        leader: hit.leader,
+        reason: 'leader_mirror_execution_skip',
+        leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        quotePriceUsd: decision.quotePriceUsd ?? null,
+        metricSource: watch.metricSource,
+      });
     }
   }
   return filled;

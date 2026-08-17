@@ -1,3 +1,22 @@
+## [1.11.1005] — 2026-08-20
+
+### Изменено
+
+- `leader_mirror` освобождён от обязательного собственного stream-принта:
+  решение остаётся на leader fill, Jupiter quote и Dex structural snapshot.
+- Неуспешные mirror-исполнения теперь запоминаются по `hitKey` и не
+  перезапускают одно и то же наблюдение до нового hit или окончания cooldown.
+- Production mirror переключён на лидера
+  `8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ`; добавлены явные env
+  независимого mirror tick и structural backfill.
+
+### Rollback
+
+```text
+MILD_DIP_MIRROR_ENABLED=0
+MILD_DIP_MIRROR_LEADERS=7BNaxx6KdUYrjACNQZ9He26NBFnArLGH5
+```
+
 ## [1.11.1004] — 2026-08-20
 
 ### Изменено

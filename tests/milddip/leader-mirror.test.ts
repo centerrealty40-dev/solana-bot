@@ -112,6 +112,29 @@ describe('leader mirror observation decisions', () => {
     expect(leaderMirrorQuoteMintsCap(3, 8)).toBe(3);
   });
 
+  it('uses the same hit-key suppression for execution skips', () => {
+    const current = hit({ signature: 'execution-skip' });
+    const hitKey = leaderMirrorHitKey(current);
+    expect(
+      leaderMirrorDecisionSuppressed({
+        hit: current,
+        hitKey,
+        decidedAtMs: 100_000,
+        nowMs: 110_000,
+        cooldownMs: 900_000,
+      }),
+    ).toBe(true);
+    expect(
+      leaderMirrorDecisionSuppressed({
+        hit: { ...current, lastSeenAtMs: 100_001 },
+        hitKey,
+        decidedAtMs: 100_000,
+        nowMs: 110_000,
+        cooldownMs: 900_000,
+      }),
+    ).toBe(false);
+  });
+
   it('is silent when disabled and uses the mirror exit profile', () => {
     expect(at(hit(), 101, 110_000, 100_000, {
       ...gates,
