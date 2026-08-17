@@ -2077,8 +2077,10 @@ async function attemptStagedEntryAdd(args: {
   markPriceUsd: number;
   liquidityUsd: number | null;
   nowMs: number;
+  troughPriceUsd: number | null;
+  troughAtMs: number | null;
 }): Promise<void> {
-  const { cfg, state, pos, markPriceUsd, liquidityUsd, nowMs } = args;
+  const { cfg, state, pos, markPriceUsd, liquidityUsd, nowMs, troughPriceUsd, troughAtMs } = args;
   const verdict = evaluateStagedEntryAdd({
     enabled: cfg.stagedEntryEnabled,
     addDone: pos.stagedEntryAddDone === true,
@@ -2087,8 +2089,14 @@ async function attemptStagedEntryAdd(args: {
     lastAttemptAtMs: pos.stagedEntryLastAttemptAtMs,
     markPx: markPriceUsd,
     firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
+    anchorMode: cfg.stagedAddAnchor,
+    troughPx: troughPriceUsd,
+    troughAtMs,
     triggerPct: cfg.stagedAddTriggerPct,
     maxChasePct: cfg.stagedAddMaxChasePct,
+    troughTriggerPct: cfg.stagedAddTroughTriggerPct,
+    troughBandPct: cfg.stagedAddTroughBandPct,
+    minTroughAgeMs: cfg.stagedAddMinTroughAgeMs,
     intendedUsd: pos.stagedEntryIntendedUsd ?? 0,
     alreadyFilledUsd: pos.stagedEntryFilledUsd ?? pos.sizeUsd,
     addMult: cfg.stagedAddMult,
@@ -2099,21 +2107,24 @@ async function attemptStagedEntryAdd(args: {
     rugRiskActive: pos.stagedEntryRugRiskTier === 'knife' || pos.stagedEntryRugRiskTier === 'blocked',
   });
   if (!verdict.shouldAdd) {
-    if (verdict.reason === 'above_chase_band') {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mild_dip_staged_add',
-        mint: pos.mint,
-        symbol: pos.symbol,
-        lane: pos.lane ?? 'dip',
-        firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
-        triggerPx: verdict.triggerPx,
-        mark: markPriceUsd,
-        intendedUsd: pos.stagedEntryIntendedUsd ?? null,
-        addUsd: 0,
-        ok: false,
-        reason: verdict.reason,
-      });
-    }
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_staged_add',
+      mint: pos.mint,
+      symbol: pos.symbol,
+      lane: pos.lane ?? 'dip',
+      firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
+      triggerPx: verdict.triggerPx,
+      mark: markPriceUsd,
+      intendedUsd: pos.stagedEntryIntendedUsd ?? null,
+      addUsd: 0,
+      anchorMode: cfg.stagedAddAnchor,
+      postEntryTroughPriceUsd: verdict.anchorPx,
+      postEntryTroughAtMs: verdict.anchorAtMs,
+      bounceOffTroughPct: verdict.bounceOffAnchorPct,
+      pnlPctVsFill: verdict.markVsFirstFillPct,
+      ok: false,
+      reason: verdict.reason,
+    });
     return;
   }
 
@@ -2130,6 +2141,11 @@ async function attemptStagedEntryAdd(args: {
     mark: markPriceUsd,
     intendedUsd: pos.stagedEntryIntendedUsd ?? null,
     addUsd: verdict.addUsd,
+    anchorMode: cfg.stagedAddAnchor,
+    postEntryTroughPriceUsd: verdict.anchorPx,
+    postEntryTroughAtMs: verdict.anchorAtMs,
+    bounceOffTroughPct: verdict.bounceOffAnchorPct,
+    pnlPctVsFill: verdict.markVsFirstFillPct,
   };
   const journal = (extra: Record<string, unknown>): void => {
     appendMildDipJournal(cfg.journalPath, { ...event, ...extra });
@@ -2515,6 +2531,8 @@ async function tryExits(
         markPriceUsd: decision.markPriceUsd,
         liquidityUsd,
         nowMs,
+        troughPriceUsd: decision.postEntryTroughPriceUsd,
+        troughAtMs: decision.postEntryTroughAtMs,
       });
     }
 

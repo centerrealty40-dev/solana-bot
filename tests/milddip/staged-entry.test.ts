@@ -47,8 +47,14 @@ describe('mild-dip staged entry', () => {
     attempts: 0,
     nowMs: 100_000,
     firstFillPx: 100,
+    anchorMode: 'fill' as const,
+    troughPx: null,
+    troughAtMs: null,
     triggerPct: 8,
     maxChasePct: 4,
+    troughTriggerPct: 8,
+    troughBandPct: 4,
+    minTroughAgeMs: 60_000,
     intendedUsd: 18,
     alreadyFilledUsd: 5,
     addMult: 2,
@@ -73,6 +79,27 @@ describe('mild-dip staged entry', () => {
     expect(evaluateStagedEntryAdd({ ...base, markPx: 111.5 }).shouldAdd).toBe(true);
   });
 
+  it('supports fill anchoring as a configuration-only rollback', () => {
+    expect(
+      evaluateStagedEntryAdd({
+        ...base,
+        anchorMode: 'fill',
+        troughPx: 50,
+        troughAtMs: 1,
+        markPx: 107,
+      }),
+    ).toMatchObject({ shouldAdd: false, reason: 'below_trigger', triggerPx: 108 });
+    expect(
+      evaluateStagedEntryAdd({
+        ...base,
+        anchorMode: 'fill',
+        troughPx: 50,
+        troughAtMs: 1,
+        markPx: 108,
+      }),
+    ).toMatchObject({ shouldAdd: true, anchorPx: 100, anchorAtMs: null });
+  });
+
   it('caps the one-shot add at $40', () => {
     const add = evaluateStagedEntryAdd({
       ...base,
@@ -89,6 +116,66 @@ describe('mild-dip staged entry', () => {
       addUsd: 0,
       reason: 'disabled',
     });
+  });
+
+  const troughBase = {
+    ...base,
+    anchorMode: 'trough' as const,
+    troughPx: 100,
+    troughAtMs: 1,
+    nowMs: 120_000,
+    maxChasePct: 10,
+  };
+
+  it('uses the trough trigger and rejects marks below the trough corridor', () => {
+    expect(
+      evaluateStagedEntryAdd({ ...troughBase, markPx: 107.99 }),
+    ).toMatchObject({ shouldAdd: false, reason: 'below_trough_trigger', triggerPx: 108 });
+  });
+
+  it('adds inside the trough corridor after the trough has stabilized', () => {
+    const verdict = evaluateStagedEntryAdd({
+      ...troughBase,
+      markPx: 110,
+      troughAtMs: 1,
+    });
+    expect(verdict).toMatchObject({
+      shouldAdd: true,
+      triggerPx: 108,
+      anchorPx: 100,
+      anchorAtMs: 1,
+    });
+    expect(verdict.bounceOffAnchorPct).toBeCloseTo(10);
+    expect(verdict.markVsFirstFillPct).toBeCloseTo(10);
+  });
+
+  it('rejects marks above the trough corridor', () => {
+    expect(
+      evaluateStagedEntryAdd({ ...troughBase, markPx: 112.01 }),
+    ).toMatchObject({ shouldAdd: false, reason: 'above_trough_band' });
+  });
+
+  it('requires the trough to be at least the configured age', () => {
+    expect(
+      evaluateStagedEntryAdd({ ...troughBase, markPx: 110, troughAtMs: 70_001 }),
+    ).toMatchObject({ shouldAdd: false, reason: 'trough_too_fresh' });
+  });
+
+  it('rejects trough mode without a usable trough', () => {
+    expect(
+      evaluateStagedEntryAdd({
+        ...troughBase,
+        troughPx: null,
+        troughAtMs: null,
+        markPx: 110,
+      }),
+    ).toMatchObject({ shouldAdd: false, reason: 'missing_trough' });
+  });
+
+  it('keeps the first-fill chase ceiling active in trough mode', () => {
+    expect(
+      evaluateStagedEntryAdd({ ...troughBase, maxChasePct: 2, markPx: 111 }),
+    ).toMatchObject({ shouldAdd: false, reason: 'above_chase_band' });
   });
 
   it('vetoes profit sleeve and TP exits below weighted average cost', () => {
