@@ -1,3 +1,27 @@
+## [1.11.992] — 2026-08-17
+
+### Изменено
+
+- Стандартный GREEN-профиль армит трейл с `+2%`, закрывает откат `4%`,
+  применяет `green_no_move` через 10 минут при MFE ниже `+2%` и оставляет
+  стоп `−45%` как катастрофный предохранитель.
+- Для `green_momentum` включены существующие GREEN-полы: ликвидность от
+  `$20k` и возраст пары от `1h`. DIP-путь и fast-профиль не менялись.
+- Отказы по этим двум полам журналируются отдельными причинами
+  `green_liq_floor` и `green_pair_age_floor`.
+
+### Rollback
+
+```text
+MILD_DIP_GREEN_EXIT_ARM_PCT=3
+MILD_DIP_GREEN_EXIT_TRAIL_PCT=6
+MILD_DIP_GREEN_NO_MOVE_CUT_MS=900000
+MILD_DIP_GREEN_NO_MOVE_MIN_MFE_PCT=3
+MILD_DIP_GREEN_EXIT_STOP_PCT=30
+MILD_DIP_GREEN_MIN_LIQUIDITY_USD=2500
+MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS=0.25
+```
+
 ## [1.11.991] — 2026-08-16
 
 ### Изменено

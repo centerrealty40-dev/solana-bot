@@ -193,10 +193,14 @@ export function evaluateGreenLane(
   if (gates.minVolume1hUsd > 0 && (vol1h == null || vol1h < gates.minVolume1hUsd)) {
     fail.push(`vol1h=${vol1h ?? 'null'}`);
   }
-  if (liq == null || liq < gates.minLiquidityUsd) fail.push(`liq=${liq ?? 'null'}`);
+  if (liq == null || liq < gates.minLiquidityUsd) {
+    fail.push(`green_liq_floor=${liq ?? 'null'}<${gates.minLiquidityUsd}`);
+  }
   const ageH = num(input.pairAgeHours);
   if (gates.minPairAgeHours > 0 && (ageH == null || ageH < gates.minPairAgeHours)) {
-    fail.push(`ageH=${ageH == null ? 'null' : ageH.toFixed(2)}`);
+    fail.push(
+      `green_pair_age_floor=${ageH == null ? 'null' : ageH.toFixed(2)}<${gates.minPairAgeHours}`,
+    );
   }
   if (gates.minBuys5m > 0 && (buys == null || buys < gates.minBuys5m)) {
     fail.push(`buys5m=${buys ?? 'null'}`);
