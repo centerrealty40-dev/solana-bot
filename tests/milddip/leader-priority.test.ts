@@ -117,9 +117,8 @@ describe('1.11.907/908 turnover ceiling and the re-entry price rule', () => {
   });
 
   it('requires a materially cheaper re-entry than our last exit', () => {
-    // Avoid selling and rebuying the same reclaim candle; the production floor
-    // requires the next entry to be at least 5% below our exit fill.
-    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '5'");
+    // Leader-style circles allow re-entry at any price after a full exit.
+    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
   });
 });
 

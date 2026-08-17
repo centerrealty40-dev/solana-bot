@@ -232,6 +232,8 @@ export type MildDipExitGates = {
    * not settled yet and the sell just burns retries. 0 = off.
    */
   mfeBankMinHoldMs: number;
+  /** Minimum hold before profitable TP/trail/reclaim exits. 0 = off. */
+  profitExitMinHoldMs: number;
   /**
    * After this many ms still unarmed, allow the same giveback% from the
    * (sub-arm) peak. Live default **0** — early never_arm_giveback was the grind loss.
@@ -805,6 +807,18 @@ export type MildDipExitReason =
   | 'green_trail'
   | 'green_no_move'
   | null;
+
+export function profitExitMinHoldApplies(args: {
+  reason: MildDipExitReason;
+  gainPct: number;
+  pnlPct: number;
+}): boolean {
+  if (args.reason === 'tp_grid') return args.gainPct >= 0;
+  if (args.reason === 'mfe_bank_sleeve' || args.reason === 'never_arm_bounce') {
+    return args.gainPct >= 0;
+  }
+  return args.reason === 'green_trail' && args.pnlPct >= 0;
+}
 
 export function tpRungsCoveredByGainPct(
   gates: Pick<MildDipExitGates, 'tpGridStepPct' | 'tpGridFirstRungPct'>,

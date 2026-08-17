@@ -12,6 +12,7 @@ import {
   mildDipLiquidityPowerLawSizeUsd,
   mildDipMicroSizeGatesForSource,
   mayFireSoftLossExit,
+  profitExitMinHoldApplies,
   resolveMildDipWantedSizeUsd,
   tpRungsCoveredByGainPct,
   type MildDipCandidateMetrics,
@@ -58,6 +59,33 @@ const mfeBankOff = {
 } as const;
 
 describe('mild-dip entry age and churn gates', () => {
+  it('holds only profitable leader-loop exit branches', () => {
+    expect(
+      profitExitMinHoldApplies({ reason: 'tp_grid', gainPct: 20, pnlPct: 20 }),
+    ).toBe(true);
+    expect(
+      profitExitMinHoldApplies({ reason: 'mfe_bank_sleeve', gainPct: 6, pnlPct: 6 }),
+    ).toBe(true);
+    expect(
+      profitExitMinHoldApplies({ reason: 'never_arm_bounce', gainPct: 3, pnlPct: -1 }),
+    ).toBe(true);
+    expect(
+      profitExitMinHoldApplies({ reason: 'green_trail', gainPct: 4, pnlPct: 4 }),
+    ).toBe(true);
+    expect(
+      profitExitMinHoldApplies({ reason: 'hard_stop', gainPct: -20, pnlPct: -20 }),
+    ).toBe(false);
+    expect(
+      profitExitMinHoldApplies({ reason: 'cliff_dump', gainPct: -20, pnlPct: -20 }),
+    ).toBe(false);
+    expect(
+      profitExitMinHoldApplies({ reason: 'mfe_bank_sleeve', gainPct: -2, pnlPct: -2 }),
+    ).toBe(false);
+    expect(
+      profitExitMinHoldApplies({ reason: 'green_trail', gainPct: -2, pnlPct: -2 }),
+    ).toBe(false);
+  });
+
   it('retry slippage increments by step and never exceeds cap', () => {
     expect(
       retrySlippageBpsForAttempt({

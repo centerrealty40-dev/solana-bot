@@ -329,10 +329,10 @@ describe('1.11.803 wait-dip coexists with turn-dump', () => {
 
   it('1.11.856 banks in the range the leaders actually bank in', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    // 48h: leaders averaged +74.1% on wins versus our +12.1%, and we captured
-    // only 25% of our peak. Keep 34% per rung and a 0.3 remainder floor.
+    // Leader-loop release closes the first TP rung fully and starts the next
+    // circle on a later entry; the remainder floor remains a rollback guard.
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_STEP_PCT: '8'");
-    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.34'");
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '1'");
     expect(eco).toContain("MILD_DIP_EXIT_GIVEBACK_PCT: '12'");
     // The +5% trail arm and 12% giveback cover a +20% peak above the +3%
     // floor, so breakeven is intentionally inert.

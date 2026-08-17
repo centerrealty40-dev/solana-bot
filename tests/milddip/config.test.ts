@@ -51,6 +51,26 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.exit.mfeBankSleeveGreenPartialFraction).toBe(0.5);
   });
 
+  it('loads the profitable-exit minimum hold from the environment', () => {
+    expect(withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).exit.profitExitMinHoldMs).toBe(0);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS: '900000',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.profitExitMinHoldMs).toBe(900_000);
+    const maxCfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS: '14400000',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(maxCfg.exit.profitExitMinHoldMs).toBe(14_400_000);
+  });
+
   it('loads the sleeve runner giveback width from the environment', () => {
     const cfg = withConfigEnv(
       {
@@ -383,5 +403,15 @@ describe('mild-dip config exit schema', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
     expect(eco).toContain("MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1'");
     expect(eco).toContain("MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2'");
+  });
+
+  it('keeps leader-loop production exit and re-entry values', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '1'");
+    expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK2_PCT: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION: '0'");
+    expect(eco).toContain("MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS: '900000'");
+    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
+    expect(eco).toContain("MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '0'");
   });
 });
