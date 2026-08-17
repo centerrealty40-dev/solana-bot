@@ -68,6 +68,7 @@ import {
   bounceFromTroughPct,
   isRecoveringFromTrough,
   profitExitMinHoldApplies,
+  shouldJournalProfitExitMinHoldSkip,
   tpRungsCoveredByGainPct,
 } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
@@ -2639,19 +2640,31 @@ async function tryExits(
         })
       ) {
         profitExitVetoed = true;
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_profit_exit_min_hold_skip',
-          mint,
-          symbol: pos.symbol,
-          branch: decision.reason,
-          positionAgeMs,
-          minHoldMs: profitMinHoldMs,
-          markPx: decision.markPriceUsd,
-          entryPx: pos.entryPriceUsd,
-          pnlPct: +decision.pnlPct.toFixed(2),
-          gainPct: +decision.gainPct.toFixed(2),
-          mfePct: +decision.mfePct.toFixed(2),
-        });
+        if (
+          shouldJournalProfitExitMinHoldSkip({
+            lastJournalAtMs: pos.profitExitMinHoldLastJournalAtMs,
+            lastReason: pos.profitExitMinHoldLastReason,
+            reason: decision.reason,
+            nowMs,
+          })
+        ) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mild_dip_profit_exit_min_hold_skip',
+            mint,
+            symbol: pos.symbol,
+            branch: decision.reason,
+            positionAgeMs,
+            minHoldMs: profitMinHoldMs,
+            markPx: decision.markPriceUsd,
+            entryPx: pos.entryPriceUsd,
+            pnlPct: +decision.pnlPct.toFixed(2),
+            gainPct: +decision.gainPct.toFixed(2),
+            mfePct: +decision.mfePct.toFixed(2),
+          });
+          pos.profitExitMinHoldLastJournalAtMs = nowMs;
+          pos.profitExitMinHoldLastReason = decision.reason;
+          saveMildDipState(cfg.statePath, state);
+        }
       }
       const avgCostPx = stagedEntryAverageCostPx(pos);
       const vetoSinceMs = pos.stagedProfitVetoSinceMs;

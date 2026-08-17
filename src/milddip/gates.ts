@@ -820,6 +820,20 @@ export function profitExitMinHoldApplies(args: {
   return args.reason === 'green_trail' && args.pnlPct >= 0;
 }
 
+export function shouldJournalProfitExitMinHoldSkip(args: {
+  lastJournalAtMs?: number;
+  lastReason?: string;
+  reason: string;
+  nowMs: number;
+  intervalMs?: number;
+}): boolean {
+  return (
+    args.lastReason !== args.reason ||
+    args.lastJournalAtMs == null ||
+    args.nowMs - args.lastJournalAtMs >= (args.intervalMs ?? 60_000)
+  );
+}
+
 export function tpRungsCoveredByGainPct(
   gates: Pick<MildDipExitGates, 'tpGridStepPct' | 'tpGridFirstRungPct'>,
   gainPct: number,
