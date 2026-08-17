@@ -200,10 +200,10 @@ describe('upsertWaitDipWatch / evaluateWaitDipReady', () => {
 
 describe('waitDipMaxPriceUsd / evaluateWaitDipPreBuy', () => {
   it('enforces the optional signal-depth floor while preserving zero-off behavior', () => {
-    expect(waitDipDumpTooDeep(-7, 10)).toBe(false);
-    expect(waitDipDumpTooDeep(-10, 10)).toBe(false);
-    expect(waitDipDumpTooDeep(-13, 10)).toBe(true);
-    expect(waitDipDumpTooDeep(-13, 0)).toBe(false);
+    expect(waitDipDumpTooDeep(-7, 25)).toBe(false);
+    expect(waitDipDumpTooDeep(-20, 25)).toBe(false);
+    expect(waitDipDumpTooDeep(-30, 25)).toBe(true);
+    expect(waitDipDumpTooDeep(-30, 0)).toBe(false);
     const accepted = evaluateWaitDipPreBuy({
       signalPriceUsd: 100,
       readyMarkPriceUsd: 93,
@@ -216,12 +216,12 @@ describe('waitDipMaxPriceUsd / evaluateWaitDipPreBuy', () => {
     expect(accepted.pass).toBe(true);
     const rejected = evaluateWaitDipPreBuy({
       signalPriceUsd: 100,
-      readyMarkPriceUsd: 87,
-      freshPriceUsd: 87,
+      readyMarkPriceUsd: 70,
+      freshPriceUsd: 70,
       waitDipPct: -7,
       maxOvershootPct: 2,
       maxChaseFromReadyPct: 3,
-      maxDumpFromSignalPct: 10,
+      maxDumpFromSignalPct: 25,
     });
     expect(rejected.pass).toBe(false);
     expect(rejected.reasons.some((r) => r.startsWith('wait_dip_too_deep='))).toBe(true);

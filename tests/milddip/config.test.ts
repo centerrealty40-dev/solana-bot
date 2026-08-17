@@ -232,7 +232,8 @@ describe('mild-dip config exit schema', () => {
 
   it('keeps the wait-dip signal-depth floor at the live value', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
-    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT: '10'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT: '25'");
+    expect(eco).toContain("MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '600000'");
     const value = eco.match(
       /MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT:\s*'([^']+)'/,
     )?.[1];
@@ -240,10 +241,12 @@ describe('mild-dip config exit schema', () => {
       {
         ...baseEnv,
         MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT: value!,
+        MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '600000',
       },
       () => loadMildDipConfig(),
     );
-    expect(cfg.waitDipMaxDumpFromSignalPct).toBe(10);
+    expect(cfg.waitDipMaxDumpFromSignalPct).toBe(25);
+    expect(cfg.waitDipMaxWatchMs).toBe(600_000);
   });
 
   it('loads GREEN shared gate overrides and preserves their safe defaults', () => {
