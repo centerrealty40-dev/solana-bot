@@ -1,3 +1,25 @@
+## [1.11.995] — 2026-08-17
+
+### Изменено
+
+- В mild-dip выключены три оставшиеся лишние ветки выхода конфигурацией:
+  `dead_set_bounce` (`MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT=0`),
+  `never_arm_time_red` (`MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS=0`) и
+  GREEN-линия (`MILD_DIP_GREEN_ENABLED=0`). За 7 суток dead-set дал −$114
+  на 227 выходах, time-red — −$93; за 11 суток GREEN дал −$6.53 на 101
+  цикле. Код веток в `gates.ts` не менялся.
+- На минусовой стороне остаются trough-reclaim `never_arm_bounce`, reclaim
+  wait из 1.11.994, `cliff_dump` и `liq_drain`; лестница, sleeve и трейлы
+  плюсовой стороны не меняются.
+
+### Rollback
+
+```text
+MILD_DIP_EXIT_DEAD_SET_BOUNCE_PCT=10
+MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS=900000
+MILD_DIP_GREEN_ENABLED=1
+```
+
 ## [1.11.994] — 2026-08-17
 
 ### Добавлено / Изменено

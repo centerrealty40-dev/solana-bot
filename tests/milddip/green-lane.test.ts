@@ -583,7 +583,7 @@ describe('the green lane keeps its own age floor', () => {
 
   it('live env enables the controlled probe', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '1'");
+    expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '0'");
     expect(eco).toContain("MILD_DIP_GREEN_POSITION_USD: '1'");
     expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1'");
     expect(eco).toContain("MILD_DIP_GREEN_MIN_LIQUIDITY_USD: '20000'");

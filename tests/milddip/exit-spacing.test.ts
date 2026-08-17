@@ -58,14 +58,12 @@ describe('1.11.938 the ladder leaves a runner', () => {
   });
 });
 
-describe('1.11.900 the time cut stops firing at five minutes', () => {
-  it('live env gives a red bag fifteen minutes, not five', () => {
-    // On 75 dips we and a leader both entered within a minute, we stopped out of
-    // 30 at a -19.77% median where they came out around flat having held 15.5
-    // minutes. On the bags that worked our exit beat theirs, +9.41% to +3.90%,
-    // so the gate stays - it just no longer fires at its old floor.
+describe('1.11.995 the time-red cut is disabled', () => {
+  it('live env disables the measured time-red branch', () => {
+    // The previously measured 900s branch is now disabled; the remaining
+    // reclaim-gated loss paths are unchanged.
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
-    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '900000'");
+    expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_MIN_MS: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_NEVER_ARM_TIME_RED_PNL_PCT: '15'");
   });
 });
