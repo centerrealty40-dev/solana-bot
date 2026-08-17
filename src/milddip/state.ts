@@ -56,6 +56,8 @@ export type MildDipOpenPosition = {
   stagedProfitVetoLastJournalAtMs?: number;
   stagedProfitVetoLastReason?: string;
   stagedProfitVetoLastThresholdPx?: number;
+  profitExitMinHoldLastJournalAtMs?: number;
+  profitExitMinHoldLastReason?: string;
   /**
    * 1.11.860 — which lane opened this bag. `green` is a momentum entry and is
    * managed by `decideGreenExit`, not by the dip ladder: the tape says those

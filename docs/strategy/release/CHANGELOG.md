@@ -1,3 +1,47 @@
+## [1.11.1001] — 2026-08-18
+
+### Изменено
+
+- Mild-dip переведён на leader-style круги: профитная первая ступень
+  `tp_grid` продаёт позицию целиком, зелёный sleeve также закрывается целиком,
+  а следующая покупка может начать новый круг. Первый staged-клип `$5`
+  сохранён; staged adds остаются отключены через
+  `MILD_DIP_STAGED_ADD_MAX_USD=0`.
+- Добавлен отдельный гейт `MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS`: только
+  прибыльные `tp_grid`, зелёный trail/sleeve и зелёный `never_arm_bounce`
+  ждут минимальный возраст позиции. Дефолт schema/loader — `0` (старое
+  поведение), production — `900000` мс. Protective/risk exits, включая
+  `hard_stop`, `cliff_dump`, liquidity drain/rug, breakeven и красные exits,
+  гейт не затрагивает. Подавленные решения журналируются как
+  `mild_dip_profit_exit_min_hold_skip` с веткой и возрастом позиции.
+- По фактическим деньгам за 7 суток первый круг дал `+1.17` на $100
+  (trimmed `−4.32`), круги №2+ — `+9.07` (trimmed `+6.33`); по удержанию
+  `<5m` — `−6.03`, `5–15m` — `−1.96`, `15–60m` — `+15.73`, `1–4h` —
+  `+7.69`. У лидера `7BNaxx` все 1798 продаж были полными выходами;
+  one-off — `−0.91`, 2–3 круга `+4.04`, 4+ круга `+3.32` на $100,
+  лучший бэнд `1–4h` — `+7.67`.
+- Для восстановления кругов production значения изменены:
+  `MILD_DIP_EXIT_TP_GRID_SELL_FRACTION 0.34→1`,
+  `MILD_DIP_EXIT_MFE_BANK2_PCT 8→0`,
+  `MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION 0.5→0`,
+  `MILD_DIP_REBUY_BELOW_EXIT_PCT 5→0`,
+  `MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT 20→0`.
+  `MILD_DIP_REBUY_LIQ_DROP*`, entry liquidity `$15000`, wait-dip параметры,
+  staged cap `0` и первый клип `$5` не менялись. В исходных журналах наши
+  гейты блокировали `rebuy_below_exit` 10261 раз, `cooldown_bounce` 7735 и
+  `rebuy_liq_drop` 33067; liquidity-drop защита сохранена.
+
+### Откат
+
+```text
+MILD_DIP_EXIT_TP_GRID_SELL_FRACTION=0.34
+MILD_DIP_EXIT_MFE_BANK2_PCT=8
+MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION=0.5
+MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS=0
+MILD_DIP_REBUY_BELOW_EXIT_PCT=5
+MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT=20
+```
+
 ## [1.11.1000] — 2026-08-17
 
 ### Изменено

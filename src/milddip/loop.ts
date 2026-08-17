@@ -67,6 +67,8 @@ import { recoverDeferIsCapped } from './recover-defer.js';
 import {
   bounceFromTroughPct,
   isRecoveringFromTrough,
+  profitExitMinHoldApplies,
+  shouldJournalProfitExitMinHoldSkip,
   tpRungsCoveredByGainPct,
 } from './gates.js';
 import { cooldownMsAfterExit } from './cooldown.js';
@@ -2626,6 +2628,44 @@ async function tryExits(
 
     let profitExitVetoed = false;
     if (decision.shouldExit && decision.reason) {
+      const profitMinHoldMs = cfg.exit.profitExitMinHoldMs;
+      const positionAgeMs = Math.max(0, nowMs - pos.openedAtMs);
+      if (
+        profitMinHoldMs > 0 &&
+        positionAgeMs < profitMinHoldMs &&
+        profitExitMinHoldApplies({
+          reason: decision.reason,
+          gainPct: decision.gainPct,
+          pnlPct: decision.pnlPct,
+        })
+      ) {
+        profitExitVetoed = true;
+        if (
+          shouldJournalProfitExitMinHoldSkip({
+            lastJournalAtMs: pos.profitExitMinHoldLastJournalAtMs,
+            lastReason: pos.profitExitMinHoldLastReason,
+            reason: decision.reason,
+            nowMs,
+          })
+        ) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mild_dip_profit_exit_min_hold_skip',
+            mint,
+            symbol: pos.symbol,
+            branch: decision.reason,
+            positionAgeMs,
+            minHoldMs: profitMinHoldMs,
+            markPx: decision.markPriceUsd,
+            entryPx: pos.entryPriceUsd,
+            pnlPct: +decision.pnlPct.toFixed(2),
+            gainPct: +decision.gainPct.toFixed(2),
+            mfePct: +decision.mfePct.toFixed(2),
+          });
+          pos.profitExitMinHoldLastJournalAtMs = nowMs;
+          pos.profitExitMinHoldLastReason = decision.reason;
+          saveMildDipState(cfg.statePath, state);
+        }
+      }
       const avgCostPx = stagedEntryAverageCostPx(pos);
       const vetoSinceMs = pos.stagedProfitVetoSinceMs;
       const profitGate = evaluateStagedProfitExit({

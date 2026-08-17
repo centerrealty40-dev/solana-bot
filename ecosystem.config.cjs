@@ -3680,7 +3680,11 @@ const PM2_APPS = [
         MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS: '20000',
         MILD_DIP_EXIT_MFE_BANK1_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK1_FRACTION: '0.4',
-        MILD_DIP_EXIT_MFE_BANK2_PCT: '8',
+        /**
+         * 1.11.1001 — full exits plus repeat-entry circles: disable the +8%
+         * second bank. Rollback: '8'.
+         */
+        MILD_DIP_EXIT_MFE_BANK2_PCT: '0',
         MILD_DIP_EXIT_MFE_BANK2_FRACTION: '0.6',
         /** 1.11.815 — 8 → 12: sleeve12 retained more value ($4.15 vs $1.98). */
         MILD_DIP_EXIT_MFE_BANK_SLEEVE_GIVEBACK_PCT: '8',
@@ -3690,7 +3694,16 @@ const PM2_APPS = [
          * green runner reaches the 12% peak-giveback trail. Set to 0 to restore
          * the historical full-bag sleeve exit.
          */
-        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION: '0.5',
+        /**
+         * 1.11.1001 — sell the green sleeve in one exit for leader-style
+         * full-close circles. Rollback: '0.5'.
+         */
+        MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION: '0',
+        /**
+         * 1.11.1001 — profitable TP/trail/reclaim exits wait 15m from entry,
+         * matching the strongest 15–60m holding band. Rollback: '0'.
+         */
+        MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS: '900000',
         /**
          * 1.11.953 — TP-grid mode leaves the post-partial green runner
          * without the classic peak-giveback path; a wide trail preserves
@@ -3735,7 +3748,11 @@ const PM2_APPS = [
          * +20% and 107 finished below +10%. Sell 34% of the remainder per rung
          * so the sleeve keeps roughly 44% after +8/+16 instead of closing it.
          */
-        MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.34',
+        /**
+         * 1.11.1001 — the first +20% rung closes the full position, then a
+         * later entry starts the next circle. Rollback: '0.34'.
+         */
+        MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '1',
         /**
          * 1.11.861 — the ladder stops instead of running forever. When the next
          * rung would leave under 20% of the original, it closes the bag: +8%
@@ -4095,7 +4112,11 @@ const PM2_APPS = [
          * 92vgKc went out on peak_giveback at +35.4% and the green lane bought it
          * back 61 seconds later 0.9% higher.
          */
-        MILD_DIP_REBUY_BELOW_EXIT_PCT: '5',
+        /**
+         * 1.11.1001 — repeat entries may re-enter at any price after a full
+         * exit. Rollback: '5'.
+         */
+        MILD_DIP_REBUY_BELOW_EXIT_PCT: '0',
         MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS: '900000',
         /** 1.11.797 — after loss exit: skip rebuy when Dex liq fell vs exit. */
         MILD_DIP_REBUY_LIQ_DROP: '1',
@@ -4211,7 +4232,11 @@ const PM2_APPS = [
          * skipped with `cooldown_bounce=15.41%>max=6`, so the pump after our
          * own exit was unreachable.
          */
-        MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '20',
+        /**
+         * 1.11.1001 — do not block leader-style circles on a post-exit bounce.
+         * Rollback: '20'.
+         */
+        MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '0',
         MILD_DIP_COOLDOWN_BOUNCE_LOOKBACK_MS: '600000',
         /** Stream drawdown can satisfy dip band when Dex pc5m lags (liq/mcap still Dex). */
         MILD_DIP_STREAM_DIP_ENTRY: '1',
