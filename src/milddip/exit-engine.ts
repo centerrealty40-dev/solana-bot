@@ -541,8 +541,7 @@ export function decideMarkExit(args: {
     const protectedReason =
       verdict.reason === 'hard_stop' ||
       verdict.reason === 'cliff_dump' ||
-      verdict.reason === 'liq_drain' ||
-      verdict.reason === 'breakeven_stop';
+      verdict.reason === 'liq_drain';
     if (!protectedReason) {
       const lstyle = evaluateLeaderStyleExit({
         heldMs,
@@ -575,17 +574,10 @@ export function decideMarkExit(args: {
           tpRungIndex: null,
         };
       }
-      return {
-        ...verdict,
-        mint,
-        markPriceUsd: decisionMark,
-        entryMarketPriceUsd,
-        gainBasisPriceUsd: pos.entryPriceUsd,
-        shouldExit: false,
-        fraction: 0,
-        reason: null,
-        tpRungIndex: null,
-      };
+      verdict.shouldExit = false;
+      verdict.fraction = 0;
+      verdict.reason = null;
+      verdict.tpRungIndex = null;
     }
   }
   /**

@@ -3938,6 +3938,10 @@ const PM2_APPS = [
         MILD_DIP_LSTYLE_DEPTH_DRAIN_MAX: '1.06',
         MILD_DIP_LSTYLE_MAX_HOLD_MS: '14400000',
         MILD_DIP_STREAM_DEX_MAX_DIVERGENCE_FACTOR: '2',
+        MILD_DIP_LSTYLE_MAX_ENRICH: '12',
+        MILD_DIP_LSTYLE_ENRICH_CONCURRENCY: '4',
+        MILD_DIP_LSTYLE_SKIP_JOURNAL_INTERVAL_MS: '60000',
+        MILD_DIP_LSTYLE_SKIP_JOURNAL_MAX_PER_HOUR: '60',
         /**
          * 1.11.955 — one decision per losing bag: sell the full sleeve after
          * its qualifying reclaim, avoiding a second same-price fee. Rollback

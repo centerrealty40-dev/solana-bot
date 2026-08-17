@@ -452,15 +452,10 @@ export async function attemptMildDipEntry(args: {
   }
   const streamForSanity = mildDipPriceRing.lastPriceBySource(c.mint, 'stream', nowMs, 60_000);
   if (streamForSanity) {
-    const dexForSanity = await fetchDexScreenerPairDetails(c.mint, {
-      nowMs,
-      allowedDexIds: cfg.entry.allowedDexIds,
-      cacheTtlMs: 3_000,
-      bypassGate: true,
-    });
+    const dexForSanity = c.priceUsd > 0 ? c.priceUsd : null;
     const sanity = validateStreamDexPrice({
       streamPriceUsd: streamForSanity.priceUsd,
-      dexPriceUsd: dexForSanity?.priceUsd ?? null,
+      dexPriceUsd: dexForSanity,
       maxDivergenceFactor: cfg.streamDexMaxDivergenceFactor,
     });
     if (!sanity.valid) {
@@ -469,7 +464,7 @@ export async function attemptMildDipEntry(args: {
         mint: c.mint,
         symbol: c.symbol,
         streamPriceUsd: streamForSanity.priceUsd,
-        dexPriceUsd: dexForSanity?.priceUsd ?? null,
+        dexPriceUsd: dexForSanity,
         divergenceFactor: sanity.divergence,
         at: 'entry',
       });

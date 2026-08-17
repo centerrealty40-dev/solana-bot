@@ -10,6 +10,10 @@
 - Rollback: `MILD_DIP_LSTYLE_ENABLED='0'`;
   `MILD_DIP_STREAM_DEX_MAX_DIVERGENCE_FACTOR='2'`.
 - Существующий `leader_mirror` lane и его env не изменялись.
+- Leader-style использует собственный путь кандидатов, обходящий общие
+  entry-risk и dip-band фильтры.
+- Выходы leader-style изолированы и не пересекаются с обычными выходными
+  ветками.
 
 ## [1.11.1002] — 2026-08-19
 

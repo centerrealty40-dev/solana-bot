@@ -68,6 +68,23 @@ export type LeaderStyleExitDecision = {
   reason: 'lstyle_profit_rebound' | 'lstyle_pnl_tp' | 'lstyle_vol_fade' | 'lstyle_depth_drain' | 'lstyle_max_hold' | null;
 };
 
+export function shouldJournalLeaderStyleSkip(args: {
+  lastAtMs: number | null | undefined;
+  nowMs: number;
+  intervalMs: number;
+  hourCount: number;
+  maxPerHour: number;
+}): boolean {
+  if (
+    args.intervalMs > 0 &&
+    args.lastAtMs != null &&
+    args.nowMs - args.lastAtMs < args.intervalMs
+  ) {
+    return false;
+  }
+  return args.maxPerHour <= 0 || args.hourCount < args.maxPerHour;
+}
+
 export function evaluateLeaderStyleExit(args: {
   heldMs: number;
   maxHoldMs: number;

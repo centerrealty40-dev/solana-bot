@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateLeaderStyleEntry,
   evaluateLeaderStyleExit,
+  shouldJournalLeaderStyleSkip,
 } from '../../src/milddip/leader-style.js';
 import { validateStreamDexPrice } from '../../src/milddip/price-sanity.js';
 
@@ -34,6 +35,30 @@ describe('leader-style pure gates', () => {
     expect(entry({ currentPriceUsd: 97 }).reason).toBe('no_pullback');
     expect(entry({ currentPriceUsd: 80 }).reason).toBe('at_local_low');
     expect(entry().pass).toBe(true);
+  });
+
+  it('accepts a young high-turnover green runner on its own lane', () => {
+    expect(entry({
+      dataAgeMs: 120_000,
+      minDataAgeMs: 120_000,
+      volume5mUsd: 2_000_000,
+      liquidityUsd: 100_000,
+    }).pass).toBe(true);
+  });
+
+  it('throttles skip journaling by mint and hourly budget', () => {
+    expect(shouldJournalLeaderStyleSkip({
+      lastAtMs: null, nowMs: 100_000, intervalMs: 60_000, hourCount: 0, maxPerHour: 60,
+    })).toBe(true);
+    expect(shouldJournalLeaderStyleSkip({
+      lastAtMs: 100_000, nowMs: 120_000, intervalMs: 60_000, hourCount: 1, maxPerHour: 60,
+    })).toBe(false);
+    expect(shouldJournalLeaderStyleSkip({
+      lastAtMs: 100_000, nowMs: 120_000, intervalMs: 60_000, hourCount: 60, maxPerHour: 60,
+    })).toBe(false);
+    expect(shouldJournalLeaderStyleSkip({
+      lastAtMs: 100_000, nowMs: 200_000, intervalMs: 60_000, hourCount: 1, maxPerHour: 60,
+    })).toBe(true);
   });
 
   it('supports rebound, pnl, fade, depth and hold exits', () => {
