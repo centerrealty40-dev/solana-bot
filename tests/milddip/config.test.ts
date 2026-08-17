@@ -179,6 +179,8 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS: '60000'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MULT: '2'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_USD: '40'");
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '0'");
+    expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN: '0'");
     expect(eco).toContain("MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_MAX_LOSS_PCT: '10'");
     expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_TARGET_PCT: '2'");

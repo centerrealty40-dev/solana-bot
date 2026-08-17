@@ -47,7 +47,7 @@ describe('1.11.899 / 1.11.922 first touch vs compete-first', () => {
   });
 
   it('first-touch leader gate off — compete on stream before leader buy', () => {
-    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '1'");
+    expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN: '0'");
     expect(eco).toContain("MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '0'");
   });
 
@@ -194,12 +194,12 @@ describe('1.11.922 hot deep dump — stream signal, not leader follow', () => {
   });
 });
 
-describe('1.11.921 leader co-buy align blocks low-turn solo dips', () => {
+describe('1.11.921 leader co-buy align remains code-gated for rollback', () => {
   const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
   const fast = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
 
-  it('is enabled in live config with the 48h analysis window', () => {
-    expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN: '1'");
+  it('is disabled in live config while retaining rollback parameters', () => {
+    expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN: '0'");
     expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN_MAX_MS: '120000'");
     expect(eco).toContain("MILD_DIP_LEADER_CO_BUY_ALIGN_MIN_TURN: '0.06'");
   });
