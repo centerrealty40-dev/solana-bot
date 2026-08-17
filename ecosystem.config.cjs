@@ -3704,6 +3704,8 @@ const PM2_APPS = [
          * matching the strongest 15–60m holding band. Rollback: '0'.
          */
         MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS: '900000',
+        // Bypass at +20% PnL; rollback: MILD_DIP_EXIT_PROFIT_MIN_HOLD_BYPASS_PNL_PCT='0'.
+        MILD_DIP_EXIT_PROFIT_MIN_HOLD_BYPASS_PNL_PCT: '20',
         /**
          * 1.11.953 — TP-grid mode leaves the post-partial green runner
          * without the classic peak-giveback path; a wide trail preserves

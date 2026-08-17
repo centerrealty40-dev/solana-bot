@@ -13,6 +13,7 @@ import {
   mildDipMicroSizeGatesForSource,
   mayFireSoftLossExit,
   profitExitMinHoldApplies,
+  profitExitMinHoldBypassed,
   resolveMildDipWantedSizeUsd,
   shouldJournalProfitExitMinHoldSkip,
   tpRungsCoveredByGainPct,
@@ -85,6 +86,12 @@ describe('mild-dip entry age and churn gates', () => {
     expect(
       profitExitMinHoldApplies({ reason: 'green_trail', gainPct: -2, pnlPct: -2 }),
     ).toBe(false);
+    expect(
+      profitExitMinHoldApplies({ reason: 'hard_stop', gainPct: 25, pnlPct: 25 }),
+    ).toBe(false);
+    expect(
+      profitExitMinHoldApplies({ reason: 'lstyle_pnl_tp', gainPct: 25, pnlPct: 25 }),
+    ).toBe(false);
   });
 
   it('throttles profitable-exit min-hold journal rows per position and branch', () => {
@@ -118,6 +125,12 @@ describe('mild-dip entry age and churn gates', () => {
         nowMs: 160_000,
       }),
     ).toBe(true);
+  });
+
+  it('bypasses profitable min-hold only above a positive configured PnL threshold', () => {
+    expect(profitExitMinHoldBypassed({ pnlPct: 25, bypassPnlPct: 0 })).toBe(false);
+    expect(profitExitMinHoldBypassed({ pnlPct: 25, bypassPnlPct: 20 })).toBe(true);
+    expect(profitExitMinHoldBypassed({ pnlPct: 10, bypassPnlPct: 20 })).toBe(false);
   });
 
   it('retry slippage increments by step and never exceeds cap', () => {

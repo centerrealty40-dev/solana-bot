@@ -1,3 +1,19 @@
+## [1.11.1008] — 2026-08-20
+
+### Изменено
+
+- Добавлен `MILD_DIP_EXIT_PROFIT_MIN_HOLD_BYPASS_PNL_PCT`: если прибыльная
+  ветка достигает заданного PnL выше нуля, она не подавляется
+  `MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS`. Schema/loader default — `0` (старое
+  поведение), production — `20%`. Риск-выходы и `leader_style` не изменялись.
+- В `mild_dip_profit_exit_min_hold_skip` добавлено поле `bypassPnlPct`.
+
+### Откат
+
+```text
+MILD_DIP_EXIT_PROFIT_MIN_HOLD_BYPASS_PNL_PCT=0
+```
+
 ## [1.11.1007] — 2026-08-20
 
 ### Изменено

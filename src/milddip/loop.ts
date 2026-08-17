@@ -77,6 +77,7 @@ import {
   bounceFromTroughPct,
   isRecoveringFromTrough,
   profitExitMinHoldApplies,
+  profitExitMinHoldBypassed,
   shouldJournalProfitExitMinHoldSkip,
   tpRungsCoveredByGainPct,
 } from './gates.js';
@@ -3089,6 +3090,10 @@ async function tryExits(
       if (
         profitMinHoldMs > 0 &&
         positionAgeMs < profitMinHoldMs &&
+        !profitExitMinHoldBypassed({
+          pnlPct: decision.pnlPct,
+          bypassPnlPct: cfg.exit.profitExitMinHoldBypassPnlPct,
+        }) &&
         profitExitMinHoldApplies({
           reason: decision.reason,
           gainPct: decision.gainPct,
@@ -3111,6 +3116,7 @@ async function tryExits(
             branch: decision.reason,
             positionAgeMs,
             minHoldMs: profitMinHoldMs,
+            bypassPnlPct: cfg.exit.profitExitMinHoldBypassPnlPct,
             markPx: decision.markPriceUsd,
             entryPx: pos.entryPriceUsd,
             pnlPct: +decision.pnlPct.toFixed(2),
