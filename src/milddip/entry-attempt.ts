@@ -10,6 +10,7 @@ import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
 import {
   noteStructuralCache,
+  invalidateStructuralCache,
   requireStreamPriceForDipSource,
   streamDumpExtentPct,
   shouldJournalGreenLeaderSeenBypass,
@@ -33,6 +34,7 @@ import { assessRugRisk } from './rug-risk.js';
 import { resolveStagedEntryFirstClip } from './staged-entry.js';
 import { mildDipPriceRing } from './price-ring.js';
 import { validateStreamDexPrice } from './price-sanity.js';
+import { evaluateSignalPriceFreshness } from './signal-price-freshness.js';
 
 /**
  * How fresh a ring sample must be to serve as the movement baseline. Dex marks
@@ -40,6 +42,7 @@ import { validateStreamDexPrice } from './price-sanity.js';
  * still excluding a stale `wait_dip` signal.
  */
 const ENTRY_MARK_MAX_AGE_MS = 30_000;
+const SIGNAL_PRICE_STALE_COOLDOWN_MS = 15_000;
 const GREEN_BUY_WINDOW_MS = 3_600_000;
 
 function pruneGreenBuyStamps(state: MildDipState, nowMs: number): number[] {
@@ -1613,6 +1616,33 @@ export async function attemptMildDipEntry(args: {
   }
 
   if (!buy.ok) {
+    let staleSignalPrice = false;
+    if (buy.reason?.includes('quote_premium_too_high')) {
+      const freshness = evaluateSignalPriceFreshness({
+        signalPriceUsd: buyLeaderPriceUsd,
+        quotePriceUsd: buy.priceUsd,
+        markAgeMs: entryMarkSample ? Math.max(0, nowMs - entryMarkSample.tsMs) : null,
+        maxMarkAgeMs: cfg.entrySignalMarkMaxAgeMs,
+        maxDivergencePct: cfg.entrySignalMaxDivergencePct,
+      });
+      if (freshness.stale) {
+        staleSignalPrice = true;
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_signal_price_stale',
+          mint: c.mint,
+          symbol: c.symbol,
+          signalPriceUsd: buyLeaderPriceUsd,
+          quotePriceUsd: buy.priceUsd,
+          divergencePct: freshness.divergencePct,
+          markSource: entryMarkSample?.source ?? null,
+          markAgeMs: entryMarkSample
+            ? Math.max(0, nowMs - entryMarkSample.tsMs)
+            : null,
+        });
+        invalidateStructuralCache(c.mint);
+        state.cooldownUntilMs[c.mint] = nowMs + SIGNAL_PRICE_STALE_COOLDOWN_MS;
+      }
+    }
     buyInFlight.delete(c.mint);
     // Soft-fail buy must not orphan a landed fill (RPC/quote said no, chain yes).
     const rawAfterFail = await fetchMintBalanceRaw(copyCfg, c.mint);
@@ -1648,7 +1678,13 @@ export async function attemptMildDipEntry(args: {
       });
     } else {
       delete state.open[c.mint];
-      state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
+      state.cooldownUntilMs[c.mint] =
+        nowMs +
+        (staleSignalPrice
+          ? SIGNAL_PRICE_STALE_COOLDOWN_MS
+          : isWaitDip
+            ? Math.min(softCd, 1_500)
+            : softCd);
       saveMildDipState(cfg.statePath, state);
     }
     resetCopyFundingCache();

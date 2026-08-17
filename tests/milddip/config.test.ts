@@ -139,6 +139,28 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.waitDipMaxDumpFromSignalPct).toBe(0);
   });
 
+  it('loads signal freshness and trough-ready defaults and overrides', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.entrySignalMarkMaxAgeMs).toBe(0);
+    expect(defaults.entrySignalMaxDivergencePct).toBe(0);
+    expect(defaults.waitDipTroughReadyFraction).toBe(0);
+    const cfg = withConfigEnv({
+      ...baseEnv,
+      MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS: '45000',
+      MILD_DIP_ENTRY_SIGNAL_MAX_DIVERGENCE_PCT: '15',
+      MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION: '0.7',
+      MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS: '60000',
+      MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT: '1.5',
+      MILD_DIP_WAIT_DIP_TROUGH_MAX_BOUNCE_PCT: '8',
+    }, () => loadMildDipConfig());
+    expect(cfg.entrySignalMarkMaxAgeMs).toBe(45_000);
+    expect(cfg.entrySignalMaxDivergencePct).toBe(15);
+    expect(cfg.waitDipTroughReadyFraction).toBe(0.7);
+    expect(cfg.waitDipTroughMinAgeMs).toBe(60_000);
+    expect(cfg.waitDipTroughMinBouncePct).toBe(1.5);
+    expect(cfg.waitDipTroughMaxBouncePct).toBe(8);
+  });
+
   it('defaults the entry minimum liquidity threshold to $4000', () => {
     const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(cfg.entryMinLiquidityUsd).toBe(4000);

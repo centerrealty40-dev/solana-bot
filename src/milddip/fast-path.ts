@@ -248,6 +248,10 @@ export function noteStructuralCache(
   structuralCache.set(mint, { fetchedAtMs, priceUsd, metrics });
 }
 
+export function invalidateStructuralCache(mint: string): void {
+  structuralCache.delete(mint);
+}
+
 export function getStructuralCache(
   mint: string,
   nowMs: number,

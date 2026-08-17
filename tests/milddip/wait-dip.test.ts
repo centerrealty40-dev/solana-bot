@@ -196,6 +196,99 @@ describe('upsertWaitDipWatch / evaluateWaitDipReady', () => {
     expect(v.expire).toBe(true);
     expect(v.ready).toBe(false);
   });
+
+  it('uses the target path before the trough-ready path', () => {
+    const watch = upsertWaitDipWatch(undefined, {
+      nowMs: 1_000_000,
+      priceUsd: 100,
+      signalPriceUsd: 100,
+      waitDipPct: -5,
+      symbol: 'TEST',
+      originalDipSource: 'dex',
+      metrics,
+    });
+    const v = evaluateWaitDipReady(
+      watch,
+      {
+        enabled: true,
+        waitDipPct: -5,
+        maxWatchMs: 600_000,
+        troughReadyFraction: 0.7,
+        troughMinAgeMs: 60_000,
+        troughMinBouncePct: 1.5,
+        troughMaxBouncePct: 8,
+      },
+      1_060_000,
+      95,
+    );
+    expect(v.ready).toBe(true);
+    expect(v.readyPath).toBe('target');
+  });
+
+  it('readies from an aged confirmed trough inside the bounce corridor', () => {
+    const signal = 3.631e-4;
+    const trough = 3.472e-4;
+    const watch = {
+      ...upsertWaitDipWatch(undefined, {
+        nowMs: 1_000_000,
+        priceUsd: signal,
+        signalPriceUsd: signal,
+        waitDipPct: -5,
+        symbol: 'TEST',
+        originalDipSource: 'dex',
+        metrics,
+      }),
+      troughPriceUsd: trough,
+      troughAtMs: 1_000_000,
+    };
+    const ready = evaluateWaitDipReady(
+      watch,
+      {
+        enabled: true,
+        waitDipPct: -5,
+        maxWatchMs: 600_000,
+        troughReadyFraction: 0.7,
+        troughMinAgeMs: 60_000,
+        troughMinBouncePct: 1.5,
+        troughMaxBouncePct: 8,
+      },
+      1_060_000,
+      trough * 1.03,
+    );
+    expect(ready.ready).toBe(true);
+    expect(ready.readyPath).toBe('trough');
+    expect(ready.reasons).toEqual(['wait_dip_trough_ready']);
+    expect(ready.dumpFromSignalPct!).toBeGreaterThan(-5);
+  });
+
+  it('keeps trough readiness off at disabled, age, and bounce boundaries', () => {
+    const watch = {
+      ...upsertWaitDipWatch(undefined, {
+        nowMs: 1_000_000,
+        priceUsd: 100,
+        signalPriceUsd: 100,
+        waitDipPct: -5,
+        symbol: 'TEST',
+        originalDipSource: 'dex',
+        metrics,
+      }),
+      troughPriceUsd: 96,
+      troughAtMs: 1_000_000,
+    };
+    const base = {
+      enabled: true,
+      waitDipPct: -5,
+      maxWatchMs: 600_000,
+      troughReadyFraction: 0.7,
+      troughMinAgeMs: 60_000,
+      troughMinBouncePct: 1.5,
+      troughMaxBouncePct: 8,
+    };
+    expect(evaluateWaitDipReady(watch, { ...base, troughReadyFraction: 0 }, 1_060_000, 98).ready).toBe(false);
+    expect(evaluateWaitDipReady(watch, base, 1_059_999, 98).ready).toBe(false);
+    expect(evaluateWaitDipReady(watch, base, 1_060_000, 96 * 1.01).ready).toBe(false);
+    expect(evaluateWaitDipReady(watch, base, 1_060_000, 96 * 1.09).ready).toBe(false);
+  });
 });
 
 describe('waitDipMaxPriceUsd / evaluateWaitDipPreBuy', () => {

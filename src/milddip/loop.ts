@@ -308,6 +308,10 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
     waitDipPct: cfg.waitDipPct,
     maxWatchMs: cfg.waitDipMaxWatchMs,
     maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
+    troughReadyFraction: cfg.waitDipTroughReadyFraction,
+    troughMinAgeMs: cfg.waitDipTroughMinAgeMs,
+    troughMinBouncePct: cfg.waitDipTroughMinBouncePct,
+    troughMaxBouncePct: cfg.waitDipTroughMaxBouncePct,
   };
 }
 
@@ -813,6 +817,7 @@ async function tryFireWaitDip(
       targetPriceUsd: verdict.targetPriceUsd,
       markPriceUsd: px,
       dumpFromSignalPct: verdict.dumpFromSignalPct,
+      readyPath: verdict.readyPath,
       originalDipSource: watch.originalDipSource,
       waitMs: nowMs - watch.detectedAtMs,
     });
