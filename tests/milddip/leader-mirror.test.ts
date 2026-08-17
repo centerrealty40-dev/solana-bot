@@ -11,6 +11,9 @@ import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 
 const gates: LeaderMirrorGates = {
   enabled: true,
+  greenCopyEnabled: false,
+  greenCorridorPct: 1.5,
+  greenCopyMaxPc5mPct: 40,
   leaders: [LEADER_MIRROR_WALLET],
   hitMaxAgeMs: 45_000,
   observeMs: 45_000,
@@ -179,5 +182,50 @@ describe('leader mirror observation decisions', () => {
       watchStartedAtMs: 100_000,
       gates: strict,
     })).toMatchObject({ action: 'skip', reason: 'leader_mirror_deep_dump_required' });
+  });
+
+  it('copies a green candidate inside the configured corridor', () => {
+    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5 };
+    expect(at(hit({ pc5m: 8 }), 101.5, 110_000, 100_000, green)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101.5,
+      mirrorBranch: 'green',
+    });
+  });
+
+  it('waits outside the green corridor until observe expires', () => {
+    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5 };
+    expect(at(hit({ pc5m: 8 }), 103, 110_000, 100_000, green)).toEqual({ action: 'wait' });
+    expect(at(hit({ pc5m: 8 }), 103, 150_000, 100_000, green)).toMatchObject({
+      action: 'skip',
+      reason: 'leader_mirror_green_corridor',
+    });
+  });
+
+  it('rejects green blow-off movement before considering the corridor', () => {
+    const green = { ...gates, greenCopyEnabled: true, greenCopyMaxPc5mPct: 40 };
+    expect(at(hit({ pc5m: 40 }), 100, 110_000, 100_000, green)).toMatchObject({
+      action: 'skip',
+      reason: 'leader_mirror_green_blowoff',
+    });
+  });
+
+  it('keeps structural floors ahead of green corridor decisions', () => {
+    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5 };
+    expect(at(hit({ pc5m: 8, liq: 7_999 }), 105, 110_000, 100_000, green)).toMatchObject({
+      action: 'skip',
+      reason: 'leader_mirror_liquidity_floor',
+    });
+  });
+
+  it('preserves the legacy green refusals when green copying is disabled', () => {
+    expect(at(hit({ pc5m: 10 }), 101, 110_000, 100_000, gates)).toMatchObject({
+      action: 'skip',
+      reason: 'leader_mirror_run_up',
+    });
+    expect(at(hit({ pc5m: 1 }), 101, 110_000, 100_000, gates)).toMatchObject({
+      action: 'skip',
+      reason: 'leader_mirror_pre_entry_floor',
+    });
   });
 });

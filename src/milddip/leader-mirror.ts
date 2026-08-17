@@ -4,7 +4,7 @@ export const LEADER_MIRROR_WALLET = '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH
 
 export type LeaderMirrorDecision =
   | { action: 'wait' }
-  | { action: 'buy'; quotePriceUsd: number }
+  | { action: 'buy'; quotePriceUsd: number; mirrorBranch?: 'green' | 'dip' }
   | { action: 'skip'; reason: string };
 
 export function leaderMirrorHitKey(hit: LeaderSeedHit): string {
@@ -49,6 +49,9 @@ export function leaderMirrorNeedsStructuralBackfill(hit: LeaderSeedHit): boolean
 
 export type LeaderMirrorGates = {
   enabled: boolean;
+  greenCopyEnabled: boolean;
+  greenCorridorPct: number;
+  greenCopyMaxPc5mPct: number;
   leaders: string[];
   hitMaxAgeMs: number;
   observeMs: number;
@@ -110,14 +113,21 @@ export function evaluateLeaderMirrorObservation(args: {
       ? { action: 'wait' }
       : { action: 'skip', reason: 'leader_mirror_no_data' };
   }
-  if (gates.requireDeepDump && pc5m > gates.deepDumpPc5mPct) {
-    return { action: 'skip', reason: 'leader_mirror_deep_dump_required' };
-  }
-  if (pc5m >= gates.runUpPc5mPct) {
-    return { action: 'skip', reason: 'leader_mirror_run_up' };
-  }
-  if (pc5m > gates.maxPreEntryPc5mPct) {
-    return { action: 'skip', reason: 'leader_mirror_pre_entry_floor' };
+  const greenCandidate = pc5m > gates.maxPreEntryPc5mPct;
+  if (gates.greenCopyEnabled && greenCandidate) {
+    if (pc5m >= gates.greenCopyMaxPc5mPct) {
+      return { action: 'skip', reason: 'leader_mirror_green_blowoff' };
+    }
+  } else {
+    if (gates.requireDeepDump && pc5m > gates.deepDumpPc5mPct) {
+      return { action: 'skip', reason: 'leader_mirror_deep_dump_required' };
+    }
+    if (pc5m >= gates.runUpPc5mPct) {
+      return { action: 'skip', reason: 'leader_mirror_run_up' };
+    }
+    if (pc5m > gates.maxPreEntryPc5mPct) {
+      return { action: 'skip', reason: 'leader_mirror_pre_entry_floor' };
+    }
   }
   if (liq < gates.minLiquidityUsd) {
     return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
@@ -144,6 +154,14 @@ export function evaluateLeaderMirrorObservation(args: {
   const leaderPrice = hit.fillPriceUsd;
   const quotePrice = args.quotePriceUsd;
   const quoteGainPct = (quotePrice / leaderPrice - 1) * 100;
+  if (gates.greenCopyEnabled && greenCandidate) {
+    if (quoteGainPct > gates.greenCorridorPct) {
+      return nowMs - args.watchStartedAtMs < gates.observeMs
+        ? { action: 'wait' }
+        : { action: 'skip', reason: 'leader_mirror_green_corridor' };
+    }
+    return { action: 'buy', quotePriceUsd: quotePrice, mirrorBranch: 'green' };
+  }
   if (quoteGainPct >= gates.greenImpulsePct) {
     return { action: 'skip', reason: 'leader_mirror_green_impulse' };
   }

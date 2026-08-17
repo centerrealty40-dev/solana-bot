@@ -450,3 +450,30 @@ describe('mild-dip mirror-only configuration', () => {
     ).toBe(true);
   });
 });
+
+describe('mild-dip mirror green-copy configuration', () => {
+  const baseEnv = {
+    MILD_DIP_EXECUTION_MODE: 'paper',
+    MILD_DIP_RPC_URL: 'https://example.invalid',
+  };
+
+  it('uses safe defaults and loads green-copy overrides', () => {
+    const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
+    expect(defaults.greenCopyEnabled).toBe(false);
+    expect(defaults.greenCorridorPct).toBe(1.5);
+    expect(defaults.greenCopyMaxPc5mPct).toBe(40);
+
+    const configured = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MIRROR_GREEN_COPY_ENABLED: '1',
+        MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '2.25',
+        MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT: '55',
+      },
+      () => loadMildDipConfig(),
+    ).leaderMirror;
+    expect(configured.greenCopyEnabled).toBe(true);
+    expect(configured.greenCorridorPct).toBe(2.25);
+    expect(configured.greenCopyMaxPc5mPct).toBe(55);
+  });
+});

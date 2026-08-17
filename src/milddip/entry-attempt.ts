@@ -319,6 +319,7 @@ export type EntryAttemptOpts = {
   lane: 'fast' | 'slow';
   leaderStyle?: boolean;
   mirror?: boolean;
+  mirrorBranch?: 'green' | 'dip';
   mirrorExit?: {
     armPct: number;
     trailPct: number;
@@ -1412,6 +1413,7 @@ export async function attemptMildDipEntry(args: {
     tapeCoverageMs: c.tapeCoverageMs ?? null,
     tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
     greenExitProfile: isGreen ? greenExitProfile : null,
+    ...(opts.mirrorBranch ? { mirrorBranch: opts.mirrorBranch } : {}),
   });
 
   const leaderSig = `milddip_${opts.lane}_${c.mint.slice(0, 8)}_${nowMs}`;
@@ -1536,6 +1538,7 @@ export async function attemptMildDipEntry(args: {
     tapeCoverageMs: c.tapeCoverageMs ?? null,
     tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
     greenExitProfile: isGreen ? greenExitProfile : null,
+    ...(opts.mirrorBranch ? { mirrorBranch: opts.mirrorBranch } : {}),
     // 1.11.803 — full decision snapshot; without it post-hoc entry analysis
     // cannot separate a good dip from a bad one.
     entrySnapshot: {
