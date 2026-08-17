@@ -133,20 +133,18 @@ export function evaluateStagedEntryAdd(args: {
     if (args.nowMs - anchorAtMs < Math.max(0, args.minTroughAgeMs)) {
       return verdict('trough_too_fresh');
     }
-    if (upperPx != null && args.markPx > upperPx) {
-      return verdict('above_chase_band');
-    }
-    if (
-      bounceOffAnchorPct! >
-      Math.max(0, args.troughTriggerPct) + Math.max(0, args.troughBandPct)
-    ) {
-      return verdict('above_trough_band');
-    }
   } else if (args.markPx < triggerPx!) {
     return verdict('below_trigger');
   }
-  if (args.anchorMode !== 'trough' && upperPx != null && args.markPx > upperPx) {
+  if (upperPx != null && args.markPx > upperPx) {
     return verdict('above_chase_band');
+  }
+  if (
+    args.anchorMode === 'trough' &&
+    bounceOffAnchorPct! >
+      Math.max(0, args.troughTriggerPct) + Math.max(0, args.troughBandPct)
+  ) {
+    return verdict('above_trough_band');
   }
   if (args.liquidityUsd == null || args.liquidityUsd < args.minLiquidityUsd) {
     return verdict('liquidity_below_floor');

@@ -19,6 +19,12 @@ function envBool(name: string, fallback: boolean): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
+function stagedAddAnchorFromEnv(): 'fill' | 'trough' {
+  return process.env.MILD_DIP_STAGED_ADD_ANCHOR?.trim().toLowerCase() === 'fill'
+    ? 'fill'
+    : 'trough';
+}
+
 const MildDipConfigSchema = z.object({
   executionMode: ExecutionModeSchema,
   rpcUrl: z.string().min(8),
@@ -1207,7 +1213,7 @@ export function loadMildDipConfig(): MildDipConfig {
     stagedFirstUsd: envNum('MILD_DIP_STAGED_FIRST_USD', 5),
     stagedAddTriggerPct: envNum('MILD_DIP_STAGED_ADD_TRIGGER_PCT', 8),
     stagedAddMaxChasePct: envNum('MILD_DIP_STAGED_ADD_MAX_CHASE_PCT', 4),
-    stagedAddAnchor: (process.env.MILD_DIP_STAGED_ADD_ANCHOR?.trim() || 'trough') as string,
+    stagedAddAnchor: stagedAddAnchorFromEnv(),
     stagedAddTroughTriggerPct: envNum('MILD_DIP_STAGED_ADD_TROUGH_TRIGGER_PCT', 8),
     stagedAddTroughBandPct: envNum('MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT', 4),
     stagedAddMinTroughAgeMs: envNum('MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS', 60_000),

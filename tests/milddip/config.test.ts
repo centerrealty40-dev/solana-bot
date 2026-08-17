@@ -122,7 +122,7 @@ describe('mild-dip config exit schema', () => {
         ...baseEnv,
         MILD_DIP_STAGED_ENTRY_ENABLED: '1',
         MILD_DIP_STAGED_FIRST_USD: '6',
-        MILD_DIP_STAGED_ADD_ANCHOR: 'fill',
+        MILD_DIP_STAGED_ADD_ANCHOR: 'FiLl',
         MILD_DIP_STAGED_ADD_TROUGH_TRIGGER_PCT: '9',
         MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT: '5',
         MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS: '120000',
@@ -135,6 +135,14 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.stagedAddTroughTriggerPct).toBe(9);
     expect(cfg.stagedAddTroughBandPct).toBe(5);
     expect(cfg.stagedAddMinTroughAgeMs).toBe(120_000);
+    const invalidAnchor = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_STAGED_ADD_ANCHOR: 'garbage',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(invalidAnchor.stagedAddAnchor).toBe('trough');
   });
 
   it('loads loss-reclaim defaults and explicit overrides', () => {

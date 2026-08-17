@@ -402,6 +402,8 @@ const lastMarkJournalMs = new Map<string, number>();
  */
 const lastWaitDipReadyJournalMs = new Map<string, number>();
 const WAIT_DIP_READY_JOURNAL_GAP_MS = 15_000;
+const lastStagedAddSkipJournalMs = new Map<string, number>();
+const STAGED_ADD_SKIP_JOURNAL_GAP_MS = 15_000;
 
 /**
  * Sample the mark path of an open position into the journal so trail widths can
@@ -2107,24 +2109,30 @@ async function attemptStagedEntryAdd(args: {
     rugRiskActive: pos.stagedEntryRugRiskTier === 'knife' || pos.stagedEntryRugRiskTier === 'blocked',
   });
   if (!verdict.shouldAdd) {
-    appendMildDipJournal(cfg.journalPath, {
-      kind: 'mild_dip_staged_add',
-      mint: pos.mint,
-      symbol: pos.symbol,
-      lane: pos.lane ?? 'dip',
-      firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
-      triggerPx: verdict.triggerPx,
-      mark: markPriceUsd,
-      intendedUsd: pos.stagedEntryIntendedUsd ?? null,
-      addUsd: 0,
-      anchorMode: cfg.stagedAddAnchor,
-      postEntryTroughPriceUsd: verdict.anchorPx,
-      postEntryTroughAtMs: verdict.anchorAtMs,
-      bounceOffTroughPct: verdict.bounceOffAnchorPct,
-      pnlPctVsFill: verdict.markVsFirstFillPct,
-      ok: false,
-      reason: verdict.reason,
-    });
+    if (verdict.reason === 'above_chase_band' || verdict.reason === 'above_trough_band') {
+      const previous = lastStagedAddSkipJournalMs.get(pos.mint) ?? 0;
+      if (nowMs - previous >= STAGED_ADD_SKIP_JOURNAL_GAP_MS) {
+        lastStagedAddSkipJournalMs.set(pos.mint, nowMs);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_staged_add',
+          mint: pos.mint,
+          symbol: pos.symbol,
+          lane: pos.lane ?? 'dip',
+          firstFillPx: pos.stagedEntryFirstFillPriceUsd ?? null,
+          triggerPx: verdict.triggerPx,
+          mark: markPriceUsd,
+          intendedUsd: pos.stagedEntryIntendedUsd ?? null,
+          addUsd: 0,
+          anchorMode: cfg.stagedAddAnchor,
+          postEntryTroughPriceUsd: verdict.anchorPx,
+          postEntryTroughAtMs: verdict.anchorAtMs,
+          bounceOffTroughPct: verdict.bounceOffAnchorPct,
+          pnlPctVsFill: verdict.markVsFirstFillPct,
+          ok: false,
+          reason: verdict.reason,
+        });
+      }
+    }
     return;
   }
 
