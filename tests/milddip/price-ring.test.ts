@@ -4,6 +4,16 @@ import { evaluateCooldownBounce, evaluateRebuyBelowExit } from '../../src/milddi
 import { priorityMintsFromCooldown } from '../../src/milddip/discover.js';
 
 describe('MildDipPriceRing', () => {
+  it('reports the full observed tape span separately from a lookback window', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'ObservedSpanMintxxxxxxxxxxxxxxxxxxxxxxxxxxxx1';
+    const t0 = 900_000;
+    ring.note(mint, 1, { tsMs: t0, source: 'stream' });
+    ring.note(mint, 1.1, { tsMs: t0 + 70_000, source: 'dex' });
+    expect(ring.observedSpanMs(mint, t0 + 70_000)).toBe(70_000);
+    expect(ring.windowStats(mint, 40_000, t0 + 70_000).spanMs).toBe(0);
+  });
+
   it('tracks trough and bounce from lookback window', () => {
     const ring = new MildDipPriceRing();
     const mint = '7pQYyWKPtxMCzdWDPZKJ7xTnCzFB25SPxp8cM4xJpump';

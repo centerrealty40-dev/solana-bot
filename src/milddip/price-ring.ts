@@ -593,6 +593,21 @@ export class MildDipPriceRing {
     return this.statsForSamples(samples);
   }
 
+  observedSpanMs(mint: string, nowMs = Date.now()): number {
+    this.pruneMint(mint, nowMs);
+    const ring = this.byMint.get(mint);
+    const samples =
+      ring?.samples.filter((sample) => !isAuxiliaryJupiterSource(sample.source)) ?? [];
+    if (samples.length < 2) return 0;
+    let oldest = samples[0]!;
+    let newest = samples[0]!;
+    for (const sample of samples) {
+      if (sample.tsMs < oldest.tsMs) oldest = sample;
+      if (sample.tsMs > newest.tsMs) newest = sample;
+    }
+    return Math.max(0, newest.tsMs - oldest.tsMs);
+  }
+
   samplesInRange(
     mint: string,
     startMs: number,

@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import {
   evaluateLeaderStyleEntry,
   evaluateLeaderStyleExit,
+  leaderStyleMinRingSpanMs,
+  resolveLeaderStylePairAge,
   shouldJournalLeaderStyleSkip,
 } from '../../src/milddip/leader-style.js';
 import { validateStreamDexPrice } from '../../src/milddip/price-sanity.js';
@@ -44,6 +46,42 @@ describe('leader-style pure gates', () => {
       volume5mUsd: 2_000_000,
       liquidityUsd: 100_000,
     }).pass).toBe(true);
+  });
+
+  it('resolves pair age from DEX, registry, then observed tape', () => {
+    expect(resolveLeaderStylePairAge({
+      nowMs: 1_000_000,
+      pairCreatedAtMs: 700_000,
+      registryAgeHours: 10,
+      observedTapeSpanMs: 30_000,
+    })).toEqual({ pairAgeMs: 300_000, pairAgeSource: 'dex' });
+    expect(resolveLeaderStylePairAge({
+      nowMs: 1_000_000,
+      pairCreatedAtMs: null,
+      registryAgeHours: 0.5,
+      observedTapeSpanMs: 30_000,
+    })).toEqual({ pairAgeMs: 1_800_000, pairAgeSource: 'registry' });
+    expect(resolveLeaderStylePairAge({
+      nowMs: 1_000_000,
+      pairCreatedAtMs: null,
+      registryAgeHours: null,
+      observedTapeSpanMs: 70_000,
+    })).toEqual({ pairAgeMs: 70_000, pairAgeSource: 'tape' });
+  });
+
+  it('keeps an unknown young pair below the minimum age', () => {
+    const age = resolveLeaderStylePairAge({
+      nowMs: 1_000_000,
+      pairCreatedAtMs: null,
+      registryAgeHours: null,
+      observedTapeSpanMs: 30_000,
+    });
+    expect(age.pairAgeMs).toBeLessThan(300_000);
+  });
+
+  it('uses the pullback window by default and a shorter configured tape span when enabled', () => {
+    expect(leaderStyleMinRingSpanMs(0, 120_000)).toBe(120_000);
+    expect(leaderStyleMinRingSpanMs(60_000, 120_000)).toBe(60_000);
   });
 
   it('throttles skip journaling by mint and hourly budget', () => {
