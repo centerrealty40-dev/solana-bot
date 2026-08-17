@@ -5,7 +5,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 
-export type MildDipPriceSource = 'dex' | 'stream' | 'green_jupiter';
+export type MildDipPriceSource = 'dex' | 'stream' | 'green_jupiter' | 'leader_mirror_jupiter';
+
+export function isAuxiliaryJupiterSource(source: MildDipPriceSource): boolean {
+  return source === 'green_jupiter' || source === 'leader_mirror_jupiter';
+}
 
 export type MildDipPriceSample = {
   tsMs: number;
@@ -153,7 +157,7 @@ export class MildDipPriceRing {
     if (!ring || ring.samples.length === 0) return null;
     for (let i = ring.samples.length - 1; i >= 0; i--) {
       const sample = ring.samples[i]!;
-      if (sample.source !== 'green_jupiter') return sample;
+      if (!isAuxiliaryJupiterSource(sample.source)) return sample;
     }
     return null;
   }
@@ -171,7 +175,7 @@ export class MildDipPriceRing {
     let best: MildDipPriceSample | null = null;
     for (const sample of ring.samples) {
       if (
-        sample.source !== 'green_jupiter' &&
+        !isAuxiliaryJupiterSource(sample.source) &&
         sample.tsMs <= boundary &&
         (!best || sample.tsMs > best.tsMs)
       ) {
@@ -379,7 +383,7 @@ export class MildDipPriceRing {
     options?: MildDipTapeMinuteOptions,
   ): MildDipTapeMinuteMetrics {
     const samples = this.samplesInWindow(mint, windowMs, nowMs, true).filter(
-      (sample) => sample.source === 'stream' || sample.source === 'green_jupiter',
+      (sample) => sample.source === 'stream' || isAuxiliaryJupiterSource(sample.source),
     );
     const allSamples = this.samplesInWindow(
       mint,
@@ -599,7 +603,7 @@ export class MildDipPriceRing {
     const samples =
       ring?.samples.filter(
         (sample) =>
-          sample.source !== 'green_jupiter' &&
+          !isAuxiliaryJupiterSource(sample.source) &&
           sample.tsMs >= startMs &&
           sample.tsMs <= endMs,
       ) ?? [];
@@ -613,7 +617,7 @@ export class MildDipPriceRing {
     let latest: MildDipPriceSample | null = null;
     for (const sample of ring.samples) {
       if (
-        sample.source !== 'green_jupiter' &&
+        !isAuxiliaryJupiterSource(sample.source) &&
         sample.tsMs <= nowMs &&
         (!latest || sample.tsMs > latest.tsMs)
       ) {
@@ -662,7 +666,7 @@ export class MildDipPriceRing {
     if (!ring) return [];
     const cut = nowMs - Math.max(0, windowMs);
     return ring.samples.filter(
-      (s) => s.tsMs >= cut && (includeGreenJupiter || s.source !== 'green_jupiter'),
+      (s) => s.tsMs >= cut && (includeGreenJupiter || !isAuxiliaryJupiterSource(s.source)),
     );
   }
 
@@ -736,7 +740,9 @@ export class MildDipPriceRing {
             ? 'stream'
             : s.source === 'green_jupiter'
               ? 'green_jupiter'
-              : 'dex';
+              : s.source === 'leader_mirror_jupiter'
+                ? 'leader_mirror_jupiter'
+                : 'dex';
         this.note(mint, s.priceUsd, { tsMs: s.tsMs, source });
         n += 1;
       }

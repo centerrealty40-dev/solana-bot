@@ -3894,6 +3894,33 @@ const PM2_APPS = [
         // The 30/hour cap cut live GREEN entries when buysInHour reached 30.
         MILD_DIP_GREEN_MAX_OPEN: '8',
         MILD_DIP_GREEN_MAX_BUYS_PER_HOUR: '60',
+        // 1.11.1001 — bounded copy lane; rollback is MILD_DIP_MIRROR_ENABLED='0'.
+        MILD_DIP_MIRROR_ENABLED: '1',
+        MILD_DIP_MIRROR_LEADERS: '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+        MILD_DIP_MIRROR_LEADER_MAX_AGE_MS: '45000',
+        MILD_DIP_MIRROR_OBSERVE_MS: '45000',
+        MILD_DIP_MIRROR_QUOTE_INTERVAL_MS: '3000',
+        MILD_DIP_MIRROR_QUOTE_MAX_AGE_MS: '10000',
+        MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000',
+        MILD_DIP_MIRROR_MIN_PAIR_AGE_HOURS: '0.5',
+        MILD_DIP_MIRROR_MIN_MCAP_USD: '5000',
+        MILD_DIP_MIRROR_MAX_OPEN: '3',
+        MILD_DIP_MIRROR_MAX_QUOTE_MINTS: '8',
+        MILD_DIP_MIRROR_POSITION_USD: '2',
+        MILD_DIP_MIRROR_MAX_PC5M_PCT: '0',
+        MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ: '2',
+        MILD_DIP_MIRROR_REQUIRE_DEEP_DUMP: '0',
+        MILD_DIP_MIRROR_DEEP_DUMP_PCT: '-8',
+        MILD_DIP_MIRROR_GREEN_IMPULSE_PCT: '5',
+        MILD_DIP_MIRROR_RUNUP_PC5M_PCT: '10',
+        MILD_DIP_MIRROR_MAX_PREMIUM_PCT: '2',
+        MILD_DIP_MIRROR_COOLDOWN_MS: '900000',
+        MILD_DIP_MIRROR_EXIT_ARM_PCT: '2',
+        MILD_DIP_MIRROR_EXIT_TRAIL_PCT: '4',
+        MILD_DIP_MIRROR_EXIT_STOP_PCT: '45',
+        MILD_DIP_MIRROR_NO_MOVE_CUT_MS: '600000',
+        MILD_DIP_MIRROR_NO_MOVE_MIN_MFE_PCT: '2',
+        MILD_DIP_MIRROR_MAX_HOLD_MS: '3600000',
         /**
          * 1.11.955 — one decision per losing bag: sell the full sleeve after
          * its qualifying reclaim, avoiding a second same-price fee. Rollback

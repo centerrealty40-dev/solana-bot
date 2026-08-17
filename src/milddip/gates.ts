@@ -806,6 +806,11 @@ export type MildDipExitReason =
   | 'green_max_hold'
   | 'green_trail'
   | 'green_no_move'
+  | 'mirror_tp'
+  | 'mirror_stop'
+  | 'mirror_max_hold'
+  | 'mirror_trail'
+  | 'mirror_no_move'
   | null;
 
 export function profitExitMinHoldApplies(args: {

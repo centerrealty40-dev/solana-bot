@@ -24,6 +24,7 @@ type ActiveCandidate = {
   slippageBps: number;
   tokenDecimals: number;
   quote?: QuoteFn;
+  source: 'green_jupiter' | 'leader_mirror_jupiter';
 };
 
 export type GreenMinuteJupiterStats = {
@@ -115,6 +116,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
   slippageBps: number;
   tokenDecimals?: number;
   quote?: QuoteFn;
+  source?: 'green_jupiter' | 'leader_mirror_jupiter';
 }): boolean {
   if (!args.enabled || !args.mint || args.mint.length < 32) return false;
   if (!(args.snapshotPriceUsd > 0)) return false;
@@ -133,6 +135,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
       slippageBps: args.slippageBps,
       tokenDecimals: args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? 6,
       quote: args.quote,
+      source: args.source ?? 'green_jupiter',
     };
     active.set(args.mint, candidate);
   } else {
@@ -144,6 +147,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
   candidate.tokenDecimals =
     args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? candidate.tokenDecimals;
   candidate.quote = args.quote;
+  candidate.source = args.source ?? candidate.source;
   stats.activeMints = active.size;
 
   return startQuote(args.mint, candidate, args.minGapMs, args.maxInFlight, args.nowMs);
@@ -200,7 +204,7 @@ function startQuote(
       stats.quoteSuccesses += 1;
       mildDipPriceRing.note(mint, priceUsd, {
         tsMs: Date.now(),
-        source: 'green_jupiter',
+        source: candidate.source,
       });
     })
     .catch(() => {

@@ -135,6 +135,7 @@ export function decideMarkExit(args: {
   oneshotDumpGraceActive?: boolean;
   /** Required for `lane === 'green'` bags; ignored otherwise. */
   greenGates?: GreenExitGates;
+  mirrorGates?: GreenExitGates;
   /** Which feed produced this mark; stream prints are held to a tighter jump guard. */
   markSource?: 'stream' | 'dex' | null;
   /** 1.11.910 — live 5m volume over pool liquidity, for the dead-set exit. */
@@ -212,6 +213,43 @@ export function decideMarkExit(args: {
         0,
         nowMsGreen - ((pos.postEntryTroughAtMs ?? pos.openedAtMs) || 0),
       ),
+    };
+  }
+  if (pos.lane === 'leader_mirror' && args.mirrorGates) {
+    const nowMsMirror = args.nowMs ?? Date.now();
+    const heldMsMirror = Math.max(0, nowMsMirror - (pos.openedAtMs || 0));
+    const basis = resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
+    const pnl = (markPriceUsd / basis - 1) * 100;
+    const peakPriceUsd = Math.max(pos.peakPriceUsd ?? basis, markPriceUsd);
+    const peakPnl = (peakPriceUsd / basis - 1) * 100;
+    const peakDrawdown = peakPriceUsd > 0 ? (1 - markPriceUsd / peakPriceUsd) * 100 : 0;
+    const wasArmed = pos.trailArmed === true;
+    const g = decideGreenExit(pnl, heldMsMirror, args.mirrorGates, peakPnl, peakDrawdown);
+    const mirrorReason: MildDipExitReason =
+      g.reason === 'green_stop'
+        ? 'mirror_stop'
+        : g.reason === 'green_trail'
+          ? 'mirror_trail'
+          : g.reason === 'green_no_move'
+            ? 'mirror_no_move'
+            : g.reason === 'green_tp'
+              ? 'mirror_tp'
+              : g.reason === 'green_max_hold'
+                ? 'mirror_max_hold'
+                : null;
+    const armed = args.mirrorGates.trailEnabled === true &&
+      (wasArmed || peakPnl >= (args.mirrorGates.armPct ?? 2));
+    return {
+      mint, markPriceUsd, entryMarketPriceUsd: null, peakPriceUsd, armed,
+      justArmed: armed && !wasArmed, shouldExit: g.shouldExit,
+      fraction: g.shouldExit ? 1 : 0,
+      reason: mirrorReason, tpRungIndex: null, mfePct: peakPnl, givebackPct: peakDrawdown,
+      pnlPct: pnl, gainPct: pnl, gainBasisPriceUsd: basis, pnlPctVsFill: pnl,
+      volFadeSamples: [...(pos.volFadeSamples ?? [])],
+      postEntryTroughPriceUsd: Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd),
+      postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+      bounceOffTroughPct: 0,
+      troughAgeMs: Math.max(0, nowMsMirror - ((pos.postEntryTroughAtMs ?? pos.openedAtMs) || 0)),
     };
   }
   const entryMarketPriceUsd = resolveEntryMarkBasis(pos);
