@@ -3789,19 +3789,19 @@ const PM2_APPS = [
          * 0.258 × 30 − 0.731 × 6.
          *
          * The dip lane's 6h floor does not transfer here: it was fitted where
-         * the exit rides a −25% stop, while this lane is out in ten minutes at
-         * −6%. Three minutes is kept only so the pair has a readable snapshot —
-         * Cmgg6FUi was 88 seconds old when a leader took it and the observer's
-         * whole dex object came back empty.
+         * the exit rides a −25% stop. The production tightening below now
+         * keeps only pairs at least one hour old.
          */
-        // Leader p5 age is 1.64h; sub-hour entries were negative (−2.2%).
-        // The observed leader buy was at pair age 0.79h; allow mature-enough 0.25h.
-        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.25',
-        // p10 vol5m $145; keep a $150 floor while avoiding the old $8000 rejection.
+        // GREEN tightening: require a one-hour-old pair after the adverse
+        // sub-hour cohort (win 39%).
+        MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1',
+        // p10 vol5m $145; keep the liquidity floor independent from volume.
         MILD_DIP_GREEN_MIN_VOL5M_USD: '150',
         // pc1h/buys5m/vol1h are absent from leader seed snapshots.
         MILD_DIP_GREEN_MIN_VOL1H_USD: '0',
-        MILD_DIP_GREEN_MIN_LIQUIDITY_USD: '2500',
+        // GREEN tightening: the adverse <$20k liquidity cohort had median
+        // return -5.29% and win rate 26%.
+        MILD_DIP_GREEN_MIN_LIQUIDITY_USD: '20000',
         // Turnover p10 is 0.033; median is 0.209.
         MILD_DIP_GREEN_MIN_TURNOVER: '0.03',
         MILD_DIP_GREEN_MIN_PC5M_PCT: '4',
@@ -3820,14 +3820,15 @@ const PM2_APPS = [
         MILD_DIP_GREEN_MIN_BUYS5M: '0',
         // n=22 live GREEN trades: buy-share>0.65 median −31.2% (n=5), <=0.65 median −6.3% (n=17).
         MILD_DIP_GREEN_MAX_BUY_SHARE: '0.65',
-        // GREEN exit probe: arm +3%, trail 6%, no-move cut at 15m; stop −30%, max hold 60m.
+        // GREEN exit tightening: arm +2%, trail 4%, no-move cut at 10m,
+        // catastrophic stop −45%, max hold 60m.
         MILD_DIP_GREEN_EXIT_TRAIL_ENABLED: '1',
-        MILD_DIP_GREEN_EXIT_ARM_PCT: '3',
-        MILD_DIP_GREEN_EXIT_TRAIL_PCT: '6',
-        MILD_DIP_GREEN_EXIT_STOP_PCT: '30',
+        MILD_DIP_GREEN_EXIT_ARM_PCT: '2',
+        MILD_DIP_GREEN_EXIT_TRAIL_PCT: '4',
+        MILD_DIP_GREEN_EXIT_STOP_PCT: '45',
         MILD_DIP_GREEN_EXIT_MAX_HOLD_MS: '3600000',
-        MILD_DIP_GREEN_NO_MOVE_CUT_MS: '900000',
-        MILD_DIP_GREEN_NO_MOVE_MIN_MFE_PCT: '3',
+        MILD_DIP_GREEN_NO_MOVE_CUT_MS: '600000',
+        MILD_DIP_GREEN_NO_MOVE_MIN_MFE_PCT: '2',
         // The 30/hour cap cut live GREEN entries when buysInHour reached 30.
         MILD_DIP_GREEN_MAX_OPEN: '8',
         MILD_DIP_GREEN_MAX_BUYS_PER_HOUR: '60',

@@ -585,6 +585,57 @@ describe('the green lane keeps its own age floor', () => {
     const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
     expect(eco).toContain("MILD_DIP_GREEN_ENABLED: '1'");
     expect(eco).toContain("MILD_DIP_GREEN_POSITION_USD: '1'");
-    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0.25'");
+    expect(eco).toContain("MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '1'");
+    expect(eco).toContain("MILD_DIP_GREEN_MIN_LIQUIDITY_USD: '20000'");
+    expect(eco).toContain("MILD_DIP_GREEN_EXIT_ARM_PCT: '2'");
+    expect(eco).toContain("MILD_DIP_GREEN_EXIT_TRAIL_PCT: '4'");
+    expect(eco).toContain("MILD_DIP_GREEN_NO_MOVE_CUT_MS: '600000'");
+    expect(eco).toContain("MILD_DIP_GREEN_NO_MOVE_MIN_MFE_PCT: '2'");
+    expect(eco).toContain("MILD_DIP_GREEN_EXIT_STOP_PCT: '45'");
+  });
+});
+
+describe('the green momentum liquidity and age floors', () => {
+  it('rejects below-floor momentum with observable green reasons', () => {
+    const tightened = { ...gates, minLiquidityUsd: 20_000, minPairAgeHours: 1 };
+    const v = evaluateGreenLane(
+      { ...ok, liquidityUsd: 19_999, pairAgeHours: 0.99 },
+      tightened,
+    );
+    expect(v.pass).toBe(false);
+    expect(v.reasons).toEqual(
+      expect.arrayContaining(['green_liq_floor=19999<20000', 'green_pair_age_floor=0.99<1']),
+    );
+  });
+
+  it('admits momentum above both tightened floors', () => {
+    expect(
+      evaluateGreenLane(
+        { ...ok, liquidityUsd: 20_000, pairAgeHours: 1 },
+        { ...gates, minLiquidityUsd: 20_000, minPairAgeHours: 1 },
+      ).pass,
+    ).toBe(true);
+  });
+
+  it('supports the explicit zero-floor opt-out', () => {
+    expect(
+      evaluateGreenLane(
+        { ...ok, liquidityUsd: 1, pairAgeHours: 0 },
+        { ...gates, minLiquidityUsd: 0, minPairAgeHours: 0 },
+      ).pass,
+    ).toBe(true);
+  });
+
+  it('does not apply GREEN floors to a DIP entry risk check', () => {
+    expect(
+      evaluateMildDipEntryRisk({
+        pairAgeHours: 0.5,
+        volume5mUsd: 1_000,
+        liquidityUsd: 6_000,
+        minPairAgeHours: 0.5,
+        maxVol5mToLiq: 0,
+        minLiquidityUsd: 5_000,
+      }).pass,
+    ).toBe(true);
   });
 });
