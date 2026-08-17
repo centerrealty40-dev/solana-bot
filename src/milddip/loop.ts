@@ -2562,8 +2562,10 @@ async function tryExits(
       });
       if (!profitGate.allow) {
         profitExitVetoed = true;
+        let vetoStateChanged = false;
         if (pos.stagedProfitVetoSinceMs == null) {
           pos.stagedProfitVetoSinceMs = nowMs;
+          vetoStateChanged = true;
         }
         const repeatDue =
           pos.stagedProfitVetoLastJournalAtMs == null ||
@@ -2586,11 +2588,14 @@ async function tryExits(
           pos.stagedProfitVetoLastJournalAtMs = nowMs;
           pos.stagedProfitVetoLastReason = decision.reason;
           pos.stagedProfitVetoLastThresholdPx = profitGate.thresholdPx;
+          vetoStateChanged = true;
         }
-        saveMildDipState(cfg.statePath, state);
+        if (vetoStateChanged) {
+          saveMildDipState(cfg.statePath, state);
+        }
       } else if (profitGate.reason === 'veto_expired') {
         appendMildDipJournal(cfg.journalPath, {
-          kind: 'mild_dip_staged_profit_exit_skip',
+          kind: 'mild_dip_staged_profit_veto_expired',
           mint,
           symbol: pos.symbol,
           reason: decision.reason,

@@ -62,6 +62,15 @@ describe('mild-dip entry age and churn gates', () => {
     expect(
       retrySlippageBpsForAttempt({
         eligible: true,
+        baseSlippageBps: 200,
+        priorRetryCount: 0,
+        stepBps: 100,
+        maxBps: 800,
+      }),
+    ).toBeUndefined();
+    expect(
+      retrySlippageBpsForAttempt({
+        eligible: true,
         baseSlippageBps: 100,
         priorRetryCount: 2,
         stepBps: 100,
@@ -2127,6 +2136,34 @@ describe('evaluateMildDipPeakGiveback MFE bank + sleeve (1.11.750)', () => {
       gates: { ...base.gates, mfeBankSleeveRunnerGivebackExhaustedPct: 0 },
     });
     expect(ordinary.shouldExit).toBe(false);
+  });
+
+  it('keeps exhausted runner tight when no new rung is owed', () => {
+    const base = {
+      entryPriceUsd: 100,
+      markPriceUsd: 150,
+      peakPriceUsd: 180,
+      armed: true,
+      scaleOutDone: true,
+      tpRungsDone: 5,
+      gates: {
+        ...exitGates,
+        tpGridStepPct: 8,
+        tpGridSellFraction: 0.34,
+        tpGridMinRemainderFraction: 0.1,
+        mfeBankSleeveGivebackPct: 0,
+        mfeBankSleeveGreenPartialFraction: 0.2,
+        mfeBankSleeveRunnerGivebackPct: 25,
+        mfeBankSleeveRunnerGivebackExhaustedPct: 10,
+      },
+    };
+    expect(evaluateMildDipPeakGiveback(base).reason).toBe('peak_giveback');
+    expect(
+      evaluateMildDipPeakGiveback({
+        ...base,
+        gates: { ...base.gates, mfeBankSleeveRunnerGivebackExhaustedPct: 0 },
+      }).shouldExit,
+    ).toBe(false);
   });
 
   it('tp_grid first rung 0 preserves the step-sized first rung', () => {

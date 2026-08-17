@@ -1488,12 +1488,19 @@ export function evaluateMildDipPeakGiveback(args: {
     args.tpRungsDone != null && Number.isFinite(args.tpRungsDone)
       ? Math.max(0, Math.floor(Number(args.tpRungsDone)))
       : 0;
-  let ladderExhausted = false;
+  const gridFrac =
+    gates.tpGridSellFraction > 0 && gates.tpGridSellFraction < 1
+      ? gates.tpGridSellFraction
+      : 0.5;
+  const gridFloor =
+    gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
+  const ladderExhausted =
+    gridStep > 0 &&
+    rungsDone >= 1 &&
+    gridFloor > 0 &&
+    Math.pow(1 - gridFrac, rungsDone + 1) < gridFloor - 1e-9;
   if (gridStep > 0) {
-    const gridFrac =
-      gates.tpGridSellFraction > 0 && gates.tpGridSellFraction < 1
-        ? gates.tpGridSellFraction
-        : 0.5;
+    const floor = gridFloor;
     const gridMinHold = gates.mfeBankMinHoldMs > 0 ? gates.mfeBankMinHoldMs : 0;
     const gridReady = gridMinHold <= 0 || heldMs >= gridMinHold;
     /**
@@ -1516,8 +1523,6 @@ export function evaluateMildDipPeakGiveback(args: {
       // Remaining share of the original bag, exactly, because every rung takes
       // the same fraction of what is left.
       const remainingBefore = Math.pow(1 - gridFrac, rungsDone);
-      const floor =
-        gates.tpGridMinRemainderFraction > 0 ? gates.tpGridMinRemainderFraction : 0;
       const owedRungs = maxK - rungsDone;
       let settledRungs = owedRungs;
       let remainingAfter =
@@ -1541,7 +1546,6 @@ export function evaluateMildDipPeakGiveback(args: {
             tpRungIndex: rungsDone + 1,
           };
         }
-        ladderExhausted = true;
       } else {
         return {
           ...hold,
