@@ -35,6 +35,10 @@ export type WaitDipGates = {
   maxWatchMs: number;
   /** Maximum allowed dump from signal before removing the watch; 0 = off. */
   maxDumpFromSignalPct?: number;
+  troughReadyFraction?: number;
+  troughMinAgeMs?: number;
+  troughMinBouncePct?: number;
+  troughMaxBouncePct?: number;
 };
 
 export type WaitDipReadyVerdict = {
@@ -43,6 +47,7 @@ export type WaitDipReadyVerdict = {
   dumpFromSignalPct: number | null;
   targetPriceUsd: number | null;
   reasons: string[];
+  readyPath: 'target' | 'trough' | null;
 };
 
 /**
@@ -300,6 +305,7 @@ export function evaluateWaitDipReady(
       dumpFromSignalPct: null,
       targetPriceUsd: null,
       reasons: ['wait_dip_disabled'],
+      readyPath: null,
     };
   }
   const age = nowMs - watch.detectedAtMs;
@@ -310,6 +316,7 @@ export function evaluateWaitDipReady(
       dumpFromSignalPct: null,
       targetPriceUsd: waitDipTargetPriceUsd(watch.signalPriceUsd, gates.waitDipPct),
       reasons: [`wait_dip_expired_age=${Math.round(age / 1000)}s`],
+      readyPath: null,
     };
   }
   const px =
@@ -323,27 +330,59 @@ export function evaluateWaitDipReady(
       dumpFromSignalPct: null,
       targetPriceUsd: target,
       reasons,
+      readyPath: null,
     };
   }
-  const dumpFromSignalPct = (px / watch.signalPriceUsd - 1) * 100;
+  const currentDumpFromSignalPct = (px / watch.signalPriceUsd - 1) * 100;
   if (px <= target + 1e-15) {
     return {
       ready: true,
       expire: false,
-      dumpFromSignalPct,
+      dumpFromSignalPct: currentDumpFromSignalPct,
       targetPriceUsd: target,
       reasons: [],
+      readyPath: 'target',
     };
   }
   reasons.push(
-    `wait_dip_need=${gates.waitDipPct}% have=${dumpFromSignalPct.toFixed(2)}%`,
+    `wait_dip_need=${gates.waitDipPct}% have=${currentDumpFromSignalPct.toFixed(2)}%`,
   );
+  const fraction = gates.troughReadyFraction ?? 0;
+  const troughDumpPct = dumpFromSignalPct(
+    watch.troughPriceUsd,
+    watch.signalPriceUsd,
+  );
+  const troughAgeMs = nowMs - watch.troughAtMs;
+  const bouncePct =
+    watch.troughPriceUsd > 0
+      ? (px / watch.troughPriceUsd - 1) * 100
+      : null;
+  const troughReady =
+    fraction > 0 &&
+    fraction <= 1 &&
+    troughDumpPct != null &&
+    troughDumpPct <= gates.waitDipPct * fraction &&
+    troughAgeMs >= (gates.troughMinAgeMs ?? 0) &&
+    bouncePct != null &&
+    bouncePct >= (gates.troughMinBouncePct ?? 0) &&
+    bouncePct <= (gates.troughMaxBouncePct ?? Number.POSITIVE_INFINITY);
+  if (troughReady) {
+    return {
+      ready: true,
+      expire: false,
+      dumpFromSignalPct: currentDumpFromSignalPct,
+      targetPriceUsd: target,
+      reasons: ['wait_dip_trough_ready'],
+      readyPath: 'trough',
+    };
+  }
   return {
     ready: false,
     expire: false,
-    dumpFromSignalPct,
+    dumpFromSignalPct: currentDumpFromSignalPct,
     targetPriceUsd: target,
     reasons,
+    readyPath: null,
   };
 }
 

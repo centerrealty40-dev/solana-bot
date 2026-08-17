@@ -3086,6 +3086,10 @@ const PM2_APPS = [
          * for 0–60s/60–300s/300–600s/>600s). Rollback: 1200000.
          */
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '600000',
+        MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION: '0.7',
+        MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS: '60000',
+        MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT: '1.5',
+        MILD_DIP_WAIT_DIP_TROUGH_MAX_BOUNCE_PCT: '8',
         /**
          * 1.11.998 — the ceiling existed, but there was no depth floor.
          * The old 10% value came from a fixed-$5 per-$100 tape reconstruction
@@ -3159,7 +3163,8 @@ const PM2_APPS = [
         MILD_DIP_MILD_STABILIZE_ENABLED: '1',
         /** 1.11.971 — on: leader-style reclaim entries, trough must hold 60s. */
         MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '1',
-        MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
+        // Rollback: MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT='-25'.
+        MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-60',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-6',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '8',
@@ -4092,6 +4097,9 @@ const PM2_APPS = [
          * Never await Dex on mark pass (that built the 20–60s gate queue).
          */
         MILD_DIP_MARK_STREAM_MAX_AGE_MS: '120000',
+        // Rollback: set both signal freshness thresholds to '0' (disabled).
+        MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS: '45000',
+        MILD_DIP_ENTRY_SIGNAL_MAX_DIVERGENCE_PCT: '15',
         MILD_DIP_MARK_STREAM_PREFER_MAX_AGE_MS: '15000',
         // Background Dex→ring for open bags when stream quiet (0 = off).
         /**

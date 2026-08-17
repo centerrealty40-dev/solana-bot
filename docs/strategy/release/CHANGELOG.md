@@ -1,3 +1,29 @@
+## [1.11.1013] — 2026-08-20
+
+### Изменено
+
+- Уточнена диагностика отказов покупки mild-dip при устаревшем signal mark:
+  premium guard по-прежнему блокирует покупку, но устаревший снапшот
+  журналируется как `mild_dip_signal_price_stale`, структурный кэш
+  инвалидируется, а повторные квоты кратко ограничиваются.
+- Окно `mild_stabilize` расширено до `-60%` от `-25%`; остальные гейты
+  ветки не менялись.
+- Wait-dip получил консервативный путь готовности по подтверждённому дну:
+  при просадке до 70% от целевой, возрасте дна 60 секунд и отскоке
+  `1.5–8%`, без ослабления pre-buy ceiling/too-deep/chase гейтов.
+
+### Откат
+
+```text
+MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS=0
+MILD_DIP_ENTRY_SIGNAL_MAX_DIVERGENCE_PCT=0
+MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT=-25
+MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION=0
+MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS=0
+MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT=0
+MILD_DIP_WAIT_DIP_TROUGH_MAX_BOUNCE_PCT=100
+```
+
 ## [1.11.1012] — 2026-08-20
 
 ### Изменено
