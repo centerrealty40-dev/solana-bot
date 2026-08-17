@@ -110,6 +110,10 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.stagedFirstUsd).toBe(5);
     expect(defaults.stagedAddTriggerPct).toBe(8);
     expect(defaults.stagedAddMaxChasePct).toBe(4);
+    expect(defaults.stagedAddAnchor).toBe('trough');
+    expect(defaults.stagedAddTroughTriggerPct).toBe(8);
+    expect(defaults.stagedAddTroughBandPct).toBe(4);
+    expect(defaults.stagedAddMinTroughAgeMs).toBe(60_000);
     expect(defaults.stagedAddMult).toBe(2);
     expect(defaults.stagedAddMaxUsd).toBe(40);
     expect(defaults.stagedProfitMinOverAvgPct).toBe(1);
@@ -118,11 +122,27 @@ describe('mild-dip config exit schema', () => {
         ...baseEnv,
         MILD_DIP_STAGED_ENTRY_ENABLED: '1',
         MILD_DIP_STAGED_FIRST_USD: '6',
+        MILD_DIP_STAGED_ADD_ANCHOR: 'FiLl',
+        MILD_DIP_STAGED_ADD_TROUGH_TRIGGER_PCT: '9',
+        MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT: '5',
+        MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS: '120000',
       },
       () => loadMildDipConfig(),
     );
     expect(cfg.stagedEntryEnabled).toBe(true);
     expect(cfg.stagedFirstUsd).toBe(6);
+    expect(cfg.stagedAddAnchor).toBe('fill');
+    expect(cfg.stagedAddTroughTriggerPct).toBe(9);
+    expect(cfg.stagedAddTroughBandPct).toBe(5);
+    expect(cfg.stagedAddMinTroughAgeMs).toBe(120_000);
+    const invalidAnchor = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_STAGED_ADD_ANCHOR: 'garbage',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(invalidAnchor.stagedAddAnchor).toBe('trough');
   });
 
   it('loads loss-reclaim defaults and explicit overrides', () => {
@@ -153,6 +173,10 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_STAGED_FIRST_USD: '5'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '2'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_ANCHOR: 'trough'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_TROUGH_TRIGGER_PCT: '8'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT: '4'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS: '60000'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MULT: '2'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_USD: '40'");
     expect(eco).toContain("MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0'");
@@ -160,6 +184,22 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_TARGET_PCT: '2'");
     expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_STOP_PCT: '25'");
     expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_MAX_WAIT_MS: '3600000'");
+  });
+
+  it('keeps ecosystem staged-add anchor keys aligned with the config loader', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    const keys = [
+      'MILD_DIP_STAGED_ADD_ANCHOR',
+      'MILD_DIP_STAGED_ADD_TROUGH_TRIGGER_PCT',
+      'MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT',
+      'MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS',
+    ];
+    for (const key of keys) {
+      expect(eco).toContain(`${key}:`);
+      expect(
+        readFileSync(new URL('../../src/milddip/config.ts', import.meta.url), 'utf8'),
+      ).toContain(key);
+    }
   });
 
   it('maps ecosystem loss-reclaim values into the exit config', () => {

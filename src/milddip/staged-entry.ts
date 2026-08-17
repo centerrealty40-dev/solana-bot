@@ -30,6 +30,10 @@ export type StagedEntryAddVerdict = {
   shouldAdd: boolean;
   addUsd: number;
   triggerPx: number | null;
+  anchorPx: number | null;
+  anchorAtMs: number | null;
+  bounceOffAnchorPct: number | null;
+  markVsFirstFillPct: number | null;
   reason: string;
 };
 
@@ -41,8 +45,14 @@ export function evaluateStagedEntryAdd(args: {
   lastAttemptAtMs?: number;
   markPx: number | null;
   firstFillPx: number | null;
+  anchorMode: 'fill' | 'trough';
+  troughPx: number | null;
+  troughAtMs: number | null;
   triggerPct: number;
   maxChasePct: number;
+  troughTriggerPct: number;
+  troughBandPct: number;
+  minTroughAgeMs: number;
   intendedUsd: number;
   alreadyFilledUsd: number;
   addMult: number;
@@ -52,52 +62,116 @@ export function evaluateStagedEntryAdd(args: {
   liquidityDrainActive: boolean;
   rugRiskActive: boolean;
 }): StagedEntryAddVerdict {
-  const triggerPx =
+  const fillTriggerPx =
     args.firstFillPx != null && args.firstFillPx > 0
       ? args.firstFillPx * (1 + Math.max(0, args.triggerPct) / 100)
       : null;
   const upperPx =
-    triggerPx != null && args.maxChasePct < 100
+    args.firstFillPx != null &&
+    args.firstFillPx > 0 &&
+    args.maxChasePct < 100
       ? args.firstFillPx! * (1 + (Math.max(0, args.triggerPct) + Math.max(0, args.maxChasePct)) / 100)
       : null;
-  if (!args.enabled) return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'disabled' };
-  if (args.addDone) return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'already_added' };
-  if (args.attempts >= 3) return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'attempt_limit' };
+  const anchorPx =
+    args.anchorMode === 'trough'
+      ? args.troughPx != null && args.troughPx > 0
+        ? args.troughPx
+        : null
+      : args.firstFillPx != null && args.firstFillPx > 0
+        ? args.firstFillPx
+        : null;
+  const anchorAtMs =
+    args.anchorMode === 'trough'
+      ? args.troughAtMs != null && args.troughAtMs > 0
+        ? args.troughAtMs
+        : null
+      : null;
+  const bounceOffAnchorPct =
+    args.markPx != null && anchorPx != null && anchorPx > 0
+      ? (args.markPx / anchorPx - 1) * 100
+      : null;
+  const markVsFirstFillPct =
+    args.markPx != null && args.firstFillPx != null && args.firstFillPx > 0
+      ? (args.markPx / args.firstFillPx - 1) * 100
+      : null;
+  const triggerPx =
+    args.anchorMode === 'trough' && anchorPx != null
+      ? anchorPx * (1 + Math.max(0, args.troughTriggerPct) / 100)
+      : fillTriggerPx;
+  const verdict = (reason: string): StagedEntryAddVerdict => ({
+    shouldAdd: false,
+    addUsd: 0,
+    triggerPx,
+    anchorPx,
+    anchorAtMs,
+    bounceOffAnchorPct,
+    markVsFirstFillPct,
+    reason,
+  });
+  if (!args.enabled) return verdict('disabled');
+  if (args.addDone) return verdict('already_added');
+  if (args.attempts >= 3) return verdict('attempt_limit');
   if (
     args.lastAttemptAtMs != null &&
     args.nowMs - args.lastAttemptAtMs < 60_000
   ) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'backoff' };
+    return verdict('backoff');
   }
   if (args.markPx == null || !(args.markPx > 0)) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'missing_fresh_mark' };
+    return verdict('missing_fresh_mark');
   }
-  if (triggerPx == null) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'missing_first_fill' };
+  if (args.firstFillPx == null || !(args.firstFillPx > 0)) {
+    return verdict('missing_first_fill');
   }
-  if (args.markPx < triggerPx) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'below_trigger' };
+  if (args.anchorMode === 'trough') {
+    if (anchorPx == null || anchorAtMs == null) {
+      return verdict('missing_trough');
+    }
+    if (bounceOffAnchorPct! < Math.max(0, args.troughTriggerPct)) {
+      return verdict('below_trough_trigger');
+    }
+    if (args.nowMs - anchorAtMs < Math.max(0, args.minTroughAgeMs)) {
+      return verdict('trough_too_fresh');
+    }
+  } else if (args.markPx < triggerPx!) {
+    return verdict('below_trigger');
   }
   if (upperPx != null && args.markPx > upperPx) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'above_chase_band' };
+    return verdict('above_chase_band');
+  }
+  if (
+    args.anchorMode === 'trough' &&
+    bounceOffAnchorPct! >
+      Math.max(0, args.troughTriggerPct) + Math.max(0, args.troughBandPct)
+  ) {
+    return verdict('above_trough_band');
   }
   if (args.liquidityUsd == null || args.liquidityUsd < args.minLiquidityUsd) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'liquidity_below_floor' };
+    return verdict('liquidity_below_floor');
   }
   if (args.liquidityDrainActive) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'liquidity_drain' };
+    return verdict('liquidity_drain');
   }
   if (args.rugRiskActive) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'rug_risk' };
+    return verdict('rug_risk');
   }
   const addUsd = Math.min(
     Math.max(0, args.intendedUsd * args.addMult - args.alreadyFilledUsd),
     Math.max(0, args.addMaxUsd),
   );
   if (!(addUsd > 0)) {
-    return { shouldAdd: false, addUsd: 0, triggerPx, reason: 'target_filled' };
+    return verdict('target_filled');
   }
-  return { shouldAdd: true, addUsd, triggerPx, reason: 'triggered' };
+  return {
+    shouldAdd: true,
+    addUsd,
+    triggerPx,
+    anchorPx,
+    anchorAtMs,
+    bounceOffAnchorPct,
+    markVsFirstFillPct,
+    reason: 'triggered',
+  };
 }
 
 const STAGED_PROFIT_EXIT_REASONS = new Set(['mfe_bank_sleeve', 'tp_grid']);

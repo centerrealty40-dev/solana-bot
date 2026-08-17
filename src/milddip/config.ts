@@ -19,6 +19,12 @@ function envBool(name: string, fallback: boolean): boolean {
   return v === '1' || v === 'true' || v === 'yes';
 }
 
+function stagedAddAnchorFromEnv(): 'fill' | 'trough' {
+  return process.env.MILD_DIP_STAGED_ADD_ANCHOR?.trim().toLowerCase() === 'fill'
+    ? 'fill'
+    : 'trough';
+}
+
 const MildDipConfigSchema = z.object({
   executionMode: ExecutionModeSchema,
   rpcUrl: z.string().min(8),
@@ -49,6 +55,10 @@ const MildDipConfigSchema = z.object({
   stagedFirstUsd: z.coerce.number().min(0).max(10_000).default(5),
   stagedAddTriggerPct: z.coerce.number().min(0).max(100).default(8),
   stagedAddMaxChasePct: z.coerce.number().min(0).max(100).default(4),
+  stagedAddAnchor: z.enum(['fill', 'trough']).default('trough'),
+  stagedAddTroughTriggerPct: z.coerce.number().min(0).max(100).default(8),
+  stagedAddTroughBandPct: z.coerce.number().min(0).max(100).default(4),
+  stagedAddMinTroughAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
   stagedAddMult: z.coerce.number().min(0).max(100).default(2),
   stagedAddMaxUsd: z.coerce.number().min(0).max(10_000).default(40),
   stagedProfitMinOverAvgPct: z.coerce.number().min(0).max(100).default(1),
@@ -1203,6 +1213,10 @@ export function loadMildDipConfig(): MildDipConfig {
     stagedFirstUsd: envNum('MILD_DIP_STAGED_FIRST_USD', 5),
     stagedAddTriggerPct: envNum('MILD_DIP_STAGED_ADD_TRIGGER_PCT', 8),
     stagedAddMaxChasePct: envNum('MILD_DIP_STAGED_ADD_MAX_CHASE_PCT', 4),
+    stagedAddAnchor: stagedAddAnchorFromEnv(),
+    stagedAddTroughTriggerPct: envNum('MILD_DIP_STAGED_ADD_TROUGH_TRIGGER_PCT', 8),
+    stagedAddTroughBandPct: envNum('MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT', 4),
+    stagedAddMinTroughAgeMs: envNum('MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS', 60_000),
     stagedAddMult: envNum('MILD_DIP_STAGED_ADD_MULT', 2),
     stagedAddMaxUsd: envNum('MILD_DIP_STAGED_ADD_MAX_USD', 40),
     stagedProfitMinOverAvgPct: envNum('MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT', 1),
