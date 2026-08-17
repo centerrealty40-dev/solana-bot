@@ -1369,6 +1369,10 @@ async function wakeLeaderMirrors(
     });
     if (decision.action === 'wait') continue;
     if (decision.action === 'skip') {
+      const quoteGainPct =
+        quote?.priceUsd != null && hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+          ? (quote.priceUsd / hit.fillPriceUsd - 1) * 100
+          : null;
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_refusal',
         mint,
@@ -1377,6 +1381,7 @@ async function wakeLeaderMirrors(
         quotePriceUsd: quote?.priceUsd ?? null,
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         pc5m: hit.pc5m ?? null,
+        quoteGainPct,
         metricSource: watch.metricSource,
       });
       leaderMirrorDecisions.set(mint, {
@@ -1391,12 +1396,18 @@ async function wakeLeaderMirrors(
       (position) => position.lane === 'leader_mirror',
     ).length;
     if (gates.maxOpen > 0 && openMirror >= gates.maxOpen) {
+      const quoteGainPct =
+        quote?.priceUsd != null && hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+          ? (quote.priceUsd / hit.fillPriceUsd - 1) * 100
+          : null;
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_refusal',
         mint,
         reason: 'leader_mirror_exposure_cap',
         openMirror,
         maxOpen: gates.maxOpen,
+        pc5m: hit.pc5m ?? null,
+        quoteGainPct,
         metricSource: watch.metricSource,
       });
       leaderMirrorDecisions.set(mint, {
@@ -1443,6 +1454,7 @@ async function wakeLeaderMirrors(
         softSkipCooldownMs: 1_500,
         lane: 'fast',
         mirror: true,
+        mirrorBranch: decision.mirrorBranch,
         mirrorExit: {
           armPct: gates.exitArmPct,
           trailPct: gates.exitTrailPct,
@@ -1470,6 +1482,11 @@ async function wakeLeaderMirrors(
         reason: 'leader_mirror_execution_skip',
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         quotePriceUsd: decision.quotePriceUsd ?? null,
+        pc5m: hit.pc5m ?? null,
+        quoteGainPct:
+          hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+            ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
+            : null,
         metricSource: watch.metricSource,
       });
     }

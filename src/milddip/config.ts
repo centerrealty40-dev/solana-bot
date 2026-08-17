@@ -760,6 +760,9 @@ const MildDipConfigSchema = z.object({
   leaderMirror: z.object({
     enabled: z.boolean().default(false),
     mirrorOnly: z.boolean().default(false),
+    greenCopyEnabled: z.boolean().default(false),
+    greenCorridorPct: z.coerce.number().min(0).default(1.5),
+    greenCopyMaxPc5mPct: z.coerce.number().min(0).default(40),
     leaders: z.array(z.string()).default([]),
     hitMaxAgeMs: z.coerce.number().int().min(1_000).max(600_000).default(45_000),
     observeMs: z.coerce.number().int().min(1_000).max(600_000).default(45_000),
@@ -1650,6 +1653,9 @@ export function loadMildDipConfig(): MildDipConfig {
     leaderMirror: {
       enabled: envBool('MILD_DIP_MIRROR_ENABLED', false),
       mirrorOnly: envBool('MILD_DIP_MIRROR_ONLY', false),
+      greenCopyEnabled: envBool('MILD_DIP_MIRROR_GREEN_COPY_ENABLED', false),
+      greenCorridorPct: envNum('MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT', 1.5),
+      greenCopyMaxPc5mPct: envNum('MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT', 40),
       leaders: (process.env.MILD_DIP_MIRROR_LEADERS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
       hitMaxAgeMs: envNum('MILD_DIP_MIRROR_LEADER_MAX_AGE_MS', 45_000),
       observeMs: envNum('MILD_DIP_MIRROR_OBSERVE_MS', 45_000),
