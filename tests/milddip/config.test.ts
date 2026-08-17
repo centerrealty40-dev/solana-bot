@@ -130,10 +130,10 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_STAGED_ENTRY_ENABLED: '1'");
     expect(eco).toContain("MILD_DIP_STAGED_FIRST_USD: '5'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8'");
-    expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '4'");
+    expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '2'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MULT: '2'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_USD: '40'");
-    expect(eco).toContain("MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '1'");
+    expect(eco).toContain("MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0'");
   });
 
   it('keeps the production thin-liquidity and shallow-branch cuts isolated to mild-dip', () => {

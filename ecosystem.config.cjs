@@ -2874,7 +2874,7 @@ const PM2_APPS = [
         MILD_DIP_STAGED_ENTRY_ENABLED: '1',
         MILD_DIP_STAGED_FIRST_USD: '5',
         MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8',
-        MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '4',
+        MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '2',
         MILD_DIP_STAGED_ADD_MULT: '2',
         MILD_DIP_STAGED_ADD_MAX_USD: '40',
         /**
@@ -2882,7 +2882,7 @@ const PM2_APPS = [
          * peak; require profit sleeves/rungs to clear weighted average cost.
          * Rollback: chase=100, avg veto=0.
          */
-        MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '1',
+        MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0',
         /**
          * 1.11.742 — thick size-up when structural name
          * (mcap ≥ $100k, liq ≥ $50k, pair age ≥ 6h). Off: set = base or 0.
