@@ -156,10 +156,24 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MULT: '2'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_USD: '40'");
     expect(eco).toContain("MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT: '0'");
-    expect(eco).toContain("MILD_DIP_LOSS_RECLAIM_MAX_LOSS_PCT: '10'");
-    expect(eco).toContain("MILD_DIP_LOSS_RECLAIM_TARGET_PCT: '2'");
-    expect(eco).toContain("MILD_DIP_LOSS_RECLAIM_STOP_PCT: '25'");
-    expect(eco).toContain("MILD_DIP_LOSS_RECLAIM_MAX_WAIT_MS: '3600000'");
+    expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_MAX_LOSS_PCT: '10'");
+    expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_TARGET_PCT: '2'");
+    expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_STOP_PCT: '25'");
+    expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_MAX_WAIT_MS: '3600000'");
+  });
+
+  it('maps ecosystem loss-reclaim values into the exit config', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    const value = eco.match(/MILD_DIP_EXIT_LOSS_RECLAIM_MAX_LOSS_PCT:\s*'([^']+)'/)?.[1];
+    expect(value).toBe('10');
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_LOSS_RECLAIM_MAX_LOSS_PCT: value!,
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.lossReclaimMaxLossPct).toBe(10);
   });
 
   it('keeps the production thin-liquidity and shallow-branch cuts isolated to mild-dip', () => {

@@ -126,6 +126,8 @@ export type MildDipOpenPosition = {
   exitDeferredAtMs?: number;
   /** 1.11.994 — start of the small-loss reclaim wait, if active. */
   lossReclaimWaitStartedAtMs?: number;
+  /** 1.11.994 — the reclaim wait is one-shot for a position. */
+  lossReclaimWaitDone?: boolean;
   /**
    * Spaced Dex vol5m samples (≥5m apart) for sustained `never_arm_vol_fade`.
    * A single weak tick must not sell — need N consecutive weak windows.

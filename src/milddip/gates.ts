@@ -1084,6 +1084,8 @@ export function evaluateMildDipPeakGiveback(args: {
   tpRungsDone?: number | null;
   /** 1.11.994 — persisted start of the small-loss reclaim wait. */
   lossReclaimWaitStartedAtMs?: number | null;
+  /** 1.11.994 — prevents a cancelled wait from restarting on later ticks. */
+  lossReclaimWaitDone?: boolean;
 }): {
   peakPriceUsd: number;
   mfePct: number;
@@ -1122,6 +1124,7 @@ export function evaluateMildDipPeakGiveback(args: {
   lossReclaimWaitStartedAtMs?: number;
   lossReclaimWaitClearedReason?: 'target' | 'stop' | 'timeout' | 'protective_exit';
   lossReclaimWaitMs?: number;
+  lossReclaimWaitDone?: boolean;
 } {
   const { entryPriceUsd, markPriceUsd, gates } = args;
   const scaleOutDone = args.scaleOutDone === true;
@@ -1276,6 +1279,7 @@ export function evaluateMildDipPeakGiveback(args: {
     | undefined;
   let lossReclaimWaitWasActive = lossReclaimWaitStartedAtMs != null;
   let lossReclaimWaitCancelled = false;
+  let lossReclaimWaitDone = args.lossReclaimWaitDone === true;
   let lossReclaimWaitMs: number | undefined;
 
   let armed = args.armed === true;
@@ -1311,6 +1315,7 @@ export function evaluateMildDipPeakGiveback(args: {
     lossReclaimWaitStartedAtMs: lossReclaimWaitStartedAtMs,
     lossReclaimWaitClearedReason,
     lossReclaimWaitMs,
+    lossReclaimWaitDone,
   };
   const liqDrainRatio = gates.liqDrainRatio ?? 0;
   const liqDrainMinAgeMs = gates.liqDrainMinAgeMs ?? 0;
@@ -1395,6 +1400,7 @@ export function evaluateMildDipPeakGiveback(args: {
       gainPct >= -reclaimMaxLoss - 1e-9
     ) {
       if (lossReclaimWaitStartedAtMs == null) {
+        if (lossReclaimWaitDone) return true;
         lossReclaimWaitStartedAtMs = nowMs;
         hold.lossReclaimWaitStartedAtMs = nowMs;
       }
@@ -1424,6 +1430,7 @@ export function evaluateMildDipPeakGiveback(args: {
   ) {
     lossReclaimWaitMs = Math.max(0, nowMs - lossReclaimWaitStartedAtMs);
     lossReclaimWaitStartedAtMs = undefined;
+    lossReclaimWaitDone = true;
     lossReclaimWaitClearedReason = 'target';
     hold.lossReclaimWaitStartedAtMs = undefined;
     hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
@@ -1444,6 +1451,7 @@ export function evaluateMildDipPeakGiveback(args: {
       lossReclaimWaitStartedAtMs = undefined;
       lossReclaimWaitWasActive = true;
       lossReclaimWaitCancelled = true;
+      lossReclaimWaitDone = true;
       hold.lossReclaimWaitStartedAtMs = undefined;
       hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
     }
@@ -1456,6 +1464,7 @@ export function evaluateMildDipPeakGiveback(args: {
       LOSS_RECLAIM_PROTECTIVE_REASONS.has(candidateReason)
     ) {
       lossReclaimWaitStartedAtMs = undefined;
+      lossReclaimWaitDone = true;
       lossReclaimWaitClearedReason = 'protective_exit';
       hold.lossReclaimWaitStartedAtMs = undefined;
       hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
@@ -1487,7 +1496,11 @@ export function evaluateMildDipPeakGiveback(args: {
     const volGone = v != null && v0 != null && v0 > 0 && v <= v0 * dsVol;
     const turnGone = t != null && t0 != null && t0 > 0 && t <= t0 * dsTurn;
     const priceGone = gainPct <= -gates.deadSetMinDropPct;
-    if (volGone && turnGone && priceGone && bounceOffTroughPct >= dsBounce - 1e-9 && (!reclaimEnabled || reclaimCandidateOk('dead_set_bounce'))) {
+    if (
+      volGone && turnGone && priceGone &&
+      bounceOffTroughPct >= dsBounce - 1e-9 &&
+      (!reclaimEnabled || reclaimCandidateOk('dead_set_bounce'))
+    ) {
       return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'dead_set_bounce' });
     }
   }

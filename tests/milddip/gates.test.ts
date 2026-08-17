@@ -967,6 +967,19 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(timeout.lossReclaimWaitClearedReason).toBe('timeout');
     expect(timeout.shouldExit).toBe(true);
     expect(timeout.reason).toBe('never_arm_timeout');
+
+    const afterTimeout = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 95,
+      peakPriceUsd: 100,
+      gates,
+      heldMs: 4_000,
+      nowMs: 4_000,
+      lossReclaimWaitDone: true,
+    });
+    expect(afterTimeout.shouldExit).toBe(true);
+    expect(afterTimeout.reason).toBe('never_arm_timeout');
+    expect(afterTimeout.lossReclaimWaitStartedAtMs).toBeUndefined();
   });
 
   it('1.11.994 — deep losses and disabled reclaim preserve the old path', () => {

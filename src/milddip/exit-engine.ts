@@ -65,6 +65,7 @@ export type MarkExitDecision = {
   lossReclaimWaitStartedAtMs?: number;
   lossReclaimWaitClearedReason?: 'target' | 'stop' | 'timeout' | 'protective_exit';
   lossReclaimWaitMs?: number;
+  lossReclaimWaitDone?: boolean;
   /** Updated spaced vol5m ring — caller persists onto the open position. */
   volFadeSamples: MildDipVolFadeSample[];
   /** Updated post-entry low-water mark. */
@@ -478,6 +479,7 @@ export function decideMarkExit(args: {
     oneshotDumpGraceActive: args.oneshotDumpGraceActive === true,
     tpRungsDone: pos.tpRungsDone ?? 0,
     lossReclaimWaitStartedAtMs: pos.lossReclaimWaitStartedAtMs ?? null,
+    lossReclaimWaitDone: pos.lossReclaimWaitDone === true,
   });
   /**
    * Dust close — operational, not strategic. Bank/bounce ladders leave $1–2
@@ -536,6 +538,7 @@ export function decideMarkExit(args: {
       ? { lossReclaimWaitClearedReason: verdict.lossReclaimWaitClearedReason }
       : {}),
     ...(verdict.lossReclaimWaitMs != null ? { lossReclaimWaitMs: verdict.lossReclaimWaitMs } : {}),
+    ...(verdict.lossReclaimWaitDone === true ? { lossReclaimWaitDone: true } : {}),
     volFadeSamples: verdict.volFadeSamples,
     postEntryTroughPriceUsd: verdict.postEntryTroughPriceUsd,
     postEntryTroughAtMs: verdict.postEntryTroughAtMs,
@@ -602,7 +605,13 @@ export function applyMarkDecisionToPosition(
   }
   if (decision.lossReclaimWaitClearedReason != null) {
     pos.lossReclaimWaitStartedAtMs = undefined;
-  } else if (decision.lossReclaimWaitStartedAtMs != null) {
+  }
+  if (decision.lossReclaimWaitDone === true) {
+    pos.lossReclaimWaitDone = true;
+  } else if (
+    decision.lossReclaimWaitClearedReason == null &&
+    decision.lossReclaimWaitStartedAtMs != null
+  ) {
     pos.lossReclaimWaitStartedAtMs = decision.lossReclaimWaitStartedAtMs;
   }
 }

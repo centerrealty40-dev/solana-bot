@@ -3536,10 +3536,10 @@ const PM2_APPS = [
          * only fires on an actual recovery leg, not on the dump's own noise.
          */
         MILD_DIP_EXIT_LOSS_MIN_BOUNCE_PCT: '18',
-        MILD_DIP_LOSS_RECLAIM_MAX_LOSS_PCT: '10',
-        MILD_DIP_LOSS_RECLAIM_TARGET_PCT: '2',
-        MILD_DIP_LOSS_RECLAIM_STOP_PCT: '25',
-        MILD_DIP_LOSS_RECLAIM_MAX_WAIT_MS: '3600000',
+        MILD_DIP_EXIT_LOSS_RECLAIM_MAX_LOSS_PCT: '10',
+        MILD_DIP_EXIT_LOSS_RECLAIM_TARGET_PCT: '2',
+        MILD_DIP_EXIT_LOSS_RECLAIM_STOP_PCT: '25',
+        MILD_DIP_EXIT_LOSS_RECLAIM_MAX_WAIT_MS: '3600000',
         /**
          * 1.11.855 — once MFE touched +8%, do not let the trail hand the bag
          * back as a loss. A 30% giveback on a +13.5% peak lands at −20.5% by
