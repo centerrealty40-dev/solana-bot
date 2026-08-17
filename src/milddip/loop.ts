@@ -1320,7 +1320,7 @@ async function wakeLeaderMirrors(
     }
     const candidate: MildDipCandidate = {
       mint,
-      symbol: null,
+      symbol: 'unknown',
       priceUsd: decision.quotePriceUsd,
       dipSource: 'leader_mirror',
       metrics: {
