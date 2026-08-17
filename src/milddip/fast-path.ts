@@ -602,8 +602,9 @@ export function requireStreamPriceForDipSource(
     dipSource !== 'dex+stream' &&
     dipSource !== 'turn_dump_knife' &&
     dipSource !== 'wait_dip' &&
-    // Green is decided entirely off the Dex snapshot; a stream print adds nothing.
-    dipSource !== 'green_momentum'
+    // Green and leader mirror are decided from Dex/Jupiter snapshots; stream adds nothing.
+    dipSource !== 'green_momentum' &&
+    dipSource !== 'leader_mirror'
   );
 }
 
