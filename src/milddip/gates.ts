@@ -234,6 +234,8 @@ export type MildDipExitGates = {
   mfeBankMinHoldMs: number;
   /** Minimum hold before profitable TP/trail/reclaim exits. 0 = off. */
   profitExitMinHoldMs: number;
+  /** PnL threshold that bypasses the profitable-exit minimum hold. 0 = off. */
+  profitExitMinHoldBypassPnlPct: number;
   /**
    * After this many ms still unarmed, allow the same giveback% from the
    * (sub-arm) peak. Live default **0** — early never_arm_giveback was the grind loss.
@@ -828,6 +830,17 @@ export function profitExitMinHoldApplies(args: {
     return args.gainPct >= 0;
   }
   return args.reason === 'green_trail' && args.pnlPct >= 0;
+}
+
+export function profitExitMinHoldBypassed(args: {
+  pnlPct: number;
+  bypassPnlPct: number;
+}): boolean {
+  return (
+    args.bypassPnlPct > 0 &&
+    Number.isFinite(args.pnlPct) &&
+    args.pnlPct >= args.bypassPnlPct
+  );
 }
 
 export function shouldJournalProfitExitMinHoldSkip(args: {
