@@ -1411,9 +1411,11 @@ export function evaluateMildDipPeakGiveback(args: {
   if (liqDrainHit && liquidityDrainConfirmTicks >= liqDrainConfirmTicksRequired) {
     if (lossReclaimWaitStartedAtMs != null) {
       lossReclaimWaitStartedAtMs = undefined;
+      lossReclaimWaitDone = true;
       lossReclaimWaitClearedReason = 'protective_exit';
       hold.lossReclaimWaitStartedAtMs = undefined;
       hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+      hold.lossReclaimWaitDone = true;
     }
     return {
       ...hold,
@@ -1434,6 +1436,7 @@ export function evaluateMildDipPeakGiveback(args: {
     lossReclaimWaitClearedReason = 'target';
     hold.lossReclaimWaitStartedAtMs = undefined;
     hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+    hold.lossReclaimWaitDone = true;
     return {
       ...hold,
       shouldExit: true,
@@ -1454,6 +1457,7 @@ export function evaluateMildDipPeakGiveback(args: {
       lossReclaimWaitDone = true;
       hold.lossReclaimWaitStartedAtMs = undefined;
       hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+      hold.lossReclaimWaitDone = true;
     }
   }
   const softLossOk = (candidateReason: MildDipExitReason) => {
@@ -1468,6 +1472,7 @@ export function evaluateMildDipPeakGiveback(args: {
       lossReclaimWaitClearedReason = 'protective_exit';
       hold.lossReclaimWaitStartedAtMs = undefined;
       hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+      hold.lossReclaimWaitDone = true;
       return true;
     }
     return reclaimCandidateOk(candidateReason) && decision.allowed;

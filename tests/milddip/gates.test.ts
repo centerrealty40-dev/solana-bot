@@ -1021,6 +1021,63 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(disabled.lossReclaimWaitStartedAtMs).toBeUndefined();
   });
 
+  it.each(['timeout', 'stop'] as const)(
+    '1.11.994 — %s cancellation persists one-shot state through a hold',
+    (cancellation) => {
+      const gates: MildDipExitGates = {
+        ...exitGates,
+        lossReclaimMaxLossPct: 10,
+        lossReclaimTargetPct: 2,
+        lossReclaimStopPct: 25,
+        lossReclaimMaxWaitMs: 1_000,
+        hardStopPnlPct: 0,
+        neverArmMaxHoldMs: 0,
+        neverArmBouncePct: 18,
+        neverArmBounceMinDumpPct: 1,
+        neverArmBounceMinPnlPct: -100,
+        neverArmBounceRequireRedPct: 0,
+        deadSetMinDropPct: 1,
+        deadSetBouncePct: 18,
+        deadSetVolFadeFrac: 0.5,
+        deadSetTurnFadeFrac: 0.5,
+        deadSetMinHoldMs: 0,
+      };
+      const cancelled = evaluateMildDipPeakGiveback({
+        entryPriceUsd: 100,
+        markPriceUsd: cancellation === 'timeout' ? 95 : 74,
+        peakPriceUsd: 100,
+        postEntryTroughPriceUsd: 80,
+        postEntryTroughAtMs: 1_000,
+        gates,
+        heldMs: 3_000,
+        nowMs: 3_000,
+        lossReclaimWaitStartedAtMs: 1_000,
+      });
+      expect(cancelled.shouldExit).toBe(false);
+      expect(cancelled.lossReclaimWaitDone).toBe(true);
+      expect(cancelled.lossReclaimWaitStartedAtMs).toBeUndefined();
+
+      const rebound = evaluateMildDipPeakGiveback({
+        entryPriceUsd: 100,
+        markPriceUsd: 99,
+        peakPriceUsd: 100,
+        postEntryTroughPriceUsd: 80,
+        postEntryTroughAtMs: 1_000,
+        volume5mUsd: 1,
+        entryVolume5mUsd: 100,
+        turnover5mLiq: 1,
+        entryTurnover5mLiq: 100,
+        gates,
+        heldMs: 4_000,
+        nowMs: 4_000,
+        lossReclaimWaitDone: cancelled.lossReclaimWaitDone,
+      });
+      expect(rebound.shouldExit).toBe(true);
+      expect(rebound.reason).toBe('dead_set_bounce');
+      expect(rebound.lossReclaimWaitStartedAtMs).toBeUndefined();
+    },
+  );
+
   it.each(['hard_stop', 'cliff_dump'] as const)(
     '1.11.994 — %s remains live during reclaim wait',
     (reason) => {
