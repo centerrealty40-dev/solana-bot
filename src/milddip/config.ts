@@ -60,7 +60,7 @@ const MildDipConfigSchema = z.object({
   stagedAddTroughBandPct: z.coerce.number().min(0).max(100).default(4),
   stagedAddMinTroughAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
   stagedAddMult: z.coerce.number().min(0).max(100).default(2),
-  stagedAddMaxUsd: z.coerce.number().min(0).max(10_000).default(40),
+  stagedAddMaxUsd: z.coerce.number().min(0).max(10_000).default(0),
   stagedProfitMinOverAvgPct: z.coerce.number().min(0).max(100).default(1),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
@@ -1220,7 +1220,7 @@ export function loadMildDipConfig(): MildDipConfig {
     stagedAddTroughBandPct: envNum('MILD_DIP_STAGED_ADD_TROUGH_BAND_PCT', 4),
     stagedAddMinTroughAgeMs: envNum('MILD_DIP_STAGED_ADD_MIN_TROUGH_AGE_MS', 60_000),
     stagedAddMult: envNum('MILD_DIP_STAGED_ADD_MULT', 2),
-    stagedAddMaxUsd: envNum('MILD_DIP_STAGED_ADD_MAX_USD', 40),
+    stagedAddMaxUsd: envNum('MILD_DIP_STAGED_ADD_MAX_USD', 0),
     stagedProfitMinOverAvgPct: envNum('MILD_DIP_STAGED_PROFIT_MIN_OVER_AVG_PCT', 1),
     thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 1,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
