@@ -94,10 +94,13 @@ import { isRunnerPartialExit } from './sell-partial.js';
 import { profitFillMinPriceUsd } from './profit-fill-guard.js';
 import { retrySlippageBpsForAttempt } from './exit-retry.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
+import { evaluateLeaderStyleEntry } from './leader-style.js';
+import { validateStreamDexPrice } from './price-sanity.js';
 import {
   computeMarkLiquidityTelemetry,
   readOpenMarkMetrics,
 } from './open-mark-metrics.js';
+const leaderStyleBuyMs: number[] = [];
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
 import {
   openMarkNeedsJupiterTopUp,
@@ -1526,6 +1529,104 @@ async function wakeOwnTapeKnifeEnrich(
 
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   let filled = 0;
+  if (cfg.leaderStyle.enabled) {
+    const cutoff = nowMs - 3_600_000;
+    while (leaderStyleBuyMs.length > 0 && leaderStyleBuyMs[0]! < cutoff) leaderStyleBuyMs.shift();
+    for (const c of enrichPass.candidates) {
+      if (state.open[c.mint] || buyInFlight.has(c.mint)) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_lstyle_skip',
+          mint: c.mint,
+          symbol: c.symbol,
+          reason: state.open[c.mint] ? 'existing_position' : 'in_flight',
+        });
+        continue;
+      }
+      const openLstyle = Object.values(state.open).filter((p) => p.lane === 'leader_style').length;
+      if (cfg.leaderStyle.maxOpen > 0 && openLstyle >= cfg.leaderStyle.maxOpen) {
+        appendMildDipJournal(cfg.journalPath, { kind: 'mild_dip_lstyle_skip', mint: c.mint, reason: 'max_open' });
+        continue;
+      }
+      if (cfg.leaderStyle.maxBuysPerHour > 0 && leaderStyleBuyMs.length >= cfg.leaderStyle.maxBuysPerHour) {
+        appendMildDipJournal(cfg.journalPath, { kind: 'mild_dip_lstyle_skip', mint: c.mint, reason: 'buys_per_hour' });
+        continue;
+      }
+      const stats = mildDipPriceRing.windowStats(c.mint, cfg.leaderStyle.pullbackWindowMs, nowMs);
+      const verdict = evaluateLeaderStyleEntry({
+        enabled: true,
+        dataAgeMs: stats.spanMs,
+        minDataAgeMs: cfg.leaderStyle.minPairAgeMs,
+        volume5mUsd: c.metrics.volume5mUsd,
+        liquidityUsd: c.metrics.liquidityUsd,
+        minVol5mToLiq: cfg.leaderStyle.minVol5mToLiq,
+        minLiquidityUsd: cfg.leaderStyle.minLiquidityUsd,
+        maxLiquidityUsd: cfg.leaderStyle.maxLiquidityUsd,
+        currentPriceUsd: c.priceUsd,
+        localHighUsd: stats.maxPriceUsd,
+        localLowUsd: stats.minPriceUsd,
+        pullbackPct: cfg.leaderStyle.pullbackPct,
+      });
+      if (!verdict.pass) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_lstyle_skip',
+          mint: c.mint,
+          symbol: c.symbol,
+          reason: verdict.reason,
+          pairAgeMs: stats.spanMs,
+          turnover: verdict.turnover,
+          liquidityUsd: c.metrics.liquidityUsd,
+          pc5m: c.metrics.priceChange5mPct,
+          pullbackPct: verdict.pullbackPct,
+        });
+        continue;
+      }
+      const result = await attemptMildDipEntry({
+        cfg,
+        state,
+        candidate: c,
+        copyCfg,
+        nowMs,
+        buyInFlight,
+        resolveEntrySizeUsd,
+        adoptOnChainHolding,
+        opts: {
+          chasePct: 0,
+          trigger: 'scan',
+          skipBounce: true,
+          skipOnchainAdopt: false,
+          freshDexPrebuy: false,
+          softSkipCooldownMs: 1_500,
+          lane: 'slow',
+          leaderStyle: true,
+        },
+      });
+      if (result === 'filled') {
+        leaderStyleBuyMs.push(nowMs);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_lstyle_buy',
+          mint: c.mint,
+          symbol: c.symbol,
+          pairAgeMs: stats.spanMs,
+          turnover: verdict.turnover,
+          liquidityUsd: c.metrics.liquidityUsd,
+          pc5m: c.metrics.priceChange5mPct,
+          pullbackPct: verdict.pullbackPct,
+          localHighUsd: stats.maxPriceUsd,
+          localLowUsd: stats.minPriceUsd,
+          priceUsd: c.priceUsd,
+          sizeUsd: cfg.leaderStyle.positionUsd,
+          trigger: 'scan',
+        });
+      } else {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_lstyle_skip',
+          mint: c.mint,
+          symbol: c.symbol,
+          reason: 'execution_skip',
+        });
+      }
+    }
+  }
   for (const c of enrichPass.candidates) {
     if (!unlimited && openCount(state) >= cfg.maxOpenPositions) break;
     if (c.dipSource !== 'knife_stabilize') continue;
@@ -2704,6 +2805,34 @@ async function tryExits(
       continue;
     }
 
+    const dexCrossCheckPx =
+      source === 'stream' && px != null
+        ? (
+            await fetchDexScreenerPairDetails(mint, {
+              nowMs,
+              allowedDexIds: cfg.entry.allowedDexIds,
+              cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
+              bypassGate: true,
+            })
+          )?.priceUsd ?? null
+        : null;
+    const priceSanity = validateStreamDexPrice({
+      streamPriceUsd: source === 'stream' ? px : null,
+      dexPriceUsd: dexCrossCheckPx,
+      maxDivergenceFactor: cfg.streamDexMaxDivergenceFactor,
+    });
+    if (!priceSanity.valid) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_stream_dex_price_sanity_skip',
+        mint,
+        streamPriceUsd: px,
+        dexPriceUsd: dexCrossCheckPx,
+        divergenceFactor: priceSanity.divergence,
+        source,
+        at: 'exit',
+      });
+      continue;
+    }
     const decision = decideMarkExit({
       mint,
       pos,
@@ -2711,17 +2840,7 @@ async function tryExits(
       gates: cfg.exit,
       markJumpConfirmMaxMs: cfg.markJumpConfirmMaxMs,
       markQuarantineGreenMaxMs: cfg.exit.markQuarantineGreenMaxMs,
-      dexCrossCheckPx:
-        source === 'stream' && px != null
-          ? (
-              await fetchDexScreenerPairDetails(mint, {
-                nowMs,
-                allowedDexIds: cfg.entry.allowedDexIds,
-                cacheTtlMs: Math.min(cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 3_000, 3_000),
-                bypassGate: true,
-              })
-            )?.priceUsd ?? null
-          : null,
+      dexCrossCheckPx,
       nowMs,
       pc5mPct,
       volume5mUsd,
@@ -2763,6 +2882,15 @@ async function tryExits(
         armPct: pos.mirrorExitArmPct ?? cfg.leaderMirror.exitArmPct,
         trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
       },
+      leaderStyleGates: pos.lane === 'leader_style'
+        ? {
+            profitReboundPct: cfg.leaderStyle.profitReboundPct,
+            pnlTpPct: cfg.leaderStyle.pnlTpPct,
+            volFadeRatio: cfg.leaderStyle.volFadeRatio,
+            depthDrainMax: cfg.leaderStyle.depthDrainMax,
+            maxHoldMs: cfg.leaderStyle.maxHoldMs,
+          }
+        : undefined,
     });
     if (!decision) continue;
     if (decision.markQuarantined === true) {

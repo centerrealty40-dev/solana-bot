@@ -811,6 +811,11 @@ export type MildDipExitReason =
   | 'mirror_max_hold'
   | 'mirror_trail'
   | 'mirror_no_move'
+  | 'lstyle_profit_rebound'
+  | 'lstyle_pnl_tp'
+  | 'lstyle_vol_fade'
+  | 'lstyle_depth_drain'
+  | 'lstyle_max_hold'
   | null;
 
 export function profitExitMinHoldApplies(args: {

@@ -3921,6 +3921,23 @@ const PM2_APPS = [
         MILD_DIP_MIRROR_NO_MOVE_CUT_MS: '600000',
         MILD_DIP_MIRROR_NO_MOVE_MIN_MFE_PCT: '2',
         MILD_DIP_MIRROR_MAX_HOLD_MS: '3600000',
+        // 1.11.1003 — rollback: MILD_DIP_LSTYLE_ENABLED='0'.
+        MILD_DIP_LSTYLE_ENABLED: '1',
+        MILD_DIP_LSTYLE_POSITION_USD: '5',
+        MILD_DIP_LSTYLE_MIN_VOL5M_TO_LIQ: '3',
+        MILD_DIP_LSTYLE_MIN_LIQUIDITY_USD: '50000',
+        MILD_DIP_LSTYLE_MAX_LIQUIDITY_USD: '400000',
+        MILD_DIP_LSTYLE_PULLBACK_PCT: '5',
+        MILD_DIP_LSTYLE_PULLBACK_WINDOW_MS: '120000',
+        MILD_DIP_LSTYLE_MIN_PAIR_AGE_MS: '300000',
+        MILD_DIP_LSTYLE_MAX_OPEN: '10',
+        MILD_DIP_LSTYLE_MAX_BUYS_PER_HOUR: '60',
+        MILD_DIP_LSTYLE_PROFIT_REBOUND_PCT: '25',
+        MILD_DIP_LSTYLE_PNL_TP_PCT: '20',
+        MILD_DIP_LSTYLE_VOL_FADE_RATIO: '0.35',
+        MILD_DIP_LSTYLE_DEPTH_DRAIN_MAX: '1.06',
+        MILD_DIP_LSTYLE_MAX_HOLD_MS: '14400000',
+        MILD_DIP_STREAM_DEX_MAX_DIVERGENCE_FACTOR: '2',
         /**
          * 1.11.955 — one decision per losing bag: sell the full sleeve after
          * its qualifying reclaim, avoiding a second same-price fee. Rollback
