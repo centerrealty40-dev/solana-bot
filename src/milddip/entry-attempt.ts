@@ -151,6 +151,22 @@ export function probeRequestedUsd(
     : familiarityCapped;
 }
 
+export function laneEntryRequestUsd(args: {
+  leaderStyle: boolean;
+  leaderStylePositionUsd: number;
+  mirror: boolean;
+  mirrorPositionUsd: number;
+  stagedClipUsd: number;
+}): number {
+  if (args.leaderStyle && args.leaderStylePositionUsd > 0) {
+    return args.leaderStylePositionUsd;
+  }
+  if (args.mirror && args.mirrorPositionUsd > 0) {
+    return args.mirrorPositionUsd;
+  }
+  return args.stagedClipUsd;
+}
+
 /** Test helper. */
 export function __resetProbeBudgetForTests(): void {
   probeStamps.length = 0;
@@ -1243,18 +1259,25 @@ export async function attemptMildDipEntry(args: {
   // own position clip unchanged.
   const wantUsd = isGreen ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd);
   const stagedClip = resolveStagedEntryFirstClip({
-    enabled: cfg.stagedEntryEnabled,
+    enabled: cfg.stagedEntryEnabled && !isMirror,
     isNewBag: !state.open[c.mint],
     isProbe: probeReason != null,
     isGreen,
     sizeUsd: wantUsd,
     firstUsd: cfg.stagedFirstUsd,
   });
+  const laneRequestUsd = laneEntryRequestUsd({
+    leaderStyle: isLeaderStyle,
+    leaderStylePositionUsd: cfg.leaderStyle.positionUsd,
+    mirror: isMirror,
+    mirrorPositionUsd: cfg.leaderMirror.positionUsd,
+    stagedClipUsd: stagedClip.sizeUsd,
+  });
   const sized = await args.resolveEntrySizeUsd(
     cfg,
     copyCfg,
     nowMs,
-    isLeaderStyle ? cfg.leaderStyle.positionUsd : stagedClip.sizeUsd,
+    laneRequestUsd,
   );
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {

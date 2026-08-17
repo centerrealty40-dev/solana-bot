@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { probeRequestedUsd } from '../../src/milddip/entry-attempt.js';
+import {
+  laneEntryRequestUsd,
+  probeRequestedUsd,
+} from '../../src/milddip/entry-attempt.js';
 
 describe('1.11.827 probe buys on re-entry blocks', () => {
   const src = readFileSync(resolve('src/milddip/entry-attempt.ts'), 'utf8');
@@ -68,6 +71,27 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
 describe('1.11.898 the first position on a coin is sized down', () => {
   const src = readFileSync(resolve('src/milddip/entry-attempt.ts'), 'utf8');
   const eco = readFileSync(resolve('ecosystem.config.cjs'), 'utf8');
+
+  it('keeps mirror at its own clip while DIP keeps the first-touch clip', () => {
+    expect(
+      laneEntryRequestUsd({
+        leaderStyle: false,
+        leaderStylePositionUsd: 0,
+        mirror: true,
+        mirrorPositionUsd: 10,
+        stagedClipUsd: 3,
+      }),
+    ).toBe(10);
+    expect(
+      laneEntryRequestUsd({
+        leaderStyle: false,
+        leaderStylePositionUsd: 0,
+        mirror: false,
+        mirrorPositionUsd: 10,
+        stagedClipUsd: 3,
+      }),
+    ).toBe(3);
+  });
 
   it('recognises a first touch as a mint we have never closed', () => {
     expect(src).toContain("cfg.firstTouchPositionUsd > 0 && !state.lastExitByMint?.[c.mint]");
