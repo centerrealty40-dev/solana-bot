@@ -43,7 +43,9 @@ import {
   evaluateLeaderMirrorObservation,
   leaderMirrorDecisionSuppressed,
   leaderMirrorHitKey,
+  leaderMirrorNeedsStructuralBackfill,
   leaderMirrorQuoteMintsCap,
+  type LeaderMirrorMetricSource,
 } from './leader-mirror.js';
 import {
   isKnifeDipPct,
@@ -200,6 +202,10 @@ const buyInFlight = new Set<string>();
 
 /** Live loop stats pointer for mark-pass telemetry (set in runMildDipLoop). */
 let loopStatsRef: MildDipLoopStats | null = null;
+let tryEntriesInFlight = false;
+let tryEntriesStartedAtMs = 0;
+let tryEntriesStallReportedAtMs = 0;
+const TRY_ENTRIES_STALL_THRESHOLD_MS = 60_000;
 
 function openCount(state: MildDipState): number {
   return Object.keys(state.open).length;
@@ -1221,7 +1227,12 @@ async function wakeLeaderMirrors(
     const hitKey = leaderMirrorHitKey(hit);
     const existing = leaderMirrorWatches.get(hit.mint);
     if (existing && existing.hitKey !== hitKey) {
-      leaderMirrorWatches.set(hit.mint, { hit, hitKey, startedAtMs: nowMs });
+      leaderMirrorWatches.set(hit.mint, {
+        hit,
+        hitKey,
+        startedAtMs: nowMs,
+        metricSource: leaderMirrorNeedsStructuralBackfill(hit) ? 'backfill' : 'seed',
+      });
       leaderMirrorDecisions.delete(hit.mint);
     } else if (!existing) {
       const prior = leaderMirrorDecisions.get(hit.mint);
@@ -1237,15 +1248,85 @@ async function wakeLeaderMirrors(
       ) {
         continue;
       }
-      leaderMirrorWatches.set(hit.mint, { hit, hitKey, startedAtMs: nowMs });
+      leaderMirrorWatches.set(hit.mint, {
+        hit,
+        hitKey,
+        startedAtMs: nowMs,
+        metricSource: leaderMirrorNeedsStructuralBackfill(hit) ? 'backfill' : 'seed',
+      });
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_observe_start',
         mint: hit.mint,
         leader: hit.leader,
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         pc5m: hit.pc5m ?? null,
+        metricSource: leaderMirrorNeedsStructuralBackfill(hit) ? 'backfill' : 'seed',
         observeMs: gates.observeMs,
       });
+    }
+  }
+  const backfillMints = [...leaderMirrorWatches.entries()]
+    .filter(
+      ([mint, watch]) =>
+        leaderMirrorNeedsStructuralBackfill(watch.hit) &&
+        nowMs - (leaderMirrorStructuralAttemptMs.get(mint) ?? 0) >= gates.structuralGapMs,
+    )
+    .sort(([, a], [, b]) => a.startedAtMs - b.startedAtMs)
+    .slice(0, gates.structuralMaxMints)
+    .map(([mint]) => mint);
+  if (backfillMints.length > 0) {
+    for (const mint of backfillMints) leaderMirrorStructuralAttemptMs.set(mint, nowMs);
+    const result = await prefetchDexScreenerPairDetailsManyWithMetadata(backfillMints, {
+      nowMs,
+      cacheTtlMs: Math.max(gates.structuralGapMs, gates.quoteMaxAgeMs),
+      allowedDexIds: cfg.entry.allowedDexIds,
+    });
+    for (const mint of backfillMints) {
+      const watch = leaderMirrorWatches.get(mint);
+      if (!watch) continue;
+      const details = result.detailsByMint.get(mint);
+      const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralStaleMs);
+      const metrics = details
+        ? {
+            priceUsd: details.priceUsd,
+            pc5m: details.priceChangeM5Pct,
+            pc1h: details.priceChangeH1Pct,
+            vol5m: details.volume5mUsd,
+            liq: details.liquidityUsd,
+            mcap: details.marketCapUsd,
+            ageHours:
+              details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
+                ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
+                : null,
+            dexId: details.dexId,
+          }
+        : cached
+          ? {
+              priceUsd: cached.priceUsd,
+              pc5m: cached.metrics.priceChange5mPct,
+              pc1h: cached.metrics.priceChange1hPct,
+              vol5m: cached.metrics.volume5mUsd,
+              liq: cached.metrics.liquidityUsd,
+              mcap: cached.metrics.marketCapUsd,
+              ageHours: cached.metrics.pairAgeHours,
+              dexId: cached.metrics.dexId,
+            }
+          : null;
+      if (!metrics) continue;
+      const pairAgeHours =
+        metrics.ageHours ?? watch.hit.ageHours;
+      const hit: LeaderSeedHit = {
+        ...watch.hit,
+        priceUsd: metrics.priceUsd ?? watch.hit.priceUsd,
+        pc5m: metrics.pc5m ?? watch.hit.pc5m,
+        pc1h: metrics.pc1h ?? watch.hit.pc1h,
+        vol5m: metrics.vol5m ?? watch.hit.vol5m,
+        liq: metrics.liq ?? watch.hit.liq,
+        mcap: metrics.mcap ?? watch.hit.mcap,
+        ageHours: pairAgeHours,
+        dexId: metrics.dexId ?? watch.hit.dexId,
+      };
+      leaderMirrorWatches.set(mint, { ...watch, hit, metricSource: 'backfill' });
     }
   }
   let filled = 0;
@@ -1295,6 +1376,7 @@ async function wakeLeaderMirrors(
         quotePriceUsd: quote?.priceUsd ?? null,
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         pc5m: hit.pc5m ?? null,
+        metricSource: watch.metricSource,
       });
       leaderMirrorDecisions.set(mint, {
         hitKey: watch.hitKey,
@@ -1314,6 +1396,7 @@ async function wakeLeaderMirrors(
         reason: 'leader_mirror_exposure_cap',
         openMirror,
         maxOpen: gates.maxOpen,
+        metricSource: watch.metricSource,
       });
       leaderMirrorDecisions.set(mint, {
         hitKey: watch.hitKey,
@@ -1455,7 +1538,6 @@ function streamWakeMintList(cfg: MildDipConfig, state: MildDipState, nowMs: numb
 
 /** Single-flight: overlapping wakes each reserved Dex gate slots → multi-minute backlog. */
 let wakeStreamHotMintsInFlight = false;
-let tryEntriesInFlight = false;
 const leaderStyleBuyMs: number[] = [];
 const leaderStyleSkipAtMs = new Map<string, number>();
 const leaderStyleSkipHourMs: number[] = [];
@@ -1591,10 +1673,13 @@ async function wakeOwnTapeKnifeEnrich(
 async function tryEntries(cfg: MildDipConfig, state: MildDipState, nowMs: number): Promise<void> {
   if (tryEntriesInFlight) return;
   tryEntriesInFlight = true;
+  tryEntriesStartedAtMs = nowMs;
   try {
     await tryEntriesBody(cfg, state, nowMs);
   } finally {
     tryEntriesInFlight = false;
+    tryEntriesStartedAtMs = 0;
+    tryEntriesStallReportedAtMs = 0;
   }
 }
 
@@ -1604,7 +1689,6 @@ async function tryEntriesBody(
   nowMs: number,
 ): Promise<void> {
   const unlimited = cfg.maxOpenPositions <= 0;
-  await wakeLeaderMirrors(cfg, state, nowMs);
   if (cfg.leaderStyle.enabled) {
     const lstyleMints = await collectCandidateMints(cfg, { nowMs });
     const lstylePass = await enrichAndFilterCandidates(cfg, lstyleMints, {
@@ -2303,12 +2387,18 @@ const lastRecoverDeferJournalMs = new Map<string, number>();
 const leaderSeedLookedAtMs = new Map<string, number>();
 const leaderMirrorWatches = new Map<
   string,
-  { hit: LeaderSeedHit; hitKey: string; startedAtMs: number }
+  {
+    hit: LeaderSeedHit;
+    hitKey: string;
+    startedAtMs: number;
+    metricSource: LeaderMirrorMetricSource;
+  }
 >();
 const leaderMirrorDecisions = new Map<
   string,
   { hitKey: string; decidedAtMs: number; reason: string }
 >();
+const leaderMirrorStructuralAttemptMs = new Map<string, number>();
 /** mint → last exit_defer_would_buy journal ts (throttle). */
 const lastExitDeferJournalMs = new Map<string, number>();
 /** mint → last leader_align_defer journal ts (throttle). */
@@ -4128,6 +4218,8 @@ export async function runMildDipLoop(
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
   let lastStreamPriceStatsMs = 0;
+  let lastMirrorWakeMs = 0;
+  let mirrorWakeInFlight = false;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
@@ -4252,6 +4344,44 @@ export async function runMildDipLoop(
           '[mild-dip] own-tape knife wake failed',
           err instanceof Error ? err.message : err,
         );
+      });
+    }
+
+    if (
+      cfg.leaderMirror.enabled &&
+      nowMs - lastMirrorWakeMs >= cfg.leaderMirror.tickIntervalMs &&
+      !mirrorWakeInFlight
+    ) {
+      lastMirrorWakeMs = nowMs;
+      mirrorWakeInFlight = true;
+      void wakeLeaderMirrors(cfg, state, nowMs)
+        .catch((err) => {
+          console.warn(
+            '[mild-dip] leader mirror tick failed',
+            err instanceof Error ? err.message : err,
+          );
+        })
+        .finally(() => {
+          mirrorWakeInFlight = false;
+        });
+    }
+
+    if (
+      tryEntriesInFlight &&
+      tryEntriesStartedAtMs > 0 &&
+      nowMs - tryEntriesStartedAtMs >= TRY_ENTRIES_STALL_THRESHOLD_MS &&
+      tryEntriesStallReportedAtMs !== tryEntriesStartedAtMs
+    ) {
+      const durationMs = nowMs - tryEntriesStartedAtMs;
+      tryEntriesStallReportedAtMs = tryEntriesStartedAtMs;
+      console.warn(
+        `[mild-dip] scan stalled durationMs=${durationMs} thresholdMs=${TRY_ENTRIES_STALL_THRESHOLD_MS}`,
+      );
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_scan_stall',
+        startedAtMs: tryEntriesStartedAtMs,
+        durationMs,
+        thresholdMs: TRY_ENTRIES_STALL_THRESHOLD_MS,
       });
     }
 

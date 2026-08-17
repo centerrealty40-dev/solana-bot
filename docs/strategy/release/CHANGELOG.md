@@ -1,3 +1,22 @@
+## [1.11.1004] — 2026-08-20
+
+### Изменено
+
+- `leader_mirror` переведён на независимый bounded tick, не зависящий от
+  зависшего scan-прохода или заполненности DIP-слотов.
+- Добавлена однократная telemetry-запись о зависании scan-прохода и bounded
+  structural Dex backfill для seed-hit без полного набора метрик в observation
+  window.
+
+### Rollback
+
+```text
+MILD_DIP_MIRROR_ENABLED=0
+MILD_DIP_MIRROR_TICK_INTERVAL_MS=2000
+MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS=4
+MILD_DIP_MIRROR_STRUCTURAL_GAP_MS=5000
+```
+
 ## [1.11.1003] — 2026-08-19
 
 ### Изменено

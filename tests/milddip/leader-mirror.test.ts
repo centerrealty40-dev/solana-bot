@@ -26,6 +26,9 @@ const gates: LeaderMirrorGates = {
   minMcapUsd: 5_000,
   maxOpen: 3,
   maxQuoteMints: 8,
+  tickIntervalMs: 2_000,
+  structuralMaxMints: 4,
+  structuralGapMs: 5_000,
   positionUsd: 2,
   cooldownMs: 900_000,
 };
@@ -75,7 +78,8 @@ describe('leader mirror observation decisions', () => {
   });
 
   it('fails closed without classification data or a quote', () => {
-    expect(at(hit({ pc5m: undefined }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_no_data' });
+    expect(at(hit({ pc5m: undefined }), 101)).toEqual({ action: 'wait' });
+    expect(at(hit({ pc5m: undefined }), 101, 150_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_no_data' });
     expect(at(hit(), null, 150_000, 100_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_no_data' });
   });
 
