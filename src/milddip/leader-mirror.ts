@@ -32,6 +32,21 @@ export function leaderMirrorQuoteMintsCap(
   return Math.min(8, Math.max(1, configuredCap), Math.max(1, activeWatchCount));
 }
 
+export type LeaderMirrorMetricSource = 'seed' | 'backfill';
+
+export function leaderMirrorNeedsStructuralBackfill(hit: LeaderSeedHit): boolean {
+  return (
+    hit.pc5m == null ||
+    !Number.isFinite(hit.pc5m) ||
+    hit.liq == null ||
+    !Number.isFinite(hit.liq) ||
+    hit.ageHours == null ||
+    !Number.isFinite(hit.ageHours) ||
+    hit.mcap == null ||
+    !Number.isFinite(hit.mcap)
+  );
+}
+
 export type LeaderMirrorGates = {
   enabled: boolean;
   leaders: string[];
@@ -49,6 +64,9 @@ export type LeaderMirrorGates = {
   minMcapUsd: number;
   maxOpen: number;
   maxQuoteMints: number;
+  tickIntervalMs: number;
+  structuralMaxMints: number;
+  structuralGapMs: number;
   cooldownMs: number;
 };
 
@@ -88,7 +106,9 @@ export function evaluateLeaderMirrorObservation(args: {
     ageHours == null ||
     mcap == null
   ) {
-    return { action: 'skip', reason: 'leader_mirror_no_data' };
+    return nowMs - args.watchStartedAtMs < gates.observeMs
+      ? { action: 'wait' }
+      : { action: 'skip', reason: 'leader_mirror_no_data' };
   }
   if (gates.requireDeepDump && pc5m > gates.deepDumpPc5mPct) {
     return { action: 'skip', reason: 'leader_mirror_deep_dump_required' };
