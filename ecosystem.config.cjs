@@ -4430,7 +4430,7 @@ const PM2_APPS = [
          * answer it with real fills and real slippage. Tagged `probe` in the
          * journal so they never mix into the book's statistics.
          */
-        MILD_DIP_PROBE_BLOCKED: '1',
+        MILD_DIP_PROBE_BLOCKED: '0',
         /**
          * 1.11.898 — $1 on a coin we have never closed a position in, against
          * the $3 clip everywhere else. Ordered by how many times we have traded
@@ -4453,12 +4453,11 @@ const PM2_APPS = [
          * without it there are no repeats.
          */
         /**
-         * 1.11.962 — probe entries use the same liquidity curve as normal buys;
-         * production journal split: probe n=133, net +$67.20, +$0.505/pos,
-         * 54% win versus normal n=3384, net +$2188.57, +$0.647/pos, 54% win.
-         * The power-law branch already bypasses THICK/MICRO tier clips.
+         * 1.11.1023 — first-touch is a cap on the liquidity curve, not a flat
+         * clip: large pools may reach $10 while the $5 size floor still holds
+         * thin pools. The power-law branch bypasses THICK/MICRO tier clips.
          */
-        MILD_DIP_FIRST_TOUCH_POSITION_USD: '3',
+        MILD_DIP_FIRST_TOUCH_POSITION_USD: '10',
         MILD_DIP_PROBE_BLOCKED_USD: '0',
         MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6',
         /**

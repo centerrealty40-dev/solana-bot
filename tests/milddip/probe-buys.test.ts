@@ -2,8 +2,13 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
+  evaluateRebuyBelowExit,
+  resolveMildDipWantedSizeUsd,
+} from '../../src/milddip/gates.js';
+import {
   laneEntryRequestUsd,
   mirrorOnlyEntryAllowed,
+  probeOverrideAllowed,
   probeRequestedUsd,
 } from '../../src/milddip/entry-attempt.js';
 
@@ -21,18 +26,44 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
     expect(src).toContain('probeBlockedUsd > 0');
     expect(src).toContain('Math.min(probeBlockedUsd, familiarityCapped)');
     expect(src).toContain('Math.min(cfg.green.positionUsd, knifeCapped)');
-    expect(src).toContain('isGreen ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd)');
+    expect(src).toContain(
+      'isGreen || probeReason != null ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd)',
+    );
   });
 
-  it('a non-positive probe cap leaves the normal request uncapped', () => {
-    expect(probeRequestedUsd('rebuy_below_exit', 0, 8)).toBe(8);
-    expect(probeRequestedUsd('rebuy_liq_drop', -1, 8)).toBe(8);
-    expect(src).toContain('probeBlockedUsd > 0');
+  it('a disabled probe cannot override a blocked re-entry', () => {
+    expect(probeOverrideAllowed(false, 2)).toBe(false);
+    expect(probeOverrideAllowed(true, 0)).toBe(false);
+    expect(probeRequestedUsd('rebuy_below_exit', 0, 8)).toBe(0);
+    expect(probeRequestedUsd('rebuy_liq_drop', -1, 8)).toBe(0);
+    expect(src).toContain('probeOverrideAllowed(cfg.probeBlockedEnabled, cfg.probeBlockedUsd)');
+    expect(src).toContain("kind: 'mild_dip_probe_disabled_skip'");
+  });
+
+  it('incident values remain blocked when the probe is disabled', () => {
+    const nowMs = 2_000_000;
+    const lastExitPriceUsd = 0.0002446194461474536;
+    const rebuy = evaluateRebuyBelowExit({
+      freshPriceUsd: lastExitPriceUsd * 1.0555,
+      lastExitPriceUsd,
+      lastExitAtMs: nowMs - 760_016,
+      nowMs,
+      minBelowExitPct: 5,
+      maxAgeMs: 900_000,
+    });
+    expect(rebuy.pass).toBe(false);
+    expect(rebuy.reasons[0]).toContain('rebuy_below_exit');
+    expect(probeOverrideAllowed(false, 0)).toBe(false);
+    expect(probeRequestedUsd('rebuy_below_exit', 0, 17.185498)).toBe(0);
   });
 
   it('a positive probe cap applies only to probe requests', () => {
+    expect(probeOverrideAllowed(true, 3)).toBe(true);
     expect(probeRequestedUsd('rebuy_below_exit', 3, 8)).toBe(3);
     expect(probeRequestedUsd(null, 3, 8)).toBe(8);
+    expect(probeRequestedUsd('rebuy_liq_drop', 3, 8)).toBeLessThanOrEqual(3);
+    expect(src).toContain('Math.min(laneRequest, requestedUsd)');
+    expect(src).toContain('Math.min(sizedRaw.sizeUsd, cfg.probeBlockedUsd)');
   });
 
   it('fills are tagged so they never mix into book statistics', () => {
@@ -63,7 +94,7 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
   });
 
   it('live env keeps six curve-sized probes per hour at most', () => {
-    expect(eco).toContain("MILD_DIP_PROBE_BLOCKED: '1'");
+    expect(eco).toContain("MILD_DIP_PROBE_BLOCKED: '0'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_USD: '0'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6'");
   });
@@ -104,15 +135,56 @@ describe('1.11.898 the first position on a coin is sized down', () => {
   });
 
   it('live env keeps first-touch and power-law buys at or above $5', () => {
-    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '3'");
+    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '10'");
     expect(eco).toContain("MILD_DIP_SIZE_LIQ_POWER_COEF: '0.001888'");
     expect(eco).toContain("MILD_DIP_SIZE_MIN_USD: '5'");
     expect(eco).toContain("MILD_DIP_SIZE_MAX_USD: '30'");
   });
 
+  it('first-touch caps the curve at $10, while non-first-touch keeps the curve', () => {
+    const law = { coef: 0.001888, exp: 0.866, minUsd: 5, maxUsd: 30 };
+    const sizing = (liquidityUsd: number) =>
+      resolveMildDipWantedSizeUsd({
+        basePositionUsd: 3,
+        liqPowerLaw: law,
+        thick: {
+          positionUsd: 20,
+          minMarketCapUsd: 100_000,
+          minLiquidityUsd: 50_000,
+          minPairAgeHours: 6,
+        },
+        metrics: {
+          liquidityUsd,
+          marketCapUsd: 200_000,
+          pairAgeHours: 12,
+        },
+      }).sizeUsd;
+
+    const largePool = sizing(100_000);
+    const thinPool = sizing(1_000);
+    const incidentPool = sizing(37_305.98);
+
+    expect(Math.max(5, Math.min(10, largePool))).toBe(10);
+    expect(Math.max(5, Math.min(10, thinPool))).toBe(5);
+    expect(Math.max(5, incidentPool)).toBeCloseTo(17.185498, 6);
+    expect(largePool).toBeGreaterThan(10);
+  });
+
   it('raises the rug-knife clip without changing the risk gate', () => {
     expect(eco).toContain("MILD_DIP_RUG_KNIFE_CLIP_USD: '3'");
     expect(src).toContain('Math.min(cfg.rugKnifeClipUsd, wanted.sizeUsd)');
+    const wanted = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 3,
+      liqPowerLaw: { coef: 0.001888, exp: 0.866, minUsd: 5, maxUsd: 30 },
+      thick: {
+        positionUsd: 20,
+        minMarketCapUsd: 100_000,
+        minLiquidityUsd: 50_000,
+        minPairAgeHours: 6,
+      },
+      metrics: { liquidityUsd: 37_305.98, marketCapUsd: 200_000, pairAgeHours: 12 },
+    });
+    expect(Math.max(5, Math.min(3, wanted.sizeUsd))).toBe(5);
   });
 
   it('wallet-drain partials stop below the configured minimum', () => {
