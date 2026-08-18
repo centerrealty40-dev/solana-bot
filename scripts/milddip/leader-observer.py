@@ -144,33 +144,146 @@ _DEX_BATCH_MAX = int(env_num("LEADER_OBSERVER_DEX_BATCH_MAX", 30.0))
 _dex_last_call_ms = 0.0
 _dex_backoff_until_ms = 0.0
 _dex_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+_AGGREGATOR_PROGRAM_PREFIXES = ("JUP",)
+_AGGREGATOR_PROGRAM_IDS = {
+    "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiP",
+}
+_CLOSED_ENTRY_MAX_AGE_SEC = 7 * 86_400
+_CLOSED_ENTRY_CAP = 20_000
 
 
-def _pair_to_dex(p: dict[str, Any]) -> dict[str, Any]:
+def _finite_number(value: Any, *, positive: bool = False) -> float | None:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(number) or (positive and number <= 0):
+        return None
+    return number
+
+
+def _pct_ratio(numerator: Any, denominator: Any) -> float | None:
+    n = _finite_number(numerator)
+    d = _finite_number(denominator, positive=True)
+    if n is None or n < 0 or d is None:
+        return None
+    return n / d * 100.0
+
+
+def _sum_positive(values: list[Any]) -> float | None:
+    parsed = [_finite_number(v, positive=True) for v in values]
+    known = [v for v in parsed if v is not None]
+    return sum(known) if known else None
+
+
+def _transaction_metadata(tx: dict[str, Any] | None) -> dict[str, Any]:
+    """Extract already-fetched transaction metadata without affecting processing."""
+    if not isinstance(tx, dict):
+        return {
+            "slot": None,
+            "feeLamports": None,
+            "computeUnitsConsumed": None,
+            "topLevelProgramIds": None,
+            "viaAggregator": None,
+            "topLevelInstructionCount": None,
+        }
+    meta = tx.get("meta") if isinstance(tx.get("meta"), dict) else {}
+    transaction = tx.get("transaction") if isinstance(tx.get("transaction"), dict) else {}
+    message = transaction.get("message") if isinstance(transaction.get("message"), dict) else {}
+    instructions = message.get("instructions")
+    program_ids: list[str] = []
+    if isinstance(instructions, list):
+        for instruction in instructions:
+            if not isinstance(instruction, dict):
+                continue
+            program_id = instruction.get("programId")
+            if isinstance(program_id, str) and program_id and program_id not in program_ids:
+                program_ids.append(program_id)
+    aggregator = None
+    if program_ids:
+        aggregator = any(
+            pid in _AGGREGATOR_PROGRAM_IDS
+            or pid.upper().startswith(_AGGREGATOR_PROGRAM_PREFIXES)
+            for pid in program_ids
+        )
+    return {
+        "slot": tx.get("slot") if isinstance(tx.get("slot"), (int, float)) else None,
+        "feeLamports": _finite_number(meta.get("fee")),
+        "computeUnitsConsumed": (
+            _finite_number(meta.get("computeUnitsConsumed"))
+            if meta.get("computeUnitsConsumed") is not None
+            else None
+        ),
+        "topLevelProgramIds": program_ids or None,
+        "viaAggregator": aggregator,
+        "topLevelInstructionCount": len(instructions) if isinstance(instructions, list) else None,
+    }
+
+
+def _pair_to_dex(
+    p: dict[str, Any],
+    all_pairs: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     liq = (p.get("liquidity") or {}).get("usd")
     vol5m = (p.get("volume") or {}).get("m5")
     created = p.get("pairCreatedAt")
     age_h = None
-    if created:
-        age_h = max(0.0, (time.time() * 1000 - float(created)) / 3_600_000)
+    created_num = _finite_number(created, positive=True)
+    if created_num is not None:
+        age_h = max(0.0, (time.time() * 1000 - created_num) / 3_600_000)
     turnover = None
-    if liq and float(liq) > 0 and vol5m is not None:
-        turnover = float(vol5m) / float(liq)
+    liq_num = _finite_number(liq, positive=True)
+    vol5m_num = _finite_number(vol5m)
+    if liq_num is not None and vol5m_num is not None:
+        turnover = vol5m_num / liq_num
+    pairs = all_pairs or [p]
+    total_liq = _sum_positive(
+        [((pair.get("liquidity") or {}).get("usd")) for pair in pairs]
+    )
+    selected_liq = _finite_number(liq, positive=True)
+    deepest: dict[str, Any] | None = None
+    deepest_liq: float | None = None
+    for pair in pairs:
+        candidate_liq = _finite_number((pair.get("liquidity") or {}).get("usd"), positive=True)
+        if candidate_liq is not None and (deepest_liq is None or candidate_liq > deepest_liq):
+            deepest = pair
+            deepest_liq = candidate_liq
+    quote_symbol = ((p.get("quoteToken") or {}).get("symbol"))
     return {
         "dexId": p.get("dexId"),
         "pairAddress": p.get("pairAddress"),
-        "priceUsd": float(p.get("priceUsd") or 0),
-        "pc5m": (p.get("priceChange") or {}).get("m5"),
-        "pc1h": (p.get("priceChange") or {}).get("h1"),
-        "vol5m": vol5m,
-        "vol1h": (p.get("volume") or {}).get("h1"),
-        "liq": liq,
-        "mcap": p.get("marketCap") or p.get("fdv"),
-        "buys5m": ((p.get("txns") or {}).get("m5") or {}).get("buys"),
-        "sells5m": ((p.get("txns") or {}).get("m5") or {}).get("sells"),
-        "pairCreatedAt": created,
+        "priceUsd": _finite_number(p.get("priceUsd"), positive=True),
+        "pc5m": _finite_number((p.get("priceChange") or {}).get("m5")),
+        "pc1h": _finite_number((p.get("priceChange") or {}).get("h1")),
+        "vol5m": vol5m_num,
+        "vol1h": _finite_number((p.get("volume") or {}).get("h1")),
+        "liq": liq_num,
+        "mcap": _finite_number(p.get("marketCap")) or _finite_number(p.get("fdv")),
+        "fdv": _finite_number(p.get("fdv")),
+        "quoteSymbol": quote_symbol if isinstance(quote_symbol, str) else None,
+        "buys5m": _finite_number(((p.get("txns") or {}).get("m5") or {}).get("buys")),
+        "sells5m": _finite_number(((p.get("txns") or {}).get("m5") or {}).get("sells")),
+        "pc6h": _finite_number((p.get("priceChange") or {}).get("h6")),
+        "pc24h": _finite_number((p.get("priceChange") or {}).get("h24")),
+        "vol6h": _finite_number((p.get("volume") or {}).get("h6")),
+        "vol24h": _finite_number((p.get("volume") or {}).get("h24")),
+        "buys1h": _finite_number(((p.get("txns") or {}).get("h1") or {}).get("buys")),
+        "sells1h": _finite_number(((p.get("txns") or {}).get("h1") or {}).get("sells")),
+        "buys6h": _finite_number(((p.get("txns") or {}).get("h6") or {}).get("buys")),
+        "sells6h": _finite_number(((p.get("txns") or {}).get("h6") or {}).get("sells")),
+        "buys24h": _finite_number(((p.get("txns") or {}).get("h24") or {}).get("buys")),
+        "sells24h": _finite_number(((p.get("txns") or {}).get("h24") or {}).get("sells")),
+        "pairCreatedAt": created_num,
         "ageHours": age_h,
         "turnover5mLiq": turnover,
+        "pairCount": len(pairs),
+        "deepestPairAddress": deepest.get("pairAddress") if deepest else None,
+        "deepestPairDexId": deepest.get("dexId") if deepest else None,
+        "deepestPairLiq": deepest_liq,
+        "totalLiq": total_liq,
+        "selectedPairLiqShare": (
+            selected_liq / total_liq if selected_liq is not None and total_liq and total_liq > 0 else None
+        ),
     }
 
 
@@ -232,8 +345,9 @@ def fetch_dex_batch(
                     by_mint.setdefault(base, []).append(p)
             stamp = time.time() * 1000
             for m in chunk:
-                pair = _pick_pair(by_mint.get(m) or [])
-                snap = _pair_to_dex(pair) if pair else None
+                pairs = by_mint.get(m) or []
+                pair = _pick_pair(pairs)
+                snap = _pair_to_dex(pair, pairs) if pair else None
                 _dex_cache[m] = (stamp, snap)
                 out[m] = snap
         except Exception as e:
@@ -339,6 +453,7 @@ def apply_path_metrics(bag: dict[str, Any], px: float, entry: float) -> dict[str
     trough = float(bag.get("troughPriceUsd") or entry)
     if px > peak:
         peak = px
+        bag["peakAtMs"] = int(time.time() * 1000)
     if px < trough:
         trough = px
     bag["peakPriceUsd"] = peak
@@ -762,6 +877,10 @@ class Observer:
         self.dense_gap_sec = max(1, int(env_num("LEADER_OBSERVER_DENSE_GAP_SEC", 1)))
         self.dex_refresh_sec = max(5, int(env_num("LEADER_OBSERVER_DEX_REFRESH_SEC", 15)))
         self.dense_only_td = env_bool("LEADER_OBSERVER_DENSE_ONLY_TD", False)
+        self.holders_enabled = env_bool("LEADER_OBSERVER_HOLDERS_ENABLED", False)
+        self.holders_min_gap_sec = max(
+            60, int(env_num("LEADER_OBSERVER_HOLDERS_MIN_GAP_SEC", 3600))
+        )
         self.price_url = (
             os.environ.get("LEADER_OBSERVER_PRICE_URL", "").strip()
             or "https://api.jup.ag/price/v3"
@@ -773,6 +892,10 @@ class Observer:
         self.seen: dict[str, int] = {}
         # leader -> mint -> bag state
         self.bags: dict[str, dict[str, dict[str, Any]]] = {}
+        self.last_closed_by_mint: dict[str, dict[str, dict[str, Any]]] = {}
+        self.last_trade_at_ms: dict[str, int] = {}
+        self.last_trade_by_mint_ms: dict[str, dict[str, int]] = {}
+        self.leader_entry_times_ms: dict[str, list[int]] = {}
         self._sol_cache: dict[str, Any] = {}
         self._load_state()
         self.out_path = self._out_path_for_today()
@@ -863,9 +986,45 @@ class Observer:
             bags = raw.get("bags") or {}
             if isinstance(bags, dict):
                 self.bags = bags  # type: ignore[assignment]
+            closed = raw.get("lastClosedByMint") or {}
+            if isinstance(closed, dict):
+                self.last_closed_by_mint = closed  # type: ignore[assignment]
+            last_trade = raw.get("lastTradeAtMs") or {}
+            if isinstance(last_trade, dict):
+                self.last_trade_at_ms = {
+                    str(k): int(v)
+                    for k, v in last_trade.items()
+                    if k and isinstance(v, (int, float))
+                }
+            last_by_mint = raw.get("lastTradeByMintMs") or {}
+            if isinstance(last_by_mint, dict):
+                self.last_trade_by_mint_ms = {
+                    str(leader): {
+                        str(mint): int(ts)
+                        for mint, ts in (by_mint or {}).items()
+                        if mint and isinstance(ts, (int, float))
+                    }
+                    for leader, by_mint in last_by_mint.items()
+                    if isinstance(by_mint, dict)
+                }
+            entry_times = raw.get("leaderEntryTimesMs") or {}
+            if isinstance(entry_times, dict):
+                self.leader_entry_times_ms = {
+                    str(leader): [
+                        int(ts)
+                        for ts in (timestamps or [])
+                        if isinstance(ts, (int, float))
+                    ]
+                    for leader, timestamps in entry_times.items()
+                    if isinstance(timestamps, list)
+                }
         except Exception:
             self.seen = {}
             self.bags = {}
+            self.last_closed_by_mint = {}
+            self.last_trade_at_ms = {}
+            self.last_trade_by_mint_ms = {}
+            self.leader_entry_times_ms = {}
 
     def _save_state(self) -> None:
         """
@@ -905,12 +1064,68 @@ class Observer:
             if keep:
                 slim[leader] = keep
         self.bags = slim
+        closed_cutoff_ms = int(time.time() * 1000) - _CLOSED_ENTRY_MAX_AGE_SEC * 1000
+        closed: dict[str, dict[str, dict[str, Any]]] = {}
+        for leader, by_mint in self.last_closed_by_mint.items():
+            keep: dict[str, dict[str, Any]] = {}
+            for mint, record in (by_mint or {}).items():
+                if not isinstance(record, dict):
+                    continue
+                closed_at = int(record.get("exitTimeMs") or 0)
+                if closed_at and closed_at < closed_cutoff_ms:
+                    continue
+                keep[mint] = record
+            if keep:
+                closed[leader] = keep
+        if sum(len(v) for v in closed.values()) > _CLOSED_ENTRY_CAP:
+            ordered = sorted(
+                (
+                    (leader, mint, record)
+                    for leader, by_mint in closed.items()
+                    for mint, record in by_mint.items()
+                ),
+                key=lambda x: int(x[2].get("exitTimeMs") or 0),
+                reverse=True,
+            )[:_CLOSED_ENTRY_CAP]
+            closed = {}
+            for leader, mint, record in ordered:
+                closed.setdefault(leader, {})[mint] = record
+        self.last_closed_by_mint = closed
+        trade_cutoff_ms = int(time.time() * 1000) - _CLOSED_ENTRY_MAX_AGE_SEC * 1000
+        self.last_trade_at_ms = {
+            leader: int(ts)
+            for leader, ts in self.last_trade_at_ms.items()
+            if isinstance(ts, (int, float)) and int(ts) >= trade_cutoff_ms
+        }
+        self.last_trade_by_mint_ms = {
+            leader: {
+                mint: int(ts)
+                for mint, ts in (by_mint or {}).items()
+                if isinstance(ts, (int, float)) and int(ts) >= trade_cutoff_ms
+            }
+            for leader, by_mint in self.last_trade_by_mint_ms.items()
+            if isinstance(by_mint, dict)
+            and any(
+                isinstance(ts, (int, float)) and int(ts) >= trade_cutoff_ms
+                for ts in by_mint.values()
+            )
+        }
+        entry_cutoff_ms = int(time.time() * 1000) - 3_600_000
+        self.leader_entry_times_ms = {
+            leader: [int(ts) for ts in times if int(ts) >= entry_cutoff_ms][-5000:]
+            for leader, times in self.leader_entry_times_ms.items()
+            if isinstance(times, list) and any(int(ts) >= entry_cutoff_ms for ts in times)
+        }
         tmp = self.state_path.with_suffix(".tmp")
         tmp.write_text(
             json.dumps(
                 {
                     "seenSignatures": self.seen,
                     "bags": self.bags,
+                    "lastClosedByMint": self.last_closed_by_mint,
+                    "lastTradeAtMs": self.last_trade_at_ms,
+                    "lastTradeByMintMs": self.last_trade_by_mint_ms,
+                    "leaderEntryTimesMs": self.leader_entry_times_ms,
                     "updatedAt": utc_iso(),
                 }
             )
@@ -1033,6 +1248,81 @@ class Observer:
         else:
             self.bags[leader][mint] = bag
 
+    def _trade_context(self, leader: str, mint: str, side: str, now_ms: int) -> dict[str, Any]:
+        previous_any = self.last_trade_at_ms.get(leader)
+        previous_mint = (self.last_trade_by_mint_ms.get(leader) or {}).get(mint)
+        self.last_trade_at_ms[leader] = now_ms
+        self.last_trade_by_mint_ms.setdefault(leader, {})[mint] = now_ms
+        entry_times = self.leader_entry_times_ms.setdefault(leader, [])
+        if side == "buy":
+            entry_times.append(now_ms)
+        cutoff_5m = now_ms - 300_000
+        cutoff_60m = now_ms - 3_600_000
+        entry_times[:] = [ts for ts in entry_times if ts >= cutoff_60m]
+        return {
+            "msSincePreviousTrade": max(0, now_ms - previous_any) if previous_any else None,
+            "msSincePreviousMintTrade": max(0, now_ms - previous_mint) if previous_mint else None,
+            "leaderEntries5m": sum(ts >= cutoff_5m for ts in entry_times),
+            "leaderEntries60m": sum(ts >= cutoff_60m for ts in entry_times),
+        }
+
+    def _open_capital(self) -> tuple[int, float | None]:
+        open_bags = self._open_bags()
+        values = [
+            _finite_number(bag.get("costUsd"), positive=True)
+            for _leader, _mint, bag in open_bags
+        ]
+        known = [value for value in values if value is not None]
+        return len(open_bags), sum(known) if known else None
+
+    def _holder_metrics(self, mint: str, now_ms: int) -> dict[str, Any]:
+        if not self.holders_enabled:
+            return {
+                "largestHolderSharePct": None,
+                "top10HolderSharePct": None,
+                "holderAccountCount": None,
+            }
+        last = getattr(self, "_holder_last_call_ms", {}).get(mint, 0)
+        if now_ms - last < self.holders_min_gap_sec * 1000:
+            return {
+                "largestHolderSharePct": None,
+                "top10HolderSharePct": None,
+                "holderAccountCount": None,
+            }
+        if not hasattr(self, "_holder_last_call_ms"):
+            self._holder_last_call_ms = {}
+        self._holder_last_call_ms[mint] = now_ms
+        try:
+            supply = rpc_call(self.rpc, "getTokenSupply", [mint])
+            largest = rpc_call(self.rpc, "getTokenLargestAccounts", [mint])
+            supply_value = _finite_number(
+                ((supply or {}).get("value") or {}).get("amount"), positive=True
+            )
+            accounts = ((largest or {}).get("value") or [])
+            amounts = [
+                _finite_number(account.get("amount"), positive=True)
+                for account in accounts
+                if isinstance(account, dict)
+            ]
+            amounts = [amount for amount in amounts if amount is not None]
+            if supply_value is None or not amounts:
+                return {
+                    "largestHolderSharePct": None,
+                    "top10HolderSharePct": None,
+                    "holderAccountCount": len(accounts) if isinstance(accounts, list) else None,
+                }
+            return {
+                "largestHolderSharePct": _pct_ratio(max(amounts), supply_value),
+                "top10HolderSharePct": _pct_ratio(sum(sorted(amounts, reverse=True)[:10]), supply_value),
+                "holderAccountCount": len(accounts) if isinstance(accounts, list) else None,
+            }
+        except Exception:
+            return {
+                "largestHolderSharePct": None,
+                "top10HolderSharePct": None,
+                "holderAccountCount": None,
+            }
+
     def _update_bag_buy(
         self,
         leader: str,
@@ -1066,6 +1356,7 @@ class Observer:
                 "maePct": 0.0,
                 "peakPriceUsd": entry0,
                 "troughPriceUsd": entry0,
+                "peakAtMs": int(block_time) * 1000 if block_time else None,
                 "maxBouncePct": 0.0,
                 "armedMfe5": False,
                 "armedMfe8": False,
@@ -1124,6 +1415,8 @@ class Observer:
         }
         prev_ui = float(prev.get("tokenUi") or 0)
         sold = max(0.0, prev_ui - token_ui) if prev_ui > 0 else abs(token_ui)
+        sell_number = int(prev.get("sells") or 0) + 1
+        sold_pct = sold / prev_ui * 100.0 if prev_ui > 0 else None
         entry_px = prev.get("entryPriceUsd")
         pnl_pct = None
         if (
@@ -1186,7 +1479,16 @@ class Observer:
                 "mfePct": prev.get("mfePct"),
                 "maePct": prev.get("maePct"),
                 "peakPriceUsd": prev.get("peakPriceUsd"),
+                "peakAtMs": prev.get("peakAtMs"),
                 "troughPriceUsd": prev.get("troughPriceUsd"),
+                "mfePctAtExit": prev.get("mfePct"),
+                "soldPctThisSell": sold_pct,
+                "sellNumber": sell_number,
+                "secondsFromPeakToSell": (
+                    max(0.0, (int(block_time) * 1000 - int(prev["peakAtMs"])) / 1000.0)
+                    if block_time and prev.get("peakAtMs")
+                    else None
+                ),
                 "maxBouncePct": prev.get("maxBouncePct"),
                 "armedMfe5": bool(prev.get("armedMfe5")),
                 "armedMfe8": bool(prev.get("armedMfe8")),
@@ -1210,7 +1512,7 @@ class Observer:
                 ),
                 "isTdEntry": entry_is_td(prev),
                 "buys": prev.get("buys"),
-                "sells": int(prev.get("sells") or 0) + 1,
+                "sells": sell_number,
                 # 1.11.803 — any leg priced off dex instead of the quote delta
                 # makes cash PnL a guess; downstream must exclude these.
                 "costEstimatedLegs": int(prev.get("costEstimatedLegs") or 0),
@@ -1224,6 +1526,11 @@ class Observer:
                 "pathReliable": abs(float(prev.get("mfePct") or 0)) <= 300,
             }
             self._set_bag(leader, mint, None)
+            self.last_closed_by_mint.setdefault(leader, {})[mint] = {
+                "exitPriceUsd": fill_px,
+                "exitTimeMs": int(block_time) * 1000 if block_time else int(time.time() * 1000),
+                "pnlPct": pnl_pct,
+            }
             return {"isFlat": True, "isPartial": False, "bag": None, "session": session}
         self._set_bag(leader, mint, bag)
         return {
@@ -1237,6 +1544,16 @@ class Observer:
                 "heldSec": held_sec,
                 "entryPriceUsd": entry_px,
                 "exitPriceUsd": fill_px,
+                "peakPriceUsd": bag.get("peakPriceUsd"),
+                "peakAtMs": bag.get("peakAtMs"),
+                "mfePctAtExit": bag.get("mfePct"),
+                "soldPctThisSell": sold_pct,
+                "sellNumber": sell_number,
+                "secondsFromPeakToSell": (
+                    max(0.0, (int(block_time) * 1000 - int(bag["peakAtMs"])) / 1000.0)
+                    if block_time and bag.get("peakAtMs")
+                    else None
+                ),
                 "sizeUsdProceeds": size_usd,
                 "costBasisUsd": cost_basis,
                 "cashPnlUsd": cash_pnl,
@@ -1330,6 +1647,41 @@ class Observer:
                 fills = fill_metrics(delta, quote, dex_px)
                 ts_ms = int(time.time() * 1000)
                 cls = classify(pc)
+                trade_ctx = self._trade_context(leader, mint, side, ts_ms)
+                tx_meta = _transaction_metadata(tx)
+                buys5m = dex.get("buys5m") if isinstance(dex, dict) else None
+                sells5m = dex.get("sells5m") if isinstance(dex, dict) else None
+                txns5m = (
+                    _finite_number(buys5m) + _finite_number(sells5m)
+                    if _finite_number(buys5m) is not None and _finite_number(sells5m) is not None
+                    else None
+                )
+                size_usd = fills.get("sizeUsd")
+                vol5m = dex.get("vol5m") if isinstance(dex, dict) else None
+                liq = dex.get("liq") if isinstance(dex, dict) else None
+                fill_dex_delta = (
+                    (float(fills["fillPriceUsd"]) / float(dex_px) - 1) * 100
+                    if _finite_number(fills.get("fillPriceUsd"), positive=True)
+                    and dex_px
+                    and dex_px > 0
+                    else None
+                )
+                trade_derived = {
+                    "sizePctOfLiq": _pct_ratio(size_usd, liq),
+                    "sizePctOfVol5m": _pct_ratio(size_usd, vol5m),
+                    "txns5m": txns5m,
+                    "buyShare5m": (
+                        _finite_number(buys5m) / txns5m
+                        if _finite_number(buys5m) is not None and txns5m and txns5m > 0
+                        else None
+                    ),
+                    "txnsImbalance5m": (
+                        _finite_number(buys5m) - _finite_number(sells5m)
+                        if _finite_number(buys5m) is not None and _finite_number(sells5m) is not None
+                        else None
+                    ),
+                    "fillVsDexMidPct": fill_dex_delta,
+                }
 
                 base = {
                     "leader": leader,
@@ -1358,9 +1710,14 @@ class Observer:
                     "class": cls,
                     "gates": gates,
                     "turnDump": td,
+                    **tx_meta,
+                    **trade_derived,
                 }
 
                 if side == "buy":
+                    previous_closed = (
+                        (self.last_closed_by_mint.get(leader) or {}).get(mint)
+                    )
                     bag_info = self._update_bag_buy(
                         leader,
                         mint,
@@ -1372,6 +1729,7 @@ class Observer:
                         size_estimated=bool(fills.get("sizeUsdEstimated")),
                     )
                     bag = bag_info.get("bag") or {}
+                    open_count, open_capital = self._open_capital()
                     if bag_info["isNewBag"] and bag:
                         bag["entryClass"] = cls
                         bag["entryGates"] = gates
@@ -1385,6 +1743,37 @@ class Observer:
                             "bagTokenUi": post_ui,
                             "bagEntryPriceUsd": bag.get("entryPriceUsd"),
                             "bagCostUsd": bag.get("costUsd"),
+                            **trade_ctx,
+                            "openBagCount": open_count,
+                            "openCapitalUsd": open_capital,
+                            "buyNumberInSession": bag.get("buys"),
+                            "previousLeaderExitPriceUsd": (
+                                previous_closed.get("exitPriceUsd")
+                                if previous_closed
+                                else None
+                            ),
+                            "msSincePreviousLeaderExit": (
+                                max(0, ts_ms - int(previous_closed.get("exitTimeMs")))
+                                if previous_closed and previous_closed.get("exitTimeMs")
+                                else None
+                            ),
+                            "entryVsPreviousLeaderExitPct": (
+                                (float(fills["fillPriceUsd"]) / float(previous_closed["exitPriceUsd"]) - 1) * 100
+                                if previous_closed
+                                and fills.get("fillPriceUsd")
+                                and _finite_number(previous_closed.get("exitPriceUsd"), positive=True)
+                                else None
+                            ),
+                            "isReentry": previous_closed is not None,
+                            **(
+                                self._holder_metrics(mint, ts_ms)
+                                if bag_info["isNewBag"]
+                                else {
+                                    "largestHolderSharePct": None,
+                                    "top10HolderSharePct": None,
+                                    "holderAccountCount": None,
+                                }
+                            ),
                         }
                     )
                     self.emit(base)
@@ -1489,6 +1878,19 @@ class Observer:
                             "heldSec": sess.get("heldSec"),
                             "entryPriceUsd": sess.get("entryPriceUsd"),
                             "exitPriceUsd": sess.get("exitPriceUsd") or fills.get("fillPriceUsd"),
+                            **trade_ctx,
+                            "openBagCount": self._open_capital()[0],
+                            "openCapitalUsd": self._open_capital()[1],
+                            "soldPctThisSell": sess.get("soldPctThisSell"),
+                            "sellNumber": sess.get("sellNumber"),
+                            "peakPriceUsd": sess.get("peakPriceUsd"),
+                            "troughPriceUsd": sess.get("troughPriceUsd"),
+                            "mfePct": sess.get("mfePct"),
+                            "maePct": sess.get("maePct"),
+                            "buys": sess.get("buys"),
+                            "sells": sess.get("sells"),
+                            "mfePctAtExit": sess.get("mfePctAtExit"),
+                            "secondsFromPeakToSell": sess.get("secondsFromPeakToSell"),
                         }
                     )
                     self.emit(base)
@@ -1569,6 +1971,11 @@ class Observer:
                                 "mfePct": sess.get("mfePct"),
                                 "maePct": sess.get("maePct"),
                                 "peakPriceUsd": sess.get("peakPriceUsd"),
+                                "mfePctAtExit": sess.get("mfePctAtExit"),
+                                "soldPctThisSell": sess.get("soldPctThisSell"),
+                                "sellNumber": sess.get("sellNumber"),
+                                "secondsFromPeakToSell": sess.get("secondsFromPeakToSell"),
+                                "peakAtMs": sess.get("peakAtMs"),
                                 "troughPriceUsd": sess.get("troughPriceUsd"),
                                 "maxBouncePct": sess.get("maxBouncePct"),
                                 "givebackPctAtExit": sess.get("givebackPctAtExit"),

@@ -117,6 +117,13 @@ export type MildDipCandidate = {
   tapeMinuteFailureReason?: string | null;
   /** Impulse metrics that were unavailable while other configured metrics passed. */
   impulseMetricsUnknown?: string[];
+  structSource?: 'leader_seed' | 'dex' | 'gecko' | null;
+  structAgeMs?: number | null;
+  streamWindowSampleCount?: number;
+  streamCoverageMs?: number | null;
+  streamBounceFromTroughPct?: number | null;
+  streamRallyIntoPeakPct?: number | null;
+  streamDumpExtentFromPeakPct?: number | null;
 };
 
 const SOLANA_CHAIN = 'solana';

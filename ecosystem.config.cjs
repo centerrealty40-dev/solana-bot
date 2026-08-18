@@ -3401,6 +3401,11 @@ const PM2_APPS = [
         MILD_DIP_ENTRY_MIN_TXNS_5M: '20',
         MILD_DIP_ENTRY_MIN_TURNOVER: '0.05',
         /**
+         * 1.11.1029 — журналирование паттернов лидера расширено additive-only:
+         * Dex windows, all-pool depth, trade execution, cadence/re-entry и
+         * exit profile. Торговые решения и пороги не меняются.
+         */
+        /**
          * 1.11.905 — one hour instead of six for a name a leader is buying.
          *
          * The floor is there because a young pair is usually unformed, but two

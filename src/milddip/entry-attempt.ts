@@ -1451,6 +1451,35 @@ export async function attemptMildDipEntry(args: {
     tapeSampleCount: c.tapeSampleCount ?? null,
     tapeCoverageMs: c.tapeCoverageMs ?? null,
     tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
+    structSource: c.structSource ?? null,
+    structAgeMs: c.structAgeMs ?? null,
+    txns5m:
+      c.metrics.buys5m != null && c.metrics.sells5m != null
+        ? c.metrics.buys5m + c.metrics.sells5m
+        : null,
+    turnover5mLiq:
+      c.metrics.volume5mUsd != null &&
+      c.metrics.liquidityUsd != null &&
+      c.metrics.liquidityUsd > 0
+        ? c.metrics.volume5mUsd / c.metrics.liquidityUsd
+        : null,
+    buyShare5m:
+      c.metrics.buys5m != null &&
+      c.metrics.sells5m != null &&
+      c.metrics.buys5m + c.metrics.sells5m > 0
+        ? c.metrics.buys5m / (c.metrics.buys5m + c.metrics.sells5m)
+        : null,
+    clipLiqPct:
+      sized.sizeUsd != null &&
+      sizeMetrics.liquidityUsd != null &&
+      sizeMetrics.liquidityUsd > 0
+        ? (sized.sizeUsd / sizeMetrics.liquidityUsd) * 100
+        : null,
+    streamWindowSampleCount: c.streamWindowSampleCount ?? null,
+    streamCoverageMs: c.streamCoverageMs ?? null,
+    streamBounceFromTroughPct: c.streamBounceFromTroughPct ?? null,
+    streamRallyIntoPeakPct: c.streamRallyIntoPeakPct ?? null,
+    streamDumpExtentFromPeakPct: c.streamDumpExtentFromPeakPct ?? null,
     greenExitProfile: isGreen ? greenExitProfile : null,
     ...(opts.mirrorBranch ? { mirrorBranch: opts.mirrorBranch } : {}),
   });
@@ -1577,6 +1606,35 @@ export async function attemptMildDipEntry(args: {
     tapeSampleCount: c.tapeSampleCount ?? null,
     tapeCoverageMs: c.tapeCoverageMs ?? null,
     tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
+    structSource: c.structSource ?? null,
+    structAgeMs: c.structAgeMs ?? null,
+    txns5m:
+      c.metrics.buys5m != null && c.metrics.sells5m != null
+        ? c.metrics.buys5m + c.metrics.sells5m
+        : null,
+    turnover5mLiq:
+      c.metrics.volume5mUsd != null &&
+      c.metrics.liquidityUsd != null &&
+      c.metrics.liquidityUsd > 0
+        ? c.metrics.volume5mUsd / c.metrics.liquidityUsd
+        : null,
+    buyShare5m:
+      c.metrics.buys5m != null &&
+      c.metrics.sells5m != null &&
+      c.metrics.buys5m + c.metrics.sells5m > 0
+        ? c.metrics.buys5m / (c.metrics.buys5m + c.metrics.sells5m)
+        : null,
+    clipLiqPct:
+      sized.sizeUsd != null &&
+      sizeMetrics.liquidityUsd != null &&
+      sizeMetrics.liquidityUsd > 0
+        ? (sized.sizeUsd / sizeMetrics.liquidityUsd) * 100
+        : null,
+    streamWindowSampleCount: c.streamWindowSampleCount ?? null,
+    streamCoverageMs: c.streamCoverageMs ?? null,
+    streamBounceFromTroughPct: c.streamBounceFromTroughPct ?? null,
+    streamRallyIntoPeakPct: c.streamRallyIntoPeakPct ?? null,
+    streamDumpExtentFromPeakPct: c.streamDumpExtentFromPeakPct ?? null,
     greenExitProfile: isGreen ? greenExitProfile : null,
     ...(opts.mirrorBranch ? { mirrorBranch: opts.mirrorBranch } : {}),
     // 1.11.803 — full decision snapshot; without it post-hoc entry analysis
@@ -1592,6 +1650,32 @@ export async function attemptMildDipEntry(args: {
       dexId: c.metrics.dexId ?? null,
       buys5m: c.metrics.buys5m ?? null,
       sells5m: c.metrics.sells5m ?? null,
+      txns5m:
+        c.metrics.buys5m != null && c.metrics.sells5m != null
+          ? c.metrics.buys5m + c.metrics.sells5m
+          : null,
+      turnover5mLiq:
+        c.metrics.volume5mUsd != null &&
+        c.metrics.liquidityUsd != null &&
+        c.metrics.liquidityUsd > 0
+          ? c.metrics.volume5mUsd / c.metrics.liquidityUsd
+          : null,
+      buyShare5m:
+        c.metrics.buys5m != null &&
+        c.metrics.sells5m != null &&
+        c.metrics.buys5m + c.metrics.sells5m > 0
+          ? c.metrics.buys5m / (c.metrics.buys5m + c.metrics.sells5m)
+          : null,
+      clipLiqPct:
+        sized.sizeUsd != null &&
+        sizeMetrics.liquidityUsd != null &&
+        sizeMetrics.liquidityUsd > 0
+          ? (sized.sizeUsd / sizeMetrics.liquidityUsd) * 100
+          : null,
+      structSource: c.structSource ?? null,
+      structAgeMs: c.structAgeMs ?? null,
+      streamWindowSampleCount: c.streamWindowSampleCount ?? null,
+      streamCoverageMs: c.streamCoverageMs ?? null,
       dipSource: c.dipSource,
       turn: tdSnapshot?.turn ?? null,
       dump: tdSnapshot?.dump ?? null,

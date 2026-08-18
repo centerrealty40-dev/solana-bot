@@ -95,6 +95,41 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     expect(py).toContain('_dex_cache');
   });
 
+  it('1.11.1029 records leader pattern telemetry without inventing m1', () => {
+    for (const field of [
+      'pc6h',
+      'pc24h',
+      'vol6h',
+      'vol24h',
+      'buys1h',
+      'buys6h',
+      'buys24h',
+      'fdv',
+      'quoteSymbol',
+      'pairCount',
+      'deepestPairAddress',
+      'selectedPairLiqShare',
+      'sizePctOfLiq',
+      'sizePctOfVol5m',
+      'fillVsDexMidPct',
+      'feeLamports',
+      'computeUnitsConsumed',
+      'viaAggregator',
+      'lastClosedByMint',
+      'msSincePreviousTrade',
+      'isReentry',
+      'peakAtMs',
+      'soldPctThisSell',
+      'secondsFromPeakToSell',
+      'LEADER_OBSERVER_HOLDERS_ENABLED',
+    ]) {
+      expect(py).toContain(field);
+    }
+    expect(py).not.toContain('m1');
+    expect(py).toContain('leader_session_flat');
+    expect(py).toContain('leader_sell_observed');
+  });
+
   it('ships 48h divergence + segment stats scripts', () => {
     const report = readFileSync(
       resolve('scripts/milddip/leader-divergence-48h.py'),

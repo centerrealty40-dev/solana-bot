@@ -89,6 +89,7 @@ function structuralFromLeaderSeed(
   }
   return {
     fetchedAtMs: hit.lastSeenAtMs,
+    source: 'leader_seed',
     priceUsd,
     metrics: {
       priceChange5mPct: hit.pc5m ?? null,
@@ -109,6 +110,7 @@ export type StructuralCacheEntry = {
   fetchedAtMs: number;
   priceUsd: number;
   metrics: MildDipCandidateMetrics;
+  source: 'leader_seed' | 'dex' | 'gecko';
 };
 
 const structuralCache = new Map<string, StructuralCacheEntry>();
@@ -251,9 +253,10 @@ export function noteStructuralCache(
   priceUsd: number,
   metrics: MildDipCandidateMetrics,
   fetchedAtMs: number,
+  source: StructuralCacheEntry['source'] = 'dex',
 ): void {
   if (!mint || !(priceUsd > 0)) return;
-  structuralCache.set(mint, { fetchedAtMs, priceUsd, metrics });
+  structuralCache.set(mint, { fetchedAtMs, priceUsd, metrics, source });
 }
 
 export function invalidateStructuralCache(mint: string): void {
@@ -646,8 +649,13 @@ export function structuralFromDexDetails(
     volume1hUsd: details.volume1hUsd,
     priceChange1hPct: details.priceChangeH1Pct,
   };
-  const entry = { fetchedAtMs: nowMs, priceUsd: details.priceUsd!, metrics };
-  noteStructuralCache(mint, entry.priceUsd, metrics, nowMs);
+  const entry: StructuralCacheEntry = {
+    fetchedAtMs: nowMs,
+    priceUsd: details.priceUsd!,
+    metrics,
+    source: 'dex',
+  };
+  noteStructuralCache(mint, entry.priceUsd, metrics, nowMs, 'dex');
   return entry;
 }
 
@@ -732,8 +740,10 @@ export async function evaluateFastPathCandidate(
     onSkip: (reason: string, details?: Record<string, unknown>) => void;
   },
 ): Promise<MildDipCandidate | null> {
+  const skipContext: Record<string, unknown> = {};
   const skip = (reason: string, extra?: Record<string, unknown>): null => {
-    shadow?.onSkip(reason, extra);
+    const details = { ...skipContext, ...extra };
+    shadow?.onSkip(reason, details);
     // Leave a trail for leader + stream wakes (silent null hid stream misses).
     // Throttle: wake ticks every 2s; journal at most every 15s per mint.
     if ((trigger === 'leader' || trigger === 'stream') && reason !== 'min_gap') {
@@ -746,14 +756,14 @@ export async function evaluateFastPathCandidate(
           lane: 'fast',
           trigger,
           reason,
-          ...extra,
+          ...details,
         });
       }
     }
     return null;
   };
   const shadowSkip = (reason: string, extra?: Record<string, unknown>): null => {
-    shadow?.onSkip(reason, extra);
+    shadow?.onSkip(reason, { ...skipContext, ...extra });
     return null;
   };
 
@@ -774,6 +784,7 @@ export async function evaluateFastPathCandidate(
   const greenStreamRally = mildDipPriceRing
     .streamWindowMetrics(mint, lookbackMs, nowMs)
     .rallyIntoPeakPct;
+  const streamWindow = mildDipPriceRing.streamWindowMetrics(mint, lookbackMs, nowMs);
   const tapeOptions = greenTapeMinuteOptions(cfg);
   const tapeMinute = mildDipPriceRing.tapeMinuteMetrics(
     mint,
@@ -840,18 +851,20 @@ export async function evaluateFastPathCandidate(
   // 1.11.775 — leader wake: prefer observer Dex snapshot (same print he bought on).
   let struct: StructuralCacheEntry | null =
     trigger === 'leader' && seedHit ? structuralFromLeaderSeed(seedHit, nowMs) : null;
-  let structSource: 'leader_seed' | 'dex' = struct ? 'leader_seed' : 'dex';
+  let structSource: 'leader_seed' | 'dex' | 'gecko' = struct?.source ?? 'dex';
   if (!struct) {
     struct = await loadStructural(mint, cfg, nowMs);
-    structSource = 'dex';
+    structSource = struct?.source ?? 'dex';
   } else {
     // Keep cache warm for follow-up ticks.
-    noteStructuralCache(mint, struct.priceUsd, struct.metrics, nowMs);
+    noteStructuralCache(mint, struct.priceUsd, struct.metrics, nowMs, struct.source);
   }
   if (!struct) return skip('structural_fetch_null', { structSource });
   // Age of the snapshot the decision rests on — lets us check afterwards whether
   // entries taken off a stale snapshot perform worse than fresh ones.
   const structAgeMs = Math.max(0, nowMs - struct.fetchedAtMs);
+  skipContext.structSource = structSource;
+  skipContext.structAgeMs = structAgeMs;
   /**
    * Green lane, evaluated before the dip floors because it is a different
    * trade with its own floors, its own clip and its own exit. A momentum name
@@ -928,6 +941,13 @@ export async function evaluateFastPathCandidate(
         tapeSampleCount: tapeMinute.sampleCount,
         tapeCoverageMs: tapeMinute.coverageMs,
         tapeMinuteFailureReason: tapeMinute.failureReason,
+        structSource,
+        structAgeMs,
+        streamWindowSampleCount: streamWindow.sampleCount,
+        streamCoverageMs: streamWindow.oldestSampleAgeMs,
+        streamBounceFromTroughPct: streamWindow.bounceFromTroughPct,
+        streamRallyIntoPeakPct: streamWindow.rallyIntoPeakPct,
+        streamDumpExtentFromPeakPct: streamWindow.dumpExtentFromPeakPct,
       };
     }
     if (shouldJournalGreenVerdict(mint, nowMs)) {
@@ -943,6 +963,8 @@ export async function evaluateFastPathCandidate(
           tapeOptions,
         ),
         reasons: g.reasons,
+        structSource,
+        structAgeMs,
         pc5m: struct.metrics.priceChange5mPct,
         pc1h: struct.metrics.priceChange1hPct,
         vol5m: struct.metrics.volume5mUsd,
@@ -1229,6 +1251,8 @@ export async function evaluateFastPathCandidate(
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_mild_stabilize_skip',
         mint,
+        structSource,
+        structAgeMs,
         dumpPct: mild.dumpPct,
         bouncePct: mild.bouncePct,
         troughAtMs: mild.troughAtMs,
@@ -1383,6 +1407,7 @@ export async function evaluateFastPathCandidate(
         lane: 'fast',
         trigger,
         structSource,
+        structAgeMs,
         pc5m: tdPc5m,
         streamDd,
         streamDump,
@@ -1451,6 +1476,13 @@ export async function evaluateFastPathCandidate(
     priceUsd,
     metrics,
     dipSource,
+    structSource,
+    structAgeMs,
+    streamWindowSampleCount: streamWindow.sampleCount,
+    streamCoverageMs: streamWindow.oldestSampleAgeMs,
+    streamBounceFromTroughPct: streamWindow.bounceFromTroughPct,
+    streamRallyIntoPeakPct: streamWindow.rallyIntoPeakPct,
+    streamDumpExtentFromPeakPct: streamWindow.dumpExtentFromPeakPct,
     ...(impulseEntry.unknownReasons
       ? { impulseMetricsUnknown: impulseEntry.unknownReasons }
       : {}),
