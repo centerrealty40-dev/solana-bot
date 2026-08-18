@@ -1,9 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { evaluateRebuyBelowExit } from '../../src/milddip/gates.js';
 import {
   laneEntryRequestUsd,
   mirrorOnlyEntryAllowed,
+  probeOverrideAllowed,
   probeRequestedUsd,
 } from '../../src/milddip/entry-attempt.js';
 
@@ -21,18 +23,44 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
     expect(src).toContain('probeBlockedUsd > 0');
     expect(src).toContain('Math.min(probeBlockedUsd, familiarityCapped)');
     expect(src).toContain('Math.min(cfg.green.positionUsd, knifeCapped)');
-    expect(src).toContain('isGreen ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd)');
+    expect(src).toContain(
+      'isGreen || probeReason != null ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd)',
+    );
   });
 
-  it('a non-positive probe cap leaves the normal request uncapped', () => {
-    expect(probeRequestedUsd('rebuy_below_exit', 0, 8)).toBe(8);
-    expect(probeRequestedUsd('rebuy_liq_drop', -1, 8)).toBe(8);
-    expect(src).toContain('probeBlockedUsd > 0');
+  it('a disabled probe cannot override a blocked re-entry', () => {
+    expect(probeOverrideAllowed(false, 2)).toBe(false);
+    expect(probeOverrideAllowed(true, 0)).toBe(false);
+    expect(probeRequestedUsd('rebuy_below_exit', 0, 8)).toBe(0);
+    expect(probeRequestedUsd('rebuy_liq_drop', -1, 8)).toBe(0);
+    expect(src).toContain('probeOverrideAllowed(cfg.probeBlockedEnabled, cfg.probeBlockedUsd)');
+    expect(src).toContain("kind: 'mild_dip_probe_disabled_skip'");
+  });
+
+  it('incident values remain blocked when the probe is disabled', () => {
+    const nowMs = 2_000_000;
+    const lastExitPriceUsd = 0.0002446194461474536;
+    const rebuy = evaluateRebuyBelowExit({
+      freshPriceUsd: lastExitPriceUsd * 1.0555,
+      lastExitPriceUsd,
+      lastExitAtMs: nowMs - 760_016,
+      nowMs,
+      minBelowExitPct: 5,
+      maxAgeMs: 900_000,
+    });
+    expect(rebuy.pass).toBe(false);
+    expect(rebuy.reasons[0]).toContain('rebuy_below_exit');
+    expect(probeOverrideAllowed(false, 0)).toBe(false);
+    expect(probeRequestedUsd('rebuy_below_exit', 0, 17.185498)).toBe(0);
   });
 
   it('a positive probe cap applies only to probe requests', () => {
+    expect(probeOverrideAllowed(true, 3)).toBe(true);
     expect(probeRequestedUsd('rebuy_below_exit', 3, 8)).toBe(3);
     expect(probeRequestedUsd(null, 3, 8)).toBe(8);
+    expect(probeRequestedUsd('rebuy_liq_drop', 3, 8)).toBeLessThanOrEqual(3);
+    expect(src).toContain('Math.min(laneRequest, requestedUsd)');
+    expect(src).toContain('Math.min(sizedRaw.sizeUsd, cfg.probeBlockedUsd)');
   });
 
   it('fills are tagged so they never mix into book statistics', () => {
@@ -63,7 +91,7 @@ describe('1.11.827 probe buys on re-entry blocks', () => {
   });
 
   it('live env keeps six curve-sized probes per hour at most', () => {
-    expect(eco).toContain("MILD_DIP_PROBE_BLOCKED: '1'");
+    expect(eco).toContain("MILD_DIP_PROBE_BLOCKED: '0'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_USD: '0'");
     expect(eco).toContain("MILD_DIP_PROBE_BLOCKED_MAX_PER_HOUR: '6'");
   });

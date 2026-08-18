@@ -4430,7 +4430,7 @@ const PM2_APPS = [
          * answer it with real fills and real slippage. Tagged `probe` in the
          * journal so they never mix into the book's statistics.
          */
-        MILD_DIP_PROBE_BLOCKED: '1',
+        MILD_DIP_PROBE_BLOCKED: '0',
         /**
          * 1.11.898 — $1 on a coin we have never closed a position in, against
          * the $3 clip everywhere else. Ordered by how many times we have traded

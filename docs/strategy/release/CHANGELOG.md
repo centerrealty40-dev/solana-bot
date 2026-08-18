@@ -1,3 +1,21 @@
+## [1.11.1023] — 2026-08-20
+
+### Изменено
+
+- Для production `mild-dip-bot` выключен обход отказов
+  `rebuy_below_exit` и `rebuy_liq_drop` через probe-входы.
+- Неположительный `MILD_DIP_PROBE_BLOCKED_USD` теперь выключает probe
+  полностью, а положительное значение всегда ограничивает фактический
+  размер probe-покупки, включая lane и funding-size пути.
+
+### Откат
+
+```text
+MILD_DIP_PROBE_BLOCKED=1
+MILD_DIP_PROBE_BLOCKED_USD=2
+Для полного отката логики revert коммита релиза.
+```
+
 ## [1.11.1022] — 2026-08-20
 
 ### Изменено

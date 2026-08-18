@@ -136,7 +136,7 @@ const leaderGateShadowDeferStamps: number[] = [];
 const leaderGateShadowDeferLastByMint = new Map<string, number>();
 
 function takeProbeSlot(cfg: MildDipConfig, nowMs: number): boolean {
-  if (!cfg.probeBlockedEnabled) return false;
+  if (!probeOverrideAllowed(cfg.probeBlockedEnabled, cfg.probeBlockedUsd)) return false;
   const cutoff = nowMs - 3_600_000;
   while (probeStamps.length > 0 && probeStamps[0]! < cutoff) probeStamps.shift();
   if (probeStamps.length >= cfg.probeBlockedMaxPerHour) return false;
@@ -144,14 +144,20 @@ function takeProbeSlot(cfg: MildDipConfig, nowMs: number): boolean {
   return true;
 }
 
+export function probeOverrideAllowed(
+  probeBlockedEnabled: boolean,
+  probeBlockedUsd: number,
+): boolean {
+  return probeBlockedEnabled && probeBlockedUsd > 0;
+}
+
 export function probeRequestedUsd(
   probeReason: string | null,
   probeBlockedUsd: number,
   familiarityCapped: number,
 ): number {
-  return probeReason && probeBlockedUsd > 0
-    ? Math.min(probeBlockedUsd, familiarityCapped)
-    : familiarityCapped;
+  if (!probeReason) return familiarityCapped;
+  return probeBlockedUsd > 0 ? Math.min(probeBlockedUsd, familiarityCapped) : 0;
 }
 
 export function laneEntryRequestUsd(args: {
@@ -1282,10 +1288,22 @@ export async function attemptMildDipEntry(args: {
     cfg.probeBlockedUsd,
     familiarityCapped,
   );
+  if (probeReason != null && !(cfg.probeBlockedUsd > 0)) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_probe_disabled_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      probe: probeReason,
+      reason: 'probe_cap_disabled',
+    });
+    state.cooldownUntilMs[c.mint] = nowMs + softCd;
+    return 'skip';
+  }
   // 1.11.947 — risk clips may narrow the request, but the live dip lane never
   // sends a buy below its configured minimum. The stopped green lane keeps its
   // own position clip unchanged.
-  const wantUsd = isGreen ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd);
+  const wantUsd =
+    isGreen || probeReason != null ? requestedUsd : Math.max(cfg.sizeMinUsd, requestedUsd);
   const stagedClip = resolveStagedEntryFirstClip({
     enabled: cfg.stagedEntryEnabled && !isMirror,
     isNewBag: !state.open[c.mint],
@@ -1294,19 +1312,25 @@ export async function attemptMildDipEntry(args: {
     sizeUsd: wantUsd,
     firstUsd: cfg.stagedFirstUsd,
   });
-  const laneRequestUsd = laneEntryRequestUsd({
+  const laneRequest = laneEntryRequestUsd({
     leaderStyle: isLeaderStyle,
     leaderStylePositionUsd: cfg.leaderStyle.positionUsd,
     mirror: isMirror,
     mirrorPositionUsd: cfg.leaderMirror.positionUsd,
     stagedClipUsd: stagedClip.sizeUsd,
   });
-  const sized = await args.resolveEntrySizeUsd(
+  const laneRequestUsd =
+    probeReason != null ? Math.min(laneRequest, requestedUsd) : laneRequest;
+  const sizedRaw = await args.resolveEntrySizeUsd(
     cfg,
     copyCfg,
     nowMs,
     laneRequestUsd,
   );
+  const sized =
+    probeReason != null
+      ? { ...sizedRaw, sizeUsd: Math.min(sizedRaw.sizeUsd, cfg.probeBlockedUsd) }
+      : sizedRaw;
   if (sized.stop || !(sized.sizeUsd > 0)) {
     if (sized.reason && sized.reason !== 'usdc_exhausted') {
       appendMildDipJournal(cfg.journalPath, {
