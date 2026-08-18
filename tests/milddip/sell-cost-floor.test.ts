@@ -40,6 +40,7 @@ describe('cost floor on money-motivated sells', () => {
       'never_arm_stale',
       'never_arm_timeout',
       'max_hold_underwater',
+      'hard_time_stop',
       'dust_close',
     ]) {
       expect(MONEY_MOTIVATED_EXIT_REASONS.has(reason)).toBe(false);

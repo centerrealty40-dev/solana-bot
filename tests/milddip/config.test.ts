@@ -71,6 +71,18 @@ describe('mild-dip config exit schema', () => {
     expect(maxCfg.exit.profitExitMinHoldMs).toBe(14_400_000);
   });
 
+  it('defaults and loads the underwater hard time stop', () => {
+    expect(withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).exit.hardTimeStopMs).toBe(0);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_HARD_TIME_STOP_MS: '5400000',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.hardTimeStopMs).toBe(5_400_000);
+  });
+
   it('loads the profitable-exit minimum-hold PnL bypass from the environment', () => {
     expect(
       withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).exit

@@ -78,8 +78,10 @@ describe('shouldDeferSoftExit', () => {
       'never_arm_time_red',
       'never_arm_timeout',
       'max_hold_underwater',
+      'hard_time_stop',
     ] as const) {
-      expect(shouldDeferSoftExit({ ...base, reason }).defer).toBe(true);
+      const verdict = shouldDeferSoftExit({ ...base, reason });
+      expect(verdict.defer).toBe(reason !== 'hard_time_stop');
     }
   });
 

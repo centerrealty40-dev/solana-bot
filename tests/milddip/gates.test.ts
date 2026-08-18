@@ -1888,6 +1888,50 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(v.reason).toBe('max_hold_underwater');
   });
 
+  it('1.11.1017 — hard time stop exits an underwater bag without reclaim', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 97,
+      peakPriceUsd: 112,
+      armed: true,
+      gates: { ...exitGates, hardTimeStopMs: 900_000, lossExitMinBouncePct: 8 },
+      heldMs: 900_000,
+      postEntryTroughPriceUsd: 90,
+      postEntryTroughAtMs: 899_000,
+      lossReclaimWaitStartedAtMs: 100_000,
+    });
+    expect(v.shouldExit).toBe(true);
+    expect(v.fraction).toBe(1);
+    expect(v.reason).toBe('hard_time_stop');
+    expect(v.lossReclaimWaitStartedAtMs).toBeUndefined();
+  });
+
+  it('1.11.1017 — hard time stop leaves a green bag to its runner logic', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 110,
+      peakPriceUsd: 112,
+      armed: true,
+      gates: { ...exitGates, hardTimeStopMs: 900_000 },
+      heldMs: 900_000,
+    });
+    expect(v.shouldExit).toBe(false);
+    expect(v.reason).not.toBe('hard_time_stop');
+    expect(v.gainPct).toBeGreaterThan(0);
+  });
+
+  it('1.11.1017 — hard time stop is a no-op when disabled', () => {
+    const v = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 97,
+      peakPriceUsd: 112,
+      armed: true,
+      gates: { ...exitGates, hardTimeStopMs: 0, neverArmMaxHoldMs: 900_000 },
+      heldMs: 900_000,
+    });
+    expect(v.reason).toBe('max_hold_underwater');
+  });
+
   it('never-arm still holds at 20m when max-hold is 40m', () => {
     const v = evaluateMildDipPeakGiveback({
       entryPriceUsd: 100,
