@@ -20,6 +20,48 @@ export type LeaderStyleEntryDecision = {
   pullbackPct: number | null;
 };
 
+export type LeaderStylePairAgeSource = 'dex' | 'registry' | 'tape';
+
+export function leaderStyleMinRingSpanMs(
+  configuredMs: number,
+  pullbackWindowMs: number,
+): number {
+  return configuredMs > 0 ? configuredMs : pullbackWindowMs;
+}
+
+export function resolveLeaderStylePairAge(args: {
+  nowMs: number;
+  pairCreatedAtMs: number | null | undefined;
+  registryAgeHours: number | null | undefined;
+  observedTapeSpanMs: number;
+}): { pairAgeMs: number | null; pairAgeSource: LeaderStylePairAgeSource | null } {
+  if (
+    args.pairCreatedAtMs != null &&
+    Number.isFinite(args.pairCreatedAtMs) &&
+    args.pairCreatedAtMs > 0 &&
+    args.pairCreatedAtMs <= args.nowMs
+  ) {
+    return {
+      pairAgeMs: args.nowMs - args.pairCreatedAtMs,
+      pairAgeSource: 'dex',
+    };
+  }
+  if (
+    args.registryAgeHours != null &&
+    Number.isFinite(args.registryAgeHours) &&
+    args.registryAgeHours >= 0
+  ) {
+    return {
+      pairAgeMs: args.registryAgeHours * 3_600_000,
+      pairAgeSource: 'registry',
+    };
+  }
+  if (Number.isFinite(args.observedTapeSpanMs) && args.observedTapeSpanMs > 0) {
+    return { pairAgeMs: args.observedTapeSpanMs, pairAgeSource: 'tape' };
+  }
+  return { pairAgeMs: null, pairAgeSource: null };
+}
+
 export function evaluateLeaderStyleEntry(
   args: LeaderStyleEntryArgs,
 ): LeaderStyleEntryDecision {

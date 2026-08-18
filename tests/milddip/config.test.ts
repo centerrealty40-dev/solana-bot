@@ -452,6 +452,22 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
     expect(eco).toContain("MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '0'");
   });
+
+  it('keeps the configured leader-style ring span override', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_LSTYLE_MIN_RING_SPAN_MS: '60000'");
+    expect(
+      withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderStyle.minRingSpanMs,
+    ).toBe(0);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_LSTYLE_MIN_RING_SPAN_MS: '60000',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.leaderStyle.minRingSpanMs).toBe(60_000);
+  });
 });
 
 describe('mild-dip mirror-only configuration', () => {

@@ -81,6 +81,10 @@ import {
   shouldJournalProfitExitMinHoldSkip,
   tpRungsCoveredByGainPct,
 } from './gates.js';
+import {
+  leaderStyleMinRingSpanMs,
+  resolveLeaderStylePairAge,
+} from './leader-style.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
   leaderSeedHitByMint,
@@ -1754,12 +1758,22 @@ async function tryEntriesBody(
         continue;
       }
       const stats = mildDipPriceRing.windowStats(c.mint, cfg.leaderStyle.pullbackWindowMs, nowMs);
-      const pairAgeMs =
-        c.pairCreatedAtMs != null ? Math.max(0, nowMs - c.pairCreatedAtMs) : null;
+      const observedTapeSpanMs = mildDipPriceRing.observedSpanMs(c.mint, nowMs);
+      const pairAge = resolveLeaderStylePairAge({
+        nowMs,
+        pairCreatedAtMs: c.pairCreatedAtMs,
+        registryAgeHours: mildDipPairAgeRegistry.pairAgeHours(c.mint, nowMs),
+        observedTapeSpanMs,
+      });
+      const pairAgeMs = pairAge.pairAgeMs;
+      const minRingSpanMs = leaderStyleMinRingSpanMs(
+        cfg.leaderStyle.minRingSpanMs,
+        cfg.leaderStyle.pullbackWindowMs,
+      );
       const verdict = evaluateLeaderStyleEntry({
         enabled: true,
         dataAgeMs: stats.spanMs,
-        minDataAgeMs: cfg.leaderStyle.pullbackWindowMs,
+        minDataAgeMs: minRingSpanMs,
         volume5mUsd: c.metrics.volume5mUsd,
         liquidityUsd: c.metrics.liquidityUsd,
         minVol5mToLiq: cfg.leaderStyle.minVol5mToLiq,
@@ -1770,22 +1784,29 @@ async function tryEntriesBody(
         localLowUsd: stats.minPriceUsd,
         pullbackPct: cfg.leaderStyle.pullbackPct,
       });
-      if (stats.spanMs < cfg.leaderStyle.pullbackWindowMs) {
+      if (stats.spanMs < minRingSpanMs) {
         journalLeaderStyleSkip(cfg, c.mint, {
-          reason: 'insufficient_data_age',
+          reason: 'insufficient_ring_span',
           pairAgeMs,
+          pairAgeSource: pairAge.pairAgeSource,
           ringSpanMs: stats.spanMs,
         }, nowMs);
         continue;
       }
       if (pairAgeMs == null || pairAgeMs < cfg.leaderStyle.minPairAgeMs) {
-        journalLeaderStyleSkip(cfg, c.mint, { reason: 'insufficient_data_age', pairAgeMs, ringSpanMs: stats.spanMs }, nowMs);
+        journalLeaderStyleSkip(cfg, c.mint, {
+          reason: 'insufficient_pair_age',
+          pairAgeMs,
+          pairAgeSource: pairAge.pairAgeSource,
+          ringSpanMs: stats.spanMs,
+        }, nowMs);
         continue;
       }
       if (!verdict.pass) {
         journalLeaderStyleSkip(cfg, c.mint, {
           reason: verdict.reason,
           pairAgeMs,
+          pairAgeSource: pairAge.pairAgeSource,
           ringSpanMs: stats.spanMs,
           turnover: verdict.turnover,
           liquidityUsd: c.metrics.liquidityUsd,
@@ -1807,7 +1828,7 @@ async function tryEntriesBody(
         leaderStyleBuyMs.push(nowMs);
         appendMildDipJournal(cfg.journalPath, {
           kind: 'mild_dip_lstyle_buy', mint: c.mint, symbol: c.symbol,
-          pairAgeMs, ringSpanMs: stats.spanMs, turnover: verdict.turnover,
+          pairAgeMs, pairAgeSource: pairAge.pairAgeSource, ringSpanMs: stats.spanMs, turnover: verdict.turnover,
           liquidityUsd: c.metrics.liquidityUsd, pc5m: c.metrics.priceChange5mPct,
           pullbackPct: verdict.pullbackPct, localHighUsd: stats.maxPriceUsd,
           localLowUsd: stats.minPriceUsd, priceUsd: c.priceUsd,
