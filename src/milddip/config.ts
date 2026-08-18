@@ -98,6 +98,8 @@ const MildDipConfigSchema = z.object({
    */
   markStreamMaxAgeMs: z.coerce.number().int().min(0).max(900_000).default(300_000),
   streamDexMaxDivergenceFactor: z.coerce.number().min(1).max(100).default(2),
+  entrySignalMarkMaxAgeMs: z.coerce.number().int().min(0).max(900_000).default(0),
+  entrySignalMaxDivergencePct: z.coerce.number().min(0).max(100).default(0),
   /**
    * Prefer a fresh stream print over Dex when choosing the exit mark (ms).
    * 0 = use whichever sample is newest in the ring.
@@ -517,6 +519,10 @@ const MildDipConfigSchema = z.object({
   waitDipWithTurnDump: z.boolean().default(false),
   waitDipPct: z.coerce.number().max(0).default(-10),
   waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
+  waitDipTroughReadyFraction: z.coerce.number().min(0).max(1).default(0),
+  waitDipTroughMinAgeMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
+  waitDipTroughMinBouncePct: z.coerce.number().min(0).max(100).default(0),
+  waitDipTroughMaxBouncePct: z.coerce.number().min(0).max(100).default(100),
   /** Maximum wait-dip dump from the original signal; 0 = off. */
   waitDipMaxDumpFromSignalPct: z.coerce.number().min(0).max(100).default(0),
   /**
@@ -759,6 +765,10 @@ const MildDipConfigSchema = z.object({
   }),
   leaderMirror: z.object({
     enabled: z.boolean().default(false),
+    mirrorOnly: z.boolean().default(false),
+    greenCopyEnabled: z.boolean().default(false),
+    greenCorridorPct: z.coerce.number().min(0).default(1.5),
+    greenCopyMaxPc5mPct: z.coerce.number().min(0).default(40),
     leaders: z.array(z.string()).default([]),
     hitMaxAgeMs: z.coerce.number().int().min(1_000).max(600_000).default(45_000),
     observeMs: z.coerce.number().int().min(1_000).max(600_000).default(45_000),
@@ -1315,6 +1325,8 @@ export function loadMildDipConfig(): MildDipConfig {
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
     markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
     streamDexMaxDivergenceFactor: process.env.MILD_DIP_STREAM_DEX_MAX_DIVERGENCE_FACTOR ?? 2,
+    entrySignalMarkMaxAgeMs: envNum('MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS', 0),
+    entrySignalMaxDivergencePct: envNum('MILD_DIP_ENTRY_SIGNAL_MAX_DIVERGENCE_PCT', 0),
     markStreamPreferMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_PREFER_MAX_AGE_MS ?? 15_000,
     markDexRefreshMs: process.env.MILD_DIP_MARK_DEX_REFRESH_MS ?? 8_000,
     markJupiterRefreshMs: process.env.MILD_DIP_MARK_JUPITER_REFRESH_MS ?? 0,
@@ -1417,6 +1429,10 @@ export function loadMildDipConfig(): MildDipConfig {
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
+    waitDipTroughReadyFraction: envNum('MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION', 0),
+    waitDipTroughMinAgeMs: envNum('MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS', 0),
+    waitDipTroughMinBouncePct: envNum('MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT', 0),
+    waitDipTroughMaxBouncePct: envNum('MILD_DIP_WAIT_DIP_TROUGH_MAX_BOUNCE_PCT', 100),
     waitDipMaxDumpFromSignalPct: envNum(
       'MILD_DIP_WAIT_DIP_MAX_DUMP_FROM_SIGNAL_PCT',
       0,
@@ -1649,6 +1665,10 @@ export function loadMildDipConfig(): MildDipConfig {
     green,
     leaderMirror: {
       enabled: envBool('MILD_DIP_MIRROR_ENABLED', false),
+      mirrorOnly: envBool('MILD_DIP_MIRROR_ONLY', false),
+      greenCopyEnabled: envBool('MILD_DIP_MIRROR_GREEN_COPY_ENABLED', false),
+      greenCorridorPct: envNum('MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT', 1.5),
+      greenCopyMaxPc5mPct: envNum('MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT', 40),
       leaders: (process.env.MILD_DIP_MIRROR_LEADERS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
       hitMaxAgeMs: envNum('MILD_DIP_MIRROR_LEADER_MAX_AGE_MS', 45_000),
       observeMs: envNum('MILD_DIP_MIRROR_OBSERVE_MS', 45_000),

@@ -139,6 +139,28 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.waitDipMaxDumpFromSignalPct).toBe(0);
   });
 
+  it('loads signal freshness and trough-ready defaults and overrides', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.entrySignalMarkMaxAgeMs).toBe(0);
+    expect(defaults.entrySignalMaxDivergencePct).toBe(0);
+    expect(defaults.waitDipTroughReadyFraction).toBe(0);
+    const cfg = withConfigEnv({
+      ...baseEnv,
+      MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS: '45000',
+      MILD_DIP_ENTRY_SIGNAL_MAX_DIVERGENCE_PCT: '15',
+      MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION: '0.7',
+      MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS: '60000',
+      MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT: '1.5',
+      MILD_DIP_WAIT_DIP_TROUGH_MAX_BOUNCE_PCT: '8',
+    }, () => loadMildDipConfig());
+    expect(cfg.entrySignalMarkMaxAgeMs).toBe(45_000);
+    expect(cfg.entrySignalMaxDivergencePct).toBe(15);
+    expect(cfg.waitDipTroughReadyFraction).toBe(0.7);
+    expect(cfg.waitDipTroughMinAgeMs).toBe(60_000);
+    expect(cfg.waitDipTroughMinBouncePct).toBe(1.5);
+    expect(cfg.waitDipTroughMaxBouncePct).toBe(8);
+  });
+
   it('defaults the entry minimum liquidity threshold to $4000', () => {
     const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(cfg.entryMinLiquidityUsd).toBe(4000);
@@ -445,5 +467,51 @@ describe('mild-dip config exit schema', () => {
       () => loadMildDipConfig(),
     );
     expect(cfg.leaderStyle.minRingSpanMs).toBe(60_000);
+  });
+});
+
+describe('mild-dip mirror-only configuration', () => {
+  const baseEnv = {
+    MILD_DIP_EXECUTION_MODE: 'paper',
+    MILD_DIP_RPC_URL: 'https://example.invalid',
+  };
+
+  it('defaults mirror-only off and loads the explicit fail-safe flag', () => {
+    expect(withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror.mirrorOnly).toBe(
+      false,
+    );
+    expect(
+      withConfigEnv(
+        { ...baseEnv, MILD_DIP_MIRROR_ONLY: '1' },
+        () => loadMildDipConfig(),
+      ).leaderMirror.mirrorOnly,
+    ).toBe(true);
+  });
+});
+
+describe('mild-dip mirror green-copy configuration', () => {
+  const baseEnv = {
+    MILD_DIP_EXECUTION_MODE: 'paper',
+    MILD_DIP_RPC_URL: 'https://example.invalid',
+  };
+
+  it('uses safe defaults and loads green-copy overrides', () => {
+    const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
+    expect(defaults.greenCopyEnabled).toBe(false);
+    expect(defaults.greenCorridorPct).toBe(1.5);
+    expect(defaults.greenCopyMaxPc5mPct).toBe(40);
+
+    const configured = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MIRROR_GREEN_COPY_ENABLED: '1',
+        MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '2.25',
+        MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT: '55',
+      },
+      () => loadMildDipConfig(),
+    ).leaderMirror;
+    expect(configured.greenCopyEnabled).toBe(true);
+    expect(configured.greenCorridorPct).toBe(2.25);
+    expect(configured.greenCopyMaxPc5mPct).toBe(55);
   });
 });

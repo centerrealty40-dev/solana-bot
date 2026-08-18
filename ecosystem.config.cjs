@@ -3086,6 +3086,10 @@ const PM2_APPS = [
          * for 0–60s/60–300s/300–600s/>600s). Rollback: 1200000.
          */
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '600000',
+        MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION: '0.7',
+        MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS: '60000',
+        MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT: '1.5',
+        MILD_DIP_WAIT_DIP_TROUGH_MAX_BOUNCE_PCT: '8',
         /**
          * 1.11.998 — the ceiling existed, but there was no depth floor.
          * The old 10% value came from a fixed-$5 per-$100 tape reconstruction
@@ -3159,7 +3163,8 @@ const PM2_APPS = [
         MILD_DIP_MILD_STABILIZE_ENABLED: '1',
         /** 1.11.971 — on: leader-style reclaim entries, trough must hold 60s. */
         MILD_DIP_MILD_STABILIZE_FRESH_ENTRY: '1',
-        MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-25',
+        // Rollback: MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT='-25'.
+        MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT: '-60',
         MILD_DIP_MILD_STABILIZE_MAX_DUMP_PCT: '-6',
         MILD_DIP_MILD_STABILIZE_MIN_BOUNCE_PCT: '1.5',
         MILD_DIP_MILD_STABILIZE_MAX_BOUNCE_PCT: '8',
@@ -3897,7 +3902,7 @@ const PM2_APPS = [
         MILD_DIP_GREEN_MAX_OPEN: '8',
         MILD_DIP_GREEN_MAX_BUYS_PER_HOUR: '60',
         // 1.11.1001 — bounded copy lane; rollback is MILD_DIP_MIRROR_ENABLED='0'.
-        MILD_DIP_MIRROR_ENABLED: '1',
+        MILD_DIP_MIRROR_ENABLED: '0',
         MILD_DIP_MIRROR_LEADERS: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
         MILD_DIP_MIRROR_LEADER_MAX_AGE_MS: '45000',
         MILD_DIP_MIRROR_OBSERVE_MS: '45000',
@@ -4094,6 +4099,9 @@ const PM2_APPS = [
          * Never await Dex on mark pass (that built the 20–60s gate queue).
          */
         MILD_DIP_MARK_STREAM_MAX_AGE_MS: '120000',
+        // Rollback: set both signal freshness thresholds to '0' (disabled).
+        MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS: '45000',
+        MILD_DIP_ENTRY_SIGNAL_MAX_DIVERGENCE_PCT: '15',
         MILD_DIP_MARK_STREAM_PREFER_MAX_AGE_MS: '15000',
         // Background Dex→ring for open bags when stream quiet (0 = off).
         /**
@@ -4693,6 +4701,72 @@ const PM2_APPS = [
      * drift — deleted to free Dex/RPC for live-oscar discovery.
      */
 ];
+
+/**
+ * Mirror copytrading on a dedicated wallet, so it cannot mix with the DIP strategy.
+ * Keep the base tuning aligned with mild-dip-bot; only wallet, state, and mirror-only
+ * runtime settings differ.
+ */
+const mildDipBotApp = PM2_APPS.find((app) => app.name === 'mild-dip-bot');
+if (mildDipBotApp) {
+  PM2_APPS.push({
+    ...mildDipBotApp,
+    name: 'mild-dip-mirror',
+    env: {
+      ...mildDipBotApp.env,
+      MILD_DIP_APP_NAME: 'mild-dip-mirror',
+      MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/mcs-wallet.json'),
+      MILD_DIP_WALLET_PUBKEY: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
+      MILD_DIP_LEADER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
+      MILD_DIP_JOURNAL_PATH: path.join(root, 'data/milddip-mirror/journal.jsonl'),
+      MILD_DIP_TRADES_PATH: path.join(root, 'data/milddip-mirror/trades.jsonl'),
+      MILD_DIP_STATE_PATH: path.join(root, 'data/milddip-mirror/state.json'),
+      MILD_DIP_HOT_MINTS_PATH: path.join(root, 'data/milddip-mirror/hot-mints.json'),
+      MILD_DIP_PRICE_RING_PATH: path.join(root, 'data/milddip-mirror/price-ring.json'),
+      MILD_DIP_MIRROR_ENABLED: '1',
+      MILD_DIP_MIRROR_ONLY: '1',
+      MILD_DIP_MIRROR_GREEN_COPY_ENABLED: '1',
+      MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3',
+      MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT: '40',
+      MILD_DIP_GREEN_ENABLED: '0',
+      MILD_DIP_LSTYLE_ENABLED: '0',
+      MILD_DIP_FAST_PATH: '0',
+      MILD_DIP_STREAM: '0',
+      MILD_DIP_STREAM_PRICE_SAMPLE: '0',
+      MILD_DIP_TAPE_SHADOW_ENABLED: '0',
+      MILD_DIP_DISCOVER_SOURCES: '',
+      MILD_DIP_LEADER_SEED_ENTRY: '0',
+      MILD_DIP_MIRROR_LEADERS: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+      MILD_DIP_MIRROR_LEADER_MAX_AGE_MS: '45000',
+      MILD_DIP_MIRROR_OBSERVE_MS: '45000',
+      MILD_DIP_MIRROR_QUOTE_INTERVAL_MS: '3000',
+      MILD_DIP_MIRROR_QUOTE_MAX_AGE_MS: '10000',
+      MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000',
+      MILD_DIP_MIRROR_MIN_PAIR_AGE_HOURS: '0.5',
+      MILD_DIP_MIRROR_MIN_MCAP_USD: '5000',
+      MILD_DIP_MIRROR_MAX_OPEN: '8',
+      MILD_DIP_MIRROR_MAX_QUOTE_MINTS: '8',
+      MILD_DIP_MIRROR_TICK_INTERVAL_MS: '2000',
+      MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS: '4',
+      MILD_DIP_MIRROR_STRUCTURAL_GAP_MS: '5000',
+      MILD_DIP_MIRROR_POSITION_USD: '10',
+      MILD_DIP_MIRROR_MAX_PC5M_PCT: '0',
+      MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ: '2',
+      MILD_DIP_MIRROR_REQUIRE_DEEP_DUMP: '0',
+      MILD_DIP_MIRROR_DEEP_DUMP_PCT: '-8',
+      MILD_DIP_MIRROR_GREEN_IMPULSE_PCT: '5',
+      MILD_DIP_MIRROR_RUNUP_PC5M_PCT: '10',
+      MILD_DIP_MIRROR_MAX_PREMIUM_PCT: '2',
+      MILD_DIP_MIRROR_COOLDOWN_MS: '900000',
+      MILD_DIP_MIRROR_EXIT_ARM_PCT: '2',
+      MILD_DIP_MIRROR_EXIT_TRAIL_PCT: '4',
+      MILD_DIP_MIRROR_EXIT_STOP_PCT: '45',
+      MILD_DIP_MIRROR_NO_MOVE_CUT_MS: '600000',
+      MILD_DIP_MIRROR_NO_MOVE_MIN_MFE_PCT: '2',
+      MILD_DIP_MIRROR_MAX_HOLD_MS: '3600000',
+    },
+  });
+}
 
 /**
  * Apps filtered out of PM2 on Oscar VPS so `pm2 start/reload ecosystem` cannot revive them.

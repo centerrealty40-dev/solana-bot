@@ -1,4 +1,4 @@
-## [1.11.1010] — 2026-08-20
+## [1.11.1014] — 2026-08-20
 
 ### Изменено
 
@@ -14,6 +14,87 @@
 
 ```text
 MILD_DIP_LSTYLE_MIN_RING_SPAN_MS=0
+```
+
+## [1.11.1013] — 2026-08-20
+
+### Изменено
+
+- Уточнена диагностика отказов покупки mild-dip при устаревшем signal mark:
+  premium guard по-прежнему блокирует покупку, но устаревший снапшот
+  журналируется как `mild_dip_signal_price_stale`, структурный кэш
+  инвалидируется, а повторные квоты кратко ограничиваются.
+- Окно `mild_stabilize` расширено до `-60%` от `-25%`; остальные гейты
+  ветки не менялись.
+- Wait-dip получил консервативный путь готовности по подтверждённому дну:
+  при просадке до 70% от целевой, возрасте дна 60 секунд и отскоке
+  `1.5–8%`, без ослабления pre-buy ceiling/too-deep/chase гейтов.
+
+### Откат
+
+```text
+MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS=0
+MILD_DIP_ENTRY_SIGNAL_MAX_DIVERGENCE_PCT=0
+MILD_DIP_MILD_STABILIZE_MIN_DUMP_PCT=-25
+MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION=0
+MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS=0
+MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT=0
+MILD_DIP_WAIT_DIP_TROUGH_MAX_BOUNCE_PCT=100
+```
+
+## [1.11.1012] — 2026-08-20
+
+### Изменено
+
+- Коридор копирования зелёных входов лидера расширен с 1.5% до 3%
+  (`MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT=3` в app-блоке `mild-dip-mirror`):
+  при 1.5% почти все зелёные входы лидера отбивались по премии квоты.
+  Остальные mirror-гейты и дип-ветка не изменены.
+
+### Откат
+
+```text
+MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT=1.5
+```
+
+## [1.11.1011] — 2026-08-20
+
+### Изменено
+
+- Mirror-копирование зелёных входов лидера включается только в узком ценовом
+  коридоре `MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT` относительно fill лидера.
+- Добавлен предохранитель `MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT` против
+  копирования blow-off движений; дип-ветка и её ограничения не изменены.
+- Новая подветка отражается в journal-покупках через `mirrorBranch: 'green'`,
+  а mirror refusal содержит `pc5m` и `quoteGainPct`.
+
+### Откат
+
+```text
+MILD_DIP_MIRROR_GREEN_COPY_ENABLED=0
+```
+
+После отключения зелёные входы лидера снова отбиваются прежними mirror-гейтами.
+
+## [1.11.1010] — 2026-08-20
+
+### Изменено
+
+- Mirror-копитрейдинг лидера `8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ`
+  вынесен в отдельный PM2-процесс `mild-dip-mirror` на выделенный кошелёк
+  `2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps`, с отдельными state/journal/trades.
+- Добавлен fail-safe режим `MILD_DIP_MIRROR_ONLY=1`: новые входы разрешены
+  только mirror-лейну, а marks и выходы всех существующих позиций остаются активны.
+- В `mild-dip-bot` новые mirror-входы отключены; mirror-only инстанс не запускает
+  собственный stream/tape/discovery-кандидатный поиск, сохраняя mirror backfill,
+  квоты, исполнение, marks и exits.
+
+### Откат
+
+```text
+pm2 delete mild-dip-mirror
+MILD_DIP_MIRROR_ENABLED=1
+MILD_DIP_MIRROR_ONLY=0
 ```
 
 ## [1.11.1009] — 2026-08-20

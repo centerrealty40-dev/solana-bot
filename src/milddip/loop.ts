@@ -312,6 +312,10 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
     waitDipPct: cfg.waitDipPct,
     maxWatchMs: cfg.waitDipMaxWatchMs,
     maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
+    troughReadyFraction: cfg.waitDipTroughReadyFraction,
+    troughMinAgeMs: cfg.waitDipTroughMinAgeMs,
+    troughMinBouncePct: cfg.waitDipTroughMinBouncePct,
+    troughMaxBouncePct: cfg.waitDipTroughMaxBouncePct,
   };
 }
 
@@ -817,6 +821,7 @@ async function tryFireWaitDip(
       targetPriceUsd: verdict.targetPriceUsd,
       markPriceUsd: px,
       dumpFromSignalPct: verdict.dumpFromSignalPct,
+      readyPath: verdict.readyPath,
       originalDipSource: watch.originalDipSource,
       waitMs: nowMs - watch.detectedAtMs,
     });
@@ -1373,6 +1378,10 @@ async function wakeLeaderMirrors(
     });
     if (decision.action === 'wait') continue;
     if (decision.action === 'skip') {
+      const quoteGainPct =
+        quote?.priceUsd != null && hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+          ? (quote.priceUsd / hit.fillPriceUsd - 1) * 100
+          : null;
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_refusal',
         mint,
@@ -1381,6 +1390,7 @@ async function wakeLeaderMirrors(
         quotePriceUsd: quote?.priceUsd ?? null,
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         pc5m: hit.pc5m ?? null,
+        quoteGainPct,
         metricSource: watch.metricSource,
       });
       leaderMirrorDecisions.set(mint, {
@@ -1395,12 +1405,18 @@ async function wakeLeaderMirrors(
       (position) => position.lane === 'leader_mirror',
     ).length;
     if (gates.maxOpen > 0 && openMirror >= gates.maxOpen) {
+      const quoteGainPct =
+        quote?.priceUsd != null && hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+          ? (quote.priceUsd / hit.fillPriceUsd - 1) * 100
+          : null;
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_refusal',
         mint,
         reason: 'leader_mirror_exposure_cap',
         openMirror,
         maxOpen: gates.maxOpen,
+        pc5m: hit.pc5m ?? null,
+        quoteGainPct,
         metricSource: watch.metricSource,
       });
       leaderMirrorDecisions.set(mint, {
@@ -1447,6 +1463,7 @@ async function wakeLeaderMirrors(
         softSkipCooldownMs: 1_500,
         lane: 'fast',
         mirror: true,
+        mirrorBranch: decision.mirrorBranch,
         mirrorExit: {
           armPct: gates.exitArmPct,
           trailPct: gates.exitTrailPct,
@@ -1474,6 +1491,11 @@ async function wakeLeaderMirrors(
         reason: 'leader_mirror_execution_skip',
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         quotePriceUsd: decision.quotePriceUsd ?? null,
+        pc5m: hit.pc5m ?? null,
+        quoteGainPct:
+          hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+            ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
+            : null,
         metricSource: watch.metricSource,
       });
     }
@@ -1708,6 +1730,7 @@ async function tryEntriesBody(
   state: MildDipState,
   nowMs: number,
 ): Promise<void> {
+  if (cfg.leaderMirror.mirrorOnly) return;
   const unlimited = cfg.maxOpenPositions <= 0;
   if (cfg.leaderStyle.enabled) {
     const lstyleMints = await collectCandidateMints(cfg, { nowMs });
@@ -3092,6 +3115,7 @@ async function tryExits(
       decision.markPriceUsd > 0 &&
       !sellInFlight.has(mint)
     ) {
+      if (cfg.leaderMirror.mirrorOnly) continue;
       await attemptStagedEntryAdd({
         cfg,
         state,
@@ -3677,7 +3701,7 @@ export async function runMildDipLoop(
   const dumpSellTape = createDumpSellTape();
   const givebackDumpGate = createGivebackDumpGate();
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
-  const tapeShadowRing = cfg.tapeShadowEnabled
+  const tapeShadowRing = cfg.tapeShadowEnabled && !cfg.leaderMirror.mirrorOnly
     ? new MildDipPriceRing({
         maxSamplesPerMint: 3_600,
         ttlMs: cfg.tapeWindowMs,
@@ -3993,7 +4017,7 @@ export async function runMildDipLoop(
     cfg.lossCooldownMs,
     cfg.postExitWakeMs,
   );
-  if (cfg.streamPriceSampleEnabled) {
+  if (cfg.streamPriceSampleEnabled && !cfg.leaderMirror.mirrorOnly) {
     priceSampler = createStreamPriceSampler({
       rpcUrl: cfg.rpcUrl,
       minGapMsPerMint: cfg.streamPriceMinGapMs,
@@ -4072,7 +4096,7 @@ export async function runMildDipLoop(
   }
 
   let streamHandle: { stop: () => void } | null = null;
-  if (cfg.streamEnabled) {
+  if (cfg.streamEnabled && !cfg.leaderMirror.mirrorOnly) {
     streamHandle = startMildDipHotMintStream({
       wsUrl: cfg.streamWsUrl || null,
       priceSampler,
@@ -4268,7 +4292,7 @@ export async function runMildDipLoop(
     const nowMs = Date.now();
     tickGreenMinuteJupiterRefresh({
       nowMs,
-      enabled: cfg.green.jupiterMinuteEnabled,
+      enabled: cfg.green.jupiterMinuteEnabled && !cfg.leaderMirror.mirrorOnly,
       minGapMs: Math.max(
         cfg.green.jupiterMinuteMinGapMs,
         cfg.green.jupiterMinuteIntervalMs,
@@ -4356,7 +4380,11 @@ export async function runMildDipLoop(
      * Do not await — marks stay on cadence. Slow enrich/scan still only when flat;
      * post-exit knife enrich is a separate throttled wake.
      */
-    if (cfg.fastPathEnabled && nowMs - lastLeaderWakeMs >= 2_000) {
+    if (
+      !cfg.leaderMirror.mirrorOnly &&
+      cfg.fastPathEnabled &&
+      nowMs - lastLeaderWakeMs >= 2_000
+    ) {
       lastLeaderWakeMs = nowMs;
       void wakeStreamHotMints(cfg, state, nowMs)
         .then(() =>
@@ -4376,6 +4404,7 @@ export async function runMildDipLoop(
       });
     }
     if (
+      !cfg.leaderMirror.mirrorOnly &&
       cfg.knifeStabilizeEnabled &&
       cfg.postExitWakeMs > 0 &&
       nowMs - lastOwnTapeKnifeMs >= 8_000
@@ -4452,7 +4481,7 @@ export async function runMildDipLoop(
       opens === 0
         ? cfg.scanIntervalMs
         : Math.max(cfg.scanIntervalMs, cfg.scanIntervalWithOpensMs);
-    if (nowMs - lastScan >= scanGapMs) {
+    if (!cfg.leaderMirror.mirrorOnly && nowMs - lastScan >= scanGapMs) {
       lastScan = nowMs;
       stats.lastScanAtMs = lastScan;
       if (opens === 0) {
