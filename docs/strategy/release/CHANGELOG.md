@@ -1,3 +1,21 @@
+## [1.11.1031] — 2026-08-20
+
+### Изменено
+
+- По распоряжению оператора оба mirror-лейна (`mild-dip-mirror` и
+  `mild-dip-mirror2`) полностью выключены: их определения сохранены в
+  `ecosystem.config.cjs` как история, но приложения добавлены в
+  `OSCAR_VPS_EXCLUDED_APPS` и больше не попадают в экспортируемый список PM2.
+
+### Откат
+
+- Удалить `mild-dip-mirror` и `mild-dip-mirror2` из
+  `OSCAR_VPS_EXCLUDED_APPS`, затем выполнить:
+
+```text
+pm2 reload ecosystem.config.cjs --update-env
+```
+
 ## [1.11.1030] — 2026-08-20
 
 ### Изменено

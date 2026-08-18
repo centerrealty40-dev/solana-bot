@@ -4841,6 +4841,9 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   /** 1.11.685 — Oscar trading = mild-dip only; 8zkg twins retired. */
   'copy-trader-8zkg',
   'copy-trader-8zkg-mirror',
+  /** 1.11.1031 — operator: both mirror lanes off; reload must not revive them. */
+  'mild-dip-mirror',
+  'mild-dip-mirror2',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',
