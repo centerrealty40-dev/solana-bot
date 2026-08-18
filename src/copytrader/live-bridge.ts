@@ -74,7 +74,7 @@ export function copyTraderLiveOscarBridge(cfg: CopyTraderConfig): LiveOscarConfi
     liveSendRpcTimeoutMs: 20_000,
     liveSendMaxRetries: 2,
     liveSendRetryBaseMs: 400,
-    liveConfirmTimeoutMs: 45_000,
+    liveConfirmTimeoutMs: readBoundedIntEnv('LIVE_CONFIRM_TIMEOUT_MS', 45_000, 3_000, 600_000),
     liveConfirmCommitment: 'confirmed',
     liveJupiterPriorityMaxLamports: readJupiterPriorityMaxLamports(),
     liveJupiterSwapPriorityLevel: readJupiterSwapPriorityLevel(),
