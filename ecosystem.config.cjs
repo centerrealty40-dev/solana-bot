@@ -3401,6 +3401,11 @@ const PM2_APPS = [
         MILD_DIP_ENTRY_MIN_TXNS_5M: '20',
         MILD_DIP_ENTRY_MIN_TURNOVER: '0.05',
         /**
+         * 1.11.1030 — журналирование паттернов лидера расширено additive-only:
+         * Dex windows, all-pool depth, trade execution, cadence/re-entry и
+         * exit profile. Торговые решения и пороги не меняются.
+         */
+        /**
          * 1.11.905 — one hour instead of six for a name a leader is buying.
          *
          * The floor is there because a young pair is usually unformed, but two
@@ -4624,6 +4629,9 @@ const PM2_APPS = [
         LEADER_OBSERVER_MAX_HOURS: '0',
         /** 1.11.760 — log sells + session flat (was buy-only). */
         LEADER_OBSERVER_LOG_SELLS: '1',
+        /** 1.11.1030 — optional holder concentration telemetry; disabled by default. */
+        LEADER_OBSERVER_HOLDERS_ENABLED: '0',
+        LEADER_OBSERVER_HOLDERS_MIN_GAP_SEC: '3600',
         /** Slow Dex snapshot marks (features refresh). */
         LEADER_OBSERVER_LOG_MARKS: '1',
         LEADER_OBSERVER_MARK_MIN_GAP_SEC: '15',
