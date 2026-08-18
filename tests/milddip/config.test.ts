@@ -71,6 +71,18 @@ describe('mild-dip config exit schema', () => {
     expect(maxCfg.exit.profitExitMinHoldMs).toBe(14_400_000);
   });
 
+  it('defaults and loads the underwater hard time stop', () => {
+    expect(withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).exit.hardTimeStopMs).toBe(0);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_HARD_TIME_STOP_MS: '5400000',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.hardTimeStopMs).toBe(5_400_000);
+  });
+
   it('loads the profitable-exit minimum-hold PnL bypass from the environment', () => {
     expect(
       withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).exit
@@ -154,8 +166,16 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.entrySignalMarkMaxAgeMs).toBe(0);
     expect(defaults.entrySignalMaxDivergencePct).toBe(0);
     expect(defaults.waitDipTroughReadyFraction).toBe(0);
+    expect(defaults.entryTroughLookbackMs).toBe(900_000);
+    expect(defaults.waitDipMinTroughAgeMs).toBe(0);
+    expect(defaults.turnDumpKnifeTroughMinAgeMs).toBe(0);
+    expect(defaults.turnDumpKnifeTroughMaxBouncePct).toBe(100);
     const cfg = withConfigEnv({
       ...baseEnv,
+      MILD_DIP_ENTRY_TROUGH_LOOKBACK_MS: '600000',
+      MILD_DIP_WAIT_DIP_MIN_TROUGH_AGE_MS: '120000',
+      MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MIN_AGE_MS: '180000',
+      MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MAX_BOUNCE_PCT: '8',
       MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS: '45000',
       MILD_DIP_ENTRY_SIGNAL_MAX_DIVERGENCE_PCT: '15',
       MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION: '0.7',
@@ -166,6 +186,10 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.entrySignalMarkMaxAgeMs).toBe(45_000);
     expect(cfg.entrySignalMaxDivergencePct).toBe(15);
     expect(cfg.waitDipTroughReadyFraction).toBe(0.7);
+    expect(cfg.entryTroughLookbackMs).toBe(600_000);
+    expect(cfg.waitDipMinTroughAgeMs).toBe(120_000);
+    expect(cfg.turnDumpKnifeTroughMinAgeMs).toBe(180_000);
+    expect(cfg.turnDumpKnifeTroughMaxBouncePct).toBe(8);
     expect(cfg.waitDipTroughMinAgeMs).toBe(60_000);
     expect(cfg.waitDipTroughMinBouncePct).toBe(1.5);
     expect(cfg.waitDipTroughMaxBouncePct).toBe(8);

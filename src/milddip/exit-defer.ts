@@ -57,6 +57,7 @@ export const WOULD_BUY_DEFER_REASONS: ReadonlySet<string> = new Set([
 export const NEVER_DEFER_REASONS: ReadonlySet<string> = new Set([
   'hard_stop',
   'cliff_dump',
+  'hard_time_stop',
   'never_arm_freefall',
   'liq_drain',
 ]);

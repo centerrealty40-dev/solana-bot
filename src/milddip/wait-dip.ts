@@ -11,6 +11,7 @@
  */
 
 import type { MildDipCandidateMetrics } from './gates.js';
+import type { ConfirmedTroughMetrics } from './confirmed-trough.js';
 
 export type WaitDipWatchEntry = {
   detectedAtMs: number;
@@ -35,6 +36,7 @@ export type WaitDipGates = {
   maxWatchMs: number;
   /** Maximum allowed dump from signal before removing the watch; 0 = off. */
   maxDumpFromSignalPct?: number;
+  minTroughAgeMs?: number;
   troughReadyFraction?: number;
   troughMinAgeMs?: number;
   troughMinBouncePct?: number;
@@ -296,6 +298,7 @@ export function evaluateWaitDipReady(
   gates: WaitDipGates,
   nowMs: number,
   freshPriceUsd?: number | null,
+  confirmedTrough?: ConfirmedTroughMetrics | null,
 ): WaitDipReadyVerdict {
   const reasons: string[] = [];
   if (!gates.enabled) {
@@ -334,19 +337,31 @@ export function evaluateWaitDipReady(
     };
   }
   const currentDumpFromSignalPct = (px / watch.signalPriceUsd - 1) * 100;
+  const targetTroughAgeFloorMs = Math.max(0, gates.minTroughAgeMs ?? 0);
   if (px <= target + 1e-15) {
-    return {
-      ready: true,
-      expire: false,
-      dumpFromSignalPct: currentDumpFromSignalPct,
-      targetPriceUsd: target,
-      reasons: [],
-      readyPath: 'target',
-    };
+    const troughAgeMs = confirmedTrough?.troughAgeMs ?? null;
+    if (
+      targetTroughAgeFloorMs <= 0 ||
+      (troughAgeMs != null && troughAgeMs >= targetTroughAgeFloorMs)
+    ) {
+      return {
+        ready: true,
+        expire: false,
+        dumpFromSignalPct: currentDumpFromSignalPct,
+        targetPriceUsd: target,
+        reasons: [],
+        readyPath: 'target',
+      };
+    }
+    reasons.push(
+      `wait_dip_target_trough_age=${troughAgeMs ?? 'null'}ms<min=${targetTroughAgeFloorMs}`,
+    );
   }
-  reasons.push(
-    `wait_dip_need=${gates.waitDipPct}% have=${currentDumpFromSignalPct.toFixed(2)}%`,
-  );
+  if (px > target) {
+    reasons.push(
+      `wait_dip_need=${gates.waitDipPct}% have=${currentDumpFromSignalPct.toFixed(2)}%`,
+    );
+  }
   const fraction = gates.troughReadyFraction ?? 0;
   const troughDumpPct = dumpFromSignalPct(
     watch.troughPriceUsd,

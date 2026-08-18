@@ -523,6 +523,8 @@ const MildDipConfigSchema = z.object({
   waitDipWithTurnDump: z.boolean().default(false),
   waitDipPct: z.coerce.number().max(0).default(-10),
   waitDipMaxWatchMs: z.coerce.number().int().min(30_000).max(3_600_000).default(1_200_000),
+  entryTroughLookbackMs: z.coerce.number().int().min(60_000).max(3_600_000).default(900_000),
+  waitDipMinTroughAgeMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
   waitDipTroughReadyFraction: z.coerce.number().min(0).max(1).default(0),
   waitDipTroughMinAgeMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
   waitDipTroughMinBouncePct: z.coerce.number().min(0).max(100).default(0),
@@ -566,6 +568,8 @@ const MildDipConfigSchema = z.object({
   /** Positive dump depth % (30 ⇒ pc5m ≤ −30). */
   turnDumpKnifeMinDumpPct: z.coerce.number().min(0).max(90).default(30),
   turnDumpKnifeMinTurn: z.coerce.number().min(0).max(10).default(0.3),
+  turnDumpKnifeTroughMinAgeMs: z.coerce.number().int().min(0).max(3_600_000).default(0),
+  turnDumpKnifeTroughMaxBouncePct: z.coerce.number().min(0).max(100).default(100),
   /**
    * Leader-style bounce clip: dump from ring peak then buy reclaim off trough.
    * Additive to main-band / deep-knife. Second-clip scale-in removed (1.11.730).
@@ -929,6 +933,8 @@ const MildDipConfigSchema = z.object({
      * Green armed runners may outlive this for TP / trail steps.
      */
     neverArmMaxHoldMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
+    /** 1.11.1017 — unconditional underwater time stop; 0 = off. */
+    hardTimeStopMs: z.coerce.number().int().min(0).max(86_400_000).default(0),
     /** Never-armed deep-loss cut min hold (0=off). Default 15m. */
     /** 1.11.728 — default 30m (was 15m). */
     neverArmDeadMinMs: z.coerce.number().int().min(0).max(86_400_000).default(1_800_000),
@@ -1207,6 +1213,7 @@ export function loadMildDipConfig(): MildDipConfig {
     /** 0 = disable never_arm_giveback (early −6% cuts were the grind loss). */
     neverArmPatienceMs: envNum('MILD_DIP_EXIT_NEVER_ARM_PATIENCE_MS', 0),
     neverArmMaxHoldMs: envNum('MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS', 900_000),
+    hardTimeStopMs: envNum('MILD_DIP_EXIT_HARD_TIME_STOP_MS', 0),
     /** Deep-loss cut before max-hold (rugs); not the early 5m knife. */
     neverArmDeadMinMs: envNum('MILD_DIP_EXIT_NEVER_ARM_DEAD_MIN_MS', 1_800_000),
     /** 1.11.706 — align with leader loser med (~−10%), was 15. */
@@ -1435,6 +1442,8 @@ export function loadMildDipConfig(): MildDipConfig {
     waitDipWithTurnDump: envBool('MILD_DIP_WAIT_DIP_WITH_TURN_DUMP', false),
     waitDipPct: envNum('MILD_DIP_WAIT_DIP_PCT', -10),
     waitDipMaxWatchMs: envNum('MILD_DIP_WAIT_DIP_MAX_WATCH_MS', 1_200_000),
+    entryTroughLookbackMs: envNum('MILD_DIP_ENTRY_TROUGH_LOOKBACK_MS', 900_000),
+    waitDipMinTroughAgeMs: envNum('MILD_DIP_WAIT_DIP_MIN_TROUGH_AGE_MS', 0),
     waitDipTroughReadyFraction: envNum('MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION', 0),
     waitDipTroughMinAgeMs: envNum('MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS', 0),
     waitDipTroughMinBouncePct: envNum('MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT', 0),
@@ -1459,6 +1468,14 @@ export function loadMildDipConfig(): MildDipConfig {
     turnDumpKnifeBranchEnabled: envBool('MILD_DIP_TURN_DUMP_KNIFE_BRANCH', false),
     turnDumpKnifeMinDumpPct: envNum('MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT', 30),
     turnDumpKnifeMinTurn: envNum('MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN', 0.3),
+    turnDumpKnifeTroughMinAgeMs: envNum(
+      'MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MIN_AGE_MS',
+      0,
+    ),
+    turnDumpKnifeTroughMaxBouncePct: envNum(
+      'MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MAX_BOUNCE_PCT',
+      100,
+    ),
     greenMaxCooldownBouncePct: envNum(
       'MILD_DIP_GREEN_MAX_COOLDOWN_BOUNCE_PCT',
       0,

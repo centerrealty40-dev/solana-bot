@@ -7,6 +7,10 @@
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { evaluateGreenLane } from './green-lane.js';
 import { requestGreenMinuteJupiterRefresh } from './green-minute-jupiter-refresh.js';
+import {
+  confirmedTroughGatePasses,
+  evaluateConfirmedTrough,
+} from './confirmed-trough.js';
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
 import {
@@ -1196,6 +1200,38 @@ export async function evaluateFastPathCandidate(
       dexPc,
       pc1h: metrics.priceChange1hPct,
     });
+  }
+
+  if (
+    dipSource === 'turn_dump_knife' &&
+    (cfg.turnDumpKnifeTroughMinAgeMs > 0 ||
+      cfg.turnDumpKnifeTroughMaxBouncePct < 100)
+  ) {
+    const trough = evaluateConfirmedTrough({
+      ring: mildDipPriceRing,
+      mint,
+      nowMs,
+      windowMs: cfg.entryTroughLookbackMs,
+      freshPriceUsd: priceUsd,
+    });
+    if (
+      !confirmedTroughGatePasses({
+        metrics: trough,
+        minTroughAgeMs: cfg.turnDumpKnifeTroughMinAgeMs,
+        maxBouncePct: cfg.turnDumpKnifeTroughMaxBouncePct,
+      })
+    ) {
+      return skip('turn_dump_knife_trough_gate', {
+        dipSource,
+        troughAgeMs: trough.troughAgeMs,
+        bounceFromTroughPct: trough.bounceFromTroughPct,
+        dropFromWindowHighPct: trough.dropFromWindowHighPct,
+        troughAtMs: trough.troughAtMs,
+        troughMinAgeMs: cfg.turnDumpKnifeTroughMinAgeMs,
+        troughMaxBouncePct: cfg.turnDumpKnifeTroughMaxBouncePct,
+        troughWindowMs: trough.windowMs,
+      });
+    }
   }
 
   // 1.11.801 — D2zNEW: H1 pump + −10% pullback is not a dip. Knife-OR (≥30) exempt.

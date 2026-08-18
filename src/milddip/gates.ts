@@ -251,6 +251,12 @@ export type MildDipExitGates = {
    */
   neverArmMaxHoldMs: number;
   /**
+   * 1.11.1017 — unconditional full exit for an underwater bag after this
+   * deadline. Unlike the soft hold ceiling, this does not wait for reclaim.
+   * 0 = disabled.
+   */
+  hardTimeStopMs?: number;
+  /**
    * Never-armed deep-loss cut: after this many ms (live 30m), if pnl ≤ −neverArmDeadPnlPct,
    * full exit (`never_arm_dead`). Catches rugs before max-hold without the
    * early 5m −6% knife. 0 = disabled.
@@ -859,6 +865,8 @@ export type MildDipExitReason =
   | 'never_arm_timeout'
   /** 1.11.782 — held ≥ max-hold, armed, but mark pnl ≤ 0. */
   | 'max_hold_underwater'
+  /** 1.11.1017 — underwater after the unconditional time deadline. */
+  | 'hard_time_stop'
   | 'cliff_dump'
   | 'hard_stop'
   /** 1.11.855 — was meaningfully green, came back to the floor. */
@@ -957,6 +965,7 @@ const LOSS_RECLAIM_PROTECTIVE_REASONS: ReadonlySet<MildDipExitReason> = new Set(
   'never_arm_vol_fade',
   'never_arm_giveback',
   'max_hold_underwater',
+  'hard_time_stop',
 ]);
 /** True when MFE-bank ladder is configured and should own the armed exit path. */
 export function isMfeBankEnabled(gates: MildDipExitGates): boolean {
@@ -1688,6 +1697,30 @@ export function evaluateMildDipPeakGiveback(args: {
     if (cliff > 0 && pnlPct <= -cliff && softLossOk('cliff_dump')) {
       return withLossExitCap({ ...hold, shouldExit: true, fraction: 1, reason: 'cliff_dump' });
     }
+  }
+
+  /**
+   * 1.11.1017 — the hard deadline is deliberately after the existing
+   * liquidity-drain and hard-stop/cliff protective checks, but before all
+   * reclaim-gated soft exits. Once it is reached, an underwater bag leaves
+   * without asking for a trough bounce or loss-reclaim approval.
+   */
+  const hardTimeStopMs = gates.hardTimeStopMs != null && gates.hardTimeStopMs > 0
+    ? gates.hardTimeStopMs
+    : 0;
+  if (hardTimeStopMs > 0 && heldMs >= hardTimeStopMs && gainPct <= 0) {
+    lossReclaimWaitStartedAtMs = undefined;
+    lossReclaimWaitDone = true;
+    lossReclaimWaitClearedReason = 'protective_exit';
+    hold.lossReclaimWaitStartedAtMs = undefined;
+    hold.lossReclaimWaitClearedReason = lossReclaimWaitClearedReason;
+    hold.lossReclaimWaitDone = true;
+    return {
+      ...hold,
+      shouldExit: true,
+      fraction: 1,
+      reason: 'hard_time_stop',
+    };
   }
 
   /**

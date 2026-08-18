@@ -24,6 +24,44 @@ MILD_DIP_ENTRY_MIN_TXNS_5M=0
 MILD_DIP_ENTRY_MIN_TURNOVER=0
 ```
 
+## [1.11.1017] — 2026-08-20
+
+### Изменено
+
+- Для красных mild-dip позиций добавлен `hard_time_stop`: при достижении
+  `MILD_DIP_EXIT_HARD_TIME_STOP_MS` мешок закрывается полностью без ожидания
+  bounce/reclaim. Зелёные позиции этот gate не затрагивает; существующие
+  `liq_drain`, `hard_stop` и `cliff_dump` проверяются раньше.
+- Production hard deadline установлен в 90 минут; мягкий
+  `MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS` синхронизирован с тем же значением.
+
+### Откат
+
+```text
+MILD_DIP_EXIT_HARD_TIME_STOP_MS=0
+MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS=10800000
+```
+
+## [1.11.1016] — 2026-08-20
+
+### Изменено
+
+- Входы `turn_dump_knife` теперь могут требовать подтверждённое дно:
+  минимальный возраст лоя `180000` мс и отскок не выше `8%`.
+- Target-depth путь `wait_dip` теперь может ждать старения собственного лоя
+  минимум `120000` мс; существующий trough-ready путь и pre-buy safety-гейты
+  не изменены.
+- Метрики подтверждённого лоя используют 15-минутное кольцо: возраст лоя,
+  отскок от него и просадка от локального максимума.
+
+### Откат
+
+```text
+MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MIN_AGE_MS=0
+MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MAX_BOUNCE_PCT=100
+MILD_DIP_WAIT_DIP_MIN_TROUGH_AGE_MS=0
+```
+
 ## [1.11.1015] — 2026-08-20
 
 ### Изменено
