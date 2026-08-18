@@ -1,52 +1,47 @@
 import { describe, expect, it } from 'vitest';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 
 const ecosystem = createRequire(import.meta.url)('../../ecosystem.config.cjs') as {
   apps: Array<{ name: string; env: Record<string, string> }>;
 };
+const ecosystemSource = readFileSync(
+  new URL('../../ecosystem.config.cjs', import.meta.url),
+  'utf8',
+);
 
 const mirrorApps = ecosystem.apps.filter((app) =>
   ['mild-dip-mirror', 'mild-dip-mirror2'].includes(app.name),
 );
 
 describe('mirror PM2 apps', () => {
-  it('exports two isolated mirror processes with shared read-only leader inputs', () => {
-    expect(mirrorApps.map((app) => app.name)).toEqual([
-      'mild-dip-mirror',
-      'mild-dip-mirror2',
-    ]);
-    const [first, second] = mirrorApps;
-    expect(first.env.MILD_DIP_WALLET_PUBKEY).not.toBe(second.env.MILD_DIP_WALLET_PUBKEY);
-    expect(first.env.MILD_DIP_WALLET_SECRET).not.toBe(second.env.MILD_DIP_WALLET_SECRET);
-    expect(first.env.MILD_DIP_MIRROR_LEADERS).not.toBe(second.env.MILD_DIP_MIRROR_LEADERS);
-    for (const key of [
-      'MILD_DIP_JOURNAL_PATH',
-      'MILD_DIP_TRADES_PATH',
-      'MILD_DIP_STATE_PATH',
-      'MILD_DIP_HOT_MINTS_PATH',
-      'MILD_DIP_PRICE_RING_PATH',
-    ]) {
-      expect(first.env[key]).not.toBe(second.env[key]);
-    }
-    expect(first.env.MILD_DIP_LEADER_SEED_PATH).toBe(second.env.MILD_DIP_LEADER_SEED_PATH);
-    expect(first.env.MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH).toBe(
-      second.env.MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH,
+  it('keeps mirror definitions in history but excludes both from exported apps', () => {
+    expect(mirrorApps).toEqual([]);
+    expect(ecosystemSource).toContain("name: 'mild-dip-mirror'");
+    expect(ecosystemSource).toContain("name: 'mild-dip-mirror2'");
+    expect(ecosystemSource).toContain("dataDir: 'data/milddip-mirror'");
+    expect(ecosystemSource).toContain("dataDir: 'data/milddip-mirror2'");
+    expect(ecosystemSource).toContain("walletSecret: 'data/live/mcs-wallet.json'");
+    expect(ecosystemSource).toContain(
+      "walletSecret: 'data/live/copy-8zkg.keypair.json'",
     );
-    expect(first.env.MILD_DIP_MIRROR_POSITION_USD).toBe('30');
-    expect(second.env.MILD_DIP_MIRROR_POSITION_USD).toBe('30');
-    expect(first.env.MILD_DIP_MIRROR_MAX_OPEN).toBe('8');
-    expect(second.env.MILD_DIP_MIRROR_MAX_OPEN).toBe('8');
-    expect(first.env.MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT).toBe('3');
-    expect(second.env.MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT).toBe('3');
-    expect(first.env.MILD_DIP_MIRROR_MIN_LIQUIDITY_USD).toBe('8000');
-    expect(second.env.MILD_DIP_MIRROR_MIN_LIQUIDITY_USD).toBe('8000');
-    expect(first.env.MILD_DIP_MIRROR_LEADER_SELL_ONLY).toBe('1');
-    expect(second.env.MILD_DIP_MIRROR_LEADER_SELL_ONLY).toBe('1');
-    expect(first.env.MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS).toBe('86400000');
-    expect(second.env.MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS).toBe('86400000');
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_POSITION_USD: '30'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_OPEN: '8'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_SELL_ONLY: '1'");
+    expect(ecosystemSource).toContain(
+      "MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS: '86400000'",
+    );
+    expect(ecosystemSource).toContain("'mild-dip-mirror',");
+    expect(ecosystemSource).toContain("'mild-dip-mirror2',");
   });
 
-  it('keeps the second mirror out of the legacy excluded app list', () => {
-    expect(mirrorApps.some((app) => app.name === 'mild-dip-mirror2')).toBe(true);
+  it('keeps both mirror lanes in the Oscar VPS exclusion list', () => {
+    const excludedAppsBlock = ecosystemSource.match(
+      /const OSCAR_VPS_EXCLUDED_APPS = new Set\(\[([\s\S]*?)\]\);/,
+    )?.[1];
+    expect(excludedAppsBlock).toContain("'mild-dip-mirror',");
+    expect(excludedAppsBlock).toContain("'mild-dip-mirror2',");
   });
 });
