@@ -15,6 +15,7 @@ import {
   type WaitDipGates,
 } from '../../src/milddip/wait-dip.js';
 import type { MildDipCandidateMetrics } from '../../src/milddip/gates.js';
+import type { ConfirmedTroughMetrics } from '../../src/milddip/confirmed-trough.js';
 
 const metrics: MildDipCandidateMetrics = {
   priceChange5mPct: -12,
@@ -223,6 +224,57 @@ describe('upsertWaitDipWatch / evaluateWaitDipReady', () => {
     );
     expect(v.ready).toBe(true);
     expect(v.readyPath).toBe('target');
+  });
+
+  it('defers target readiness until the confirmed trough ages, then readies', () => {
+    const watch = upsertWaitDipWatch(undefined, {
+      nowMs: 1_000_000,
+      priceUsd: 100,
+      signalPriceUsd: 100,
+      waitDipPct: -5,
+      symbol: 'TEST',
+      originalDipSource: 'dex',
+      metrics,
+    });
+    const confirmedTrough: ConfirmedTroughMetrics = {
+      windowMs: 900_000,
+      peakPriceUsd: 100,
+      troughPriceUsd: 95,
+      troughAtMs: 1_010_000,
+      troughAgeMs: 50_000,
+      bounceFromTroughPct: 0,
+      dropFromWindowHighPct: -5,
+    };
+    const deferred = evaluateWaitDipReady(
+      watch,
+      {
+        enabled: true,
+        waitDipPct: -5,
+        maxWatchMs: 600_000,
+        minTroughAgeMs: 120_000,
+      },
+      1_060_000,
+      95,
+      confirmedTrough,
+    );
+    expect(deferred.ready).toBe(false);
+    expect(deferred.readyPath).toBe(null);
+    expect(deferred.reasons[0]).toContain('wait_dip_target_trough_age=50000ms<min=120000');
+
+    const aged = evaluateWaitDipReady(
+      watch,
+      {
+        enabled: true,
+        waitDipPct: -5,
+        maxWatchMs: 600_000,
+        minTroughAgeMs: 120_000,
+      },
+      1_130_000,
+      95,
+      { ...confirmedTrough, troughAgeMs: 120_000 },
+    );
+    expect(aged.ready).toBe(true);
+    expect(aged.readyPath).toBe('target');
   });
 
   it('readies from an aged confirmed trough inside the bounce corridor', () => {
