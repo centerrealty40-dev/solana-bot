@@ -51,6 +51,10 @@ const MildDipConfigSchema = z.object({
   entryMaxVol5mToLiq: z.coerce.number().max(100_000).default(2),
   /** 1.11.970 — reject known pool liquidity below this; 0 = off. */
   entryMinLiquidityUsd: z.coerce.number().min(0).max(10_000_000).default(4_000),
+  /** 1.11.1018 — minimum observed 5m buys+sells; 0 = off. */
+  entryMinTxns5m: z.coerce.number().min(0).max(100_000).default(0),
+  /** 1.11.1018 — minimum observed 5m volume/liquidity turnover; 0 = off. */
+  entryMinTurnover5mLiq: z.coerce.number().min(0).max(100_000).default(0),
   stagedEntryEnabled: z.boolean().default(false),
   stagedFirstUsd: z.coerce.number().min(0).max(10_000).default(5),
   stagedAddTriggerPct: z.coerce.number().min(0).max(100).default(8),
@@ -1305,6 +1309,8 @@ export function loadMildDipConfig(): MildDipConfig {
     entryMinPairAgeHours: envNum('MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS', 1),
     entryMaxVol5mToLiq: envNum('MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ', 2),
     entryMinLiquidityUsd: envNum('MILD_DIP_ENTRY_MIN_LIQ_USD', 4_000),
+    entryMinTxns5m: envNum('MILD_DIP_ENTRY_MIN_TXNS_5M', 0),
+    entryMinTurnover5mLiq: envNum('MILD_DIP_ENTRY_MIN_TURNOVER', 0),
     stagedEntryEnabled: envBool('MILD_DIP_STAGED_ENTRY_ENABLED', false),
     stagedFirstUsd: envNum('MILD_DIP_STAGED_FIRST_USD', 5),
     stagedAddTriggerPct: envNum('MILD_DIP_STAGED_ADD_TRIGGER_PCT', 8),

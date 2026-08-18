@@ -138,12 +138,22 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1.25',
         MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2.5',
         MILD_DIP_ENTRY_MIN_LIQ_USD: '4500',
+        MILD_DIP_ENTRY_MIN_TXNS_5M: '30',
+        MILD_DIP_ENTRY_MIN_TURNOVER: '0.15',
       },
       () => loadMildDipConfig(),
     );
     expect(cfg.entryMinPairAgeHours).toBe(1.25);
     expect(cfg.entryMaxVol5mToLiq).toBe(2.5);
     expect(cfg.entryMinLiquidityUsd).toBe(4500);
+    expect(cfg.entryMinTxns5m).toBe(30);
+    expect(cfg.entryMinTurnover5mLiq).toBe(0.15);
+  });
+
+  it('defaults the impulse entry floors to disabled', () => {
+    const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(cfg.entryMinTxns5m).toBe(0);
+    expect(cfg.entryMinTurnover5mLiq).toBe(0);
   });
 
   it('defaults the wait-dip signal-depth floor to off', () => {
@@ -306,7 +316,7 @@ describe('mild-dip config exit schema', () => {
 
   it('keeps the production thin-liquidity and shallow-branch cuts isolated to mild-dip', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
-    expect(eco).toContain("MILD_DIP_ENTRY_MIN_LIQ_USD: '15000'");
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_LIQ_USD: '6000'");
     expect(eco).toContain("MILD_DIP_TURN_DUMP_SHALLOW_BRANCH: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '4000'");
   });
@@ -462,8 +472,13 @@ describe('mild-dip config exit schema', () => {
 
   it('keeps production entry age and churn thresholds', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
-    expect(eco).toContain("MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1'");
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '0.25'");
     expect(eco).toContain("MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2'");
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_LIQ_USD: '6000'");
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_TXNS_5M: '30'");
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_TURNOVER: '0.15'");
+    expect(eco).toContain("MILD_DIP_LSTYLE_MIN_LIQUIDITY_USD: '6000'");
+    expect(eco).toContain("MILD_DIP_LSTYLE_MIN_VOL5M_TO_LIQ: '0.15'");
   });
 
   it('keeps leader-loop production exit and re-entry values', () => {

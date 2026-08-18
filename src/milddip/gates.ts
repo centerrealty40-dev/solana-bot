@@ -439,15 +439,83 @@ export type MildDipGateVerdict = {
   reasons: string[];
 };
 
+export function evaluateMildDipImpulseEntry(args: {
+  buys5m: number | null | undefined;
+  sells5m: number | null | undefined;
+  volume5mUsd: number | null | undefined;
+  liquidityUsd: number | null | undefined;
+  minTxns5m?: number;
+  minTurnover5mLiq?: number;
+}): MildDipGateVerdict {
+  const reasons: string[] = [];
+  const minTxns5m = args.minTxns5m ?? 0;
+  const minTurnover5mLiq = args.minTurnover5mLiq ?? 0;
+
+  if (minTxns5m > 0) {
+    const buys = args.buys5m;
+    const sells = args.sells5m;
+    if (
+      buys == null ||
+      sells == null ||
+      !Number.isFinite(buys) ||
+      !Number.isFinite(sells) ||
+      buys < 0 ||
+      sells < 0
+    ) {
+      reasons.push('txns5m_unknown');
+    } else {
+      const txns5m = buys + sells;
+      if (txns5m < minTxns5m) {
+        reasons.push(`txns5m_too_few=${txns5m.toFixed(0)}<${minTxns5m}`);
+      }
+    }
+  }
+
+  if (minTurnover5mLiq > 0) {
+    const volume5mUsd = args.volume5mUsd;
+    const liquidityUsd = args.liquidityUsd;
+    if (
+      volume5mUsd == null ||
+      liquidityUsd == null ||
+      !Number.isFinite(volume5mUsd) ||
+      !Number.isFinite(liquidityUsd) ||
+      liquidityUsd <= 0
+    ) {
+      reasons.push('turnover_unknown');
+    } else {
+      const turnover = volume5mUsd / liquidityUsd;
+      if (turnover < minTurnover5mLiq) {
+        reasons.push(`turnover_too_low=${turnover.toFixed(4)}<${minTurnover5mLiq}`);
+      }
+    }
+  }
+
+  return { pass: reasons.length === 0, reasons };
+}
+
 export function evaluateMildDipEntryRisk(args: {
   pairAgeHours: number | null | undefined;
   volume5mUsd: number | null | undefined;
   liquidityUsd: number | null | undefined;
+  buys5m?: number | null | undefined;
+  sells5m?: number | null | undefined;
   minPairAgeHours: number;
   maxVol5mToLiq: number;
   minLiquidityUsd?: number;
+  minTxns5m?: number;
+  minTurnover5mLiq?: number;
 }): MildDipGateVerdict {
   const reasons: string[] = [];
+  reasons.push(
+    ...evaluateMildDipImpulseEntry({
+      buys5m: args.buys5m,
+      sells5m: args.sells5m,
+      volume5mUsd: args.volume5mUsd,
+      liquidityUsd: args.liquidityUsd,
+      minTxns5m: args.minTxns5m,
+      minTurnover5mLiq: args.minTurnover5mLiq,
+    }).reasons,
+  );
   if (
     args.minPairAgeHours > 0 &&
     args.pairAgeHours != null &&
