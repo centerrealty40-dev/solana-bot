@@ -16,6 +16,11 @@ import {
 } from '../../src/milddip/fast-path.js';
 import type { MildDipConfig } from '../../src/milddip/config.js';
 import type { MildDipCandidateMetrics } from '../../src/milddip/gates.js';
+import {
+  confirmedTroughGatePasses,
+  evaluateConfirmedTrough,
+} from '../../src/milddip/confirmed-trough.js';
+import { MildDipPriceRing } from '../../src/milddip/price-ring.js';
 
 function stubCfg(minMcap = 50_000): MildDipConfig {
   return {
@@ -52,6 +57,52 @@ function stubMetrics(partial: Partial<MildDipCandidateMetrics> = {}): MildDipCan
 describe('fast-path helpers', () => {
   beforeEach(() => {
     resetFastPathStateForTests();
+  });
+
+  it('requires an aged trough and bounded bounce for the knife entry', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'AgedTroughKnifeMintxxxxxxxxxxxxxxxxxxxx1';
+    const t0 = 1_000_000;
+    ring.note(mint, 1, { tsMs: t0, source: 'stream' });
+    ring.note(mint, 0.8, { tsMs: t0 + 10_000, source: 'stream' });
+    const fresh = evaluateConfirmedTrough({
+      ring,
+      mint,
+      nowMs: t0 + 40_000,
+      windowMs: 900_000,
+      freshPriceUsd: 0.84,
+    });
+    expect(fresh.troughAgeMs).toBe(30_000);
+    expect(fresh.bounceFromTroughPct).toBeCloseTo(5, 8);
+    expect(
+      confirmedTroughGatePasses({
+        metrics: fresh,
+        minTroughAgeMs: 180_000,
+        maxBouncePct: 8,
+      }),
+    ).toBe(false);
+
+    const aged = evaluateConfirmedTrough({
+      ring,
+      mint,
+      nowMs: t0 + 200_000,
+      windowMs: 900_000,
+      freshPriceUsd: 0.84,
+    });
+    expect(
+      confirmedTroughGatePasses({
+        metrics: aged,
+        minTroughAgeMs: 180_000,
+        maxBouncePct: 8,
+      }),
+    ).toBe(true);
+    expect(
+      confirmedTroughGatePasses({
+        metrics: aged,
+        minTroughAgeMs: 180_000,
+        maxBouncePct: 4,
+      }),
+    ).toBe(false);
   });
 
   it('main band is (−25, −5] exclusive min', () => {
