@@ -140,6 +140,11 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_ENTRY_MIN_LIQ_USD: '4500',
         MILD_DIP_ENTRY_MIN_TXNS_5M: '20',
         MILD_DIP_ENTRY_MIN_TURNOVER: '0.05',
+        MILD_DIP_STRUCTURAL_FALLBACK_ENABLED: '1',
+        MILD_DIP_STRUCTURAL_FALLBACK_MAX_PER_MIN: '20',
+        MILD_DIP_STRUCTURAL_FALLBACK_MINT_GAP_MS: '30000',
+        MILD_DIP_STRUCTURAL_FALLBACK_CACHE_TTL_MS: '15000',
+        MILD_DIP_STRUCTURAL_FALLBACK_TIMEOUT_MS: '2500',
       },
       () => loadMildDipConfig(),
     );
@@ -148,12 +153,26 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.entryMinLiquidityUsd).toBe(4500);
     expect(cfg.entryMinTxns5m).toBe(20);
     expect(cfg.entryMinTurnover5mLiq).toBe(0.05);
+    expect(cfg.structuralFallbackEnabled).toBe(true);
+    expect(cfg.structuralFallbackMaxPerMin).toBe(20);
+    expect(cfg.structuralFallbackMintGapMs).toBe(30_000);
+    expect(cfg.structuralFallbackCacheTtlMs).toBe(15_000);
+    expect(cfg.structuralFallbackTimeoutMs).toBe(2_500);
   });
 
   it('defaults the impulse entry floors to disabled', () => {
     const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(cfg.entryMinTxns5m).toBe(0);
     expect(cfg.entryMinTurnover5mLiq).toBe(0);
+  });
+
+  it('defaults the structural fallback to disabled with bounded budgets', () => {
+    const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(cfg.structuralFallbackEnabled).toBe(false);
+    expect(cfg.structuralFallbackMaxPerMin).toBe(20);
+    expect(cfg.structuralFallbackMintGapMs).toBe(30_000);
+    expect(cfg.structuralFallbackCacheTtlMs).toBe(15_000);
+    expect(cfg.structuralFallbackTimeoutMs).toBe(2_500);
   });
 
   it('defaults the wait-dip signal-depth floor to off', () => {
@@ -477,6 +496,11 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_ENTRY_MIN_LIQ_USD: '6000'");
     expect(eco).toContain("MILD_DIP_ENTRY_MIN_TXNS_5M: '20'");
     expect(eco).toContain("MILD_DIP_ENTRY_MIN_TURNOVER: '0.05'");
+    expect(eco).toContain("MILD_DIP_STRUCTURAL_FALLBACK_ENABLED: '1'");
+    expect(eco).toContain("MILD_DIP_STRUCTURAL_FALLBACK_MAX_PER_MIN: '20'");
+    expect(eco).toContain("MILD_DIP_STRUCTURAL_FALLBACK_MINT_GAP_MS: '30000'");
+    expect(eco).toContain("MILD_DIP_STRUCTURAL_FALLBACK_CACHE_TTL_MS: '15000'");
+    expect(eco).toContain("MILD_DIP_STRUCTURAL_FALLBACK_TIMEOUT_MS: '2500'");
     expect(eco).toContain("MILD_DIP_LSTYLE_MIN_LIQUIDITY_USD: '6000'");
     expect(eco).toContain("MILD_DIP_LSTYLE_MIN_VOL5M_TO_LIQ: '0.15'");
   });
