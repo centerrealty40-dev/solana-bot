@@ -488,7 +488,7 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_EXIT_MFE_BANK_SLEEVE_GREEN_PARTIAL_FRACTION: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS: '900000'");
     expect(eco).toContain("MILD_DIP_EXIT_PROFIT_MIN_HOLD_BYPASS_PNL_PCT: '20'");
-    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '0'");
+    expect(eco).toContain("MILD_DIP_REBUY_BELOW_EXIT_PCT: '5'");
     expect(eco).toContain("MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT: '0'");
   });
 
