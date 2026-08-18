@@ -5,6 +5,7 @@ import {
   resolveStagedEntryFirstClip,
   stagedEntryAverageCostPx,
 } from '../../src/milddip/staged-entry.js';
+import { resolveMildDipWantedSizeUsd } from '../../src/milddip/gates.js';
 
 describe('mild-dip staged entry', () => {
   it('caps a new $18 curve clip at $5 and remembers the intended size', () => {
@@ -39,6 +40,36 @@ describe('mild-dip staged entry', () => {
         }).sizeUsd,
       ).toBe(18);
     }
+  });
+
+  it('keeps the first-touch curve cap when staged entry is disabled', () => {
+    const wanted = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 3,
+      liqPowerLaw: { coef: 0.001888, exp: 0.866, minUsd: 5, maxUsd: 30 },
+      thick: {
+        positionUsd: 20,
+        minMarketCapUsd: 100_000,
+        minLiquidityUsd: 50_000,
+        minPairAgeHours: 6,
+      },
+      metrics: {
+        liquidityUsd: 21_008.46,
+        marketCapUsd: 30_000,
+        pairAgeHours: 2,
+      },
+    });
+    const firstTouchUsd = Math.min(10, wanted.sizeUsd);
+    const clip = resolveStagedEntryFirstClip({
+      enabled: false,
+      isNewBag: true,
+      isProbe: false,
+      isGreen: false,
+      sizeUsd: Math.max(5, firstTouchUsd),
+      firstUsd: 5,
+    });
+    expect(wanted.sizeUsd).toBeCloseTo(10.45, 1);
+    expect(firstTouchUsd).toBe(10);
+    expect(clip).toEqual({ sizeUsd: 10, intendedUsd: null, active: false });
   });
 
   const base = {

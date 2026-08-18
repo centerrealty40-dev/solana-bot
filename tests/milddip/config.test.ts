@@ -265,7 +265,7 @@ describe('mild-dip config exit schema', () => {
 
   it('keeps staged-entry production values in the mild-dip app', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
-    expect(eco).toContain("MILD_DIP_STAGED_ENTRY_ENABLED: '1'");
+    expect(eco).toContain("MILD_DIP_STAGED_ENTRY_ENABLED: '0'");
     expect(eco).toContain("MILD_DIP_STAGED_FIRST_USD: '5'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8'");
     expect(eco).toContain("MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '2'");

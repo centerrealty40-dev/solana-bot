@@ -2866,12 +2866,12 @@ const PM2_APPS = [
         MILD_DIP_SIZE_MIN_USD: '5',
         MILD_DIP_SIZE_MAX_USD: '30',
         /**
-         * 1.11.985 — staged new-bag entry keeps the first clip at $5.
-         * Do not disable staged entry: that would buy the whole liquidity-curve
-         * clip (up to MILD_DIP_SIZE_MAX_USD=$30) in one shot — the losing size
-         * band in the current measurement.
+         * 1.11.1025 — with staged adds disabled, the former new-bag first clip
+         * no longer flattens every entry to $5; the first-touch cap and
+         * liquidity curve determine the initial size. Add settings remain
+         * configurable for rollback, currently with ADD_MAX_USD=0.
          */
-        MILD_DIP_STAGED_ENTRY_ENABLED: '1',
+        MILD_DIP_STAGED_ENTRY_ENABLED: '0',
         MILD_DIP_STAGED_FIRST_USD: '5',
         MILD_DIP_STAGED_ADD_TRIGGER_PCT: '8',
         MILD_DIP_STAGED_ADD_MAX_CHASE_PCT: '2',
