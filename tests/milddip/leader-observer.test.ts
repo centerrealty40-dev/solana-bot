@@ -4,6 +4,7 @@
  * env contract so CI notices if ecosystem drops absolute logging.
  */
 import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
@@ -95,7 +96,7 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     expect(py).toContain('_dex_cache');
   });
 
-  it('1.11.1029 records leader pattern telemetry without inventing m1', () => {
+  it('1.11.1030 records leader pattern telemetry without inventing m1', () => {
     for (const field of [
       'pc6h',
       'pc24h',
@@ -128,6 +129,41 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     expect(py).not.toContain('m1');
     expect(py).toContain('leader_session_flat');
     expect(py).toContain('leader_sell_observed');
+  });
+
+  it('detects only exact, canonical Jupiter aggregator IDs', () => {
+    const result = execFileSync(
+      'python3',
+      [
+        '-c',
+        `
+import importlib.util
+import json
+import sys
+
+spec = importlib.util.spec_from_file_location("leader_observer", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+print(json.dumps([
+    module._transaction_metadata({
+        "meta": {},
+        "transaction": {
+            "message": {
+                "instructions": [{"programId": pid}],
+            },
+        },
+    })["viaAggregator"]
+    for pid in sys.argv[2:]
+]))
+`,
+        resolve('scripts/milddip/leader-observer.py'),
+        'JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB',
+        'JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+        'jup6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4',
+    ],
+      { encoding: 'utf8' },
+    );
+    expect(JSON.parse(result)).toEqual([true, true, null]);
   });
 
   it('ships 48h divergence + segment stats scripts', () => {

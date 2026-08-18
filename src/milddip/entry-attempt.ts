@@ -1433,6 +1433,28 @@ export async function attemptMildDipEntry(args: {
         cfg.waitDipMaxOvershootPct,
       )
     : null;
+  const txns5m =
+    c.metrics.buys5m != null && c.metrics.sells5m != null
+      ? c.metrics.buys5m + c.metrics.sells5m
+      : null;
+  const turnover5mLiq =
+    c.metrics.volume5mUsd != null &&
+    c.metrics.liquidityUsd != null &&
+    c.metrics.liquidityUsd > 0
+      ? c.metrics.volume5mUsd / c.metrics.liquidityUsd
+      : null;
+  const buyShare5m =
+    c.metrics.buys5m != null &&
+    c.metrics.sells5m != null &&
+    c.metrics.buys5m + c.metrics.sells5m > 0
+      ? c.metrics.buys5m / (c.metrics.buys5m + c.metrics.sells5m)
+      : null;
+  const clipLiqPct =
+    sized.sizeUsd != null &&
+    sizeMetrics.liquidityUsd != null &&
+    sizeMetrics.liquidityUsd > 0
+      ? (sized.sizeUsd / sizeMetrics.liquidityUsd) * 100
+      : null;
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_buy_reserved',
     mint: c.mint,
@@ -1453,28 +1475,10 @@ export async function attemptMildDipEntry(args: {
     tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
     structSource: c.structSource ?? null,
     structAgeMs: c.structAgeMs ?? null,
-    txns5m:
-      c.metrics.buys5m != null && c.metrics.sells5m != null
-        ? c.metrics.buys5m + c.metrics.sells5m
-        : null,
-    turnover5mLiq:
-      c.metrics.volume5mUsd != null &&
-      c.metrics.liquidityUsd != null &&
-      c.metrics.liquidityUsd > 0
-        ? c.metrics.volume5mUsd / c.metrics.liquidityUsd
-        : null,
-    buyShare5m:
-      c.metrics.buys5m != null &&
-      c.metrics.sells5m != null &&
-      c.metrics.buys5m + c.metrics.sells5m > 0
-        ? c.metrics.buys5m / (c.metrics.buys5m + c.metrics.sells5m)
-        : null,
-    clipLiqPct:
-      sized.sizeUsd != null &&
-      sizeMetrics.liquidityUsd != null &&
-      sizeMetrics.liquidityUsd > 0
-        ? (sized.sizeUsd / sizeMetrics.liquidityUsd) * 100
-        : null,
+    txns5m,
+    turnover5mLiq,
+    buyShare5m,
+    clipLiqPct,
     streamWindowSampleCount: c.streamWindowSampleCount ?? null,
     streamCoverageMs: c.streamCoverageMs ?? null,
     streamBounceFromTroughPct: c.streamBounceFromTroughPct ?? null,
@@ -1608,28 +1612,10 @@ export async function attemptMildDipEntry(args: {
     tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
     structSource: c.structSource ?? null,
     structAgeMs: c.structAgeMs ?? null,
-    txns5m:
-      c.metrics.buys5m != null && c.metrics.sells5m != null
-        ? c.metrics.buys5m + c.metrics.sells5m
-        : null,
-    turnover5mLiq:
-      c.metrics.volume5mUsd != null &&
-      c.metrics.liquidityUsd != null &&
-      c.metrics.liquidityUsd > 0
-        ? c.metrics.volume5mUsd / c.metrics.liquidityUsd
-        : null,
-    buyShare5m:
-      c.metrics.buys5m != null &&
-      c.metrics.sells5m != null &&
-      c.metrics.buys5m + c.metrics.sells5m > 0
-        ? c.metrics.buys5m / (c.metrics.buys5m + c.metrics.sells5m)
-        : null,
-    clipLiqPct:
-      sized.sizeUsd != null &&
-      sizeMetrics.liquidityUsd != null &&
-      sizeMetrics.liquidityUsd > 0
-        ? (sized.sizeUsd / sizeMetrics.liquidityUsd) * 100
-        : null,
+    txns5m,
+    turnover5mLiq,
+    buyShare5m,
+    clipLiqPct,
     streamWindowSampleCount: c.streamWindowSampleCount ?? null,
     streamCoverageMs: c.streamCoverageMs ?? null,
     streamBounceFromTroughPct: c.streamBounceFromTroughPct ?? null,
@@ -1650,28 +1636,10 @@ export async function attemptMildDipEntry(args: {
       dexId: c.metrics.dexId ?? null,
       buys5m: c.metrics.buys5m ?? null,
       sells5m: c.metrics.sells5m ?? null,
-      txns5m:
-        c.metrics.buys5m != null && c.metrics.sells5m != null
-          ? c.metrics.buys5m + c.metrics.sells5m
-          : null,
-      turnover5mLiq:
-        c.metrics.volume5mUsd != null &&
-        c.metrics.liquidityUsd != null &&
-        c.metrics.liquidityUsd > 0
-          ? c.metrics.volume5mUsd / c.metrics.liquidityUsd
-          : null,
-      buyShare5m:
-        c.metrics.buys5m != null &&
-        c.metrics.sells5m != null &&
-        c.metrics.buys5m + c.metrics.sells5m > 0
-          ? c.metrics.buys5m / (c.metrics.buys5m + c.metrics.sells5m)
-          : null,
-      clipLiqPct:
-        sized.sizeUsd != null &&
-        sizeMetrics.liquidityUsd != null &&
-        sizeMetrics.liquidityUsd > 0
-          ? (sized.sizeUsd / sizeMetrics.liquidityUsd) * 100
-          : null,
+      txns5m,
+      turnover5mLiq,
+      buyShare5m,
+      clipLiqPct,
       structSource: c.structSource ?? null,
       structAgeMs: c.structAgeMs ?? null,
       streamWindowSampleCount: c.streamWindowSampleCount ?? null,

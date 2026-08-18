@@ -781,10 +781,8 @@ export async function evaluateFastPathCandidate(
   const streamCurrentDd = streamDrawdownPct(mint, lookbackMs, nowMs);
   const streamDump = streamDumpExtentPct(mint, lookbackMs, nowMs);
   const streamRally = mildDipPriceRing.rallyIntoPeakPct(mint, lookbackMs, nowMs);
-  const greenStreamRally = mildDipPriceRing
-    .streamWindowMetrics(mint, lookbackMs, nowMs)
-    .rallyIntoPeakPct;
   const streamWindow = mildDipPriceRing.streamWindowMetrics(mint, lookbackMs, nowMs);
+  const greenStreamRally = streamWindow.rallyIntoPeakPct;
   const tapeOptions = greenTapeMinuteOptions(cfg);
   const tapeMinute = mildDipPriceRing.tapeMinuteMetrics(
     mint,

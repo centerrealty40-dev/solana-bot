@@ -144,9 +144,11 @@ _DEX_BATCH_MAX = int(env_num("LEADER_OBSERVER_DEX_BATCH_MAX", 30.0))
 _dex_last_call_ms = 0.0
 _dex_backoff_until_ms = 0.0
 _dex_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
-_AGGREGATOR_PROGRAM_PREFIXES = ("JUP",)
+# Keep in sync with src/core/constants.ts DEX_PROGRAMS and
+# src/parser/allowlisted-dex-swap.ts (base58 IDs are case-sensitive).
 _AGGREGATOR_PROGRAM_IDS = {
-    "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiP",
+    "JUP4Fb2cqiRUcaTHdrPC8h2gNsA2ETXiPDD33WcGuJB",
+    "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4",
 }
 _CLOSED_ENTRY_MAX_AGE_SEC = 7 * 86_400
 _CLOSED_ENTRY_CAP = 20_000
@@ -199,13 +201,7 @@ def _transaction_metadata(tx: dict[str, Any] | None) -> dict[str, Any]:
             program_id = instruction.get("programId")
             if isinstance(program_id, str) and program_id and program_id not in program_ids:
                 program_ids.append(program_id)
-    aggregator = None
-    if program_ids:
-        aggregator = any(
-            pid in _AGGREGATOR_PROGRAM_IDS
-            or pid.upper().startswith(_AGGREGATOR_PROGRAM_PREFIXES)
-            for pid in program_ids
-        )
+    aggregator = True if any(pid in _AGGREGATOR_PROGRAM_IDS for pid in program_ids) else None
     return {
         "slot": tx.get("slot") if isinstance(tx.get("slot"), (int, float)) else None,
         "feeLamports": _finite_number(meta.get("fee")),
