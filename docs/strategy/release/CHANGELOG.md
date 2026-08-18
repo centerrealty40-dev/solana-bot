@@ -1,3 +1,19 @@
+## [1.11.1019] — 2026-08-20
+
+### Изменено
+
+- Для production `mild-dip-bot` включён минимальный дисконт повторного входа
+  `MILD_DIP_REBUY_BELOW_EXIT_PCT=5`: в течение окна
+  `MILD_DIP_REBUY_BELOW_EXIT_MAX_AGE_MS=900000` повторный вход должен быть
+  минимум на 5% дешевле нашей последней цены выхода.
+- Mirror, observer, leader-green и отдельный dc-trader не изменялись.
+
+### Откат
+
+```text
+MILD_DIP_REBUY_BELOW_EXIT_PCT=0
+```
+
 ## [1.11.1018] — 2026-08-20
 
 ### Изменено
