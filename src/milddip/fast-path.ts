@@ -408,10 +408,35 @@ export function streamOnlyNearTroughOk(args: {
   return b <= Math.max(0, args.maxBouncePct);
 }
 
+export type KnifeStreamGuardReasonCode =
+  | 'dex_green_vetoes_stream_knife'
+  | 'knife_stream_divergence'
+  | 'knife_dex_unknown_stream_untrusted';
+
+export type KnifeStreamGuardDetail =
+  | {
+      code: 'dex_green_vetoes_stream_knife';
+      streamDd: number;
+      dexPc: number;
+      greenMinPc5m: number;
+    }
+  | {
+      code: 'knife_stream_divergence';
+      streamDd: number;
+      dexPc: number;
+      divergencePp: number;
+      maxPp: number;
+    }
+  | {
+      code: 'knife_dex_unknown_stream_untrusted';
+      streamDd: number;
+    };
+
 export type KnifeStreamGuardResult = {
   streamPc5mForKnife: number | null;
   blocked: boolean;
-  reasons: string[];
+  reasons: KnifeStreamGuardReasonCode[];
+  details: KnifeStreamGuardDetail[];
 };
 
 /**
@@ -431,35 +456,47 @@ export function evaluateKnifeStreamGuard(args: {
   const stream = args.streamDd != null && Number.isFinite(args.streamDd) ? args.streamDd : null;
   const dex = args.dexPc != null && Number.isFinite(args.dexPc) ? args.dexPc : null;
   if (stream == null) {
-    return { streamPc5mForKnife: stream, blocked: false, reasons: [] };
+    return { streamPc5mForKnife: stream, blocked: false, reasons: [], details: [] };
   }
   if (dex == null) {
     return {
       streamPc5mForKnife: null,
       blocked: true,
-      reasons: [`knife_dex_unknown_stream_untrusted streamDd=${stream.toFixed(2)}`],
+      reasons: ['knife_dex_unknown_stream_untrusted'],
+      details: [{ code: 'knife_dex_unknown_stream_untrusted', streamDd: stream }],
     };
   }
 
-  const reasons: string[] = [];
+  const reasons: KnifeStreamGuardReasonCode[] = [];
+  const details: KnifeStreamGuardDetail[] = [];
   const greenMin = args.dexGreenMinPc5m ?? 0;
   if (args.dexGreenVeto && dex >= greenMin) {
-    reasons.push(
-      `dex_green_vetoes_stream_knife streamDd=${stream.toFixed(2)} dexPc=${dex.toFixed(2)} greenMinPc5m=${greenMin.toFixed(2)}`,
-    );
+    reasons.push('dex_green_vetoes_stream_knife');
+    details.push({
+      code: 'dex_green_vetoes_stream_knife',
+      streamDd: stream,
+      dexPc: dex,
+      greenMinPc5m: greenMin,
+    });
   }
 
   const divergencePp = dex - stream;
   if (args.maxDivergencePp >= 0 && divergencePp > args.maxDivergencePp) {
-    reasons.push(
-      `knife_stream_divergence streamDd=${stream.toFixed(2)} dexPc=${dex.toFixed(2)} divergencePp=${divergencePp.toFixed(2)} maxPp=${args.maxDivergencePp.toFixed(2)}`,
-    );
+    reasons.push('knife_stream_divergence');
+    details.push({
+      code: 'knife_stream_divergence',
+      streamDd: stream,
+      dexPc: dex,
+      divergencePp,
+      maxPp: args.maxDivergencePp,
+    });
   }
 
   return {
     streamPc5mForKnife: reasons.length > 0 ? null : stream,
     blocked: reasons.length > 0,
     reasons,
+    details,
   };
 }
 
@@ -1007,6 +1044,7 @@ export async function evaluateFastPathCandidate(
       pc5m: struct.metrics.priceChange5mPct,
       deepestPc,
       knifeStreamGuardReasons: knifeStreamGuard.reasons,
+      knifeStreamGuardDetails: knifeStreamGuard.details,
     });
   }
 
@@ -1058,6 +1096,7 @@ export async function evaluateFastPathCandidate(
       streamCurrentDd,
       dexPc,
       knifeStreamGuardReasons: knifeStreamGuard.reasons,
+      knifeStreamGuardDetails: knifeStreamGuard.details,
     });
   }
 
@@ -1266,6 +1305,7 @@ export async function evaluateFastPathCandidate(
       dexPc,
       pc1h: metrics.priceChange1hPct,
       knifeStreamGuardReasons: knifeStreamGuard.reasons,
+      knifeStreamGuardDetails: knifeStreamGuard.details,
     });
   }
 

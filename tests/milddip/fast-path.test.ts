@@ -373,10 +373,26 @@ describe('fast-path helpers', () => {
     });
     expect(result.blocked).toBe(true);
     expect(result.streamPc5mForKnife).toBeNull();
-    expect(result.reasons[0]).toContain('dex_green_vetoes_stream_knife');
-    expect(result.reasons[0]).toContain('streamDd=-93.06');
-    expect(result.reasons[0]).toContain('dexPc=3.65');
-    expect(result.reasons[1]).toContain('divergencePp=96.71');
+    expect(result.reasons).toEqual([
+      'dex_green_vetoes_stream_knife',
+      'knife_stream_divergence',
+    ]);
+    expect(result.details[0]).toEqual({
+      code: 'dex_green_vetoes_stream_knife',
+      streamDd: -93.06,
+      dexPc: 3.65,
+      greenMinPc5m: 0,
+    });
+    const divergenceDetail = result.details[1];
+    expect(divergenceDetail).toMatchObject({
+      code: 'knife_stream_divergence',
+      streamDd: -93.06,
+      dexPc: 3.65,
+      maxPp: 40,
+    });
+    if (divergenceDetail.code === 'knife_stream_divergence') {
+      expect(divergenceDetail.divergencePp).toBeCloseTo(96.71, 10);
+    }
   });
 
   it('keeps knife evidence for a genuinely red Dex print close to stream', () => {
@@ -390,6 +406,7 @@ describe('fast-path helpers', () => {
       streamPc5mForKnife: -31.2,
       blocked: false,
       reasons: [],
+      details: [],
     });
   });
 
@@ -402,7 +419,13 @@ describe('fast-path helpers', () => {
     });
     expect(result.blocked).toBe(true);
     expect(result.streamPc5mForKnife).toBeNull();
-    expect(result.reasons[0]).toContain('knife_dex_unknown_stream_untrusted');
+    expect(result.reasons).toEqual(['knife_dex_unknown_stream_untrusted']);
+    expect(result.details).toEqual([
+      {
+        code: 'knife_dex_unknown_stream_untrusted',
+        streamDd: -31.2,
+      },
+    ]);
   });
 
   it('1.11.928 leader trust bypasses structural re-check on fast-path', () => {
