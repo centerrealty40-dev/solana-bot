@@ -103,6 +103,7 @@ import { profitFillMinPriceUsd } from './profit-fill-guard.js';
 import { retrySlippageBpsForAttempt } from './exit-retry.js';
 import { decideExitRefire } from './exit-refire.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
+import { peekCopyQuoteBalances } from '../copytrader/funding-gate.js';
 import {
   evaluateLeaderStyleEntry,
   shouldJournalLeaderStyleSkip,
@@ -2159,25 +2160,16 @@ async function executeQueuedSell(args: {
         : {}),
   });
 
-  const settleRefireClosed = async (onchainRaw: bigint): Promise<void> => {
-    const realizedPnl = decision.pnlPct;
-    const cd = cooldownMsAfterExit({
-      pnlPct: realizedPnl,
-      mintCooldownMs: cfg.mintCooldownMs,
-      lossCooldownMs: cfg.lossCooldownMs,
-    });
-    if (state.open[mint]) {
-      delete state.open[mint];
-      state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
-      if (!state.lastExitByMint) state.lastExitByMint = {};
-      state.lastExitByMint[mint] = {
-        priceUsd: decision.markPriceUsd || pos.entryPriceUsd,
-        atMs: nowMs,
-        pnlPct: +realizedPnl.toFixed(2),
-      };
-      mildDipHotMints.note(mint, nowMs);
-      saveMildDipState(cfg.statePath, state);
-    }
+  const settleRefireClosed = async (onchainRaw: bigint) => {
+    const afterBalances = await peekCopyQuoteBalances(copyCfg);
+    const usdcBefore = sell.usdcBefore ?? null;
+    const usdcAfter = afterBalances?.quoteUsd ?? null;
+    const feeSolBefore = sell.feeSolBefore ?? null;
+    const feeSolAfter = afterBalances?.feeSol ?? null;
+    const quoteReceivedUsd =
+      usdcBefore != null && usdcAfter != null && usdcAfter > usdcBefore
+        ? usdcAfter - usdcBefore
+        : null;
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_exit_refire',
       mint,
@@ -2191,28 +2183,24 @@ async function executeQueuedSell(args: {
       onchainRaw: onchainRaw.toString(),
       dustRaw: HOLDING_DUST_RAW.toString(),
       appliedSlippageBps: null,
+      usdcBefore,
+      usdcAfter,
+      feeSolBefore,
+      feeSolAfter,
+      quoteReceivedUsd,
     });
-    appendMildDipJournal(cfg.journalPath, {
-      kind: 'mild_dip_cooldown_set',
-      mint,
-      symbol: pos.symbol,
-      pnlPct: +realizedPnl.toFixed(2),
-      cooldownMs: cd.cooldownMs,
-      cooldownKind: cd.kind,
-      exitReason: decision.reason,
-      lastExitPriceUsd: decision.markPriceUsd || pos.entryPriceUsd,
-      settleReason: 'confirm_timeout_refire_chain_flat',
-      remainderSource: 'refire_onchain_read',
-    });
-    await reclaimEmptyAta(cfg, {
-      mint,
-      symbol: pos.symbol,
-      reason: `post_sell_${decision.reason}`,
-    });
+    return {
+      usdcBefore,
+      usdcAfter,
+      feeSolBefore,
+      feeSolAfter,
+      quoteReceivedUsd,
+    };
   };
 
   let sell = await executeCopySell(sellArgs({ attempt: 0 }));
   let refireAttempt = 0;
+  let refireSettlement: Awaited<ReturnType<typeof settleRefireClosed>> | null = null;
   while (
     !sell.ok &&
     sell.reason === 'confirm_timeout' &&
@@ -2274,8 +2262,8 @@ async function executeQueuedSell(args: {
       appliedSlippageBps: nextSlippageBps ?? null,
     });
     if (action === 'settle_closed') {
-      await settleRefireClosed(onchainRaw);
-      return;
+      refireSettlement = await settleRefireClosed(onchainRaw);
+      break;
     }
     if (action === 'give_up') break;
     refireAttempt += 1;
@@ -2301,11 +2289,11 @@ async function executeQueuedSell(args: {
     givebackPct: +decision.givebackPct.toFixed(2),
     /** Mark/quote price-ratio % — NOT wallet cash. Use trades.jsonl cashPnlUsd. */
     realizedPct: +(sell.pnlPct ?? decision.pnlPct).toFixed(2),
-    quoteReceivedUsd: sell.quoteReceivedUsd ?? null,
-    usdcBefore: sell.usdcBefore ?? null,
-    usdcAfter: sell.usdcAfter ?? null,
-    feeSolBefore: sell.feeSolBefore ?? null,
-    feeSolAfter: sell.feeSolAfter ?? null,
+    quoteReceivedUsd: refireSettlement ? refireSettlement.quoteReceivedUsd : sell.quoteReceivedUsd ?? null,
+    usdcBefore: refireSettlement ? refireSettlement.usdcBefore : sell.usdcBefore ?? null,
+    usdcAfter: refireSettlement ? refireSettlement.usdcAfter : sell.usdcAfter ?? null,
+    feeSolBefore: refireSettlement ? refireSettlement.feeSolBefore : sell.feeSolBefore ?? null,
+    feeSolAfter: refireSettlement ? refireSettlement.feeSolAfter : sell.feeSolAfter ?? null,
     fraction,
     tpRung: decision.reason === 'tp_grid' ? decision.tpRungIndex : null,
     liq: decision.liquidityUsd != null ? +decision.liquidityUsd.toFixed(2) : null,
@@ -2323,8 +2311,10 @@ async function executeQueuedSell(args: {
     scaleOut: isPartial,
     armed: decision.armed,
     holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
-    ok: sell.ok,
+    ok: sell.ok || refireSettlement != null,
     sellReason: sell.reason ?? null,
+    settleSource: refireSettlement ? 'refire_onchain_flat' : null,
+    fillConfirmed: refireSettlement ? false : null,
     minExitPriceGuard: sell.minExitPriceGuard ?? null,
     signature: sell.signature ?? null,
     mode: cfg.executionMode,
@@ -2339,17 +2329,19 @@ async function executeQueuedSell(args: {
       wallet,
       mint,
       symbol: pos.symbol,
-      ok: sell.ok,
+      ok: sell.ok || refireSettlement != null,
       signature: sell.signature ?? null,
       sizeUsdIntent: pos.sizeUsd,
       fraction,
-      usdcBefore: sell.usdcBefore ?? null,
-      usdcAfter: sell.usdcAfter ?? null,
-      feeSolBefore: sell.feeSolBefore ?? null,
-      feeSolAfter: sell.feeSolAfter ?? null,
-      quoteReceivedUsd: sell.quoteReceivedUsd ?? null,
-      fillPriceUsd: sell.priceUsd || decision.markPriceUsd,
-      markPnlPct: sell.pnlPct ?? decision.pnlPct,
+      usdcBefore: refireSettlement ? refireSettlement.usdcBefore : sell.usdcBefore ?? null,
+      usdcAfter: refireSettlement ? refireSettlement.usdcAfter : sell.usdcAfter ?? null,
+      feeSolBefore: refireSettlement ? refireSettlement.feeSolBefore : sell.feeSolBefore ?? null,
+      feeSolAfter: refireSettlement ? refireSettlement.feeSolAfter : sell.feeSolAfter ?? null,
+      quoteReceivedUsd: refireSettlement
+        ? refireSettlement.quoteReceivedUsd
+        : sell.quoteReceivedUsd ?? null,
+      fillPriceUsd: refireSettlement ? null : sell.priceUsd || decision.markPriceUsd,
+      markPnlPct: refireSettlement ? null : sell.pnlPct ?? decision.pnlPct,
       reason: decision.reason,
       lossExitBounceCap: decision.lossExitBounceCap ?? null,
       lossReclaimWaitMs: decision.lossReclaimWaitMs ?? null,
@@ -2388,6 +2380,35 @@ async function executeQueuedSell(args: {
     // 1.11.783 — pin to hot buffer so stream wake / sampler keep the name.
     mildDipHotMints.note(mint, nowMs);
   };
+
+  if (refireSettlement) {
+    const realizedPnl = decision.pnlPct;
+    const exitPx = decision.markPriceUsd || pos.entryPriceUsd;
+    if (state.open[mint]) {
+      delete state.open[mint];
+      state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
+      noteLastExit(exitPx);
+      saveMildDipState(cfg.statePath, state);
+    }
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_cooldown_set',
+      mint,
+      symbol: pos.symbol,
+      pnlPct: +realizedPnl.toFixed(2),
+      cooldownMs: cd.cooldownMs,
+      cooldownKind: cd.kind,
+      exitReason: decision.reason,
+      lastExitPriceUsd: exitPx,
+      settleReason: 'confirm_timeout_refire_chain_flat',
+      remainderSource: 'refire_onchain_read',
+    });
+    await reclaimEmptyAta(cfg, {
+      mint,
+      symbol: pos.symbol,
+      reason: `post_sell_${decision.reason}`,
+    });
+    return;
+  }
 
   if (sell.ok) {
     const exitPx = sell.priceUsd || decision.markPriceUsd;
