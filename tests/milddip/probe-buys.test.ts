@@ -1,7 +1,10 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { evaluateRebuyBelowExit } from '../../src/milddip/gates.js';
+import {
+  evaluateRebuyBelowExit,
+  resolveMildDipWantedSizeUsd,
+} from '../../src/milddip/gates.js';
 import {
   laneEntryRequestUsd,
   mirrorOnlyEntryAllowed,
@@ -132,15 +135,56 @@ describe('1.11.898 the first position on a coin is sized down', () => {
   });
 
   it('live env keeps first-touch and power-law buys at or above $5', () => {
-    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '3'");
+    expect(eco).toContain("MILD_DIP_FIRST_TOUCH_POSITION_USD: '10'");
     expect(eco).toContain("MILD_DIP_SIZE_LIQ_POWER_COEF: '0.001888'");
     expect(eco).toContain("MILD_DIP_SIZE_MIN_USD: '5'");
     expect(eco).toContain("MILD_DIP_SIZE_MAX_USD: '30'");
   });
 
+  it('first-touch caps the curve at $10, while non-first-touch keeps the curve', () => {
+    const law = { coef: 0.001888, exp: 0.866, minUsd: 5, maxUsd: 30 };
+    const sizing = (liquidityUsd: number) =>
+      resolveMildDipWantedSizeUsd({
+        basePositionUsd: 3,
+        liqPowerLaw: law,
+        thick: {
+          positionUsd: 20,
+          minMarketCapUsd: 100_000,
+          minLiquidityUsd: 50_000,
+          minPairAgeHours: 6,
+        },
+        metrics: {
+          liquidityUsd,
+          marketCapUsd: 200_000,
+          pairAgeHours: 12,
+        },
+      }).sizeUsd;
+
+    const largePool = sizing(100_000);
+    const thinPool = sizing(1_000);
+    const incidentPool = sizing(37_305.98);
+
+    expect(Math.max(5, Math.min(10, largePool))).toBe(10);
+    expect(Math.max(5, Math.min(10, thinPool))).toBe(5);
+    expect(Math.max(5, incidentPool)).toBeCloseTo(17.185498, 6);
+    expect(largePool).toBeGreaterThan(10);
+  });
+
   it('raises the rug-knife clip without changing the risk gate', () => {
     expect(eco).toContain("MILD_DIP_RUG_KNIFE_CLIP_USD: '3'");
     expect(src).toContain('Math.min(cfg.rugKnifeClipUsd, wanted.sizeUsd)');
+    const wanted = resolveMildDipWantedSizeUsd({
+      basePositionUsd: 3,
+      liqPowerLaw: { coef: 0.001888, exp: 0.866, minUsd: 5, maxUsd: 30 },
+      thick: {
+        positionUsd: 20,
+        minMarketCapUsd: 100_000,
+        minLiquidityUsd: 50_000,
+        minPairAgeHours: 6,
+      },
+      metrics: { liquidityUsd: 37_305.98, marketCapUsd: 200_000, pairAgeHours: 12 },
+    });
+    expect(Math.max(5, Math.min(3, wanted.sizeUsd))).toBe(5);
   });
 
   it('wallet-drain partials stop below the configured minimum', () => {

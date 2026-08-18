@@ -7,12 +7,16 @@
 - Неположительный `MILD_DIP_PROBE_BLOCKED_USD` теперь выключает probe
   полностью, а положительное значение всегда ограничивает фактический
   размер probe-покупки, включая lane и funding-size пути.
+- Для первого входа `MILD_DIP_FIRST_TOUCH_POSITION_USD` повышен до `$10`:
+  это кэп поверх liquidity power-law, а не фиксированный размер; для тонких
+  пулов сохраняется пол `$5`.
 
 ### Откат
 
 ```text
 MILD_DIP_PROBE_BLOCKED=1
 MILD_DIP_PROBE_BLOCKED_USD=2
+MILD_DIP_FIRST_TOUCH_POSITION_USD=3
 Для полного отката логики revert коммита релиза.
 ```
 
