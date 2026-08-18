@@ -4715,21 +4715,21 @@ const PM2_APPS = [
  * runtime settings differ.
  */
 const mildDipBotApp = PM2_APPS.find((app) => app.name === 'mild-dip-bot');
-if (mildDipBotApp) {
-  PM2_APPS.push({
+function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
+  return {
     ...mildDipBotApp,
-    name: 'mild-dip-mirror',
+    name,
     env: {
       ...mildDipBotApp.env,
-      MILD_DIP_APP_NAME: 'mild-dip-mirror',
-      MILD_DIP_WALLET_SECRET: path.join(root, 'data/live/mcs-wallet.json'),
-      MILD_DIP_WALLET_PUBKEY: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
+      MILD_DIP_APP_NAME: name,
+      MILD_DIP_WALLET_SECRET: path.join(root, walletSecret),
+      MILD_DIP_WALLET_PUBKEY: walletPubkey,
       MILD_DIP_LEADER_SEED_PATH: path.join(root, 'data/milddip/leader-seed.json'),
-      MILD_DIP_JOURNAL_PATH: path.join(root, 'data/milddip-mirror/journal.jsonl'),
-      MILD_DIP_TRADES_PATH: path.join(root, 'data/milddip-mirror/trades.jsonl'),
-      MILD_DIP_STATE_PATH: path.join(root, 'data/milddip-mirror/state.json'),
-      MILD_DIP_HOT_MINTS_PATH: path.join(root, 'data/milddip-mirror/hot-mints.json'),
-      MILD_DIP_PRICE_RING_PATH: path.join(root, 'data/milddip-mirror/price-ring.json'),
+      MILD_DIP_JOURNAL_PATH: path.join(root, dataDir, 'journal.jsonl'),
+      MILD_DIP_TRADES_PATH: path.join(root, dataDir, 'trades.jsonl'),
+      MILD_DIP_STATE_PATH: path.join(root, dataDir, 'state.json'),
+      MILD_DIP_HOT_MINTS_PATH: path.join(root, dataDir, 'hot-mints.json'),
+      MILD_DIP_PRICE_RING_PATH: path.join(root, dataDir, 'price-ring.json'),
       MILD_DIP_MIRROR_ENABLED: '1',
       MILD_DIP_MIRROR_ONLY: '1',
       MILD_DIP_MIRROR_GREEN_COPY_ENABLED: '1',
@@ -4739,6 +4739,8 @@ if (mildDipBotApp) {
       MILD_DIP_MIRROR_EXIT_REFIRE_MAX: '2',
       MILD_DIP_MIRROR_LEADER_SELL_ENABLED: '1',
       MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH: path.join(root, 'data/milddip/trades.jsonl'),
+      MILD_DIP_MIRROR_LEADER_SELL_ONLY: '1',
+      MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS: '86400000',
       MILD_DIP_GREEN_ENABLED: '0',
       MILD_DIP_LSTYLE_ENABLED: '0',
       MILD_DIP_FAST_PATH: '0',
@@ -4747,7 +4749,7 @@ if (mildDipBotApp) {
       MILD_DIP_TAPE_SHADOW_ENABLED: '0',
       MILD_DIP_DISCOVER_SOURCES: '',
       MILD_DIP_LEADER_SEED_ENTRY: '0',
-      MILD_DIP_MIRROR_LEADERS: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+      MILD_DIP_MIRROR_LEADERS: leaders,
       MILD_DIP_MIRROR_LEADER_MAX_AGE_MS: '45000',
       MILD_DIP_MIRROR_OBSERVE_MS: '45000',
       MILD_DIP_MIRROR_QUOTE_INTERVAL_MS: '3000',
@@ -4776,7 +4778,25 @@ if (mildDipBotApp) {
       MILD_DIP_MIRROR_NO_MOVE_MIN_MFE_PCT: '2',
       MILD_DIP_MIRROR_MAX_HOLD_MS: '3600000',
     },
-  });
+  };
+}
+if (mildDipBotApp) {
+  PM2_APPS.push(
+    makeMirrorApp({
+      name: 'mild-dip-mirror',
+      walletSecret: 'data/live/mcs-wallet.json',
+      walletPubkey: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
+      dataDir: 'data/milddip-mirror',
+      leaders: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+    }),
+    makeMirrorApp({
+      name: 'mild-dip-mirror2',
+      walletSecret: 'data/live/copy-8zkg.keypair.json',
+      walletPubkey: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
+      dataDir: 'data/milddip-mirror2',
+      leaders: '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+    }),
+  );
 }
 
 /**

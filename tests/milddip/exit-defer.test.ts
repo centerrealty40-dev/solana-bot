@@ -35,6 +35,14 @@ const base = {
 };
 
 describe('shouldDeferSoftExit', () => {
+  it('never defers the mirror safety cut', () => {
+    const v = shouldDeferSoftExit({
+      ...base,
+      reason: 'mirror_safety_cut',
+    });
+    expect(v.defer).toBe(false);
+  });
+
   it('holds a soft exit the entry gate would still buy', () => {
     const v = shouldDeferSoftExit(base);
     expect(v.defer).toBe(true);

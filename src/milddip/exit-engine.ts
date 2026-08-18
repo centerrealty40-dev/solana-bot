@@ -140,7 +140,10 @@ export function decideMarkExit(args: {
   oneshotDumpGraceActive?: boolean;
   /** Required for `lane === 'green'` bags; ignored otherwise. */
   greenGates?: GreenExitGates;
-  mirrorGates?: GreenExitGates;
+  mirrorGates?: GreenExitGates & {
+    leaderSellOnly?: boolean;
+    safetyMaxHoldMs?: number;
+  };
   leaderStyleGates?: {
     profitReboundPct: number;
     pnlTpPct: number;
@@ -237,24 +240,36 @@ export function decideMarkExit(args: {
     const peakDrawdown = peakPriceUsd > 0 ? (1 - markPriceUsd / peakPriceUsd) * 100 : 0;
     const wasArmed = pos.trailArmed === true;
     const g = decideGreenExit(pnl, heldMsMirror, args.mirrorGates, peakPnl, peakDrawdown);
+    const safetyCut =
+      (args.mirrorGates.safetyMaxHoldMs ?? 0) > 0 &&
+      heldMsMirror >= (args.mirrorGates.safetyMaxHoldMs ?? 0);
+    const mirrorShouldExit = safetyCut
+      ? true
+      : args.mirrorGates.leaderSellOnly === true
+        ? false
+        : g.shouldExit;
     const mirrorReason: MildDipExitReason =
-      g.reason === 'green_stop'
-        ? 'mirror_stop'
-        : g.reason === 'green_trail'
-          ? 'mirror_trail'
-          : g.reason === 'green_no_move'
-            ? 'mirror_no_move'
-            : g.reason === 'green_tp'
-              ? 'mirror_tp'
-              : g.reason === 'green_max_hold'
-                ? 'mirror_max_hold'
-                : null;
+      safetyCut
+        ? 'mirror_safety_cut'
+        : args.mirrorGates.leaderSellOnly === true
+          ? null
+          : g.reason === 'green_stop'
+            ? 'mirror_stop'
+            : g.reason === 'green_trail'
+              ? 'mirror_trail'
+              : g.reason === 'green_no_move'
+                ? 'mirror_no_move'
+                : g.reason === 'green_tp'
+                  ? 'mirror_tp'
+                  : g.reason === 'green_max_hold'
+                    ? 'mirror_max_hold'
+                    : null;
     const armed = args.mirrorGates.trailEnabled === true &&
       (wasArmed || peakPnl >= (args.mirrorGates.armPct ?? 2));
     return {
       mint, markPriceUsd, entryMarketPriceUsd: null, peakPriceUsd, armed,
-      justArmed: armed && !wasArmed, shouldExit: g.shouldExit,
-      fraction: g.shouldExit ? 1 : 0,
+      justArmed: armed && !wasArmed, shouldExit: mirrorShouldExit,
+      fraction: mirrorShouldExit ? 1 : 0,
       reason: mirrorReason, tpRungIndex: null, mfePct: peakPnl, givebackPct: peakDrawdown,
       pnlPct: pnl, gainPct: pnl, gainBasisPriceUsd: basis, pnlPctVsFill: pnl,
       volFadeSamples: [...(pos.volFadeSamples ?? [])],
