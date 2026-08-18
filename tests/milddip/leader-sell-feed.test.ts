@@ -81,4 +81,21 @@ describe('leader sell feed parser', () => {
     expect(feed.get('MintRemoved', 110_000)).toBeNull();
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('keeps a sale available for observation when there are no open positions', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'leader-sell-feed-flat-'));
+    const file = path.join(dir, 'trades.jsonl');
+    fs.writeFileSync(file, '');
+    const feed = new LeaderSellFeed(file, { leaders: [leader], maxAgeMs: 10_000 });
+    feed.start();
+    fs.appendFileSync(
+      file,
+      `${JSON.stringify({ ...base, mint: 'MintObservedWhileFlat', blockTime: 105 })}\n`,
+    );
+
+    // The main tick polls the feed before exit processing, even with no open positions.
+    expect(feed.read(110_000)).toHaveLength(1);
+    expect(feed.get('MintObservedWhileFlat', 110_000)?.mint).toBe('MintObservedWhileFlat');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });

@@ -3035,8 +3035,6 @@ async function tryExits(
           max: cfg.leaderSeedMax,
         })
       : [];
-  leaderSellFeed?.read(nowMs);
-
   const markStarted = Date.now();
   // 1.11.794 — refresh blind/oldest first so armed bags cannot starve new opens
   // of the Dex→ring slots (was hard-coded maxInFlight=3 in armed-first order).
