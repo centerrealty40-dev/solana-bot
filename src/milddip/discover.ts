@@ -117,6 +117,7 @@ export type MildDipCandidate = {
   tapeMinuteFailureReason?: string | null;
   /** Impulse metrics that were unavailable while other configured metrics passed. */
   impulseMetricsUnknown?: string[];
+  structSource?: 'leader_seed' | 'dex' | 'gecko';
 };
 
 const SOLANA_CHAIN = 'solana';
@@ -548,7 +549,7 @@ export async function enrichAndFilterCandidates(
         volume1hUsd: details.volume1hUsd,
         priceChange1hPct: details.priceChangeH1Pct,
       };
-      noteStructuralCache(mint, details.priceUsd, metrics, nowMs);
+      noteStructuralCache(mint, details.priceUsd, metrics, nowMs, 'dex');
       if (leaderStyle) {
         return {
           kind: 'candidate',

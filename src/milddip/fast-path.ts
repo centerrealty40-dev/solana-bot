@@ -31,6 +31,10 @@ import type { LeaderSeedHit } from './discover-extra.js';
 import { isLeaderFreshCoBuy } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
 import {
+  fetchMildDipStructuralFallback,
+  type StructuralFallbackSnapshot,
+} from './structural-fallback.js';
+import {
   evaluateTurnDumpGate,
   metricsHotDeepDumpOk,
   turnDumpKnifeBranchLive,
@@ -90,6 +94,7 @@ function structuralFromLeaderSeed(
   return {
     fetchedAtMs: hit.lastSeenAtMs,
     priceUsd,
+    source: 'leader_seed',
     metrics: {
       priceChange5mPct: hit.pc5m ?? null,
       priceChange1hPct: hit.pc1h ?? null,
@@ -109,6 +114,7 @@ export type StructuralCacheEntry = {
   fetchedAtMs: number;
   priceUsd: number;
   metrics: MildDipCandidateMetrics;
+  source?: 'leader_seed' | 'dex' | 'gecko';
 };
 
 const structuralCache = new Map<string, StructuralCacheEntry>();
@@ -251,9 +257,10 @@ export function noteStructuralCache(
   priceUsd: number,
   metrics: MildDipCandidateMetrics,
   fetchedAtMs: number,
+  source?: StructuralCacheEntry['source'],
 ): void {
   if (!mint || !(priceUsd > 0)) return;
-  structuralCache.set(mint, { fetchedAtMs, priceUsd, metrics });
+  structuralCache.set(mint, { fetchedAtMs, priceUsd, metrics, source });
 }
 
 export function invalidateStructuralCache(mint: string): void {
@@ -646,29 +653,46 @@ export function structuralFromDexDetails(
     volume1hUsd: details.volume1hUsd,
     priceChange1hPct: details.priceChangeH1Pct,
   };
-  const entry = { fetchedAtMs: nowMs, priceUsd: details.priceUsd!, metrics };
-  noteStructuralCache(mint, entry.priceUsd, metrics, nowMs);
+  const entry = {
+    fetchedAtMs: nowMs,
+    priceUsd: details.priceUsd!,
+    metrics,
+    source: 'dex' as const,
+  };
+  noteStructuralCache(mint, entry.priceUsd, metrics, nowMs, 'dex');
   return entry;
 }
 
 /**
- * Dex structural load: fresh cache → fetch with 1 retry → stale cache ≤30s.
+ * Dex structural load: fresh cache → fetch with 1 retry → stale cache → Gecko fallback.
  * One null blip must not kill a TD-eligible mint (`structural_fetch_null` spam).
  */
+export type StructuralLoadDeps = {
+  fetchDex?: typeof fetchDexScreenerPairDetails;
+  fetchFallback?: (
+    mint: string,
+    cfg: MildDipConfig,
+    nowMs: number,
+  ) => Promise<StructuralFallbackSnapshot | null>;
+};
+
 export async function loadStructural(
   mint: string,
   cfg: MildDipConfig,
   nowMs: number,
+  allowFallback = false,
+  deps?: StructuralLoadDeps,
 ): Promise<StructuralCacheEntry | null> {
   const freshMs = cfg.fastPathStructuralCacheMs;
   const cached = getStructuralCache(mint, nowMs, freshMs);
   if (cached) return cached;
 
+  const fetchDex = deps?.fetchDex ?? fetchDexScreenerPairDetails;
   for (let attempt = 0; attempt < STRUCTURAL_FETCH_RETRIES; attempt++) {
     if (attempt > 0) {
       await new Promise((r) => setTimeout(r, STRUCTURAL_RETRY_GAP_MS));
     }
-    const details = await fetchDexScreenerPairDetails(mint, {
+    const details = await fetchDex(mint, {
       nowMs,
       bypassCache: attempt > 0,
       cacheTtlMs: Math.min(5_000, freshMs),
@@ -685,6 +709,32 @@ export async function loadStructural(
       : STRUCTURAL_STALE_FALLBACK_MS;
   const stale = getStructuralCache(mint, nowMs, staleMs);
   if (stale) return stale;
+  if (allowFallback && cfg.structuralFallbackEnabled) {
+    const fetchFallback = deps?.fetchFallback ?? fetchMildDipStructuralFallback;
+    const snapshot = await fetchFallback(mint, cfg, nowMs);
+    if (snapshot) {
+      const metrics: MildDipCandidateMetrics = {
+        priceChange5mPct: snapshot.priceChange5mPct,
+        priceChange1hPct: snapshot.priceChange1hPct,
+        volume5mUsd: snapshot.volume5mUsd,
+        liquidityUsd: snapshot.liquidityUsd,
+        marketCapUsd: null,
+        pairAgeHours: snapshot.pairAgeHours,
+        dexId: snapshot.dexId,
+        buys5m: snapshot.buys5m,
+        sells5m: snapshot.sells5m,
+        volume1hUsd: snapshot.volume1hUsd,
+      };
+      const entry: StructuralCacheEntry = {
+        fetchedAtMs: nowMs,
+        priceUsd: snapshot.priceUsd,
+        metrics,
+        source: 'gecko',
+      };
+      noteStructuralCache(mint, entry.priceUsd, metrics, nowMs, 'gecko');
+      return entry;
+    }
+  }
   return null;
 }
 
@@ -840,13 +890,14 @@ export async function evaluateFastPathCandidate(
   // 1.11.775 — leader wake: prefer observer Dex snapshot (same print he bought on).
   let struct: StructuralCacheEntry | null =
     trigger === 'leader' && seedHit ? structuralFromLeaderSeed(seedHit, nowMs) : null;
-  let structSource: 'leader_seed' | 'dex' = struct ? 'leader_seed' : 'dex';
+  let structSource: 'leader_seed' | 'dex' | 'gecko' = struct ? 'leader_seed' : 'dex';
   if (!struct) {
-    struct = await loadStructural(mint, cfg, nowMs);
-    structSource = 'dex';
+    const allowStructuralFallback = trigger === 'leader' || streamInMain;
+    struct = await loadStructural(mint, cfg, nowMs, allowStructuralFallback);
+    structSource = struct?.source ?? 'dex';
   } else {
     // Keep cache warm for follow-up ticks.
-    noteStructuralCache(mint, struct.priceUsd, struct.metrics, nowMs);
+    noteStructuralCache(mint, struct.priceUsd, struct.metrics, nowMs, struct.source);
   }
   if (!struct) return skip('structural_fetch_null', { structSource });
   // Age of the snapshot the decision rests on — lets us check afterwards whether
@@ -1451,6 +1502,7 @@ export async function evaluateFastPathCandidate(
     priceUsd,
     metrics,
     dipSource,
+    structSource,
     ...(impulseEntry.unknownReasons
       ? { impulseMetricsUnknown: impulseEntry.unknownReasons }
       : {}),
