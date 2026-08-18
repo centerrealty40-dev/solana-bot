@@ -4019,7 +4019,8 @@ const PM2_APPS = [
          * 60 minutes -0.007 - so the ceiling goes where the tape turns, not where
          * the pile is most annoying. It reaches about thirty bags per 36h.
          */
-        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '10800000',
+        MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS: '5400000',
+        MILD_DIP_EXIT_HARD_TIME_STOP_MS: '5400000',
         /**
          * 1.11.734 — oneshot emptied-bag dump grace:
          * Stream sell that empties a wallet (post≈0) and ≥$500 → defer

@@ -1998,6 +1998,7 @@ async function executeQueuedSell(args: {
     'never_arm_vol_fade',
     'never_arm_timeout',
     'max_hold_underwater',
+    'hard_time_stop',
     'breakeven_stop',
     'dead_set_bounce',
     'liq_drain',
@@ -2927,6 +2928,8 @@ async function tryExits(
 
     const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));
     const maxHold = cfg.exit.neverArmMaxHoldMs > 0 ? cfg.exit.neverArmMaxHoldMs : 0;
+    const hardTimeStop =
+      cfg.exit.hardTimeStopMs > 0 ? cfg.exit.hardTimeStopMs : 0;
     const deadMin = cfg.exit.neverArmDeadMinMs > 0 ? cfg.exit.neverArmDeadMinMs : 0;
 
     /**
@@ -2935,9 +2938,16 @@ async function tryExits(
      * 1.11.781/782 — past max-hold force-exit even when armed (cannot prove green).
      */
     if (px == null) {
-      let forceReason: 'never_arm_timeout' | 'max_hold_underwater' | 'never_arm_dead' | null =
+      let forceReason:
+        | 'never_arm_timeout'
+        | 'max_hold_underwater'
+        | 'hard_time_stop'
+        | 'never_arm_dead'
+        | null =
         null;
-      if (maxHold > 0 && heldMs >= maxHold) {
+      if (hardTimeStop > 0 && heldMs >= hardTimeStop) {
+        forceReason = 'hard_time_stop';
+      } else if (maxHold > 0 && heldMs >= maxHold) {
         forceReason =
           pos.trailArmed === true ? 'max_hold_underwater' : 'never_arm_timeout';
       } else if (pos.trailArmed !== true && deadMin > 0 && heldMs >= deadMin) {

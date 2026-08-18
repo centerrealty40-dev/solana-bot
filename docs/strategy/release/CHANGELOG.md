@@ -1,3 +1,21 @@
+## [1.11.1017] — 2026-08-20
+
+### Изменено
+
+- Для красных mild-dip позиций добавлен `hard_time_stop`: при достижении
+  `MILD_DIP_EXIT_HARD_TIME_STOP_MS` мешок закрывается полностью без ожидания
+  bounce/reclaim. Зелёные позиции этот gate не затрагивает; существующие
+  `liq_drain`, `hard_stop` и `cliff_dump` проверяются раньше.
+- Production hard deadline установлен в 90 минут; мягкий
+  `MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS` синхронизирован с тем же значением.
+
+### Откат
+
+```text
+MILD_DIP_EXIT_HARD_TIME_STOP_MS=0
+MILD_DIP_EXIT_NEVER_ARM_MAX_HOLD_MS=10800000
+```
+
 ## [1.11.1015] — 2026-08-20
 
 ### Изменено
