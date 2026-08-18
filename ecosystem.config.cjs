@@ -4616,6 +4616,9 @@ const PM2_APPS = [
         LEADER_OBSERVER_MAX_HOURS: '0',
         /** 1.11.760 — log sells + session flat (was buy-only). */
         LEADER_OBSERVER_LOG_SELLS: '1',
+        /** 1.11.1029 — optional holder concentration telemetry; disabled by default. */
+        LEADER_OBSERVER_HOLDERS_ENABLED: '0',
+        LEADER_OBSERVER_HOLDERS_MIN_GAP_SEC: '3600',
         /** Slow Dex snapshot marks (features refresh). */
         LEADER_OBSERVER_LOG_MARKS: '1',
         LEADER_OBSERVER_MARK_MIN_GAP_SEC: '15',
