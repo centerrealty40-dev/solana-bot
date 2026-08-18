@@ -329,6 +329,8 @@ export type EntryAttemptOpts = {
   leaderStyle?: boolean;
   mirror?: boolean;
   mirrorBranch?: 'green' | 'dip';
+  leaderBuyTsMs?: number;
+  leaderBuySignature?: string;
   mirrorExit?: {
     armPct: number;
     trailPct: number;
@@ -1389,6 +1391,8 @@ export async function attemptMildDipEntry(args: {
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,
     buySignature: null,
+    ...(isMirror && opts.leaderBuyTsMs != null ? { leaderBuyTsMs: opts.leaderBuyTsMs } : {}),
+    ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
     // Peak tracks the mark series from the fill — not the wait_dip trough the
     // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
     peakPriceUsd: entryPriceUsd,
@@ -1736,6 +1740,8 @@ export async function attemptMildDipEntry(args: {
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,
     buySignature: buy.signature ?? null,
+    ...(isMirror && opts.leaderBuyTsMs != null ? { leaderBuyTsMs: opts.leaderBuyTsMs } : {}),
+    ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
     peakPriceUsd: fillPx,
     entryMarkPriceUsd,
     lane: isMirror ? 'leader_mirror' : isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
