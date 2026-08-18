@@ -564,9 +564,13 @@ export async function enrichAndFilterCandidates(
         pairAgeHours: metrics.pairAgeHours,
         volume5mUsd: metrics.volume5mUsd,
         liquidityUsd: metrics.liquidityUsd,
+        buys5m: metrics.buys5m,
+        sells5m: metrics.sells5m,
         minPairAgeHours: cfg.entryMinPairAgeHours,
         maxVol5mToLiq: cfg.entryMaxVol5mToLiq,
         minLiquidityUsd: cfg.entryMinLiquidityUsd,
+        minTxns5m: cfg.entryMinTxns5m,
+        minTurnover5mLiq: cfg.entryMinTurnover5mLiq,
       });
       if (!entryRisk.pass) {
         appendMildDipJournal(cfg.journalPath, {

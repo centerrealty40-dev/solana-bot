@@ -1,3 +1,29 @@
+## [1.11.1018] — 2026-08-20
+
+### Изменено
+
+- Для обычного mild-dip и leader-style входа добавлены config-gated impulse
+  floors: минимум `buys5m+sells5m` и минимум `volume5m/liquidityUsd`.
+  Production values: `30` и `0.15`.
+- При включённом gate неизвестные transaction/turnover metrics блокируют вход
+  (`txns5m_unknown` / `turnover_unknown`), поскольку blind entry для этого
+  класса пулов не считается безопасным. Отдельный `leaderMirror` lane не
+  затрагивается.
+- Production coverage thresholds снижены до `liquidity $6k`, pair age `0.25h`,
+  leader-style liquidity `$6k` и turnover `0.15`; общий `$4k` depth floor
+  не менялся.
+
+### Откат
+
+```text
+MILD_DIP_ENTRY_MIN_LIQ_USD=15000
+MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS=1
+MILD_DIP_LSTYLE_MIN_LIQUIDITY_USD=50000
+MILD_DIP_LSTYLE_MIN_VOL5M_TO_LIQ=3
+MILD_DIP_ENTRY_MIN_TXNS_5M=0
+MILD_DIP_ENTRY_MIN_TURNOVER=0
+```
+
 ## [1.11.1015] — 2026-08-20
 
 ### Изменено

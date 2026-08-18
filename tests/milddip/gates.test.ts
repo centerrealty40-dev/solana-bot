@@ -3,6 +3,7 @@ import {
   bounceFromTroughPct,
   decideSoftLossExit,
   evaluateFlatMicroDip,
+  evaluateMildDipImpulseEntry,
   evaluateMildDipEntry,
   evaluateMildDipEntryRisk,
   evaluateMildDipPeakGiveback,
@@ -61,6 +62,73 @@ const mfeBankOff = {
 } as const;
 
 describe('mild-dip entry age and churn gates', () => {
+  it('accepts the measured leader impulse at 76 txns and 0.29 turnover', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: 40,
+      sells5m: 36,
+      volume5mUsd: 8_200 * 0.29,
+      liquidityUsd: 8_200,
+      minTxns5m: 30,
+      minTurnover5mLiq: 0.15,
+    });
+    expect(verdict).toEqual({ pass: true, reasons: [] });
+  });
+
+  it('rejects too few transactions with the measured reason', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: 7,
+      sells5m: 5,
+      volume5mUsd: 2_000,
+      liquidityUsd: 8_200,
+      minTxns5m: 30,
+      minTurnover5mLiq: 0.15,
+    });
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons).toContain('txns5m_too_few=12<30');
+  });
+
+  it('rejects turnover below the configured floor', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: 40,
+      sells5m: 36,
+      volume5mUsd: 8_200 * 0.1,
+      liquidityUsd: 8_200,
+      minTxns5m: 30,
+      minTurnover5mLiq: 0.15,
+    });
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons).toContain('turnover_too_low=0.1000<0.15');
+  });
+
+  it('fails closed on unknown impulse metrics when enabled', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: null,
+      sells5m: 36,
+      volume5mUsd: null,
+      liquidityUsd: 8_200,
+      minTxns5m: 30,
+      minTurnover5mLiq: 0.15,
+    });
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons).toEqual(['txns5m_unknown', 'turnover_unknown']);
+  });
+
+  it('keeps the impulse gate disabled by default', () => {
+    const baseline = evaluateMildDipEntryRisk({
+      ...metrics({ buys5m: null, sells5m: null, volume5mUsd: null, liquidityUsd: null }),
+      minPairAgeHours: 0,
+      maxVol5mToLiq: 0,
+    });
+    const disabled = evaluateMildDipEntryRisk({
+      ...metrics({ buys5m: null, sells5m: null, volume5mUsd: null, liquidityUsd: null }),
+      minPairAgeHours: 0,
+      maxVol5mToLiq: 0,
+      minTxns5m: 0,
+      minTurnover5mLiq: 0,
+    });
+    expect(disabled).toEqual(baseline);
+  });
+
   it('holds only profitable leader-loop exit branches', () => {
     expect(
       profitExitMinHoldApplies({ reason: 'tp_grid', gainPct: 20, pnlPct: 20 }),

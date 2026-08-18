@@ -9,7 +9,11 @@ import { evaluateGreenLane } from './green-lane.js';
 import { requestGreenMinuteJupiterRefresh } from './green-minute-jupiter-refresh.js';
 import type { MildDipConfig } from './config.js';
 import type { MildDipCandidate } from './discover.js';
-import { evaluateFlatMicroDip, type MildDipCandidateMetrics } from './gates.js';
+import {
+  evaluateFlatMicroDip,
+  evaluateMildDipImpulseEntry,
+  type MildDipCandidateMetrics,
+} from './gates.js';
 import {
   evaluateMildStabilizeFromRing,
   mildStabilizeDexDipOk,
@@ -853,6 +857,26 @@ export async function evaluateFastPathCandidate(
       });
     }
     if (greenOnly) return null;
+  }
+
+  const impulseEntry = evaluateMildDipImpulseEntry({
+    buys5m: struct.metrics.buys5m,
+    sells5m: struct.metrics.sells5m,
+    volume5mUsd: struct.metrics.volume5mUsd,
+    liquidityUsd: struct.metrics.liquidityUsd,
+    minTxns5m: cfg.entryMinTxns5m,
+    minTurnover5mLiq: cfg.entryMinTurnover5mLiq,
+  });
+  if (!impulseEntry.pass) {
+    return skip('entry_impulse_fail', {
+      reasons: impulseEntry.reasons,
+      buys5m: struct.metrics.buys5m,
+      sells5m: struct.metrics.sells5m,
+      vol5m: struct.metrics.volume5mUsd,
+      liq: struct.metrics.liquidityUsd,
+      minTxns5m: cfg.entryMinTxns5m,
+      minTurnover5mLiq: cfg.entryMinTurnover5mLiq,
+    });
   }
 
   // A name a leader is buying gets the younger age floor (1.11.905).

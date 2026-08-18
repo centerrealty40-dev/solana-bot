@@ -569,6 +569,8 @@ export async function attemptMildDipEntry(args: {
     marketCapUsd: c.metrics.marketCapUsd,
     pairAgeHours: c.metrics.pairAgeHours,
   };
+  let entryBuys5m = c.metrics.buys5m;
+  let entrySells5m = c.metrics.sells5m;
   const softCd = opts.softSkipCooldownMs ?? Math.min(cfg.mintCooldownMs, 120_000);
   const knifeMaxDip =
     cfg.turnDumpKnifeMinDumpPct > 0 ? -cfg.turnDumpKnifeMinDumpPct : -30;
@@ -642,6 +644,8 @@ export async function attemptMildDipEntry(args: {
           marketCapUsd: fresh.marketCapUsd ?? sizeMetrics.marketCapUsd,
           pairAgeHours: pairAgeHours ?? sizeMetrics.pairAgeHours,
         };
+        entryBuys5m = fresh.buys5m ?? entryBuys5m;
+        entrySells5m = fresh.sells5m ?? entrySells5m;
       }
       const pre = isKnife
         ? evaluateKnifeStabilizePreBuy({
@@ -830,6 +834,8 @@ export async function attemptMildDipEntry(args: {
     pairAgeHours: livePairAgeHours,
     volume5mUsd: liveVolume5mUsd,
     liquidityUsd: liveLiquidityUsd,
+    buys5m: entryBuys5m,
+    sells5m: entrySells5m,
     minPairAgeHours: isMirror
       ? cfg.leaderMirror.minPairAgeHours
       : isLeaderStyle
@@ -851,6 +857,8 @@ export async function attemptMildDipEntry(args: {
       : isGreen
         ? cfg.green.minLiquidityUsd
         : cfg.entryMinLiquidityUsd,
+    minTxns5m: !isMirror && !isGreen ? cfg.entryMinTxns5m : 0,
+    minTurnover5mLiq: !isMirror && !isGreen ? cfg.entryMinTurnover5mLiq : 0,
   });
   if (isMirror) {
     if (
@@ -873,7 +881,7 @@ export async function attemptMildDipEntry(args: {
       pairAgeHours: sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours,
       volume5mUsd: entryVol5m,
       liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
-      entryRiskLane: isGreen ? 'green' : 'dip',
+      entryRiskLane: isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
       reasons: entryRisk.reasons,
     });
     state.cooldownUntilMs[c.mint] = nowMs + softCd;

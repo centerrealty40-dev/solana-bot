@@ -3380,9 +3380,11 @@ const PM2_APPS = [
          * we lose money on them.
          */
         MILD_DIP_MIN_PAIR_AGE_HOURS: '6',
-        MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1',
+        MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '0.25',
         MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2',
-        MILD_DIP_ENTRY_MIN_LIQ_USD: '15000',
+        MILD_DIP_ENTRY_MIN_LIQ_USD: '6000',
+        MILD_DIP_ENTRY_MIN_TXNS_5M: '30',
+        MILD_DIP_ENTRY_MIN_TURNOVER: '0.15',
         /**
          * 1.11.905 — one hour instead of six for a name a leader is buying.
          *
@@ -3934,8 +3936,8 @@ const PM2_APPS = [
         // 1.11.1003 — rollback: MILD_DIP_LSTYLE_ENABLED='0'.
         MILD_DIP_LSTYLE_ENABLED: '1',
         MILD_DIP_LSTYLE_POSITION_USD: '5',
-        MILD_DIP_LSTYLE_MIN_VOL5M_TO_LIQ: '3',
-        MILD_DIP_LSTYLE_MIN_LIQUIDITY_USD: '50000',
+        MILD_DIP_LSTYLE_MIN_VOL5M_TO_LIQ: '0.15',
+        MILD_DIP_LSTYLE_MIN_LIQUIDITY_USD: '6000',
         MILD_DIP_LSTYLE_MAX_LIQUIDITY_USD: '400000',
         MILD_DIP_LSTYLE_PULLBACK_PCT: '5',
         MILD_DIP_LSTYLE_PULLBACK_WINDOW_MS: '120000',
