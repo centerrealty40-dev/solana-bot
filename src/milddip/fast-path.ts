@@ -966,6 +966,7 @@ export async function evaluateFastPathCandidate(
   if (!impulseEntry.pass) {
     return skip('entry_impulse_fail', {
       reasons: impulseEntry.reasons,
+      impulseMetricsUnknown: impulseEntry.unknownReasons ?? null,
       buys5m: struct.metrics.buys5m,
       sells5m: struct.metrics.sells5m,
       vol5m: struct.metrics.volume5mUsd,
@@ -1450,6 +1451,9 @@ export async function evaluateFastPathCandidate(
     priceUsd,
     metrics,
     dipSource,
+    ...(impulseEntry.unknownReasons
+      ? { impulseMetricsUnknown: impulseEntry.unknownReasons }
+      : {}),
     ...(dipSource === 'mild_stabilize'
       ? {
           mildStabilizeDumpPct: mildDumpPct,

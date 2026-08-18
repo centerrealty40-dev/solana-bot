@@ -3388,8 +3388,18 @@ const PM2_APPS = [
         MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '0.25',
         MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2',
         MILD_DIP_ENTRY_MIN_LIQ_USD: '6000',
-        MILD_DIP_ENTRY_MIN_TXNS_5M: '30',
-        MILD_DIP_ENTRY_MIN_TURNOVER: '0.15',
+        /**
+         * 1.11.1028 — лидерские полосы меняют знак около txns=20 и
+         * turnover=0.05. Старый AND-порог 30/0.15 пропускал 46.0% входов
+         * лидера (median +0.5%, winrate 51.2%); новый 20/0.05 пропускает
+         * 66.5% (median +0.9%, winrate 52.2%, $8108 из $8216 кассы).
+         * Отсекаемая полоса остаётся отрицательной: txns<20 — median −1.6%,
+         * winrate 46.0% (0–10: −2.1%/44.4%, 10–20: −1.6%/45.7%);
+         * turnover<0.05 — median −1.3%, winrate 46.3%. Выше границ
+         * turnover 0.05–0.10 даёт +1.4%/53.7%, а txns 20–30 — +2.0%/55.1%.
+         */
+        MILD_DIP_ENTRY_MIN_TXNS_5M: '20',
+        MILD_DIP_ENTRY_MIN_TURNOVER: '0.05',
         /**
          * 1.11.905 — one hour instead of six for a name a leader is buying.
          *

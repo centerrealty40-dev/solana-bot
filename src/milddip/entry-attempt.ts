@@ -1569,6 +1569,7 @@ export async function attemptMildDipEntry(args: {
     waitDipMaxPriceUsd: waitDipCeilingPx,
     lane: isMirror ? 'leader_mirror' : opts.lane,
     probe: probeReason,
+    impulseMetricsUnknown: c.impulseMetricsUnknown ?? null,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
     tapeRet1mPct: c.tapeRet1mPct ?? null,
