@@ -884,6 +884,7 @@ export type MildDipExitReason =
   | 'green_max_hold'
   | 'green_trail'
   | 'mirror_leader_sell'
+  | 'mirror_safety_cut'
   | 'green_no_move'
   | 'mirror_tp'
   | 'mirror_stop'

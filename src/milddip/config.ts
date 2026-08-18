@@ -787,6 +787,8 @@ const MildDipConfigSchema = z.object({
     leaderSellExitEnabled: z.boolean().default(false),
     leaderSellExitMaxAgeMs: z.coerce.number().int().min(0).default(60_000),
     leaderSellTradesPath: z.string().default('data/milddip/trades.jsonl'),
+    leaderSellOnlyExit: z.boolean().default(false),
+    safetyMaxHoldMs: z.coerce.number().int().min(0).default(0),
     leaders: z.array(z.string()).default([]),
     hitMaxAgeMs: z.coerce.number().int().min(1_000).max(600_000).default(45_000),
     observeMs: z.coerce.number().int().min(1_000).max(600_000).default(45_000),
@@ -1711,6 +1713,8 @@ export function loadMildDipConfig(): MildDipConfig {
       leaderSellTradesPath:
         process.env.MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH?.trim() ||
         path.join('data', 'milddip', 'trades.jsonl'),
+      leaderSellOnlyExit: envBool('MILD_DIP_MIRROR_LEADER_SELL_ONLY', false),
+      safetyMaxHoldMs: envNum('MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS', 0),
       leaders: (process.env.MILD_DIP_MIRROR_LEADERS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
       hitMaxAgeMs: envNum('MILD_DIP_MIRROR_LEADER_MAX_AGE_MS', 45_000),
       observeMs: envNum('MILD_DIP_MIRROR_OBSERVE_MS', 45_000),

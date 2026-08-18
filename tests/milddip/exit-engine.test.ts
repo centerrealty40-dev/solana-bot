@@ -25,6 +25,7 @@ function pos(partial: Partial<MildDipOpenPosition> & { mint: string }): MildDipO
     liquidityDrainSampleTsMs: partial.liquidityDrainSampleTsMs,
     lastMarkPriceUsd: partial.lastMarkPriceUsd,
     markQuarantineSinceMs: partial.markQuarantineSinceMs,
+    lane: partial.lane,
     trailArmed: partial.trailArmed,
     scaleOutDone: partial.scaleOutDone,
     mint: partial.mint,
@@ -105,6 +106,82 @@ const gatesForDust = {
 };
 
 describe('decideMarkExit / applyMarkDecisionToPosition', () => {
+  const mirrorGates = {
+    takeProfitPct: 5,
+    stopPct: 5,
+    maxHoldMs: 1_000,
+    noMoveCutMs: 500,
+    noMoveMinMfePct: 2,
+    trailEnabled: true,
+    armPct: 5,
+    trailPct: 5,
+  };
+
+  it.each([
+    ['mirror_stop', { markPriceUsd: 90, nowMs: 100 }],
+    ['mirror_trail', { markPriceUsd: 108, nowMs: 100, peakPriceUsd: 120 }],
+    ['mirror_no_move', { markPriceUsd: 100, nowMs: 1_000 }],
+    ['mirror_tp', { markPriceUsd: 110, nowMs: 100 }],
+    ['mirror_max_hold', { markPriceUsd: 100, nowMs: 1_000 }],
+  ] as const)('suppresses %s in leader-sell-only mode while retaining telemetry', (reason, sample) => {
+    const d = decideMarkExit({
+      mint: `mirror-only-${reason}`,
+      pos: pos({
+        mint: `mirror-only-${reason}`,
+        lane: 'leader_mirror',
+        openedAtMs: 0,
+        peakPriceUsd: sample.peakPriceUsd,
+      }),
+      markPriceUsd: sample.markPriceUsd,
+      nowMs: sample.nowMs,
+      gates: gatesForDust,
+      mirrorGates: { ...mirrorGates, leaderSellOnly: true },
+    })!;
+    expect(d.reason).toBeNull();
+    expect(d.shouldExit).toBe(false);
+    expect(d.fraction).toBe(0);
+    expect(d.mfePct).toBeGreaterThanOrEqual(0);
+  });
+
+  it('preserves mirror green exits when leader-sell-only mode is disabled', () => {
+    const d = decideMarkExit({
+      mint: 'mirror-regression',
+      pos: pos({ mint: 'mirror-regression', lane: 'leader_mirror' }),
+      markPriceUsd: 110,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates,
+    })!;
+    expect(d.shouldExit).toBe(true);
+    expect(d.reason).toBe('mirror_tp');
+    expect(d.fraction).toBe(1);
+  });
+
+  it('uses the safety cut as the only scheduled mirror exit in leader-sell-only mode', () => {
+    const d = decideMarkExit({
+      mint: 'mirror-safety',
+      pos: pos({ mint: 'mirror-safety', lane: 'leader_mirror' }),
+      markPriceUsd: 100,
+      nowMs: 1_000,
+      gates: gatesForDust,
+      mirrorGates: { ...mirrorGates, leaderSellOnly: true, safetyMaxHoldMs: 900 },
+    })!;
+    expect(d.shouldExit).toBe(true);
+    expect(d.fraction).toBe(1);
+    expect(d.reason).toBe('mirror_safety_cut');
+
+    const off = decideMarkExit({
+      mint: 'mirror-safety-off',
+      pos: pos({ mint: 'mirror-safety-off', lane: 'leader_mirror' }),
+      markPriceUsd: 110,
+      nowMs: 10_000,
+      gates: gatesForDust,
+      mirrorGates: { ...mirrorGates, leaderSellOnly: true, safetyMaxHoldMs: 0 },
+    })!;
+    expect(off.shouldExit).toBe(false);
+    expect(off.reason).toBeNull();
+  });
+
   it('does not let breakeven_stop veto a leader-style exit decision', () => {
     const d = decideMarkExit({
       mint: 'lstyle-be',

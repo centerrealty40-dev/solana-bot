@@ -3364,6 +3364,8 @@ async function tryExits(
         noMoveMinMfePct: pos.mirrorExitNoMoveMinMfePct ?? cfg.leaderMirror.noMoveMinMfePct,
         armPct: pos.mirrorExitArmPct ?? cfg.leaderMirror.exitArmPct,
         trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
+        leaderSellOnly: cfg.leaderMirror.leaderSellOnlyExit,
+        safetyMaxHoldMs: cfg.leaderMirror.safetyMaxHoldMs,
       },
       leaderStyleGates: pos.lane === 'leader_style'
         ? {
