@@ -32,8 +32,8 @@ describe('mirror PM2 apps', () => {
     expect(first.env.MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH).toBe(
       second.env.MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH,
     );
-    expect(first.env.MILD_DIP_MIRROR_POSITION_USD).toBe('50');
-    expect(second.env.MILD_DIP_MIRROR_POSITION_USD).toBe('50');
+    expect(first.env.MILD_DIP_MIRROR_POSITION_USD).toBe('30');
+    expect(second.env.MILD_DIP_MIRROR_POSITION_USD).toBe('30');
     expect(first.env.MILD_DIP_MIRROR_MAX_OPEN).toBe('8');
     expect(second.env.MILD_DIP_MIRROR_MAX_OPEN).toBe('8');
     expect(first.env.MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT).toBe('3');

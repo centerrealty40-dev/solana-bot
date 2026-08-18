@@ -1,3 +1,15 @@
+## [1.11.1027] — 2026-08-20
+
+### Изменено
+
+- Клип обоих mirror-процессов (`mild-dip-mirror`, `mild-dip-mirror2`)
+  снижен с $50 до $30 (`MILD_DIP_MIRROR_POSITION_USD`).
+
+### Откат
+
+- Вернуть `MILD_DIP_MIRROR_POSITION_USD: '50'` в фабрике mirror-процессов
+  `ecosystem.config.cjs` и перезагрузить PM2 с `--update-env`.
+
 ## [1.11.1026] — 2026-08-20
 
 ### Изменено
