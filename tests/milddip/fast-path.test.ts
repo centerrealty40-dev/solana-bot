@@ -5,6 +5,7 @@ import {
   allowHotDexProbe,
   dumpH1PumpGateOk,
   dumpRallyGateOk,
+  evaluateKnifeStreamGuard,
   inDipBand,
   requireStreamPriceForDipSource,
   resetFastPathStateForTests,
@@ -361,6 +362,47 @@ describe('fast-path helpers', () => {
     expect(requireStreamPriceForDipSource('stream')).toBe(true);
     expect(requireStreamPriceForDipSource('mild_stabilize')).toBe(true);
     expect(requireStreamPriceForDipSource(null)).toBe(true);
+  });
+
+  it('vetoes a stream knife dump when Dex is green', () => {
+    const result = evaluateKnifeStreamGuard({
+      streamDd: -93.06,
+      dexPc: 3.65,
+      dexGreenVeto: true,
+      maxDivergencePp: 40,
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.streamPc5mForKnife).toBeNull();
+    expect(result.reasons[0]).toContain('dex_green_vetoes_stream_knife');
+    expect(result.reasons[0]).toContain('streamDd=-93.06');
+    expect(result.reasons[0]).toContain('dexPc=3.65');
+    expect(result.reasons[1]).toContain('divergencePp=96.71');
+  });
+
+  it('keeps knife evidence for a genuinely red Dex print close to stream', () => {
+    const result = evaluateKnifeStreamGuard({
+      streamDd: -31.2,
+      dexPc: -30.5,
+      dexGreenVeto: true,
+      maxDivergencePp: 40,
+    });
+    expect(result).toEqual({
+      streamPc5mForKnife: -31.2,
+      blocked: false,
+      reasons: [],
+    });
+  });
+
+  it('fails closed for stream knife evidence when Dex is unknown', () => {
+    const result = evaluateKnifeStreamGuard({
+      streamDd: -31.2,
+      dexPc: null,
+      dexGreenVeto: true,
+      maxDivergencePp: 40,
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.streamPc5mForKnife).toBeNull();
+    expect(result.reasons[0]).toContain('knife_dex_unknown_stream_untrusted');
   });
 
   it('1.11.928 leader trust bypasses structural re-check on fast-path', () => {

@@ -3156,6 +3156,8 @@ const PM2_APPS = [
         MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN: '0.3',
         MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MIN_AGE_MS: '180000',
         MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MAX_BOUNCE_PCT: '8',
+        MILD_DIP_KNIFE_DEX_GREEN_VETO: '1',
+        MILD_DIP_KNIFE_STREAM_DIVERGENCE_MAX_PP: '40',
         /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
          * 1.11.730 with scale-in removal). Scale-in stays deleted.

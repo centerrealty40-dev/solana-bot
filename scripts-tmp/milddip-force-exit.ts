@@ -47,6 +47,8 @@ type Runtime = {
   fetchMintBalanceRaw: typeof import('../src/copytrader/live-exec.js')['fetchMintBalanceRaw'];
   copyTraderLiveOscarBridge: typeof import('../src/copytrader/live-bridge.js')['copyTraderLiveOscarBridge'];
   liveSellQuoteAndPrepareSnapshot: typeof import('../src/live/jupiter.js')['liveSellQuoteAndPrepareSnapshot'];
+  resolveLiveJupiterQuoteUrl: typeof import('../src/live/jupiter.js')['resolveLiveJupiterQuoteUrl'];
+  jupiterJsonHeaders: typeof import('../src/core/jupiter-http.js')['jupiterJsonHeaders'];
   listOrphanTokenAccounts: typeof import('../src/milddip/orphan-janitor.js')['listOrphanTokenAccounts'];
 };
 
@@ -209,6 +211,50 @@ async function quoteExit(
   return { estimatedUsd: quote.proceedsUsd, mark: quote.priceUsd };
 }
 
+async function classifyUnavailableQuote(
+  runtime: Runtime,
+  copyCfg: ReturnType<typeof mildDipToCopyTraderConfig>,
+  mint: string,
+  tokenRaw: string,
+): Promise<'no_route' | 'quote_unavailable'> {
+  const liveCfg = runtime.copyTraderLiveOscarBridge(copyCfg);
+  const spec = copyQuoteSpec(copyCfg);
+  const url = new URL(runtime.resolveLiveJupiterQuoteUrl(liveCfg));
+  url.searchParams.set('inputMint', mint);
+  url.searchParams.set('outputMint', spec.mint);
+  url.searchParams.set('amount', tokenRaw);
+  url.searchParams.set('slippageBps', String(liveCfg.liveDefaultSlippageBps));
+  url.searchParams.set('onlyDirectRoutes', 'false');
+  url.searchParams.set('asLegacyTransaction', 'false');
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), liveCfg.liveJupiterQuoteTimeoutMs);
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      signal: controller.signal,
+      headers: runtime.jupiterJsonHeaders(),
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+  let raw: Record<string, unknown> | null = null;
+  try {
+    const body: unknown = await response.json();
+    if (body && typeof body === 'object' && !Array.isArray(body)) {
+      raw = body as Record<string, unknown>;
+    }
+  } catch {
+    raw = null;
+  }
+  if (raw?.errorCode === 'NO_ROUTES_FOUND' || raw?.error === 'No routes found') {
+    return 'no_route';
+  }
+  if (!response.ok) {
+    return 'quote_unavailable';
+  }
+  return 'quote_unavailable';
+}
+
 function printLine(value: Record<string, unknown>): void {
   console.log(JSON.stringify(value));
 }
@@ -230,18 +276,22 @@ async function main(): Promise<void> {
   }
   let runtime: Runtime;
   try {
-    const [executor, liveExec, liveBridge, jupiter, orphanJanitor] = await Promise.all([
+    const [executor, liveExec, liveBridge, jupiter, jupiterHttp, orphanJanitor] =
+      await Promise.all([
       import('../src/copytrader/executor.js'),
       import('../src/copytrader/live-exec.js'),
       import('../src/copytrader/live-bridge.js'),
       import('../src/live/jupiter.js'),
+      import('../src/core/jupiter-http.js'),
       import('../src/milddip/orphan-janitor.js'),
-    ]);
+      ]);
     runtime = {
       executeCopySell: executor.executeCopySell,
       fetchMintBalanceRaw: liveExec.fetchMintBalanceRaw,
       copyTraderLiveOscarBridge: liveBridge.copyTraderLiveOscarBridge,
       liveSellQuoteAndPrepareSnapshot: jupiter.liveSellQuoteAndPrepareSnapshot,
+      resolveLiveJupiterQuoteUrl: jupiter.resolveLiveJupiterQuoteUrl,
+      jupiterJsonHeaders: jupiterHttp.jupiterJsonHeaders,
       listOrphanTokenAccounts: orphanJanitor.listOrphanTokenAccounts,
     };
   } catch (error) {
@@ -339,7 +389,13 @@ async function main(): Promise<void> {
     }
     if (!quote) {
       skipped += 1;
-      printLine({ mint, estimatedUsd: null, ok: false, signature: null, reason: 'quote_unavailable' });
+      let reason: 'no_route' | 'quote_unavailable' = 'quote_unavailable';
+      try {
+        reason = await classifyUnavailableQuote(runtime, copyCfg, mint, onchainRaw.toString());
+      } catch {
+        /* Preserve the generic unavailable classification when diagnosis fails. */
+      }
+      printLine({ mint, estimatedUsd: null, ok: false, signature: null, reason });
       continue;
     }
     totalEstimatedUsd += quote.estimatedUsd;
