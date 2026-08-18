@@ -32,6 +32,37 @@ describe('decideLeaderSellExit', () => {
     expect(decideLeaderSellExit({ ...base, openedAtMs: 100_001 }).reason).toBe('before_entry');
   });
 
+  it('uses freshness when the mirror position has no saved leader-buy timestamp', () => {
+    expect(decideLeaderSellExit({ ...base, openedAtMs: undefined })).toEqual({
+      shouldExit: true,
+      reason: 'leader_sell',
+    });
+  });
+
+  it('accepts a sale after the copied leader buy but rejects one before it', () => {
+    expect(
+      decideLeaderSellExit({ ...base, openedAtMs: 90_000 }),
+    ).toMatchObject({ shouldExit: true });
+    expect(
+      decideLeaderSellExit({
+        ...base,
+        event: { ...event, blockTimeMs: 80_000 },
+        openedAtMs: 90_000,
+      }),
+    ).toEqual({ shouldExit: false, reason: 'before_entry' });
+  });
+
+  it('can block an observation before our own fill', () => {
+    expect(
+      decideLeaderSellExit({
+        ...base,
+        lane: 'leader_mirror',
+        openedAtMs: 90_000,
+        nowMs: 110_000,
+      }),
+    ).toMatchObject({ shouldExit: true });
+  });
+
   it('supports an optional minimum hold', () => {
     expect(decideLeaderSellExit({ ...base, minHoldMs: 20_000 }).reason).toBe('min_hold');
   });

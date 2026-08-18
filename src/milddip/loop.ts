@@ -1260,6 +1260,7 @@ async function wakeLeaderMirrors(
   cfg: MildDipConfig,
   state: MildDipState,
   nowMs: number,
+  leaderSellFeed: LeaderSellFeed | null,
 ): Promise<number> {
   const gates = cfg.leaderMirror;
   if (!gates.enabled) return 0;
@@ -1381,6 +1382,46 @@ async function wakeLeaderMirrors(
       continue;
     }
     const hit = watch.hit;
+    const leaderSell = leaderSellFeed?.get(mint, nowMs);
+    const leaderBuyTsMs =
+      hit.blockTime != null && hit.blockTime > 0
+        ? hit.blockTime * 1000
+        : hit.lastSeenAtMs;
+    const leaderSellDecision = decideLeaderSellExit({
+      enabled: cfg.leaderMirror.leaderSellExitEnabled,
+      lane: 'leader_mirror',
+      leaders: cfg.leaderMirror.leaders,
+      event: leaderSell,
+      openedAtMs: leaderBuyTsMs,
+      nowMs,
+      maxAgeMs: cfg.leaderMirror.leaderSellExitMaxAgeMs,
+    });
+    if (leaderSellDecision.shouldExit && leaderSell) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint,
+        leader: leaderSell.leader,
+        reason: 'leader_mirror_leader_sell',
+        leaderSignature: leaderSell.signature,
+        leaderSellBlockTimeMs: leaderSell.blockTimeMs,
+        leaderBuyTsMs,
+        leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        leaderSellFillPriceUsd: leaderSell.fillPriceUsd,
+        leaderSellMarkPnlPct: leaderSell.markPnlPct,
+        quotePriceUsd: null,
+        pc5m: hit.pc5m ?? null,
+        quoteGainPct: null,
+        metricSource: watch.metricSource,
+      });
+      leaderMirrorDecisions.set(mint, {
+        hitKey: watch.hitKey,
+        decidedAtMs: nowMs,
+        reason: 'leader_mirror_leader_sell',
+      });
+      leaderMirrorWatches.delete(mint);
+      leaderSellFeed?.remove(mint);
+      continue;
+    }
     requestGreenMinuteJupiterRefresh({
       mint,
       nowMs,
@@ -1499,6 +1540,8 @@ async function wakeLeaderMirrors(
         lane: 'fast',
         mirror: true,
         mirrorBranch: decision.mirrorBranch,
+        leaderBuyTsMs,
+        leaderBuySignature: hit.signature,
         mirrorExit: {
           armPct: gates.exitArmPct,
           trailPct: gates.exitTrailPct,
@@ -2992,10 +3035,7 @@ async function tryExits(
           max: cfg.leaderSeedMax,
         })
       : [];
-  const leaderSellByMint = new Map<string, ReturnType<LeaderSellFeed['read']>[number]>();
-  for (const event of leaderSellFeed?.read(nowMs) ?? []) {
-    leaderSellByMint.set(event.mint, event);
-  }
+  leaderSellFeed?.read(nowMs);
 
   const markStarted = Date.now();
   // 1.11.794 — refresh blind/oldest first so armed bags cannot starve new opens
@@ -3102,13 +3142,13 @@ async function tryExits(
   } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
-    const leaderSell = leaderSellByMint.get(mint);
+    const leaderSell = leaderSellFeed?.get(mint, nowMs);
     const leaderSellDecision = decideLeaderSellExit({
       enabled: cfg.leaderMirror.leaderSellExitEnabled,
       lane: pos.lane,
       leaders: cfg.leaderMirror.leaders,
       event: leaderSell,
-      openedAtMs: pos.openedAtMs,
+      openedAtMs: pos.leaderBuyTsMs,
       nowMs,
       maxAgeMs: cfg.leaderMirror.leaderSellExitMaxAgeMs,
     });
@@ -3137,6 +3177,7 @@ async function tryExits(
         lagMs: Math.max(0, nowMs - leaderSell.blockTimeMs),
         reason: leaderSellDecision.reason,
       });
+      leaderSellFeed?.remove(mint);
       toSell.push({
         mint,
         markPriceUsd,
@@ -4568,6 +4609,7 @@ export async function runMildDipLoop(
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+    leaderSellFeed?.read(nowMs);
     tickGreenMinuteJupiterRefresh({
       nowMs,
       enabled: cfg.green.jupiterMinuteEnabled && !cfg.leaderMirror.mirrorOnly,
@@ -4704,7 +4746,7 @@ export async function runMildDipLoop(
     ) {
       lastMirrorWakeMs = nowMs;
       mirrorWakeInFlight = true;
-      void wakeLeaderMirrors(cfg, state, nowMs)
+      void wakeLeaderMirrors(cfg, state, nowMs, leaderSellFeed)
         .catch((err) => {
           console.warn(
             '[mild-dip] leader mirror tick failed',

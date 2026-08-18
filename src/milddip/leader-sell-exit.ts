@@ -19,7 +19,7 @@ export function decideLeaderSellExit(args: {
   lane: string | null | undefined;
   leaders: readonly string[];
   event: LeaderSellEvent | null | undefined;
-  openedAtMs: number;
+  openedAtMs?: number;
   nowMs: number;
   maxAgeMs: number;
   minHoldMs?: number;
@@ -33,10 +33,15 @@ export function decideLeaderSellExit(args: {
   if (args.maxAgeMs > 0 && args.nowMs - args.event.blockTimeMs > args.maxAgeMs) {
     return { shouldExit: false, reason: 'stale' };
   }
-  if (args.event.blockTimeMs < args.openedAtMs) {
+  if (args.openedAtMs != null && args.event.blockTimeMs < args.openedAtMs) {
     return { shouldExit: false, reason: 'before_entry' };
   }
-  if (args.minHoldMs && args.minHoldMs > 0 && args.nowMs - args.openedAtMs < args.minHoldMs) {
+  if (
+    args.openedAtMs != null &&
+    args.minHoldMs &&
+    args.minHoldMs > 0 &&
+    args.nowMs - args.openedAtMs < args.minHoldMs
+  ) {
     return { shouldExit: false, reason: 'min_hold' };
   }
   return { shouldExit: true, reason: 'leader_sell' };

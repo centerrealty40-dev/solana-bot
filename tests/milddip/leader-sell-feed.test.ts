@@ -64,4 +64,21 @@ describe('leader sell feed parser', () => {
     expect(feed.read(110_000).map((event) => event.mint)).toEqual(['MintRotated']);
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('buffers a consumed event until it is explicitly removed or expires', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'leader-sell-feed-buffer-'));
+    const file = path.join(dir, 'trades.jsonl');
+    fs.writeFileSync(file, '');
+    const feed = new LeaderSellFeed(file, { leaders: [leader], maxAgeMs: 10_000 });
+    feed.start();
+    fs.appendFileSync(file, `${JSON.stringify({ ...base, mint: 'MintBuffered', blockTime: 105 })}\n`);
+    expect(feed.read(110_000)).toHaveLength(1);
+    expect(feed.get('MintBuffered', 110_000)?.mint).toBe('MintBuffered');
+    expect(feed.get('MintBuffered', 116_000)).toBeNull();
+    fs.appendFileSync(file, `${JSON.stringify({ ...base, mint: 'MintRemoved', blockTime: 109 })}\n`);
+    feed.read(110_000);
+    feed.remove('MintRemoved');
+    expect(feed.get('MintRemoved', 110_000)).toBeNull();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });

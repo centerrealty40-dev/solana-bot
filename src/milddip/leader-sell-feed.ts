@@ -69,6 +69,8 @@ export class LeaderSellFeed {
   private offset = 0;
   private pending = '';
   private started = false;
+  private readonly buffer = new Map<string, LeaderSellEvent>();
+  private readonly maxBuffered = 256;
 
   constructor(
     private readonly path: string,
@@ -103,12 +105,39 @@ export class LeaderSellFeed {
         const text = this.pending + buffer.toString('utf8');
         const rows = text.split('\n');
         this.pending = rows.pop() ?? '';
-        return parseLeaderSellLines(rows, nowMs, this.options);
+        const events = parseLeaderSellLines(rows, nowMs, this.options);
+        for (const event of events) {
+          this.buffer.delete(event.mint);
+          this.buffer.set(event.mint, event);
+        }
+        this.prune(nowMs);
+        while (this.buffer.size > this.maxBuffered) {
+          const oldest = this.buffer.keys().next().value;
+          if (typeof oldest !== 'string') break;
+          this.buffer.delete(oldest);
+        }
+        return events;
       } finally {
         fs.closeSync(fd);
       }
     } catch {
       return [];
+    }
+  }
+
+  get(mint: string, nowMs: number): LeaderSellEvent | null {
+    this.prune(nowMs);
+    return this.buffer.get(mint) ?? null;
+  }
+
+  remove(mint: string): void {
+    this.buffer.delete(mint);
+  }
+
+  private prune(nowMs: number): void {
+    if (this.options.maxAgeMs <= 0) return;
+    for (const [mint, event] of this.buffer) {
+      if (nowMs - event.blockTimeMs > this.options.maxAgeMs) this.buffer.delete(mint);
     }
   }
 }

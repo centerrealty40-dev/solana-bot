@@ -25,6 +25,9 @@ export type MildDipOpenPosition = {
   openedAtMs: number;
   entryPc5mPct: number | null;
   buySignature: string | null;
+  /** Leader buy copied by the mirror, when available. */
+  leaderBuyTsMs?: number;
+  leaderBuySignature?: string;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
   /** 1.11.919 — when the quarantined mark first appeared, so it can time out. */
