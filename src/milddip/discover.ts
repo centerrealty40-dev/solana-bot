@@ -115,6 +115,8 @@ export type MildDipCandidate = {
   tapeSampleCount?: number;
   tapeCoverageMs?: number | null;
   tapeMinuteFailureReason?: string | null;
+  /** Impulse metrics that were unavailable while other configured metrics passed. */
+  impulseMetricsUnknown?: string[];
 };
 
 const SOLANA_CHAIN = 'solana';

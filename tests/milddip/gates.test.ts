@@ -62,55 +62,133 @@ const mfeBankOff = {
 } as const;
 
 describe('mild-dip entry age and churn gates', () => {
-  it('accepts the measured leader impulse at 76 txns and 0.29 turnover', () => {
+  it('accepts both configured impulse metrics when they pass', () => {
     const verdict = evaluateMildDipImpulseEntry({
       buys5m: 40,
       sells5m: 36,
       volume5mUsd: 8_200 * 0.29,
       liquidityUsd: 8_200,
-      minTxns5m: 30,
-      minTurnover5mLiq: 0.15,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0.05,
     });
     expect(verdict).toEqual({ pass: true, reasons: [] });
   });
 
-  it('rejects too few transactions with the measured reason', () => {
+  it('rejects when a known transaction metric fails the new floor', () => {
     const verdict = evaluateMildDipImpulseEntry({
       buys5m: 7,
       sells5m: 5,
-      volume5mUsd: 2_000,
+      volume5mUsd: 8_200 * 0.2,
       liquidityUsd: 8_200,
-      minTxns5m: 30,
-      minTurnover5mLiq: 0.15,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0.05,
     });
     expect(verdict.pass).toBe(false);
-    expect(verdict.reasons).toContain('txns5m_too_few=12<30');
+    expect(verdict.reasons).toContain('txns5m_too_few=12<20');
   });
 
-  it('rejects turnover below the configured floor', () => {
+  it('rejects when a known turnover metric fails the new floor', () => {
     const verdict = evaluateMildDipImpulseEntry({
       buys5m: 40,
       sells5m: 36,
-      volume5mUsd: 8_200 * 0.1,
+      volume5mUsd: 8_200 * 0.03,
       liquidityUsd: 8_200,
-      minTxns5m: 30,
-      minTurnover5mLiq: 0.15,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0.05,
     });
     expect(verdict.pass).toBe(false);
-    expect(verdict.reasons).toContain('turnover_too_low=0.1000<0.15');
+    expect(verdict.reasons).toContain('turnover_too_low=0.0300<0.05');
   });
 
-  it('fails closed on unknown impulse metrics when enabled', () => {
+  it('accepts unknown transactions when turnover is known and passes', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: null,
+      sells5m: 36,
+      volume5mUsd: 8_200 * 0.31,
+      liquidityUsd: 8_200,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0.05,
+    });
+    expect(verdict).toEqual({
+      pass: true,
+      reasons: [],
+      unknownReasons: ['txns5m_unknown'],
+    });
+  });
+
+  it('rejects unknown transactions when turnover is known but fails', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: null,
+      sells5m: 36,
+      volume5mUsd: 8_200 * 0.03,
+      liquidityUsd: 8_200,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0.05,
+    });
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons).toContain('turnover_too_low=0.0300<0.05');
+    expect(verdict.unknownReasons).toEqual(['txns5m_unknown']);
+  });
+
+  it('accepts unknown turnover when transactions are known and pass', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: 12,
+      sells5m: 12,
+      volume5mUsd: null,
+      liquidityUsd: 8_200,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0.05,
+    });
+    expect(verdict).toEqual({
+      pass: true,
+      reasons: [],
+      unknownReasons: ['turnover_unknown'],
+    });
+  });
+
+  it('fails closed when all configured impulse metrics are unknown', () => {
     const verdict = evaluateMildDipImpulseEntry({
       buys5m: null,
       sells5m: 36,
       volume5mUsd: null,
       liquidityUsd: 8_200,
-      minTxns5m: 30,
-      minTurnover5mLiq: 0.15,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0.05,
+    });
+    expect(verdict).toEqual({
+      pass: false,
+      reasons: ['impulse_metrics_unknown'],
+      unknownReasons: ['txns5m_unknown', 'turnover_unknown'],
+    });
+  });
+
+  it('fails closed when the only configured metric is unknown', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: null,
+      sells5m: null,
+      volume5mUsd: 8_200 * 0.31,
+      liquidityUsd: 8_200,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0,
+    });
+    expect(verdict).toEqual({
+      pass: false,
+      reasons: ['impulse_metrics_unknown'],
+      unknownReasons: ['txns5m_unknown'],
+    });
+  });
+
+  it('keeps the HWzUC1x4 incident blocked below 20 transactions', () => {
+    const verdict = evaluateMildDipImpulseEntry({
+      buys5m: 8,
+      sells5m: 8,
+      volume5mUsd: 8_200 * 0.0554,
+      liquidityUsd: 8_200,
+      minTxns5m: 20,
+      minTurnover5mLiq: 0.05,
     });
     expect(verdict.pass).toBe(false);
-    expect(verdict.reasons).toEqual(['txns5m_unknown', 'turnover_unknown']);
+    expect(verdict.reasons).toContain('txns5m_too_few=16<20');
   });
 
   it('keeps the impulse gate disabled by default', () => {

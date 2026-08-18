@@ -138,16 +138,16 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '1.25',
         MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2.5',
         MILD_DIP_ENTRY_MIN_LIQ_USD: '4500',
-        MILD_DIP_ENTRY_MIN_TXNS_5M: '30',
-        MILD_DIP_ENTRY_MIN_TURNOVER: '0.15',
+        MILD_DIP_ENTRY_MIN_TXNS_5M: '20',
+        MILD_DIP_ENTRY_MIN_TURNOVER: '0.05',
       },
       () => loadMildDipConfig(),
     );
     expect(cfg.entryMinPairAgeHours).toBe(1.25);
     expect(cfg.entryMaxVol5mToLiq).toBe(2.5);
     expect(cfg.entryMinLiquidityUsd).toBe(4500);
-    expect(cfg.entryMinTxns5m).toBe(30);
-    expect(cfg.entryMinTurnover5mLiq).toBe(0.15);
+    expect(cfg.entryMinTxns5m).toBe(20);
+    expect(cfg.entryMinTurnover5mLiq).toBe(0.05);
   });
 
   it('defaults the impulse entry floors to disabled', () => {
@@ -475,8 +475,8 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '0.25'");
     expect(eco).toContain("MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2'");
     expect(eco).toContain("MILD_DIP_ENTRY_MIN_LIQ_USD: '6000'");
-    expect(eco).toContain("MILD_DIP_ENTRY_MIN_TXNS_5M: '30'");
-    expect(eco).toContain("MILD_DIP_ENTRY_MIN_TURNOVER: '0.15'");
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_TXNS_5M: '20'");
+    expect(eco).toContain("MILD_DIP_ENTRY_MIN_TURNOVER: '0.05'");
     expect(eco).toContain("MILD_DIP_LSTYLE_MIN_LIQUIDITY_USD: '6000'");
     expect(eco).toContain("MILD_DIP_LSTYLE_MIN_VOL5M_TO_LIQ: '0.15'");
   });

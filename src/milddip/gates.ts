@@ -437,6 +437,7 @@ export type MildDipVolFadeSample = {
 export type MildDipGateVerdict = {
   pass: boolean;
   reasons: string[];
+  unknownReasons?: string[];
 };
 
 export function evaluateMildDipImpulseEntry(args: {
@@ -448,8 +449,11 @@ export function evaluateMildDipImpulseEntry(args: {
   minTurnover5mLiq?: number;
 }): MildDipGateVerdict {
   const reasons: string[] = [];
+  const unknownReasons: string[] = [];
   const minTxns5m = args.minTxns5m ?? 0;
   const minTurnover5mLiq = args.minTurnover5mLiq ?? 0;
+  const configuredMetrics =
+    Number(minTxns5m > 0) + Number(minTurnover5mLiq > 0);
 
   if (minTxns5m > 0) {
     const buys = args.buys5m;
@@ -462,7 +466,7 @@ export function evaluateMildDipImpulseEntry(args: {
       buys < 0 ||
       sells < 0
     ) {
-      reasons.push('txns5m_unknown');
+      unknownReasons.push('txns5m_unknown');
     } else {
       const txns5m = buys + sells;
       if (txns5m < minTxns5m) {
@@ -481,7 +485,7 @@ export function evaluateMildDipImpulseEntry(args: {
       !Number.isFinite(liquidityUsd) ||
       liquidityUsd <= 0
     ) {
-      reasons.push('turnover_unknown');
+      unknownReasons.push('turnover_unknown');
     } else {
       const turnover = volume5mUsd / liquidityUsd;
       if (turnover < minTurnover5mLiq) {
@@ -490,7 +494,18 @@ export function evaluateMildDipImpulseEntry(args: {
     }
   }
 
-  return { pass: reasons.length === 0, reasons };
+  if (configuredMetrics > 0 && unknownReasons.length === configuredMetrics) {
+    return {
+      pass: false,
+      reasons: ['impulse_metrics_unknown'],
+      unknownReasons,
+    };
+  }
+  return {
+    pass: reasons.length === 0,
+    reasons,
+    ...(unknownReasons.length > 0 ? { unknownReasons } : {}),
+  };
 }
 
 export function evaluateMildDipEntryRisk(args: {
