@@ -554,3 +554,23 @@ describe('mild-dip mirror green-copy configuration', () => {
     expect(configured.greenCopyMaxPc5mPct).toBe(55);
   });
 });
+
+describe('mild-dip mirror exit refire configuration', () => {
+  const baseEnv = {
+    MILD_DIP_EXECUTION_MODE: 'paper',
+    MILD_DIP_RPC_URL: 'https://example.invalid',
+  };
+
+  it('defaults exit refire off and loads the configured limit', () => {
+    const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
+    expect(defaults.exitRefireMax).toBe(0);
+    const configured = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MIRROR_EXIT_REFIRE_MAX: '2',
+      },
+      () => loadMildDipConfig(),
+    ).leaderMirror;
+    expect(configured.exitRefireMax).toBe(2);
+  });
+});

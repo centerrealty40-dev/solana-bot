@@ -101,6 +101,7 @@ import {
 import { isRunnerPartialExit } from './sell-partial.js';
 import { profitFillMinPriceUsd } from './profit-fill-guard.js';
 import { retrySlippageBpsForAttempt } from './exit-retry.js';
+import { decideExitRefire } from './exit-refire.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import {
   evaluateLeaderStyleEntry,
@@ -2115,7 +2116,7 @@ async function executeQueuedSell(args: {
     [minExitPriceUsd, profitFillMinPriceUsdValue, lossFillMinPriceUsdValue]
       .filter((value): value is number => value != null)
       .reduce((max, value) => Math.max(max, value), 0) || undefined;
-  const minExitPriceGuard =
+  const minExitPriceGuard: 'cost_floor' | 'profit_fill_slippage' | 'loss_fill_slippage' | undefined =
     lossFillMinPriceUsdValue != null
       ? 'loss_fill_slippage'
       : profitFillMinPriceUsdValue != null
@@ -2123,7 +2124,11 @@ async function executeQueuedSell(args: {
       : minExitPriceUsd != null
         ? 'cost_floor'
         : undefined;
-  const sell = await executeCopySell({
+  const sellArgs = (overrides: {
+    tokenRawBase?: string;
+    slippageBpsOverride?: number;
+    attempt: number;
+  }) => ({
     cfg: copyCfg,
     mint,
     symbol: pos.symbol,
@@ -2131,7 +2136,7 @@ async function executeQueuedSell(args: {
     exitPriceUsd: decision.markPriceUsd,
     sizeUsd: pos.sizeUsd,
     fraction,
-    leaderSignature: `milddip_exit_${decision.reason}_${nowMs}`,
+    leaderSignature: `milddip_exit_${decision.reason}_${nowMs}_${overrides.attempt}`,
     sellDelayMs: 0,
     ...(guardedMinExitPriceUsd != null ? { minExitPriceUsd: guardedMinExitPriceUsd } : {}),
     ...(minExitPriceGuard != null ? { minExitPriceGuard } : {}),
@@ -2142,9 +2147,146 @@ async function executeQueuedSell(args: {
             lossFillMinPriceUsdValue != null ? lossFillMaxSlipPct : profitFillMaxSlipPct,
         }
       : {}),
-    ...(pos.tokenRawSettled && pos.tokenRaw ? { tokenRawBase: pos.tokenRaw } : {}),
-    ...(retrySlippageBps != null ? { slippageBpsOverride: retrySlippageBps } : {}),
+    ...(overrides.tokenRawBase != null
+      ? { tokenRawBase: overrides.tokenRawBase }
+      : pos.tokenRawSettled && pos.tokenRaw
+        ? { tokenRawBase: pos.tokenRaw }
+        : {}),
+    ...(overrides.slippageBpsOverride != null
+      ? { slippageBpsOverride: overrides.slippageBpsOverride }
+      : retrySlippageBps != null
+        ? { slippageBpsOverride: retrySlippageBps }
+        : {}),
   });
+
+  const settleRefireClosed = async (onchainRaw: bigint): Promise<void> => {
+    const realizedPnl = decision.pnlPct;
+    const cd = cooldownMsAfterExit({
+      pnlPct: realizedPnl,
+      mintCooldownMs: cfg.mintCooldownMs,
+      lossCooldownMs: cfg.lossCooldownMs,
+    });
+    if (state.open[mint]) {
+      delete state.open[mint];
+      state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
+      if (!state.lastExitByMint) state.lastExitByMint = {};
+      state.lastExitByMint[mint] = {
+        priceUsd: decision.markPriceUsd || pos.entryPriceUsd,
+        atMs: nowMs,
+        pnlPct: +realizedPnl.toFixed(2),
+      };
+      mildDipHotMints.note(mint, nowMs);
+      saveMildDipState(cfg.statePath, state);
+    }
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_exit_refire',
+      mint,
+      symbol: pos.symbol,
+      lane: pos.lane ?? 'dip',
+      exitReason: decision.reason,
+      sellReason: 'confirm_timeout',
+      action: 'settle_closed',
+      attempt: 0,
+      maxAttempts: cfg.leaderMirror.exitRefireMax,
+      onchainRaw: onchainRaw.toString(),
+      dustRaw: HOLDING_DUST_RAW.toString(),
+      appliedSlippageBps: null,
+    });
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_cooldown_set',
+      mint,
+      symbol: pos.symbol,
+      pnlPct: +realizedPnl.toFixed(2),
+      cooldownMs: cd.cooldownMs,
+      cooldownKind: cd.kind,
+      exitReason: decision.reason,
+      lastExitPriceUsd: decision.markPriceUsd || pos.entryPriceUsd,
+      settleReason: 'confirm_timeout_refire_chain_flat',
+      remainderSource: 'refire_onchain_read',
+    });
+    await reclaimEmptyAta(cfg, {
+      mint,
+      symbol: pos.symbol,
+      reason: `post_sell_${decision.reason}`,
+    });
+  };
+
+  let sell = await executeCopySell(sellArgs({ attempt: 0 }));
+  let refireAttempt = 0;
+  while (
+    !sell.ok &&
+    sell.reason === 'confirm_timeout' &&
+    pos.lane === 'leader_mirror' &&
+    fraction === 1 &&
+    cfg.leaderMirror.exitRefireMax > 0
+  ) {
+    await sleep(800);
+    const freshRaw = await fetchMintBalanceRaw(copyCfg, mint);
+    const onchainRaw = freshRaw != null ? parseTokenRaw(freshRaw) : null;
+    if (onchainRaw == null) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_exit_refire',
+        mint,
+        symbol: pos.symbol,
+        lane: pos.lane,
+        exitReason: decision.reason,
+        sellReason: sell.reason,
+        action: 'give_up',
+        attempt: refireAttempt,
+        maxAttempts: cfg.leaderMirror.exitRefireMax,
+        onchainRaw: null,
+        dustRaw: HOLDING_DUST_RAW.toString(),
+        appliedSlippageBps: null,
+      });
+      break;
+    }
+    const action = decideExitRefire({
+      lane: pos.lane,
+      sellReason: sell.reason,
+      fraction,
+      attemptsUsed: refireAttempt,
+      maxAttempts: cfg.leaderMirror.exitRefireMax,
+      onchainRaw,
+      dustRaw: HOLDING_DUST_RAW,
+    });
+    const nextSlippageBps =
+      action === 'refire'
+        ? retrySlippageBpsForAttempt({
+            eligible: true,
+            baseSlippageBps: cfg.slippageBps,
+            priorRetryCount: priorRetryCount + refireAttempt + 1,
+            stepBps: cfg.exitRetrySlippageStepBps,
+            maxBps: cfg.exitRetrySlippageMaxBps,
+          })
+        : undefined;
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_exit_refire',
+      mint,
+      symbol: pos.symbol,
+      lane: pos.lane,
+      exitReason: decision.reason,
+      sellReason: sell.reason,
+      action,
+      attempt: refireAttempt,
+      maxAttempts: cfg.leaderMirror.exitRefireMax,
+      onchainRaw: onchainRaw.toString(),
+      dustRaw: HOLDING_DUST_RAW.toString(),
+      appliedSlippageBps: nextSlippageBps ?? null,
+    });
+    if (action === 'settle_closed') {
+      await settleRefireClosed(onchainRaw);
+      return;
+    }
+    if (action === 'give_up') break;
+    refireAttempt += 1;
+    sell = await executeCopySell(
+      sellArgs({
+        attempt: refireAttempt,
+        tokenRawBase: onchainRaw.toString(),
+        ...(nextSlippageBps != null ? { slippageBpsOverride: nextSlippageBps } : {}),
+      }),
+    );
+  }
 
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mild_dip_sell',
