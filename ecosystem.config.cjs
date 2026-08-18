@@ -3086,6 +3086,7 @@ const PM2_APPS = [
          * for 0–60s/60–300s/300–600s/>600s). Rollback: 1200000.
          */
         MILD_DIP_WAIT_DIP_MAX_WATCH_MS: '600000',
+        MILD_DIP_WAIT_DIP_MIN_TROUGH_AGE_MS: '120000',
         MILD_DIP_WAIT_DIP_TROUGH_READY_FRACTION: '0.7',
         MILD_DIP_WAIT_DIP_TROUGH_MIN_AGE_MS: '60000',
         MILD_DIP_WAIT_DIP_TROUGH_MIN_BOUNCE_PCT: '1.5',
@@ -3153,6 +3154,8 @@ const PM2_APPS = [
          */
         MILD_DIP_TURN_DUMP_KNIFE_MIN_DUMP_PCT: '28',
         MILD_DIP_TURN_DUMP_KNIFE_MIN_TURN: '0.3',
+        MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MIN_AGE_MS: '180000',
+        MILD_DIP_TURN_DUMP_KNIFE_TROUGH_MAX_BOUNCE_PCT: '8',
         /**
          * 1.11.732 — re-enable leader-style dump→bounce seats (was off in
          * 1.11.730 with scale-in removal). Scale-in stays deleted.

@@ -85,6 +85,7 @@ import {
   leaderStyleMinRingSpanMs,
   resolveLeaderStylePairAge,
 } from './leader-style.js';
+import { evaluateConfirmedTrough } from './confirmed-trough.js';
 import { cooldownMsAfterExit } from './cooldown.js';
 import {
   leaderSeedHitByMint,
@@ -312,6 +313,7 @@ function waitDipGatesFromCfg(cfg: MildDipConfig): WaitDipGates {
     waitDipPct: cfg.waitDipPct,
     maxWatchMs: cfg.waitDipMaxWatchMs,
     maxDumpFromSignalPct: cfg.waitDipMaxDumpFromSignalPct,
+    minTroughAgeMs: cfg.waitDipMinTroughAgeMs,
     troughReadyFraction: cfg.waitDipTroughReadyFraction,
     troughMinAgeMs: cfg.waitDipTroughMinAgeMs,
     troughMinBouncePct: cfg.waitDipTroughMinBouncePct,
@@ -439,6 +441,8 @@ const lastMarkJournalMs = new Map<string, number>();
  */
 const lastWaitDipReadyJournalMs = new Map<string, number>();
 const WAIT_DIP_READY_JOURNAL_GAP_MS = 15_000;
+const lastWaitDipTargetTroughJournalMs = new Map<string, number>();
+const WAIT_DIP_TARGET_TROUGH_JOURNAL_GAP_MS = 15_000;
 const lastStagedAddSkipJournalMs = new Map<string, number>();
 const STAGED_ADD_SKIP_JOURNAL_GAP_MS = 15_000;
 
@@ -702,7 +706,14 @@ async function tryFireWaitDip(
   const last = mildDipPriceRing.lastPrice(mint, nowMs);
   const px = last && last.priceUsd > 0 ? last.priceUsd : watch.lastPriceUsd;
   const gates = waitDipGatesFromCfg(cfg);
-  const verdict = evaluateWaitDipReady(watch, gates, nowMs, px);
+  const confirmedTrough = evaluateConfirmedTrough({
+    ring: mildDipPriceRing,
+    mint,
+    nowMs,
+    windowMs: cfg.entryTroughLookbackMs,
+    freshPriceUsd: px,
+  });
+  const verdict = evaluateWaitDipReady(watch, gates, nowMs, px, confirmedTrough);
   if (state.waitDipWatch) {
     state.waitDipWatch[mint] = upsertWaitDipWatch(watch, {
       nowMs,
@@ -737,6 +748,26 @@ async function tryFireWaitDip(
     return false;
   }
   if (!verdict.ready) {
+    if (verdict.reasons.some((reason) => reason.startsWith('wait_dip_target_trough_age='))) {
+      const previous = lastWaitDipTargetTroughJournalMs.get(mint) ?? 0;
+      if (nowMs - previous >= WAIT_DIP_TARGET_TROUGH_JOURNAL_GAP_MS) {
+        lastWaitDipTargetTroughJournalMs.set(mint, nowMs);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_wait_dip_target_trough_defer',
+          mint,
+          symbol: watch.symbol,
+          signalPriceUsd: watch.signalPriceUsd,
+          targetPriceUsd: verdict.targetPriceUsd,
+          markPriceUsd: px,
+          troughAgeMs: confirmedTrough.troughAgeMs,
+          troughAtMs: confirmedTrough.troughAtMs,
+          minTroughAgeMs: cfg.waitDipMinTroughAgeMs,
+          bounceFromTroughPct: confirmedTrough.bounceFromTroughPct,
+          dropFromWindowHighPct: confirmedTrough.dropFromWindowHighPct,
+          reasons: verdict.reasons,
+        });
+      }
+    }
     return false;
   }
   if (waitDipDumpTooDeep(verdict.dumpFromSignalPct, cfg.waitDipMaxDumpFromSignalPct)) {
