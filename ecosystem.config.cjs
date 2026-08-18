@@ -3389,7 +3389,7 @@ const PM2_APPS = [
         MILD_DIP_ENTRY_MAX_VOL5M_TO_LIQ: '2',
         MILD_DIP_ENTRY_MIN_LIQ_USD: '6000',
         /**
-         * 1.11.1027 — лидерские полосы меняют знак около txns=20 и
+         * 1.11.1028 — лидерские полосы меняют знак около txns=20 и
          * turnover=0.05. Старый AND-порог 30/0.15 пропускал 46.0% входов
          * лидера (median +0.5%, winrate 51.2%); новый 20/0.05 пропускает
          * 66.5% (median +0.9%, winrate 52.2%, $8108 из $8216 кассы).
@@ -4772,7 +4772,7 @@ function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
       MILD_DIP_MIRROR_TICK_INTERVAL_MS: '2000',
       MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS: '4',
       MILD_DIP_MIRROR_STRUCTURAL_GAP_MS: '5000',
-      MILD_DIP_MIRROR_POSITION_USD: '50',
+      MILD_DIP_MIRROR_POSITION_USD: '30',
       MILD_DIP_MIRROR_MAX_PC5M_PCT: '0',
       MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ: '2',
       MILD_DIP_MIRROR_REQUIRE_DEEP_DUMP: '0',

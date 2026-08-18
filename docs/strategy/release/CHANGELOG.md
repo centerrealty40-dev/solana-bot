@@ -1,4 +1,4 @@
-## [1.11.1027] — 2026-08-20
+## [1.11.1028] — 2026-08-20
 
 ### Изменено
 
@@ -18,6 +18,18 @@ MILD_DIP_ENTRY_MIN_TXNS_5M=30
 MILD_DIP_ENTRY_MIN_TURNOVER=0.15
 Для полного отката логики частично неизвестных метрик revert коммита релиза.
 ```
+
+## [1.11.1027] — 2026-08-20
+
+### Изменено
+
+- Клип обоих mirror-процессов (`mild-dip-mirror`, `mild-dip-mirror2`)
+  снижен с $50 до $30 (`MILD_DIP_MIRROR_POSITION_USD`).
+
+### Откат
+
+- Вернуть `MILD_DIP_MIRROR_POSITION_USD: '50'` в фабрике mirror-процессов
+  `ecosystem.config.cjs` и перезагрузить PM2 с `--update-env`.
 
 ## [1.11.1026] — 2026-08-20
 
