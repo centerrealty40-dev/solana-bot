@@ -555,7 +555,7 @@ export async function enrichAndFilterCandidates(
         volume1hUsd: details.volume1hUsd,
         priceChange1hPct: details.priceChangeH1Pct,
       };
-      noteStructuralCache(mint, details.priceUsd, metrics, nowMs);
+      noteStructuralCache(mint, details.priceUsd, metrics, nowMs, 'dex');
       if (leaderStyle) {
         return {
           kind: 'candidate',

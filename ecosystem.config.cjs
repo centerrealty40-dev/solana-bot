@@ -4275,6 +4275,19 @@ const PM2_APPS = [
          */
         MILD_DIP_FAST_PATH_STRUCTURAL_STALE_MS: '120000',
         /**
+         * 1.11.1029 — при `structural_fetch_null` разрешён приоритизированный
+         * GeckoTerminal fallback: 3933 отказа за ~3ч на 1558 mint-ах, из них
+         * 172 на leader-триггерах; остальные были stream. В минуту требуется
+         * медиана 21, p90 34, максимум 42 уникальных mint-а, а бесплатный
+         * лимит источника около 30 запросов/мин, поэтому fallback ограничен
+         * 20 запросами/мин и интервалом 30s на mint.
+         */
+        MILD_DIP_STRUCTURAL_FALLBACK_ENABLED: '1',
+        MILD_DIP_STRUCTURAL_FALLBACK_MAX_PER_MIN: '20',
+        MILD_DIP_STRUCTURAL_FALLBACK_MINT_GAP_MS: '30000',
+        MILD_DIP_STRUCTURAL_FALLBACK_CACHE_TTL_MS: '15000',
+        MILD_DIP_STRUCTURAL_FALLBACK_TIMEOUT_MS: '2500',
+        /**
          * 1.11.713 — Dex-probe stream-hot mints even when local ring dd is
          * outside main band (throttled). Without this, Dex dumps only wake
          * via leader-seed (Agmu8X: 8zkg −31s, our fill on leader path).

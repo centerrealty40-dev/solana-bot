@@ -17,6 +17,30 @@
 - Вернуть `docs/strategy/release/VERSION` на `1.11.1028` и удалить запись
   `1.11.1030`; для полного отката логирования revert коммита релиза.
 
+## [1.11.1029] — 2026-08-20
+
+### Изменено
+
+- В `mild-dip-bot` включён ограниченный структурный fallback через
+  GeckoTerminal для случаев, когда DexScreener не отдаёт снапшот.
+  За ~3 часа было 3933 отказа `structural_fetch_null`/`structural_fail`
+  на 1558 mint-ах, включая 172 leader-триггера; медиана требующих fallback
+  mint-ов в минуту — 21, p90 — 34, максимум — 42.
+- Fallback вызывается только для leader-пробуждений и stream-событий уже
+  внутри входной полосы, ограничен 20 запросами/мин и 30 сек на mint,
+  кэшируется на 15 сек и имеет timeout 2500 мс. Лимит бесплатного источника
+  около 30 запросов/мин требует такого приоритизированного режима.
+
+### Откат
+
+```text
+MILD_DIP_STRUCTURAL_FALLBACK_ENABLED=0
+MILD_DIP_STRUCTURAL_FALLBACK_MAX_PER_MIN=20
+MILD_DIP_STRUCTURAL_FALLBACK_MINT_GAP_MS=30000
+MILD_DIP_STRUCTURAL_FALLBACK_CACHE_TTL_MS=15000
+MILD_DIP_STRUCTURAL_FALLBACK_TIMEOUT_MS=2500
+```
+
 ## [1.11.1028] — 2026-08-20
 
 ### Изменено

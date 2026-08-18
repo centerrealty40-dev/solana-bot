@@ -710,6 +710,12 @@ const MildDipConfigSchema = z.object({
    * fast-path skip because DexScreener is rate limited.
    */
   fastPathStructuralStaleMs: z.coerce.number().int().min(0).max(600_000).default(30_000),
+  /** Optional GeckoTerminal structural fallback; disabled by default. */
+  structuralFallbackEnabled: z.boolean().default(false),
+  structuralFallbackMaxPerMin: z.coerce.number().int().min(0).max(60).default(20),
+  structuralFallbackMintGapMs: z.coerce.number().int().min(0).max(300_000).default(30_000),
+  structuralFallbackCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(15_000),
+  structuralFallbackTimeoutMs: z.coerce.number().int().min(100).max(10_000).default(2_500),
   /**
    * 1.11.863 — scan floor while positions are open. Was a hard-coded 15_000.
    * 0 falls back to `scanIntervalMs`.
@@ -1555,6 +1561,17 @@ export function loadMildDipConfig(): MildDipConfig {
     fastPathStructuralCacheMs: process.env.MILD_DIP_FAST_PATH_STRUCTURAL_CACHE_MS ?? 8_000,
     fastPathStructuralStaleMs:
       process.env.MILD_DIP_FAST_PATH_STRUCTURAL_STALE_MS ?? 30_000,
+    structuralFallbackEnabled: envBool('MILD_DIP_STRUCTURAL_FALLBACK_ENABLED', false),
+    structuralFallbackMaxPerMin: envNum('MILD_DIP_STRUCTURAL_FALLBACK_MAX_PER_MIN', 20),
+    structuralFallbackMintGapMs: envNum('MILD_DIP_STRUCTURAL_FALLBACK_MINT_GAP_MS', 30_000),
+    structuralFallbackCacheTtlMs: envNum(
+      'MILD_DIP_STRUCTURAL_FALLBACK_CACHE_TTL_MS',
+      15_000,
+    ),
+    structuralFallbackTimeoutMs: envNum(
+      'MILD_DIP_STRUCTURAL_FALLBACK_TIMEOUT_MS',
+      2_500,
+    ),
     enrichMax: process.env.MILD_DIP_ENRICH_MAX ?? 12,
     scanIntervalWithOpensMs: process.env.MILD_DIP_SCAN_INTERVAL_WITH_OPENS_MS ?? 3000,
     maxCooldownBouncePct: process.env.MILD_DIP_MAX_COOLDOWN_BOUNCE_PCT ?? 6,

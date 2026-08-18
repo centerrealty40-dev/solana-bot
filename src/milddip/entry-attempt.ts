@@ -646,6 +646,7 @@ export async function attemptMildDipEntry(args: {
             priceChange1hPct: fresh.priceChangeH1Pct,
           },
           freshNow,
+          'dex',
         );
         sizeMetrics = {
           liquidityUsd: fresh.liquidityUsd ?? sizeMetrics.liquidityUsd,
@@ -1558,6 +1559,7 @@ export async function attemptMildDipEntry(args: {
       priceUsd: entryPriceUsd,
       pc5m: entryPc5m,
       dipSource: c.dipSource,
+      structSource: c.structSource ?? null,
       lane: isMirror ? 'leader_mirror' : opts.lane,
       trigger: opts.trigger,
       waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
@@ -1602,6 +1604,7 @@ export async function attemptMildDipEntry(args: {
     waitDipMaxPriceUsd: waitDipCeilingPx,
     lane: isMirror ? 'leader_mirror' : opts.lane,
     probe: probeReason,
+    structSource: c.structSource ?? null,
     impulseMetricsUnknown: c.impulseMetricsUnknown ?? null,
     mildStabilizeBouncePct: c.mildStabilizeBouncePct ?? null,
     mildStabilizeDumpPct: c.mildStabilizeDumpPct ?? null,
@@ -1610,7 +1613,6 @@ export async function attemptMildDipEntry(args: {
     tapeSampleCount: c.tapeSampleCount ?? null,
     tapeCoverageMs: c.tapeCoverageMs ?? null,
     tapeMinuteFailureReason: c.tapeMinuteFailureReason ?? null,
-    structSource: c.structSource ?? null,
     structAgeMs: c.structAgeMs ?? null,
     txns5m,
     turnover5mLiq,
