@@ -85,9 +85,16 @@ function ageHours(raw: unknown, nowMs: number): number | null {
   return Math.max(0, (nowMs - createdAtMs) / 3_600_000);
 }
 
+function normalizedDexId(dexId: string): string {
+  return dexId.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
 function allowedDex(dexId: string | null, allowedDexIds: string[]): boolean {
   if (allowedDexIds.length === 0) return true;
-  return dexId != null && allowedDexIds.some((id) => id.toLowerCase() === dexId.toLowerCase());
+  return (
+    dexId != null &&
+    allowedDexIds.some((id) => normalizedDexId(id) === normalizedDexId(dexId))
+  );
 }
 
 function pickPool(
@@ -108,7 +115,7 @@ function pickPool(
     }
     const dexId = relationshipId(relationships, 'dex');
     if (!allowedDex(dexId, allowedDexIds)) continue;
-    const reserve = nonNegative(attributes.reserve_in_usd);
+    const reserve = positive(attributes.reserve_in_usd);
     if (reserve == null || reserve < bestReserve) continue;
     best = pool;
     bestReserve = reserve;
@@ -166,6 +173,19 @@ function takeBucket(nowMs: number, maxPerMin: number): boolean {
   return true;
 }
 
+function pruneState(nowMs: number, cacheTtlMs: number, mintGapMs: number): void {
+  for (const [mint, cached] of fallbackCache) {
+    if (nowMs - cached.fetchedAtMs > Math.max(0, cacheTtlMs)) {
+      fallbackCache.delete(mint);
+    }
+  }
+  for (const [mint, requestedAtMs] of lastRequestByMint) {
+    if (nowMs - requestedAtMs > Math.max(0, mintGapMs)) {
+      lastRequestByMint.delete(mint);
+    }
+  }
+}
+
 export function resetStructuralFallbackStateForTests(): void {
   fallbackCache.clear();
   lastRequestByMint.clear();
@@ -189,6 +209,7 @@ export async function fetchMildDipStructuralFallback(
   opts?: { fetchImpl?: FetchLike },
 ): Promise<StructuralFallbackSnapshot | null> {
   if (!mint || !cfg.structuralFallbackEnabled) return null;
+  pruneState(nowMs, cfg.structuralFallbackCacheTtlMs, cfg.structuralFallbackMintGapMs);
   const cached = fallbackCache.get(mint);
   if (
     cached &&
@@ -230,4 +251,14 @@ export async function fetchMildDipStructuralFallback(
   } finally {
     clearTimeout(timeout);
   }
+}
+
+export function getStructuralFallbackStateSizesForTests(): {
+  cache: number;
+  lastRequestByMint: number;
+} {
+  return {
+    cache: fallbackCache.size,
+    lastRequestByMint: lastRequestByMint.size,
+  };
 }

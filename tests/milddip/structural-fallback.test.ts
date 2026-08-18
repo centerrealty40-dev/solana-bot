@@ -1,6 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import {
   fetchMildDipStructuralFallback,
+  getStructuralFallbackStateSizesForTests,
   resetStructuralFallbackStateForTests,
   type StructuralFallbackSnapshot,
 } from '../../src/milddip/structural-fallback.js';
@@ -89,6 +90,33 @@ describe('GeckoTerminal structural fallback', () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
+  it('normalizes dex IDs when applying the allowed list', async () => {
+    const fetchImpl = vi.fn(async () =>
+      response({ data: [pool(mint, 'pump-fun', '20000')] }),
+    );
+    const snapshot = await fetchMildDipStructuralFallback(
+      mint,
+      cfg({ entry: { allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'] } }),
+      nowMs,
+      { fetchImpl },
+    );
+    expect(snapshot?.dexId).toBe('pump-fun');
+  });
+
+  it('rejects pools with zero reserve instead of selecting them', async () => {
+    const fetchImpl = vi.fn(async () =>
+      response({ data: [pool(mint, 'pump-fun', '0.0')] }),
+    );
+    await expect(
+      fetchMildDipStructuralFallback(
+        mint,
+        cfg({ entry: { allowedDexIds: ['pumpfun'] } }),
+        nowMs,
+        { fetchImpl },
+      ),
+    ).resolves.toBeNull();
+  });
+
   it('returns null when no base-token pool survives dex filtering', async () => {
     const fetchImpl = vi.fn(async () =>
       response({ data: [pool(otherMint, 'raydium', '10000'), pool(mint, 'meteora', '50000')] }),
@@ -168,6 +196,30 @@ describe('GeckoTerminal structural fallback', () => {
     await fetchMildDipStructuralFallback(mint, limited, nowMs + 1_000, { fetchImpl });
     await fetchMildDipStructuralFallback(otherMint, limited, nowMs + 1_000, { fetchImpl });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it('prunes aged response-cache and per-mint request entries', async () => {
+    const fetchImpl = vi.fn(async () => response({ data: [pool(mint, 'raydium', '10000')] }));
+    const limited = cfg({
+      structuralFallbackCacheTtlMs: 1_000,
+      structuralFallbackMintGapMs: 1_000,
+    });
+    await fetchMildDipStructuralFallback(mint, limited, nowMs, { fetchImpl });
+    expect(getStructuralFallbackStateSizesForTests()).toEqual({
+      cache: 1,
+      lastRequestByMint: 1,
+    });
+
+    await fetchMildDipStructuralFallback(
+      otherMint,
+      { ...limited, structuralFallbackMaxPerMin: 0 },
+      nowMs + 2_001,
+      { fetchImpl },
+    );
+    expect(getStructuralFallbackStateSizesForTests()).toEqual({
+      cache: 0,
+      lastRequestByMint: 0,
+    });
   });
 
   it('loads fallback only after stale cache and keeps it out of the price ring', async () => {
