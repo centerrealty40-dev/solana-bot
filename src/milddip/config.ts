@@ -438,6 +438,12 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeBandPct: z.coerce.number().min(0).max(50).default(2.5),
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
+  /** Reject stream-derived knife evidence when Dex contradicts it. */
+  knifeDexGreenVeto: z.boolean().default(false),
+  /** Dex pc5m at or above this level is considered green for the veto. */
+  knifeDexGreenMinPc5m: z.coerce.number().min(-100).max(100).default(0),
+  /** Maximum stream-vs-Dex divergence, in percentage points, for knife evidence. */
+  knifeStreamDivergenceMaxPp: z.coerce.number().min(0).max(200).default(40),
   /**
    * 1.11.753 — park signal; buy only after extra dump from signal.
    * 1.11.762 — default −10%; main-band only (stabilize buys immediate).
@@ -1403,6 +1409,9 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeBandPct: envNum('MILD_DIP_KNIFE_STABILIZE_BAND_PCT', 2.5),
     knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
+    knifeDexGreenVeto: envBool('MILD_DIP_KNIFE_DEX_GREEN_VETO', false),
+    knifeDexGreenMinPc5m: envNum('MILD_DIP_KNIFE_DEX_GREEN_MIN_PC5M', 0),
+    knifeStreamDivergenceMaxPp: envNum('MILD_DIP_KNIFE_STREAM_DIVERGENCE_MAX_PP', 40),
     /**
      * 1.11.752 — wait extra −7% from signal before buy (MFE-bank CF winner).
      * Set MILD_DIP_WAIT_DIP=0 to restore immediate entries (all branches).

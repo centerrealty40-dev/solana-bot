@@ -1,4 +1,4 @@
-## [1.11.1021] — 2026-08-20
+## [1.11.1022] — 2026-08-20
 
 ### Изменено
 
@@ -13,6 +13,24 @@
 ```text
 MILD_DIP_MIRROR_EXIT_REFIRE_MAX=0
 LIVE_CONFIRM_TIMEOUT_MS не задавать (вернётся 45000)
+```
+
+## [1.11.1021] — 2026-08-20
+
+### Изменено
+
+- Для `turn_dump_knife` добавлена fail-closed защита от расхождения
+  stream-рингa с живым Dex `pc5m`: зелёный Dex не может быть переопределён
+  stream-провалом, а подозрительное расхождение блокирует knife-вход.
+- В `milddip-force-exit.ts` недоступные для Jupiter мешки теперь отдельно
+  помечаются причиной `no_route`, без попытки продажи.
+
+### Откат
+
+```text
+MILD_DIP_KNIFE_DEX_GREEN_VETO=0
+MILD_DIP_KNIFE_STREAM_DIVERGENCE_MAX_PP=200
+Удалить scripts-tmp/milddip-force-exit.ts
 ```
 
 ## [1.11.1020] — 2026-08-20

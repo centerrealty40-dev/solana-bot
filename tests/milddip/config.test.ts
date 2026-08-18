@@ -481,6 +481,12 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_LSTYLE_MIN_VOL5M_TO_LIQ: '0.15'");
   });
 
+  it('keeps production knife stream integrity guards', () => {
+    const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
+    expect(eco).toContain("MILD_DIP_KNIFE_DEX_GREEN_VETO: '1'");
+    expect(eco).toContain("MILD_DIP_KNIFE_STREAM_DIVERGENCE_MAX_PP: '40'");
+  });
+
   it('keeps leader-loop production exit and re-entry values', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
     expect(eco).toContain("MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '1'");

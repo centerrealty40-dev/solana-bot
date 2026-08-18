@@ -408,6 +408,98 @@ export function streamOnlyNearTroughOk(args: {
   return b <= Math.max(0, args.maxBouncePct);
 }
 
+export type KnifeStreamGuardReasonCode =
+  | 'dex_green_vetoes_stream_knife'
+  | 'knife_stream_divergence'
+  | 'knife_dex_unknown_stream_untrusted';
+
+export type KnifeStreamGuardDetail =
+  | {
+      code: 'dex_green_vetoes_stream_knife';
+      streamDd: number;
+      dexPc: number;
+      greenMinPc5m: number;
+    }
+  | {
+      code: 'knife_stream_divergence';
+      streamDd: number;
+      dexPc: number;
+      divergencePp: number;
+      maxPp: number;
+    }
+  | {
+      code: 'knife_dex_unknown_stream_untrusted';
+      streamDd: number;
+    };
+
+export type KnifeStreamGuardResult = {
+  streamPc5mForKnife: number | null;
+  blocked: boolean;
+  reasons: KnifeStreamGuardReasonCode[];
+  details: KnifeStreamGuardDetail[];
+};
+
+/**
+ * Keep a malformed stream ring out of the knife/turn-dump branch.
+ *
+ * A green Dex print vetoes stream-derived knife evidence when enabled. A
+ * stream print that is materially deeper than Dex is treated as corrupted and
+ * blocks knife entirely; other entry sources remain independent of this guard.
+ */
+export function evaluateKnifeStreamGuard(args: {
+  streamDd: number | null | undefined;
+  dexPc: number | null | undefined;
+  dexGreenVeto: boolean;
+  dexGreenMinPc5m?: number;
+  maxDivergencePp: number;
+}): KnifeStreamGuardResult {
+  const stream = args.streamDd != null && Number.isFinite(args.streamDd) ? args.streamDd : null;
+  const dex = args.dexPc != null && Number.isFinite(args.dexPc) ? args.dexPc : null;
+  if (stream == null) {
+    return { streamPc5mForKnife: stream, blocked: false, reasons: [], details: [] };
+  }
+  if (dex == null) {
+    return {
+      streamPc5mForKnife: null,
+      blocked: true,
+      reasons: ['knife_dex_unknown_stream_untrusted'],
+      details: [{ code: 'knife_dex_unknown_stream_untrusted', streamDd: stream }],
+    };
+  }
+
+  const reasons: KnifeStreamGuardReasonCode[] = [];
+  const details: KnifeStreamGuardDetail[] = [];
+  const greenMin = args.dexGreenMinPc5m ?? 0;
+  if (args.dexGreenVeto && dex >= greenMin) {
+    reasons.push('dex_green_vetoes_stream_knife');
+    details.push({
+      code: 'dex_green_vetoes_stream_knife',
+      streamDd: stream,
+      dexPc: dex,
+      greenMinPc5m: greenMin,
+    });
+  }
+
+  const divergencePp = dex - stream;
+  if (args.maxDivergencePp >= 0 && divergencePp > args.maxDivergencePp) {
+    reasons.push('knife_stream_divergence');
+    details.push({
+      code: 'knife_stream_divergence',
+      streamDd: stream,
+      dexPc: dex,
+      divergencePp,
+      maxPp: args.maxDivergencePp,
+    });
+  }
+
+  return {
+    streamPc5mForKnife: reasons.length > 0 ? null : stream,
+    blocked: reasons.length > 0,
+    reasons,
+    details,
+  };
+}
+
 /**
  * Exported for unit tests — structural floors on fast-path candidates.
  *
@@ -885,18 +977,27 @@ export async function evaluateFastPathCandidate(
 
   // A name a leader is buying gets the younger age floor (1.11.905).
   const dexPc = struct.metrics.priceChange5mPct;
+  const knifeStreamGuard = evaluateKnifeStreamGuard({
+    streamDd,
+    dexPc,
+    dexGreenVeto: cfg.knifeDexGreenVeto,
+    dexGreenMinPc5m: cfg.knifeDexGreenMinPc5m,
+    maxDivergencePp: cfg.knifeStreamDivergenceMaxPp,
+  });
+  const streamPc5mForKnife = knifeStreamGuard.streamPc5mForKnife;
   const deepestPc =
-    streamDd != null && dexPc != null
-      ? Math.min(streamDd, dexPc)
-      : streamDd != null
-        ? streamDd
+    streamPc5mForKnife != null && dexPc != null
+      ? Math.min(streamPc5mForKnife, dexPc)
+      : streamPc5mForKnife != null
+        ? streamPc5mForKnife
         : dexPc;
   /**
    * Hot deep dump on our own tape: dump≥knifeMin & turn≥knifeMin. Evaluated *before*
    * structural so high turnover (vol5m/liq) does not block the blade we are
    * trying to catch ahead of anyone else.
    */
-  const hotDeepKnifeOk = metricsHotDeepDumpOk(cfg, struct.metrics, deepestPc);
+  const hotDeepKnifeOk =
+    !knifeStreamGuard.blocked && metricsHotDeepDumpOk(cfg, struct.metrics, deepestPc);
 
   const leaderSeenForAge = leaderSeenName;
   /**
@@ -942,6 +1043,8 @@ export async function evaluateFastPathCandidate(
       ageH: struct.metrics.pairAgeHours,
       pc5m: struct.metrics.priceChange5mPct,
       deepestPc,
+      knifeStreamGuardReasons: knifeStreamGuard.reasons,
+      knifeStreamGuardDetails: knifeStreamGuard.details,
     });
   }
 
@@ -992,6 +1095,8 @@ export async function evaluateFastPathCandidate(
       streamDump,
       streamCurrentDd,
       dexPc,
+      knifeStreamGuardReasons: knifeStreamGuard.reasons,
+      knifeStreamGuardDetails: knifeStreamGuard.details,
     });
   }
 
@@ -1170,12 +1275,12 @@ export async function evaluateFastPathCandidate(
   // already matched Dex tape but classic main-band dipSource was unset).
   let tdRescue = false;
   const tdPc5mForGate =
-    streamDd != null &&
-    Number.isFinite(streamDd) &&
+    streamPc5mForKnife != null &&
+    Number.isFinite(streamPc5mForKnife) &&
     (metrics.priceChange5mPct == null ||
       !Number.isFinite(metrics.priceChange5mPct) ||
-      streamDd < (metrics.priceChange5mPct as number))
-      ? streamDd
+      streamPc5mForKnife < (metrics.priceChange5mPct as number))
+      ? streamPc5mForKnife
       : (metrics.priceChange5mPct ?? dexPc);
   if (!dipSource && cfg.turnDumpGateEnabled) {
     const tdEarly = evaluateTurnDumpGate(
@@ -1191,7 +1296,7 @@ export async function evaluateFastPathCandidate(
   }
 
   if (!dipSource) {
-    return skip('no_dip_source', {
+    return skip(knifeStreamGuard.reasons[0] ?? 'no_dip_source', {
       structSource,
       streamDd,
       streamDump,
@@ -1199,6 +1304,8 @@ export async function evaluateFastPathCandidate(
       streamRally,
       dexPc,
       pc1h: metrics.priceChange1hPct,
+      knifeStreamGuardReasons: knifeStreamGuard.reasons,
+      knifeStreamGuardDetails: knifeStreamGuard.details,
     });
   }
 

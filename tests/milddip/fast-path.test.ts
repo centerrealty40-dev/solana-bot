@@ -5,6 +5,7 @@ import {
   allowHotDexProbe,
   dumpH1PumpGateOk,
   dumpRallyGateOk,
+  evaluateKnifeStreamGuard,
   inDipBand,
   requireStreamPriceForDipSource,
   resetFastPathStateForTests,
@@ -361,6 +362,70 @@ describe('fast-path helpers', () => {
     expect(requireStreamPriceForDipSource('stream')).toBe(true);
     expect(requireStreamPriceForDipSource('mild_stabilize')).toBe(true);
     expect(requireStreamPriceForDipSource(null)).toBe(true);
+  });
+
+  it('vetoes a stream knife dump when Dex is green', () => {
+    const result = evaluateKnifeStreamGuard({
+      streamDd: -93.06,
+      dexPc: 3.65,
+      dexGreenVeto: true,
+      maxDivergencePp: 40,
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.streamPc5mForKnife).toBeNull();
+    expect(result.reasons).toEqual([
+      'dex_green_vetoes_stream_knife',
+      'knife_stream_divergence',
+    ]);
+    expect(result.details[0]).toEqual({
+      code: 'dex_green_vetoes_stream_knife',
+      streamDd: -93.06,
+      dexPc: 3.65,
+      greenMinPc5m: 0,
+    });
+    const divergenceDetail = result.details[1];
+    expect(divergenceDetail).toMatchObject({
+      code: 'knife_stream_divergence',
+      streamDd: -93.06,
+      dexPc: 3.65,
+      maxPp: 40,
+    });
+    if (divergenceDetail.code === 'knife_stream_divergence') {
+      expect(divergenceDetail.divergencePp).toBeCloseTo(96.71, 10);
+    }
+  });
+
+  it('keeps knife evidence for a genuinely red Dex print close to stream', () => {
+    const result = evaluateKnifeStreamGuard({
+      streamDd: -31.2,
+      dexPc: -30.5,
+      dexGreenVeto: true,
+      maxDivergencePp: 40,
+    });
+    expect(result).toEqual({
+      streamPc5mForKnife: -31.2,
+      blocked: false,
+      reasons: [],
+      details: [],
+    });
+  });
+
+  it('fails closed for stream knife evidence when Dex is unknown', () => {
+    const result = evaluateKnifeStreamGuard({
+      streamDd: -31.2,
+      dexPc: null,
+      dexGreenVeto: true,
+      maxDivergencePp: 40,
+    });
+    expect(result.blocked).toBe(true);
+    expect(result.streamPc5mForKnife).toBeNull();
+    expect(result.reasons).toEqual(['knife_dex_unknown_stream_untrusted']);
+    expect(result.details).toEqual([
+      {
+        code: 'knife_dex_unknown_stream_untrusted',
+        streamDd: -31.2,
+      },
+    ]);
   });
 
   it('1.11.928 leader trust bypasses structural re-check on fast-path', () => {
