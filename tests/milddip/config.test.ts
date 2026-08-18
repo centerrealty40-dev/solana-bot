@@ -580,3 +580,29 @@ describe('mild-dip mirror exit refire configuration', () => {
     expect(configured.exitRefireMax).toBe(2);
   });
 });
+
+describe('mild-dip mirror leader-sell exit configuration', () => {
+  const baseEnv = {
+    MILD_DIP_EXECUTION_MODE: 'paper',
+    MILD_DIP_RPC_URL: 'https://example.invalid',
+  };
+
+  it('defaults off and loads the mirror-only feed settings', () => {
+    const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
+    expect(defaults.leaderSellExitEnabled).toBe(false);
+    expect(defaults.leaderSellExitMaxAgeMs).toBe(60_000);
+    expect(defaults.leaderSellTradesPath).toBe('data/milddip/trades.jsonl');
+    const configured = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MIRROR_LEADER_SELL_ENABLED: '1',
+        MILD_DIP_MIRROR_LEADER_SELL_MAX_AGE_MS: '30000',
+        MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH: '/tmp/leader-trades.jsonl',
+      },
+      () => loadMildDipConfig(),
+    ).leaderMirror;
+    expect(configured.leaderSellExitEnabled).toBe(true);
+    expect(configured.leaderSellExitMaxAgeMs).toBe(30_000);
+    expect(configured.leaderSellTradesPath).toBe('/tmp/leader-trades.jsonl');
+  });
+});

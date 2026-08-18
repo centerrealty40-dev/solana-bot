@@ -784,6 +784,9 @@ const MildDipConfigSchema = z.object({
     greenCorridorPct: z.coerce.number().min(0).default(1.5),
     greenCopyMaxPc5mPct: z.coerce.number().min(0).default(40),
     exitRefireMax: z.coerce.number().int().min(0).default(0),
+    leaderSellExitEnabled: z.boolean().default(false),
+    leaderSellExitMaxAgeMs: z.coerce.number().int().min(0).default(60_000),
+    leaderSellTradesPath: z.string().default('data/milddip/trades.jsonl'),
     leaders: z.array(z.string()).default([]),
     hitMaxAgeMs: z.coerce.number().int().min(1_000).max(600_000).default(45_000),
     observeMs: z.coerce.number().int().min(1_000).max(600_000).default(45_000),
@@ -1703,6 +1706,11 @@ export function loadMildDipConfig(): MildDipConfig {
       greenCorridorPct: envNum('MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT', 1.5),
       greenCopyMaxPc5mPct: envNum('MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT', 40),
       exitRefireMax: envNum('MILD_DIP_MIRROR_EXIT_REFIRE_MAX', 0),
+      leaderSellExitEnabled: envBool('MILD_DIP_MIRROR_LEADER_SELL_ENABLED', false),
+      leaderSellExitMaxAgeMs: envNum('MILD_DIP_MIRROR_LEADER_SELL_MAX_AGE_MS', 60_000),
+      leaderSellTradesPath:
+        process.env.MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH?.trim() ||
+        path.join('data', 'milddip', 'trades.jsonl'),
       leaders: (process.env.MILD_DIP_MIRROR_LEADERS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
       hitMaxAgeMs: envNum('MILD_DIP_MIRROR_LEADER_MAX_AGE_MS', 45_000),
       observeMs: envNum('MILD_DIP_MIRROR_OBSERVE_MS', 45_000),

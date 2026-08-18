@@ -72,6 +72,8 @@ import {
   type MarkExitDecision,
 } from './exit-engine.js';
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
+import { LeaderSellFeed } from './leader-sell-feed.js';
+import { decideLeaderSellExit } from './leader-sell-exit.js';
 import { recoverDeferIsCapped } from './recover-defer.js';
 import {
   bounceFromTroughPct,
@@ -2978,6 +2980,7 @@ async function tryExits(
   oneshotDumpGrace: ReturnType<typeof createOneshotDumpGraceTracker>,
   dumpTape: ReturnType<typeof createDumpSellTape>,
   givebackDumpGate: ReturnType<typeof createGivebackDumpGate>,
+  leaderSellFeed: LeaderSellFeed | null,
 ): Promise<void> {
   const ordered = orderMintsForMark(state.open).filter((m) => !sellInFlight.has(m));
   if (ordered.length === 0) return;
@@ -2989,6 +2992,10 @@ async function tryExits(
           max: cfg.leaderSeedMax,
         })
       : [];
+  const leaderSellByMint = new Map<string, ReturnType<LeaderSellFeed['read']>[number]>();
+  for (const event of leaderSellFeed?.read(nowMs) ?? []) {
+    leaderSellByMint.set(event.mint, event);
+  }
 
   const markStarted = Date.now();
   // 1.11.794 — refresh blind/oldest first so armed bags cannot starve new opens
@@ -3095,6 +3102,66 @@ async function tryExits(
   } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
+    const leaderSell = leaderSellByMint.get(mint);
+    const leaderSellDecision = decideLeaderSellExit({
+      enabled: cfg.leaderMirror.leaderSellExitEnabled,
+      lane: pos.lane,
+      leaders: cfg.leaderMirror.leaders,
+      event: leaderSell,
+      openedAtMs: pos.openedAtMs,
+      nowMs,
+      maxAgeMs: cfg.leaderMirror.leaderSellExitMaxAgeMs,
+    });
+    if (leaderSellDecision.shouldExit && leaderSell) {
+      const ourMarkPriceUsd = px;
+      const markPriceUsd =
+        ourMarkPriceUsd != null && ourMarkPriceUsd > 0
+          ? ourMarkPriceUsd
+          : pos.entryPriceUsd;
+      const ourPnlPct =
+        ourMarkPriceUsd != null && pos.entryPriceUsd > 0
+          ? ((ourMarkPriceUsd / pos.entryPriceUsd) - 1) * 100
+          : null;
+      const pnlPct = ourPnlPct ?? 0;
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_leader_sell_exit',
+        mint,
+        symbol: pos.symbol,
+        leader: leaderSell.leader,
+        leaderSignature: leaderSell.signature,
+        leaderBlockTimeMs: leaderSell.blockTimeMs,
+        leaderFillPriceUsd: leaderSell.fillPriceUsd,
+        leaderMarkPnlPct: leaderSell.markPnlPct,
+        ourMarkPriceUsd,
+        ourPnlPct: ourPnlPct == null ? null : +ourPnlPct.toFixed(2),
+        lagMs: Math.max(0, nowMs - leaderSell.blockTimeMs),
+        reason: leaderSellDecision.reason,
+      });
+      toSell.push({
+        mint,
+        markPriceUsd,
+        entryMarketPriceUsd: pos.entryMarkPriceUsd ?? null,
+        tpRungIndex: null,
+        peakPriceUsd: Math.max(pos.peakPriceUsd ?? 0, markPriceUsd),
+        armed: pos.trailArmed === true,
+        justArmed: false,
+        shouldExit: true,
+        fraction: 1,
+        reason: 'mirror_leader_sell',
+        mfePct: 0,
+        givebackPct: 0,
+        pnlPct,
+        gainPct: pnlPct,
+        gainBasisPriceUsd: pos.entryPriceUsd,
+        pnlPctVsFill: pnlPct,
+        bounceOffTroughPct: 0,
+        troughAgeMs: 0,
+        volFadeSamples: pos.volFadeSamples ?? [],
+        postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+        postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+      });
+      continue;
+    }
     /**
      * 1.11.879 — let a sell settle before deciding again on this bag.
      *
@@ -3904,6 +3971,13 @@ export async function runMildDipLoop(
   const oneshotDumpGrace = createOneshotDumpGraceTracker();
   const dumpSellTape = createDumpSellTape();
   const givebackDumpGate = createGivebackDumpGate();
+  const leaderSellFeed = cfg.leaderMirror.leaderSellExitEnabled
+    ? new LeaderSellFeed(cfg.leaderMirror.leaderSellTradesPath, {
+        leaders: cfg.leaderMirror.leaders,
+        maxAgeMs: cfg.leaderMirror.leaderSellExitMaxAgeMs,
+      })
+    : null;
+  leaderSellFeed?.start();
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
   const tapeShadowRing = cfg.tapeShadowEnabled && !cfg.leaderMirror.mirrorOnly
     ? new MildDipPriceRing({
@@ -4557,6 +4631,7 @@ export async function runMildDipLoop(
         oneshotDumpGrace,
         dumpSellTape,
         givebackDumpGate,
+        leaderSellFeed,
       );
       lastMark = Date.now();
       stats.lastMarkAtMs = lastMark;
