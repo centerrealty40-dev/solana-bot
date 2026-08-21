@@ -3,6 +3,7 @@ import {
   mirrorAverageHoldAllowed,
   mirrorAveragePriceAllowed,
   recentMirrorLocalLow,
+  recentMirrorLocalLowCascade,
   parseMirrorOhlcvList,
 } from '../../src/milddip/mirror-averaging.js';
 
@@ -29,6 +30,66 @@ describe('mirror averaging local low', () => {
       windowMs: 3_600_000,
       excludeTailMs: 900_000,
     })).toBeNull();
+  });
+
+  it('uses the first window whose low clears the entry discount', () => {
+    const now = 10_000_000;
+    const candles = [
+      { tsMs: now - 30 * 60_000, low: 75 },
+      { tsMs: now - 2 * 3_600_000, low: 10 },
+    ];
+    expect(recentMirrorLocalLowCascade({
+      candles,
+      nowMs: now,
+      windowsMs: [3_600_000, 7_200_000, 10_800_000],
+      excludeTailMs: 120_000,
+      entryPriceUsd: 100,
+      minDiscountPct: 10,
+    })).toBe(75);
+  });
+
+  it('falls through to a longer window when the short window is too shallow', () => {
+    const now = 10_000_000;
+    const candles = [
+      { tsMs: now - 30 * 60_000, low: 95 },
+      { tsMs: now - 2 * 3_600_000, low: 85 },
+    ];
+    expect(recentMirrorLocalLowCascade({
+      candles,
+      nowMs: now,
+      windowsMs: [3_600_000, 7_200_000, 10_800_000],
+      excludeTailMs: 120_000,
+      entryPriceUsd: 100,
+      minDiscountPct: 10,
+    })).toBe(85);
+  });
+
+  it('returns no target when no window reaches the required discount', () => {
+    const now = 10_000_000;
+    expect(recentMirrorLocalLowCascade({
+      candles: [
+        { tsMs: now - 30 * 60_000, low: 95 },
+        { tsMs: now - 2 * 3_600_000, low: 91 },
+      ],
+      nowMs: now,
+      windowsMs: [3_600_000, 7_200_000, 10_800_000],
+      excludeTailMs: 120_000,
+      entryPriceUsd: 100,
+      minDiscountPct: 10,
+    })).toBeNull();
+  });
+
+  it('excludes only the latest two minutes from each window', () => {
+    const now = 10_000_000;
+    expect(recentMirrorLocalLow({
+      candles: [
+        { tsMs: now - 60_000, low: 50 },
+        { tsMs: now - 180_000, low: 60 },
+      ],
+      nowMs: now,
+      windowMs: 3_600_000,
+      excludeTailMs: 120_000,
+    })).toBe(60);
   });
 
   it('requires a discount below the position entry and the local-low condition', () => {

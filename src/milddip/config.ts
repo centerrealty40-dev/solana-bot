@@ -13,6 +13,24 @@ function envNum(name: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
+const DEFAULT_MIRROR_AVERAGE_WINDOWS_MS = [
+  3_600_000,
+  7_200_000,
+  10_800_000,
+  14_400_000,
+  21_600_000,
+];
+
+function envMirrorAverageWindowsMs(): number[] {
+  const raw = process.env.MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS?.trim();
+  if (!raw) return [...DEFAULT_MIRROR_AVERAGE_WINDOWS_MS];
+  const values = raw
+    .split(',')
+    .map((value) => Number(value.trim()))
+    .filter((value) => Number.isInteger(value) && value >= 60_000);
+  return values.length > 0 ? [...new Set(values)].sort((a, b) => a - b) : [...DEFAULT_MIRROR_AVERAGE_WINDOWS_MS];
+}
+
 function envBool(name: string, fallback: boolean): boolean {
   const v = process.env[name]?.trim().toLowerCase();
   if (!v) return fallback;
@@ -826,7 +844,7 @@ const MildDipConfigSchema = z.object({
     ladderDustUsd: z.coerce.number().min(0).default(1.5),
     averageEnabled: z.boolean().default(false),
     averageUsd: z.coerce.number().min(0).default(2.5),
-    averageWindowMs: z.coerce.number().int().min(60_000).default(10_800_000),
+    averageWindowsMs: z.array(z.coerce.number().int().min(60_000)).min(1).default(DEFAULT_MIRROR_AVERAGE_WINDOWS_MS),
     averageExcludeTailMs: z.coerce.number().int().min(0).default(900_000),
     averageTolerancePct: z.coerce.number().min(0).default(0.5),
     averageMaxTimes: z.coerce.number().int().min(0).default(1),
@@ -1779,7 +1797,7 @@ export function loadMildDipConfig(): MildDipConfig {
       ladderDustUsd: envNum('MILD_DIP_MIRROR_LADDER_DUST_USD', 1.5),
       averageEnabled: envBool('MILD_DIP_MIRROR_AVERAGE_ENABLED', false),
       averageUsd: envNum('MILD_DIP_MIRROR_AVERAGE_USD', 2.5),
-      averageWindowMs: envNum('MILD_DIP_MIRROR_AVERAGE_WINDOW_MS', 10_800_000),
+      averageWindowsMs: envMirrorAverageWindowsMs(),
       averageExcludeTailMs: envNum('MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS', 900_000),
       averageTolerancePct: envNum('MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT', 0.5),
       averageMaxTimes: envNum('MILD_DIP_MIRROR_AVERAGE_MAX_TIMES', 1),

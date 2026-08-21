@@ -4811,11 +4811,15 @@ function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
       MILD_DIP_MIRROR_LADDER_DUST_USD: '1',
       MILD_DIP_MIRROR_AVERAGE_ENABLED: name === 'mild-dip-mirror' ? '1' : '0',
       MILD_DIP_MIRROR_AVERAGE_USD: '5',
-      MILD_DIP_MIRROR_AVERAGE_WINDOW_MS: '10800000',
-      MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS: '900000',
+      MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS:
+        name === 'mild-dip-mirror'
+          ? '3600000,7200000,10800000,14400000,21600000'
+          : '10800000',
+      MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS:
+        name === 'mild-dip-mirror' ? '120000' : '900000',
       MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT: '0.5',
       MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '1',
-      MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: name === 'mild-dip-mirror' ? '2' : '0',
+      MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: name === 'mild-dip-mirror' ? '10' : '0',
       MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS: name === 'mild-dip-mirror' ? '120000' : '0',
       MILD_DIP_MIRROR_COOLDOWN_MS: '900000',
       MILD_DIP_MIRROR_EXIT_ARM_PCT: '2',
