@@ -89,6 +89,37 @@ describe('leader mirror observation decisions', () => {
     expect(at(hit(), null, 150_000, 100_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_no_data' });
   });
 
+  it('gracefully waits for a leader fill, then rejects the non-buy hit', () => {
+    const missingFill = hit({ fillPriceUsd: undefined, blockTime: 100 });
+    expect(at(missingFill, 101, 150_000, 100_000)).toEqual({
+      action: 'wait',
+      waitReason: 'no_structural',
+    });
+    expect(at(missingFill, 101, 161_000, 100_000)).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_no_leader_fill',
+    });
+  });
+
+  it('rejects known leader transfers below the configured size floor', () => {
+    const guarded = { ...gates, minLeaderSizeUsd: 20 };
+    expect(at(hit({ sizeUsd: 0.02 }), 99, 110_000, 100_000, guarded)).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_leader_size_floor',
+    });
+    expect(at(hit({ sizeUsd: 200 }), 98.8, 110_000, 100_000, guarded)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 98.8,
+    });
+    expect(at(hit({ sizeUsd: 0.02 }), 98.8, 110_000, 100_000, {
+      ...guarded,
+      minLeaderSizeUsd: 0,
+    })).toEqual({
+      action: 'buy',
+      quotePriceUsd: 98.8,
+    });
+  });
+
   it('rejects adds and other wallets', () => {
     expect(at(hit({ isAdd: true }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_add' });
     expect(at(hit({ leader: 'other' }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_wallet' });

@@ -75,6 +75,8 @@ export type LeaderMirrorGates = {
   cooldownMs: number;
   retryWhileLeaderHolds?: boolean;
   requireDipCandle?: boolean;
+  leaderFillGraceMs?: number;
+  minLeaderSizeUsd?: number;
 };
 
 function finitePositive(value: number | null | undefined): value is number {
@@ -102,6 +104,7 @@ export function evaluateLeaderMirrorObservation(args: {
   const ageHours = typeof hit.ageHours === 'number' && Number.isFinite(hit.ageHours) ? hit.ageHours : null;
   const mcap = typeof hit.mcap === 'number' && Number.isFinite(hit.mcap) ? hit.mcap : null;
   const requireDipCandle = gates.requireDipCandle !== false;
+  const leaderFillGraceMs = Math.max(0, gates.leaderFillGraceMs ?? 60_000);
   const soft = (reason: string, waitReason: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor', transient = false): LeaderMirrorDecision =>
     gates.retryWhileLeaderHolds
       ? { action: 'wait', waitReason }
@@ -117,8 +120,25 @@ export function evaluateLeaderMirrorObservation(args: {
     return { action: 'skip', reason: 'leader_mirror_wallet' };
   }
   if (hit.isAdd === true) return { action: 'skip', reason: 'leader_mirror_add' };
+  if (!finitePositive(hit.fillPriceUsd)) {
+    const blockTimeMs =
+      typeof hit.blockTime === 'number' && Number.isFinite(hit.blockTime) && hit.blockTime > 0
+        ? hit.blockTime * 1000
+        : null;
+    if (blockTimeMs != null && nowMs - blockTimeMs < leaderFillGraceMs) {
+      return { action: 'wait', waitReason: 'no_structural' };
+    }
+    return { action: 'skip', reason: 'leader_mirror_no_leader_fill' };
+  }
   if (
-    !finitePositive(hit.fillPriceUsd) ||
+    (gates.minLeaderSizeUsd ?? 0) > 0 &&
+    hit.sizeUsd != null &&
+    Number.isFinite(hit.sizeUsd) &&
+    hit.sizeUsd < gates.minLeaderSizeUsd!
+  ) {
+    return { action: 'skip', reason: 'leader_mirror_leader_size_floor' };
+  }
+  if (
     (requireDipCandle && pc5m == null) ||
     liq == null ||
     ageHours == null ||
