@@ -273,8 +273,12 @@ export function decideMarkExit(args: {
       if (owed > 0) {
         const sellFraction = Math.min(1, Math.max(0, args.mirrorGates.ladderSellFraction ?? 0.2));
         ladderFraction = 1 - Math.pow(1 - sellFraction, owed);
-        const remainderUsd = pos.sizeUsd * (1 - ladderFraction);
-        if (remainderUsd > 0 && remainderUsd < (args.mirrorGates.ladderDustUsd ?? 1.5)) {
+        const remainderMarketUsd =
+          pos.sizeUsd * (markPriceUsd / Math.max(ladderBasis, 1e-18)) * (1 - ladderFraction);
+        if (
+          remainderMarketUsd > 0 &&
+          remainderMarketUsd < (args.mirrorGates.ladderDustUsd ?? 1)
+        ) {
           ladderFraction = 1;
         }
         ladderRungIndex = done + owed;
