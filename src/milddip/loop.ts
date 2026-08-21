@@ -1483,6 +1483,7 @@ async function wakeLeaderMirrors(
           metricSource: watch.metricSource,
           quotePriceUsd: quote?.priceUsd ?? null,
           leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+          sizeUsd: hit.sizeUsd ?? null,
           quoteGainPct:
             quote?.priceUsd != null && hit.fillPriceUsd != null && hit.fillPriceUsd > 0
               ? (quote.priceUsd / hit.fillPriceUsd - 1) * 100
@@ -1506,6 +1507,7 @@ async function wakeLeaderMirrors(
         reason: decision.reason,
         quotePriceUsd: quote?.priceUsd ?? null,
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        sizeUsd: hit.sizeUsd ?? null,
         pc5m: hit.pc5m ?? null,
         quoteGainPct,
         metricSource: watch.metricSource,
@@ -1610,6 +1612,7 @@ async function wakeLeaderMirrors(
         leader: hit.leader,
         reason: 'leader_mirror_execution_skip',
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        sizeUsd: hit.sizeUsd ?? null,
         quotePriceUsd: decision.quotePriceUsd ?? null,
         pc5m: hit.pc5m ?? null,
         quoteGainPct:
