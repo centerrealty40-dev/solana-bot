@@ -30,6 +30,7 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LADDER_DUST_USD: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_OPEN: '8'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_REQUIRE_DIP_CANDLE: name === 'mild-dip-mirror' ? '0' : '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_SELL_ONLY: '1'");
     expect(ecosystemSource).toContain(

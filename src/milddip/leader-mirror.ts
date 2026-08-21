@@ -34,10 +34,12 @@ export function leaderMirrorQuoteMintsCap(
 
 export type LeaderMirrorMetricSource = 'seed' | 'backfill';
 
-export function leaderMirrorNeedsStructuralBackfill(hit: LeaderSeedHit): boolean {
+export function leaderMirrorNeedsStructuralBackfill(
+  hit: LeaderSeedHit,
+  requireDipCandle = true,
+): boolean {
   return (
-    hit.pc5m == null ||
-    !Number.isFinite(hit.pc5m) ||
+    (requireDipCandle && (hit.pc5m == null || !Number.isFinite(hit.pc5m))) ||
     hit.liq == null ||
     !Number.isFinite(hit.liq) ||
     hit.ageHours == null ||
@@ -72,6 +74,7 @@ export type LeaderMirrorGates = {
   structuralGapMs: number;
   cooldownMs: number;
   retryWhileLeaderHolds?: boolean;
+  requireDipCandle?: boolean;
 };
 
 function finitePositive(value: number | null | undefined): value is number {
@@ -98,6 +101,7 @@ export function evaluateLeaderMirrorObservation(args: {
   const liq = typeof hit.liq === 'number' && Number.isFinite(hit.liq) ? hit.liq : null;
   const ageHours = typeof hit.ageHours === 'number' && Number.isFinite(hit.ageHours) ? hit.ageHours : null;
   const mcap = typeof hit.mcap === 'number' && Number.isFinite(hit.mcap) ? hit.mcap : null;
+  const requireDipCandle = gates.requireDipCandle !== false;
   const soft = (reason: string, waitReason: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor', transient = false): LeaderMirrorDecision =>
     gates.retryWhileLeaderHolds
       ? { action: 'wait', waitReason }
@@ -115,27 +119,29 @@ export function evaluateLeaderMirrorObservation(args: {
   if (hit.isAdd === true) return { action: 'skip', reason: 'leader_mirror_add' };
   if (
     !finitePositive(hit.fillPriceUsd) ||
-    pc5m == null ||
+    (requireDipCandle && pc5m == null) ||
     liq == null ||
     ageHours == null ||
     mcap == null
   ) {
     return soft('leader_mirror_no_data', 'no_structural', true);
   }
-  const greenCandidate = pc5m > gates.maxPreEntryPc5mPct;
-  if (gates.greenCopyEnabled && greenCandidate) {
-    if (pc5m >= gates.greenCopyMaxPc5mPct) {
-      return { action: 'skip', reason: 'leader_mirror_green_blowoff' };
-    }
-  } else {
-    if (gates.requireDeepDump && pc5m > gates.deepDumpPc5mPct) {
-      return softQuality('leader_mirror_deep_dump_required');
-    }
-    if (pc5m >= gates.runUpPc5mPct) {
-      return softQuality('leader_mirror_run_up');
-    }
-    if (pc5m > gates.maxPreEntryPc5mPct) {
-      return softQuality('leader_mirror_pre_entry_floor');
+  const greenCandidate = pc5m != null && pc5m > gates.maxPreEntryPc5mPct;
+  if (requireDipCandle) {
+    if (gates.greenCopyEnabled && greenCandidate) {
+      if (pc5m! >= gates.greenCopyMaxPc5mPct) {
+        return { action: 'skip', reason: 'leader_mirror_green_blowoff' };
+      }
+    } else {
+      if (gates.requireDeepDump && pc5m! > gates.deepDumpPc5mPct) {
+        return softQuality('leader_mirror_deep_dump_required');
+      }
+      if (pc5m! >= gates.runUpPc5mPct) {
+        return softQuality('leader_mirror_run_up');
+      }
+      if (pc5m! > gates.maxPreEntryPc5mPct) {
+        return softQuality('leader_mirror_pre_entry_floor');
+      }
     }
   }
   if (liq < gates.minLiquidityUsd) {
@@ -161,13 +167,13 @@ export function evaluateLeaderMirrorObservation(args: {
   const leaderPrice = hit.fillPriceUsd;
   const quotePrice = args.quotePriceUsd;
   const quoteGainPct = (quotePrice / leaderPrice - 1) * 100;
-  if (gates.greenCopyEnabled && greenCandidate) {
+  if (requireDipCandle && gates.greenCopyEnabled && greenCandidate) {
     if (quoteGainPct > gates.greenCorridorPct) {
       return soft('leader_mirror_green_corridor', 'green_corridor', true);
     }
     return { action: 'buy', quotePriceUsd: quotePrice, mirrorBranch: 'green' };
   }
-  if (quoteGainPct >= gates.greenImpulsePct) {
+  if (requireDipCandle && quoteGainPct >= gates.greenImpulsePct) {
     return gates.retryWhileLeaderHolds
       ? { action: 'wait', waitReason: 'premium_cap' }
       : { action: 'skip', reason: 'leader_mirror_green_impulse' };
