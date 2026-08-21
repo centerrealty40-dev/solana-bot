@@ -58,11 +58,35 @@ export function recentMirrorLocalLow(args: {
   return lows.length > 0 ? Math.min(...lows) : null;
 }
 
+export function recentMirrorLocalLowCascade(args: {
+  candles: Candle[];
+  nowMs: number;
+  windowsMs: readonly number[];
+  excludeTailMs: number;
+  entryPriceUsd: number;
+  minDiscountPct: number;
+}): number | null {
+  if (!(args.entryPriceUsd > 0)) return null;
+  const targetPrice = args.entryPriceUsd * (1 - args.minDiscountPct / 100);
+  for (const windowMs of args.windowsMs) {
+    const low = recentMirrorLocalLow({
+      candles: args.candles,
+      nowMs: args.nowMs,
+      windowMs,
+      excludeTailMs: args.excludeTailMs,
+    });
+    if (low != null && low <= targetPrice) return low;
+  }
+  return null;
+}
+
 export async function mirrorRecentLocalLow(args: {
   mint: string;
   nowMs: number;
-  windowMs: number;
+  windowsMs: readonly number[];
   excludeTailMs: number;
+  entryPriceUsd: number;
+  minDiscountPct: number;
   refreshMs?: number;
   timeoutMs?: number;
   fetchImpl?: FetchLike;
@@ -102,7 +126,7 @@ export async function mirrorRecentLocalLow(args: {
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), args.timeoutMs ?? 8_000);
       const response = await fetchImpl(
-        `https://api.geckoterminal.com/api/v2/networks/solana/pools/${encodeURIComponent(pool.pool)}/ohlcv/minute?aggregate=1&limit=180&currency=usd`,
+        `https://api.geckoterminal.com/api/v2/networks/solana/pools/${encodeURIComponent(pool.pool)}/ohlcv/minute?aggregate=1&limit=${Math.max(1, Math.ceil(Math.max(...args.windowsMs) / 60_000))}&currency=usd`,
         { headers: { accept: 'application/json' }, signal: controller.signal },
       );
       clearTimeout(timer);
@@ -116,11 +140,13 @@ export async function mirrorRecentLocalLow(args: {
       return null;
     }
   }
-  return recentMirrorLocalLow({
+  return recentMirrorLocalLowCascade({
     candles: candles.candles,
     nowMs: args.nowMs,
-    windowMs: args.windowMs,
+    windowsMs: args.windowsMs,
     excludeTailMs: args.excludeTailMs,
+    entryPriceUsd: args.entryPriceUsd,
+    minDiscountPct: args.minDiscountPct,
   });
 }
 

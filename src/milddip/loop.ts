@@ -3094,8 +3094,10 @@ async function attemptMirrorAverage(args: {
   const target = await mirrorRecentLocalLow({
     mint: pos.mint,
     nowMs,
-    windowMs: g.averageWindowMs,
+    windowsMs: g.averageWindowsMs,
     excludeTailMs: g.averageExcludeTailMs,
+    entryPriceUsd: pos.entryPriceUsd,
+    minDiscountPct: g.averageMinDiscountPct,
   });
   if (
     target == null ||
