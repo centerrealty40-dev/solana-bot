@@ -35,6 +35,7 @@ const gates: LeaderMirrorGates = {
   positionUsd: 2,
   cooldownMs: 900_000,
 };
+const SECOND_LEADER = '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ';
 
 const hit = (overrides: Record<string, unknown> = {}) => ({
   mint: 'So11111111111111111111111111111111111111112',
@@ -76,12 +77,12 @@ describe('leader mirror observation decisions', () => {
   });
 
   it('waits through premium and refuses after the window', () => {
-    expect(at(hit(), 103, 110_000)).toEqual({ action: 'wait' });
+    expect(at(hit(), 103, 110_000)).toEqual({ action: 'wait', waitReason: 'premium_cap' });
     expect(at(hit(), 103, 150_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_premium_cap' });
   });
 
   it('fails closed without classification data or a quote', () => {
-    expect(at(hit({ pc5m: undefined }), 101)).toEqual({ action: 'wait' });
+    expect(at(hit({ pc5m: undefined }), 101)).toEqual({ action: 'wait', waitReason: 'no_structural' });
     expect(at(hit({ pc5m: undefined }), 101, 150_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_no_data' });
     expect(at(hit(), null, 150_000, 100_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_no_data' });
   });
@@ -89,6 +90,25 @@ describe('leader mirror observation decisions', () => {
   it('rejects adds and other wallets', () => {
     expect(at(hit({ isAdd: true }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_add' });
     expect(at(hit({ leader: 'other' }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_wallet' });
+  });
+
+  it('accepts either configured leader and retries soft quality refusals', () => {
+    const retry = {
+      ...gates,
+      leaders: [LEADER_MIRROR_WALLET, SECOND_LEADER],
+      retryWhileLeaderHolds: true,
+      minMcapUsd: 150_000,
+    };
+    expect(at(hit({ leader: SECOND_LEADER, mcap: 200_000 }), 101, 110_000, 100_000, retry)).toMatchObject({ action: 'buy' });
+    expect(at(hit({ leader: 'third' }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_wallet' });
+    expect(at(hit({ mcap: 149_999 }), 90, 150_000, 100_000, retry)).toMatchObject({
+      action: 'wait',
+      waitReason: 'no_structural',
+    });
+    expect(at(hit({ ageHours: 5.9 }), 90, 150_000, 100_000, { ...retry, minPairAgeHours: 6 }))
+      .toMatchObject({ action: 'wait' });
+    expect(at(hit({ ageHours: 6, mcap: 200_000 }), 99, 150_000, 100_000, { ...retry, minPairAgeHours: 6 }))
+      .toMatchObject({ action: 'buy' });
   });
 
   it('suppresses a repeated refusal for the same hit and caps quote fanout', () => {
@@ -195,7 +215,7 @@ describe('leader mirror observation decisions', () => {
 
   it('waits outside the green corridor until observe expires', () => {
     const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5 };
-    expect(at(hit({ pc5m: 8 }), 103, 110_000, 100_000, green)).toEqual({ action: 'wait' });
+    expect(at(hit({ pc5m: 8 }), 103, 110_000, 100_000, green)).toEqual({ action: 'wait', waitReason: 'green_corridor' });
     expect(at(hit({ pc5m: 8 }), 103, 150_000, 100_000, green)).toMatchObject({
       action: 'skip',
       reason: 'leader_mirror_green_corridor',

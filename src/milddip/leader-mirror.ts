@@ -3,7 +3,7 @@ import type { LeaderSeedHit } from './discover-extra.js';
 export const LEADER_MIRROR_WALLET = '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5';
 
 export type LeaderMirrorDecision =
-  | { action: 'wait' }
+  | { action: 'wait'; waitReason?: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor' | string }
   | { action: 'buy'; quotePriceUsd: number; mirrorBranch?: 'green' | 'dip' }
   | { action: 'skip'; reason: string };
 
@@ -17,6 +17,7 @@ export function leaderMirrorDecisionSuppressed(args: {
   decidedAtMs: number;
   nowMs: number;
   cooldownMs: number;
+  retryWhileLeaderHolds?: boolean;
 }): boolean {
   return (
     leaderMirrorHitKey(args.hit) === args.hitKey &&
@@ -71,6 +72,7 @@ export type LeaderMirrorGates = {
   structuralMaxMints: number;
   structuralGapMs: number;
   cooldownMs: number;
+  retryWhileLeaderHolds?: boolean;
 };
 
 function finitePositive(value: number | null | undefined): value is number {
@@ -97,6 +99,16 @@ export function evaluateLeaderMirrorObservation(args: {
   const liq = typeof hit.liq === 'number' && Number.isFinite(hit.liq) ? hit.liq : null;
   const ageHours = typeof hit.ageHours === 'number' && Number.isFinite(hit.ageHours) ? hit.ageHours : null;
   const mcap = typeof hit.mcap === 'number' && Number.isFinite(hit.mcap) ? hit.mcap : null;
+  const soft = (reason: string, waitReason: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor', transient = false): LeaderMirrorDecision =>
+    gates.retryWhileLeaderHolds
+      ? { action: 'wait', waitReason }
+      : transient && nowMs - args.watchStartedAtMs < gates.observeMs
+        ? { action: 'wait', waitReason }
+        : { action: 'skip', reason };
+  const softQuality = (reason: string): LeaderMirrorDecision =>
+    gates.retryWhileLeaderHolds
+      ? { action: 'wait', waitReason: 'no_structural' }
+      : { action: 'skip', reason };
   if (!gates.enabled) return { action: 'skip', reason: 'leader_mirror_disabled' };
   if (!leaderMirrorWalletAllowed(hit, gates.leaders)) {
     return { action: 'skip', reason: 'leader_mirror_wallet' };
@@ -109,9 +121,7 @@ export function evaluateLeaderMirrorObservation(args: {
     ageHours == null ||
     mcap == null
   ) {
-    return nowMs - args.watchStartedAtMs < gates.observeMs
-      ? { action: 'wait' }
-      : { action: 'skip', reason: 'leader_mirror_no_data' };
+    return soft('leader_mirror_no_data', 'no_structural', true);
   }
   const greenCandidate = pc5m > gates.maxPreEntryPc5mPct;
   if (gates.greenCopyEnabled && greenCandidate) {
@@ -120,23 +130,23 @@ export function evaluateLeaderMirrorObservation(args: {
     }
   } else {
     if (gates.requireDeepDump && pc5m > gates.deepDumpPc5mPct) {
-      return { action: 'skip', reason: 'leader_mirror_deep_dump_required' };
+      return softQuality('leader_mirror_deep_dump_required');
     }
     if (pc5m >= gates.runUpPc5mPct) {
-      return { action: 'skip', reason: 'leader_mirror_run_up' };
+      return softQuality('leader_mirror_run_up');
     }
     if (pc5m > gates.maxPreEntryPc5mPct) {
-      return { action: 'skip', reason: 'leader_mirror_pre_entry_floor' };
+      return softQuality('leader_mirror_pre_entry_floor');
     }
   }
   if (liq < gates.minLiquidityUsd) {
-    return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
+    return softQuality('leader_mirror_liquidity_floor');
   }
   if (ageHours < gates.minPairAgeHours) {
-    return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
+    return softQuality('leader_mirror_pair_age_floor');
   }
   if (mcap < gates.minMcapUsd) {
-    return { action: 'skip', reason: 'leader_mirror_mcap_floor' };
+    return softQuality('leader_mirror_mcap_floor');
   }
   if (
     args.quotePriceUsd == null ||
@@ -146,9 +156,7 @@ export function evaluateLeaderMirrorObservation(args: {
     gates.quoteMaxAgeMs <= 0 ||
     nowMs - args.quoteTsMs > gates.quoteMaxAgeMs
   ) {
-    return nowMs - args.watchStartedAtMs < gates.observeMs
-      ? { action: 'wait' }
-      : { action: 'skip', reason: 'leader_mirror_no_data' };
+    return soft('leader_mirror_no_data', 'no_quote', true);
   }
 
   const leaderPrice = hit.fillPriceUsd;
@@ -156,9 +164,7 @@ export function evaluateLeaderMirrorObservation(args: {
   const quoteGainPct = (quotePrice / leaderPrice - 1) * 100;
   if (gates.greenCopyEnabled && greenCandidate) {
     if (quoteGainPct > gates.greenCorridorPct) {
-      return nowMs - args.watchStartedAtMs < gates.observeMs
-        ? { action: 'wait' }
-        : { action: 'skip', reason: 'leader_mirror_green_corridor' };
+      return soft('leader_mirror_green_corridor', 'green_corridor', true);
     }
     return { action: 'buy', quotePriceUsd: quotePrice, mirrorBranch: 'green' };
   }
@@ -166,9 +172,7 @@ export function evaluateLeaderMirrorObservation(args: {
     return { action: 'skip', reason: 'leader_mirror_green_impulse' };
   }
   if (quoteGainPct > gates.maxPremiumPct) {
-    return nowMs - args.watchStartedAtMs < gates.observeMs
-      ? { action: 'wait' }
-      : { action: 'skip', reason: 'leader_mirror_premium_cap' };
+    return soft('leader_mirror_premium_cap', 'premium_cap', true);
   }
   return { action: 'buy', quotePriceUsd: quotePrice };
 }

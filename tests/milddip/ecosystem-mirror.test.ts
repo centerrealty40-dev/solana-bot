@@ -15,8 +15,8 @@ const mirrorApps = ecosystem.apps.filter((app) =>
 );
 
 describe('mirror PM2 apps', () => {
-  it('keeps mirror definitions in history but excludes both from exported apps', () => {
-    expect(mirrorApps).toEqual([]);
+  it('exports the primary mirror and keeps mirror2 disabled', () => {
+    expect(mirrorApps.map((app) => app.name)).toEqual(['mild-dip-mirror']);
     expect(ecosystemSource).toContain("name: 'mild-dip-mirror'");
     expect(ecosystemSource).toContain("name: 'mild-dip-mirror2'");
     expect(ecosystemSource).toContain("dataDir: 'data/milddip-mirror'");
@@ -25,7 +25,7 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain(
       "walletSecret: 'data/live/copy-8zkg.keypair.json'",
     );
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_POSITION_USD: '30'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_POSITION_USD: name === 'mild-dip-mirror' ? '5' : '30'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_OPEN: '8'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000'");
@@ -33,15 +33,19 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain(
       "MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS: '86400000'",
     );
-    expect(ecosystemSource).toContain("'mild-dip-mirror',");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_MCAP_USD: name === 'mild-dip-mirror' ? '150000' : '5000'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_PREMIUM_PCT: name === 'mild-dip-mirror' ? '-1' : '2'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OBSERVE_MS: name === 'mild-dip-mirror' ? '86400000' : '45000'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_PAIR_AGE_HOURS: name === 'mild-dip-mirror' ? '6' : '0.5'");
+    expect(ecosystemSource).toContain("'mild-dip-mirror2',");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
   });
 
-  it('keeps both mirror lanes in the Oscar VPS exclusion list', () => {
+  it('keeps only mirror2 in the Oscar VPS exclusion list', () => {
     const excludedAppsBlock = ecosystemSource.match(
       /const OSCAR_VPS_EXCLUDED_APPS = new Set\(\[([\s\S]*?)\]\);/,
     )?.[1];
-    expect(excludedAppsBlock).toContain("'mild-dip-mirror',");
+    expect(excludedAppsBlock).not.toContain("'mild-dip-mirror',");
     expect(excludedAppsBlock).toContain("'mild-dip-mirror2',");
   });
 });

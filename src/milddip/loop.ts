@@ -111,6 +111,7 @@ import {
   shouldJournalLeaderStyleSkip,
 } from './leader-style.js';
 import { validateStreamDexPrice } from './price-sanity.js';
+import { mirrorRecentLocalLow } from './mirror-averaging.js';
 import {
   computeMarkLiquidityTelemetry,
   readOpenMarkMetrics,
@@ -1271,17 +1272,18 @@ async function wakeLeaderMirrors(
   for (const hit of hits) {
     if (state.open[hit.mint]) continue;
     const hitKey = leaderMirrorHitKey(hit);
-    const existing = leaderMirrorWatches.get(hit.mint);
+    const watchKey = leaderMirrorWatchKey(hit);
+    const existing = leaderMirrorWatches.get(watchKey);
     if (existing && existing.hitKey !== hitKey) {
-      leaderMirrorWatches.set(hit.mint, {
+      leaderMirrorWatches.set(watchKey, {
         hit,
         hitKey,
         startedAtMs: nowMs,
         metricSource: leaderMirrorNeedsStructuralBackfill(hit) ? 'backfill' : 'seed',
       });
-      leaderMirrorDecisions.delete(hit.mint);
+      leaderMirrorDecisions.delete(watchKey);
     } else if (!existing) {
-      const prior = leaderMirrorDecisions.get(hit.mint);
+      const prior = leaderMirrorDecisions.get(watchKey);
       if (
         prior &&
         leaderMirrorDecisionSuppressed({
@@ -1294,7 +1296,7 @@ async function wakeLeaderMirrors(
       ) {
         continue;
       }
-      leaderMirrorWatches.set(hit.mint, {
+      leaderMirrorWatches.set(watchKey, {
         hit,
         hitKey,
         startedAtMs: nowMs,
@@ -1311,25 +1313,27 @@ async function wakeLeaderMirrors(
       });
     }
   }
-  const backfillMints = [...leaderMirrorWatches.entries()]
+  const backfillEntries = [...leaderMirrorWatches.entries()]
     .filter(
-      ([mint, watch]) =>
+      ([watchKey, watch]) =>
         leaderMirrorNeedsStructuralBackfill(watch.hit) &&
-        nowMs - (leaderMirrorStructuralAttemptMs.get(mint) ?? 0) >= gates.structuralGapMs,
+        nowMs - (leaderMirrorStructuralAttemptMs.get(watchKey) ?? 0) >= gates.structuralGapMs,
     )
     .sort(([, a], [, b]) => a.startedAtMs - b.startedAtMs)
-    .slice(0, gates.structuralMaxMints)
-    .map(([mint]) => mint);
-  if (backfillMints.length > 0) {
-    for (const mint of backfillMints) leaderMirrorStructuralAttemptMs.set(mint, nowMs);
-    const result = await prefetchDexScreenerPairDetailsManyWithMetadata(backfillMints, {
+    .slice(0, gates.structuralMaxMints);
+  if (backfillEntries.length > 0 && !leaderMirrorStructuralInFlight) {
+    const backfillMints = [...new Set(backfillEntries.map(([, watch]) => watch.hit.mint))];
+    for (const [watchKey] of backfillEntries) leaderMirrorStructuralAttemptMs.set(watchKey, nowMs);
+    leaderMirrorStructuralInFlight = true;
+    void prefetchDexScreenerPairDetailsManyWithMetadata(backfillMints, {
       nowMs,
       cacheTtlMs: Math.max(gates.structuralGapMs, gates.quoteMaxAgeMs),
       allowedDexIds: cfg.entry.allowedDexIds,
-    });
-    for (const mint of backfillMints) {
-      const watch = leaderMirrorWatches.get(mint);
-      if (!watch) continue;
+    }).then((result) => {
+      for (const [watchKey, startedWatch] of backfillEntries) {
+        const watch = leaderMirrorWatches.get(watchKey);
+        if (!watch || watch.hitKey !== startedWatch.hitKey) continue;
+        const mint = watch.hit.mint;
       const details = result.detailsByMint.get(mint);
       const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralStaleMs);
       const metrics = details
@@ -1372,17 +1376,30 @@ async function wakeLeaderMirrors(
         ageHours: pairAgeHours,
         dexId: metrics.dexId ?? watch.hit.dexId,
       };
-      leaderMirrorWatches.set(mint, { ...watch, hit, metricSource: 'backfill' });
-    }
+        if (leaderMirrorWatches.has(watchKey)) {
+          leaderMirrorWatches.set(watchKey, { ...watch, hit, metricSource: 'backfill' });
+        }
+      }
+    }).catch((err) => {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_structural_backfill_error',
+        error: err instanceof Error ? err.message : String(err),
+        mints: backfillMints.length,
+      });
+    }).finally(() => {
+      leaderMirrorStructuralInFlight = false;
+    });
   }
   let filled = 0;
-  for (const [mint, watch] of leaderMirrorWatches) {
+  for (const [watchKey, watch] of leaderMirrorWatches) {
+    const mint = watch.hit.mint;
     if (state.open[mint]) {
-      leaderMirrorWatches.delete(mint);
+      leaderMirrorWatches.delete(watchKey);
       continue;
     }
     const hit = watch.hit;
-    const leaderSell = leaderSellFeed?.get(mint, nowMs);
+    const feedSell = leaderSellFeed?.get(mint, nowMs);
+    const leaderSell = feedSell && feedSell.leader === hit.leader ? feedSell : null;
     const leaderBuyTsMs =
       hit.blockTime != null && hit.blockTime > 0
         ? hit.blockTime * 1000
@@ -1413,12 +1430,12 @@ async function wakeLeaderMirrors(
         quoteGainPct: null,
         metricSource: watch.metricSource,
       });
-      leaderMirrorDecisions.set(mint, {
+      leaderMirrorDecisions.set(watchKey, {
         hitKey: watch.hitKey,
         decidedAtMs: nowMs,
         reason: 'leader_mirror_leader_sell',
       });
-      leaderMirrorWatches.delete(mint);
+      leaderMirrorWatches.delete(watchKey);
       leaderSellFeed?.remove(mint);
       continue;
     }
@@ -1433,7 +1450,7 @@ async function wakeLeaderMirrors(
         leaderMirrorWatches.size,
         gates.maxQuoteMints,
       ),
-      maxInFlight: 2,
+      maxInFlight: 4,
       probeUsd: gates.positionUsd,
       slippageBps: cfg.slippageBps,
       source: 'leader_mirror_jupiter',
@@ -1452,7 +1469,31 @@ async function wakeLeaderMirrors(
       watchStartedAtMs: watch.startedAtMs,
       gates,
     });
-    if (decision.action === 'wait') continue;
+    if (decision.action === 'wait') {
+      const waitReason = decision.waitReason ?? 'unknown';
+      if (
+        watch.lastWaitReason !== waitReason ||
+        nowMs - (watch.lastWaitAtMs ?? 0) >= 60_000
+      ) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_wait',
+          mint,
+          leader: hit.leader,
+          waitReason,
+          metricSource: watch.metricSource,
+          quotePriceUsd: quote?.priceUsd ?? null,
+          leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+          quoteGainPct:
+            quote?.priceUsd != null && hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+              ? (quote.priceUsd / hit.fillPriceUsd - 1) * 100
+              : null,
+          waitedMs: Math.max(0, nowMs - watch.startedAtMs),
+        });
+        watch.lastWaitReason = waitReason;
+        watch.lastWaitAtMs = nowMs;
+      }
+      continue;
+    }
     if (decision.action === 'skip') {
       const quoteGainPct =
         quote?.priceUsd != null && hit.fillPriceUsd != null && hit.fillPriceUsd > 0
@@ -1469,12 +1510,12 @@ async function wakeLeaderMirrors(
         quoteGainPct,
         metricSource: watch.metricSource,
       });
-      leaderMirrorDecisions.set(mint, {
+      leaderMirrorDecisions.set(watchKey, {
         hitKey: watch.hitKey,
         decidedAtMs: nowMs,
         reason: decision.reason,
       });
-      leaderMirrorWatches.delete(mint);
+      leaderMirrorWatches.delete(watchKey);
       continue;
     }
     const openMirror = Object.values(state.open).filter(
@@ -1495,12 +1536,12 @@ async function wakeLeaderMirrors(
         quoteGainPct,
         metricSource: watch.metricSource,
       });
-      leaderMirrorDecisions.set(mint, {
+      leaderMirrorDecisions.set(watchKey, {
         hitKey: watch.hitKey,
         decidedAtMs: nowMs,
         reason: 'leader_mirror_exposure_cap',
       });
-      leaderMirrorWatches.delete(mint);
+      leaderMirrorWatches.delete(watchKey);
       continue;
     }
     const candidate: MildDipCandidate = {
@@ -1542,6 +1583,7 @@ async function wakeLeaderMirrors(
         mirrorBranch: decision.mirrorBranch,
         leaderBuyTsMs,
         leaderBuySignature: hit.signature,
+        leaderMirrorLeader: hit.leader,
         mirrorExit: {
           armPct: gates.exitArmPct,
           trailPct: gates.exitTrailPct,
@@ -1552,12 +1594,12 @@ async function wakeLeaderMirrors(
         },
       },
     });
-    leaderMirrorWatches.delete(mint);
+    leaderMirrorWatches.delete(watchKey);
     if (result === 'filled') {
       state.cooldownUntilMs[mint] = nowMs + gates.cooldownMs;
       filled += 1;
     } else {
-      leaderMirrorDecisions.set(mint, {
+      leaderMirrorDecisions.set(watchKey, {
         hitKey: watch.hitKey,
         decidedAtMs: nowMs,
         reason: 'leader_mirror_execution_skip',
@@ -2507,6 +2549,12 @@ async function executeQueuedSell(args: {
         );
         live.lastTpGridFillAtMs = nowMs;
       }
+      if (decision.reason === 'mirror_tp_ladder' && decision.tpRungIndex != null) {
+        live.mirrorLadderRungsDone = Math.max(
+          live.mirrorLadderRungsDone ?? 0,
+          decision.tpRungIndex,
+        );
+      }
       live.exitRetryCount = undefined;
       live.exitRetryReason = undefined;
       if (isPartial) {
@@ -2692,13 +2740,19 @@ const leaderMirrorWatches = new Map<
     hitKey: string;
     startedAtMs: number;
     metricSource: LeaderMirrorMetricSource;
+    lastWaitReason?: string;
+    lastWaitAtMs?: number;
   }
 >();
 const leaderMirrorDecisions = new Map<
   string,
   { hitKey: string; decidedAtMs: number; reason: string }
 >();
+function leaderMirrorWatchKey(hit: LeaderSeedHit): string {
+  return `${hit.mint}:${hit.leader ?? ''}`;
+}
 const leaderMirrorStructuralAttemptMs = new Map<string, number>();
+let leaderMirrorStructuralInFlight = false;
 /** mint → last exit_defer_would_buy journal ts (throttle). */
 const lastExitDeferJournalMs = new Map<string, number>();
 /** mint → last leader_align_defer journal ts (throttle). */
@@ -3016,6 +3070,90 @@ async function attemptStagedEntryAdd(args: {
   }
 }
 
+async function attemptMirrorAverage(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  pos: MildDipOpenPosition;
+  markPriceUsd: number;
+  nowMs: number;
+  leaderHeld: boolean;
+}): Promise<void> {
+  const { cfg, state, pos, markPriceUsd, nowMs } = args;
+  const g = cfg.leaderMirror;
+  if (!args.leaderHeld || pos.mirrorAverageDone || pos.mirrorAverageAttempts != null &&
+      pos.mirrorAverageAttempts >= g.averageMaxTimes || !(g.averageEnabled && g.averageUsd > 0)) return;
+  if (buyInFlight.has(pos.mint) || sellInFlight.has(pos.mint)) return;
+  const target = await mirrorRecentLocalLow({
+    mint: pos.mint,
+    nowMs,
+    windowMs: g.averageWindowMs,
+    excludeTailMs: g.averageExcludeTailMs,
+  });
+  if (target == null || markPriceUsd > target * (1 + g.averageTolerancePct / 100)) return;
+  pos.mirrorAverageAttempts = (pos.mirrorAverageAttempts ?? 0) + 1;
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
+  const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, g.averageUsd);
+  if (sized.stop || !(sized.sizeUsd > 0)) {
+    saveMildDipState(cfg.statePath, state);
+    return;
+  }
+  buyInFlight.add(pos.mint);
+  try {
+    const buy = await executeCopyBuy({
+      cfg: copyCfg,
+      mint: pos.mint,
+      symbol: pos.symbol,
+      priceUsd: markPriceUsd,
+      sizeUsd: Math.min(g.averageUsd, sized.sizeUsd),
+      kind: 'add',
+      evalResult: { pass: true, reasons: ['mirror_local_low_average'], score: target },
+      leaderSignature: `milddip_mirror_average_${pos.mint.slice(0, 8)}_${nowMs}`,
+      trigger: 'stream',
+      leaderPriceUsd: markPriceUsd,
+      leaderBuyTs: nowMs,
+    });
+    if (!buy.ok) return;
+    const live = state.open[pos.mint];
+    if (!live) return;
+    const addUsd = buy.quoteSpentUsd ?? Math.min(g.averageUsd, sized.sizeUsd);
+    const fillPx = buy.priceUsd > 0 ? buy.priceUsd : markPriceUsd;
+    const priorTokens = live.sizeUsd / Math.max(live.entryPriceUsd, 1e-18);
+    const addTokens = addUsd / Math.max(fillPx, 1e-18);
+    live.entryPriceUsd = (live.sizeUsd + addUsd) / (priorTokens + addTokens);
+    live.sizeUsd += addUsd;
+    live.mirrorAverageDone = true;
+    live.mirrorAverageFillPriceUsd = fillPx;
+    live.mirrorLadderBasisPriceUsd = fillPx;
+    live.mirrorLadderRungsDone = 0;
+    const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
+    if (raw && /^\d+$/.test(raw)) {
+      live.tokenRaw = raw;
+      live.tokenRawSettled = false;
+    }
+    saveMildDipState(cfg.statePath, state);
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mirror_average',
+      mint: pos.mint,
+      symbol: pos.symbol,
+      targetPriceUsd: target,
+      markPriceUsd,
+      fillPriceUsd: fillPx,
+      amountUsd: addUsd,
+      newEntryPriceUsd: live.entryPriceUsd,
+    });
+  } catch (err) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mirror_average',
+      mint: pos.mint,
+      symbol: pos.symbol,
+      ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+  } finally {
+    buyInFlight.delete(pos.mint);
+  }
+}
+
 async function tryExits(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -3140,7 +3278,12 @@ async function tryExits(
   } of markRows) {
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
-    const leaderSell = leaderSellFeed?.get(mint, nowMs);
+    const feedLeaderSell = leaderSellFeed?.get(mint, nowMs);
+    const leaderSell =
+      feedLeaderSell &&
+      (pos.leaderMirrorLeader == null || feedLeaderSell.leader === pos.leaderMirrorLeader)
+        ? feedLeaderSell
+        : null;
     const leaderSellDecision = decideLeaderSellExit({
       enabled: cfg.leaderMirror.leaderSellExitEnabled,
       lane: pos.lane,
@@ -3366,6 +3509,10 @@ async function tryExits(
         trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
         leaderSellOnly: cfg.leaderMirror.leaderSellOnlyExit,
         safetyMaxHoldMs: cfg.leaderMirror.safetyMaxHoldMs,
+        ladderStepPct: cfg.leaderMirror.ladderStepPct,
+        ladderStepAfterAveragePct: cfg.leaderMirror.ladderStepAfterAveragePct,
+        ladderSellFraction: cfg.leaderMirror.ladderSellFraction,
+        ladderDustUsd: cfg.leaderMirror.ladderDustUsd,
       },
       leaderStyleGates: pos.lane === 'leader_style'
         ? {
@@ -3427,6 +3574,16 @@ async function tryExits(
       decision.markPriceUsd > 0 &&
       !sellInFlight.has(mint)
     ) {
+      if (pos.lane === 'leader_mirror') {
+        await attemptMirrorAverage({
+          cfg,
+          state,
+          pos,
+          markPriceUsd: decision.markPriceUsd,
+          nowMs,
+          leaderHeld: leaderSell == null,
+        });
+      }
       if (cfg.leaderMirror.mirrorOnly) continue;
       await attemptStagedEntryAdd({
         cfg,
