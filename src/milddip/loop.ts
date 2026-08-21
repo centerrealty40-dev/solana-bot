@@ -79,7 +79,9 @@ import {
 } from './leader-sell-feed.js';
 import {
   decideLeaderSellExit,
+  isLeaderSellEventValidForPosition,
   mirrorLeaderSellRetryDue,
+  selectNewerLeaderSellEvent,
 } from './leader-sell-exit.js';
 import { recoverDeferIsCapped } from './recover-defer.js';
 import {
@@ -3388,6 +3390,36 @@ async function tryExits(
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
     const feedLeaderSell = leaderSellFeed?.get(mint, nowMs);
+    if (
+      pos.mirrorLeaderSellIntent &&
+      !isLeaderSellEventValidForPosition({
+        event: {
+          mint,
+          leader: pos.mirrorLeaderSellIntent.leader,
+          signature: pos.mirrorLeaderSellIntent.signature,
+          blockTimeMs: pos.mirrorLeaderSellIntent.leaderBlockTimeMs,
+          fillPriceUsd: null,
+          markPnlPct: null,
+        },
+        leader: pos.leaderMirrorLeader,
+        leaderBuyTsMs: pos.leaderBuyTsMs,
+        openedAtMs: pos.openedAtMs,
+      })
+    ) {
+      const droppedIntent = pos.mirrorLeaderSellIntent;
+      delete pos.mirrorLeaderSellIntent;
+      saveMildDipState(cfg.statePath, state);
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_leader_sell_intent_dropped',
+        mint,
+        symbol: pos.symbol,
+        leader: droppedIntent.leader,
+        signature: droppedIntent.signature,
+        leaderBlockTimeMs: droppedIntent.leaderBlockTimeMs,
+        leaderBuyTsMs: pos.leaderBuyTsMs ?? null,
+        reason: 'before_current_leader_session',
+      });
+    }
     const durableLeaderSell: LeaderSellEvent | null = pos.mirrorLeaderSellIntent
       ? {
           mint,
@@ -3398,12 +3430,22 @@ async function tryExits(
           markPnlPct: null,
         }
       : null;
-    const leaderSellEvent = durableLeaderSell ?? (
+    const validFeedLeaderSell =
       feedLeaderSell &&
-      (pos.leaderMirrorLeader == null || feedLeaderSell.leader === pos.leaderMirrorLeader)
+      isLeaderSellEventValidForPosition({
+        event: feedLeaderSell,
+        leader: pos.leaderMirrorLeader,
+        leaderBuyTsMs: pos.leaderBuyTsMs,
+        openedAtMs: pos.openedAtMs,
+      })
         ? feedLeaderSell
-        : null
+        : null;
+    const leaderSellEvent = selectNewerLeaderSellEvent(
+      durableLeaderSell,
+      validFeedLeaderSell,
     );
+    const leaderSellEventIsDurable =
+      leaderSellEvent != null && leaderSellEvent === durableLeaderSell;
     const leaderSellDecision = decideLeaderSellExit({
       enabled: cfg.leaderMirror.leaderSellExitEnabled,
       lane: pos.lane,
@@ -3413,16 +3455,19 @@ async function tryExits(
       nowMs,
       // Once persisted on the position, the intent is authoritative and is
       // deliberately outside the live feed's freshness window.
-      maxAgeMs: durableLeaderSell ? 0 : cfg.leaderMirror.leaderSellExitMaxAgeMs,
+      maxAgeMs: leaderSellEventIsDurable ? 0 : cfg.leaderMirror.leaderSellExitMaxAgeMs,
     });
     if (
-      durableLeaderSell &&
+      leaderSellEventIsDurable &&
       !mirrorLeaderSellRetryDue(pos.mirrorLeaderSellIntent?.lastAttemptAtMs, nowMs)
     ) {
       continue;
     }
     if (leaderSellDecision.shouldExit && leaderSellEvent) {
-      if (!pos.mirrorLeaderSellIntent) {
+      if (
+        !pos.mirrorLeaderSellIntent ||
+        leaderSellEvent.blockTimeMs > pos.mirrorLeaderSellIntent.leaderBlockTimeMs
+      ) {
         pos.mirrorLeaderSellIntent = {
           leader: leaderSellEvent.leader,
           signature: leaderSellEvent.signature,
@@ -4240,7 +4285,10 @@ async function tryExits(
     if (sellInFlight.has(decision.mint)) return;
     if (!state.open[decision.mint]) return;
     sellInFlight.add(decision.mint);
-    const intent = state.open[decision.mint]?.mirrorLeaderSellIntent;
+    const intent =
+      decision.reason === 'mirror_leader_sell'
+        ? state.open[decision.mint]?.mirrorLeaderSellIntent
+        : undefined;
     const sentAtMs = Date.now();
     const attempt = (intent?.attemptCount ?? 0) + 1;
     if (intent) {
@@ -4441,6 +4489,16 @@ export async function runMildDipLoop(
     for (const event of reconciled) {
       const pos = state.open[event.mint];
       if (!pos || pos.lane !== 'leader_mirror' || pos.leaderMirrorLeader !== event.leader) {
+        continue;
+      }
+      if (
+        !isLeaderSellEventValidForPosition({
+          event,
+          leader: pos.leaderMirrorLeader,
+          leaderBuyTsMs: pos.leaderBuyTsMs,
+          openedAtMs: pos.openedAtMs,
+        })
+      ) {
         continue;
       }
       if (pos.mirrorLeaderSellIntent) continue;
