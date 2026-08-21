@@ -14,6 +14,14 @@ export type LeaderSellFeedOptions = {
   maxAgeMs: number;
 };
 
+export type LeaderSellReconciliationOptions = {
+  path: string;
+  leaders: readonly string[];
+  openMints: ReadonlySet<string>;
+  nowMs: number;
+  windowMs?: number;
+};
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -63,6 +71,33 @@ export function parseLeaderSellLines(
     }
   }
   return result;
+}
+
+/** Read current and one rotated observer journal without the live-feed age gate. */
+export function reconcileLeaderSellEvents(
+  options: LeaderSellReconciliationOptions,
+): LeaderSellEvent[] {
+  const paths = [options.path, `${options.path}.1`];
+  const lines: string[] = [];
+  for (const file of paths) {
+    try {
+      lines.push(...fs.readFileSync(file, 'utf8').split('\n').filter(Boolean));
+    } catch {
+      // A journal may be absent or rotate between the two reads.
+    }
+  }
+  const events = parseLeaderSellLines(lines, options.nowMs, {
+    leaders: options.leaders,
+    maxAgeMs: 0,
+  });
+  const cutoff = options.nowMs - (options.windowMs ?? 6 * 60 * 60_000);
+  const latest = new Map<string, LeaderSellEvent>();
+  for (const event of events) {
+    if (event.blockTimeMs < cutoff || !options.openMints.has(event.mint)) continue;
+    const prior = latest.get(event.mint);
+    if (prior == null || event.blockTimeMs > prior.blockTimeMs) latest.set(event.mint, event);
+  }
+  return [...latest.values()];
 }
 
 export class LeaderSellFeed {

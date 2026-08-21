@@ -71,7 +71,11 @@ import {
   type MarkExitDecision,
 } from './exit-engine.js';
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
-import { LeaderSellFeed } from './leader-sell-feed.js';
+import {
+  LeaderSellFeed,
+  reconcileLeaderSellEvents,
+  type LeaderSellEvent,
+} from './leader-sell-feed.js';
 import { decideLeaderSellExit } from './leader-sell-exit.js';
 import { recoverDeferIsCapped } from './recover-defer.js';
 import {
@@ -3303,21 +3307,53 @@ async function tryExits(
     const pos = state.open[mint];
     if (!pos || sellInFlight.has(mint)) continue;
     const feedLeaderSell = leaderSellFeed?.get(mint, nowMs);
-    const leaderSell =
+    const durableLeaderSell: LeaderSellEvent | null = pos.mirrorLeaderSellIntent
+      ? {
+          mint,
+          leader: pos.mirrorLeaderSellIntent.leader,
+          signature: pos.mirrorLeaderSellIntent.signature,
+          blockTimeMs: pos.mirrorLeaderSellIntent.leaderBlockTimeMs,
+          fillPriceUsd: null,
+          markPnlPct: null,
+        }
+      : null;
+    const leaderSellEvent = durableLeaderSell ?? (
       feedLeaderSell &&
       (pos.leaderMirrorLeader == null || feedLeaderSell.leader === pos.leaderMirrorLeader)
         ? feedLeaderSell
-        : null;
+        : null
+    );
     const leaderSellDecision = decideLeaderSellExit({
       enabled: cfg.leaderMirror.leaderSellExitEnabled,
       lane: pos.lane,
       leaders: cfg.leaderMirror.leaders,
-      event: leaderSell,
+      event: leaderSellEvent,
       openedAtMs: pos.leaderBuyTsMs,
       nowMs,
-      maxAgeMs: cfg.leaderMirror.leaderSellExitMaxAgeMs,
+      // Once persisted on the position, the intent is authoritative and is
+      // deliberately outside the live feed's freshness window.
+      maxAgeMs: durableLeaderSell ? 0 : cfg.leaderMirror.leaderSellExitMaxAgeMs,
     });
-    if (leaderSellDecision.shouldExit && leaderSell) {
+    if (leaderSellDecision.shouldExit && leaderSellEvent) {
+      if (!pos.mirrorLeaderSellIntent) {
+        pos.mirrorLeaderSellIntent = {
+          leader: leaderSellEvent.leader,
+          signature: leaderSellEvent.signature,
+          leaderBlockTimeMs: leaderSellEvent.blockTimeMs,
+          detectedAtMs: nowMs,
+        };
+        saveMildDipState(cfg.statePath, state);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mirror_leader_sell_intent',
+          mint,
+          symbol: pos.symbol,
+          leader: leaderSellEvent.leader,
+          signature: leaderSellEvent.signature,
+          leaderBlockTimeMs: leaderSellEvent.blockTimeMs,
+          detectedAtMs: nowMs,
+          source: 'live_feed',
+        });
+      }
       const ourMarkPriceUsd = px;
       const markPriceUsd =
         ourMarkPriceUsd != null && ourMarkPriceUsd > 0
@@ -3332,14 +3368,14 @@ async function tryExits(
         kind: 'mirror_leader_sell_exit',
         mint,
         symbol: pos.symbol,
-        leader: leaderSell.leader,
-        leaderSignature: leaderSell.signature,
-        leaderBlockTimeMs: leaderSell.blockTimeMs,
-        leaderFillPriceUsd: leaderSell.fillPriceUsd,
-        leaderMarkPnlPct: leaderSell.markPnlPct,
+        leader: leaderSellEvent.leader,
+        leaderSignature: leaderSellEvent.signature,
+        leaderBlockTimeMs: leaderSellEvent.blockTimeMs,
+        leaderFillPriceUsd: leaderSellEvent.fillPriceUsd,
+        leaderMarkPnlPct: leaderSellEvent.markPnlPct,
         ourMarkPriceUsd,
         ourPnlPct: ourPnlPct == null ? null : +ourPnlPct.toFixed(2),
-        lagMs: Math.max(0, nowMs - leaderSell.blockTimeMs),
+        lagMs: Math.max(0, nowMs - leaderSellEvent.blockTimeMs),
         reason: leaderSellDecision.reason,
       });
       leaderSellFeed?.remove(mint);
@@ -3605,7 +3641,7 @@ async function tryExits(
           pos,
           markPriceUsd: decision.markPriceUsd,
           nowMs,
-          leaderHeld: leaderSell == null,
+          leaderHeld: leaderSellEvent == null,
         });
       }
       if (cfg.leaderMirror.mirrorOnly) continue;
@@ -4117,9 +4153,60 @@ async function tryExits(
     if (sellInFlight.has(decision.mint)) return;
     if (!state.open[decision.mint]) return;
     sellInFlight.add(decision.mint);
+    const intent = state.open[decision.mint]?.mirrorLeaderSellIntent;
+    const sentAtMs = Date.now();
+    const attempt = (intent?.attemptCount ?? 0) + 1;
+    if (intent) {
+      intent.attemptCount = attempt;
+      intent.lastAttemptAtMs = sentAtMs;
+      saveMildDipState(cfg.statePath, state);
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_leader_sell_attempt',
+        mint: decision.mint,
+        leader: intent.leader,
+        detectedAtMs: intent.detectedAtMs,
+        leaderBlockTimeMs: intent.leaderBlockTimeMs,
+        attempt,
+        sentAtMs,
+      });
+    }
     try {
       await executeQueuedSell({ cfg, state, decision, nowMs: Date.now() });
     } finally {
+      if (intent) {
+        const closed = !state.open[decision.mint];
+        const finishedAtMs = Date.now();
+        const lagMs = Math.max(0, finishedAtMs - intent.leaderBlockTimeMs);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mirror_leader_sell_attempt_result',
+          mint: decision.mint,
+          leader: intent.leader,
+          detectedAtMs: intent.detectedAtMs,
+          leaderBlockTimeMs: intent.leaderBlockTimeMs,
+          attempt,
+          sentAtMs,
+          finishedAtMs,
+          ok: closed,
+          lagMs,
+        });
+        if (closed) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mirror_leader_sell_success',
+            mint: decision.mint,
+            leader: intent.leader,
+            detectedAtMs: intent.detectedAtMs,
+            leaderBlockTimeMs: intent.leaderBlockTimeMs,
+            attempt,
+            sentAtMs,
+            lagMs,
+          });
+        }
+        if (lagMs > 30_000) {
+          console.warn(
+            `[mild-dip] mirror leader sell lag exceeded 30s mint=${decision.mint} lagMs=${lagMs}`,
+          );
+        }
+      }
       sellInFlight.delete(decision.mint);
       // Stamped after the attempt, so the settle window starts from the moment
       // the size on chain could have changed (1.11.879).
@@ -4200,6 +4287,44 @@ export async function runMildDipLoop(
       })
     : null;
   leaderSellFeed?.start();
+  if (leaderSellFeed && Object.keys(state.open).length > 0) {
+    const reconciled = reconcileLeaderSellEvents({
+      path: cfg.leaderMirror.leaderSellTradesPath,
+      leaders: cfg.leaderMirror.leaders,
+      openMints: new Set(
+        Object.entries(state.open)
+          .filter(([, pos]) => pos.lane === 'leader_mirror' && pos.leaderMirrorLeader)
+          .map(([mint]) => mint),
+      ),
+      nowMs: Date.now(),
+    });
+    let changed = false;
+    for (const event of reconciled) {
+      const pos = state.open[event.mint];
+      if (!pos || pos.lane !== 'leader_mirror' || pos.leaderMirrorLeader !== event.leader) {
+        continue;
+      }
+      if (pos.mirrorLeaderSellIntent) continue;
+      pos.mirrorLeaderSellIntent = {
+        leader: event.leader,
+        signature: event.signature,
+        leaderBlockTimeMs: event.blockTimeMs,
+        detectedAtMs: Date.now(),
+      };
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_leader_sell_intent',
+        mint: event.mint,
+        symbol: pos.symbol,
+        leader: event.leader,
+        signature: event.signature,
+        leaderBlockTimeMs: event.blockTimeMs,
+        detectedAtMs: pos.mirrorLeaderSellIntent.detectedAtMs,
+        source: 'startup_reconciliation',
+      });
+      changed = true;
+    }
+    if (changed) saveMildDipState(cfg.statePath, state);
+  }
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
   const tapeShadowRing = cfg.tapeShadowEnabled && !cfg.leaderMirror.mirrorOnly
     ? new MildDipPriceRing({
@@ -4791,7 +4916,7 @@ export async function runMildDipLoop(
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
-    leaderSellFeed?.read(nowMs);
+    const leaderSellEvents = leaderSellFeed?.read(nowMs) ?? [];
     tickGreenMinuteJupiterRefresh({
       nowMs,
       enabled: cfg.green.jupiterMinuteEnabled && !cfg.leaderMirror.mirrorOnly,
@@ -4848,7 +4973,13 @@ export async function runMildDipLoop(
     }
 
     // Open-book exits own the loop. Stream-first marks must not wait on scan/Dex.
-    if (opens > 0 && nowMs - lastMark >= cfg.markIntervalMs) {
+    const durableLeaderSell = Object.values(state.open).some(
+      (pos) => pos.lane === 'leader_mirror' && pos.mirrorLeaderSellIntent,
+    );
+    if (
+      opens > 0 &&
+      (nowMs - lastMark >= cfg.markIntervalMs || leaderSellEvents.length > 0 || durableLeaderSell)
+    ) {
       await tryExits(
         cfg,
         state,
