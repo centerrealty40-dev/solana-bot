@@ -14,6 +14,16 @@ export type LeaderSellFeedOptions = {
   maxAgeMs: number;
 };
 
+export type LeaderSellReconciliationOptions = {
+  path: string;
+  leaders: readonly string[];
+  openMints: ReadonlySet<string>;
+  nowMs: number;
+  windowMs?: number;
+};
+
+export const LEADER_SELL_RECONCILIATION_TAIL_BYTES = 32 * 1024 * 1024;
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -63,6 +73,45 @@ export function parseLeaderSellLines(
     }
   }
   return result;
+}
+
+/** Read current and one rotated observer journal without the live-feed age gate. */
+export function reconcileLeaderSellEvents(
+  options: LeaderSellReconciliationOptions,
+): LeaderSellEvent[] {
+  const paths = [options.path, `${options.path}.1`];
+  const lines: string[] = [];
+  for (const file of paths) {
+    try {
+      const fd = fs.openSync(file, 'r');
+      try {
+        const size = fs.fstatSync(fd).size;
+        const length = Math.min(size, LEADER_SELL_RECONCILIATION_TAIL_BYTES);
+        const buffer = Buffer.alloc(length);
+        fs.readSync(fd, buffer, 0, length, size - length);
+        const text = buffer.toString('utf8');
+        const rows = text.split('\n');
+        if (size > length) rows.shift();
+        lines.push(...rows.filter(Boolean));
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      // A journal may be absent or rotate between the two reads.
+    }
+  }
+  const events = parseLeaderSellLines(lines, options.nowMs, {
+    leaders: options.leaders,
+    maxAgeMs: 0,
+  });
+  const cutoff = options.nowMs - (options.windowMs ?? 6 * 60 * 60_000);
+  const latest = new Map<string, LeaderSellEvent>();
+  for (const event of events) {
+    if (event.blockTimeMs < cutoff || !options.openMints.has(event.mint)) continue;
+    const prior = latest.get(event.mint);
+    if (prior == null || event.blockTimeMs > prior.blockTimeMs) latest.set(event.mint, event);
+  }
+  return [...latest.values()];
 }
 
 export class LeaderSellFeed {

@@ -4,7 +4,9 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   LeaderSellFeed,
+  LEADER_SELL_RECONCILIATION_TAIL_BYTES,
   parseLeaderSellLines,
+  reconcileLeaderSellEvents,
 } from '../../src/milddip/leader-sell-feed.js';
 
 const leader = '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ';
@@ -96,6 +98,43 @@ describe('leader sell feed parser', () => {
     // The main tick polls the feed before exit processing, even with no open positions.
     expect(feed.read(110_000)).toHaveLength(1);
     expect(feed.get('MintObservedWhileFlat', 110_000)?.mint).toBe('MintObservedWhileFlat');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reconciles current and rotated journals beyond the live max age', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'leader-sell-feed-reconcile-'));
+    const file = path.join(dir, 'trades.jsonl');
+    const event = { ...base, mint: 'MintReconciled', blockTime: 100 };
+    fs.writeFileSync(`${file}.1`, `${JSON.stringify(event)}\n`);
+    fs.writeFileSync(file, '');
+    expect(
+      reconcileLeaderSellEvents({
+        path: file,
+        leaders: [leader],
+        openMints: new Set(['MintReconciled']),
+        nowMs: 100_000,
+        windowMs: 6 * 60 * 60_000,
+      }),
+    ).toMatchObject([{ mint: 'MintReconciled', leader, blockTimeMs: 100_000 }]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reads a sale at the end of a large tail and drops a partial first line', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'leader-sell-feed-tail-'));
+    const file = path.join(dir, 'trades.jsonl');
+    const event = { ...base, mint: 'MintTail', blockTime: 100 };
+    fs.writeFileSync(
+      file,
+      `${'x'.repeat(LEADER_SELL_RECONCILIATION_TAIL_BYTES + 100)}\n${JSON.stringify(event)}\n`,
+    );
+    expect(
+      reconcileLeaderSellEvents({
+        path: file,
+        leaders: [leader],
+        openMints: new Set(['MintTail']),
+        nowMs: 110_000,
+      }),
+    ).toMatchObject([{ mint: 'MintTail' }]);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

@@ -173,6 +173,15 @@ export type MildDipOpenPosition = {
    * held in the first place.
    */
   tokenRawSettled?: boolean;
+  /** Durable full-exit intent after the bound leader sells. */
+  mirrorLeaderSellIntent?: {
+    leader: string;
+    signature: string | null;
+    leaderBlockTimeMs: number;
+    detectedAtMs: number;
+    attemptCount?: number;
+    lastAttemptAtMs?: number;
+  };
 };
 
 /** Last full exit — block rebuy near the same USD price (no Dex needed). */
@@ -340,6 +349,43 @@ function sanitizeLastExitByMint(raw: unknown): Record<string, MildDipLastExit> {
   return out;
 }
 
+function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, MildDipOpenPosition> = {};
+  for (const [mint, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const pos = value as MildDipOpenPosition;
+    const intent = pos.mirrorLeaderSellIntent;
+    if (
+      intent &&
+      typeof intent === 'object' &&
+      typeof intent.leader === 'string' &&
+      intent.leader &&
+      Number.isFinite(Number(intent.leaderBlockTimeMs)) &&
+      Number(intent.leaderBlockTimeMs) > 0 &&
+      Number.isFinite(Number(intent.detectedAtMs)) &&
+      Number(intent.detectedAtMs) > 0
+    ) {
+      pos.mirrorLeaderSellIntent = {
+        leader: intent.leader,
+        signature: typeof intent.signature === 'string' ? intent.signature : null,
+        leaderBlockTimeMs: Number(intent.leaderBlockTimeMs),
+        detectedAtMs: Number(intent.detectedAtMs),
+        ...(Number.isFinite(Number(intent.attemptCount))
+          ? { attemptCount: Math.max(0, Number(intent.attemptCount)) }
+          : {}),
+        ...(Number.isFinite(Number(intent.lastAttemptAtMs))
+          ? { lastAttemptAtMs: Number(intent.lastAttemptAtMs) }
+          : {}),
+      };
+    } else {
+      delete pos.mirrorLeaderSellIntent;
+    }
+    out[mint] = pos;
+  }
+  return out;
+}
+
 export function emptyMildDipState(nowMs = Date.now()): MildDipState {
   return {
     open: {},
@@ -359,7 +405,7 @@ export function loadMildDipState(statePath: string): MildDipState {
     const parsed = JSON.parse(raw) as MildDipState;
     if (!parsed || typeof parsed !== 'object') return emptyMildDipState();
     return {
-      open: parsed.open && typeof parsed.open === 'object' ? parsed.open : {},
+      open: sanitizeOpenPositions(parsed.open),
       cooldownUntilMs:
         parsed.cooldownUntilMs && typeof parsed.cooldownUntilMs === 'object'
           ? parsed.cooldownUntilMs

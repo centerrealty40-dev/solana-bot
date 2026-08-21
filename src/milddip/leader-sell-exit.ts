@@ -1,5 +1,17 @@
 import type { LeaderSellEvent } from './leader-sell-feed.js';
 
+export const MIRROR_LEADER_SELL_RETRY_INTERVAL_MS = 5_000;
+
+export function mirrorLeaderSellRetryDue(
+  lastAttemptAtMs: number | undefined,
+  nowMs: number,
+): boolean {
+  return (
+    lastAttemptAtMs == null ||
+    nowMs - lastAttemptAtMs >= MIRROR_LEADER_SELL_RETRY_INTERVAL_MS
+  );
+}
+
 export type LeaderSellExitReason =
   | 'disabled'
   | 'wrong_lane'
