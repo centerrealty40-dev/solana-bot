@@ -29,7 +29,7 @@ export function leaderMirrorQuoteMintsCap(
   activeWatchCount: number,
   configuredCap: number,
 ): number {
-  return Math.min(8, Math.max(1, configuredCap), Math.max(1, activeWatchCount));
+  return Math.min(32, Math.max(1, configuredCap), Math.max(1, activeWatchCount));
 }
 
 export type LeaderMirrorMetricSource = 'seed' | 'backfill';

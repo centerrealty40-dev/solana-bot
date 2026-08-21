@@ -44,7 +44,6 @@ import {
   leaderMirrorDecisionSuppressed,
   leaderMirrorHitKey,
   leaderMirrorNeedsStructuralBackfill,
-  leaderMirrorQuoteMintsCap,
   type LeaderMirrorMetricSource,
 } from './leader-mirror.js';
 import {
@@ -111,7 +110,11 @@ import {
   shouldJournalLeaderStyleSkip,
 } from './leader-style.js';
 import { validateStreamDexPrice } from './price-sanity.js';
-import { mirrorRecentLocalLow } from './mirror-averaging.js';
+import {
+  mirrorAverageHoldAllowed,
+  mirrorAveragePriceAllowed,
+  mirrorRecentLocalLow,
+} from './mirror-averaging.js';
 import {
   computeMarkLiquidityTelemetry,
   readOpenMarkMetrics,
@@ -1445,12 +1448,9 @@ async function wakeLeaderMirrors(
       snapshotPriceUsd: hit.fillPriceUsd ?? 0,
       enabled: true,
       minGapMs: gates.quoteIntervalMs,
-      ttlMs: gates.observeMs + gates.quoteMaxAgeMs,
-      maxMints: leaderMirrorQuoteMintsCap(
-        leaderMirrorWatches.size,
-        gates.maxQuoteMints,
-      ),
-      maxInFlight: 4,
+      ttlMs: Math.max(3 * gates.quoteMaxAgeMs, 30_000),
+      maxMints: 0,
+      maxInFlight: 16,
       probeUsd: gates.positionUsd,
       slippageBps: cfg.slippageBps,
       source: 'leader_mirror_jupiter',
@@ -3094,7 +3094,21 @@ async function attemptMirrorAverage(args: {
     windowMs: g.averageWindowMs,
     excludeTailMs: g.averageExcludeTailMs,
   });
-  if (target == null || markPriceUsd > target * (1 + g.averageTolerancePct / 100)) return;
+  if (
+    target == null ||
+    !mirrorAverageHoldAllowed({
+      openedAtMs: pos.openedAtMs,
+      nowMs,
+      minHoldMs: g.averageMinHoldMs,
+    }) ||
+    !mirrorAveragePriceAllowed({
+      markPriceUsd,
+      entryPriceUsd: pos.entryPriceUsd,
+      targetPriceUsd: target,
+      tolerancePct: g.averageTolerancePct,
+      minDiscountPct: g.averageMinDiscountPct,
+    })
+  ) return;
   pos.mirrorAverageLastAttemptAtMs = nowMs;
   saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
@@ -4767,6 +4781,7 @@ export async function runMildDipLoop(
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
   let lastStreamPriceStatsMs = 0;
+  let lastMirrorQuoteStatsMs = 0;
   let lastMirrorWakeMs = 0;
   let mirrorWakeInFlight = false;
 
@@ -4797,6 +4812,7 @@ export async function runMildDipLoop(
       const greenJupiter = greenMinuteJupiterStats(
         nowMs,
         cfg.green.jupiterMinuteTtlMs,
+        'green_jupiter',
       );
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_stream_price_stats',
@@ -4886,6 +4902,26 @@ export async function runMildDipLoop(
           '[mild-dip] wait-dip wake failed',
           err instanceof Error ? err.message : err,
         );
+      });
+    }
+    if (
+      cfg.leaderMirror.enabled &&
+      nowMs - lastMirrorQuoteStatsMs >= 30_000
+    ) {
+      lastMirrorQuoteStatsMs = nowMs;
+      const mirrorJupiter = greenMinuteJupiterStats(
+        nowMs,
+        Math.max(3 * cfg.leaderMirror.quoteMaxAgeMs, 30_000),
+        'leader_mirror_jupiter',
+      );
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_quote_stats',
+        activeMints: mirrorJupiter.activeMints,
+        inFlight: mirrorJupiter.inFlight,
+        quoteAttempts: mirrorJupiter.quoteAttempts,
+        quoteSuccesses: mirrorJupiter.quoteSuccesses,
+        quoteErrors: mirrorJupiter.quoteErrors,
+        capRejected: mirrorJupiter.capRejected,
       });
     }
     if (

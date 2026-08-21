@@ -61,13 +61,21 @@ export function __resetGreenMinuteJupiterRefreshForTests(): void {
 export function greenMinuteJupiterStats(
   nowMs = Date.now(),
   ttlMs = 600_000,
+  source?: ActiveCandidate['source'],
 ): GreenMinuteJupiterStats {
-  prune(nowMs, ttlMs);
-  return { ...stats, activeMints: active.size, inFlight: inFlight.size };
+  prune(nowMs, ttlMs, source);
+  return {
+    ...stats,
+    activeMints: source
+      ? [...active.values()].filter((candidate) => candidate.source === source).length
+      : active.size,
+    inFlight: inFlight.size,
+  };
 }
 
-function prune(nowMs: number, ttlMs: number): void {
+function prune(nowMs: number, ttlMs: number, source?: ActiveCandidate['source']): void {
   for (const [mint, candidate] of active) {
+    if (source && candidate.source !== source) continue;
     if (nowMs - candidate.lastCandidateAtMs > Math.max(0, ttlMs)) {
       active.delete(mint);
     }
@@ -123,7 +131,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
   prune(args.nowMs, args.ttlMs);
   let candidate = active.get(args.mint);
   if (!candidate) {
-    if (active.size >= Math.max(1, Math.floor(args.maxMints))) {
+    if (args.maxMints > 0 && active.size >= Math.floor(args.maxMints)) {
       stats.capRejected += 1;
       return false;
     }
