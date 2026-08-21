@@ -3,7 +3,7 @@ import type { LeaderSeedHit } from './discover-extra.js';
 export const LEADER_MIRROR_WALLET = '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5';
 
 export type LeaderMirrorDecision =
-  | { action: 'wait'; waitReason?: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor' | string }
+  | { action: 'wait'; waitReason?: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor' | 'not_dip' | string }
   | { action: 'buy'; quotePriceUsd: number; mirrorBranch?: 'green' | 'dip' }
   | { action: 'skip'; reason: string };
 
@@ -17,7 +17,6 @@ export function leaderMirrorDecisionSuppressed(args: {
   decidedAtMs: number;
   nowMs: number;
   cooldownMs: number;
-  retryWhileLeaderHolds?: boolean;
 }): boolean {
   return (
     leaderMirrorHitKey(args.hit) === args.hitKey &&
@@ -105,9 +104,9 @@ export function evaluateLeaderMirrorObservation(args: {
       : transient && nowMs - args.watchStartedAtMs < gates.observeMs
         ? { action: 'wait', waitReason }
         : { action: 'skip', reason };
-  const softQuality = (reason: string): LeaderMirrorDecision =>
+  const softQuality = (reason: string, waitReason: 'not_dip' = 'not_dip'): LeaderMirrorDecision =>
     gates.retryWhileLeaderHolds
-      ? { action: 'wait', waitReason: 'no_structural' }
+      ? { action: 'wait', waitReason }
       : { action: 'skip', reason };
   if (!gates.enabled) return { action: 'skip', reason: 'leader_mirror_disabled' };
   if (!leaderMirrorWalletAllowed(hit, gates.leaders)) {
@@ -140,13 +139,13 @@ export function evaluateLeaderMirrorObservation(args: {
     }
   }
   if (liq < gates.minLiquidityUsd) {
-    return softQuality('leader_mirror_liquidity_floor');
+    return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
   }
   if (ageHours < gates.minPairAgeHours) {
-    return softQuality('leader_mirror_pair_age_floor');
+    return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
   }
   if (mcap < gates.minMcapUsd) {
-    return softQuality('leader_mirror_mcap_floor');
+    return { action: 'skip', reason: 'leader_mirror_mcap_floor' };
   }
   if (
     args.quotePriceUsd == null ||
@@ -169,7 +168,9 @@ export function evaluateLeaderMirrorObservation(args: {
     return { action: 'buy', quotePriceUsd: quotePrice, mirrorBranch: 'green' };
   }
   if (quoteGainPct >= gates.greenImpulsePct) {
-    return { action: 'skip', reason: 'leader_mirror_green_impulse' };
+    return gates.retryWhileLeaderHolds
+      ? { action: 'wait', waitReason: 'premium_cap' }
+      : { action: 'skip', reason: 'leader_mirror_green_impulse' };
   }
   if (quoteGainPct > gates.maxPremiumPct) {
     return soft('leader_mirror_premium_cap', 'premium_cap', true);

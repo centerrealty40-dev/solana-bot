@@ -73,6 +73,8 @@ describe('leader mirror observation decisions', () => {
 
   it('rejects green impulse and run-up', () => {
     expect(at(hit(), 106)).toMatchObject({ action: 'skip', reason: 'leader_mirror_green_impulse' });
+    expect(at(hit(), 106, 110_000, 100_000, { ...gates, retryWhileLeaderHolds: true }))
+      .toEqual({ action: 'wait', waitReason: 'premium_cap' });
     expect(at(hit({ pc5m: 10 }), 101)).toMatchObject({ action: 'skip', reason: 'leader_mirror_run_up' });
   });
 
@@ -97,17 +99,23 @@ describe('leader mirror observation decisions', () => {
       ...gates,
       leaders: [LEADER_MIRROR_WALLET, SECOND_LEADER],
       retryWhileLeaderHolds: true,
-      minMcapUsd: 150_000,
+      minMcapUsd: 120_000,
     };
     expect(at(hit({ leader: SECOND_LEADER, mcap: 200_000 }), 101, 110_000, 100_000, retry)).toMatchObject({ action: 'buy' });
     expect(at(hit({ leader: 'third' }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_wallet' });
-    expect(at(hit({ mcap: 149_999 }), 90, 150_000, 100_000, retry)).toMatchObject({
+    expect(at(hit({ mcap: 119_999 }), 90, 150_000, 100_000, retry)).toMatchObject({
+      action: 'skip',
+      reason: 'leader_mirror_mcap_floor',
+    });
+    expect(at(hit({ mcap: null }), 90, 150_000, 100_000, retry)).toEqual({
       action: 'wait',
       waitReason: 'no_structural',
     });
-    expect(at(hit({ ageHours: 5.9 }), 90, 150_000, 100_000, { ...retry, minPairAgeHours: 6 }))
-      .toMatchObject({ action: 'wait' });
-    expect(at(hit({ ageHours: 6, mcap: 200_000 }), 99, 150_000, 100_000, { ...retry, minPairAgeHours: 6 }))
+    expect(at(hit({ ageHours: 3.9 }), 90, 150_000, 100_000, { ...retry, minPairAgeHours: 4 }))
+      .toMatchObject({ action: 'skip', reason: 'leader_mirror_pair_age_floor' });
+    expect(at(hit({ ageHours: null, mcap: 200_000 }), 90, 150_000, 100_000, { ...retry, minPairAgeHours: 4 }))
+      .toEqual({ action: 'wait', waitReason: 'no_structural' });
+    expect(at(hit({ ageHours: 4, mcap: 200_000 }), 99, 150_000, 100_000, { ...retry, minPairAgeHours: 4 }))
       .toMatchObject({ action: 'buy' });
   });
 
@@ -202,6 +210,14 @@ describe('leader mirror observation decisions', () => {
       watchStartedAtMs: 100_000,
       gates: strict,
     })).toMatchObject({ action: 'skip', reason: 'leader_mirror_deep_dump_required' });
+    expect(evaluateLeaderMirrorObservation({
+      hit: hit({ pc5m: -4 }),
+      quotePriceUsd: 101,
+      quoteTsMs: 110_000,
+      nowMs: 110_000,
+      watchStartedAtMs: 100_000,
+      gates: { ...strict, retryWhileLeaderHolds: true },
+    })).toEqual({ action: 'wait', waitReason: 'not_dip' });
   });
 
   it('copies a green candidate inside the configured corridor', () => {

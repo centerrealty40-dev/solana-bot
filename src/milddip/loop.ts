@@ -3080,8 +3080,13 @@ async function attemptMirrorAverage(args: {
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
   const g = cfg.leaderMirror;
-  if (!args.leaderHeld || pos.mirrorAverageDone || pos.mirrorAverageAttempts != null &&
-      pos.mirrorAverageAttempts >= g.averageMaxTimes || !(g.averageEnabled && g.averageUsd > 0)) return;
+  if (
+    !args.leaderHeld ||
+    pos.mirrorAverageDone ||
+    (pos.mirrorAverageLastAttemptAtMs != null &&
+      nowMs - pos.mirrorAverageLastAttemptAtMs < 60_000) ||
+    !(g.averageEnabled && g.averageUsd > 0)
+  ) return;
   if (buyInFlight.has(pos.mint) || sellInFlight.has(pos.mint)) return;
   const target = await mirrorRecentLocalLow({
     mint: pos.mint,
@@ -3090,7 +3095,8 @@ async function attemptMirrorAverage(args: {
     excludeTailMs: g.averageExcludeTailMs,
   });
   if (target == null || markPriceUsd > target * (1 + g.averageTolerancePct / 100)) return;
-  pos.mirrorAverageAttempts = (pos.mirrorAverageAttempts ?? 0) + 1;
+  pos.mirrorAverageLastAttemptAtMs = nowMs;
+  saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, g.averageUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
@@ -3122,6 +3128,7 @@ async function attemptMirrorAverage(args: {
     live.entryPriceUsd = (live.sizeUsd + addUsd) / (priorTokens + addTokens);
     live.sizeUsd += addUsd;
     live.mirrorAverageDone = true;
+    live.mirrorAverageAttempts = (live.mirrorAverageAttempts ?? 0) + 1;
     live.mirrorAverageFillPriceUsd = fillPx;
     live.mirrorLadderBasisPriceUsd = fillPx;
     live.mirrorLadderRungsDone = 0;
