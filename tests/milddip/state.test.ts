@@ -39,4 +39,41 @@ describe('mild-dip state', () => {
     );
     fs.rmSync(dir, { recursive: true, force: true });
   });
+
+  it('persists and hydrates mirror watches and decisions', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-watch-state-'));
+    const statePath = path.join(dir, 'state.json');
+    const state = {
+      open: {},
+      cooldownUntilMs: {},
+      leaderMirrorWatches: {
+        'MintWatch:Leader111': {
+          hit: {
+            mint: 'MintWatch',
+            leader: 'Leader111',
+            lastSeenAtMs: 2_000,
+            fillPriceUsd: 1,
+            blockTime: 2,
+          },
+          hitKey: 'MintWatch:Leader111:2',
+          startedAtMs: 2_000,
+          expiresAtMs: 3_000,
+          metricSource: 'seed' as const,
+        },
+      },
+      leaderMirrorDecisions: {
+        'MintOld:Leader111': {
+          hitKey: 'old',
+          decidedAtMs: 2_000,
+          reason: 'leader_mirror_execution_skip',
+        },
+      },
+      updatedAtMs: 2_000,
+    };
+    saveMildDipState(statePath, state);
+    const loaded = loadMildDipState(statePath);
+    expect(loaded.leaderMirrorWatches).toEqual(state.leaderMirrorWatches);
+    expect(loaded.leaderMirrorDecisions).toEqual(state.leaderMirrorDecisions);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
 });

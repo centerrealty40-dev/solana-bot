@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { KnifeWatchEntry } from './knife-stabilize.js';
 import type { WaitDipWatchEntry } from './wait-dip.js';
 import type { MildDipCandidateMetrics } from './gates.js';
+import type { LeaderSeedHit } from './discover-extra.js';
 import { sanitizeRecentEntryMsByMint } from './entry-churn.js';
 
 export type MildDipOpenPosition = {
@@ -220,6 +221,22 @@ export type MildDipState = {
   knifeWatch?: Record<string, KnifeWatchEntry>;
   /** mint → wait-dip watch (park signal; buy after extra dump). */
   waitDipWatch?: Record<string, WaitDipWatchEntry>;
+  leaderMirrorWatches?: Record<
+    string,
+    {
+      hit: LeaderSeedHit;
+      hitKey: string;
+      startedAtMs: number;
+      expiresAtMs: number;
+      metricSource: 'seed' | 'backfill';
+      lastWaitReason?: string;
+      lastWaitAtMs?: number;
+    }
+  >;
+  leaderMirrorDecisions?: Record<
+    string,
+    { hitKey: string; decidedAtMs: number; reason: string }
+  >;
   updatedAtMs: number;
 };
 
@@ -386,6 +403,60 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
   return out;
 }
 
+function sanitizeLeaderMirrorWatches(
+  raw: unknown,
+): MildDipState['leaderMirrorWatches'] {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: NonNullable<MildDipState['leaderMirrorWatches']> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const watch = value as Partial<NonNullable<MildDipState['leaderMirrorWatches']>[string]>;
+    if (!watch.hit || typeof watch.hit !== 'object') continue;
+    if (
+      typeof watch.hitKey !== 'string' ||
+      !(Number(watch.startedAtMs) > 0) ||
+      !(Number(watch.expiresAtMs) > 0) ||
+      (watch.metricSource !== 'seed' && watch.metricSource !== 'backfill')
+    ) continue;
+    out[key] = {
+      hit: watch.hit as LeaderSeedHit,
+      hitKey: watch.hitKey,
+      startedAtMs: Number(watch.startedAtMs),
+      expiresAtMs: Number(watch.expiresAtMs),
+      metricSource: watch.metricSource,
+      ...(typeof watch.lastWaitReason === 'string'
+        ? { lastWaitReason: watch.lastWaitReason }
+        : {}),
+      ...(Number.isFinite(Number(watch.lastWaitAtMs))
+        ? { lastWaitAtMs: Number(watch.lastWaitAtMs) }
+        : {}),
+    };
+  }
+  return out;
+}
+
+function sanitizeLeaderMirrorDecisions(
+  raw: unknown,
+): MildDipState['leaderMirrorDecisions'] {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: NonNullable<MildDipState['leaderMirrorDecisions']> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const decision = value as Partial<NonNullable<MildDipState['leaderMirrorDecisions']>[string]>;
+    if (
+      typeof decision.hitKey !== 'string' ||
+      !(Number(decision.decidedAtMs) > 0) ||
+      typeof decision.reason !== 'string'
+    ) continue;
+    out[key] = {
+      hitKey: decision.hitKey,
+      decidedAtMs: Number(decision.decidedAtMs),
+      reason: decision.reason,
+    };
+  }
+  return out;
+}
+
 export function emptyMildDipState(nowMs = Date.now()): MildDipState {
   return {
     open: {},
@@ -394,6 +465,8 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     leaderSeenMints: {},
     knifeWatch: {},
     waitDipWatch: {},
+    leaderMirrorWatches: {},
+    leaderMirrorDecisions: {},
     recentEntryMsByMint: {},
     updatedAtMs: nowMs,
   };
@@ -423,6 +496,8 @@ export function loadMildDipState(statePath: string): MildDipState {
           : {},
       knifeWatch: sanitizeKnifeWatch(parsed.knifeWatch),
       waitDipWatch: sanitizeWaitDipWatch(parsed.waitDipWatch),
+      leaderMirrorWatches: sanitizeLeaderMirrorWatches(parsed.leaderMirrorWatches),
+      leaderMirrorDecisions: sanitizeLeaderMirrorDecisions(parsed.leaderMirrorDecisions),
       recentEntryMsByMint: sanitizeRecentEntryMsByMint(parsed.recentEntryMsByMint),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),
     };
