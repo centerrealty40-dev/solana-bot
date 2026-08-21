@@ -16,7 +16,7 @@ const gates = {
   ladderStepPct: 5,
   ladderStepAfterAveragePct: 10,
   ladderSellFraction: 0.2,
-  ladderDustUsd: 1.5,
+  ladderDustUsd: 1,
 } as any;
 
 const position = (overrides: Record<string, unknown> = {}) => ({
@@ -75,6 +75,13 @@ describe('mirror TP ladder', () => {
     expect(at(116, { mirrorLadderRungsDone: 3 })?.shouldExit).toBe(false);
   });
 
+  it('keeps a $10 clip open after five ladder rungs', () => {
+    const decision = at(125, { sizeUsd: 10 });
+    expect(decision?.tpRungIndex).toBe(5);
+    expect(decision?.fraction).toBeLessThan(1);
+    expect(decision?.shouldExit).toBe(true);
+  });
+
   it('uses a fresh 10% basis and resets rungs after averaging', () => {
     expect(at(109, {
       mirrorAverageDone: true,
@@ -94,10 +101,15 @@ describe('mirror TP ladder', () => {
   });
 
   it('closes a remainder below the dust threshold', () => {
-    expect(at(115, { sizeUsd: 1.8 })).toMatchObject({
+    expect(at(115, { sizeUsd: 1.2 })).toMatchObject({
       fraction: 1,
       reason: 'mirror_tp_ladder',
     });
+  });
+
+  it('uses current market value, not cost basis, for the dust decision', () => {
+    expect(at(130, { sizeUsd: 1.2 })?.fraction).toBe(1);
+    expect(at(105, { sizeUsd: 1.2 })?.fraction).toBeLessThan(1);
   });
 
   it('suppresses ordinary exits while leader-sell-only is active', () => {

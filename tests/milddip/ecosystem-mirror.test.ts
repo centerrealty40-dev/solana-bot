@@ -25,7 +25,9 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain(
       "walletSecret: 'data/live/copy-8zkg.keypair.json'",
     );
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_POSITION_USD: name === 'mild-dip-mirror' ? '5' : '30'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_POSITION_USD: name === 'mild-dip-mirror' ? '10' : '30'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_USD: '5'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LADDER_DUST_USD: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_OPEN: '8'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000'");
