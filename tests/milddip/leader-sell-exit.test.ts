@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { decideLeaderSellExit } from '../../src/milddip/leader-sell-exit.js';
+import {
+  decideLeaderSellExit,
+  mirrorLeaderSellRetryDue,
+} from '../../src/milddip/leader-sell-exit.js';
 
 const leader = '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ';
 const event = {
@@ -69,5 +72,11 @@ describe('decideLeaderSellExit', () => {
 
   it('exits on a fresh configured leader sale', () => {
     expect(decideLeaderSellExit(base)).toEqual({ shouldExit: true, reason: 'leader_sell' });
+  });
+
+  it('sends the first durable attempt immediately and spaces retries by five seconds', () => {
+    expect(mirrorLeaderSellRetryDue(undefined, 1_000)).toBe(true);
+    expect(mirrorLeaderSellRetryDue(1_000, 5_999)).toBe(false);
+    expect(mirrorLeaderSellRetryDue(1_000, 6_000)).toBe(true);
   });
 });

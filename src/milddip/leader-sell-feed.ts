@@ -22,6 +22,8 @@ export type LeaderSellReconciliationOptions = {
   windowMs?: number;
 };
 
+export const LEADER_SELL_RECONCILIATION_TAIL_BYTES = 32 * 1024 * 1024;
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -81,7 +83,19 @@ export function reconcileLeaderSellEvents(
   const lines: string[] = [];
   for (const file of paths) {
     try {
-      lines.push(...fs.readFileSync(file, 'utf8').split('\n').filter(Boolean));
+      const fd = fs.openSync(file, 'r');
+      try {
+        const size = fs.fstatSync(fd).size;
+        const length = Math.min(size, LEADER_SELL_RECONCILIATION_TAIL_BYTES);
+        const buffer = Buffer.alloc(length);
+        fs.readSync(fd, buffer, 0, length, size - length);
+        const text = buffer.toString('utf8');
+        const rows = text.split('\n');
+        if (size > length) rows.shift();
+        lines.push(...rows.filter(Boolean));
+      } finally {
+        fs.closeSync(fd);
+      }
     } catch {
       // A journal may be absent or rotate between the two reads.
     }

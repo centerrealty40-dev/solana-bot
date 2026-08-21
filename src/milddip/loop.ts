@@ -76,7 +76,10 @@ import {
   reconcileLeaderSellEvents,
   type LeaderSellEvent,
 } from './leader-sell-feed.js';
-import { decideLeaderSellExit } from './leader-sell-exit.js';
+import {
+  decideLeaderSellExit,
+  mirrorLeaderSellRetryDue,
+} from './leader-sell-exit.js';
 import { recoverDeferIsCapped } from './recover-defer.js';
 import {
   bounceFromTroughPct,
@@ -3334,6 +3337,12 @@ async function tryExits(
       // deliberately outside the live feed's freshness window.
       maxAgeMs: durableLeaderSell ? 0 : cfg.leaderMirror.leaderSellExitMaxAgeMs,
     });
+    if (
+      durableLeaderSell &&
+      !mirrorLeaderSellRetryDue(pos.mirrorLeaderSellIntent?.lastAttemptAtMs, nowMs)
+    ) {
+      continue;
+    }
     if (leaderSellDecision.shouldExit && leaderSellEvent) {
       if (!pos.mirrorLeaderSellIntent) {
         pos.mirrorLeaderSellIntent = {
@@ -4974,7 +4983,10 @@ export async function runMildDipLoop(
 
     // Open-book exits own the loop. Stream-first marks must not wait on scan/Dex.
     const durableLeaderSell = Object.values(state.open).some(
-      (pos) => pos.lane === 'leader_mirror' && pos.mirrorLeaderSellIntent,
+      (pos) =>
+        pos.lane === 'leader_mirror' &&
+        pos.mirrorLeaderSellIntent &&
+        mirrorLeaderSellRetryDue(pos.mirrorLeaderSellIntent.lastAttemptAtMs, nowMs),
     );
     if (
       opens > 0 &&
