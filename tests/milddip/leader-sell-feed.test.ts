@@ -6,6 +6,7 @@ import {
   LeaderSellFeed,
   LEADER_SELL_RECONCILIATION_TAIL_BYTES,
   parseLeaderSellLines,
+  reconcileLeaderBuyEvents,
   reconcileLeaderSellEvents,
 } from '../../src/milddip/leader-sell-feed.js';
 
@@ -135,6 +136,47 @@ describe('leader sell feed parser', () => {
         nowMs: 110_000,
       }),
     ).toMatchObject([{ mint: 'MintTail' }]);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('reconciles a leader buy and suppresses it when a later sale exists', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'leader-buy-reconcile-'));
+    const file = path.join(dir, 'trades.jsonl');
+    const buy = {
+      ...base,
+      side: 'buy',
+      mint: 'MintBuy',
+      blockTime: 100,
+      fillPriceUsd: 0.25,
+      sizeUsdIntent: 200,
+      isAdd: false,
+    };
+    fs.writeFileSync(file, `${JSON.stringify(buy)}\n`);
+    expect(
+      reconcileLeaderBuyEvents({
+        path: file,
+        leaders: [leader],
+        openMints: new Set(['MintAlreadyOpen']),
+        nowMs: 110_000,
+      }),
+    ).toMatchObject([
+      {
+        mint: 'MintBuy',
+        leader,
+        blockTimeMs: 100_000,
+        fillPriceUsd: 0.25,
+        sizeUsd: 200,
+      },
+    ]);
+    fs.appendFileSync(file, `${JSON.stringify({ ...base, mint: 'MintBuy', blockTime: 101 })}\n`);
+    expect(
+      reconcileLeaderBuyEvents({
+        path: file,
+        leaders: [leader],
+        openMints: new Set(),
+        nowMs: 110_000,
+      }),
+    ).toEqual([]);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

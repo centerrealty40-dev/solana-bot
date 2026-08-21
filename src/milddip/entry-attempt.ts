@@ -1428,7 +1428,8 @@ export async function attemptMildDipEntry(args: {
   };
   if (state.knifeWatch?.[c.mint]) delete state.knifeWatch[c.mint];
   // Keep waitDipWatch until fill succeeds — quote-premium reject must retry.
-  saveMildDipState(cfg.statePath, state);
+  // The reservation is deliberately process-local. Persisting it before the
+  // buy is confirmed can resurrect a phantom position after a restart.
   const waitDipCeilingPx = isWaitDip
     ? waitDipMaxPriceUsd(
         c.waitDipSignalPriceUsd ?? c.priceUsd,

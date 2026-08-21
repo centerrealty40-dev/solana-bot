@@ -73,6 +73,7 @@ import {
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import {
   LeaderSellFeed,
+  reconcileLeaderBuyEvents,
   reconcileLeaderSellEvents,
   type LeaderSellEvent,
 } from './leader-sell-feed.js';
@@ -154,6 +155,7 @@ import {
 import {
   appendMildDipJournal,
   loadMildDipState,
+  MAX_LEADER_MIRROR_DECISIONS,
   saveMildDipState,
   type MildDipOpenPosition,
   type MildDipState,
@@ -1275,6 +1277,7 @@ async function wakeLeaderMirrors(
 ): Promise<number> {
   const gates = cfg.leaderMirror;
   if (!gates.enabled) return 0;
+  hydrateLeaderMirrorWatches(cfg, state, nowMs);
   const hits = readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
     maxAgeMs: Math.min(gates.hitMaxAgeMs, 600_000),
     max: cfg.leaderSeedMax,
@@ -1289,6 +1292,7 @@ async function wakeLeaderMirrors(
         hit,
         hitKey,
         startedAtMs: nowMs,
+        expiresAtMs: nowMs + gates.observeMs,
         metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
       });
       leaderMirrorDecisions.delete(watchKey);
@@ -1310,6 +1314,7 @@ async function wakeLeaderMirrors(
         hit,
         hitKey,
         startedAtMs: nowMs,
+        expiresAtMs: nowMs + gates.observeMs,
         metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
       });
       appendMildDipJournal(cfg.journalPath, {
@@ -1408,6 +1413,24 @@ async function wakeLeaderMirrors(
       continue;
     }
     const hit = watch.hit;
+    if (nowMs >= watch.expiresAtMs) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint,
+        leader: hit.leader,
+        reason: 'leader_mirror_observe_expired',
+        leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        sizeUsd: hit.sizeUsd ?? null,
+        metricSource: watch.metricSource,
+      });
+      leaderMirrorDecisions.set(watchKey, {
+        hitKey: watch.hitKey,
+        decidedAtMs: nowMs,
+        reason: 'leader_mirror_observe_expired',
+      });
+      leaderMirrorWatches.delete(watchKey);
+      continue;
+    }
     const feedSell = leaderSellFeed?.get(mint, nowMs);
     const leaderSell = feedSell && feedSell.leader === hit.leader ? feedSell : null;
     const leaderBuyTsMs =
@@ -1630,6 +1653,7 @@ async function wakeLeaderMirrors(
       });
     }
   }
+  persistLeaderMirrorWatches(cfg, state);
   return filled;
 }
 
@@ -2749,6 +2773,7 @@ const leaderMirrorWatches = new Map<
     hit: LeaderSeedHit;
     hitKey: string;
     startedAtMs: number;
+    expiresAtMs: number;
     metricSource: LeaderMirrorMetricSource;
     lastWaitReason?: string;
     lastWaitAtMs?: number;
@@ -2763,6 +2788,57 @@ function leaderMirrorWatchKey(hit: LeaderSeedHit): string {
 }
 const leaderMirrorStructuralAttemptMs = new Map<string, number>();
 let leaderMirrorStructuralInFlight = false;
+let leaderMirrorStateHydrated = false;
+
+function hydrateLeaderMirrorWatches(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): void {
+  if (leaderMirrorStateHydrated) return;
+  leaderMirrorStateHydrated = true;
+  leaderMirrorWatches.clear();
+  leaderMirrorDecisions.clear();
+  for (const [watchKey, watch] of Object.entries(state.leaderMirrorWatches ?? {})) {
+    if (watch.expiresAtMs <= nowMs || state.open[watch.hit.mint]) continue;
+    leaderMirrorWatches.set(watchKey, watch);
+  }
+  for (const [key, decision] of Object.entries(state.leaderMirrorDecisions ?? {})) {
+    leaderMirrorDecisions.set(key, decision);
+  }
+  if (
+    Object.keys(state.leaderMirrorWatches ?? {}).length !== leaderMirrorWatches.size
+  ) {
+    persistLeaderMirrorWatches(cfg, state);
+  }
+}
+
+function persistLeaderMirrorWatches(cfg: MildDipConfig, state: MildDipState): void {
+  const nowMs = Date.now();
+  const retentionMs = Math.max(cfg.leaderMirror.observeMs * 2, 5 * 60_000);
+  for (const [key, watch] of leaderMirrorWatches) {
+    if (watch.expiresAtMs <= nowMs) leaderMirrorWatches.delete(key);
+  }
+  for (const [key, decision] of leaderMirrorDecisions) {
+    if (decision.decidedAtMs < nowMs - retentionMs) leaderMirrorDecisions.delete(key);
+  }
+  if (leaderMirrorDecisions.size > MAX_LEADER_MIRROR_DECISIONS) {
+    const stale = [...leaderMirrorDecisions.entries()]
+      .sort(([, a], [, b]) => a.decidedAtMs - b.decidedAtMs)
+      .slice(0, leaderMirrorDecisions.size - MAX_LEADER_MIRROR_DECISIONS);
+    for (const [key] of stale) leaderMirrorDecisions.delete(key);
+  }
+  const watches = Object.fromEntries(leaderMirrorWatches);
+  const decisions = Object.fromEntries(leaderMirrorDecisions);
+  const watchesChanged =
+    JSON.stringify(state.leaderMirrorWatches ?? {}) !== JSON.stringify(watches);
+  const decisionsChanged =
+    JSON.stringify(state.leaderMirrorDecisions ?? {}) !== JSON.stringify(decisions);
+  if (!watchesChanged && !decisionsChanged) return;
+  state.leaderMirrorWatches = watches;
+  state.leaderMirrorDecisions = decisions;
+  saveMildDipState(cfg.statePath, state);
+}
 /** mint → last exit_defer_would_buy journal ts (throttle). */
 const lastExitDeferJournalMs = new Map<string, number>();
 /** mint → last leader_align_defer journal ts (throttle). */
@@ -4239,7 +4315,10 @@ export async function runMildDipLoop(
   cfg: MildDipConfig,
   opts?: { once?: boolean; signal?: AbortSignal },
 ): Promise<void> {
-  const state = loadMildDipState(cfg.statePath);
+  const state = loadMildDipState(cfg.statePath, {
+    mirrorObserveMs: cfg.leaderMirror.observeMs,
+  });
+  leaderMirrorStateHydrated = false;
   const stats: MildDipLoopStats = {
     open: openCount(state),
     lastScanAtMs: null,
@@ -4298,6 +4377,55 @@ export async function runMildDipLoop(
       })
     : null;
   leaderSellFeed?.start();
+  hydrateLeaderMirrorWatches(cfg, state, Date.now());
+  if (cfg.leaderMirror.enabled) {
+    const reconciledBuys = reconcileLeaderBuyEvents({
+      path: cfg.leaderMirror.leaderSellTradesPath,
+      leaders: cfg.leaderMirror.leaders,
+      openMints: new Set(Object.keys(state.open)),
+      nowMs: Date.now(),
+    });
+    let changed = false;
+    for (const event of reconciledBuys) {
+      if (state.open[event.mint]) continue;
+      const watchKey = `${event.mint}:${event.leader}`;
+      if (leaderMirrorWatches.has(watchKey)) continue;
+      const startedAtMs = event.blockTimeMs;
+      const expiresAtMs = startedAtMs + cfg.leaderMirror.observeMs;
+      if (expiresAtMs <= Date.now()) continue;
+      const hit: LeaderSeedHit = {
+        mint: event.mint,
+        leader: event.leader,
+        signature: event.signature ?? undefined,
+        fillPriceUsd: event.fillPriceUsd ?? undefined,
+        sizeUsd: event.sizeUsd ?? undefined,
+        blockTime: Math.floor(event.blockTimeMs / 1000),
+        lastSeenAtMs: event.lastSeenAtMs,
+        isAdd: event.isAdd,
+      };
+      const hitKey = leaderMirrorHitKey(hit);
+      leaderMirrorWatches.set(watchKey, {
+        hit,
+        hitKey,
+        startedAtMs,
+        expiresAtMs,
+        metricSource: leaderMirrorNeedsStructuralBackfill(hit, cfg.leaderMirror.requireDipCandle)
+          ? 'backfill'
+          : 'seed',
+      });
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_observe_start',
+        mint: event.mint,
+        leader: event.leader,
+        leaderFillPriceUsd: event.fillPriceUsd,
+        sizeUsd: event.sizeUsd,
+        metricSource: 'reconciliation',
+        observeMs: cfg.leaderMirror.observeMs,
+      });
+      changed = true;
+    }
+    if (changed) persistLeaderMirrorWatches(cfg, state);
+  }
   if (leaderSellFeed && Object.keys(state.open).length > 0) {
     const reconciled = reconcileLeaderSellEvents({
       path: cfg.leaderMirror.leaderSellTradesPath,

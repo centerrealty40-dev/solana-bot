@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { KnifeWatchEntry } from './knife-stabilize.js';
 import type { WaitDipWatchEntry } from './wait-dip.js';
 import type { MildDipCandidateMetrics } from './gates.js';
+import type { LeaderSeedHit } from './discover-extra.js';
 import { sanitizeRecentEntryMsByMint } from './entry-churn.js';
 
 export type MildDipOpenPosition = {
@@ -220,8 +221,28 @@ export type MildDipState = {
   knifeWatch?: Record<string, KnifeWatchEntry>;
   /** mint → wait-dip watch (park signal; buy after extra dump). */
   waitDipWatch?: Record<string, WaitDipWatchEntry>;
+  leaderMirrorWatches?: Record<
+    string,
+    {
+      hit: LeaderSeedHit;
+      hitKey: string;
+      startedAtMs: number;
+      expiresAtMs: number;
+      metricSource: 'seed' | 'backfill';
+      lastWaitReason?: string;
+      lastWaitAtMs?: number;
+    }
+  >;
+  leaderMirrorDecisions?: Record<
+    string,
+    { hitKey: string; decidedAtMs: number; reason: string }
+  >;
   updatedAtMs: number;
 };
+
+export const MAX_LEADER_MIRROR_DECISIONS = 512;
+const LEADER_MIRROR_STATE_RETENTION_MULTIPLIER = 2;
+const LEADER_MIRROR_STATE_MIN_RETENTION_MS = 5 * 60_000;
 
 function sanitizeKnifeWatch(
   raw: unknown,
@@ -386,6 +407,80 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
   return out;
 }
 
+function sanitizeLeaderMirrorWatches(
+  raw: unknown,
+  nowMs: number,
+): MildDipState['leaderMirrorWatches'] {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: NonNullable<MildDipState['leaderMirrorWatches']> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const watch = value as Partial<NonNullable<MildDipState['leaderMirrorWatches']>[string]>;
+    if (!watch.hit || typeof watch.hit !== 'object') continue;
+    if (
+      typeof watch.hitKey !== 'string' ||
+      !(Number(watch.startedAtMs) > 0) ||
+      !(Number(watch.expiresAtMs) > 0) ||
+      Number(watch.expiresAtMs) <= nowMs ||
+      (watch.metricSource !== 'seed' && watch.metricSource !== 'backfill')
+    ) continue;
+    out[key] = {
+      hit: watch.hit as LeaderSeedHit,
+      hitKey: watch.hitKey,
+      startedAtMs: Number(watch.startedAtMs),
+      expiresAtMs: Number(watch.expiresAtMs),
+      metricSource: watch.metricSource,
+      ...(typeof watch.lastWaitReason === 'string'
+        ? { lastWaitReason: watch.lastWaitReason }
+        : {}),
+      ...(Number.isFinite(Number(watch.lastWaitAtMs))
+        ? { lastWaitAtMs: Number(watch.lastWaitAtMs) }
+        : {}),
+    };
+  }
+  return out;
+}
+
+function sanitizeLeaderMirrorDecisions(
+  raw: unknown,
+  nowMs: number,
+  observeMs: number,
+): MildDipState['leaderMirrorDecisions'] {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: NonNullable<MildDipState['leaderMirrorDecisions']> = {};
+  const cutoff =
+    nowMs -
+    Math.max(
+      observeMs * LEADER_MIRROR_STATE_RETENTION_MULTIPLIER,
+      LEADER_MIRROR_STATE_MIN_RETENTION_MS,
+    );
+  const entries: Array<
+    [string, NonNullable<MildDipState['leaderMirrorDecisions']>[string]]
+  > = [];
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const decision = value as Partial<NonNullable<MildDipState['leaderMirrorDecisions']>[string]>;
+    if (
+      typeof decision.hitKey !== 'string' ||
+      !(Number(decision.decidedAtMs) > 0) ||
+      typeof decision.reason !== 'string'
+    ) continue;
+    entries.push([key, {
+      hitKey: decision.hitKey,
+      decidedAtMs: Number(decision.decidedAtMs),
+      reason: decision.reason,
+    }]);
+  }
+  entries
+    .filter(([, decision]) => decision.decidedAtMs >= cutoff)
+    .sort(([, a], [, b]) => b.decidedAtMs - a.decidedAtMs)
+    .slice(0, MAX_LEADER_MIRROR_DECISIONS)
+    .forEach(([key, decision]) => {
+      out[key] = decision;
+    });
+  return out;
+}
+
 export function emptyMildDipState(nowMs = Date.now()): MildDipState {
   return {
     open: {},
@@ -394,16 +489,23 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     leaderSeenMints: {},
     knifeWatch: {},
     waitDipWatch: {},
+    leaderMirrorWatches: {},
+    leaderMirrorDecisions: {},
     recentEntryMsByMint: {},
     updatedAtMs: nowMs,
   };
 }
 
-export function loadMildDipState(statePath: string): MildDipState {
+export function loadMildDipState(
+  statePath: string,
+  options?: { mirrorObserveMs?: number; nowMs?: number },
+): MildDipState {
   try {
     const raw = fs.readFileSync(statePath, 'utf8');
     const parsed = JSON.parse(raw) as MildDipState;
     if (!parsed || typeof parsed !== 'object') return emptyMildDipState();
+    const nowMs = options?.nowMs ?? Date.now();
+    const mirrorObserveMs = options?.mirrorObserveMs ?? 45_000;
     return {
       open: sanitizeOpenPositions(parsed.open),
       cooldownUntilMs:
@@ -423,6 +525,15 @@ export function loadMildDipState(statePath: string): MildDipState {
           : {},
       knifeWatch: sanitizeKnifeWatch(parsed.knifeWatch),
       waitDipWatch: sanitizeWaitDipWatch(parsed.waitDipWatch),
+      leaderMirrorWatches: sanitizeLeaderMirrorWatches(
+        parsed.leaderMirrorWatches,
+        nowMs,
+      ),
+      leaderMirrorDecisions: sanitizeLeaderMirrorDecisions(
+        parsed.leaderMirrorDecisions,
+        nowMs,
+        mirrorObserveMs,
+      ),
       recentEntryMsByMint: sanitizeRecentEntryMsByMint(parsed.recentEntryMsByMint),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),
     };

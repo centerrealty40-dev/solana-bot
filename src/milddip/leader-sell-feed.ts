@@ -24,6 +24,25 @@ export type LeaderSellReconciliationOptions = {
 
 export const LEADER_SELL_RECONCILIATION_TAIL_BYTES = 32 * 1024 * 1024;
 
+export type LeaderBuyReconciliationEvent = {
+  mint: string;
+  leader: string;
+  signature: string | null;
+  blockTimeMs: number;
+  fillPriceUsd: number | null;
+  sizeUsd: number | null;
+  lastSeenAtMs: number;
+  isAdd: boolean;
+};
+
+export type LeaderBuyReconciliationOptions = {
+  path: string;
+  leaders: readonly string[];
+  openMints: ReadonlySet<string>;
+  nowMs: number;
+  windowMs?: number;
+};
+
 function finiteNumber(value: unknown): number | null {
   return typeof value === 'number' && Number.isFinite(value) ? value : null;
 }
@@ -33,6 +52,21 @@ function eventTimestampMs(row: Record<string, unknown>): number | null {
   if (blockTime != null && blockTime > 0) return blockTime * 1000;
   const ts = finiteNumber(row.ts);
   return ts != null && ts > 0 ? ts : null;
+}
+
+function readTailLines(file: string): string[] {
+  const fd = fs.openSync(file, 'r');
+  try {
+    const size = fs.fstatSync(fd).size;
+    const length = Math.min(size, LEADER_SELL_RECONCILIATION_TAIL_BYTES);
+    const buffer = Buffer.alloc(length);
+    fs.readSync(fd, buffer, 0, length, size - length);
+    const rows = buffer.toString('utf8').split('\n');
+    if (size > length) rows.shift();
+    return rows.filter(Boolean);
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 export function parseLeaderSellLines(
@@ -83,19 +117,7 @@ export function reconcileLeaderSellEvents(
   const lines: string[] = [];
   for (const file of paths) {
     try {
-      const fd = fs.openSync(file, 'r');
-      try {
-        const size = fs.fstatSync(fd).size;
-        const length = Math.min(size, LEADER_SELL_RECONCILIATION_TAIL_BYTES);
-        const buffer = Buffer.alloc(length);
-        fs.readSync(fd, buffer, 0, length, size - length);
-        const text = buffer.toString('utf8');
-        const rows = text.split('\n');
-        if (size > length) rows.shift();
-        lines.push(...rows.filter(Boolean));
-      } finally {
-        fs.closeSync(fd);
-      }
+      lines.push(...readTailLines(file));
     } catch {
       // A journal may be absent or rotate between the two reads.
     }
@@ -112,6 +134,67 @@ export function reconcileLeaderSellEvents(
     if (prior == null || event.blockTimeMs > prior.blockTimeMs) latest.set(event.mint, event);
   }
   return [...latest.values()];
+}
+
+export function reconcileLeaderBuyEvents(
+  options: LeaderBuyReconciliationOptions,
+): LeaderBuyReconciliationEvent[] {
+  const lines: string[] = [];
+  for (const file of [options.path, `${options.path}.1`]) {
+    try {
+      lines.push(...readTailLines(file));
+    } catch {
+      // The current journal is authoritative; rotation is optional.
+    }
+  }
+  const allowed = new Set(options.leaders);
+  const cutoff = options.nowMs - (options.windowMs ?? 6 * 60 * 60_000);
+  const buys = new Map<string, LeaderBuyReconciliationEvent>();
+  const sells = new Map<string, number>();
+  for (const line of lines) {
+    try {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      if (
+        row.kind !== 'trade_fill' ||
+        row.actor !== 'leader' ||
+        row.ok !== true
+      ) continue;
+      const leader =
+        typeof row.wallet === 'string' && allowed.has(row.wallet)
+          ? row.wallet
+          : typeof row.leader === 'string' && allowed.has(row.leader)
+            ? row.leader
+            : '';
+      const mint = typeof row.mint === 'string' ? row.mint : '';
+      const blockTimeMs = eventTimestampMs(row);
+      if (!leader || !mint || blockTimeMs == null || blockTimeMs < cutoff) continue;
+      const key = `${mint}:${leader}`;
+      if (row.side === 'sell') {
+        sells.set(key, Math.max(sells.get(key) ?? 0, blockTimeMs));
+        continue;
+      }
+      if (row.side !== 'buy') continue;
+      if (options.openMints.has(mint)) continue;
+      const prior = buys.get(key);
+      if (prior && prior.blockTimeMs >= blockTimeMs) continue;
+      buys.set(key, {
+        mint,
+        leader,
+        signature: typeof row.signature === 'string' ? row.signature : null,
+        blockTimeMs,
+        fillPriceUsd: finiteNumber(row.fillPriceUsd),
+        sizeUsd: finiteNumber(row.sizeUsdIntent) ?? finiteNumber(row.sizeUsd),
+        lastSeenAtMs: blockTimeMs,
+        isAdd: row.isAdd === true,
+      });
+    } catch {
+      // Ignore partial or malformed append-only lines.
+    }
+  }
+  return [...buys.values()].filter((event) => {
+    const sellTime = sells.get(`${event.mint}:${event.leader}`);
+    return sellTime == null || sellTime < event.blockTimeMs;
+  });
 }
 
 export class LeaderSellFeed {
