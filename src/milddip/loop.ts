@@ -3082,7 +3082,7 @@ async function attemptMirrorAverage(args: {
   const g = cfg.leaderMirror;
   if (
     !args.leaderHeld ||
-    pos.mirrorAverageDone ||
+    (pos.mirrorAverageAttempts ?? 0) >= g.averageMaxTimes ||
     (pos.mirrorAverageLastAttemptAtMs != null &&
       nowMs - pos.mirrorAverageLastAttemptAtMs < 60_000) ||
     !(g.averageEnabled && g.averageUsd > 0)
