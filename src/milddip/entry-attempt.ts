@@ -331,6 +331,7 @@ export type EntryAttemptOpts = {
   mirrorBranch?: 'green' | 'dip';
   leaderBuyTsMs?: number;
   leaderBuySignature?: string;
+  leaderMirrorLeader?: string;
   mirrorExit?: {
     armPct: number;
     trailPct: number;
@@ -375,7 +376,7 @@ export async function attemptMildDipEntry(args: {
   const { cfg, state, copyCfg, nowMs, buyInFlight, opts } = args;
   const c = args.candidate;
 
-  if (!mirrorOnlyEntryAllowed(cfg.leaderMirror.mirrorOnly, opts.mirror === true)) {
+  if (!mirrorOnlyEntryAllowed(cfg.leaderMirror?.mirrorOnly ?? false, opts.mirror === true)) {
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_mirror_only_skip',
       mint: c.mint,
@@ -1394,6 +1395,7 @@ export async function attemptMildDipEntry(args: {
     buySignature: null,
     ...(isMirror && opts.leaderBuyTsMs != null ? { leaderBuyTsMs: opts.leaderBuyTsMs } : {}),
     ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
+    ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
     // Peak tracks the mark series from the fill — not the wait_dip trough the
     // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
     peakPriceUsd: entryPriceUsd,
@@ -1797,6 +1799,8 @@ export async function attemptMildDipEntry(args: {
     buySignature: buy.signature ?? null,
     ...(isMirror && opts.leaderBuyTsMs != null ? { leaderBuyTsMs: opts.leaderBuyTsMs } : {}),
     ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
+    ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
+    ...(isMirror ? { mirrorLadderBasisPriceUsd: fillPx, mirrorLadderRungsDone: 0 } : {}),
     peakPriceUsd: fillPx,
     entryMarkPriceUsd,
     lane: isMirror ? 'leader_mirror' : isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',

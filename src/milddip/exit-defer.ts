@@ -74,6 +74,7 @@ export const NEVER_DEFER_REASONS: ReadonlySet<string> = new Set([
  */
 export const MONEY_MOTIVATED_EXIT_REASONS: ReadonlySet<string> = new Set([
   'tp_grid',
+  'mirror_tp_ladder',
   'mfe_bank_1',
   'mfe_bank_2',
   'mfe_bank_sleeve',
