@@ -29,7 +29,7 @@ describe('mirror Jupiter quote feed', () => {
       quote,
       source: 'leader_mirror_jupiter',
     })).toBe(true);
-    await Promise.resolve();
+    await new Promise((resolve) => setTimeout(resolve, 0));
     expect(requestGreenMinuteJupiterRefresh({
       mint: mint(2),
       nowMs: 2_000,
@@ -116,5 +116,49 @@ describe('mirror Jupiter quote feed', () => {
     })).toBe(true);
     await Promise.resolve();
     expect(greenMinuteJupiterStats(31_001, 30_000, 'leader_mirror_jupiter').activeMints).toBe(0);
+  });
+
+  it('keeps each source alive when the other source uses a shorter TTL', async () => {
+    __resetGreenMinuteJupiterRefreshForTests();
+    const request = (
+      candidate: string,
+      source: 'green_jupiter' | 'leader_mirror_jupiter',
+      nowMs = 1_000,
+    ) =>
+      requestGreenMinuteJupiterRefresh({
+        mint: candidate,
+        nowMs,
+        snapshotPriceUsd: 1,
+        enabled: true,
+        minGapMs: 0,
+        ttlMs: source === 'green_jupiter' ? 60_000 : 30_000,
+        maxMints: 0,
+        maxInFlight: 16,
+        probeUsd: 1,
+        slippageBps: 50,
+        quote: async () => 1,
+        source,
+      });
+    expect(request(mint(7), 'green_jupiter')).toBe(true);
+    expect(request(mint(8), 'leader_mirror_jupiter')).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(requestGreenMinuteJupiterRefresh({
+      mint: mint(8),
+      nowMs: 31_001,
+      snapshotPriceUsd: 1,
+      enabled: true,
+      minGapMs: 0,
+      ttlMs: 30_000,
+      maxMints: 0,
+      maxInFlight: 16,
+      probeUsd: 1,
+      slippageBps: 50,
+      quote: async () => 1,
+      source: 'leader_mirror_jupiter',
+    })).toBe(true);
+    expect(greenMinuteJupiterStats(31_001, 60_000, 'green_jupiter').activeMints).toBe(1);
+    expect(request(mint(7), 'green_jupiter', 31_001)).toBe(true);
+    expect(greenMinuteJupiterStats(31_001, 30_000, 'leader_mirror_jupiter').activeMints).toBe(1);
   });
 });

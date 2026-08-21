@@ -128,7 +128,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
 }): boolean {
   if (!args.enabled || !args.mint || args.mint.length < 32) return false;
   if (!(args.snapshotPriceUsd > 0)) return false;
-  prune(args.nowMs, args.ttlMs);
+  prune(args.nowMs, args.ttlMs, args.source ?? 'green_jupiter');
   let candidate = active.get(args.mint);
   if (!candidate) {
     if (args.maxMints > 0 && active.size >= Math.floor(args.maxMints)) {
