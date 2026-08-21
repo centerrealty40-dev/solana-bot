@@ -601,13 +601,7 @@ const PM2_APPS = [
         TELEGRAM_CHAT_ID: OPERATOR_TELEGRAM_CHAT_ID,
         COLLECTOR_HEALTH_PRODUCT_LABEL: 'Oscar',
         /** 1.11.685 — Oscar trading health = mild-dip only. */
-        COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([
-          {
-            pm2: 'mild-dip-bot',
-            heartbeatPath: 'data/ops-heartbeats/mild-dip-bot.json',
-            staleMs: 300_000,
-          },
-        ]),
+        COLLECTOR_HEALTH_STRATEGY_TARGETS: JSON.stringify([]),
         COLLECTOR_HEALTH_TELEGRAM: '1',
         COLLECTOR_HEALTH_POLL_MS: '120000',
         COLLECTOR_HEALTH_STATUS_INTERVAL_MS: '1800000',
@@ -2251,14 +2245,7 @@ const PM2_APPS = [
         /** 1.11.675 — page every 5m on missing/stale (PM2 wipe killed watch at 20:11). */
         STRATEGY_PROCESS_WATCH_ALERT_REPEAT_MIN: '5',
         /** 1.11.685 — Oscar trading = mild-dip only (8zkg twins retired). */
-        STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([
-          {
-            pm2: 'mild-dip-bot',
-            heartbeatPath: 'data/ops-heartbeats/mild-dip-bot.json',
-            staleMs: 300_000,
-            fatalPath: 'data/ops-heartbeats/mild-dip-bot-last-fatal.json',
-          },
-        ]),
+        STRATEGY_PROCESS_WATCH_TARGETS: JSON.stringify([]),
       },
     },
     /**
@@ -4863,6 +4850,8 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'copy-trader-8zkg-mirror',
   /** 1.11.1031 — operator: both mirror lanes off; reload must not revive them. */
   'mild-dip-mirror2',
+  /** 1.11.1040 — operator permanently disabled mild-dip-bot; reload must not revive it. */
+  'mild-dip-bot',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',
@@ -4893,4 +4882,6 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
 
 module.exports = {
   apps: PM2_APPS.filter((a) => !OSCAR_VPS_EXCLUDED_APPS.has(a.name)),
+  /** Internal consumers need definitions excluded from the PM2 export. */
+  allApps: PM2_APPS,
 };
