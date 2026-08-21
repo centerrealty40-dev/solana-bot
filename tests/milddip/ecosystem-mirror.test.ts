@@ -29,8 +29,11 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_USD: '5'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LADDER_DUST_USD: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_OPEN: '8'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_QUOTE_MINTS: name === 'mild-dip-mirror' ? '0' : '8'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_REQUIRE_DIP_CANDLE: name === 'mild-dip-mirror' ? '0' : '1'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: name === 'mild-dip-mirror' ? '2' : '0'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS: name === 'mild-dip-mirror' ? '120000' : '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_SELL_ONLY: '1'");
     expect(ecosystemSource).toContain(

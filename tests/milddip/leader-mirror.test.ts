@@ -167,7 +167,7 @@ describe('leader mirror observation decisions', () => {
         cooldownMs: 900_000,
       }),
     ).toBe(false);
-    expect(leaderMirrorQuoteMintsCap(20, 50)).toBe(8);
+    expect(leaderMirrorQuoteMintsCap(20, 50)).toBe(20);
     expect(leaderMirrorQuoteMintsCap(3, 8)).toBe(3);
   });
 

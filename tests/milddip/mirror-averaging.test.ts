@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { recentMirrorLocalLow, parseMirrorOhlcvList } from '../../src/milddip/mirror-averaging.js';
+import {
+  mirrorAverageHoldAllowed,
+  mirrorAveragePriceAllowed,
+  recentMirrorLocalLow,
+  parseMirrorOhlcvList,
+} from '../../src/milddip/mirror-averaging.js';
 
 describe('mirror averaging local low', () => {
   it('parses candles, excludes the tail, and finds the minimum low', () => {
@@ -24,5 +29,31 @@ describe('mirror averaging local low', () => {
       windowMs: 3_600_000,
       excludeTailMs: 900_000,
     })).toBeNull();
+  });
+
+  it('requires a discount below the position entry and the local-low condition', () => {
+    const base = {
+      entryPriceUsd: 100,
+      targetPriceUsd: 98,
+      tolerancePct: 0.5,
+      minDiscountPct: 2,
+    };
+    expect(mirrorAveragePriceAllowed({ ...base, markPriceUsd: 101 })).toBe(false);
+    expect(mirrorAveragePriceAllowed({ ...base, markPriceUsd: 99 })).toBe(false);
+    expect(mirrorAveragePriceAllowed({ ...base, markPriceUsd: 97 })).toBe(true);
+    expect(mirrorAveragePriceAllowed({ ...base, markPriceUsd: 99 })).toBe(false);
+  });
+
+  it('waits for the minimum hold after opening', () => {
+    expect(mirrorAverageHoldAllowed({
+      openedAtMs: 1_000,
+      nowMs: 120_999,
+      minHoldMs: 120_000,
+    })).toBe(false);
+    expect(mirrorAverageHoldAllowed({
+      openedAtMs: 1_000,
+      nowMs: 121_000,
+      minHoldMs: 120_000,
+    })).toBe(true);
   });
 });

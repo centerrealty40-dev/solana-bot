@@ -9,6 +9,30 @@ function numberValue(value: unknown): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+export function mirrorAveragePriceAllowed(args: {
+  markPriceUsd: number;
+  entryPriceUsd: number;
+  targetPriceUsd: number;
+  tolerancePct: number;
+  minDiscountPct: number;
+}): boolean {
+  return (
+    args.markPriceUsd > 0 &&
+    args.entryPriceUsd > 0 &&
+    args.targetPriceUsd > 0 &&
+    args.markPriceUsd <= args.targetPriceUsd * (1 + args.tolerancePct / 100) &&
+    args.markPriceUsd <= args.entryPriceUsd * (1 - args.minDiscountPct / 100)
+  );
+}
+
+export function mirrorAverageHoldAllowed(args: {
+  openedAtMs: number;
+  nowMs: number;
+  minHoldMs: number;
+}): boolean {
+  return args.nowMs - args.openedAtMs >= Math.max(0, args.minHoldMs);
+}
+
 export function parseMirrorOhlcvList(raw: unknown): Candle[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((row) => {
