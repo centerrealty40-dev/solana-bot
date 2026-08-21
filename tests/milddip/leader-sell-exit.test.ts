@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import {
   decideLeaderSellExit,
+  isLeaderSellEventValidForPosition,
   mirrorLeaderSellRetryDue,
+  selectNewerLeaderSellEvent,
 } from '../../src/milddip/leader-sell-exit.js';
 
 const leader = '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ';
@@ -22,8 +25,77 @@ const base = {
   nowMs: 110_000,
   maxAgeMs: 60_000,
 };
+const loopSource = readFileSync(new URL('../../src/milddip/loop.ts', import.meta.url), 'utf8');
 
 describe('decideLeaderSellExit', () => {
+  it('validates a sell against the bound leader session and position entry', () => {
+    expect(
+      isLeaderSellEventValidForPosition({
+        event,
+        leader,
+        leaderBuyTsMs: 100_000,
+        openedAtMs: 100_000,
+      }),
+    ).toBe(true);
+    expect(
+      isLeaderSellEventValidForPosition({
+        event: { ...event, leader: 'other' },
+        leader,
+        leaderBuyTsMs: 100_000,
+        openedAtMs: 100_000,
+      }),
+    ).toBe(false);
+    expect(
+      isLeaderSellEventValidForPosition({
+        event: { ...event, blockTimeMs: 99_999 },
+        leader,
+        leaderBuyTsMs: 100_000,
+        openedAtMs: 100_000,
+      }),
+    ).toBe(false);
+    expect(
+      isLeaderSellEventValidForPosition({
+        event: { ...event, blockTimeMs: 100_000 },
+        leader,
+        leaderBuyTsMs: 90_000,
+        openedAtMs: 100_001,
+      }),
+    ).toBe(false);
+  });
+
+  it('prefers a newer live sell over an older durable intent', () => {
+    expect(selectNewerLeaderSellEvent(event, { ...event, blockTimeMs: 100_001 })).toEqual({
+      ...event,
+      blockTimeMs: 100_001,
+    });
+    expect(selectNewerLeaderSellEvent(event, null)).toEqual(event);
+  });
+
+  it('drops stale intents before evaluating the same-tick feed sell', () => {
+    const staleIntent = { ...event, blockTimeMs: 90_000 };
+    const freshFeed = { ...event, blockTimeMs: 110_000 };
+    expect(
+      isLeaderSellEventValidForPosition({
+        event: staleIntent,
+        leader,
+        leaderBuyTsMs: 100_000,
+        openedAtMs: 100_000,
+      }),
+    ).toBe(false);
+    expect(
+      isLeaderSellEventValidForPosition({
+        event: freshFeed,
+        leader,
+        leaderBuyTsMs: 100_000,
+        openedAtMs: 100_000,
+      }),
+    ).toBe(true);
+    expect(loopSource).toContain("kind: 'mirror_leader_sell_intent_dropped'");
+    expect(loopSource).toContain('delete pos.mirrorLeaderSellIntent');
+    expect(loopSource).toContain('const leaderSellEvent = selectNewerLeaderSellEvent');
+    expect(loopSource).toContain("reason: 'mirror_leader_sell'");
+  });
+
   it('requires the feature and mirror lane', () => {
     expect(decideLeaderSellExit({ ...base, enabled: false }).shouldExit).toBe(false);
     expect(decideLeaderSellExit({ ...base, lane: 'dip' }).reason).toBe('wrong_lane');

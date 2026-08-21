@@ -26,6 +26,29 @@ export type LeaderSellExitDecision = {
   reason: LeaderSellExitReason;
 };
 
+export function isLeaderSellEventValidForPosition(args: {
+  event: LeaderSellEvent;
+  leader?: string | null;
+  leaderBuyTsMs?: number | null;
+  openedAtMs?: number | null;
+}): boolean {
+  if (args.leader && args.event.leader !== args.leader) return false;
+  const minimumBlockTimeMs = Math.max(
+    args.leaderBuyTsMs ?? Number.NEGATIVE_INFINITY,
+    args.openedAtMs ?? Number.NEGATIVE_INFINITY,
+  );
+  return args.event.blockTimeMs >= minimumBlockTimeMs;
+}
+
+export function selectNewerLeaderSellEvent(
+  durableEvent: LeaderSellEvent | null,
+  feedEvent: LeaderSellEvent | null,
+): LeaderSellEvent | null {
+  if (!durableEvent) return feedEvent;
+  if (!feedEvent) return durableEvent;
+  return feedEvent.blockTimeMs >= durableEvent.blockTimeMs ? feedEvent : durableEvent;
+}
+
 export function decideLeaderSellExit(args: {
   enabled: boolean;
   lane: string | null | undefined;
