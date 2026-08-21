@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 
 const ecosystem = createRequire(import.meta.url)('../../ecosystem.config.cjs') as {
   apps: Array<{ name: string; env: Record<string, string> }>;
+  allApps: Array<{ name: string; env: Record<string, string> }>;
 };
 const ecosystemSource = readFileSync(
   new URL('../../ecosystem.config.cjs', import.meta.url),
@@ -59,5 +60,11 @@ describe('mirror PM2 apps', () => {
     )?.[1];
     expect(excludedAppsBlock).not.toContain("'mild-dip-mirror',");
     expect(excludedAppsBlock).toContain("'mild-dip-mirror2',");
+  });
+
+  it('keeps the disabled dip bot definition for internal consumers only', () => {
+    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-bot')).toBe(false);
+    expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-bot')).toBe(true);
+    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror')).toBe(true);
   });
 });

@@ -101,7 +101,7 @@ function parseStrategyTargets(raw) {
   if (!raw?.trim()) return fallback;
   try {
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) return fallback;
+    if (!Array.isArray(parsed)) return fallback;
     return parsed
       .map((t) => ({
         pm2: String(t.pm2 || '').trim(),

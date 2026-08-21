@@ -24,7 +24,7 @@ import { loadMildDipState } from '../src/milddip/state.js';
 
 type Lane = 'main' | 'mirror';
 type EcosystemApp = { name?: string; env?: Record<string, unknown> };
-type EcosystemConfig = { apps?: EcosystemApp[] };
+type EcosystemConfig = { apps?: EcosystemApp[]; allApps?: EcosystemApp[] };
 
 type Options = {
   lane: Lane;
@@ -153,7 +153,9 @@ function loadLaneEnvironment(lane: Lane): void {
   const require = createRequire(import.meta.url);
   const ecosystem = require('../ecosystem.config.cjs') as EcosystemConfig;
   const appName = lane === 'mirror' ? 'mild-dip-mirror' : 'mild-dip-bot';
-  const app = ecosystem.apps?.find((candidate) => candidate.name === appName);
+  const app = (ecosystem.allApps ?? ecosystem.apps)?.find(
+    (candidate) => candidate.name === appName,
+  );
   if (!app?.env) throw new Error(`ecosystem app env unavailable: ${appName}`);
   for (const [key, value] of Object.entries(app.env)) {
     if (typeof value === 'string') process.env[key] = value;

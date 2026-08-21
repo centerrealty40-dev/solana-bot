@@ -86,7 +86,7 @@ function parseStrategyTargets(raw) {
   if (!raw?.trim()) return fallback;
   try {
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) && parsed.length ? parsed : fallback;
+    return Array.isArray(parsed) ? parsed : fallback;
   } catch {
     return fallback;
   }
