@@ -119,6 +119,34 @@ describe('leader mirror observation decisions', () => {
       .toMatchObject({ action: 'buy' });
   });
 
+  it('can accept any candle direction when dip-candle gating is disabled', () => {
+    const noDip = { ...gates, requireDipCandle: false, maxPremiumPct: -1 };
+    expect(at(hit({ pc5m: 12 }), 98.8, 110_000, 100_000, noDip)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 98.8,
+    });
+    expect(at(hit({ pc5m: 12 }), 99.6, 110_000, 100_000, noDip)).toEqual({
+      action: 'wait',
+      waitReason: 'premium_cap',
+    });
+    expect(at(hit({ pc5m: undefined }), 98.8, 110_000, 100_000, noDip)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 98.8,
+    });
+    expect(at(hit({ mcap: undefined, pc5m: 12 }), 98.8, 110_000, 100_000, noDip)).toEqual({
+      action: 'wait',
+      waitReason: 'no_structural',
+    });
+    expect(at(hit({ ageHours: undefined, pc5m: 12 }), 98.8, 110_000, 100_000, noDip)).toEqual({
+      action: 'wait',
+      waitReason: 'no_structural',
+    });
+    expect(at(hit({ liq: undefined, pc5m: 12 }), 98.8, 110_000, 100_000, noDip)).toEqual({
+      action: 'wait',
+      waitReason: 'no_structural',
+    });
+  });
+
   it('suppresses a repeated refusal for the same hit and caps quote fanout', () => {
     const current = hit({ signature: 'sig-1' });
     expect(

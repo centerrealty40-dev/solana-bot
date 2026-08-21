@@ -4764,6 +4764,7 @@ function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
       MILD_DIP_MIRROR_ENABLED: '1',
       MILD_DIP_MIRROR_ONLY: '1',
       MILD_DIP_MIRROR_GREEN_COPY_ENABLED: name === 'mild-dip-mirror' ? '0' : '1',
+      MILD_DIP_MIRROR_REQUIRE_DIP_CANDLE: name === 'mild-dip-mirror' ? '0' : '1',
       MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3',
       MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT: '40',
       LIVE_CONFIRM_TIMEOUT_MS: '15000',

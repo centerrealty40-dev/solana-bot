@@ -1279,7 +1279,7 @@ async function wakeLeaderMirrors(
         hit,
         hitKey,
         startedAtMs: nowMs,
-        metricSource: leaderMirrorNeedsStructuralBackfill(hit) ? 'backfill' : 'seed',
+        metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
       });
       leaderMirrorDecisions.delete(watchKey);
     } else if (!existing) {
@@ -1300,7 +1300,7 @@ async function wakeLeaderMirrors(
         hit,
         hitKey,
         startedAtMs: nowMs,
-        metricSource: leaderMirrorNeedsStructuralBackfill(hit) ? 'backfill' : 'seed',
+        metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
       });
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_observe_start',
@@ -1308,7 +1308,7 @@ async function wakeLeaderMirrors(
         leader: hit.leader,
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         pc5m: hit.pc5m ?? null,
-        metricSource: leaderMirrorNeedsStructuralBackfill(hit) ? 'backfill' : 'seed',
+        metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
         observeMs: gates.observeMs,
       });
     }
@@ -1316,7 +1316,7 @@ async function wakeLeaderMirrors(
   const backfillEntries = [...leaderMirrorWatches.entries()]
     .filter(
       ([watchKey, watch]) =>
-        leaderMirrorNeedsStructuralBackfill(watch.hit) &&
+        leaderMirrorNeedsStructuralBackfill(watch.hit, gates.requireDipCandle) &&
         nowMs - (leaderMirrorStructuralAttemptMs.get(watchKey) ?? 0) >= gates.structuralGapMs,
     )
     .sort(([, a], [, b]) => a.startedAtMs - b.startedAtMs)
