@@ -156,7 +156,7 @@ describe('leader sell feed parser', () => {
       reconcileLeaderBuyEvents({
         path: file,
         leaders: [leader],
-        openMints: new Set(),
+        openMints: new Set(['MintAlreadyOpen']),
         nowMs: 110_000,
       }),
     ).toMatchObject([

@@ -155,6 +155,7 @@ import {
 import {
   appendMildDipJournal,
   loadMildDipState,
+  MAX_LEADER_MIRROR_DECISIONS,
   saveMildDipState,
   type MildDipOpenPosition,
   type MildDipState,
@@ -2813,8 +2814,29 @@ function hydrateLeaderMirrorWatches(
 }
 
 function persistLeaderMirrorWatches(cfg: MildDipConfig, state: MildDipState): void {
-  state.leaderMirrorWatches = Object.fromEntries(leaderMirrorWatches);
-  state.leaderMirrorDecisions = Object.fromEntries(leaderMirrorDecisions);
+  const nowMs = Date.now();
+  const retentionMs = Math.max(cfg.leaderMirror.observeMs * 2, 5 * 60_000);
+  for (const [key, watch] of leaderMirrorWatches) {
+    if (watch.expiresAtMs <= nowMs) leaderMirrorWatches.delete(key);
+  }
+  for (const [key, decision] of leaderMirrorDecisions) {
+    if (decision.decidedAtMs < nowMs - retentionMs) leaderMirrorDecisions.delete(key);
+  }
+  if (leaderMirrorDecisions.size > MAX_LEADER_MIRROR_DECISIONS) {
+    const stale = [...leaderMirrorDecisions.entries()]
+      .sort(([, a], [, b]) => a.decidedAtMs - b.decidedAtMs)
+      .slice(0, leaderMirrorDecisions.size - MAX_LEADER_MIRROR_DECISIONS);
+    for (const [key] of stale) leaderMirrorDecisions.delete(key);
+  }
+  const watches = Object.fromEntries(leaderMirrorWatches);
+  const decisions = Object.fromEntries(leaderMirrorDecisions);
+  const watchesChanged =
+    JSON.stringify(state.leaderMirrorWatches ?? {}) !== JSON.stringify(watches);
+  const decisionsChanged =
+    JSON.stringify(state.leaderMirrorDecisions ?? {}) !== JSON.stringify(decisions);
+  if (!watchesChanged && !decisionsChanged) return;
+  state.leaderMirrorWatches = watches;
+  state.leaderMirrorDecisions = decisions;
   saveMildDipState(cfg.statePath, state);
 }
 /** mint → last exit_defer_would_buy journal ts (throttle). */
@@ -4293,7 +4315,9 @@ export async function runMildDipLoop(
   cfg: MildDipConfig,
   opts?: { once?: boolean; signal?: AbortSignal },
 ): Promise<void> {
-  const state = loadMildDipState(cfg.statePath);
+  const state = loadMildDipState(cfg.statePath, {
+    mirrorObserveMs: cfg.leaderMirror.observeMs,
+  });
   leaderMirrorStateHydrated = false;
   const stats: MildDipLoopStats = {
     open: openCount(state),
@@ -4358,7 +4382,7 @@ export async function runMildDipLoop(
     const reconciledBuys = reconcileLeaderBuyEvents({
       path: cfg.leaderMirror.leaderSellTradesPath,
       leaders: cfg.leaderMirror.leaders,
-      openMints: new Set(),
+      openMints: new Set(Object.keys(state.open)),
       nowMs: Date.now(),
     });
     let changed = false;

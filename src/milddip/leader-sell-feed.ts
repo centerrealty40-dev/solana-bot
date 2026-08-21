@@ -174,7 +174,7 @@ export function reconcileLeaderBuyEvents(
         continue;
       }
       if (row.side !== 'buy') continue;
-      if (options.openMints.size > 0 && !options.openMints.has(mint)) continue;
+      if (options.openMints.has(mint)) continue;
       const prior = buys.get(key);
       if (prior && prior.blockTimeMs >= blockTimeMs) continue;
       buys.set(key, {
