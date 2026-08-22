@@ -35,6 +35,7 @@ import { resolveStagedEntryFirstClip } from './staged-entry.js';
 import { mildDipPriceRing } from './price-ring.js';
 import { validateStreamDexPrice } from './price-sanity.js';
 import { evaluateSignalPriceFreshness } from './signal-price-freshness.js';
+import { buyCostUsd, buyTokens } from './mirror-loss-cap.js';
 
 /**
  * How fresh a ring sample must be to serve as the movement baseline. Dex marks
@@ -404,6 +405,22 @@ export async function attemptMildDipEntry(args: {
   }
   if (buyInFlight.has(c.mint)) return 'skip';
   if (state.open[c.mint]) return 'skip';
+  if (
+    opts.mirror === true &&
+    cfg.leaderMirror.lossCapUsd > 0 &&
+    state.mirrorLossCapTriggeredAtMs != null
+  ) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'leader_mirror_refusal',
+      mint: c.mint,
+      symbol: c.symbol,
+      lane: opts.lane,
+      reason: 'mirror_loss_cap',
+      realizedPnlUsd: state.mirrorRealizedPnlUsd ?? 0,
+      lossCapUsd: cfg.leaderMirror.lossCapUsd,
+    });
+    return 'skip';
+  }
   if (!opts.leaderStyle && (state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
   if (c.dipSource === 'green_momentum' && !cfg.green.enabled) {
@@ -1837,6 +1854,16 @@ export async function attemptMildDipEntry(args: {
     symbol: c.symbol,
     entryPriceUsd: fillPx,
     sizeUsd: sized.sizeUsd,
+    ...(isMirror
+      ? (() => {
+          const event = buy as unknown as Record<string, unknown>;
+          const costUsd = buyCostUsd(event);
+          return {
+            mirrorCostUsd: costUsd,
+            mirrorTokenAmount: buyTokens(event, costUsd),
+          };
+        })()
+      : {}),
     tokenRaw: filledRaw ?? buy.tokenRaw ?? null,
     openedAtMs: nowMs,
     entryPc5mPct: entryPc5m,

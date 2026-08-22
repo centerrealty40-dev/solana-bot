@@ -38,6 +38,9 @@ export type MildDipOpenPosition = {
   mirrorAverageLastFillAtMs?: number;
   mirrorAverageAttempts?: number;
   mirrorAverageLastAttemptAtMs?: number;
+  /** Cash cost and token quantity still held for realized mirror P&L. */
+  mirrorCostUsd?: number;
+  mirrorTokenAmount?: number;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
   /** 1.11.919 — when the quarantined mark first appeared, so it can time out. */
@@ -239,6 +242,10 @@ export type MildDipState = {
     string,
     { hitKey: string; decidedAtMs: number; reason: string }
   >;
+  mirrorRealizedPnlUsd?: number;
+  mirrorLossCapBackfilled?: boolean;
+  mirrorLossCapTriggeredAtMs?: number;
+  mirrorLossCapTriggeredPnlUsd?: number;
   updatedAtMs: number;
 };
 
@@ -494,6 +501,8 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     leaderMirrorWatches: {},
     leaderMirrorDecisions: {},
     recentEntryMsByMint: {},
+    mirrorRealizedPnlUsd: 0,
+    mirrorLossCapBackfilled: false,
     updatedAtMs: nowMs,
   };
 }
@@ -537,6 +546,17 @@ export function loadMildDipState(
         mirrorObserveMs,
       ),
       recentEntryMsByMint: sanitizeRecentEntryMsByMint(parsed.recentEntryMsByMint),
+      mirrorRealizedPnlUsd:
+        Number.isFinite(Number(parsed.mirrorRealizedPnlUsd))
+          ? Number(parsed.mirrorRealizedPnlUsd)
+          : 0,
+      mirrorLossCapBackfilled: parsed.mirrorLossCapBackfilled === true,
+      ...(Number.isFinite(Number(parsed.mirrorLossCapTriggeredAtMs))
+        ? { mirrorLossCapTriggeredAtMs: Number(parsed.mirrorLossCapTriggeredAtMs) }
+        : {}),
+      ...(Number.isFinite(Number(parsed.mirrorLossCapTriggeredPnlUsd))
+        ? { mirrorLossCapTriggeredPnlUsd: Number(parsed.mirrorLossCapTriggeredPnlUsd) }
+        : {}),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),
     };
   } catch {

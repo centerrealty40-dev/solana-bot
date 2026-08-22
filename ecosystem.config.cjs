@@ -4746,6 +4746,7 @@ function makeMirrorApp({
   exitArmPct,
   exitTrailPct,
   ownExitTimeStopMs,
+  lossCapUsd,
 }) {
   return {
     ...mildDipBotApp,
@@ -4826,6 +4827,7 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_EXIT_ARM_PCT: exitArmPct,
       MILD_DIP_MIRROR_EXIT_TRAIL_PCT: exitTrailPct,
       MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS: ownExitTimeStopMs,
+      MILD_DIP_MIRROR_LOSS_CAP_USD: lossCapUsd,
       MILD_DIP_MIRROR_EXIT_STOP_PCT: '45',
       MILD_DIP_MIRROR_NO_MOVE_CUT_MS: '600000',
       MILD_DIP_MIRROR_NO_MOVE_MIN_MFE_PCT: '2',
@@ -4845,6 +4847,7 @@ if (mildDipBotApp) {
       exitArmPct: '2',
       exitTrailPct: '0',
       ownExitTimeStopMs: '7200000',
+      lossCapUsd: '100',
     }),
     makeMirrorApp({
       name: 'mild-dip-mirror2',
@@ -4856,6 +4859,7 @@ if (mildDipBotApp) {
       exitArmPct: '5',
       exitTrailPct: '3',
       ownExitTimeStopMs: '3600000',
+      lossCapUsd: '100',
     }),
   );
 }
