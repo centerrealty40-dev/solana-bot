@@ -61,6 +61,7 @@ export type LeaderMirrorGates = {
   greenImpulsePct: number;
   runUpPc5mPct: number;
   maxPremiumPct: number;
+  maxEntryPc5mPct: number;
   maxPreEntryPc5mPct: number;
   requireDeepDump: boolean;
   deepDumpPc5mPct: number;
@@ -138,16 +139,14 @@ export function evaluateLeaderMirrorObservation(args: {
   ) {
     return { action: 'skip', reason: 'leader_mirror_leader_size_floor' };
   }
-  if (
-    (requireDipCandle && pc5m == null) ||
-    liq == null ||
-    ageHours == null ||
-    mcap == null
-  ) {
+  if (liq == null || ageHours == null || mcap == null) {
     return soft('leader_mirror_no_data', 'no_structural', true);
   }
+  if (pc5m != null && pc5m > gates.maxEntryPc5mPct) {
+    return { action: 'skip', reason: 'leader_mirror_green_direction' };
+  }
   const greenCandidate = pc5m != null && pc5m > gates.maxPreEntryPc5mPct;
-  if (requireDipCandle) {
+  if (requireDipCandle && pc5m != null) {
     if (gates.greenCopyEnabled && greenCandidate) {
       if (pc5m! >= gates.greenCopyMaxPc5mPct) {
         return { action: 'skip', reason: 'leader_mirror_green_blowoff' };

@@ -43,15 +43,16 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("'3600000,7200000,10800000,14400000,21600000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS:");
     expect(ecosystemSource).toContain("name === 'mild-dip-mirror' ? '120000' : '900000'");
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '4000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_SELL_ONLY: '1'");
     expect(ecosystemSource).toContain(
       "MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS: '86400000'",
     );
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_MCAP_USD: name === 'mild-dip-mirror' ? '120000' : '5000'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_MCAP_USD: name === 'mild-dip-mirror' ? '50000' : '5000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_PREMIUM_PCT: name === 'mild-dip-mirror' ? '-1' : '2'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OBSERVE_MS: name === 'mild-dip-mirror' ? '86400000' : '45000'");
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_PAIR_AGE_HOURS: name === 'mild-dip-mirror' ? '4' : '0.5'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_PAIR_AGE_HOURS: name === 'mild-dip-mirror' ? '1' : '0.5'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT: '0'");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
   });

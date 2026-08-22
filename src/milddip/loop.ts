@@ -1327,6 +1327,7 @@ async function wakeLeaderMirrors(
         leader: hit.leader,
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         pc5m: hit.pc5m ?? null,
+        pc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
         metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
         observeMs: gates.observeMs,
       });
@@ -1545,6 +1546,7 @@ async function wakeLeaderMirrors(
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         sizeUsd: hit.sizeUsd ?? null,
         pc5m: hit.pc5m ?? null,
+        pc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
         quoteGainPct,
         metricSource: watch.metricSource,
       });
@@ -1625,6 +1627,7 @@ async function wakeLeaderMirrors(
         mirrorExecutionRetryBackoffMs: gates.executionRetryBackoffMs,
         mirrorExecutionSlippageMultiplier: gates.executionSlippageMultiplier,
         mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,
+        mirrorPc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
         mirrorExit: {
           armPct: gates.exitArmPct,
           trailPct: gates.exitTrailPct,
