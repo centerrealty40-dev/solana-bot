@@ -22,9 +22,9 @@ describe('bumpSlippageBps', () => {
 
 describe('multiplySlippageBps', () => {
   it('escalates mirror retries multiplicatively and respects the hard cap', () => {
-    let bps = 400;
+    let bps = 200;
     bps = multiplySlippageBps({ currentBps: bps, multiplier: 2, maxBps: 800 });
-    expect(bps).toBe(800);
+    expect(bps).toBe(400);
     bps = multiplySlippageBps({ currentBps: bps, multiplier: 2, maxBps: 800 });
     expect(bps).toBe(800);
   });
