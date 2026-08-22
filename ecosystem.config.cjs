@@ -4778,7 +4778,7 @@ function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
       MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '8000',
       MILD_DIP_MIRROR_MIN_PAIR_AGE_HOURS: name === 'mild-dip-mirror' ? '4' : '0.5',
       MILD_DIP_MIRROR_MIN_MCAP_USD: name === 'mild-dip-mirror' ? '120000' : '5000',
-      MILD_DIP_MIRROR_MAX_OPEN: '8',
+      MILD_DIP_MIRROR_MAX_OPEN: name === 'mild-dip-mirror' ? '0' : '8',
       MILD_DIP_MIRROR_MAX_QUOTE_MINTS: name === 'mild-dip-mirror' ? '0' : '8',
       MILD_DIP_MIRROR_TICK_INTERVAL_MS: '2000',
       MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS: '4',
