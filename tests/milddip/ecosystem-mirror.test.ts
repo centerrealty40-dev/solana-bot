@@ -53,6 +53,8 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OBSERVE_MS: name === 'mild-dip-mirror' ? '86400000' : '45000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_PAIR_AGE_HOURS: name === 'mild-dip-mirror' ? '1' : '0.5'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT: '0'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_ENTRY_GRACE_MS: '60000'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_ENTRY_GRACE_MAX_PREMIUM_PCT: '1'");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
   });

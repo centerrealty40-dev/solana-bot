@@ -61,6 +61,8 @@ export type LeaderMirrorGates = {
   greenImpulsePct: number;
   runUpPc5mPct: number;
   maxPremiumPct: number;
+  entryGraceMs?: number;
+  entryGraceMaxPremiumPct?: number;
   maxEntryPc5mPct: number;
   maxPreEntryPc5mPct: number;
   requireDeepDump: boolean;
@@ -95,6 +97,7 @@ export function evaluateLeaderMirrorObservation(args: {
   hit: LeaderSeedHit;
   quotePriceUsd?: number | null;
   quoteTsMs?: number | null;
+  leaderBuyTsMs?: number | null;
   nowMs: number;
   watchStartedAtMs: number;
   gates: LeaderMirrorGates;
@@ -106,6 +109,8 @@ export function evaluateLeaderMirrorObservation(args: {
   const mcap = typeof hit.mcap === 'number' && Number.isFinite(hit.mcap) ? hit.mcap : null;
   const requireDipCandle = gates.requireDipCandle !== false;
   const leaderFillGraceMs = Math.max(0, gates.leaderFillGraceMs ?? 60_000);
+  const entryGraceMs = Math.max(0, gates.entryGraceMs ?? 60_000);
+  const entryGraceMaxPremiumPct = gates.entryGraceMaxPremiumPct ?? 1;
   const soft = (reason: string, waitReason: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor', transient = false): LeaderMirrorDecision =>
     gates.retryWhileLeaderHolds
       ? { action: 'wait', waitReason }
@@ -186,6 +191,18 @@ export function evaluateLeaderMirrorObservation(args: {
   const leaderPrice = hit.fillPriceUsd;
   const quotePrice = args.quotePriceUsd;
   const quoteGainPct = (quotePrice / leaderPrice - 1) * 100;
+  const leaderAgeMs =
+    args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
+      ? nowMs - args.leaderBuyTsMs
+      : null;
+  const entryGraceActive =
+    leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
+  const maxPremiumPct = entryGraceActive
+    ? entryGraceMaxPremiumPct
+    : gates.maxPremiumPct;
+  if (entryGraceActive && quoteGainPct > entryGraceMaxPremiumPct) {
+    return soft('leader_mirror_premium_cap', 'premium_cap', true);
+  }
   if (requireDipCandle && gates.greenCopyEnabled && greenCandidate) {
     if (quoteGainPct > gates.greenCorridorPct) {
       return soft('leader_mirror_green_corridor', 'green_corridor', true);
@@ -197,7 +214,7 @@ export function evaluateLeaderMirrorObservation(args: {
       ? { action: 'wait', waitReason: 'premium_cap' }
       : { action: 'skip', reason: 'leader_mirror_green_impulse' };
   }
-  if (quoteGainPct > gates.maxPremiumPct) {
+  if (quoteGainPct > maxPremiumPct) {
     return soft('leader_mirror_premium_cap', 'premium_cap', true);
   }
   return { action: 'buy', quotePriceUsd: quotePrice };

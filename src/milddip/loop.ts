@@ -1444,6 +1444,14 @@ async function wakeLeaderMirrors(
       hit.blockTime != null && hit.blockTime > 0
         ? hit.blockTime * 1000
         : hit.lastSeenAtMs;
+    const leaderBuyTsMsForGrace =
+      hit.blockTime != null && hit.blockTime > 0
+        ? hit.blockTime * 1000
+        : null;
+    const entryGraceActive =
+      leaderBuyTsMsForGrace != null &&
+      nowMs - leaderBuyTsMsForGrace >= 0 &&
+      nowMs - leaderBuyTsMsForGrace <= (gates.entryGraceMs ?? 60_000);
     const leaderSellDecision = decideLeaderSellExit({
       enabled: cfg.leaderMirror.leaderSellExitEnabled,
       lane: 'leader_mirror',
@@ -1502,6 +1510,7 @@ async function wakeLeaderMirrors(
       hit,
       quotePriceUsd: quote?.priceUsd,
       quoteTsMs: quote?.tsMs,
+      leaderBuyTsMs: leaderBuyTsMsForGrace,
       nowMs,
       watchStartedAtMs: watch.startedAtMs,
       gates,
@@ -1525,6 +1534,7 @@ async function wakeLeaderMirrors(
             quote?.priceUsd != null && hit.fillPriceUsd != null && hit.fillPriceUsd > 0
               ? (quote.priceUsd / hit.fillPriceUsd - 1) * 100
               : null,
+          entryGraceActive,
           waitedMs: Math.max(0, nowMs - watch.startedAtMs),
         });
         watch.lastWaitReason = waitReason;
@@ -1548,6 +1558,7 @@ async function wakeLeaderMirrors(
         pc5m: hit.pc5m ?? null,
         pc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
         quoteGainPct,
+        entryGraceActive,
         metricSource: watch.metricSource,
       });
       leaderMirrorDecisions.set(watchKey, {
@@ -1628,6 +1639,11 @@ async function wakeLeaderMirrors(
         mirrorExecutionSlippageMultiplier: gates.executionSlippageMultiplier,
         mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,
         mirrorPc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
+        mirrorEntryGraceActive: entryGraceActive,
+        mirrorQuoteGainPct:
+          hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+            ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
+            : null,
         mirrorExit: {
           armPct: gates.exitArmPct,
           trailPct: gates.exitTrailPct,
