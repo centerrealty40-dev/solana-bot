@@ -3925,7 +3925,7 @@ const PM2_APPS = [
         MILD_DIP_MIRROR_TICK_INTERVAL_MS: '2000',
         MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS: '4',
         MILD_DIP_MIRROR_STRUCTURAL_GAP_MS: '5000',
-        MILD_DIP_MIRROR_POSITION_USD: '20',
+        MILD_DIP_MIRROR_POSITION_USD: '30',
         MILD_DIP_MIRROR_MAX_PC5M_PCT: '0',
         MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ: '2',
         MILD_DIP_MIRROR_REQUIRE_DEEP_DUMP: '0',
@@ -4783,7 +4783,7 @@ function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
       MILD_DIP_MIRROR_TICK_INTERVAL_MS: '2000',
       MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS: '4',
       MILD_DIP_MIRROR_STRUCTURAL_GAP_MS: '5000',
-      MILD_DIP_MIRROR_POSITION_USD: name === 'mild-dip-mirror' ? '20' : '30',
+      MILD_DIP_MIRROR_POSITION_USD: name === 'mild-dip-mirror' ? '30' : '30',
       MILD_DIP_MIRROR_MAX_PC5M_PCT: '0',
       MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ: '2',
       MILD_DIP_MIRROR_REQUIRE_DEEP_DUMP: '0',
@@ -4797,7 +4797,7 @@ function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
       MILD_DIP_MIRROR_LADDER_SELL_FRACTION: '0.2',
       MILD_DIP_MIRROR_LADDER_DUST_USD: '1',
       MILD_DIP_MIRROR_AVERAGE_ENABLED: name === 'mild-dip-mirror' ? '1' : '0',
-      MILD_DIP_MIRROR_AVERAGE_USD: '15',
+      MILD_DIP_MIRROR_AVERAGE_USD: '20',
       MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS:
         name === 'mild-dip-mirror'
           ? '3600000,7200000,10800000,14400000,21600000'
