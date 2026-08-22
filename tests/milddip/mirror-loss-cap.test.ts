@@ -3,7 +3,6 @@ import {
   buyCashDeltaUsd,
   confirmLossCapObservation,
   mirrorOpenMarkValueUsd,
-  replayMirrorTradingCash,
   sellCashDeltaUsd,
 } from '../../src/milddip/mirror-loss-cap.js';
 import fs from 'node:fs';
@@ -19,27 +18,16 @@ describe('mirror loss cap cash and mark accounting', () => {
     expect(sellCashDeltaUsd({ quoteReceivedUsd: 8 })).toBe(8);
   });
 
-  it('replays the trading cash component and ignores failed executions', () => {
-    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'mirror-cap-')), 'journal.jsonl');
-    fs.writeFileSync(file, [
-      JSON.stringify({ kind: 'copy_buy', mint: 'A', ok: true, usdcBefore: 100, usdcAfter: 50 }),
-      JSON.stringify({ kind: 'copy_sell', mint: 'A', ok: true, usdcBefore: 50, usdcAfter: 70 }),
-      JSON.stringify({ kind: 'copy_buy', mint: 'A', ok: false, usdcBefore: 70, usdcAfter: 60 }),
-    ].join('\n'));
-    expect(replayMirrorTradingCash(file)).toBe(-30);
-  });
-
   it('falls back to the position cost when no confirmed mark exists', () => {
     expect(mirrorOpenMarkValueUsd({
       sizeUsd: 40,
       entryPriceUsd: 2,
-      tokenRaw: '20',
     })).toBe(40);
     expect(mirrorOpenMarkValueUsd({
-      sizeUsd: 40,
-      entryPriceUsd: 2,
-      tokenRaw: '20',
-    }, 1.5)).toBe(30);
+      sizeUsd: 10,
+      entryPriceUsd: 0.00013581,
+      tokenRaw: '73628247970',
+    }, 0.00013581)).toBeCloseTo(10, 8);
   });
 
   it('requires two consecutive below-cap observations', () => {
@@ -78,8 +66,6 @@ describe('mirror loss cap cash and mark accounting', () => {
       leaderMirrorDecisions: {},
       recentEntryMsByMint: {},
       mirrorTradingCashUsd: -120,
-      mirrorLossCapBackfilled: true,
-      mirrorLossCapBackfillVersion: 2,
       mirrorLossCapPendingDrawdownUsd: -101,
       mirrorLossCapPendingAtMs: 1_000,
       mirrorLossCapTriggeredAtMs: 2_000,

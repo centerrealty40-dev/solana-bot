@@ -35,7 +35,7 @@ import { resolveStagedEntryFirstClip } from './staged-entry.js';
 import { mildDipPriceRing } from './price-ring.js';
 import { validateStreamDexPrice } from './price-sanity.js';
 import { evaluateSignalPriceFreshness } from './signal-price-freshness.js';
-import { buyCashDeltaUsd } from './mirror-loss-cap.js';
+import { accountMirrorCashLeg } from './mirror-loss-cap.js';
 
 /**
  * How fresh a ring sample must be to serve as the movement baseline. Dex marks
@@ -1848,9 +1848,7 @@ export async function attemptMildDipEntry(args: {
   if (state.waitDipWatch?.[c.mint]) delete state.waitDipWatch[c.mint];
 
   if (isMirror) {
-    state.mirrorTradingCashUsd =
-      (state.mirrorTradingCashUsd ?? 0) +
-      buyCashDeltaUsd(buy as unknown as Record<string, unknown>);
+    accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
   }
   const filledRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
   const fillPx = buy.priceUsd || entryPriceUsd;

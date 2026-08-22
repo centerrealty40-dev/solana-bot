@@ -240,8 +240,7 @@ export type MildDipState = {
     { hitKey: string; decidedAtMs: number; reason: string }
   >;
   mirrorTradingCashUsd?: number;
-  mirrorLossCapBackfilled?: boolean;
-  mirrorLossCapBackfillVersion?: number;
+  mirrorLossCapBaselineAtMs?: number;
   mirrorLossCapTriggeredAtMs?: number;
   mirrorLossCapTriggeredPnlUsd?: number;
   mirrorLossCapPendingDrawdownUsd?: number;
@@ -502,8 +501,6 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     leaderMirrorDecisions: {},
     recentEntryMsByMint: {},
     mirrorTradingCashUsd: 0,
-    mirrorLossCapBackfilled: false,
-    mirrorLossCapBackfillVersion: 2,
     updatedAtMs: nowMs,
   };
 }
@@ -551,9 +548,8 @@ export function loadMildDipState(
         Number.isFinite(Number(parsed.mirrorTradingCashUsd))
           ? Number(parsed.mirrorTradingCashUsd)
           : 0,
-      mirrorLossCapBackfilled: parsed.mirrorLossCapBackfilled === true,
-      ...(Number.isFinite(Number(parsed.mirrorLossCapBackfillVersion))
-        ? { mirrorLossCapBackfillVersion: Number(parsed.mirrorLossCapBackfillVersion) }
+      ...(Number.isFinite(Number(parsed.mirrorLossCapBaselineAtMs))
+        ? { mirrorLossCapBaselineAtMs: Number(parsed.mirrorLossCapBaselineAtMs) }
         : {}),
       ...(Number.isFinite(Number(parsed.mirrorLossCapTriggeredAtMs))
         ? { mirrorLossCapTriggeredAtMs: Number(parsed.mirrorLossCapTriggeredAtMs) }

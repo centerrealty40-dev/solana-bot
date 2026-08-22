@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-
 function positive(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -19,28 +17,6 @@ export function sellCashDeltaUsd(event: Record<string, unknown>): number {
   return positive(event.quoteReceivedUsd) ?? 0;
 }
 
-export function replayMirrorTradingCash(journalPath: string): number {
-  let text: string;
-  try {
-    text = fs.readFileSync(journalPath, 'utf8');
-  } catch {
-    return 0;
-  }
-  let cash = 0;
-  for (const line of text.split('\n')) {
-    if (!line.trim()) continue;
-    try {
-      const event = JSON.parse(line) as Record<string, unknown>;
-      if (event.ok !== true) continue;
-      if (event.kind === 'copy_buy') cash += buyCashDeltaUsd(event);
-      else if (event.kind === 'copy_sell') cash += sellCashDeltaUsd(event);
-    } catch {
-      /* Ignore malformed journal rows during backfill. */
-    }
-  }
-  return cash;
-}
-
 export function mirrorOpenMarkValueUsd(
   position: {
     sizeUsd: number;
@@ -52,12 +28,19 @@ export function mirrorOpenMarkValueUsd(
 ): number {
   const mark = positive(markPriceUsd) ?? positive(position.lastMarkPriceUsd);
   if (mark == null) return Math.max(0, position.sizeUsd);
-  const tokens = positive(position.tokenRaw);
-  return tokens != null
-    ? tokens * mark
-    : position.entryPriceUsd > 0
-      ? Math.max(0, position.sizeUsd * mark / position.entryPriceUsd)
-      : Math.max(0, position.sizeUsd);
+  return position.entryPriceUsd > 0
+    ? Math.max(0, position.sizeUsd * mark / position.entryPriceUsd)
+    : Math.max(0, position.sizeUsd);
+}
+
+export function accountMirrorCashLeg(
+  target: { mirrorTradingCashUsd?: number },
+  event: Record<string, unknown>,
+  side: 'buy' | 'sell',
+): number {
+  const delta = side === 'buy' ? buyCashDeltaUsd(event) : sellCashDeltaUsd(event);
+  target.mirrorTradingCashUsd = (target.mirrorTradingCashUsd ?? 0) + delta;
+  return delta;
 }
 
 export function confirmLossCapObservation(args: {
