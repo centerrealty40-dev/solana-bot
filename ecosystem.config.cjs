@@ -4841,10 +4841,10 @@ if (mildDipBotApp) {
       walletPubkey: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
       dataDir: 'data/milddip-mirror',
       leaders: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
-      ownExitEnabled: true,
+      ownExitEnabled: false,
       exitArmPct: '2',
       exitTrailPct: '0',
-      ownExitTimeStopMs: '7200000',
+      ownExitTimeStopMs: '0',
     }),
     makeMirrorApp({
       name: 'mild-dip-mirror2',

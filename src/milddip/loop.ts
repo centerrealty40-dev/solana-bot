@@ -113,6 +113,7 @@ import {
 import { isRunnerPartialExit } from './sell-partial.js';
 import { profitFillMinPriceUsd } from './profit-fill-guard.js';
 import { retrySlippageBpsForAttempt } from './exit-retry.js';
+import { prioritizeFreshStructuralEntries } from './structural-priority.js';
 import { decideExitRefire } from './exit-refire.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
 import { peekCopyQuoteBalances } from '../copytrader/funding-gate.js';
@@ -1333,69 +1334,82 @@ async function wakeLeaderMirrors(
       });
     }
   }
-  const backfillEntries = [...leaderMirrorWatches.entries()]
+  const structuralCandidates = [...leaderMirrorWatches.entries()]
     .filter(
       ([watchKey, watch]) =>
         leaderMirrorNeedsStructuralBackfill(watch.hit, gates.requireDipCandle) &&
         nowMs - (leaderMirrorStructuralAttemptMs.get(watchKey) ?? 0) >= gates.structuralGapMs,
-    )
-    .sort(([, a], [, b]) => a.startedAtMs - b.startedAtMs)
-    .slice(0, gates.structuralMaxMints);
-  if (backfillEntries.length > 0 && !leaderMirrorStructuralInFlight) {
-    const backfillMints = [...new Set(backfillEntries.map(([, watch]) => watch.hit.mint))];
-    for (const [watchKey] of backfillEntries) leaderMirrorStructuralAttemptMs.set(watchKey, nowMs);
-    leaderMirrorStructuralInFlight = true;
+    );
+  const backfillEntries = prioritizeFreshStructuralEntries(
+    structuralCandidates,
+    nowMs,
+    gates.entryGraceMs ?? 60_000,
+    gates.structuralMaxMints,
+    ([, watch]) => watch.startedAtMs,
+  );
+  const priorityEntries = backfillEntries
+    .filter(([, watch]) => nowMs - watch.startedAtMs <= (gates.entryGraceMs ?? 60_000))
+    .slice(0, 1);
+  const priorityKeys = new Set(priorityEntries.map(([watchKey]) => watchKey));
+  const massBackfillEntries = backfillEntries.filter(([watchKey]) => !priorityKeys.has(watchKey));
+  const launchStructuralBackfill = (
+    entries: typeof backfillEntries,
+    priority: boolean,
+  ): void => {
+    if (entries.length === 0) return;
+    const backfillMints = [...new Set(entries.map(([, watch]) => watch.hit.mint))];
+    for (const [watchKey] of entries) leaderMirrorStructuralAttemptMs.set(watchKey, nowMs);
+    if (priority) leaderMirrorStructuralPriorityInFlight = true;
+    else leaderMirrorStructuralInFlight = true;
     void prefetchDexScreenerPairDetailsManyWithMetadata(backfillMints, {
       nowMs,
       cacheTtlMs: Math.max(gates.structuralGapMs, gates.quoteMaxAgeMs),
       allowedDexIds: cfg.entry.allowedDexIds,
     }).then((result) => {
-      for (const [watchKey, startedWatch] of backfillEntries) {
+      for (const [watchKey, startedWatch] of entries) {
         const watch = leaderMirrorWatches.get(watchKey);
         if (!watch || watch.hitKey !== startedWatch.hitKey) continue;
         const mint = watch.hit.mint;
-      const details = result.detailsByMint.get(mint);
-      const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralStaleMs);
-      const metrics = details
-        ? {
-            priceUsd: details.priceUsd,
-            pc5m: details.priceChangeM5Pct,
-            pc1h: details.priceChangeH1Pct,
-            vol5m: details.volume5mUsd,
-            liq: details.liquidityUsd,
-            mcap: details.marketCapUsd,
-            ageHours:
-              details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
-                ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
-                : null,
-            dexId: details.dexId,
-          }
-        : cached
+        const details = result.detailsByMint.get(mint);
+        const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralStaleMs);
+        const metrics = details
           ? {
-              priceUsd: cached.priceUsd,
-              pc5m: cached.metrics.priceChange5mPct,
-              pc1h: cached.metrics.priceChange1hPct,
-              vol5m: cached.metrics.volume5mUsd,
-              liq: cached.metrics.liquidityUsd,
-              mcap: cached.metrics.marketCapUsd,
-              ageHours: cached.metrics.pairAgeHours,
-              dexId: cached.metrics.dexId,
+              priceUsd: details.priceUsd,
+              pc5m: details.priceChangeM5Pct,
+              pc1h: details.priceChangeH1Pct,
+              vol5m: details.volume5mUsd,
+              liq: details.liquidityUsd,
+              mcap: details.marketCapUsd,
+              ageHours:
+                details.pairCreatedAtMs != null && details.pairCreatedAtMs > 0
+                  ? Math.max(0, (nowMs - details.pairCreatedAtMs) / 3_600_000)
+                  : null,
+              dexId: details.dexId,
             }
-          : null;
-      if (!metrics) continue;
-      const pairAgeHours =
-        metrics.ageHours ?? watch.hit.ageHours;
-      const hit: LeaderSeedHit = {
-        ...watch.hit,
-        priceUsd: metrics.priceUsd ?? watch.hit.priceUsd,
-        pc5m: metrics.pc5m ?? watch.hit.pc5m,
-        pc1h: metrics.pc1h ?? watch.hit.pc1h,
-        vol5m: metrics.vol5m ?? watch.hit.vol5m,
-        liq: metrics.liq ?? watch.hit.liq,
-        mcap: metrics.mcap ?? watch.hit.mcap,
-        ageHours: pairAgeHours,
-        dexId: metrics.dexId ?? watch.hit.dexId,
-      };
+          : cached
+            ? {
+                priceUsd: cached.priceUsd,
+                pc5m: cached.metrics.priceChange5mPct,
+                pc1h: cached.metrics.priceChange1hPct,
+                vol5m: cached.metrics.volume5mUsd,
+                liq: cached.metrics.liquidityUsd,
+                mcap: cached.metrics.marketCapUsd,
+                ageHours: cached.metrics.pairAgeHours,
+                dexId: cached.metrics.dexId,
+              }
+            : null;
+        if (!metrics) continue;
+        const hit: LeaderSeedHit = {
+          ...watch.hit,
+          priceUsd: metrics.priceUsd ?? watch.hit.priceUsd,
+          pc5m: metrics.pc5m ?? watch.hit.pc5m,
+          pc1h: metrics.pc1h ?? watch.hit.pc1h,
+          vol5m: metrics.vol5m ?? watch.hit.vol5m,
+          liq: metrics.liq ?? watch.hit.liq,
+          mcap: metrics.mcap ?? watch.hit.mcap,
+          ageHours: metrics.ageHours ?? watch.hit.ageHours,
+          dexId: metrics.dexId ?? watch.hit.dexId,
+        };
         if (leaderMirrorWatches.has(watchKey)) {
           leaderMirrorWatches.set(watchKey, { ...watch, hit, metricSource: 'backfill' });
         }
@@ -1407,8 +1421,15 @@ async function wakeLeaderMirrors(
         mints: backfillMints.length,
       });
     }).finally(() => {
-      leaderMirrorStructuralInFlight = false;
+      if (priority) leaderMirrorStructuralPriorityInFlight = false;
+      else leaderMirrorStructuralInFlight = false;
     });
+  };
+  if (priorityEntries.length > 0 && !leaderMirrorStructuralPriorityInFlight) {
+    launchStructuralBackfill(priorityEntries, true);
+  }
+  if (massBackfillEntries.length > 0 && !leaderMirrorStructuralInFlight) {
+    launchStructuralBackfill(massBackfillEntries, false);
   }
   let filled = 0;
   for (const [watchKey, watch] of leaderMirrorWatches) {
@@ -2316,6 +2337,12 @@ async function executeQueuedSell(args: {
       : retrySlippageBps != null
         ? { slippageBpsOverride: retrySlippageBps }
         : {}),
+    ...(pos.lane === 'leader_mirror'
+      ? {
+          slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
+          slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
+        }
+      : {}),
   });
 
   const settleRefireClosed = async (onchainRaw: bigint) => {
@@ -2826,6 +2853,7 @@ function leaderMirrorWatchKey(hit: LeaderSeedHit): string {
 const leaderMirrorStructuralAttemptMs = new Map<string, number>();
 const leaderMirrorEntryRetryAfterMs = new Map<string, number>();
 let leaderMirrorStructuralInFlight = false;
+let leaderMirrorStructuralPriorityInFlight = false;
 let leaderMirrorStateHydrated = false;
 
 function hydrateLeaderMirrorWatches(
@@ -2971,6 +2999,8 @@ async function attemptLeaderAlignScaleIn(args: {
       leaderSignature: leaderSig,
       leaderPriceUsd: fillPx,
       leaderBuyTs: hit.blockTime != null ? hit.blockTime * 1000 : nowMs,
+      slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
+      slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
     });
     if (!buy.ok) {
       appendMildDipJournal(cfg.journalPath, {
@@ -3145,6 +3175,12 @@ async function attemptStagedEntryAdd(args: {
       trigger: 'stream',
       leaderPriceUsd: verdict.triggerPx ?? markPriceUsd,
       leaderBuyTs: nowMs,
+      ...(pos.lane === 'leader_mirror'
+        ? {
+            slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
+            slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
+          }
+        : {}),
     });
     if (!buy.ok) {
       journal({ ok: false, addUsd: sized.sizeUsd, reason: buy.reason ?? 'buy_failed' });
@@ -3270,6 +3306,8 @@ async function attemptMirrorAverage(args: {
       trigger: 'stream',
       leaderPriceUsd: markPriceUsd,
       leaderBuyTs: nowMs,
+      slippageRetryMultiplier: g.executionSlippageMultiplier,
+      slippageRetryMaxBps: g.executionSlippageMaxBps,
     });
     if (!buy.ok) return;
     const live = state.open[pos.mint];
