@@ -14,8 +14,10 @@ describe('mirror loss cap cash and mark accounting', () => {
   it('uses cash deltas for executed buys and sells', () => {
     expect(buyCashDeltaUsd({ usdcBefore: 100, usdcAfter: 70 })).toBe(-30);
     expect(sellCashDeltaUsd({ usdcBefore: 70, usdcAfter: 90 })).toBe(20);
-    expect(buyCashDeltaUsd({ quoteSpentUsd: 12 })).toBe(-12);
-    expect(sellCashDeltaUsd({ quoteReceivedUsd: 8 })).toBe(8);
+    expect(buyCashDeltaUsd({ quoteSpentUsd: 12, usdcBefore: 100, usdcAfter: 130 })).toBe(-12);
+    expect(sellCashDeltaUsd({ quoteReceivedUsd: 8, usdcBefore: 70, usdcAfter: 50 })).toBe(8);
+    expect(buyCashDeltaUsd({ sizeUsd: 12 })).toBe(-12);
+    expect(sellCashDeltaUsd({ sizeUsd: 8 })).toBe(8);
   });
 
   it('falls back to the position cost when no confirmed mark exists', () => {

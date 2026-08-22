@@ -4,17 +4,21 @@ function positive(value: unknown): number | null {
 }
 
 export function buyCashDeltaUsd(event: Record<string, unknown>): number {
+  const quoteSpentUsd = positive(event.quoteSpentUsd);
+  if (quoteSpentUsd != null) return -quoteSpentUsd;
   const before = Number(event.usdcBefore);
   const after = Number(event.usdcAfter);
   if (Number.isFinite(before) && Number.isFinite(after)) return after - before;
-  return -(positive(event.quoteSpentUsd) ?? positive(event.sizeUsd) ?? positive(event.amountUsd) ?? 0);
+  return -(positive(event.sizeUsd) ?? positive(event.amountUsd) ?? 0);
 }
 
 export function sellCashDeltaUsd(event: Record<string, unknown>): number {
+  const quoteReceivedUsd = positive(event.quoteReceivedUsd);
+  if (quoteReceivedUsd != null) return quoteReceivedUsd;
   const before = Number(event.usdcBefore);
   const after = Number(event.usdcAfter);
   if (Number.isFinite(before) && Number.isFinite(after)) return after - before;
-  return positive(event.quoteReceivedUsd) ?? 0;
+  return positive(event.sizeUsd) ?? positive(event.amountUsd) ?? 0;
 }
 
 export function mirrorOpenMarkValueUsd(
