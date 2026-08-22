@@ -1545,7 +1545,6 @@ export async function attemptMildDipEntry(args: {
       leaderBuyTs: nowMs,
       ...(isMirror
         ? {
-            slippageBpsOverride: copyCfg.slippageBps,
             slippageRetryMultiplier: opts.mirrorExecutionSlippageMultiplier,
             slippageRetryMaxBps: opts.mirrorExecutionSlippageMaxBps,
           }
