@@ -200,9 +200,6 @@ export function evaluateLeaderMirrorObservation(args: {
   const maxPremiumPct = entryGraceActive
     ? entryGraceMaxPremiumPct
     : gates.maxPremiumPct;
-  if (entryGraceActive && quoteGainPct > entryGraceMaxPremiumPct) {
-    return soft('leader_mirror_premium_cap', 'premium_cap', true);
-  }
   if (requireDipCandle && gates.greenCopyEnabled && greenCandidate) {
     if (quoteGainPct > gates.greenCorridorPct) {
       return soft('leader_mirror_green_corridor', 'green_corridor', true);
