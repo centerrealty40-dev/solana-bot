@@ -86,11 +86,27 @@ describe('shouldDeferSoftExit', () => {
       'never_arm_time_red',
       'never_arm_timeout',
       'max_hold_underwater',
+      'mirror_time_stop',
       'hard_time_stop',
     ] as const) {
       const verdict = shouldDeferSoftExit({ ...base, reason });
       expect(verdict.defer).toBe(reason !== 'hard_time_stop');
     }
+  });
+
+  it('retries a deferred mirror time-stop and fires after its budget', () => {
+    const first = shouldDeferSoftExit({
+      ...base,
+      reason: 'mirror_time_stop',
+    });
+    expect(first.defer).toBe(true);
+    const nextTick = shouldDeferSoftExit({
+      ...base,
+      reason: 'mirror_time_stop',
+      deferredMsSoFar: 600_000,
+    });
+    expect(nextTick.defer).toBe(false);
+    expect(nextTick.reasons).toContain('defer_budget_spent');
   });
 
   it('a time cut still fires once the budget is spent', () => {

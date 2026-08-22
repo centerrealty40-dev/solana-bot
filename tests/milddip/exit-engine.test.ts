@@ -227,6 +227,33 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(trail.reason).toBe('mirror_trail');
   });
 
+  it('does not carry a legacy armed flag across the new arm threshold', () => {
+    const d = decideMarkExit({
+      mint: 'mirror-legacy-arm',
+      pos: pos({
+        mint: 'mirror-legacy-arm',
+        lane: 'leader_mirror',
+        trailArmed: true,
+        peakPriceUsd: 102,
+        lastMarkPriceUsd: 102,
+      }),
+      markPriceUsd: 102 * 0.97,
+      nowMs: 1_000,
+      gates: gatesForDust,
+      mirrorGates: {
+        ...mirrorGates,
+        leaderSellOnly: true,
+        ownExitEnabled: true,
+        ownExitTimeStopMs: 3_600_000,
+        armPct: 5,
+        trailPct: 3,
+      },
+    })!;
+    expect(d.armed).toBe(false);
+    expect(d.shouldExit).toBe(false);
+    expect(d.reason).toBeNull();
+  });
+
   it('prioritizes a full own trail over a same-tick ladder sale', () => {
     const d = decideMarkExit({
       mint: 'mirror-own-trail-ladder',

@@ -479,7 +479,7 @@ export function decideMarkExit(args: {
     const armed =
       ownExitEnabled &&
       (args.mirrorGates.trailPct ?? 0) > 0 &&
-      (wasArmed || peakPnl >= (args.mirrorGates.armPct ?? 2));
+      peakPnl >= (args.mirrorGates.armPct ?? 2);
     const safetyCut =
       (args.mirrorGates.safetyMaxHoldMs ?? 0) > 0 &&
       heldMsMirror >= (args.mirrorGates.safetyMaxHoldMs ?? 0);
@@ -494,19 +494,23 @@ export function decideMarkExit(args: {
       (args.mirrorGates.ownExitTimeStopMs ?? 0) > 0 &&
       heldMsMirror >= (args.mirrorGates.ownExitTimeStopMs ?? 0);
     const ownShouldExit = ownTrailExit || ownTimeStop;
+    const g =
+      args.mirrorGates.leaderSellOnly === true
+        ? null
+        : decideGreenExit(
+            pnl,
+            heldMsMirror,
+            args.mirrorGates,
+            peakPnl,
+            peakDrawdown,
+          );
     const mirrorShouldExit = safetyCut
       ? true
       : ownShouldExit
         ? true
         : args.mirrorGates.leaderSellOnly === true
           ? false
-          : decideGreenExit(
-              pnl,
-              heldMsMirror,
-              args.mirrorGates,
-              peakPnl,
-              peakDrawdown,
-            ).shouldExit;
+          : g!.shouldExit;
     let ladderFraction = 0;
     let ladderRungIndex: number | null = null;
     if (
@@ -557,26 +561,17 @@ export function decideMarkExit(args: {
               ? 'mirror_tp_ladder'
               : args.mirrorGates.leaderSellOnly === true
                 ? null
-                : (() => {
-                    const g = decideGreenExit(
-                      pnl,
-                      heldMsMirror,
-                      args.mirrorGates!,
-                      peakPnl,
-                      peakDrawdown,
-                    );
-                    return g.reason === 'green_stop'
+                : g!.reason === 'green_stop'
                       ? 'mirror_stop'
-                      : g.reason === 'green_trail'
+                      : g!.reason === 'green_trail'
                         ? 'mirror_trail'
-                        : g.reason === 'green_no_move'
+                        : g!.reason === 'green_no_move'
                           ? 'mirror_no_move'
-                          : g.reason === 'green_tp'
+                          : g!.reason === 'green_tp'
                             ? 'mirror_tp'
-                            : g.reason === 'green_max_hold'
+                            : g!.reason === 'green_max_hold'
                               ? 'mirror_max_hold'
                               : null;
-                  })();
     return {
       mint,
       markPriceUsd: decisionMark,
@@ -593,7 +588,7 @@ export function decideMarkExit(args: {
       pnlPct: pnl,
       gainPct: pnl,
       gainBasisPriceUsd: basis,
-      pnlPctVsFill: (decisionMark / pos.entryPriceUsd - 1) * 100,
+      pnlPctVsFill: pnl,
       volFadeSamples: [...(pos.volFadeSamples ?? [])],
       postEntryTroughPriceUsd: Math.min(
         pos.postEntryTroughUsd ?? pos.entryPriceUsd,

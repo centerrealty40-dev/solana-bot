@@ -48,6 +48,7 @@ export const WOULD_BUY_DEFER_REASONS: ReadonlySet<string> = new Set([
   'never_arm_time_red',
   'never_arm_timeout',
   'max_hold_underwater',
+  'mirror_time_stop',
 ]);
 
 /**
@@ -63,7 +64,6 @@ export const NEVER_DEFER_REASONS: ReadonlySet<string> = new Set([
   'mirror_leader_sell',
   'mirror_safety_cut',
   'mirror_trail',
-  'mirror_time_stop',
 ]);
 
 /**
