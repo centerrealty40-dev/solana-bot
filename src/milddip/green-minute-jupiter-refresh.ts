@@ -19,6 +19,8 @@ type QuoteFn = (args: {
 type ActiveCandidate = {
   lastCandidateAtMs: number;
   lastAttemptAtMs: number;
+  minGapMs: number;
+  priority: number;
   snapshotPriceUsd: number;
   probeUsd: number;
   slippageBps: number;
@@ -120,6 +122,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
   ttlMs: number;
   maxMints: number;
   maxInFlight: number;
+  priority?: number;
   probeUsd: number;
   slippageBps: number;
   tokenDecimals?: number;
@@ -132,12 +135,30 @@ export function requestGreenMinuteJupiterRefresh(args: {
   let candidate = active.get(args.mint);
   if (!candidate) {
     if (args.maxMints > 0 && active.size >= Math.floor(args.maxMints)) {
-      stats.capRejected += 1;
-      return false;
+      const replaceable = [...active.entries()]
+        .filter(
+          ([mint, incumbent]) =>
+            !inFlight.has(mint) && incumbent.source === (args.source ?? 'green_jupiter'),
+        )
+        .sort(
+          ([, a], [, b]) =>
+            a.priority - b.priority || a.lastCandidateAtMs - b.lastCandidateAtMs,
+        )[0];
+      if (
+        !replaceable ||
+        args.priority == null ||
+        args.priority <= replaceable[1].priority
+      ) {
+        stats.capRejected += 1;
+        return false;
+      }
+      active.delete(replaceable[0]);
     }
     candidate = {
       lastCandidateAtMs: args.nowMs,
       lastAttemptAtMs: 0,
+      minGapMs: Math.max(0, args.minGapMs),
+      priority: args.priority ?? 0,
       snapshotPriceUsd: args.snapshotPriceUsd,
       probeUsd: args.probeUsd,
       slippageBps: args.slippageBps,
@@ -150,6 +171,8 @@ export function requestGreenMinuteJupiterRefresh(args: {
     candidate.lastCandidateAtMs = args.nowMs;
   }
   candidate.snapshotPriceUsd = args.snapshotPriceUsd;
+  candidate.minGapMs = Math.max(0, args.minGapMs);
+  candidate.priority = args.priority ?? candidate.priority;
   candidate.probeUsd = args.probeUsd;
   candidate.slippageBps = args.slippageBps;
   candidate.tokenDecimals =
@@ -158,7 +181,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
   candidate.source = args.source ?? candidate.source;
   stats.activeMints = active.size;
 
-  return startQuote(args.mint, candidate, args.minGapMs, args.maxInFlight, args.nowMs);
+  return startQuote(args.mint, candidate, candidate.minGapMs, args.maxInFlight, args.nowMs);
 }
 
 export function tickGreenMinuteJupiterRefresh(args: {
@@ -173,7 +196,7 @@ export function tickGreenMinuteJupiterRefresh(args: {
   prune(args.nowMs, args.ttlMs);
   for (const [mint, candidate] of active) {
     if (args.nowMs - candidate.lastCandidateAtMs > Math.max(0, args.graceMs)) continue;
-    startQuote(mint, candidate, args.minGapMs, args.maxInFlight, args.nowMs);
+    startQuote(mint, candidate, candidate.minGapMs, args.maxInFlight, args.nowMs);
   }
 }
 
