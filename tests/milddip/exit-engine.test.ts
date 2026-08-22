@@ -227,6 +227,59 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(trail.reason).toBe('mirror_trail');
   });
 
+  it('arms the mirror trail from fill cost, not a stale entry mark', () => {
+    const ownExit = {
+      ...mirrorGates,
+      leaderSellOnly: true,
+      ownExitEnabled: true,
+      ownExitTimeStopMs: 3_600_000,
+      armPct: 5,
+      trailPct: 3,
+    };
+    const p = pos({
+      mint: 'mirror-trail-fill-basis',
+      lane: 'leader_mirror',
+      openedAtMs: 0,
+      entryPriceUsd: 100,
+      entryMarkPriceUsd: 87,
+      peakPriceUsd: 100,
+    });
+    const nearFill = decideMarkExit({
+      mint: p.mint,
+      pos: p,
+      markPriceUsd: 100.2,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates: ownExit,
+    })!;
+    expect(nearFill.armed).toBe(false);
+    expect(nearFill.shouldExit).toBe(false);
+
+    const high = decideMarkExit({
+      mint: p.mint,
+      pos: p,
+      markPriceUsd: 106,
+      nowMs: 200,
+      gates: gatesForDust,
+      mirrorGates: ownExit,
+    })!;
+    expect(high.armed).toBe(true);
+    expect(high.shouldExit).toBe(false);
+    applyMarkDecisionToPosition(p, high);
+
+    const pullback = decideMarkExit({
+      mint: p.mint,
+      pos: p,
+      markPriceUsd: 106 * 0.97,
+      nowMs: 300,
+      gates: gatesForDust,
+      mirrorGates: ownExit,
+    })!;
+    expect(pullback.shouldExit).toBe(true);
+    expect(pullback.reason).toBe('mirror_trail');
+    expect(pullback.pnlPct).toBeGreaterThan(0);
+  });
+
   it('does not carry a legacy armed flag across the new arm threshold', () => {
     const d = decideMarkExit({
       mint: 'mirror-legacy-arm',

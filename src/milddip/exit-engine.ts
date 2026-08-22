@@ -468,7 +468,7 @@ export function decideMarkExit(args: {
   if (pos.lane === 'leader_mirror' && args.mirrorGates) {
     const nowMsMirror = args.nowMs ?? Date.now();
     const heldMsMirror = Math.max(0, nowMsMirror - (pos.openedAtMs || 0));
-    const basis = resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
+    const basis = pos.entryPriceUsd;
     const pnl = (decisionMark / basis - 1) * 100;
     const peakPriceUsd = Math.max(pos.peakPriceUsd ?? basis, decisionMark);
     const peakPnl = (peakPriceUsd / basis - 1) * 100;
