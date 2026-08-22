@@ -1525,8 +1525,8 @@ async function wakeLeaderMirrors(
     [...leaderMirrorWatches.entries()],
     nowMs,
     gates.entryGraceMs ?? 60_000,
-    gates.quoteMaxMints > 0
-      ? Math.floor(gates.quoteMaxMints)
+    gates.maxQuoteMints > 0
+      ? Math.floor(gates.maxQuoteMints)
       : leaderMirrorWatches.size,
     ([, watch]) => watch.startedAtMs,
   );
@@ -1618,7 +1618,7 @@ async function wakeLeaderMirrors(
           ? gates.quoteIntervalMs
           : Math.max(gates.quoteIntervalMs, gates.staleQuoteIntervalMs),
         ttlMs: Math.max(3 * gates.quoteMaxAgeMs, 30_000),
-        maxMints: gates.quoteMaxMints,
+        maxMints: gates.maxQuoteMints,
         maxInFlight: 16,
         priority: entryGraceActive ? 1 : 0,
         probeUsd: gates.positionUsd,
