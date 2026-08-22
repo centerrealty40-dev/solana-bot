@@ -142,6 +142,8 @@ export function decideMarkExit(args: {
   greenGates?: GreenExitGates;
   mirrorGates?: GreenExitGates & {
     leaderSellOnly?: boolean;
+    ownExitEnabled?: boolean;
+    ownExitTimeStopMs?: number;
     safetyMaxHoldMs?: number;
     ladderStepPct?: number;
     ladderStepAfterAveragePct?: number;
@@ -232,90 +234,6 @@ export function decideMarkExit(args: {
         0,
         nowMsGreen - ((pos.postEntryTroughAtMs ?? pos.openedAtMs) || 0),
       ),
-    };
-  }
-  if (pos.lane === 'leader_mirror' && args.mirrorGates) {
-    const nowMsMirror = args.nowMs ?? Date.now();
-    const heldMsMirror = Math.max(0, nowMsMirror - (pos.openedAtMs || 0));
-    const basis = resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
-    const pnl = (markPriceUsd / basis - 1) * 100;
-    const peakPriceUsd = Math.max(pos.peakPriceUsd ?? basis, markPriceUsd);
-    const peakPnl = (peakPriceUsd / basis - 1) * 100;
-    const peakDrawdown = peakPriceUsd > 0 ? (1 - markPriceUsd / peakPriceUsd) * 100 : 0;
-    const wasArmed = pos.trailArmed === true;
-    const g = decideGreenExit(pnl, heldMsMirror, args.mirrorGates, peakPnl, peakDrawdown);
-    const safetyCut =
-      (args.mirrorGates.safetyMaxHoldMs ?? 0) > 0 &&
-      heldMsMirror >= (args.mirrorGates.safetyMaxHoldMs ?? 0);
-    const mirrorShouldExit = safetyCut
-      ? true
-      : args.mirrorGates.leaderSellOnly === true
-        ? false
-        : g.shouldExit;
-    let ladderFraction = 0;
-    let ladderRungIndex: number | null = null;
-    if (
-      !safetyCut &&
-      args.mirrorGates.leaderSellOnly === true &&
-      args.mirrorGates.ladderStepPct != null
-    ) {
-      const ladderBasis = pos.mirrorLadderBasisPriceUsd ?? pos.entryPriceUsd;
-      const step = pos.mirrorAverageDone
-        ? args.mirrorGates.ladderStepAfterAveragePct ?? 10
-        : args.mirrorGates.ladderStepPct ?? 5;
-      const rungStep = step > 0 ? step : 0;
-      const gainPct = ladderBasis > 0 ? (markPriceUsd / ladderBasis - 1) * 100 : 0;
-      const covered = rungStep > 0 && gainPct >= rungStep
-        ? Math.floor((gainPct + 1e-9) / rungStep)
-        : 0;
-      const done = pos.mirrorLadderRungsDone ?? 0;
-      const owed = Math.max(0, covered - done);
-      if (owed > 0) {
-        const sellFraction = Math.min(1, Math.max(0, args.mirrorGates.ladderSellFraction ?? 0.2));
-        ladderFraction = 1 - Math.pow(1 - sellFraction, owed);
-        const remainderMarketUsd =
-          pos.sizeUsd * (markPriceUsd / Math.max(ladderBasis, 1e-18)) * (1 - ladderFraction);
-        if (
-          remainderMarketUsd > 0 &&
-          remainderMarketUsd < (args.mirrorGates.ladderDustUsd ?? 1)
-        ) {
-          ladderFraction = 1;
-        }
-        ladderRungIndex = done + owed;
-      }
-    }
-    const ladderShouldExit = ladderFraction > 0;
-    const mirrorReason: MildDipExitReason =
-      safetyCut
-        ? 'mirror_safety_cut'
-        : ladderShouldExit
-          ? 'mirror_tp_ladder'
-        : args.mirrorGates.leaderSellOnly === true
-          ? null
-          : g.reason === 'green_stop'
-            ? 'mirror_stop'
-            : g.reason === 'green_trail'
-              ? 'mirror_trail'
-              : g.reason === 'green_no_move'
-                ? 'mirror_no_move'
-                : g.reason === 'green_tp'
-                  ? 'mirror_tp'
-                  : g.reason === 'green_max_hold'
-                    ? 'mirror_max_hold'
-                    : null;
-    const armed = args.mirrorGates.trailEnabled === true &&
-      (wasArmed || peakPnl >= (args.mirrorGates.armPct ?? 2));
-    return {
-      mint, markPriceUsd, entryMarketPriceUsd: null, peakPriceUsd, armed,
-      justArmed: armed && !wasArmed, shouldExit: mirrorShouldExit || ladderShouldExit,
-      fraction: mirrorShouldExit ? 1 : ladderFraction,
-      reason: mirrorReason, tpRungIndex: ladderRungIndex, mfePct: peakPnl, givebackPct: peakDrawdown,
-      pnlPct: pnl, gainPct: pnl, gainBasisPriceUsd: basis, pnlPctVsFill: pnl,
-      volFadeSamples: [...(pos.volFadeSamples ?? [])],
-      postEntryTroughPriceUsd: Math.min(pos.postEntryTroughUsd ?? pos.entryPriceUsd, markPriceUsd),
-      postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
-      bounceOffTroughPct: 0,
-      troughAgeMs: Math.max(0, nowMsMirror - ((pos.postEntryTroughAtMs ?? pos.openedAtMs) || 0)),
     };
   }
   const entryMarketPriceUsd = resolveEntryMarkBasis(pos);
@@ -546,6 +464,143 @@ export function decideMarkExit(args: {
       decisionMark = args.dexCrossCheckPx;
       decisionSource = 'dex';
     }
+  }
+  if (pos.lane === 'leader_mirror' && args.mirrorGates) {
+    const nowMsMirror = args.nowMs ?? Date.now();
+    const heldMsMirror = Math.max(0, nowMsMirror - (pos.openedAtMs || 0));
+    const basis = resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
+    const pnl = (decisionMark / basis - 1) * 100;
+    const peakPriceUsd = Math.max(pos.peakPriceUsd ?? basis, decisionMark);
+    const peakPnl = (peakPriceUsd / basis - 1) * 100;
+    const peakDrawdown =
+      peakPriceUsd > 0 ? (1 - decisionMark / peakPriceUsd) * 100 : 0;
+    const ownExitEnabled = args.mirrorGates.ownExitEnabled === true;
+    const wasArmed = pos.trailArmed === true;
+    const armed =
+      ownExitEnabled &&
+      (args.mirrorGates.trailPct ?? 0) > 0 &&
+      peakPnl >= (args.mirrorGates.armPct ?? 2);
+    const safetyCut =
+      (args.mirrorGates.safetyMaxHoldMs ?? 0) > 0 &&
+      heldMsMirror >= (args.mirrorGates.safetyMaxHoldMs ?? 0);
+    const ownTrailExit =
+      ownExitEnabled &&
+      armed &&
+      (args.mirrorGates.trailPct ?? 0) > 0 &&
+      peakDrawdown + 1e-9 >= (args.mirrorGates.trailPct ?? 0);
+    const ownTimeStop =
+      ownExitEnabled &&
+      !armed &&
+      (args.mirrorGates.ownExitTimeStopMs ?? 0) > 0 &&
+      heldMsMirror >= (args.mirrorGates.ownExitTimeStopMs ?? 0);
+    const ownShouldExit = ownTrailExit || ownTimeStop;
+    const g =
+      args.mirrorGates.leaderSellOnly === true
+        ? null
+        : decideGreenExit(
+            pnl,
+            heldMsMirror,
+            args.mirrorGates,
+            peakPnl,
+            peakDrawdown,
+          );
+    const mirrorShouldExit = safetyCut
+      ? true
+      : ownShouldExit
+        ? true
+        : args.mirrorGates.leaderSellOnly === true
+          ? false
+          : g!.shouldExit;
+    let ladderFraction = 0;
+    let ladderRungIndex: number | null = null;
+    if (
+      !safetyCut &&
+      !ownShouldExit &&
+      args.mirrorGates.leaderSellOnly === true &&
+      args.mirrorGates.ladderStepPct != null
+    ) {
+      const ladderBasis = pos.mirrorLadderBasisPriceUsd ?? pos.entryPriceUsd;
+      const step = pos.mirrorAverageDone
+        ? args.mirrorGates.ladderStepAfterAveragePct ?? 10
+        : args.mirrorGates.ladderStepPct ?? 5;
+      const rungStep = step > 0 ? step : 0;
+      const gainPct = ladderBasis > 0 ? (decisionMark / ladderBasis - 1) * 100 : 0;
+      const covered = rungStep > 0 && gainPct >= rungStep
+        ? Math.floor((gainPct + 1e-9) / rungStep)
+        : 0;
+      const done = pos.mirrorLadderRungsDone ?? 0;
+      const owed = Math.max(0, covered - done);
+      if (owed > 0) {
+        const sellFraction = Math.min(
+          1,
+          Math.max(0, args.mirrorGates.ladderSellFraction ?? 0.2),
+        );
+        ladderFraction = 1 - Math.pow(1 - sellFraction, owed);
+        const remainderMarketUsd =
+          pos.sizeUsd *
+          (decisionMark / Math.max(ladderBasis, 1e-18)) *
+          (1 - ladderFraction);
+        if (
+          remainderMarketUsd > 0 &&
+          remainderMarketUsd < (args.mirrorGates.ladderDustUsd ?? 1)
+        ) {
+          ladderFraction = 1;
+        }
+        ladderRungIndex = done + owed;
+      }
+    }
+    const ladderShouldExit = ladderFraction > 0;
+    const mirrorReason: MildDipExitReason =
+      safetyCut
+        ? 'mirror_safety_cut'
+        : ownTrailExit
+          ? 'mirror_trail'
+          : ownTimeStop
+            ? 'mirror_time_stop'
+            : ladderShouldExit
+              ? 'mirror_tp_ladder'
+              : args.mirrorGates.leaderSellOnly === true
+                ? null
+                : g!.reason === 'green_stop'
+                      ? 'mirror_stop'
+                      : g!.reason === 'green_trail'
+                        ? 'mirror_trail'
+                        : g!.reason === 'green_no_move'
+                          ? 'mirror_no_move'
+                          : g!.reason === 'green_tp'
+                            ? 'mirror_tp'
+                            : g!.reason === 'green_max_hold'
+                              ? 'mirror_max_hold'
+                              : null;
+    return {
+      mint,
+      markPriceUsd: decisionMark,
+      entryMarketPriceUsd: null,
+      peakPriceUsd,
+      armed,
+      justArmed: armed && !wasArmed,
+      shouldExit: mirrorShouldExit || ladderShouldExit,
+      fraction: mirrorShouldExit ? 1 : ladderFraction,
+      reason: mirrorReason,
+      tpRungIndex: ladderRungIndex,
+      mfePct: peakPnl,
+      givebackPct: peakDrawdown,
+      pnlPct: pnl,
+      gainPct: pnl,
+      gainBasisPriceUsd: basis,
+      pnlPctVsFill: pnl,
+      volFadeSamples: [...(pos.volFadeSamples ?? [])],
+      postEntryTroughPriceUsd: Math.min(
+        pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+        decisionMark,
+      ),
+      postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+      bounceOffTroughPct: 0,
+      troughAgeMs: Math.max(
+        0,
+        nowMsMirror - ((pos.postEntryTroughAtMs ?? pos.openedAtMs) || 0),
+      ),
+    };
   }
   const nowMs = args.nowMs ?? Date.now();
   const heldMs = Math.max(0, nowMs - (pos.openedAtMs > 0 ? pos.openedAtMs : nowMs));

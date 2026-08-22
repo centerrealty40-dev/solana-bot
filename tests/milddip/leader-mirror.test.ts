@@ -304,6 +304,10 @@ describe('leader mirror observation decisions', () => {
       },
       markPriceUsd: 103,
       nowMs: 120_000,
+      gates: {
+        markJumpConfirmPct: 25,
+        markJumpConfirmStreamPct: 8,
+      },
       mirrorGates: {
         trailEnabled: true,
         takeProfitPct: 0,

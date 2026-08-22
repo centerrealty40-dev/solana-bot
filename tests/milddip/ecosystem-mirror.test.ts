@@ -57,7 +57,6 @@ describe('mirror PM2 apps', () => {
       'MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS',
-      'MILD_DIP_MIRROR_EXIT_TRAIL_PCT',
     ]) {
       expect(mirror?.env[key]).toBe(mirror2?.env[key]);
     }
@@ -103,6 +102,16 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT: '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_ENTRY_GRACE_MS: '60000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_ENTRY_GRACE_MAX_PREMIUM_PCT: '1'");
+    expect(mirror?.env.MILD_DIP_MIRROR_OWN_EXIT_ENABLED).toBe('1');
+    expect(mirror?.env.MILD_DIP_MIRROR_EXIT_ARM_PCT).toBe('2');
+    expect(mirror?.env.MILD_DIP_MIRROR_EXIT_TRAIL_PCT).toBe('0');
+    expect(mirror?.env.MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS).toBe('7200000');
+    expect(mirror2?.env.MILD_DIP_MIRROR_OWN_EXIT_ENABLED).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_EXIT_ARM_PCT).toBe('5');
+    expect(mirror2?.env.MILD_DIP_MIRROR_EXIT_TRAIL_PCT).toBe('3');
+    expect(mirror2?.env.MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS).toBe('3600000');
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_ENABLED: ownExitEnabled ? '1' : '0'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS: ownExitTimeStopMs");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
   });
