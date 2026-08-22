@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { bumpSlippageBps } from '../../src/copytrader/slippage-bump.js';
+import { bumpSlippageBps, multiplySlippageBps } from '../../src/copytrader/slippage-bump.js';
 
 describe('bumpSlippageBps', () => {
   it('climbs Oscar envelope 10 → 100 by +10', () => {
@@ -17,5 +17,16 @@ describe('bumpSlippageBps', () => {
 
   it('no-ops when bump is 0', () => {
     expect(bumpSlippageBps({ currentBps: 10, bumpBps: 0, maxBps: 100 })).toBe(10);
+  });
+});
+
+describe('multiplySlippageBps', () => {
+  it('escalates mirror retries multiplicatively and respects the hard cap', () => {
+    let bps = 150;
+    bps = multiplySlippageBps({ currentBps: bps, multiplier: 2, maxBps: 600 });
+    expect(bps).toBe(300);
+    bps = multiplySlippageBps({ currentBps: bps, multiplier: 2, maxBps: 600 });
+    expect(bps).toBe(600);
+    expect(multiplySlippageBps({ currentBps: bps, multiplier: 2, maxBps: 400 })).toBe(600);
   });
 });

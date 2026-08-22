@@ -8,6 +8,10 @@ import {
   type LeaderMirrorGates,
 } from '../../src/milddip/leader-mirror.js';
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
+import {
+  mirrorEntryAttemptOutcome,
+  type EntryAttemptResult,
+} from '../../src/milddip/entry-attempt.js';
 
 const gates: LeaderMirrorGates = {
   enabled: true,
@@ -67,6 +71,13 @@ const at = (
   });
 
 describe('leader mirror observation decisions', () => {
+  it('retries execution failures but suppresses genuine refusals', () => {
+    expect(mirrorEntryAttemptOutcome('exec_failed')).toBe('retry');
+    expect(mirrorEntryAttemptOutcome('skip')).toBe('refused');
+    expect(mirrorEntryAttemptOutcome('filled')).toBe('filled');
+    const result: EntryAttemptResult = 'exec_failed';
+    expect(mirrorEntryAttemptOutcome(result)).toBe('retry');
+  });
   it('buys after a fresh quote on a dump', () => {
     expect(at()).toEqual({ action: 'buy', quotePriceUsd: 101 });
   });

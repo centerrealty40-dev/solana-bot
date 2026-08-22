@@ -13,3 +13,14 @@ export function bumpSlippageBps(args: {
   const cap = Math.max(Math.floor(args.maxBps), current);
   return Math.min(cap, current + Math.floor(args.bumpBps));
 }
+
+export function multiplySlippageBps(args: {
+  currentBps: number;
+  multiplier: number;
+  maxBps: number;
+}): number {
+  const current = Math.max(1, Math.floor(args.currentBps));
+  const cap = Math.max(current, Math.min(5000, Math.floor(args.maxBps)));
+  if (!(args.multiplier > 1)) return current;
+  return Math.min(cap, Math.max(current + 1, Math.ceil(current * args.multiplier)));
+}

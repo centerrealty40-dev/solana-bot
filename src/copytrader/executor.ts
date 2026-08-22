@@ -62,6 +62,9 @@ export async function executeCopyBuy(args: {
   leaderPriceUsd?: number;
   /** Leader buy timestamp — selects first-shot vs steady premium cap. */
   leaderBuyTs?: number;
+  slippageBpsOverride?: number;
+  slippageRetryMultiplier?: number;
+  slippageRetryMaxBps?: number;
 }): Promise<BuyExecutionResult> {
   const { cfg, mint, symbol, priceUsd, sizeUsd, kind, evalResult, leaderSignature, trigger } = args;
 
@@ -103,6 +106,9 @@ export async function executeCopyBuy(args: {
       trigger,
       leaderPriceUsd: args.leaderPriceUsd ?? 0,
       leaderBuyTs: args.leaderBuyTs ?? 0,
+      slippageBpsOverride: args.slippageBpsOverride,
+      slippageRetryMultiplier: args.slippageRetryMultiplier,
+      slippageRetryMaxBps: args.slippageRetryMaxBps,
     });
     appendJsonl(cfg.journalPath, {
       kind: kind === 'add' ? 'copy_add' : 'copy_buy',

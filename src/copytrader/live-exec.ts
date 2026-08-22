@@ -27,7 +27,7 @@ import {
   copySellQuotePriceUsd,
 } from './quote-mint.js';
 import { peekCopyQuoteBalances } from './funding-gate.js';
-import { bumpSlippageBps } from './slippage-bump.js';
+import { bumpSlippageBps, multiplySlippageBps } from './slippage-bump.js';
 import { isQuoteOutRegressed, parseTokenRaw } from './quote-quality.js';
 
 export type LiveCashFillFields = {
@@ -137,6 +137,9 @@ export async function executeLiveCopyBuy(args: {
   leaderPriceUsd?: number;
   /** Leader buy timestamp — selects first-shot vs steady premium cap. */
   leaderBuyTs?: number;
+  slippageBpsOverride?: number;
+  slippageRetryMultiplier?: number;
+  slippageRetryMaxBps?: number;
 }): Promise<
   {
     ok: boolean;
@@ -171,7 +174,10 @@ export async function executeLiveCopyBuy(args: {
   const maxAttempts = 1 + liveCfg.liveBuySimRetryAttempts;
   const slippageCap = 1 + liveCfg.liveBuySimSlippageRetryAttempts;
   let slippageClassAttempts = 0;
-  let currentSlippageBps = liveCfg.liveDefaultSlippageBps;
+  let currentSlippageBps =
+    args.slippageBpsOverride != null && Number.isFinite(args.slippageBpsOverride)
+      ? Math.max(1, Math.min(5000, Math.floor(args.slippageBpsOverride)))
+      : liveCfg.liveDefaultSlippageBps;
   let lastReason = 'jupiter_buy_quote_failed';
   let lastPriceUsd = 0;
   let bestOutRaw = 0n;
@@ -355,6 +361,7 @@ export async function executeLiveCopyBuy(args: {
         buySimRetryMaxAttempts: maxAttempts,
         slippageBps: currentSlippageBps,
       },
+      slippageBps: currentSlippageBps,
     });
 
     if (sent.ok) {
@@ -394,11 +401,19 @@ export async function executeLiveCopyBuy(args: {
     const isSlippage = isSlippageClassSimError(lastReason);
     if (isSlippage) {
       slippageClassAttempts += 1;
-      currentSlippageBps = bumpSlippageBps({
-        currentBps: currentSlippageBps,
-        bumpBps: liveCfg.liveSimSlippageRetryBumpBps,
-        maxBps: liveCfg.liveSimSlippageRetryMaxBps,
-      });
+      if (args.slippageRetryMultiplier != null && args.slippageRetryMultiplier > 1) {
+        currentSlippageBps = multiplySlippageBps({
+          currentBps: currentSlippageBps,
+          multiplier: args.slippageRetryMultiplier,
+          maxBps: args.slippageRetryMaxBps ?? liveCfg.liveSimSlippageRetryMaxBps,
+        });
+      } else {
+        currentSlippageBps = bumpSlippageBps({
+          currentBps: currentSlippageBps,
+          bumpBps: liveCfg.liveSimSlippageRetryBumpBps,
+          maxBps: liveCfg.liveSimSlippageRetryMaxBps,
+        });
+      }
     }
     const slippageBail = isSlippage && slippageClassAttempts >= slippageCap;
     if (!slippageBail && attempt < maxAttempts - 1 && isRetryableBuyPreSendError(lastReason)) {

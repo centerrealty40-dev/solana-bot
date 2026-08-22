@@ -17,6 +17,7 @@ import { closeEmptyAtas } from './close-empty-ata.js';
 import {
   appendLeaderGateShadowOutcome,
   attemptMildDipEntry,
+  mirrorEntryAttemptOutcome,
   takeLeaderGateShadowDeferSlot,
 } from './entry-attempt.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
@@ -1412,6 +1413,7 @@ async function wakeLeaderMirrors(
   for (const [watchKey, watch] of leaderMirrorWatches) {
     const mint = watch.hit.mint;
     if (state.open[mint]) {
+      leaderMirrorEntryRetryAfterMs.delete(watchKey);
       leaderMirrorWatches.delete(watchKey);
       continue;
     }
@@ -1434,6 +1436,7 @@ async function wakeLeaderMirrors(
       leaderMirrorWatches.delete(watchKey);
       continue;
     }
+    if ((leaderMirrorEntryRetryAfterMs.get(watchKey) ?? 0) > nowMs) continue;
     const feedSell = leaderSellFeed?.get(mint, nowMs);
     const leaderSell = feedSell && feedSell.leader === hit.leader ? feedSell : null;
     const leaderBuyTsMs =
@@ -1619,6 +1622,9 @@ async function wakeLeaderMirrors(
         leaderBuyTsMs,
         leaderBuySignature: hit.signature,
         leaderMirrorLeader: hit.leader,
+        mirrorExecutionRetryBackoffMs: gates.executionRetryBackoffMs,
+        mirrorExecutionSlippageMultiplier: gates.executionSlippageMultiplier,
+        mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,
         mirrorExit: {
           armPct: gates.exitArmPct,
           trailPct: gates.exitTrailPct,
@@ -1629,11 +1635,20 @@ async function wakeLeaderMirrors(
         },
       },
     });
-    leaderMirrorWatches.delete(watchKey);
-    if (result === 'filled') {
+    const outcome = mirrorEntryAttemptOutcome(result);
+    if (outcome === 'filled') {
+      leaderMirrorEntryRetryAfterMs.delete(watchKey);
+      leaderMirrorWatches.delete(watchKey);
       state.cooldownUntilMs[mint] = nowMs + gates.cooldownMs;
       filled += 1;
+    } else if (outcome === 'retry') {
+      leaderMirrorEntryRetryAfterMs.set(
+        watchKey,
+        nowMs + gates.executionRetryBackoffMs,
+      );
     } else {
+      leaderMirrorEntryRetryAfterMs.delete(watchKey);
+      leaderMirrorWatches.delete(watchKey);
       leaderMirrorDecisions.set(watchKey, {
         hitKey: watch.hitKey,
         decidedAtMs: nowMs,
@@ -2790,6 +2805,7 @@ function leaderMirrorWatchKey(hit: LeaderSeedHit): string {
   return `${hit.mint}:${hit.leader ?? ''}`;
 }
 const leaderMirrorStructuralAttemptMs = new Map<string, number>();
+const leaderMirrorEntryRetryAfterMs = new Map<string, number>();
 let leaderMirrorStructuralInFlight = false;
 let leaderMirrorStateHydrated = false;
 
@@ -3290,7 +3306,9 @@ async function tryExits(
   givebackDumpGate: ReturnType<typeof createGivebackDumpGate>,
   leaderSellFeed: LeaderSellFeed | null,
 ): Promise<void> {
-  const ordered = orderMintsForMark(state.open).filter((m) => !sellInFlight.has(m));
+  const ordered = orderMintsForMark(state.open).filter(
+    (m) => !sellInFlight.has(m) && !buyInFlight.has(m),
+  );
   if (ordered.length === 0) return;
 
   const leaderHits =

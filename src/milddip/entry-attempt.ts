@@ -340,9 +340,20 @@ export type EntryAttemptOpts = {
     noMoveCutMs: number;
     noMoveMinMfePct: number;
   };
+  mirrorExecutionRetryBackoffMs?: number;
+  mirrorExecutionSlippageMultiplier?: number;
+  mirrorExecutionSlippageMaxBps?: number;
 };
 
-export type EntryAttemptResult = 'filled' | 'skip' | 'stop';
+export type EntryAttemptResult = 'filled' | 'skip' | 'exec_failed' | 'stop';
+
+export function mirrorEntryAttemptOutcome(
+  result: EntryAttemptResult,
+): 'filled' | 'retry' | 'refused' {
+  if (result === 'filled') return 'filled';
+  if (result === 'exec_failed') return 'retry';
+  return 'refused';
+}
 
 export function mirrorOnlyEntryAllowed(mirrorOnly: boolean, mirror: boolean): boolean {
   return !mirrorOnly || mirror;
@@ -1532,6 +1543,13 @@ export async function attemptMildDipEntry(args: {
       trigger: opts.trigger,
       leaderPriceUsd: buyLeaderPriceUsd,
       leaderBuyTs: nowMs,
+      ...(isMirror
+        ? {
+            slippageBpsOverride: copyCfg.slippageBps,
+            slippageRetryMultiplier: opts.mirrorExecutionSlippageMultiplier,
+            slippageRetryMaxBps: opts.mirrorExecutionSlippageMaxBps,
+          }
+        : {}),
     });
   } catch (err) {
     buyInFlight.delete(c.mint);
@@ -1552,7 +1570,13 @@ export async function attemptMildDipEntry(args: {
       });
     } else {
       delete state.open[c.mint];
-      state.cooldownUntilMs[c.mint] = nowMs + (isWaitDip ? Math.min(softCd, 1_500) : softCd);
+      state.cooldownUntilMs[c.mint] =
+        nowMs +
+        (isMirror
+          ? opts.mirrorExecutionRetryBackoffMs ?? 3_000
+          : isWaitDip
+            ? Math.min(softCd, 1_500)
+            : softCd);
       saveMildDipState(cfg.statePath, state);
     }
     appendMildDipJournal(cfg.journalPath, {
@@ -1574,7 +1598,7 @@ export async function attemptMildDipEntry(args: {
       onchainRawAfterFail: onchainAfterThrow.toString(),
     });
     resetCopyFundingCache();
-    return 'skip';
+    return isMirror ? 'exec_failed' : 'skip';
   }
 
   const fillPxJournal = buy.priceUsd || entryPriceUsd;
@@ -1775,15 +1799,17 @@ export async function attemptMildDipEntry(args: {
       delete state.open[c.mint];
       state.cooldownUntilMs[c.mint] =
         nowMs +
-        (staleSignalPrice
-          ? SIGNAL_PRICE_STALE_COOLDOWN_MS
-          : isWaitDip
-            ? Math.min(softCd, 1_500)
-            : softCd);
+        (isMirror
+          ? opts.mirrorExecutionRetryBackoffMs ?? 3_000
+          : staleSignalPrice
+            ? SIGNAL_PRICE_STALE_COOLDOWN_MS
+            : isWaitDip
+              ? Math.min(softCd, 1_500)
+              : softCd);
       saveMildDipState(cfg.statePath, state);
     }
     resetCopyFundingCache();
-    return 'skip';
+    return isMirror ? 'exec_failed' : 'skip';
   }
 
   if (state.waitDipWatch?.[c.mint]) delete state.waitDipWatch[c.mint];
