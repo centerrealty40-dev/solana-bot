@@ -3744,7 +3744,7 @@ async function tryExits(
         trailPct: pos.greenExitTrailPct ?? cfg.green.exitTrailPct,
       },
       mirrorGates: {
-        trailEnabled: true,
+        trailEnabled: cfg.leaderMirror.ownExitEnabled,
         takeProfitPct: 0,
         stopPct: pos.mirrorExitStopPct ?? cfg.leaderMirror.exitStopPct,
         maxHoldMs: pos.mirrorExitMaxHoldMs ?? cfg.leaderMirror.maxHoldMs,
@@ -3752,6 +3752,8 @@ async function tryExits(
         noMoveMinMfePct: pos.mirrorExitNoMoveMinMfePct ?? cfg.leaderMirror.noMoveMinMfePct,
         armPct: pos.mirrorExitArmPct ?? cfg.leaderMirror.exitArmPct,
         trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
+        ownExitEnabled: cfg.leaderMirror.ownExitEnabled,
+        ownExitTimeStopMs: cfg.leaderMirror.ownExitTimeStopMs,
         leaderSellOnly: cfg.leaderMirror.leaderSellOnlyExit,
         safetyMaxHoldMs: cfg.leaderMirror.safetyMaxHoldMs,
         ladderStepPct: cfg.leaderMirror.ladderStepPct,

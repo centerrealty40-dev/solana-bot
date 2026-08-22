@@ -14,6 +14,7 @@ function pos(partial: Partial<MildDipOpenPosition> & { mint: string }): MildDipO
   return {
     symbol: partial.symbol ?? partial.mint.slice(0, 6),
     entryPriceUsd: partial.entryPriceUsd ?? 100,
+    entryMarkPriceUsd: partial.entryMarkPriceUsd,
     sizeUsd: partial.sizeUsd ?? 5,
     tokenRaw: partial.tokenRaw ?? '1',
     openedAtMs: partial.openedAtMs ?? 0,
@@ -24,6 +25,9 @@ function pos(partial: Partial<MildDipOpenPosition> & { mint: string }): MildDipO
     liquidityDrainConfirmTicks: partial.liquidityDrainConfirmTicks,
     liquidityDrainSampleTsMs: partial.liquidityDrainSampleTsMs,
     lastMarkPriceUsd: partial.lastMarkPriceUsd,
+    pendingMarkPriceUsd: partial.pendingMarkPriceUsd,
+    pendingMarkSource: partial.pendingMarkSource,
+    pendingMarkAtMs: partial.pendingMarkAtMs,
     markQuarantineSinceMs: partial.markQuarantineSinceMs,
     lane: partial.lane,
     trailArmed: partial.trailArmed,
@@ -180,6 +184,203 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     })!;
     expect(off.shouldExit).toBe(false);
     expect(off.reason).toBeNull();
+  });
+
+  it('allows the opt-in mirror trail through leader-sell-only mode', () => {
+    const ownExit = {
+      ...mirrorGates,
+      leaderSellOnly: true,
+      ownExitEnabled: true,
+      ownExitTimeStopMs: 3_600_000,
+      armPct: 5,
+      trailPct: 3,
+    };
+    const p = pos({
+      mint: 'mirror-own-trail',
+      lane: 'leader_mirror',
+      openedAtMs: 0,
+      entryMarkPriceUsd: 110,
+      lastMarkPriceUsd: 110,
+      peakPriceUsd: 110,
+    });
+    const armed = decideMarkExit({
+      mint: p.mint,
+      pos: p,
+      markPriceUsd: 115.5,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates: ownExit,
+    })!;
+    expect(armed.armed).toBe(true);
+    expect(armed.shouldExit).toBe(false);
+    applyMarkDecisionToPosition(p, armed);
+    const trail = decideMarkExit({
+      mint: p.mint,
+      pos: p,
+      markPriceUsd: 115.5 * 0.97,
+      nowMs: 200,
+      gates: gatesForDust,
+      mirrorGates: ownExit,
+    })!;
+    expect(trail.shouldExit).toBe(true);
+    expect(trail.fraction).toBe(1);
+    expect(trail.reason).toBe('mirror_trail');
+  });
+
+  it('prioritizes a full own trail over a same-tick ladder sale', () => {
+    const d = decideMarkExit({
+      mint: 'mirror-own-trail-ladder',
+      pos: pos({
+        mint: 'mirror-own-trail-ladder',
+        lane: 'leader_mirror',
+        trailArmed: true,
+        peakPriceUsd: 120,
+        lastMarkPriceUsd: 120,
+      }),
+      markPriceUsd: 120 * 0.97,
+      nowMs: 200,
+      gates: gatesForDust,
+      mirrorGates: {
+        ...mirrorGates,
+        leaderSellOnly: true,
+        ownExitEnabled: true,
+        ownExitTimeStopMs: 3_600_000,
+        armPct: 5,
+        trailPct: 3,
+      },
+    })!;
+    expect(d.shouldExit).toBe(true);
+    expect(d.fraction).toBe(1);
+    expect(d.reason).toBe('mirror_trail');
+    expect(d.tpRungIndex).toBeNull();
+  });
+
+  it('uses the opt-in mirror time stop only before the trail arms', () => {
+    const ownExit = {
+      ...mirrorGates,
+      leaderSellOnly: true,
+      ownExitEnabled: true,
+      ownExitTimeStopMs: 3_600_000,
+      armPct: 5,
+      trailPct: 3,
+    };
+    const unarmed = decideMarkExit({
+      mint: 'mirror-time-stop',
+      pos: pos({ mint: 'mirror-time-stop', lane: 'leader_mirror', openedAtMs: 0 }),
+      markPriceUsd: 103,
+      nowMs: 3_600_000,
+      gates: gatesForDust,
+      mirrorGates: ownExit,
+    })!;
+    expect(unarmed.shouldExit).toBe(true);
+    expect(unarmed.fraction).toBe(1);
+    expect(unarmed.reason).toBe('mirror_time_stop');
+
+    const armed = decideMarkExit({
+      mint: 'mirror-time-stop-armed',
+      pos: pos({
+        mint: 'mirror-time-stop-armed',
+        lane: 'leader_mirror',
+        openedAtMs: 0,
+        peakPriceUsd: 105,
+        trailArmed: true,
+      }),
+      markPriceUsd: 102,
+      nowMs: 3_600_000,
+      gates: gatesForDust,
+      mirrorGates: ownExit,
+    })!;
+    expect(armed.shouldExit).toBe(false);
+    expect(armed.reason).toBeNull();
+  });
+
+  it('makes a trail-disabled own exit time stop unconditional but not immediate', () => {
+    const ownExit = {
+      ...mirrorGates,
+      leaderSellOnly: true,
+      ownExitEnabled: true,
+      ownExitTimeStopMs: 3_600_000,
+      armPct: 5,
+      trailPct: 0,
+    };
+    for (const [mint, markPriceUsd] of [
+      ['mirror-time-stop-no-trail-up', 120],
+      ['mirror-time-stop-no-trail-down', 80],
+    ] as const) {
+      const p = pos({
+        mint,
+        lane: 'leader_mirror',
+        openedAtMs: 0,
+        lastMarkPriceUsd: 100,
+      });
+      const beforeDeadline = decideMarkExit({
+        mint,
+        pos: p,
+        markPriceUsd,
+        nowMs: 100,
+        gates: gatesForDust,
+        mirrorGates: ownExit,
+      })!;
+      expect(beforeDeadline.armed).toBe(false);
+      expect(beforeDeadline.shouldExit).toBe(false);
+      const atDeadline = decideMarkExit({
+        mint,
+        pos: p,
+        markPriceUsd,
+        nowMs: 3_600_000,
+        gates: gatesForDust,
+        mirrorGates: ownExit,
+      })!;
+      expect(atDeadline.shouldExit).toBe(true);
+      expect(atDeadline.fraction).toBe(1);
+      expect(atDeadline.reason).toBe('mirror_time_stop');
+    }
+  });
+
+  it('does not arm or exit on a single unconfirmed mark jump', () => {
+    const ownExit = {
+      ...mirrorGates,
+      leaderSellOnly: true,
+      ownExitEnabled: true,
+      ownExitTimeStopMs: 3_600_000,
+      armPct: 5,
+      trailPct: 3,
+    };
+    const d = decideMarkExit({
+      mint: 'mirror-phantom-up',
+      pos: pos({
+        mint: 'mirror-phantom-up',
+        lane: 'leader_mirror',
+        lastMarkPriceUsd: 100,
+      }),
+      markPriceUsd: 120,
+      markSource: 'dex',
+      gates: { ...gatesForDust, markJumpConfirmPct: 10 },
+      mirrorGates: ownExit,
+      nowMs: 100,
+    })!;
+    expect(d.armed).toBe(false);
+    expect(d.shouldExit).toBe(false);
+    expect(d.markQuarantined).toBe(true);
+
+    const down = decideMarkExit({
+      mint: 'mirror-phantom-down',
+      pos: pos({
+        mint: 'mirror-phantom-down',
+        lane: 'leader_mirror',
+        trailArmed: true,
+        peakPriceUsd: 120,
+        lastMarkPriceUsd: 120,
+      }),
+      markPriceUsd: 80,
+      markSource: 'dex',
+      gates: { ...gatesForDust, markJumpConfirmPct: 10 },
+      mirrorGates: ownExit,
+      nowMs: 100,
+    })!;
+    expect(down.armed).toBe(true);
+    expect(down.shouldExit).toBe(false);
+    expect(down.markQuarantined).toBe(true);
   });
 
   it('does not let breakeven_stop veto a leader-style exit decision', () => {

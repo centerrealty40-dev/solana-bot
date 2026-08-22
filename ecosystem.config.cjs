@@ -4736,7 +4736,17 @@ const PM2_APPS = [
  * runtime settings differ.
  */
 const mildDipBotApp = PM2_APPS.find((app) => app.name === 'mild-dip-bot');
-function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
+function makeMirrorApp({
+  name,
+  walletSecret,
+  walletPubkey,
+  dataDir,
+  leaders,
+  ownExitEnabled,
+  exitArmPct,
+  exitTrailPct,
+  ownExitTimeStopMs,
+}) {
   return {
     ...mildDipBotApp,
     name,
@@ -4812,8 +4822,10 @@ function makeMirrorApp({ name, walletSecret, walletPubkey, dataDir, leaders }) {
       MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT: '15',
       MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS: '120000',
       MILD_DIP_MIRROR_COOLDOWN_MS: '900000',
-      MILD_DIP_MIRROR_EXIT_ARM_PCT: '2',
-      MILD_DIP_MIRROR_EXIT_TRAIL_PCT: '0',
+      MILD_DIP_MIRROR_OWN_EXIT_ENABLED: ownExitEnabled ? '1' : '0',
+      MILD_DIP_MIRROR_EXIT_ARM_PCT: exitArmPct,
+      MILD_DIP_MIRROR_EXIT_TRAIL_PCT: exitTrailPct,
+      MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS: ownExitTimeStopMs,
       MILD_DIP_MIRROR_EXIT_STOP_PCT: '45',
       MILD_DIP_MIRROR_NO_MOVE_CUT_MS: '600000',
       MILD_DIP_MIRROR_NO_MOVE_MIN_MFE_PCT: '2',
@@ -4829,6 +4841,10 @@ if (mildDipBotApp) {
       walletPubkey: '2fMzAm6aTCAPrXjamCLRbjLRxEqrcD7zLdN2wNdaL7Ps',
       dataDir: 'data/milddip-mirror',
       leaders: '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+      ownExitEnabled: true,
+      exitArmPct: '2',
+      exitTrailPct: '0',
+      ownExitTimeStopMs: '7200000',
     }),
     makeMirrorApp({
       name: 'mild-dip-mirror2',
@@ -4836,6 +4852,10 @@ if (mildDipBotApp) {
       walletPubkey: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
       dataDir: 'data/milddip-mirror2',
       leaders: '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+      ownExitEnabled: true,
+      exitArmPct: '5',
+      exitTrailPct: '3',
+      ownExitTimeStopMs: '3600000',
     }),
   );
 }
