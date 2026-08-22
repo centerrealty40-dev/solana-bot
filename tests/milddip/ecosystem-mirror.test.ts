@@ -37,7 +37,7 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_REQUIRE_DIP_CANDLE: name === 'mild-dip-mirror' ? '0' : '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_FILL_GRACE_MS: name === 'mild-dip-mirror' ? '60000' : '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LEADER_SIZE_USD: name === 'mild-dip-mirror' ? '20' : '0'");
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: name === 'mild-dip-mirror' ? '10' : '0'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: name === 'mild-dip-mirror' ? '15' : '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS: name === 'mild-dip-mirror' ? '120000' : '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS:");
     expect(ecosystemSource).toContain("'3600000,7200000,10800000,14400000,21600000'");
