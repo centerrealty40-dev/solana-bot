@@ -1396,6 +1396,7 @@ export async function attemptMildDipEntry(args: {
     ...(isMirror && opts.leaderBuyTsMs != null ? { leaderBuyTsMs: opts.leaderBuyTsMs } : {}),
     ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
     ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
+    ...(isMirror ? { mirrorOriginalEntryPriceUsd: entryPriceUsd } : {}),
     // Peak tracks the mark series from the fill — not the wait_dip trough the
     // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
     peakPriceUsd: entryPriceUsd,
