@@ -38,9 +38,6 @@ export type MildDipOpenPosition = {
   mirrorAverageLastFillAtMs?: number;
   mirrorAverageAttempts?: number;
   mirrorAverageLastAttemptAtMs?: number;
-  /** Cash cost and token quantity still held for realized mirror P&L. */
-  mirrorCostUsd?: number;
-  mirrorTokenAmount?: number;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
   /** 1.11.919 — when the quarantined mark first appeared, so it can time out. */
@@ -242,10 +239,13 @@ export type MildDipState = {
     string,
     { hitKey: string; decidedAtMs: number; reason: string }
   >;
-  mirrorRealizedPnlUsd?: number;
+  mirrorTradingCashUsd?: number;
   mirrorLossCapBackfilled?: boolean;
+  mirrorLossCapBackfillVersion?: number;
   mirrorLossCapTriggeredAtMs?: number;
   mirrorLossCapTriggeredPnlUsd?: number;
+  mirrorLossCapPendingDrawdownUsd?: number;
+  mirrorLossCapPendingAtMs?: number;
   updatedAtMs: number;
 };
 
@@ -501,8 +501,9 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     leaderMirrorWatches: {},
     leaderMirrorDecisions: {},
     recentEntryMsByMint: {},
-    mirrorRealizedPnlUsd: 0,
+    mirrorTradingCashUsd: 0,
     mirrorLossCapBackfilled: false,
+    mirrorLossCapBackfillVersion: 2,
     updatedAtMs: nowMs,
   };
 }
@@ -546,16 +547,25 @@ export function loadMildDipState(
         mirrorObserveMs,
       ),
       recentEntryMsByMint: sanitizeRecentEntryMsByMint(parsed.recentEntryMsByMint),
-      mirrorRealizedPnlUsd:
-        Number.isFinite(Number(parsed.mirrorRealizedPnlUsd))
-          ? Number(parsed.mirrorRealizedPnlUsd)
+      mirrorTradingCashUsd:
+        Number.isFinite(Number(parsed.mirrorTradingCashUsd))
+          ? Number(parsed.mirrorTradingCashUsd)
           : 0,
       mirrorLossCapBackfilled: parsed.mirrorLossCapBackfilled === true,
+      ...(Number.isFinite(Number(parsed.mirrorLossCapBackfillVersion))
+        ? { mirrorLossCapBackfillVersion: Number(parsed.mirrorLossCapBackfillVersion) }
+        : {}),
       ...(Number.isFinite(Number(parsed.mirrorLossCapTriggeredAtMs))
         ? { mirrorLossCapTriggeredAtMs: Number(parsed.mirrorLossCapTriggeredAtMs) }
         : {}),
       ...(Number.isFinite(Number(parsed.mirrorLossCapTriggeredPnlUsd))
         ? { mirrorLossCapTriggeredPnlUsd: Number(parsed.mirrorLossCapTriggeredPnlUsd) }
+        : {}),
+      ...(Number.isFinite(Number(parsed.mirrorLossCapPendingDrawdownUsd))
+        ? { mirrorLossCapPendingDrawdownUsd: Number(parsed.mirrorLossCapPendingDrawdownUsd) }
+        : {}),
+      ...(Number.isFinite(Number(parsed.mirrorLossCapPendingAtMs))
+        ? { mirrorLossCapPendingAtMs: Number(parsed.mirrorLossCapPendingAtMs) }
         : {}),
       updatedAtMs: Number(parsed.updatedAtMs) || Date.now(),
     };

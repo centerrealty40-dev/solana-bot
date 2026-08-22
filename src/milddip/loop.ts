@@ -166,11 +166,11 @@ import {
 } from './state.js';
 import { hydrateTradeLotsFromOpen, writeUsSellFill } from './trade-journal.js';
 import {
-  applyMirrorSell,
-  buyCostUsd,
-  buyTokens,
-  replayMirrorRealizedPnl,
-  sellProceedsUsd,
+  buyCashDeltaUsd,
+  mirrorOpenMarkValueUsd,
+  replayMirrorTradingCash,
+  sellCashDeltaUsd,
+  confirmLossCapObservation,
 } from './mirror-loss-cap.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
@@ -212,30 +212,64 @@ function mirrorLossCapTriggered(cfg: MildDipConfig, state: MildDipState): boolea
 function maybeTriggerMirrorLossCap(
   cfg: MildDipConfig,
   state: MildDipState,
+  drawdownUsd: number,
   nowMs: number,
 ): void {
+  if (cfg.leaderMirror.lossCapUsd <= 0 || state.mirrorLossCapTriggeredAtMs != null) return;
+  if (drawdownUsd <= -cfg.leaderMirror.lossCapUsd) {
+    const observation = confirmLossCapObservation({
+      drawdownUsd,
+      capUsd: cfg.leaderMirror.lossCapUsd,
+      pendingDrawdownUsd: state.mirrorLossCapPendingDrawdownUsd,
+      pendingAtMs: state.mirrorLossCapPendingAtMs,
+      nowMs,
+    });
+    if (observation.confirmed) {
+      state.mirrorLossCapTriggeredAtMs = nowMs;
+      state.mirrorLossCapTriggeredPnlUsd = drawdownUsd;
+      saveMildDipState(cfg.statePath, state);
+      console.warn(
+        `[mild-dip] MIRROR LOSS CAP TRIGGERED drawdown=$${drawdownUsd.toFixed(2)} ` +
+          `cap=$${cfg.leaderMirror.lossCapUsd.toFixed(2)}`,
+      );
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_loss_cap_triggered',
+        drawdownUsd,
+        lossCapUsd: cfg.leaderMirror.lossCapUsd,
+        triggeredAtMs: nowMs,
+      });
+      return;
+    }
+    state.mirrorLossCapPendingDrawdownUsd = observation.pendingDrawdownUsd;
+    state.mirrorLossCapPendingAtMs = observation.pendingAtMs;
+    saveMildDipState(cfg.statePath, state);
+    return;
+  }
   if (
-    cfg.leaderMirror.lossCapUsd <= 0 ||
-    state.mirrorLossCapTriggeredAtMs != null ||
-    (state.mirrorRealizedPnlUsd ?? 0) > -cfg.leaderMirror.lossCapUsd
-  ) return;
-  state.mirrorLossCapTriggeredAtMs = nowMs;
-  state.mirrorLossCapTriggeredPnlUsd = state.mirrorRealizedPnlUsd ?? 0;
-  saveMildDipState(cfg.statePath, state);
-  console.warn(
-    `[mild-dip] MIRROR LOSS CAP TRIGGERED realized=$${(state.mirrorRealizedPnlUsd ?? 0).toFixed(2)} ` +
-      `cap=$${cfg.leaderMirror.lossCapUsd.toFixed(2)}`,
-  );
-  appendMildDipJournal(cfg.journalPath, {
-    kind: 'mirror_loss_cap_triggered',
-    realizedPnlUsd: state.mirrorRealizedPnlUsd ?? 0,
-    lossCapUsd: cfg.leaderMirror.lossCapUsd,
-    triggeredAtMs: nowMs,
-  });
+    state.mirrorLossCapPendingDrawdownUsd != null ||
+    state.mirrorLossCapPendingAtMs != null
+  ) {
+    state.mirrorLossCapPendingDrawdownUsd = undefined;
+    state.mirrorLossCapPendingAtMs = undefined;
+    saveMildDipState(cfg.statePath, state);
+  }
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 let lastMirrorLossCapStatusMs = 0;
+let lastMirrorLossCapEvaluationMs = 0;
+
+function mirrorLossCapValues(state: MildDipState): {
+  cashUsd: number;
+  bagsUsd: number;
+  drawdownUsd: number;
+} {
+  const cashUsd = state.mirrorTradingCashUsd ?? 0;
+  const bagsUsd = Object.values(state.open)
+    .filter((position) => position.lane === 'leader_mirror')
+    .reduce((sum, position) => sum + mirrorOpenMarkValueUsd(position), 0);
+  return { cashUsd, bagsUsd, drawdownUsd: cashUsd + bagsUsd };
+}
 
 /** Floor for a last partial clip when draining the wallet. */
 const MIN_CLIP_USD = 1;
@@ -1637,7 +1671,7 @@ async function wakeLeaderMirrors(
         kind: 'leader_mirror_refusal',
         mint,
         reason: 'mirror_loss_cap',
-        realizedPnlUsd: state.mirrorRealizedPnlUsd ?? 0,
+        tradingCashUsd: state.mirrorTradingCashUsd ?? 0,
         lossCapUsd: cfg.leaderMirror.lossCapUsd,
       });
       leaderMirrorDecisions.set(watchKey, {
@@ -2487,43 +2521,18 @@ async function executeQueuedSell(args: {
     );
   }
 
-  let mirrorLeg: ReturnType<typeof applyMirrorSell> | null = null;
   if (pos.lane === 'leader_mirror' && (sell.ok || refireSettlement != null)) {
-    const proceeds = refireSettlement
+    const cashDelta = refireSettlement
       ? refireSettlement.quoteReceivedUsd ?? 0
-      : sellProceedsUsd(sell as unknown as Record<string, unknown>);
-    const liveCost = pos.mirrorCostUsd ?? pos.sizeUsd;
-    const liveTokens =
-      pos.mirrorTokenAmount ??
-      (parseTokenRaw(pos.tokenRaw)?.toString() != null
-        ? Number(parseTokenRaw(pos.tokenRaw))
-        : pos.sizeUsd / Math.max(pos.entryPriceUsd, 1e-18));
-    mirrorLeg = applyMirrorSell({
-      costUsd: liveCost,
-      tokens: liveTokens,
-      receivedUsd: proceeds,
-      fraction,
-      tokenRawBefore: sell.tokenRawBefore,
-      tokenRawSold: sell.tokenRawSold,
-    });
-    state.mirrorRealizedPnlUsd =
-      (state.mirrorRealizedPnlUsd ?? 0) + mirrorLeg.realizedPnlUsd;
+      : sellCashDeltaUsd(sell as unknown as Record<string, unknown>);
+    state.mirrorTradingCashUsd = (state.mirrorTradingCashUsd ?? 0) + cashDelta;
     appendMildDipJournal(cfg.journalPath, {
-      kind: 'mirror_realized_close',
+      kind: 'mirror_trading_cash_leg',
       mint,
       exitReason: decision.reason,
-      realizedLegUsd: mirrorLeg.realizedPnlUsd,
-      allocatedCostUsd: liveCost - mirrorLeg.remainingCostUsd,
-      receivedUsd: proceeds,
-      fraction,
-      realizedPnlUsd: state.mirrorRealizedPnlUsd,
-      lossCapUsd: cfg.leaderMirror.lossCapUsd,
-      remainingToCapUsd: Math.max(
-        0,
-        (state.mirrorRealizedPnlUsd ?? 0) + cfg.leaderMirror.lossCapUsd,
-      ),
+      cashDeltaUsd: cashDelta,
+      tradingCashUsd: state.mirrorTradingCashUsd,
     });
-    maybeTriggerMirrorLossCap(cfg, state, nowMs);
   }
 
   appendMildDipJournal(cfg.journalPath, {
@@ -2723,10 +2732,6 @@ async function executeQueuedSell(args: {
       if (isPartial) {
         live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
       }
-      if (mirrorLeg) {
-        live.mirrorCostUsd = mirrorLeg.remainingCostUsd;
-        live.mirrorTokenAmount = mirrorLeg.remainingTokens;
-      }
       live.peakPriceUsd = decision.peakPriceUsd;
       live.trailArmed = decision.armed;
       if (settle.remainingRaw != null) {
@@ -2760,10 +2765,6 @@ async function executeQueuedSell(args: {
 
     // Confirmed flat (or keep_runner without open — nothing to do).
     if (state.open[mint]) {
-      if (mirrorLeg) {
-        pos.mirrorCostUsd = mirrorLeg.remainingCostUsd;
-        pos.mirrorTokenAmount = mirrorLeg.remainingTokens;
-      }
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
       noteLastExit(exitPx);
@@ -3378,14 +3379,17 @@ async function attemptMirrorAverage(args: {
     const addUsd = buy.quoteSpentUsd ?? Math.min(g.averageUsd, sized.sizeUsd);
     const fillPx = buy.priceUsd > 0 ? buy.priceUsd : markPriceUsd;
     const event = buy as unknown as Record<string, unknown>;
-    const actualAddUsd = buyCostUsd(event) || addUsd;
+    state.mirrorTradingCashUsd =
+      (state.mirrorTradingCashUsd ?? 0) + buyCashDeltaUsd(event);
+    const actualAddUsd = -buyCashDeltaUsd(event) || addUsd;
+    const priorRaw = parseTokenRaw(live.tokenRaw);
     const priorTokens =
-      live.mirrorTokenAmount ?? live.sizeUsd / Math.max(live.entryPriceUsd, 1e-18);
-    const addTokens = buyTokens(event, actualAddUsd) || actualAddUsd / Math.max(fillPx, 1e-18);
+      priorRaw != null
+        ? Number(priorRaw)
+        : live.sizeUsd / Math.max(live.entryPriceUsd, 1e-18);
+    const addTokens = actualAddUsd / Math.max(fillPx, 1e-18);
     live.entryPriceUsd = (live.sizeUsd + addUsd) / (priorTokens + addTokens);
     live.sizeUsd += addUsd;
-    live.mirrorCostUsd = (live.mirrorCostUsd ?? live.sizeUsd - addUsd) + actualAddUsd;
-    live.mirrorTokenAmount = priorTokens + addTokens;
     live.mirrorAverageDone = true;
     live.mirrorAverageAttempts = (live.mirrorAverageAttempts ?? 0) + 1;
     live.mirrorAverageFillPriceUsd = fillPx;
@@ -3431,6 +3435,11 @@ async function tryExits(
   givebackDumpGate: ReturnType<typeof createGivebackDumpGate>,
   leaderSellFeed: LeaderSellFeed | null,
 ): Promise<void> {
+  const lossCapValues = mirrorLossCapValues(state);
+  if (nowMs - lastMirrorLossCapEvaluationMs >= 5_000) {
+    lastMirrorLossCapEvaluationMs = nowMs;
+    maybeTriggerMirrorLossCap(cfg, state, lossCapValues.drawdownUsd, nowMs);
+  }
   if (
     cfg.leaderMirror.enabled &&
     nowMs - lastMirrorLossCapStatusMs >= 60_000
@@ -3438,11 +3447,13 @@ async function tryExits(
     lastMirrorLossCapStatusMs = nowMs;
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mirror_realized_loss_cap_status',
-      realizedPnlUsd: state.mirrorRealizedPnlUsd ?? 0,
+      tradingCashUsd: lossCapValues.cashUsd,
+      openBagsUsd: lossCapValues.bagsUsd,
+      drawdownUsd: lossCapValues.drawdownUsd,
       lossCapUsd: cfg.leaderMirror.lossCapUsd,
       remainingToCapUsd:
         cfg.leaderMirror.lossCapUsd > 0
-          ? Math.max(0, (state.mirrorRealizedPnlUsd ?? 0) + cfg.leaderMirror.lossCapUsd)
+          ? Math.max(0, lossCapValues.drawdownUsd + cfg.leaderMirror.lossCapUsd)
           : null,
       capTriggered: mirrorLossCapTriggered(cfg, state),
       openMirror: Object.values(state.open).filter(
@@ -4556,17 +4567,27 @@ export async function runMildDipLoop(
   const state = loadMildDipState(cfg.statePath, {
     mirrorObserveMs: cfg.leaderMirror.observeMs,
   });
-  if (cfg.leaderMirror.lossCapUsd > 0 && state.mirrorLossCapBackfilled !== true) {
-    state.mirrorRealizedPnlUsd = replayMirrorRealizedPnl(cfg.journalPath);
+  if (
+    cfg.leaderMirror.lossCapUsd > 0 &&
+    (state.mirrorLossCapBackfilled !== true ||
+      state.mirrorLossCapBackfillVersion !== 2)
+  ) {
+    state.mirrorTradingCashUsd = replayMirrorTradingCash(cfg.journalPath);
     state.mirrorLossCapBackfilled = true;
+    state.mirrorLossCapBackfillVersion = 2;
     saveMildDipState(cfg.statePath, state);
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mirror_loss_cap_backfill',
-      realizedPnlUsd: state.mirrorRealizedPnlUsd,
+      tradingCashUsd: state.mirrorTradingCashUsd,
       lossCapUsd: cfg.leaderMirror.lossCapUsd,
     });
   }
-  maybeTriggerMirrorLossCap(cfg, state, Date.now());
+  maybeTriggerMirrorLossCap(
+    cfg,
+    state,
+    mirrorLossCapValues(state).drawdownUsd,
+    Date.now(),
+  );
   leaderMirrorStateHydrated = false;
   const stats: MildDipLoopStats = {
     open: openCount(state),
