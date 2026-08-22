@@ -30,10 +30,12 @@ export type MildDipOpenPosition = {
   leaderBuyTsMs?: number;
   leaderBuySignature?: string;
   leaderMirrorLeader?: string;
+  mirrorOriginalEntryPriceUsd?: number;
   mirrorLadderBasisPriceUsd?: number;
   mirrorLadderRungsDone?: number;
   mirrorAverageDone?: boolean;
   mirrorAverageFillPriceUsd?: number;
+  mirrorAverageLastFillAtMs?: number;
   mirrorAverageAttempts?: number;
   mirrorAverageLastAttemptAtMs?: number;
   /** Running high-water mark from entry (W9.1). */

@@ -5,9 +5,33 @@ import {
   recentMirrorLocalLow,
   recentMirrorLocalLowCascade,
   parseMirrorOhlcvList,
+  mirrorAverageReference,
 } from '../../src/milddip/mirror-averaging.js';
 
 describe('mirror averaging local low', () => {
+  it('uses the entry base for the first average and the prior fill for the next', () => {
+    expect(mirrorAverageReference({
+      entryPriceUsd: 100,
+      lastAverageFillPriceUsd: undefined,
+      attempts: 0,
+      initialDiscountPct: 10,
+      nextDiscountPct: 15,
+    })).toEqual({ entryPriceUsd: 100, minDiscountPct: 10 });
+    expect(mirrorAverageReference({
+      entryPriceUsd: 90,
+      lastAverageFillPriceUsd: 80,
+      attempts: 1,
+      initialDiscountPct: 10,
+      nextDiscountPct: 15,
+    })).toEqual({ entryPriceUsd: 80, minDiscountPct: 15 });
+    expect(mirrorAverageReference({
+      entryPriceUsd: 90,
+      lastAverageFillPriceUsd: undefined,
+      attempts: 1,
+      initialDiscountPct: 10,
+      nextDiscountPct: 15,
+    })).toBeNull();
+  });
   it('parses candles, excludes the tail, and finds the minimum low', () => {
     const now = 10_000_000;
     const candles = parseMirrorOhlcvList([

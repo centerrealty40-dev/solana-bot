@@ -33,6 +33,27 @@ export function mirrorAverageHoldAllowed(args: {
   return args.nowMs - args.openedAtMs >= Math.max(0, args.minHoldMs);
 }
 
+export function mirrorAverageReference(args: {
+  entryPriceUsd: number;
+  lastAverageFillPriceUsd?: number;
+  attempts: number;
+  initialDiscountPct: number;
+  nextDiscountPct: number;
+}): { entryPriceUsd: number; minDiscountPct: number } | null {
+  if (args.attempts > 0) {
+    const lastFillPriceUsd = numberValue(args.lastAverageFillPriceUsd);
+    if (lastFillPriceUsd == null) return null;
+    return {
+      entryPriceUsd: lastFillPriceUsd,
+      minDiscountPct: args.nextDiscountPct,
+    };
+  }
+  return {
+    entryPriceUsd: args.entryPriceUsd,
+    minDiscountPct: args.initialDiscountPct,
+  };
+}
+
 export function parseMirrorOhlcvList(raw: unknown): Candle[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((row) => {

@@ -123,6 +123,7 @@ import { validateStreamDexPrice } from './price-sanity.js';
 import {
   mirrorAverageHoldAllowed,
   mirrorAveragePriceAllowed,
+  mirrorAverageReference,
   mirrorRecentLocalLow,
 } from './mirror-averaging.js';
 import {
@@ -3168,9 +3169,22 @@ async function attemptMirrorAverage(args: {
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
   const g = cfg.leaderMirror;
+  const averageAttempts = pos.mirrorAverageAttempts ?? 0;
+  const averageReference = mirrorAverageReference({
+    entryPriceUsd: pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd,
+    lastAverageFillPriceUsd: pos.mirrorAverageFillPriceUsd,
+    attempts: averageAttempts,
+    initialDiscountPct: g.averageMinDiscountPct,
+    nextDiscountPct: g.averageNextDiscountPct,
+  });
+  if (!averageReference) return;
+  const averageHoldSinceMs =
+    averageAttempts > 0
+      ? pos.mirrorAverageLastFillAtMs ?? pos.openedAtMs
+      : pos.openedAtMs;
   if (
     !args.leaderHeld ||
-    (pos.mirrorAverageAttempts ?? 0) >= g.averageMaxTimes ||
+    averageAttempts >= g.averageMaxTimes ||
     (pos.mirrorAverageLastAttemptAtMs != null &&
       nowMs - pos.mirrorAverageLastAttemptAtMs < 60_000) ||
     !(g.averageEnabled && g.averageUsd > 0)
@@ -3181,22 +3195,22 @@ async function attemptMirrorAverage(args: {
     nowMs,
     windowsMs: g.averageWindowsMs,
     excludeTailMs: g.averageExcludeTailMs,
-    entryPriceUsd: pos.entryPriceUsd,
-    minDiscountPct: g.averageMinDiscountPct,
+    entryPriceUsd: averageReference.entryPriceUsd,
+    minDiscountPct: averageReference.minDiscountPct,
   });
   if (
     target == null ||
     !mirrorAverageHoldAllowed({
-      openedAtMs: pos.openedAtMs,
+      openedAtMs: averageHoldSinceMs,
       nowMs,
       minHoldMs: g.averageMinHoldMs,
     }) ||
     !mirrorAveragePriceAllowed({
       markPriceUsd,
-      entryPriceUsd: pos.entryPriceUsd,
+      entryPriceUsd: averageReference.entryPriceUsd,
       targetPriceUsd: target,
       tolerancePct: g.averageTolerancePct,
-      minDiscountPct: g.averageMinDiscountPct,
+      minDiscountPct: averageReference.minDiscountPct,
     })
   ) return;
   pos.mirrorAverageLastAttemptAtMs = nowMs;
@@ -3234,6 +3248,7 @@ async function attemptMirrorAverage(args: {
     live.mirrorAverageDone = true;
     live.mirrorAverageAttempts = (live.mirrorAverageAttempts ?? 0) + 1;
     live.mirrorAverageFillPriceUsd = fillPx;
+    live.mirrorAverageLastFillAtMs = nowMs;
     live.mirrorLadderBasisPriceUsd = fillPx;
     live.mirrorLadderRungsDone = 0;
     const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
@@ -3250,6 +3265,7 @@ async function attemptMirrorAverage(args: {
       markPriceUsd,
       fillPriceUsd: fillPx,
       amountUsd: addUsd,
+      attempt: live.mirrorAverageAttempts,
       newEntryPriceUsd: live.entryPriceUsd,
     });
   } catch (err) {
