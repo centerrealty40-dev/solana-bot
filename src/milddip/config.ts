@@ -862,6 +862,7 @@ const MildDipConfigSchema = z.object({
     exitTrailPct: z.coerce.number().min(0).default(4),
     ownExitEnabled: z.boolean().default(false),
     ownExitTimeStopMs: z.coerce.number().int().min(0).default(0),
+    lossCapUsd: z.coerce.number().min(0).default(0),
     exitStopPct: z.coerce.number().min(0).default(45),
     noMoveCutMs: z.coerce.number().int().min(0).default(600_000),
     noMoveMinMfePct: z.coerce.number().min(0).default(2),
@@ -1775,6 +1776,7 @@ export function loadMildDipConfig(): MildDipConfig {
         process.env.MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH?.trim() ||
         path.join('data', 'milddip', 'trades.jsonl'),
       leaderSellOnlyExit: envBool('MILD_DIP_MIRROR_LEADER_SELL_ONLY', false),
+      lossCapUsd: envNum('MILD_DIP_MIRROR_LOSS_CAP_USD', 0),
       safetyMaxHoldMs: envNum('MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS', 0),
       leaders: (process.env.MILD_DIP_MIRROR_LEADERS ?? '').split(',').map((s) => s.trim()).filter(Boolean),
       hitMaxAgeMs: envNum('MILD_DIP_MIRROR_LEADER_MAX_AGE_MS', 45_000),

@@ -142,6 +142,7 @@ export function decideMarkExit(args: {
   greenGates?: GreenExitGates;
   mirrorGates?: GreenExitGates & {
     leaderSellOnly?: boolean;
+    lossCapActive?: boolean;
     ownExitEnabled?: boolean;
     ownExitTimeStopMs?: number;
     safetyMaxHoldMs?: number;
@@ -504,8 +505,11 @@ export function decideMarkExit(args: {
             peakPnl,
             peakDrawdown,
           );
+    const lossCap = args.mirrorGates.lossCapActive === true;
     const mirrorShouldExit = safetyCut
       ? true
+      : lossCap
+        ? true
       : ownShouldExit
         ? true
         : args.mirrorGates.leaderSellOnly === true
@@ -553,6 +557,8 @@ export function decideMarkExit(args: {
     const mirrorReason: MildDipExitReason =
       safetyCut
         ? 'mirror_safety_cut'
+        : lossCap
+          ? 'mirror_loss_cap'
         : ownTrailExit
           ? 'mirror_trail'
           : ownTimeStop

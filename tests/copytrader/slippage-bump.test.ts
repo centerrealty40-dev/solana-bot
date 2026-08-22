@@ -28,4 +28,14 @@ describe('multiplySlippageBps', () => {
     bps = multiplySlippageBps({ currentBps: bps, multiplier: 2, maxBps: 800 });
     expect(bps).toBe(800);
   });
+
+  it('provides the retry sequence used after Jupiter 6001 slippage failures', () => {
+    let bps = 200;
+    const retryBps: number[] = [];
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      bps = multiplySlippageBps({ currentBps: bps, multiplier: 2, maxBps: 800 });
+      retryBps.push(bps);
+    }
+    expect(retryBps).toEqual([400, 800]);
+  });
 });

@@ -31,6 +31,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_LEADERS).toBe(
       '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
     );
+    expect(mirror?.env.MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT).toBe('1000');
+    expect(mirror2?.env.MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT).toBe('0');
     expect(mirror?.env.MILD_DIP_WALLET_PUBKEY).not.toBe(
       mirror2?.env.MILD_DIP_WALLET_PUBKEY,
     );
@@ -102,10 +104,10 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT: '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_ENTRY_GRACE_MS: '60000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_ENTRY_GRACE_MAX_PREMIUM_PCT: '1'");
-    expect(mirror?.env.MILD_DIP_MIRROR_OWN_EXIT_ENABLED).toBe('1');
+    expect(mirror?.env.MILD_DIP_MIRROR_OWN_EXIT_ENABLED).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_EXIT_ARM_PCT).toBe('2');
     expect(mirror?.env.MILD_DIP_MIRROR_EXIT_TRAIL_PCT).toBe('0');
-    expect(mirror?.env.MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS).toBe('7200000');
+    expect(mirror?.env.MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS).toBe('0');
     expect(mirror2?.env.MILD_DIP_MIRROR_OWN_EXIT_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_EXIT_ARM_PCT).toBe('5');
     expect(mirror2?.env.MILD_DIP_MIRROR_EXIT_TRAIL_PCT).toBe('3');

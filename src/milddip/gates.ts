@@ -906,6 +906,7 @@ export type MildDipExitReason =
   | 'mirror_max_hold'
   | 'mirror_trail'
   | 'mirror_time_stop'
+  | 'mirror_loss_cap'
   | 'mirror_no_move'
   | 'mirror_tp_ladder'
   | 'lstyle_profit_rebound'

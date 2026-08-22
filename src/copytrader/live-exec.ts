@@ -460,6 +460,8 @@ export async function executeLiveCopySell(args: {
   fillGuardDecisionPriceUsd?: number;
   fillGuardMaxSlipPct?: number;
   slippageBpsOverride?: number;
+  slippageRetryMultiplier?: number;
+  slippageRetryMaxBps?: number;
 }): Promise<
   {
     ok: boolean;
@@ -695,11 +697,19 @@ export async function executeLiveCopySell(args: {
     const isSlippage = isSlippageClassSimError(lastReason);
     if (isSlippage) {
       slippageClassAttempts += 1;
-      currentSlippageBps = bumpSlippageBps({
-        currentBps: currentSlippageBps,
-        bumpBps: liveCfg.liveSimSlippageRetryBumpBps,
-        maxBps: liveCfg.liveSimSlippageRetryMaxBps,
-      });
+      if (args.slippageRetryMultiplier != null && args.slippageRetryMultiplier > 1) {
+        currentSlippageBps = multiplySlippageBps({
+          currentBps: currentSlippageBps,
+          multiplier: args.slippageRetryMultiplier,
+          maxBps: args.slippageRetryMaxBps ?? liveCfg.liveSimSlippageRetryMaxBps,
+        });
+      } else {
+        currentSlippageBps = bumpSlippageBps({
+          currentBps: currentSlippageBps,
+          bumpBps: liveCfg.liveSimSlippageRetryBumpBps,
+          maxBps: liveCfg.liveSimSlippageRetryMaxBps,
+        });
+      }
     }
     const slippageBail = isSlippage && slippageClassAttempts >= slippageCap;
     if (!slippageBail && attempt < maxAttempts - 1 && isRetryableSellPreSendError(lastReason)) {
