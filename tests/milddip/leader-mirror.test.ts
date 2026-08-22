@@ -25,6 +25,8 @@ const gates: LeaderMirrorGates = {
   greenImpulsePct: 5,
   runUpPc5mPct: 10,
   maxPremiumPct: 2,
+  entryGraceMs: 60_000,
+  entryGraceMaxPremiumPct: 1,
   maxEntryPc5mPct: 0,
   maxPreEntryPc5mPct: 0,
   requireDeepDump: false,
@@ -61,6 +63,7 @@ const at = (
   now = 110_000,
   start = 100_000,
   decisionGates = gates,
+  leaderBuyTsMs: number | null | undefined = undefined,
 ) =>
   evaluateLeaderMirrorObservation({
     hit: h,
@@ -69,6 +72,7 @@ const at = (
     nowMs: now,
     watchStartedAtMs: start,
     gates: decisionGates,
+    leaderBuyTsMs,
   });
 
 describe('leader mirror observation decisions', () => {
@@ -93,6 +97,36 @@ describe('leader mirror observation decisions', () => {
   it('waits through premium and refuses after the window', () => {
     expect(at(hit(), 103, 110_000)).toEqual({ action: 'wait', waitReason: 'premium_cap' });
     expect(at(hit(), 103, 150_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_premium_cap' });
+  });
+
+  it('allows a small premium during the leader-buy grace window', () => {
+    expect(at(hit(), 100.9, 110_000, 100_000, {
+      ...gates,
+      maxPremiumPct: -1,
+      retryWhileLeaderHolds: true,
+    }, 100_000)).toEqual({ action: 'buy', quotePriceUsd: 100.9 });
+    expect(at(hit(), 101.5, 110_000, 100_000, {
+      ...gates,
+      maxPremiumPct: -1,
+      retryWhileLeaderHolds: true,
+    }, 100_000)).toEqual({ action: 'wait', waitReason: 'premium_cap' });
+    expect(at(hit(), 99.5, 160_001, 100_000, {
+      ...gates,
+      maxPremiumPct: -1,
+      retryWhileLeaderHolds: true,
+    }, 100_000)).toEqual({ action: 'wait', waitReason: 'premium_cap' });
+    expect(at(hit(), 98.5, 160_001, 100_000, {
+      ...gates,
+      maxPremiumPct: -1,
+      retryWhileLeaderHolds: true,
+    }, 100_000)).toEqual({ action: 'buy', quotePriceUsd: 98.5 });
+  });
+
+  it('does not apply grace without a leader-buy timestamp', () => {
+    expect(at(hit(), 100.9, 110_000, 100_000, {
+      ...gates,
+      maxPremiumPct: -1,
+    })).toEqual({ action: 'wait', waitReason: 'premium_cap' });
   });
 
   it('allows unknown pc5m while failing closed without structural data or a quote', () => {
