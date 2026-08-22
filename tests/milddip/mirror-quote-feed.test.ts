@@ -161,4 +161,89 @@ describe('mirror Jupiter quote feed', () => {
     expect(request(mint(7), 'green_jupiter', 31_001)).toBe(true);
     expect(greenMinuteJupiterStats(31_001, 30_000, 'leader_mirror_jupiter').activeMints).toBe(1);
   });
+
+  it('keeps the entry-grace quote cadence at the base interval', async () => {
+    __resetGreenMinuteJupiterRefreshForTests();
+    const quote = async () => 1;
+    const request = (nowMs: number, minGapMs: number) =>
+      requestGreenMinuteJupiterRefresh({
+        mint: mint(9),
+        nowMs,
+        snapshotPriceUsd: 1,
+        enabled: true,
+        minGapMs,
+        ttlMs: 60_000,
+        maxMints: 8,
+        maxInFlight: 16,
+        probeUsd: 1,
+        slippageBps: 50,
+        quote,
+        source: 'leader_mirror_jupiter',
+      });
+    expect(request(1_000, 1_000)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(request(1_500, 1_000)).toBe(false);
+    expect(request(2_000, 1_000)).toBe(true);
+  });
+
+  it('uses the stale interval after the entry-grace cadence is lowered', async () => {
+    __resetGreenMinuteJupiterRefreshForTests();
+    const quote = async () => 1;
+    const request = (nowMs: number, minGapMs: number) =>
+      requestGreenMinuteJupiterRefresh({
+        mint: mint(10),
+        nowMs,
+        snapshotPriceUsd: 1,
+        enabled: true,
+        minGapMs,
+        ttlMs: 60_000,
+        maxMints: 8,
+        maxInFlight: 16,
+        probeUsd: 1,
+        slippageBps: 50,
+        quote,
+        source: 'leader_mirror_jupiter',
+      });
+    expect(request(1_000, 1_000)).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(request(1_500, 5_000)).toBe(false);
+    expect(request(6_000, 5_000)).toBe(true);
+  });
+
+  it('lets a fresh mirror candidate replace an older capped candidate', async () => {
+    __resetGreenMinuteJupiterRefreshForTests();
+    const quote = async () => 1;
+    expect(requestGreenMinuteJupiterRefresh({
+      mint: mint(11),
+      nowMs: 1_000,
+      snapshotPriceUsd: 1,
+      enabled: true,
+      minGapMs: 1_000,
+      ttlMs: 60_000,
+      maxMints: 1,
+      maxInFlight: 16,
+      priority: 0,
+      probeUsd: 1,
+      slippageBps: 50,
+      quote,
+      source: 'leader_mirror_jupiter',
+    })).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(requestGreenMinuteJupiterRefresh({
+      mint: mint(12),
+      nowMs: 2_000,
+      snapshotPriceUsd: 1,
+      enabled: true,
+      minGapMs: 1_000,
+      ttlMs: 60_000,
+      maxMints: 1,
+      maxInFlight: 16,
+      priority: 1,
+      probeUsd: 1,
+      slippageBps: 50,
+      quote,
+      source: 'leader_mirror_jupiter',
+    })).toBe(true);
+    expect(greenMinuteJupiterStats(2_000, 60_000, 'leader_mirror_jupiter').activeMints).toBe(1);
+  });
 });

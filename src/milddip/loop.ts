@@ -1521,6 +1521,16 @@ async function wakeLeaderMirrors(
   if (massBackfillEntries.length > 0 && !leaderMirrorStructuralInFlight) {
     launchStructuralBackfill(massBackfillEntries, false);
   }
+  const quoteEntries = prioritizeFreshStructuralEntries(
+    [...leaderMirrorWatches.entries()],
+    nowMs,
+    gates.entryGraceMs ?? 60_000,
+    gates.maxQuoteMints > 0
+      ? Math.floor(gates.maxQuoteMints)
+      : leaderMirrorWatches.size,
+    ([, watch]) => watch.startedAtMs,
+  );
+  const quoteKeys = new Set(quoteEntries.map(([watchKey]) => watchKey));
   let filled = 0;
   for (const [watchKey, watch] of leaderMirrorWatches) {
     const mint = watch.hit.mint;
@@ -1598,19 +1608,24 @@ async function wakeLeaderMirrors(
       leaderSellFeed?.remove(mint);
       continue;
     }
-    requestGreenMinuteJupiterRefresh({
-      mint,
-      nowMs,
-      snapshotPriceUsd: hit.fillPriceUsd ?? 0,
-      enabled: true,
-      minGapMs: gates.quoteIntervalMs,
-      ttlMs: Math.max(3 * gates.quoteMaxAgeMs, 30_000),
-      maxMints: 0,
-      maxInFlight: 16,
-      probeUsd: gates.positionUsd,
-      slippageBps: cfg.slippageBps,
-      source: 'leader_mirror_jupiter',
-    });
+    if (quoteKeys.has(watchKey)) {
+      requestGreenMinuteJupiterRefresh({
+        mint,
+        nowMs,
+        snapshotPriceUsd: hit.fillPriceUsd ?? 0,
+        enabled: true,
+        minGapMs: entryGraceActive
+          ? gates.quoteIntervalMs
+          : Math.max(gates.quoteIntervalMs, gates.staleQuoteIntervalMs),
+        ttlMs: Math.max(3 * gates.quoteMaxAgeMs, 30_000),
+        maxMints: gates.maxQuoteMints,
+        maxInFlight: 16,
+        priority: entryGraceActive ? 1 : 0,
+        probeUsd: gates.positionUsd,
+        slippageBps: cfg.slippageBps,
+        source: 'leader_mirror_jupiter',
+      });
+    }
     const quote = mildDipPriceRing.lastPriceBySource(
       mint,
       'leader_mirror_jupiter',
