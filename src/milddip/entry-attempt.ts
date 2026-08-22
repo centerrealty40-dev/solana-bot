@@ -343,6 +343,7 @@ export type EntryAttemptOpts = {
   mirrorExecutionRetryBackoffMs?: number;
   mirrorExecutionSlippageMultiplier?: number;
   mirrorExecutionSlippageMaxBps?: number;
+  mirrorPc5mKnown?: boolean;
 };
 
 export type EntryAttemptResult = 'filled' | 'skip' | 'exec_failed' | 'stop';
@@ -1595,6 +1596,7 @@ export async function attemptMildDipEntry(args: {
       reason: err instanceof Error ? err.message : String(err),
       mode: cfg.executionMode,
       onchainRawAfterFail: onchainAfterThrow.toString(),
+      ...(isMirror ? { mirrorPc5mKnown: opts.mirrorPc5mKnown ?? entryPc5m != null } : {}),
     });
     resetCopyFundingCache();
     return isMirror ? 'exec_failed' : 'skip';
@@ -1652,6 +1654,7 @@ export async function attemptMildDipEntry(args: {
     streamDumpExtentFromPeakPct: c.streamDumpExtentFromPeakPct ?? null,
     greenExitProfile: isGreen ? greenExitProfile : null,
     ...(opts.mirrorBranch ? { mirrorBranch: opts.mirrorBranch } : {}),
+    ...(isMirror ? { mirrorPc5mKnown: opts.mirrorPc5mKnown ?? entryPc5m != null } : {}),
     // 1.11.803 — full decision snapshot; without it post-hoc entry analysis
     // cannot separate a good dip from a bad one.
     entrySnapshot: {

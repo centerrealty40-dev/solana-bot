@@ -25,6 +25,7 @@ const gates: LeaderMirrorGates = {
   greenImpulsePct: 5,
   runUpPc5mPct: 10,
   maxPremiumPct: 2,
+  maxEntryPc5mPct: 0,
   maxPreEntryPc5mPct: 0,
   requireDeepDump: false,
   deepDumpPc5mPct: -8,
@@ -86,7 +87,7 @@ describe('leader mirror observation decisions', () => {
     expect(at(hit(), 106)).toMatchObject({ action: 'skip', reason: 'leader_mirror_green_impulse' });
     expect(at(hit(), 106, 110_000, 100_000, { ...gates, retryWhileLeaderHolds: true }))
       .toEqual({ action: 'wait', waitReason: 'premium_cap' });
-    expect(at(hit({ pc5m: 10 }), 101)).toMatchObject({ action: 'skip', reason: 'leader_mirror_run_up' });
+    expect(at(hit({ pc5m: 10 }), 101)).toMatchObject({ action: 'skip', reason: 'leader_mirror_green_direction' });
   });
 
   it('waits through premium and refuses after the window', () => {
@@ -94,9 +95,8 @@ describe('leader mirror observation decisions', () => {
     expect(at(hit(), 103, 150_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_premium_cap' });
   });
 
-  it('fails closed without classification data or a quote', () => {
-    expect(at(hit({ pc5m: undefined }), 101)).toEqual({ action: 'wait', waitReason: 'no_structural' });
-    expect(at(hit({ pc5m: undefined }), 101, 150_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_no_data' });
+  it('allows unknown pc5m while failing closed without structural data or a quote', () => {
+    expect(at(hit({ pc5m: undefined }), 101)).toEqual({ action: 'buy', quotePriceUsd: 101 });
     expect(at(hit(), null, 150_000, 100_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_no_data' });
   });
 
@@ -164,12 +164,12 @@ describe('leader mirror observation decisions', () => {
   it('can accept any candle direction when dip-candle gating is disabled', () => {
     const noDip = { ...gates, requireDipCandle: false, maxPremiumPct: -1 };
     expect(at(hit({ pc5m: 12 }), 98.8, 110_000, 100_000, noDip)).toEqual({
-      action: 'buy',
-      quotePriceUsd: 98.8,
+      action: 'skip',
+      reason: 'leader_mirror_green_direction',
     });
     expect(at(hit({ pc5m: 12 }), 99.6, 110_000, 100_000, noDip)).toEqual({
-      action: 'wait',
-      waitReason: 'premium_cap',
+      action: 'skip',
+      reason: 'leader_mirror_green_direction',
     });
     expect(at(hit({ pc5m: undefined }), 98.8, 110_000, 100_000, noDip)).toEqual({
       action: 'buy',
@@ -186,6 +186,21 @@ describe('leader mirror observation decisions', () => {
     expect(at(hit({ liq: undefined, pc5m: 12 }), 98.8, 110_000, 100_000, noDip)).toEqual({
       action: 'wait',
       waitReason: 'no_structural',
+    });
+  });
+
+  it('rejects green leader direction but accepts a dump', () => {
+    expect(at(hit({ pc5m: 0.01 }), 98.8)).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_green_direction',
+    });
+    expect(at(hit({ pc5m: -0.01 }), 98.8)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 98.8,
+    });
+    expect(at(hit({ pc5m: undefined }), 98.8)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 98.8,
     });
   });
 
@@ -291,7 +306,7 @@ describe('leader mirror observation decisions', () => {
   });
 
   it('copies a green candidate inside the configured corridor', () => {
-    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5 };
+    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5, maxEntryPc5mPct: 100 };
     expect(at(hit({ pc5m: 8 }), 101.5, 110_000, 100_000, green)).toEqual({
       action: 'buy',
       quotePriceUsd: 101.5,
@@ -300,7 +315,7 @@ describe('leader mirror observation decisions', () => {
   });
 
   it('waits outside the green corridor until observe expires', () => {
-    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5 };
+    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5, maxEntryPc5mPct: 100 };
     expect(at(hit({ pc5m: 8 }), 103, 110_000, 100_000, green)).toEqual({ action: 'wait', waitReason: 'green_corridor' });
     expect(at(hit({ pc5m: 8 }), 103, 150_000, 100_000, green)).toMatchObject({
       action: 'skip',
@@ -309,7 +324,7 @@ describe('leader mirror observation decisions', () => {
   });
 
   it('rejects green blow-off movement before considering the corridor', () => {
-    const green = { ...gates, greenCopyEnabled: true, greenCopyMaxPc5mPct: 40 };
+    const green = { ...gates, greenCopyEnabled: true, greenCopyMaxPc5mPct: 40, maxEntryPc5mPct: 100 };
     expect(at(hit({ pc5m: 40 }), 100, 110_000, 100_000, green)).toMatchObject({
       action: 'skip',
       reason: 'leader_mirror_green_blowoff',
@@ -317,7 +332,7 @@ describe('leader mirror observation decisions', () => {
   });
 
   it('keeps structural floors ahead of green corridor decisions', () => {
-    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5 };
+    const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5, maxEntryPc5mPct: 100 };
     expect(at(hit({ pc5m: 8, liq: 7_999 }), 105, 110_000, 100_000, green)).toMatchObject({
       action: 'skip',
       reason: 'leader_mirror_liquidity_floor',
@@ -327,11 +342,11 @@ describe('leader mirror observation decisions', () => {
   it('preserves the legacy green refusals when green copying is disabled', () => {
     expect(at(hit({ pc5m: 10 }), 101, 110_000, 100_000, gates)).toMatchObject({
       action: 'skip',
-      reason: 'leader_mirror_run_up',
+      reason: 'leader_mirror_green_direction',
     });
     expect(at(hit({ pc5m: 1 }), 101, 110_000, 100_000, gates)).toMatchObject({
       action: 'skip',
-      reason: 'leader_mirror_pre_entry_floor',
+      reason: 'leader_mirror_green_direction',
     });
   });
 });
