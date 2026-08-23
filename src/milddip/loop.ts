@@ -4343,6 +4343,18 @@ async function tryExits(
           nowMs - firstFillAtMs <= cfg.leaderMirror.entryGraceMs
         );
       })();
+    const mirrorLastBuyFillAtMs = Math.max(
+      mirrorFirstClipWindowBaseMs(
+        pos.openedAtMs,
+        pos.mirrorFirstClipFirstFillAtMs,
+      ),
+      pos.mirrorAverageLastFillAtMs ?? 0,
+    );
+    const mirrorEntrySettlementAgeMs = Math.max(0, nowMs - mirrorLastBuyFillAtMs);
+    const mirrorEntrySettling =
+      pos.lane === 'leader_mirror' &&
+      cfg.leaderMirror.ladderMinSettleSec > 0 &&
+      mirrorEntrySettlementAgeMs < cfg.leaderMirror.ladderMinSettleSec * 1_000;
     const decision = decideMarkExit({
       mint,
       pos,
@@ -4402,7 +4414,8 @@ async function tryExits(
         ladderDustUsd: cfg.leaderMirror.ladderDustUsd,
         mirrorDustCloseUsd: cfg.leaderMirror.dustCloseUsd,
         mirrorFirstClipPending,
-        mirrorTokenRawSettled: pos.tokenRawSettled === true,
+        mirrorEntrySettling,
+        mirrorEntrySettlementAgeMs,
       },
       leaderStyleGates: pos.lane === 'leader_style'
         ? {
@@ -4435,6 +4448,9 @@ async function tryExits(
           symbol: pos.symbol,
           reason: decision.mirrorExitSuppressedReason,
           tokenRawSettled: pos.tokenRawSettled === true,
+          entrySettlementAgeMs: decision.mirrorExitSuppressedReason === 'entry_settling'
+            ? mirrorEntrySettlementAgeMs
+            : null,
           firstClipLegsFilled: pos.mirrorFirstClipLegsFilled ?? 1,
           at: nowMs,
         });

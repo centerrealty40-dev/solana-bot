@@ -123,7 +123,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     armPct: 5,
     trailPct: 5,
     mirrorFirstClipPending: false,
-    mirrorTokenRawSettled: true,
+    mirrorEntrySettling: false,
   };
 
   it.each([
@@ -242,15 +242,16 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       gates: gatesForDust,
       mirrorGates: {
         ...mirrorDust,
-        mirrorTokenRawSettled: false,
+        mirrorEntrySettling: true,
+        mirrorEntrySettlementAgeMs: 10_000,
       },
     })!;
     expect(dustBlocked.shouldExit).toBe(false);
     expect(dustBlocked.reason).toBeNull();
-    expect(dustBlocked.mirrorExitSuppressedReason).toBe('token_raw_unsettled');
+    expect(dustBlocked.mirrorExitSuppressedReason).toBe('entry_settling');
   });
 
-  it('holds the mirror ladder until the first clip and token balance settle', () => {
+  it('holds the mirror ladder until the first clip and entry settle', () => {
     const ladder = {
       ...mirrorGates,
       leaderSellOnly: true,
@@ -273,20 +274,43 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(firstClipPending.reason).toBeNull();
     expect(firstClipPending.mirrorExitSuppressedReason).toBe('first_clip_pending');
 
-    const unsettled = decideMarkExit({
-      mint: 'mirror-ladder-token-unsettled',
+    const settling = decideMarkExit({
+      mint: 'mirror-ladder-entry-settling',
       pos: pos({
-        mint: 'mirror-ladder-token-unsettled',
+        mint: 'mirror-ladder-entry-settling',
         lane: 'leader_mirror',
       }),
       markPriceUsd: 110,
       nowMs: 100,
       gates: gatesForDust,
-      mirrorGates: { ...ladder, mirrorTokenRawSettled: false },
+      mirrorGates: {
+        ...ladder,
+        mirrorEntrySettling: true,
+        mirrorEntrySettlementAgeMs: 30_000,
+      },
     })!;
-    expect(unsettled.shouldExit).toBe(false);
-    expect(unsettled.reason).toBeNull();
-    expect(unsettled.mirrorExitSuppressedReason).toBe('token_raw_unsettled');
+    expect(settling.shouldExit).toBe(false);
+    expect(settling.reason).toBeNull();
+    expect(settling.mirrorExitSuppressedReason).toBe('entry_settling');
+
+    const settled = decideMarkExit({
+      mint: 'mirror-ladder-entry-settled',
+      pos: pos({
+        mint: 'mirror-ladder-entry-settled',
+        lane: 'leader_mirror',
+        mirrorLadderRungsDone: 0,
+      }),
+      markPriceUsd: 110,
+      nowMs: 45_001,
+      gates: gatesForDust,
+      mirrorGates: {
+        ...ladder,
+        mirrorEntrySettling: false,
+        mirrorEntrySettlementAgeMs: 45_001,
+      },
+    })!;
+    expect(settled.shouldExit).toBe(true);
+    expect(settled.reason).toBe('mirror_tp_ladder');
 
     const safety = decideMarkExit({
       mint: 'mirror-ladder-safety',
@@ -301,7 +325,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       mirrorGates: {
         ...ladder,
         mirrorFirstClipPending: true,
-        mirrorTokenRawSettled: false,
+        mirrorEntrySettling: true,
+        mirrorEntrySettlementAgeMs: 100,
         safetyMaxHoldMs: 900,
       },
     })!;

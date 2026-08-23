@@ -90,7 +90,7 @@ export type MarkExitDecision = {
   liqRatio?: number | null;
   depthDrainRatio?: number | null;
   /** Mirror ladder/dust exit was held until the entry was settled. */
-  mirrorExitSuppressedReason?: 'first_clip_pending' | 'token_raw_unsettled';
+  mirrorExitSuppressedReason?: 'first_clip_pending' | 'entry_settling';
 };
 
 /** Armed positions first (trail can fire), then older opens. */
@@ -154,7 +154,8 @@ export function decideMarkExit(args: {
     ladderDustUsd?: number;
     mirrorDustCloseUsd?: number;
     mirrorFirstClipPending?: boolean;
-    mirrorTokenRawSettled?: boolean;
+    mirrorEntrySettling?: boolean;
+    mirrorEntrySettlementAgeMs?: number;
   };
   leaderStyleGates?: {
     profitReboundPct: number;
@@ -530,8 +531,8 @@ export function decideMarkExit(args: {
     const mirrorExitBlockReason =
       args.mirrorGates.mirrorFirstClipPending === true
         ? 'first_clip_pending'
-        : args.mirrorGates.mirrorTokenRawSettled !== true
-          ? 'token_raw_unsettled'
+        : args.mirrorGates.mirrorEntrySettling === true
+          ? 'entry_settling'
           : undefined;
     const mirrorLadderAllowed = mirrorExitBlockReason == null;
     const mirrorDustCandidate =
