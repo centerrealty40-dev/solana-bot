@@ -1373,6 +1373,17 @@ function rememberLeaderSeen(
   }
 }
 
+function isMirrorFirstClipPending(
+  position: MildDipOpenPosition | undefined,
+  configuredLegs: number | undefined,
+): boolean {
+  const legs = Math.max(1, Math.min(2, Math.floor(configuredLegs ?? 1)));
+  return (
+    position?.lane === 'leader_mirror' &&
+    (position.mirrorFirstClipLegsFilled ?? 1) < legs
+  );
+}
+
 async function wakeLeaderMirrors(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -2013,12 +2024,12 @@ async function wakeLeaderMirrors(
       },
     };
     const copyCfg = mildDipToCopyTraderConfig(cfg);
-    const openMirrorPosition = state.open[mint] as MildDipOpenPosition | undefined;
-    let result =
+    const openMirrorPosition = state.open[mint];
+    const firstClipPending =
       openMirrorPosition != null &&
-      openMirrorPosition.lane === 'leader_mirror' &&
-      (openMirrorPosition.mirrorFirstClipLegsFilled ?? 1) <
-        (cfg.leaderMirror.firstClipLegs ?? 1)
+      isMirrorFirstClipPending(openMirrorPosition, cfg.leaderMirror.firstClipLegs);
+    let result =
+      firstClipPending
         ? await attemptMirrorFirstClipLeg({
             cfg,
             state,
@@ -2071,9 +2082,10 @@ async function wakeLeaderMirrors(
           });
     if (
       result === 'filled' &&
-      (state.open[mint] as MildDipOpenPosition | undefined)?.lane === 'leader_mirror' &&
-      ((state.open[mint] as MildDipOpenPosition | undefined)?.mirrorFirstClipLegsFilled ?? 1) <
-        (cfg.leaderMirror.firstClipLegs ?? 1)
+      isMirrorFirstClipPending(
+        state.open[mint],
+        cfg.leaderMirror.firstClipLegs,
+      )
     ) {
       result = await attemptMirrorFirstClipLeg({
         cfg,
@@ -4376,6 +4388,59 @@ async function tryExits(
       !sellInFlight.has(mint)
     ) {
       if (pos.lane === 'leader_mirror') {
+        const firstClipLegs = Math.max(
+          1,
+          Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)),
+        );
+        const firstFillAtMs =
+          pos.mirrorFirstClipFirstFillAtMs ?? pos.leaderBuyTsMs ?? pos.openedAtMs;
+        const firstFillPrice =
+          pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd;
+        const firstClipWindowLive =
+          (pos.mirrorFirstClipLegsFilled ?? 1) < firstClipLegs &&
+          nowMs - firstFillAtMs <= cfg.leaderMirror.entryGraceMs;
+        const premiumAllowed =
+          firstFillPrice > 0 &&
+          decision.markPriceUsd <=
+            firstFillPrice * (1 + cfg.leaderMirror.maxPremiumPct / 100);
+        if (
+          firstClipWindowLive &&
+          leaderSellEvent == null &&
+          premiumAllowed
+        ) {
+          await attemptMirrorFirstClipLeg({
+            cfg,
+            state,
+            candidate: {
+              mint,
+              symbol: pos.symbol,
+              priceUsd: decision.markPriceUsd,
+              dipSource: 'leader_mirror',
+              metrics: {
+                priceChange5mPct: null,
+                volume5mUsd: null,
+                liquidityUsd,
+                marketCapUsd: null,
+                pairAgeHours: null,
+                dexId: null,
+                buys5m: null,
+                sells5m: null,
+                volume1hUsd: null,
+                priceChange1hPct: null,
+              },
+            },
+            copyCfg: mildDipToCopyTraderConfig(cfg),
+            nowMs,
+            buyInFlight,
+            resolveEntrySizeUsd,
+          });
+        } else if (
+          (pos.mirrorFirstClipLegsFilled ?? 1) < firstClipLegs &&
+          !firstClipWindowLive
+        ) {
+          pos.mirrorFirstClipLegsFilled = firstClipLegs;
+          saveMildDipState(cfg.statePath, state);
+        }
         await attemptMirrorAverage({
           cfg,
           state,

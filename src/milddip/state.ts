@@ -32,6 +32,7 @@ export type MildDipOpenPosition = {
   leaderMirrorLeader?: string;
   mirrorOriginalEntryPriceUsd?: number;
   mirrorFirstClipLegsFilled?: number;
+  mirrorFirstClipFirstFillAtMs?: number;
   mirrorLadderBasisPriceUsd?: number;
   mirrorLadderRungsDone?: number;
   mirrorAverageDone?: boolean;
@@ -392,6 +393,9 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
       );
     } else {
       delete pos.mirrorFirstClipLegsFilled;
+    }
+    if (!Number.isFinite(Number(pos.mirrorFirstClipFirstFillAtMs))) {
+      delete pos.mirrorFirstClipFirstFillAtMs;
     }
     const intent = pos.mirrorLeaderSellIntent;
     if (

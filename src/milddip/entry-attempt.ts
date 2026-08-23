@@ -177,6 +177,11 @@ export function laneEntryRequestUsd(args: {
   return args.stagedClipUsd;
 }
 
+export function mirrorFirstClipLegSize(positionUsd: number, legs: number): number {
+  const normalizedLegs = Math.max(1, Math.min(2, Math.floor(legs)));
+  return positionUsd / normalizedLegs;
+}
+
 /** Test helper. */
 export function __resetProbeBudgetForTests(): void {
   probeStamps.length = 0;
@@ -1362,7 +1367,7 @@ export async function attemptMildDipEntry(args: {
   );
   const mirrorFirstClipRequestUsd =
     isMirror && mirrorFirstClipLegs > 1
-      ? laneRequestUsd / mirrorFirstClipLegs
+      ? mirrorFirstClipLegSize(laneRequestUsd, mirrorFirstClipLegs)
       : laneRequestUsd;
   const sizedRaw = await args.resolveEntrySizeUsd(
     cfg,
@@ -1437,6 +1442,7 @@ export async function attemptMildDipEntry(args: {
     ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
     ...(isMirror ? { mirrorOriginalEntryPriceUsd: entryPriceUsd } : {}),
     ...(isMirror ? { mirrorFirstClipLegsFilled: 1 } : {}),
+    ...(isMirror ? { mirrorFirstClipFirstFillAtMs: nowMs } : {}),
     // Peak tracks the mark series from the fill — not the wait_dip trough the
     // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
     peakPriceUsd: entryPriceUsd,
