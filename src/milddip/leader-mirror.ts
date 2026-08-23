@@ -4,7 +4,18 @@ export const LEADER_MIRROR_WALLET = '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH
 
 export type LeaderMirrorDecision =
   | { action: 'wait'; waitReason?: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor' | 'not_dip' | string }
-  | { action: 'buy'; quotePriceUsd: number; mirrorBranch?: 'green' | 'dip' }
+  | {
+      action: 'buy';
+      quotePriceUsd: number;
+      mirrorBranch?: 'green' | 'dip';
+      knifeWait?: {
+        enteredByDiscount: boolean;
+        enteredByWindowExpiry: boolean;
+        waitedMs: number;
+        leaderPc5m: number;
+        leaderFillPriceUsd: number;
+      };
+    }
   | { action: 'skip'; reason: string };
 
 export function leaderMirrorHitKey(hit: LeaderSeedHit): string {
@@ -80,7 +91,23 @@ export type LeaderMirrorGates = {
   requireDipCandle?: boolean;
   leaderFillGraceMs?: number;
   minLeaderSizeUsd?: number;
+  knifeWaitEnabled: boolean;
+  knifeWaitPc5mPct: number;
+  knifeWaitDiscountPct: number;
+  knifeWaitWindowMs: number;
 };
+
+export function leaderMirrorObservationWindowMs(gates: Pick<
+  LeaderMirrorGates,
+  'observeMs' | 'knifeWaitEnabled' | 'knifeWaitWindowMs' | 'tickIntervalMs'
+>): number {
+  return Math.max(
+    gates.observeMs,
+    gates.knifeWaitEnabled
+      ? gates.knifeWaitWindowMs + Math.max(1, gates.tickIntervalMs)
+      : 0,
+  );
+}
 
 function finitePositive(value: number | null | undefined): value is number {
   return value != null && Number.isFinite(value) && value > 0;
@@ -192,9 +219,54 @@ export function evaluateLeaderMirrorObservation(args: {
   const quotePrice = args.quotePriceUsd;
   const quoteGainPct = (quotePrice / leaderPrice - 1) * 100;
   const leaderAgeMs =
-    args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
-      ? nowMs - args.leaderBuyTsMs
+    (args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
+      ? args.leaderBuyTsMs
+      : hit.blockTime != null && Number.isFinite(hit.blockTime) && hit.blockTime > 0
+        ? hit.blockTime * 1000
+        : null) != null
+      ? nowMs -
+        (args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
+          ? args.leaderBuyTsMs
+          : hit.blockTime! * 1000)
       : null;
+  const knifeWaitActive =
+    gates.knifeWaitEnabled &&
+    pc5m != null &&
+    (pc5m <= gates.knifeWaitPc5mPct || pc5m >= 0) &&
+    leaderAgeMs != null &&
+    leaderAgeMs >= 0 &&
+    leaderAgeMs < gates.knifeWaitWindowMs;
+  const knifeWaitPassed =
+    knifeWaitActive && quoteGainPct <= -Math.abs(gates.knifeWaitDiscountPct);
+  const knifeWaitMetadata =
+    knifeWaitPassed && pc5m != null && leaderAgeMs != null
+      ? {
+          enteredByDiscount: true,
+          enteredByWindowExpiry: false,
+          waitedMs: Math.max(0, leaderAgeMs),
+          leaderPc5m: pc5m,
+          leaderFillPriceUsd: leaderPrice,
+        }
+      : undefined;
+  if (knifeWaitActive && !knifeWaitPassed && quoteGainPct > -Math.abs(gates.knifeWaitDiscountPct)) {
+    return { action: 'wait', waitReason: 'knife_discount' };
+  }
+  const knifeWaitExpired =
+    gates.knifeWaitEnabled &&
+    pc5m != null &&
+    (pc5m <= gates.knifeWaitPc5mPct || pc5m >= 0) &&
+    leaderAgeMs != null &&
+    leaderAgeMs >= gates.knifeWaitWindowMs;
+  const expiredKnifeWaitMetadata =
+    knifeWaitExpired && leaderAgeMs != null
+      ? {
+          enteredByDiscount: false,
+          enteredByWindowExpiry: true,
+          waitedMs: Math.max(0, leaderAgeMs),
+          leaderPc5m: pc5m!,
+          leaderFillPriceUsd: leaderPrice,
+        }
+      : knifeWaitMetadata;
   const entryGraceActive =
     leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
   const maxPremiumPct = entryGraceActive
@@ -204,7 +276,12 @@ export function evaluateLeaderMirrorObservation(args: {
     if (quoteGainPct > gates.greenCorridorPct) {
       return soft('leader_mirror_green_corridor', 'green_corridor', true);
     }
-    return { action: 'buy', quotePriceUsd: quotePrice, mirrorBranch: 'green' };
+    return {
+      action: 'buy',
+      quotePriceUsd: quotePrice,
+      mirrorBranch: 'green',
+      ...(expiredKnifeWaitMetadata ? { knifeWait: expiredKnifeWaitMetadata } : {}),
+    };
   }
   if (requireDipCandle && quoteGainPct >= gates.greenImpulsePct) {
     return gates.retryWhileLeaderHolds
@@ -214,5 +291,9 @@ export function evaluateLeaderMirrorObservation(args: {
   if (quoteGainPct > maxPremiumPct) {
     return soft('leader_mirror_premium_cap', 'premium_cap', true);
   }
-  return { action: 'buy', quotePriceUsd: quotePrice };
+  return {
+    action: 'buy',
+    quotePriceUsd: quotePrice,
+    ...(expiredKnifeWaitMetadata ? { knifeWait: expiredKnifeWaitMetadata } : {}),
+  };
 }

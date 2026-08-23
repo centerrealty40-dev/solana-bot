@@ -4,6 +4,7 @@ import {
   leaderMirrorDecisionSuppressed,
   LEADER_MIRROR_WALLET,
   leaderMirrorHitKey,
+  leaderMirrorObservationWindowMs,
   leaderMirrorQuoteMintsCap,
   type LeaderMirrorGates,
 } from '../../src/milddip/leader-mirror.js';
@@ -24,6 +25,10 @@ const gates: LeaderMirrorGates = {
   quoteMaxAgeMs: 10_000,
   greenImpulsePct: 5,
   runUpPc5mPct: 10,
+  knifeWaitEnabled: true,
+  knifeWaitPc5mPct: -10,
+  knifeWaitDiscountPct: 5,
+  knifeWaitWindowMs: 600_000,
   maxPremiumPct: 2,
   entryGraceMs: 60_000,
   entryGraceMaxPremiumPct: 1,
@@ -85,6 +90,51 @@ describe('leader mirror observation decisions', () => {
   });
   it('buys after a fresh quote on a dump', () => {
     expect(at()).toEqual({ action: 'buy', quotePriceUsd: 101 });
+  });
+
+  it('waits for a deep-knife discount during the wait window', () => {
+    expect(at(hit({ pc5m: -10 }), 100, 200_000, 100_000, gates, 100_000)).toEqual({
+      action: 'wait',
+      waitReason: 'knife_discount',
+    });
+    expect(at(hit({ pc5m: -10 }), 95, 200_000, 100_000, gates, 100_000)).toMatchObject({
+      action: 'buy',
+      quotePriceUsd: 95,
+      knifeWait: {
+        enteredByDiscount: true,
+        enteredByWindowExpiry: false,
+      },
+    });
+  });
+
+  it('leaves shallow dips unchanged and waits on green leaders', () => {
+    expect(at(hit({ pc5m: -5 }), 101, 200_000, 100_000, gates, 100_000)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101,
+    });
+    const green = { ...gates, maxEntryPc5mPct: 100, requireDipCandle: false };
+    expect(at(hit({ pc5m: 5 }), 100, 200_000, 100_000, green, 100_000)).toEqual({
+      action: 'wait',
+      waitReason: 'knife_discount',
+    });
+  });
+
+  it('falls back to the ordinary entry after the knife wait expires', () => {
+    expect(at(hit({ pc5m: -10 }), 101, 800_001, 100_000, gates, 100_000)).toMatchObject({
+      action: 'buy',
+      quotePriceUsd: 101,
+      knifeWait: {
+        enteredByDiscount: false,
+        enteredByWindowExpiry: true,
+      },
+    });
+  });
+
+  it('fails open when the leader purchase timestamp is unavailable', () => {
+    expect(at(hit({ pc5m: -10 }), 101)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101,
+    });
   });
 
   it('rejects green impulse and run-up', () => {
@@ -260,6 +310,21 @@ describe('leader mirror observation decisions', () => {
     ).toBe(false);
     expect(leaderMirrorQuoteMintsCap(20, 50)).toBe(20);
     expect(leaderMirrorQuoteMintsCap(3, 8)).toBe(3);
+  });
+
+  it('retains mirror observations for the full knife wait window', () => {
+    expect(leaderMirrorObservationWindowMs({
+      observeMs: 45_000,
+      knifeWaitEnabled: true,
+      knifeWaitWindowMs: 600_000,
+      tickIntervalMs: 2_000,
+    })).toBe(602_000);
+    expect(leaderMirrorObservationWindowMs({
+      observeMs: 86400000,
+      knifeWaitEnabled: true,
+      knifeWaitWindowMs: 600_000,
+      tickIntervalMs: 2_000,
+    })).toBe(86400000);
   });
 
   it('uses the same hit-key suppression for execution skips', () => {

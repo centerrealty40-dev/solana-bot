@@ -45,6 +45,7 @@ import {
   leaderMirrorDecisionSuppressed,
   leaderMirrorHitKey,
   leaderMirrorNeedsStructuralBackfill,
+  leaderMirrorObservationWindowMs,
   type LeaderMirrorMetricSource,
 } from './leader-mirror.js';
 import {
@@ -1372,6 +1373,7 @@ async function wakeLeaderMirrors(
 ): Promise<number> {
   const gates = cfg.leaderMirror;
   if (!gates.enabled) return 0;
+  const mirrorObserveMs = leaderMirrorObservationWindowMs(gates);
   hydrateLeaderMirrorWatches(cfg, state, nowMs);
   const hits = readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
     maxAgeMs: Math.min(gates.hitMaxAgeMs, 600_000),
@@ -1387,7 +1389,7 @@ async function wakeLeaderMirrors(
         hit,
         hitKey,
         startedAtMs: nowMs,
-        expiresAtMs: nowMs + gates.observeMs,
+        expiresAtMs: nowMs + mirrorObserveMs,
         metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
       });
       leaderMirrorDecisions.delete(watchKey);
@@ -1409,7 +1411,7 @@ async function wakeLeaderMirrors(
         hit,
         hitKey,
         startedAtMs: nowMs,
-        expiresAtMs: nowMs + gates.observeMs,
+        expiresAtMs: nowMs + mirrorObserveMs,
         metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
       });
       appendMildDipJournal(cfg.journalPath, {
@@ -1798,6 +1800,27 @@ async function wakeLeaderMirrors(
     });
     const outcome = mirrorEntryAttemptOutcome(result);
     if (outcome === 'filled') {
+      if (decision.knifeWait) {
+        const entryPriceUsd =
+          (state.open as Record<string, { entryPriceUsd?: number }>)[mint]
+            ?.entryPriceUsd ?? decision.quotePriceUsd;
+        const discountPct =
+          hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+            ? (1 - entryPriceUsd / hit.fillPriceUsd) * 100
+            : null;
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_knife_wait',
+          mint,
+          leader: hit.leader,
+          pc5m: decision.knifeWait.leaderPc5m,
+          leaderFillPriceUsd: decision.knifeWait.leaderFillPriceUsd,
+          entryPriceUsd,
+          discountPct,
+          waitedMs: decision.knifeWait.waitedMs,
+          enteredByDiscount: decision.knifeWait.enteredByDiscount,
+          enteredByWindowExpiry: decision.knifeWait.enteredByWindowExpiry,
+        });
+      }
       leaderMirrorEntryRetryAfterMs.delete(watchKey);
       leaderMirrorWatches.delete(watchKey);
       state.cooldownUntilMs[mint] = nowMs + gates.cooldownMs;
@@ -3006,9 +3029,15 @@ function hydrateLeaderMirrorWatches(
   leaderMirrorStateHydrated = true;
   leaderMirrorWatches.clear();
   leaderMirrorDecisions.clear();
+  const mirrorObserveMs = leaderMirrorObservationWindowMs(cfg.leaderMirror);
   for (const [watchKey, watch] of Object.entries(state.leaderMirrorWatches ?? {})) {
     if (watch.expiresAtMs <= nowMs || state.open[watch.hit.mint]) continue;
-    leaderMirrorWatches.set(watchKey, watch);
+    leaderMirrorWatches.set(
+      watchKey,
+      watch.expiresAtMs < watch.startedAtMs + mirrorObserveMs
+        ? { ...watch, expiresAtMs: watch.startedAtMs + mirrorObserveMs }
+        : watch,
+    );
   }
   for (const [key, decision] of Object.entries(state.leaderMirrorDecisions ?? {})) {
     leaderMirrorDecisions.set(key, decision);
@@ -4716,7 +4745,8 @@ export async function runMildDipLoop(
       const watchKey = `${event.mint}:${event.leader}`;
       if (leaderMirrorWatches.has(watchKey)) continue;
       const startedAtMs = event.blockTimeMs;
-      const expiresAtMs = startedAtMs + cfg.leaderMirror.observeMs;
+      const expiresAtMs =
+        startedAtMs + leaderMirrorObservationWindowMs(cfg.leaderMirror);
       if (expiresAtMs <= Date.now()) continue;
       const hit: LeaderSeedHit = {
         mint: event.mint,
