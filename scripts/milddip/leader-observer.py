@@ -37,14 +37,17 @@ Env:
 from __future__ import annotations
 
 import datetime as dt
+import email.utils
 import json
 import math
 import os
 import subprocess
 import time
 import urllib.request
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError
 
 DEFAULT_LEADERS = [
     "8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ",
@@ -144,6 +147,179 @@ _DEX_BATCH_MAX = int(env_num("LEADER_OBSERVER_DEX_BATCH_MAX", 30.0))
 _dex_last_call_ms = 0.0
 _dex_backoff_until_ms = 0.0
 _dex_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
+
+
+def retry_after_ms(value: str | None, now_ms: float) -> float | None:
+    """Parse Retry-After seconds or HTTP-date, rejecting stale/malformed values."""
+    if not value:
+        return None
+    raw = value.strip()
+    try:
+        seconds = float(raw)
+        if math.isfinite(seconds) and seconds > 0:
+            return seconds * 1000.0
+    except ValueError:
+        pass
+    try:
+        parsed = email.utils.parsedate_to_datetime(raw)
+        if parsed is None:
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt.timezone.utc)
+        delay = parsed.timestamp() * 1000.0 - now_ms
+        return delay if delay > 0 else None
+    except (TypeError, ValueError, OverflowError):
+        return None
+
+
+def next_dex_cooldown(
+    now_ms: float,
+    retry_after: str | None,
+    consecutive_429: int,
+    *,
+    base_ms: float = 5000.0,
+    max_ms: float = 120000.0,
+) -> tuple[float, int]:
+    """Return (cooldown end, incremented streak) using shared gate semantics."""
+    streak = max(0, int(consecutive_429)) + 1
+    parsed = retry_after_ms(retry_after, now_ms)
+    raw_delay = parsed if parsed is not None else base_ms * (2 ** (streak - 1))
+    ceiling = max(1000.0, float(max_ms))
+    delay = min(ceiling, max(1000.0, raw_delay))
+    return now_ms + delay, streak
+
+
+def next_dex_slot_at(
+    now_ms: float,
+    next_allowed_ms: float,
+    cooldown_until_ms: float = 0.0,
+    *,
+    min_gap_ms: float = 1000.0,
+    max_backlog_ms: float = 30000.0,
+) -> float:
+    """Return the next shared-gate slot, honoring a bounded active cooldown."""
+    del min_gap_ms  # The caller reserves the returned slot plus one gap.
+    backlog = max(0.0, float(max_backlog_ms))
+    if next_allowed_ms - now_ms > backlog:
+        next_allowed_ms = now_ms
+    cooldown = min(max(0.0, cooldown_until_ms), now_ms + 120000.0)
+    return max(now_ms, next_allowed_ms, cooldown)
+
+
+def _dex_gate_path() -> Path | None:
+    enabled = os.environ.get("DEXSCREENER_GLOBAL_RATE_LIMIT", "1").strip()
+    raw = os.environ.get("DEXSCREENER_GLOBAL_GATE_PATH", "").strip()
+    return Path(raw) if enabled != "0" and raw else None
+
+
+def _read_dex_gate(path: Path) -> dict[str, float | int]:
+    state: dict[str, float | int] = {
+        "nextAllowedMs": 0.0,
+        "cooldownUntilMs": 0.0,
+        "consecutive429": 0,
+        "total429": 0,
+        "last429AtMs": 0.0,
+    }
+    try:
+        raw = json.loads(path.read_text())
+        if isinstance(raw, dict):
+            for key in state:
+                value = raw.get(key)
+                if isinstance(value, (int, float)) and math.isfinite(float(value)):
+                    state[key] = value
+    except (OSError, ValueError, TypeError):
+        pass
+    return state
+
+
+def _write_dex_gate(path: Path, state: dict[str, float | int]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp.{os.getpid()}.{int(time.time() * 1000)}")
+    tmp.write_text(json.dumps(state))
+    os.replace(tmp, path)
+
+
+@contextmanager
+def _dex_gate_lock(path: Path):
+    lock = Path(f"{path}.lock")
+    deadline = time.time() + 15.0
+    fd: int | None = None
+    while time.time() < deadline:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            break
+        except FileExistsError:
+            time.sleep(0.01)
+    if fd is None:
+        raise TimeoutError("DexScreener gate lock timeout")
+    try:
+        yield
+    finally:
+        os.close(fd)
+        try:
+            lock.unlink()
+        except OSError:
+            pass
+
+
+def _acquire_shared_dex_slot() -> bool | None:
+    path = _dex_gate_path()
+    if path is None:
+        return None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with _dex_gate_lock(path):
+            now_ms = time.time() * 1000.0
+            state = _read_dex_gate(path)
+            rpm = max(1.0, min(120.0, env_num("DEXSCREENER_GLOBAL_MAX_RPM", 42.0)))
+            gap = 60_000.0 / rpm
+            max_backlog = max(
+                0.0,
+                min(300_000.0, env_num("DEXSCREENER_GLOBAL_MAX_BACKLOG_MS", 30_000.0)),
+            )
+            grant = next_dex_slot_at(
+                now_ms,
+                float(state["nextAllowedMs"]),
+                float(state["cooldownUntilMs"]),
+                min_gap_ms=gap,
+                max_backlog_ms=max_backlog,
+            )
+            state["nextAllowedMs"] = grant + gap
+            _write_dex_gate(path, state)
+        if grant > now_ms:
+            time.sleep((grant - now_ms) / 1000.0)
+        return True
+    except (OSError, TimeoutError, ValueError, TypeError):
+        return None
+
+
+def _record_shared_dex_response(status: int, retry_after: str | None = None) -> None:
+    path = _dex_gate_path()
+    if path is None:
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with _dex_gate_lock(path):
+            now_ms = time.time() * 1000.0
+            state = _read_dex_gate(path)
+            if status == 429:
+                until, streak = next_dex_cooldown(
+                    now_ms,
+                    retry_after,
+                    int(state["consecutive429"]),
+                    base_ms=env_num("DEXSCREENER_429_BACKOFF_BASE_MS", 5000.0),
+                    max_ms=env_num("DEXSCREENER_429_BACKOFF_MAX_MS", 120000.0),
+                )
+                state["cooldownUntilMs"] = until
+                state["consecutive429"] = streak
+                state["total429"] = int(state["total429"]) + 1
+                state["last429AtMs"] = now_ms
+            elif 200 <= status < 300:
+                state["consecutive429"] = 0
+                state["cooldownUntilMs"] = 0.0
+            _write_dex_gate(path, state)
+    except (OSError, TimeoutError, ValueError, TypeError):
+        pass
 # Keep in sync with src/core/constants.ts DEX_PROGRAMS and
 # src/parser/allowlisted-dex-swap.ts (base58 IDs are case-sensitive).
 _AGGREGATOR_PROGRAM_IDS = {
@@ -308,11 +484,12 @@ def fetch_dex_batch(
             pending.append(m)
     if not pending:
         return out
-    if now_ms < _dex_backoff_until_ms and not priority:
+    shared_gate = _dex_gate_path() is not None
+    if not shared_gate and now_ms < _dex_backoff_until_ms and not priority:
         for m in pending:
             out[m] = {"error": "throttled_local", "retryInMs": int(_dex_backoff_until_ms - now_ms)}
         return out
-    if now_ms < _dex_backoff_until_ms and priority:
+    if not shared_gate and now_ms < _dex_backoff_until_ms and priority:
         wait_s = max(0.0, (_dex_backoff_until_ms - now_ms) / 1000.0)
         if wait_s > 0:
             time.sleep(min(wait_s, 5.0))
@@ -320,9 +497,21 @@ def fetch_dex_batch(
 
     for i in range(0, len(pending), _DEX_BATCH_MAX):
         chunk = pending[i : i + _DEX_BATCH_MAX]
-        gap = _DEX_MIN_GAP_MS - (time.time() * 1000 - _dex_last_call_ms)
-        if gap > 0:
-            time.sleep(min(gap, _DEX_MIN_GAP_MS) / 1000.0)
+        shared_slot = _acquire_shared_dex_slot()
+        if shared_slot is None:
+            local_now_ms = time.time() * 1000
+            if local_now_ms < _dex_backoff_until_ms and not priority:
+                for m in chunk:
+                    out[m] = {
+                        "error": "throttled_local",
+                        "retryInMs": int(_dex_backoff_until_ms - local_now_ms),
+                    }
+                continue
+            if local_now_ms < _dex_backoff_until_ms and priority:
+                time.sleep(min((_dex_backoff_until_ms - local_now_ms) / 1000.0, 5.0))
+            gap = _DEX_MIN_GAP_MS - (time.time() * 1000 - _dex_last_call_ms)
+            if gap > 0:
+                time.sleep(min(gap, _DEX_MIN_GAP_MS) / 1000.0)
         _dex_last_call_ms = time.time() * 1000
         try:
             req = urllib.request.Request(
@@ -333,7 +522,15 @@ def fetch_dex_batch(
                 },
             )
             with urllib.request.urlopen(req, timeout=15) as r:
-                j = json.loads(r.read().decode())
+                status = int(getattr(r, "status", 200))
+                body = r.read().decode()
+            if status == 429:
+                _record_shared_dex_response(status, None)
+                for m in chunk:
+                    out[m] = {"error": "HTTP Error 429: Too Many Requests"}
+                continue
+            _record_shared_dex_response(status)
+            j = json.loads(body)
             by_mint: dict[str, list[dict[str, Any]]] = {}
             for p in j.get("pairs") or []:
                 base = ((p.get("baseToken") or {}).get("address") or "").strip()
@@ -346,6 +543,14 @@ def fetch_dex_batch(
                 snap = _pair_to_dex(pair, pairs) if pair else None
                 _dex_cache[m] = (stamp, snap)
                 out[m] = snap
+        except HTTPError as e:
+            msg = str(e)
+            if e.code == 429:
+                retry_after = e.headers.get("Retry-After") if e.headers else None
+                _record_shared_dex_response(e.code, retry_after)
+                _dex_backoff_until_ms = time.time() * 1000 + _DEX_BACKOFF_MS
+            for m in chunk:
+                out[m] = {"error": msg}
         except Exception as e:
             msg = str(e)
             if "429" in msg:

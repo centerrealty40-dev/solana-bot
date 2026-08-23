@@ -4604,6 +4604,7 @@ const PM2_APPS = [
       time: true,
       env: {
         NODE_ENV: 'production',
+        ...DEXSCREENER_GATE_ENV,
         LEADER_OBSERVER_OUT_DIR: path.join(root, 'data/milddip'),
         /** Dual-write canonical trade_fill / trade_roundtrip rows. */
         LEADER_OBSERVER_TRADES_PATH: path.join(root, 'data/milddip/trades.jsonl'),
@@ -4767,6 +4768,8 @@ function makeMirrorApp({
       MILD_DIP_PRICE_RING_PATH: path.join(root, dataDir, 'price-ring.json'),
       MILD_DIP_MIRROR_ENABLED: '1',
       MILD_DIP_MIRROR_ONLY: '1',
+      MILD_DIP_MIRROR_OWN_STRUCTURAL_ENABLED: '1',
+      MILD_DIP_STRUCTURAL_FALLBACK_ENABLED: '1',
       MILD_DIP_MIRROR_GREEN_COPY_ENABLED: '0',
       MILD_DIP_MIRROR_REQUIRE_DIP_CANDLE: '0',
       MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3',

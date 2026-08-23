@@ -169,6 +169,7 @@ describe('mild-dip config exit schema', () => {
   it('defaults the structural fallback to disabled with bounded budgets', () => {
     const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(cfg.structuralFallbackEnabled).toBe(false);
+    expect(cfg.mirrorOwnStructuralEnabled).toBe(false);
     expect(cfg.structuralFallbackMaxPerMin).toBe(20);
     expect(cfg.structuralFallbackMintGapMs).toBe(30_000);
     expect(cfg.structuralFallbackCacheTtlMs).toBe(15_000);
