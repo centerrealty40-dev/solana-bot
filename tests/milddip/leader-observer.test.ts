@@ -55,11 +55,13 @@ print(json.dumps({
     expect(eco).toContain("LEADER_OBSERVER_DENSE_ONLY_TD: '1'");
   });
 
-  it('ecosystem enables 1Hz dense exit tape (1.11.790)', () => {
-    expect(eco).toContain("LEADER_OBSERVER_DENSE_TICKS: '1'");
+  it('ecosystem bounds observer telemetry and disables dense tape by default', () => {
+    expect(eco).toContain("LEADER_OBSERVER_DENSE_TICKS: '0'");
     expect(eco).toContain("LEADER_OBSERVER_DENSE_GAP_SEC: '1'");
     expect(eco).toContain("LEADER_OBSERVER_DEX_REFRESH_SEC: '15'");
-    expect(eco).toContain("LEADER_OBSERVER_MARK_MIN_GAP_SEC: '15'");
+    expect(eco).toContain("LEADER_OBSERVER_MARK_MIN_GAP_SEC: '60'");
+    expect(eco).toContain("LEADER_OBSERVER_TELEMETRY_BUDGET_MS: '1800'");
+    expect(eco).toContain("LEADER_OBSERVER_TELEMETRY_DEAD_BAG_SEC: '21600'");
     expect(eco).toContain("LEADER_OBSERVER_POLL_SEC: '5'");
     expect(eco).toContain('api.jup.ag/price/v3');
   });
@@ -74,6 +76,10 @@ print(json.dumps({
     expect(py).toContain('turn_dump_snapshot');
     expect(py).toContain('mfePct');
     expect(py).toContain('-25 < pc_f <= -2');
+    expect(py).toContain('leader_observer_cycle');
+    expect(py).toContain('signaturePollIntervalMs');
+    expect(py).toContain('_rotating_telemetry_bags');
+    expect(py).toContain('telemetry_dead_bag_sec');
   });
 
   it('python observer emits dense ticks with exit-formula fields (1.11.790)', () => {
