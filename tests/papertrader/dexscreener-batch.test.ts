@@ -6,6 +6,7 @@ import {
   DEXSCREENER_BATCH_MAX,
   __resetDexQuoteCacheForTests,
   fetchDexScreenerPairCreatedAtMany,
+  nextDexScreenerCooldownAt,
   prefetchDexScreenerPairDetailsMany,
   prefetchDexScreenerPairDetailsManyWithMetadata,
 } from '../../src/papertrader/pricing/dexscreener-quote-cache.js';
@@ -42,6 +43,9 @@ describe('1.11.820 DexScreener batch prefetch', () => {
   afterEach(() => {
     delete process.env.DEX_QUOTE_CACHE_PATH;
     process.env.DEX_QUOTE_CACHE_ENABLED = '0';
+    delete process.env.DEXSCREENER_GLOBAL_GATE_PATH;
+    delete process.env.DEXSCREENER_429_BACKOFF_BASE_MS;
+    delete process.env.DEXSCREENER_429_BACKOFF_MAX_MS;
   });
 
   it('spends one request per 30 mints, not one per mint', async () => {
@@ -105,14 +109,21 @@ describe('1.11.820 DexScreener batch prefetch', () => {
   it('does not cache a 429 as a negative quote', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-batch-error-'));
     process.env.DEX_QUOTE_CACHE_PATH = path.join(dir, 'cache.json');
+    process.env.DEXSCREENER_GLOBAL_GATE_PATH = path.join(dir, 'gate.json');
     process.env.DEX_QUOTE_CACHE_ENABLED = '1';
     const target = mint(77);
     const failed = await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
-      fetchImpl: (async () => ({ ok: false, status: 429 })) as never,
+      fetchImpl: (async () => ({
+        ok: false,
+        status: 429,
+        headers: { get: (name: string) => (name === 'retry-after' ? '1' : null) },
+      })) as never,
       nowMs: Date.now(),
       bypassGate: true,
     });
     expect(failed.errorMints).toEqual([target]);
+    expect(failed.rateLimited429).toBe(1);
+    expect(JSON.parse(fs.readFileSync(path.join(dir, 'gate.json'), 'utf8')).total429).toBe(1);
     __resetDexQuoteCacheForTests();
     const recovered = await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
       fetchImpl: (async () => ({
@@ -123,6 +134,122 @@ describe('1.11.820 DexScreener batch prefetch', () => {
       bypassGate: true,
     });
     expect(recovered.resolvedMints).toEqual([target]);
+    delete process.env.DEXSCREENER_GLOBAL_GATE_PATH;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('parses Retry-After seconds and HTTP dates, then falls back exponentially', () => {
+    const nowMs = Date.parse('2025-01-01T00:00:00.000Z');
+    const seconds = nextDexScreenerCooldownAt({
+      nowMs,
+      retryAfter: '2',
+      consecutive429: 0,
+    });
+    expect(seconds.consecutive429).toBe(1);
+    expect(seconds.cooldownMs).toBe(2_000);
+
+    const date = nextDexScreenerCooldownAt({
+      nowMs,
+      retryAfter: 'Wed, 01 Jan 2025 00:00:04 GMT',
+      consecutive429: 1,
+    });
+    expect(date.consecutive429).toBe(2);
+    expect(date.cooldownMs).toBe(4_000);
+
+    const invalid = nextDexScreenerCooldownAt({
+      nowMs,
+      retryAfter: 'garbage',
+      consecutive429: 1,
+    });
+    const missing = nextDexScreenerCooldownAt({
+      nowMs,
+      retryAfter: undefined,
+      consecutive429: 2,
+    });
+    expect(invalid.cooldownMs).toBe(10_000);
+    expect(missing.cooldownMs).toBe(20_000);
+  });
+
+  it('clamps configured 429 backoff base and ceiling', () => {
+    process.env.DEXSCREENER_429_BACKOFF_BASE_MS = '500';
+    process.env.DEXSCREENER_429_BACKOFF_MAX_MS = '1500';
+    expect(
+      nextDexScreenerCooldownAt({ nowMs: 1_000, retryAfter: 'garbage', consecutive429: 0 }).cooldownMs,
+    ).toBe(1_000);
+    expect(
+      nextDexScreenerCooldownAt({ nowMs: 1_000, retryAfter: 'garbage', consecutive429: 1 }).cooldownMs,
+    ).toBe(1_500);
+    delete process.env.DEXSCREENER_429_BACKOFF_BASE_MS;
+    delete process.env.DEXSCREENER_429_BACKOFF_MAX_MS;
+  });
+
+  it('resets the 429 streak and cooldown after an ok response', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-gate-reset-'));
+    process.env.DEXSCREENER_GLOBAL_GATE_PATH = path.join(dir, 'gate.json');
+    const target = mint(80);
+    const responses = [
+      {
+        ok: false,
+        status: 429,
+        headers: { get: () => null },
+      },
+      {
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ pairs: [pairFor(target)] }),
+      },
+    ];
+    const fetchImpl = (async () => responses.shift()!) as never;
+    await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
+      fetchImpl,
+      nowMs: Date.now(),
+      bypassGate: true,
+    });
+    __resetDexQuoteCacheForTests();
+    await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
+      fetchImpl,
+      nowMs: Date.now() + 1_000,
+      bypassGate: true,
+    });
+    const state = JSON.parse(fs.readFileSync(path.join(dir, 'gate.json'), 'utf8'));
+    expect(state.consecutive429).toBe(0);
+    expect(state.cooldownUntilMs).toBe(0);
+    expect(state.total429).toBe(1);
+    delete process.env.DEXSCREENER_GLOBAL_GATE_PATH;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('waits for a cooldown persisted by another process before requesting', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-gate-wait-'));
+    const gatePath = path.join(dir, 'gate.json');
+    const nowMs = Date.now();
+    fs.writeFileSync(
+      gatePath,
+      JSON.stringify({
+        nextAllowedMs: nowMs,
+        cooldownUntilMs: nowMs + 1_000,
+        consecutive429: 1,
+        total429: 1,
+        last429AtMs: nowMs,
+      }),
+    );
+    process.env.DEXSCREENER_GLOBAL_GATE_PATH = gatePath;
+    process.env.DEXSCREENER_GLOBAL_RATE_LIMIT = '1';
+    process.env.DEXSCREENER_GLOBAL_MAX_RPM = '120';
+    const startedAt = Date.now();
+    await prefetchDexScreenerPairDetailsManyWithMetadata([mint(81)], {
+      fetchImpl: (async () => ({
+        ok: true,
+        status: 200,
+        headers: { get: () => null },
+        json: async () => ({ pairs: [] }),
+      })) as never,
+    });
+    expect(Date.now() - startedAt).toBeGreaterThanOrEqual(900);
+    delete process.env.DEXSCREENER_GLOBAL_GATE_PATH;
+    delete process.env.DEXSCREENER_GLOBAL_RATE_LIMIT;
+    delete process.env.DEXSCREENER_GLOBAL_MAX_RPM;
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
