@@ -1,6 +1,6 @@
 import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
 import { checkCopyFundingGate } from '../copytrader/funding-gate.js';
-import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
+import { fetchMintBalanceRaw, readMintBalanceRaw } from '../copytrader/live-exec.js';
 import type { MildDipConfig } from './config.js';
 import {
   collectCandidateMints,
@@ -152,6 +152,7 @@ import {
   prefetchDexScreenerPairDetailsManyWithMetadata,
 } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
+import { decideMirrorOrphanClose } from './mirror-orphan.js';
 import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
 import {
@@ -574,6 +575,8 @@ const lastStagedAddSkipJournalMs = new Map<string, number>();
 const STAGED_ADD_SKIP_JOURNAL_GAP_MS = 15_000;
 const lastMirrorExitSuppressedJournalMs = new Map<string, number>();
 const MIRROR_EXIT_SUPPRESSED_JOURNAL_GAP_MS = 15_000;
+const lastMirrorOrphanCheckMs = new Map<string, number>();
+const MIRROR_ORPHAN_CHECK_GAP_MS = 60_000;
 
 /**
  * Sample the mark path of an open position into the journal so trail widths can
@@ -3921,6 +3924,7 @@ async function tryExits(
   givebackDumpGate: ReturnType<typeof createGivebackDumpGate>,
   leaderSellFeed: LeaderSellFeed | null,
 ): Promise<void> {
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
   const lossCapValues = mirrorLossCapValues(state);
   if (nowMs - lastMirrorLossCapEvaluationMs >= 5_000) {
     lastMirrorLossCapEvaluationMs = nowMs;
@@ -4355,6 +4359,48 @@ async function tryExits(
       pos.lane === 'leader_mirror' &&
       cfg.leaderMirror.ladderMinSettleSec > 0 &&
       mirrorEntrySettlementAgeMs < cfg.leaderMirror.ladderMinSettleSec * 1_000;
+    if (
+      pos.lane === 'leader_mirror' &&
+      leaderSellEvent == null &&
+      !pos.mirrorLeaderSellIntent
+    ) {
+      const lastOrphanCheckAtMs = lastMirrorOrphanCheckMs.get(mint) ?? 0;
+      if (nowMs - lastOrphanCheckAtMs >= MIRROR_ORPHAN_CHECK_GAP_MS) {
+        lastMirrorOrphanCheckMs.set(mint, nowMs);
+        const balanceRead = await readMintBalanceRaw(copyCfg, mint);
+        const orphan = decideMirrorOrphanClose({
+          balanceRaw: balanceRead.ok ? balanceRead.raw : null,
+          markPriceUsd: px,
+          entrySettlementAgeMs: mirrorEntrySettlementAgeMs,
+          firstClipPending: mirrorFirstClipPending,
+          minSettleSec: cfg.leaderMirror.ladderMinSettleSec,
+          dustUsd: cfg.leaderMirror.orphanDustUsd,
+        });
+        if (orphan.close && state.open[mint]) {
+          const cd = cooldownMsAfterExit({
+            pnlPct: 0,
+            mintCooldownMs: cfg.mintCooldownMs,
+            lossCooldownMs: cfg.lossCooldownMs,
+          });
+          delete state.open[mint];
+          state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
+          saveMildDipState(cfg.statePath, state);
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mild_dip_position_orphan_closed',
+            mint,
+            symbol: pos.symbol,
+            sizeUsd: pos.sizeUsd,
+            balanceRaw: orphan.balanceRaw.toString(),
+            balanceMarketUsd: +orphan.balanceMarketUsd.toFixed(6),
+            positionAgeMs: Math.max(0, nowMs - pos.openedAtMs),
+            entrySettlementAgeMs: mirrorEntrySettlementAgeMs,
+            cooldownMs: cd.cooldownMs,
+            cooldownKind: cd.kind,
+          });
+          continue;
+        }
+      }
+    }
     const decision = decideMarkExit({
       mint,
       pos,

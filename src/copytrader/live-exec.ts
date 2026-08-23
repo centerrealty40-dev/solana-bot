@@ -80,26 +80,38 @@ function signer(cfg: CopyTraderConfig): Keypair {
   return cachedSigner;
 }
 
+export async function readMintBalanceRaw(
+  cfg: CopyTraderConfig,
+  mint: string,
+): Promise<{ ok: true; raw: string } | { ok: false }> {
+  try {
+    const owner = signer(cfg).publicKey.toBase58();
+    const rows = await rpcCall<unknown>(
+      cfg.rpcUrl,
+      'getTokenAccountsByOwner',
+      [owner, { mint }, { encoding: 'jsonParsed' }],
+      5,
+    );
+    const value = (rows as { value?: unknown[] } | null)?.value ?? [];
+    let total = 0n;
+    for (const row of value) {
+      if (!row || typeof row !== 'object') continue;
+      const account = (row as { account?: { data?: { parsed?: { info?: { tokenAmount?: { amount?: string } } } } } }).account;
+      const amt = account?.data?.parsed?.info?.tokenAmount?.amount;
+      if (typeof amt === 'string' && /^\d+$/.test(amt)) total += BigInt(amt);
+    }
+    return { ok: true, raw: total.toString() };
+  } catch {
+    return { ok: false };
+  }
+}
+
 export async function fetchMintBalanceRaw(
   cfg: CopyTraderConfig,
   mint: string,
 ): Promise<string | null> {
-  const owner = signer(cfg).publicKey.toBase58();
-  const rows = await rpcCall<unknown>(
-    cfg.rpcUrl,
-    'getTokenAccountsByOwner',
-    [owner, { mint }, { encoding: 'jsonParsed' }],
-    5,
-  );
-  const value = (rows as { value?: unknown[] } | null)?.value ?? [];
-  let total = 0n;
-  for (const row of value) {
-    if (!row || typeof row !== 'object') continue;
-    const account = (row as { account?: { data?: { parsed?: { info?: { tokenAmount?: { amount?: string } } } } } }).account;
-    const amt = account?.data?.parsed?.info?.tokenAmount?.amount;
-    if (typeof amt === 'string' && /^\d+$/.test(amt)) total += BigInt(amt);
-  }
-  return total > 0n ? total.toString() : null;
+  const result = await readMintBalanceRaw(cfg, mint);
+  return result.ok && result.raw !== '0' ? result.raw : null;
 }
 
 async function sendSwap(cfg: CopyTraderConfig, unsignedB64: string, meta: Record<string, unknown>): Promise<{ ok: boolean; signature?: string; reason?: string }> {
