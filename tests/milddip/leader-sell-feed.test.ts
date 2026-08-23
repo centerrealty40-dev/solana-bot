@@ -27,6 +27,7 @@ const base = {
 
 describe('leader sell feed parser', () => {
   it('filters event shape, configured leaders, and max age', () => {
+    const stats = { staleDropped: 0 };
     expect(
       parseLeaderSellLines(
         [
@@ -36,9 +37,10 @@ describe('leader sell feed parser', () => {
           JSON.stringify({ ...base, blockTime: 1, mint: 'Mint444' }),
         ],
         110_000,
-        { leaders: [leader], maxAgeMs: 20_000 },
+        { leaders: [leader], maxAgeMs: 20_000, stats },
       ),
     ).toHaveLength(1);
+    expect(stats.staleDropped).toBe(1);
   });
 
   it('uses ts fallback and ignores malformed lines', () => {

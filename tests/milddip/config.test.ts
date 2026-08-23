@@ -617,18 +617,27 @@ describe('mild-dip mirror leader-sell exit configuration', () => {
     expect(defaults.leaderSellExitEnabled).toBe(false);
     expect(defaults.leaderSellExitMaxAgeMs).toBe(60_000);
     expect(defaults.leaderSellTradesPath).toBe('data/milddip/trades.jsonl');
+    expect(defaults.leaderSellLateReconcileIntervalMs).toBe(30_000);
+    expect(defaults.leaderSellLateReconcileWindowMs).toBe(3_600_000);
+    expect(defaults.leaderSellLateReconcileTailBytes).toBe(2 * 1024 * 1024);
     const configured = withConfigEnv(
       {
         ...baseEnv,
         MILD_DIP_MIRROR_LEADER_SELL_ENABLED: '1',
         MILD_DIP_MIRROR_LEADER_SELL_MAX_AGE_MS: '30000',
         MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH: '/tmp/leader-trades.jsonl',
+        MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_INTERVAL_MS: '15000',
+        MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_WINDOW_MS: '1800000',
+        MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_TAIL_BYTES: '1048576',
       },
       () => loadMildDipConfig(),
     ).leaderMirror;
     expect(configured.leaderSellExitEnabled).toBe(true);
     expect(configured.leaderSellExitMaxAgeMs).toBe(30_000);
     expect(configured.leaderSellTradesPath).toBe('/tmp/leader-trades.jsonl');
+    expect(configured.leaderSellLateReconcileIntervalMs).toBe(15_000);
+    expect(configured.leaderSellLateReconcileWindowMs).toBe(1_800_000);
+    expect(configured.leaderSellLateReconcileTailBytes).toBe(1_048_576);
   });
 });
 

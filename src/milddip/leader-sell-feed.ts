@@ -12,6 +12,11 @@ export type LeaderSellEvent = {
 export type LeaderSellFeedOptions = {
   leaders: readonly string[];
   maxAgeMs: number;
+  stats?: LeaderSellFeedStats;
+};
+
+export type LeaderSellFeedStats = {
+  staleDropped: number;
 };
 
 export type LeaderSellReconciliationOptions = {
@@ -20,6 +25,7 @@ export type LeaderSellReconciliationOptions = {
   openMints: ReadonlySet<string>;
   nowMs: number;
   windowMs?: number;
+  tailBytes?: number;
 };
 
 export const LEADER_SELL_RECONCILIATION_TAIL_BYTES = 32 * 1024 * 1024;
@@ -54,11 +60,14 @@ function eventTimestampMs(row: Record<string, unknown>): number | null {
   return ts != null && ts > 0 ? ts : null;
 }
 
-function readTailLines(file: string): string[] {
+function readTailLines(
+  file: string,
+  tailBytes = LEADER_SELL_RECONCILIATION_TAIL_BYTES,
+): string[] {
   const fd = fs.openSync(file, 'r');
   try {
     const size = fs.fstatSync(fd).size;
-    const length = Math.min(size, LEADER_SELL_RECONCILIATION_TAIL_BYTES);
+    const length = Math.min(size, tailBytes);
     const buffer = Buffer.alloc(length);
     fs.readSync(fd, buffer, 0, length, size - length);
     const rows = buffer.toString('utf8').split('\n');
@@ -93,7 +102,10 @@ export function parseLeaderSellLines(
       const mint = typeof row.mint === 'string' ? row.mint : '';
       const blockTimeMs = eventTimestampMs(row);
       if (!leader || !mint || blockTimeMs == null || !allowed.has(leader)) continue;
-      if (options.maxAgeMs > 0 && nowMs - blockTimeMs > options.maxAgeMs) continue;
+      if (options.maxAgeMs > 0 && nowMs - blockTimeMs > options.maxAgeMs) {
+        if (options.stats) options.stats.staleDropped += 1;
+        continue;
+      }
       result.push({
         mint,
         leader,
@@ -117,7 +129,7 @@ export function reconcileLeaderSellEvents(
   const lines: string[] = [];
   for (const file of paths) {
     try {
-      lines.push(...readTailLines(file));
+      lines.push(...readTailLines(file, options.tailBytes));
     } catch {
       // A journal may be absent or rotate between the two reads.
     }
@@ -203,11 +215,18 @@ export class LeaderSellFeed {
   private started = false;
   private readonly buffer = new Map<string, LeaderSellEvent>();
   private readonly maxBuffered = 256;
+  private readonly feedStats: LeaderSellFeedStats;
 
   constructor(
     private readonly path: string,
     private readonly options: LeaderSellFeedOptions,
-  ) {}
+  ) {
+    this.feedStats = options.stats ?? { staleDropped: 0 };
+  }
+
+  stats(): LeaderSellFeedStats {
+    return { ...this.feedStats };
+  }
 
   start(): void {
     this.started = true;
