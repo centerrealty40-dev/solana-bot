@@ -5,6 +5,7 @@ import {
   MONEY_MOTIVATED_EXIT_REASONS,
   NEVER_DEFER_REASONS,
 } from '../../src/milddip/exit-defer.js';
+import { profitFillMinPriceUsd } from '../../src/milddip/profit-fill-guard.js';
 
 /**
  * 1.11.883 — the mark that decides an exit is a mid; the quote in the executor
@@ -20,6 +21,7 @@ describe('cost floor on money-motivated sells', () => {
   it('covers the exits taken for the money', () => {
     for (const reason of [
       'tp_grid',
+      'mirror_tp_ladder',
       'mfe_bank_1',
       'mfe_bank_2',
       'mfe_bank_sleeve',
@@ -28,6 +30,17 @@ describe('cost floor on money-motivated sells', () => {
     ]) {
       expect(MONEY_MOTIVATED_EXIT_REASONS.has(reason)).toBe(true);
     }
+  });
+
+  it('applies the configured profit-fill floor to mirror ladder steps', () => {
+    expect(
+      profitFillMinPriceUsd({
+        reason: 'mirror_tp_ladder',
+        gainPct: 5,
+        decisionPriceUsd: 100,
+        maxSlipPct: 2,
+      }),
+    ).toBe(98);
   });
 
   it('never blocks an exit that is leaving regardless', () => {

@@ -122,6 +122,8 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     trailEnabled: true,
     armPct: 5,
     trailPct: 5,
+    mirrorFirstClipPending: false,
+    mirrorTokenRawSettled: true,
   };
 
   it.each([
@@ -226,6 +228,85 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(remnant.shouldExit).toBe(true);
     expect(remnant.fraction).toBe(1);
     expect(remnant.reason).toBe('mirror_dust_close');
+
+    const dustBlocked = decideMarkExit({
+      mint: 'mirror-dust-unsettled',
+      pos: pos({
+        mint: 'mirror-dust-unsettled',
+        lane: 'leader_mirror',
+        sizeUsd: 8,
+        scaleOutDone: true,
+      }),
+      markPriceUsd: 100,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates: {
+        ...mirrorDust,
+        mirrorTokenRawSettled: false,
+      },
+    })!;
+    expect(dustBlocked.shouldExit).toBe(false);
+    expect(dustBlocked.reason).toBeNull();
+    expect(dustBlocked.mirrorExitSuppressedReason).toBe('token_raw_unsettled');
+  });
+
+  it('holds the mirror ladder until the first clip and token balance settle', () => {
+    const ladder = {
+      ...mirrorGates,
+      leaderSellOnly: true,
+      ladderStepPct: 5,
+      ladderSellFraction: 0.2,
+    };
+    const firstClipPending = decideMarkExit({
+      mint: 'mirror-ladder-first-clip-pending',
+      pos: pos({
+        mint: 'mirror-ladder-first-clip-pending',
+        lane: 'leader_mirror',
+        mirrorFirstClipLegsFilled: 1,
+      }),
+      markPriceUsd: 110,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates: { ...ladder, mirrorFirstClipPending: true },
+    })!;
+    expect(firstClipPending.shouldExit).toBe(false);
+    expect(firstClipPending.reason).toBeNull();
+    expect(firstClipPending.mirrorExitSuppressedReason).toBe('first_clip_pending');
+
+    const unsettled = decideMarkExit({
+      mint: 'mirror-ladder-token-unsettled',
+      pos: pos({
+        mint: 'mirror-ladder-token-unsettled',
+        lane: 'leader_mirror',
+      }),
+      markPriceUsd: 110,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates: { ...ladder, mirrorTokenRawSettled: false },
+    })!;
+    expect(unsettled.shouldExit).toBe(false);
+    expect(unsettled.reason).toBeNull();
+    expect(unsettled.mirrorExitSuppressedReason).toBe('token_raw_unsettled');
+
+    const safety = decideMarkExit({
+      mint: 'mirror-ladder-safety',
+      pos: pos({
+        mint: 'mirror-ladder-safety',
+        lane: 'leader_mirror',
+        openedAtMs: 0,
+      }),
+      markPriceUsd: 100,
+      nowMs: 1_000,
+      gates: gatesForDust,
+      mirrorGates: {
+        ...ladder,
+        mirrorFirstClipPending: true,
+        mirrorTokenRawSettled: false,
+        safetyMaxHoldMs: 900,
+      },
+    })!;
+    expect(safety.shouldExit).toBe(true);
+    expect(safety.reason).toBe('mirror_safety_cut');
   });
 
   it('allows the opt-in mirror trail through leader-sell-only mode', () => {

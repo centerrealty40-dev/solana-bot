@@ -89,6 +89,8 @@ export type MarkExitDecision = {
   liquidityUsd?: number | null;
   liqRatio?: number | null;
   depthDrainRatio?: number | null;
+  /** Mirror ladder/dust exit was held until the entry was settled. */
+  mirrorExitSuppressedReason?: 'first_clip_pending' | 'token_raw_unsettled';
 };
 
 /** Armed positions first (trail can fire), then older opens. */
@@ -151,6 +153,8 @@ export function decideMarkExit(args: {
     ladderSellFraction?: number;
     ladderDustUsd?: number;
     mirrorDustCloseUsd?: number;
+    mirrorFirstClipPending?: boolean;
+    mirrorTokenRawSettled?: boolean;
   };
   leaderStyleGates?: {
     profitReboundPct: number;
@@ -523,13 +527,22 @@ export function decideMarkExit(args: {
       (1 - fraction);
     const mirrorPartialSale =
       pos.scaleOutDone === true || (pos.mirrorLadderRungsDone ?? 0) > 0;
-    const mirrorDustClose =
+    const mirrorExitBlockReason =
+      args.mirrorGates.mirrorFirstClipPending === true
+        ? 'first_clip_pending'
+        : args.mirrorGates.mirrorTokenRawSettled !== true
+          ? 'token_raw_unsettled'
+          : undefined;
+    const mirrorLadderAllowed = mirrorExitBlockReason == null;
+    const mirrorDustCandidate =
       (args.mirrorGates.mirrorDustCloseUsd ?? 0) > 0 &&
       mirrorPartialSale &&
       remainderMarketUsd(0) > 0 &&
       remainderMarketUsd(0) < (args.mirrorGates.mirrorDustCloseUsd ?? 0);
+    const mirrorDustClose = mirrorLadderAllowed && mirrorDustCandidate;
     let ladderFraction = 0;
     let ladderRungIndex: number | null = null;
+    let ladderWouldExit = false;
     if (
       !safetyCut &&
       !ownShouldExit &&
@@ -547,6 +560,9 @@ export function decideMarkExit(args: {
       const done = pos.mirrorLadderRungsDone ?? 0;
       const owed = Math.max(0, covered - done);
       if (owed > 0) {
+        ladderWouldExit = true;
+      }
+      if (owed > 0 && mirrorLadderAllowed) {
         const sellFraction = Math.min(
           1,
           Math.max(0, args.mirrorGates.ladderSellFraction ?? 0.2),
@@ -561,6 +577,10 @@ export function decideMarkExit(args: {
         ladderRungIndex = done + owed;
       }
     }
+    const mirrorExitSuppressedReason =
+      !mirrorLadderAllowed && (ladderWouldExit || mirrorDustCandidate)
+        ? mirrorExitBlockReason
+        : undefined;
     const ladderShouldExit = ladderFraction > 0;
     const mirrorReason: MildDipExitReason =
       safetyCut
@@ -599,6 +619,7 @@ export function decideMarkExit(args: {
       fraction: mirrorShouldExit || mirrorDustClose ? 1 : ladderFraction,
       reason: mirrorReason,
       tpRungIndex: mirrorDustClose ? null : ladderRungIndex,
+      mirrorExitSuppressedReason,
       mfePct: peakPnl,
       givebackPct: peakDrawdown,
       pnlPct: pnl,
