@@ -40,6 +40,7 @@ export type GreenMinuteJupiterStats = {
 
 const active = new Map<string, ActiveCandidate>();
 const inFlight = new Set<string>();
+const lastAttemptBySourceMint = new Map<string, number>();
 const stats: GreenMinuteJupiterStats = {
   activeMints: 0,
   inFlight: 0,
@@ -52,6 +53,7 @@ const stats: GreenMinuteJupiterStats = {
 export function __resetGreenMinuteJupiterRefreshForTests(): void {
   active.clear();
   inFlight.clear();
+  lastAttemptBySourceMint.clear();
   stats.activeMints = 0;
   stats.inFlight = 0;
   stats.quoteAttempts = 0;
@@ -80,6 +82,12 @@ function prune(nowMs: number, ttlMs: number, source?: ActiveCandidate['source'])
     if (source && candidate.source !== source) continue;
     if (nowMs - candidate.lastCandidateAtMs > Math.max(0, ttlMs)) {
       active.delete(mint);
+    }
+  }
+  const memoryTtlMs = Math.max(30_000, ttlMs);
+  for (const [key, lastAttemptAtMs] of lastAttemptBySourceMint) {
+    if (nowMs - lastAttemptAtMs > memoryTtlMs) {
+      lastAttemptBySourceMint.delete(key);
     }
   }
   stats.activeMints = active.size;
@@ -156,7 +164,10 @@ export function requestGreenMinuteJupiterRefresh(args: {
     }
     candidate = {
       lastCandidateAtMs: args.nowMs,
-      lastAttemptAtMs: 0,
+      lastAttemptAtMs:
+        lastAttemptBySourceMint.get(
+          `${args.source ?? 'green_jupiter'}:${args.mint}`,
+        ) ?? 0,
       minGapMs: Math.max(0, args.minGapMs),
       priority: args.priority ?? 0,
       snapshotPriceUsd: args.snapshotPriceUsd,
@@ -227,6 +238,7 @@ function startQuote(
     return false;
   }
   candidate.lastAttemptAtMs = nowMs;
+  lastAttemptBySourceMint.set(`${candidate.source}:${mint}`, nowMs);
   inFlight.add(mint);
   stats.inFlight = inFlight.size;
   stats.quoteAttempts += 1;

@@ -158,6 +158,39 @@ describe('leader mirror quote slot rotation', () => {
       }),
     ).toEqual([]);
   });
+
+  it('keeps the knife request budget aggregate while rotating watches', () => {
+    const entries = Array.from({ length: 24 }, (_, i) =>
+      candidate(i, i + 1),
+    );
+    const lastQuotedAtMs = new Map<string, number>();
+    const selectedOverTime: string[] = [];
+    let intervalStart = 0;
+    let requestsInInterval = 0;
+    for (const nowMs of [0, 1_000, 2_000, 3_000, 4_000, 5_000, 6_000, 7_000, 8_000, 9_000]) {
+      if (nowMs - intervalStart >= 5_000) {
+        intervalStart = nowMs;
+        requestsInInterval = 0;
+      }
+      const selected = selectLeaderMirrorQuoteKeys({
+        entries,
+        nowMs,
+        entryGraceMs: 0,
+        maxQuoteMints: 8,
+        knifeWaitQuoteSlots: Math.max(0, 3 - requestsInInterval),
+        lastQuotedAtMs,
+      });
+      const knifeSelected = selected.filter((key) => key.startsWith('watch-'));
+      selectedOverTime.push(...knifeSelected);
+      requestsInInterval += knifeSelected.length;
+      for (const key of knifeSelected) lastQuotedAtMs.set(key, nowMs);
+    }
+    expect(selectedOverTime.slice(0, 3)).toHaveLength(3);
+    expect(selectedOverTime.slice(3, 6)).toHaveLength(3);
+    expect(new Set(selectedOverTime.slice(0, 3))).not.toEqual(
+      new Set(selectedOverTime.slice(3, 6)),
+    );
+  });
 });
 
 const at = (

@@ -1562,15 +1562,30 @@ async function wakeLeaderMirrors(
           (leaderMirrorQuoteLastSelectedAtMs.get(watchKey) ??
             Number.NEGATIVE_INFINITY) >=
         gates.staleQuoteIntervalMs,
-    }),
+      }),
   );
+  const knifeWaitQuoteIntervalMs = Math.max(
+    gates.quoteIntervalMs,
+    gates.staleQuoteIntervalMs,
+  );
+  if (
+    knifeWaitQuoteWindowStartedAtMs === 0 ||
+    nowMs - knifeWaitQuoteWindowStartedAtMs >= knifeWaitQuoteIntervalMs
+  ) {
+    knifeWaitQuoteWindowStartedAtMs = nowMs;
+    knifeWaitQuoteRequestsInWindow = 0;
+  }
   const quoteKeys = new Set(
     selectLeaderMirrorQuoteKeys({
       entries: quoteCandidates,
       nowMs,
       entryGraceMs: gates.entryGraceMs ?? 60_000,
       maxQuoteMints: gates.maxQuoteMints,
-      knifeWaitQuoteSlots: gates.knifeWaitQuoteSlots,
+      knifeWaitQuoteSlots: Math.max(
+        0,
+        Math.floor(gates.knifeWaitQuoteSlots) -
+          knifeWaitQuoteRequestsInWindow,
+      ),
       lastQuotedAtMs: leaderMirrorQuoteLastSelectedAtMs,
     }),
   );
@@ -1698,6 +1713,9 @@ async function wakeLeaderMirrors(
       });
       if (quoteRequested) {
         leaderMirrorQuoteLastSelectedAtMs.set(watchKey, nowMs);
+        if (knifeWaitPendingByWatchKey.get(watchKey)) {
+          knifeWaitQuoteRequestsInWindow += 1;
+        }
       }
     }
     const quote = quoteSamples.get(watchKey) ?? null;
@@ -3106,6 +3124,8 @@ const leaderMirrorQuoteLastSampleTsMs = new Map<string, number>();
 const leaderMirrorQuoteSampleCount = new Map<string, number>();
 const knifeWaitQuoteWaitingKeys = new Set<string>();
 const knifeWaitQuoteUncoveredKeys = new Set<string>();
+let knifeWaitQuoteWindowStartedAtMs = 0;
+let knifeWaitQuoteRequestsInWindow = 0;
 let leaderMirrorStructuralInFlight = false;
 let leaderMirrorStructuralPriorityInFlight = false;
 let leaderMirrorStateHydrated = false;
