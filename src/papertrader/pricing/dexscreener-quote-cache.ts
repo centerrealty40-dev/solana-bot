@@ -25,7 +25,10 @@ interface CacheEntry {
   fetchedAtMs: number;
 }
 
-const inProcess = new Map<string, { at: number; val: DexScreenerMarketSnapshot | null }>();
+const inProcess = new Map<
+  string,
+  { at: number; val: DexScreenerMarketSnapshot | null; details?: DexScreenerPairDetails }
+>();
 
 export function isDexQuoteCacheEnabled(): boolean {
   const flag = String(process.env.DEX_QUOTE_CACHE_ENABLED ?? '1').trim();
@@ -300,6 +303,27 @@ function cacheEntryToSnapshot(entry: CacheEntry | undefined): DexScreenerMarketS
   };
 }
 
+function cacheEntryToDetails(
+  entry: CacheEntry,
+  mint: string,
+): DexScreenerPairDetails | null {
+  if (entry.miss || !entry.pairAddress) return null;
+  return parsePairToDetails(
+    {
+      priceUsd: entry.priceUsd,
+      marketCap: entry.marketCapUsd,
+      liquidity: { usd: entry.liquidityUsd },
+      volume: { m5: entry.volume5mUsd, h1: entry.volume1hUsd },
+      pairAddress: entry.pairAddress,
+      baseToken: { address: entry.baseMint ?? mint },
+      quoteToken: { address: entry.quoteMint ?? SOL_MINT },
+      dexId: entry.dexId,
+    },
+    mint,
+    entry.fetchedAtMs,
+  );
+}
+
 function toInt(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? Math.trunc(n) : null;
@@ -456,12 +480,14 @@ export async function fetchDexScreenerPairDetails(
     await putCachedDexQuotes({ [mint]: cacheEntry }, nowMs);
   }
   const snap = cacheEntryToSnapshot(cacheEntry);
-  inProcess.set(mint, { at: nowMs, val: snap });
+  inProcess.set(mint, { at: nowMs, val: snap, details: details ?? undefined });
   return details;
 }
 
 /** DexScreener accepts up to 30 comma-separated addresses per request. */
 export const DEXSCREENER_BATCH_MAX = 30;
+// Bound fallback requests so structural backfill cannot monopolize the gate.
+const DEXSCREENER_FOLLOW_UP_MAX = 8;
 
 export type DexScreenerBatchPrefetchResult = {
   requests: number;
@@ -469,6 +495,8 @@ export type DexScreenerBatchPrefetchResult = {
   resolvedMints: string[];
   missedMints: string[];
   errorMints: string[];
+  uncoveredMints: string[];
+  retriedMints: string[];
   pairCreatedAtMs: Map<string, number | null>;
   detailsByMint: Map<string, DexScreenerPairDetails>;
 };
@@ -515,34 +543,61 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
   const nowMs = opts?.nowMs ?? Date.now();
   const ttlMs = opts?.cacheTtlMs ?? dexQuoteCacheTtlMs();
   const wanted: string[] = [];
+  const resolvedMints: string[] = [];
+  const missedMints: string[] = [];
+  const uncoveredMints: string[] = [];
+  const retriedMints: string[] = [];
+  const pairCreatedAtMs = new Map<string, number | null>();
+  const detailsByMint = new Map<string, DexScreenerPairDetails>();
   const seen = new Set<string>();
   for (const m of mints) {
     if (!m || seen.has(m)) continue;
     seen.add(m);
     const mem = inProcess.get(m);
-    if (mem && nowMs - mem.at < ttlMs) continue;
-    if (isDexQuoteCacheEnabled() && getCachedDexQuote(m, nowMs, ttlMs).hit) continue;
+    if (mem && nowMs - mem.at < ttlMs) {
+      if (mem.details) {
+        detailsByMint.set(m, mem.details);
+        pairCreatedAtMs.set(m, mem.details.pairCreatedAtMs);
+        resolvedMints.push(m);
+        continue;
+      }
+    }
+    if (isDexQuoteCacheEnabled()) {
+      const cached = getCachedDexQuote(m, nowMs, ttlMs);
+      if (
+        cached.hit &&
+        cached.entry &&
+        !cached.entry.miss &&
+        dexIdAllowed(cached.entry.dexId, opts?.allowedDexIds)
+      ) {
+        const details = cacheEntryToDetails(cached.entry, m);
+        if (details) {
+          detailsByMint.set(m, details);
+          pairCreatedAtMs.set(m, details.pairCreatedAtMs);
+          resolvedMints.push(m);
+          continue;
+        }
+      }
+    }
     wanted.push(m);
   }
   if (wanted.length === 0) {
     return {
       requests: 0,
       requestedMints: [],
-      resolvedMints: [],
-      missedMints: [],
+      resolvedMints,
+      missedMints,
       errorMints: [],
-      pairCreatedAtMs: new Map(),
-      detailsByMint: new Map(),
+      uncoveredMints,
+      retriedMints,
+      pairCreatedAtMs,
+      detailsByMint,
     };
   }
 
   const doFetch = opts?.fetchImpl ?? fetch;
   let calls = 0;
-  const resolvedMints: string[] = [];
-  const missedMints: string[] = [];
   const errorMints: string[] = [];
-  const pairCreatedAtMs = new Map<string, number | null>();
-  const detailsByMint = new Map<string, DexScreenerPairDetails>();
   for (let i = 0; i < wanted.length; i += DEXSCREENER_BATCH_MAX) {
     const chunk = wanted.slice(i, i + DEXSCREENER_BATCH_MAX);
     if (opts?.bypassGate !== true) await acquireDexScreenerSlot();
@@ -558,6 +613,7 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
       if (res.ok) {
         const j = (await res.json()) as { pairs?: unknown[] };
         const pairs = Array.isArray(j.pairs) ? j.pairs : [];
+        const chunkUncovered: string[] = [];
         for (const m of chunk) {
           const best = pickBestSolanaPair(pairs, m, undefined, opts?.allowedDexIds);
           entries[m] = parsePairToCacheEntry(best, m, nowMs);
@@ -566,7 +622,50 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
           const createdAt = parsePairCreatedAtMs(best, m, nowMs);
           pairCreatedAtMs.set(m, createdAt);
           if (!entries[m]!.miss) resolvedMints.push(m);
-          else missedMints.push(m);
+          else chunkUncovered.push(m);
+        }
+        if (pairs.length >= DEXSCREENER_BATCH_MAX && chunkUncovered.length > 0) {
+          uncoveredMints.push(...chunkUncovered);
+          for (const [index, mint] of chunkUncovered.entries()) {
+            if (index >= DEXSCREENER_FOLLOW_UP_MAX) {
+              missedMints.push(mint);
+              continue;
+            }
+            retriedMints.push(mint);
+            const details = await fetchDexScreenerPairDetails(mint, {
+              fetchImpl: doFetch,
+              cacheTtlMs: ttlMs,
+              nowMs,
+              allowedDexIds: opts?.allowedDexIds,
+              bypassCache: true,
+              bypassGate: opts?.bypassGate,
+            });
+            calls += 1;
+            if (details) {
+              detailsByMint.set(mint, details);
+              pairCreatedAtMs.set(mint, details.pairCreatedAtMs);
+              entries[mint] = parsePairToCacheEntry(
+                {
+                  priceUsd: details.priceUsd,
+                  marketCap: details.marketCapUsd,
+                  liquidity: { usd: details.liquidityUsd },
+                  volume: { m5: details.volume5mUsd, h1: details.volume1hUsd },
+                  pairAddress: details.pairAddress,
+                  baseToken: { address: details.baseMint },
+                  quoteToken: { address: details.quoteMint },
+                  dexId: details.dexId,
+                },
+                mint,
+                nowMs,
+              );
+              resolvedMints.push(mint);
+            } else {
+              entries[mint] = { miss: true, fetchedAtMs: nowMs };
+              missedMints.push(mint);
+            }
+          }
+        } else {
+          missedMints.push(...chunkUncovered);
         }
       } else {
         requestError = true;
@@ -580,7 +679,11 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
     }
     if (isDexQuoteCacheEnabled()) await putCachedDexQuotes(entries, nowMs);
     for (const m of chunk) {
-      inProcess.set(m, { at: nowMs, val: cacheEntryToSnapshot(entries[m]!) });
+      inProcess.set(m, {
+        at: nowMs,
+        val: cacheEntryToSnapshot(entries[m]!),
+        details: detailsByMint.get(m),
+      });
     }
   }
   return {
@@ -589,6 +692,8 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
     resolvedMints,
     missedMints,
     errorMints,
+    uncoveredMints,
+    retriedMints,
     pairCreatedAtMs,
     detailsByMint,
   };

@@ -126,6 +126,107 @@ describe('1.11.820 DexScreener batch prefetch', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('retries a fresh negative cache entry instead of suppressing the mint', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-negative-cache-'));
+    process.env.DEX_QUOTE_CACHE_PATH = path.join(dir, 'cache.json');
+    process.env.DEX_QUOTE_CACHE_ENABLED = '1';
+    const now = Date.now();
+    const target = mint(78);
+    fs.writeFileSync(
+      process.env.DEX_QUOTE_CACHE_PATH,
+      JSON.stringify({
+        entries: { [target]: { miss: true, fetchedAtMs: now } },
+      }),
+    );
+    let calls = 0;
+    const result = await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
+      fetchImpl: (async () => {
+        calls += 1;
+        return {
+          ok: true,
+          json: async () => ({ pairs: [pairFor(target)] }),
+        };
+      }) as never,
+      nowMs: now + 1_000,
+      bypassGate: true,
+    });
+    expect(calls).toBe(1);
+    expect(result.resolvedMints).toEqual([target]);
+    expect(result.detailsByMint.get(target)?.pairAddress).toBeTruthy();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('fills mints omitted by a truncated full-size batch with targeted requests', async () => {
+    const mints = Array.from({ length: 30 }, (_, i) => mint(i));
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string) => {
+      calls.push(String(url));
+      const addresses = String(url)
+        .split('/tokens/')[1]!
+        .split(',')
+        .map(decodeURIComponent);
+      const pairs =
+        addresses.length === 30
+          ? addresses.slice(0, 10).flatMap((address) =>
+              Array.from({ length: 3 }, () => pairFor(address)),
+            )
+          : [pairFor(addresses[0]!)];
+      return { ok: true, json: async () => ({ pairs }) };
+    }) as never;
+
+    const result = await prefetchDexScreenerPairDetailsManyWithMetadata(mints, {
+      fetchImpl,
+      nowMs: Date.now(),
+      bypassGate: true,
+    });
+
+    expect(calls).toHaveLength(9);
+    expect(result.uncoveredMints).toHaveLength(20);
+    expect(result.retriedMints).toHaveLength(8);
+    expect(result.missedMints).toHaveLength(12);
+    expect(result.detailsByMint.size).toBe(18);
+    expect(result.resolvedMints).toHaveLength(18);
+  });
+
+  it('returns fresh positive cache details without an HTTP request', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-positive-cache-'));
+    process.env.DEX_QUOTE_CACHE_PATH = path.join(dir, 'cache.json');
+    process.env.DEX_QUOTE_CACHE_ENABLED = '1';
+    const now = Date.now();
+    const target = mint(79);
+    const pair = pairFor(target);
+    fs.writeFileSync(
+      process.env.DEX_QUOTE_CACHE_PATH,
+      JSON.stringify({
+        entries: {
+          [target]: {
+            miss: false,
+            priceUsd: Number(pair.priceUsd),
+            marketCapUsd: pair.marketCap,
+            liquidityUsd: pair.liquidity.usd,
+            volume5mUsd: pair.volume.m5,
+            volume1hUsd: pair.volume.h1,
+            pairAddress: pair.pairAddress,
+            baseMint: target,
+            quoteMint: 'So11111111111111111111111111111111111111112',
+            dexId: pair.dexId,
+            fetchedAtMs: now,
+          },
+        },
+      }),
+    );
+    const result = await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
+      fetchImpl: (async () => {
+        throw new Error('HTTP must not be called');
+      }) as never,
+      nowMs: now + 1_000,
+      bypassGate: true,
+    });
+    expect(result.requests).toBe(0);
+    expect(result.detailsByMint.get(target)?.pairAddress).toBe(pair.pairAddress);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('returns pair creation times with the same 30-address chunking and pair pick', async () => {
     const urls: string[] = [];
     const mints = Array.from({ length: 31 }, (_, i) => mint(i));

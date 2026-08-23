@@ -1467,6 +1467,23 @@ async function wakeLeaderMirrors(
       cacheTtlMs: Math.max(gates.structuralGapMs, gates.quoteMaxAgeMs),
       allowedDexIds: cfg.entry.allowedDexIds,
     }).then((result) => {
+      if (
+        result.uncoveredMints.length > 0 ||
+        result.retriedMints.length > 0 ||
+        result.errorMints.length > 0
+      ) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_structural_backfill_stats',
+          mints: backfillMints.length,
+          requests: result.requests,
+          resolvedMints: result.resolvedMints.length,
+          uncoveredMints: result.uncoveredMints.length,
+          retriedMints: result.retriedMints.length,
+          errorMints: result.errorMints.length,
+          uncoveredMintList: result.uncoveredMints,
+          retriedMintList: result.retriedMints,
+        });
+      }
       for (const [watchKey, startedWatch] of entries) {
         const watch = leaderMirrorWatches.get(watchKey);
         if (!watch || watch.hitKey !== startedWatch.hitKey) continue;
