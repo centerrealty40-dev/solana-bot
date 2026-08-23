@@ -144,6 +144,7 @@ _DEX_MIN_GAP_MS = env_num("LEADER_OBSERVER_DEX_MIN_GAP_MS", 400.0)
 _DEX_BACKOFF_MS = env_num("LEADER_OBSERVER_DEX_BACKOFF_MS", 30_000.0)
 _DEX_CACHE_MS = env_num("LEADER_OBSERVER_DEX_CACHE_MS", 20_000.0)
 _DEX_BATCH_MAX = int(env_num("LEADER_OBSERVER_DEX_BATCH_MAX", 30.0))
+_TELEMETRY_BATCH_MAX = 40
 _dex_last_call_ms = 0.0
 _dex_backoff_until_ms = 0.0
 _dex_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
@@ -262,7 +263,7 @@ def _dex_gate_lock(path: Path):
             pass
 
 
-def _acquire_shared_dex_slot() -> bool | None:
+def _acquire_shared_dex_slot(max_wait_ms: float | None = None) -> bool | None:
     path = _dex_gate_path()
     if path is None:
         return None
@@ -287,7 +288,10 @@ def _acquire_shared_dex_slot() -> bool | None:
             state["nextAllowedMs"] = grant + gap
             _write_dex_gate(path, state)
         if grant > now_ms:
-            time.sleep((grant - now_ms) / 1000.0)
+            wait_ms = grant - now_ms
+            if max_wait_ms is not None and wait_ms > max(0.0, max_wait_ms):
+                return False
+            time.sleep(wait_ms / 1000.0)
         return True
     except (OSError, TimeoutError, ValueError, TypeError):
         return None
@@ -470,6 +474,8 @@ def fetch_dex_batch(
     mints: list[str],
     *,
     priority: bool = False,
+    max_wait_ms: float | None = None,
+    timeout_sec: float = 15.0,
 ) -> dict[str, dict[str, Any] | None]:
     """One HTTP call per ≤30 mints. Returns mint -> snapshot (or error dict)."""
     global _dex_last_call_ms, _dex_backoff_until_ms
@@ -497,7 +503,14 @@ def fetch_dex_batch(
 
     for i in range(0, len(pending), _DEX_BATCH_MAX):
         chunk = pending[i : i + _DEX_BATCH_MAX]
-        shared_slot = _acquire_shared_dex_slot()
+        shared_slot = _acquire_shared_dex_slot(max_wait_ms=max_wait_ms)
+        if shared_slot is False:
+            for m in chunk:
+                out[m] = {
+                    "error": "telemetry_budget",
+                    "retryInMs": int(max(0.0, max_wait_ms or 0.0)),
+                }
+            continue
         if shared_slot is None:
             local_now_ms = time.time() * 1000
             if local_now_ms < _dex_backoff_until_ms and not priority:
@@ -508,9 +521,18 @@ def fetch_dex_batch(
                     }
                 continue
             if local_now_ms < _dex_backoff_until_ms and priority:
-                time.sleep(min((_dex_backoff_until_ms - local_now_ms) / 1000.0, 5.0))
+                wait_ms = min(_dex_backoff_until_ms - local_now_ms, 5000.0)
+                if max_wait_ms is not None and wait_ms > max_wait_ms:
+                    for m in chunk:
+                        out[m] = {"error": "telemetry_budget"}
+                    continue
+                time.sleep(wait_ms / 1000.0)
             gap = _DEX_MIN_GAP_MS - (time.time() * 1000 - _dex_last_call_ms)
             if gap > 0:
+                if max_wait_ms is not None and gap > max_wait_ms:
+                    for m in chunk:
+                        out[m] = {"error": "telemetry_budget"}
+                    continue
                 time.sleep(min(gap, _DEX_MIN_GAP_MS) / 1000.0)
         _dex_last_call_ms = time.time() * 1000
         try:
@@ -521,7 +543,7 @@ def fetch_dex_batch(
                     "accept": "application/json",
                 },
             )
-            with urllib.request.urlopen(req, timeout=15) as r:
+            with urllib.request.urlopen(req, timeout=max(0.1, timeout_sec)) as r:
                 status = int(getattr(r, "status", 200))
                 body = r.read().decode()
             if status == 429:
@@ -565,11 +587,26 @@ def fetch_dex_batch(
     return out
 
 
-def fetch_dex(mint: str, *, priority: bool = False) -> dict[str, Any] | None:
-    return fetch_dex_batch([mint], priority=priority).get(mint)
+def fetch_dex(
+    mint: str,
+    *,
+    priority: bool = False,
+    max_wait_ms: float | None = None,
+    timeout_sec: float = 15.0,
+) -> dict[str, Any] | None:
+    return fetch_dex_batch(
+        [mint],
+        priority=priority,
+        max_wait_ms=max_wait_ms,
+        timeout_sec=timeout_sec,
+    ).get(mint)
 
 
-def fetch_jupiter_prices(mints: list[str], price_url: str) -> dict[str, float]:
+def fetch_jupiter_prices(
+    mints: list[str],
+    price_url: str,
+    timeout_sec: float = 8.0,
+) -> dict[str, float]:
     """Batch Jupiter price v3. Returns mint -> usdPrice for hits only."""
     out: dict[str, float] = {}
     ids = [m for m in mints if m and len(m) >= 32]
@@ -586,7 +623,7 @@ def fetch_jupiter_prices(mints: list[str], price_url: str) -> dict[str, float]:
         url = f"{base}?ids={','.join(chunk)}"
         try:
             req = urllib.request.Request(url, headers=headers)
-            with urllib.request.urlopen(req, timeout=8) as r:
+            with urllib.request.urlopen(req, timeout=max(0.1, timeout_sec)) as r:
                 j = json.loads(r.read().decode())
         except Exception:
             continue
@@ -1074,10 +1111,16 @@ class Observer:
         self.log_sells = env_bool("LEADER_OBSERVER_LOG_SELLS", True)
         self.log_marks = env_bool("LEADER_OBSERVER_LOG_MARKS", True)
         self.mark_min_gap_sec = max(1, int(env_num("LEADER_OBSERVER_MARK_MIN_GAP_SEC", 15)))
-        self.dense_ticks = env_bool("LEADER_OBSERVER_DENSE_TICKS", True)
+        self.dense_ticks = env_bool("LEADER_OBSERVER_DENSE_TICKS", False)
         self.dense_gap_sec = max(1, int(env_num("LEADER_OBSERVER_DENSE_GAP_SEC", 1)))
         self.dex_refresh_sec = max(5, int(env_num("LEADER_OBSERVER_DEX_REFRESH_SEC", 15)))
         self.dense_only_td = env_bool("LEADER_OBSERVER_DENSE_ONLY_TD", False)
+        self.telemetry_budget_ms = max(
+            100, int(env_num("LEADER_OBSERVER_TELEMETRY_BUDGET_MS", 1800))
+        )
+        self.telemetry_dead_bag_sec = max(
+            60, int(env_num("LEADER_OBSERVER_TELEMETRY_DEAD_BAG_SEC", 21600))
+        )
         self.holders_enabled = env_bool("LEADER_OBSERVER_HOLDERS_ENABLED", False)
         self.holders_min_gap_sec = max(
             60, int(env_num("LEADER_OBSERVER_HOLDERS_MIN_GAP_SEC", 3600))
@@ -1103,6 +1146,8 @@ class Observer:
         self.dense_path = self._dense_path_for_today()
         self._last_sig_poll_at = 0.0
         self._last_state_save_at = 0.0
+        self._telemetry_cursor: tuple[str, str] | None = None
+        self._last_cycle_emit_at = 0.0
         # 1.11.786 — dual-write cash trade rows next to mild-dip fills.
         trades_env = os.environ.get("LEADER_OBSERVER_TRADES_PATH", "").strip()
         self.trades_path = (
@@ -1835,7 +1880,46 @@ class Observer:
                 if side == "sell" and not self.log_sells:
                     continue
 
-                dex = fetch_dex(mint, priority=True)
+                if side == "sell":
+                    # The canonical sell feed must see the RPC event before any
+                    # Dex/holder enrichment below can block or fail.
+                    rpc_fills = fill_metrics(delta, quote, None)
+                    qdelta = quote.get("quoteUsdDelta")
+                    received_from_rpc = (
+                        abs(float(qdelta))
+                        if isinstance(qdelta, (int, float)) and abs(float(qdelta)) > 0
+                        else rpc_fills.get("sizeUsd")
+                    )
+                    self.emit_trade(
+                        {
+                            "kind": "trade_fill",
+                            "actor": "leader",
+                            "wallet": leader,
+                            "leader": leader,
+                            "mint": mint,
+                            "side": "sell",
+                            "ok": True,
+                            "signature": sig,
+                            "sizeUsdIntent": rpc_fills.get("sizeUsd"),
+                            "quoteSpentUsd": None,
+                            "quoteReceivedUsd": received_from_rpc,
+                            "cashDeltaUsd": (
+                                float(received_from_rpc)
+                                if received_from_rpc
+                                else None
+                            ),
+                            "fillPriceUsd": rpc_fills.get("fillPriceUsd"),
+                            "cashSource": "observed_delta" if qdelta else "quote",
+                            "counterLegMints": None,
+                            "source": "leader_observer",
+                            "blockTime": block_time,
+                        }
+                    )
+                dex = fetch_dex(
+                    mint,
+                    max_wait_ms=1000,
+                    timeout_sec=2.0,
+                )
                 dex_px = None
                 if isinstance(dex, dict) and not dex.get("error"):
                     try:
@@ -2094,7 +2178,6 @@ class Observer:
                             "secondsFromPeakToSell": sess.get("secondsFromPeakToSell"),
                         }
                     )
-                    self.emit(base)
                     qdelta = quote.get("quoteUsdDelta")
                     received = (
                         abs(float(qdelta))
@@ -2110,35 +2193,21 @@ class Observer:
                         received, priced = self.counter_leg_usd(cl, True)
                         if received:
                             counter_src = ",".join(m[:8] for m in priced)
-                    self.emit_trade(
+                    base.update(
                         {
-                            "kind": "trade_fill",
-                            "actor": "leader",
-                            "wallet": leader,
-                            "leader": leader,
-                            "mint": mint,
-                            "side": "sell",
-                            "ok": True,
-                            "signature": sig,
-                            "sizeUsdIntent": fills.get("sizeUsd"),
-                            "quoteSpentUsd": None,
-                            "quoteReceivedUsd": received,
-                            # Sell always receives quote — force positive cash delta.
-                            "cashDeltaUsd": (float(received) if received else None),
-                            "fillPriceUsd": fills.get("fillPriceUsd"),
                             "markPnlPct": sess.get("pnlPctApprox"),
                             "cashPnlUsd": sess.get("cashPnlUsd"),
                             "costBasisUsd": sess.get("costBasisUsd"),
+                            "quoteReceivedUsd": received,
                             "cashSource": (
                                 "observed_delta"
                                 if qdelta
                                 else ("counter_leg" if counter_src else "quote")
                             ),
                             "counterLegMints": counter_src,
-                            "source": "leader_observer",
-                            "blockTime": block_time,
                         }
                     )
+                    self.emit(base)
                     if bag_info.get("isFlat"):
                         self.emit(
                             {
@@ -2224,6 +2293,33 @@ class Observer:
                     continue
                 out.append((leader, mint, bag))
         return out
+
+    def _telemetry_bags(self) -> list[tuple[str, str, dict[str, Any]]]:
+        now_ms = int(time.time() * 1000)
+        cutoff_ms = now_ms - self.telemetry_dead_bag_sec * 1000
+        out = []
+        for leader, mint, bag in self._open_bags():
+            last_trade = max(
+                int((self.last_trade_by_mint_ms.get(leader) or {}).get(mint) or 0),
+                int(bag.get("lastBuyBlockTime") or 0) * 1000,
+                int(bag.get("lastSellBlockTime") or 0) * 1000,
+                int(bag.get("openedBlockTime") or 0) * 1000,
+            )
+            if last_trade and last_trade < cutoff_ms:
+                continue
+            out.append((leader, mint, bag))
+        return sorted(out, key=lambda item: (item[0], item[1]))
+
+    def _rotating_telemetry_bags(self) -> list[tuple[str, str, dict[str, Any]]]:
+        bags = self._telemetry_bags()
+        if not bags:
+            return []
+        if self._telemetry_cursor is None:
+            return bags
+        for index, (leader, mint, _bag) in enumerate(bags):
+            if (leader, mint) > self._telemetry_cursor:
+                return bags[index:] + bags[:index]
+        return bags
 
     def _refresh_dex_cache(self, mint: str, bag: dict[str, Any], now_ms: int, force: bool = False) -> dict[str, Any] | None:
         last = int(bag.get("lastDexAtMs") or 0)
@@ -2327,25 +2423,47 @@ class Observer:
             row.pop("dex", None)
         return row
 
-    def emit_bag_marks(self) -> None:
+    def emit_bag_marks(self, deadline: float | None = None) -> int:
         if not self.log_marks:
-            return
+            return 0
         now_ms = int(time.time() * 1000)
         gap_ms = self.mark_min_gap_sec * 1000
-        due = [
-            (leader, mint, bag)
-            for leader, mint, bag in self._open_bags()
-            if not (
+        due = []
+        for leader, mint, bag in self._rotating_telemetry_bags():
+            if deadline is not None and time.time() >= deadline:
+                break
+            if (
                 int(bag.get("lastMarkAtMs") or 0)
                 and now_ms - int(bag.get("lastMarkAtMs") or 0) < gap_ms
-            )
-        ]
+            ):
+                self._telemetry_cursor = (leader, mint)
+                continue
+            due.append((leader, mint, bag))
+            if len(due) >= _TELEMETRY_BATCH_MAX:
+                break
         # 1.11.819 — one batched call for the whole pass instead of one per bag.
         if due:
-            fetch_dex_batch(sorted({mint for _l, mint, _b in due}))
+            remaining_ms = (
+                max(0.0, (deadline - time.time()) * 1000)
+                if deadline is not None
+                else None
+            )
+            fetched = fetch_dex_batch(
+                sorted({mint for _l, mint, _b in due}),
+                max_wait_ms=remaining_ms,
+                timeout_sec=max(0.1, (remaining_ms or 15_000) / 1000),
+            )
+        else:
+            fetched = {}
+        processed = 0
         for leader, mint, bag in due:
+            if deadline is not None and time.time() >= deadline:
+                break
             entry = bag.get("entryPriceUsd")
-            dex = self._refresh_dex_cache(mint, bag, now_ms, force=True)
+            dex = fetched.get(mint)
+            if isinstance(dex, dict):
+                bag["lastDex"] = dex
+                bag["lastDexAtMs"] = now_ms
             px = None
             if isinstance(dex, dict) and not dex.get("error"):
                 try:
@@ -2362,6 +2480,7 @@ class Observer:
                 path = apply_path_metrics(bag, px, float(entry))
             bag["lastMarkAtMs"] = now_ms
             self._set_bag(leader, mint, bag)
+            self._telemetry_cursor = (leader, mint)
             self.emit(
                 self._exit_feature_row(
                     kind="leader_bag_mark",
@@ -2375,27 +2494,44 @@ class Observer:
                     now_ms=now_ms,
                 )
             )
+            processed += 1
+        return processed
 
-    def emit_dense_ticks(self) -> None:
+    def emit_dense_ticks(self, deadline: float | None = None) -> int:
         if not self.dense_ticks:
-            return
+            return 0
         now_ms = int(time.time() * 1000)
         gap_ms = self.dense_gap_sec * 1000
-        open_bags = self._open_bags()
+        open_bags = self._rotating_telemetry_bags()
         if not open_bags:
-            return
+            return 0
         due: list[tuple[str, str, dict[str, Any]]] = []
         for leader, mint, bag in open_bags:
+            if deadline is not None and time.time() >= deadline:
+                break
             if self.dense_only_td and not entry_is_td(bag):
+                self._telemetry_cursor = (leader, mint)
                 continue
             last = int(bag.get("lastDenseAtMs") or 0)
             if last and now_ms - last < gap_ms:
+                self._telemetry_cursor = (leader, mint)
                 continue
             due.append((leader, mint, bag))
+            if len(due) >= _TELEMETRY_BATCH_MAX:
+                break
         if not due:
-            return
+            return 0
         mints = sorted({mint for _, mint, _ in due})
-        jup = fetch_jupiter_prices(mints, self.price_url)
+        remaining_ms = (
+            max(0.0, (deadline - time.time()) * 1000)
+            if deadline is not None
+            else None
+        )
+        jup = fetch_jupiter_prices(
+            mints,
+            self.price_url,
+            timeout_sec=max(0.1, (remaining_ms or 8_000) / 1000),
+        )
         # 1.11.819 — warm the batch cache once; the per-bag call below is a hit.
         stale = [
             m
@@ -2409,10 +2545,34 @@ class Observer:
             )
         ]
         if stale:
-            fetch_dex_batch(stale)
+            dex_fetched = fetch_dex_batch(
+                stale,
+                max_wait_ms=(
+                    max(0.0, (deadline - time.time()) * 1000)
+                    if deadline is not None
+                    else None
+                ),
+                timeout_sec=max(
+                    0.1,
+                    (
+                        max(0.0, (deadline - time.time()) * 1000)
+                        if deadline is not None
+                        else 15_000
+                    )
+                    / 1000,
+                ),
+            )
+            for leader, mint, bag in due:
+                dex = dex_fetched.get(mint)
+                if isinstance(dex, dict):
+                    bag["lastDex"] = dex
+                    bag["lastDexAtMs"] = now_ms
+        processed = 0
         for leader, mint, bag in due:
+            if deadline is not None and time.time() >= deadline:
+                break
             entry = bag.get("entryPriceUsd")
-            dex = self._refresh_dex_cache(mint, bag, now_ms, force=False)
+            dex = bag.get("lastDex") if isinstance(bag.get("lastDex"), dict) else None
             px = jup.get(mint)
             price_source = "jupiter"
             if not px or px <= 0:
@@ -2435,6 +2595,7 @@ class Observer:
                 path = apply_path_metrics(bag, float(px), float(entry))
             bag["lastDenseAtMs"] = now_ms
             self._set_bag(leader, mint, bag)
+            self._telemetry_cursor = (leader, mint)
             row = self._exit_feature_row(
                 kind="leader_bag_tick",
                 leader=leader,
@@ -2447,6 +2608,8 @@ class Observer:
                 now_ms=now_ms,
             )
             self.emit_dense(row)
+            processed += 1
+        return processed
 
     def run(self) -> None:
         end = None if self.max_hours <= 0 else time.time() + self.max_hours * 3600
@@ -2468,6 +2631,8 @@ class Observer:
                 "denseGapSec": self.dense_gap_sec,
                 "dexRefreshSec": self.dex_refresh_sec,
                 "denseOnlyTd": self.dense_only_td,
+                "telemetryBudgetMs": self.telemetry_budget_ms,
+                "telemetryDeadBagSec": self.telemetry_dead_bag_sec,
                 "priceUrl": self.price_url,
                 "version": "1.11.790",
             }
@@ -2483,7 +2648,12 @@ class Observer:
         )
         while end is None or time.time() < end:
             loop_t0 = time.time()
+            poll_interval_ms = None
             if loop_t0 - self._last_sig_poll_at >= self.poll_sec:
+                if self._last_sig_poll_at:
+                    poll_interval_ms = int(
+                        max(0.0, loop_t0 - self._last_sig_poll_at) * 1000
+                    )
                 for leader in self.leaders:
                     try:
                         self.observe_leader(leader)
@@ -2496,18 +2666,36 @@ class Observer:
                             }
                         )
                 self._last_sig_poll_at = loop_t0
+            telemetry_deadline = loop_t0 + self.telemetry_budget_ms / 1000.0
+            bags_processed = 0
             try:
-                self.emit_bag_marks()
+                bags_processed += self.emit_bag_marks(telemetry_deadline)
             except Exception as e:
                 self.emit({"kind": "leader_observer_error", "error": f"marks:{str(e)[:200]}"})
             try:
-                self.emit_dense_ticks()
+                if time.time() < telemetry_deadline:
+                    bags_processed += self.emit_dense_ticks(telemetry_deadline)
             except Exception as e:
                 self.emit({"kind": "leader_observer_error", "error": f"dense:{str(e)[:200]}"})
             # Persist often enough for crash recovery, not every tick.
             if loop_t0 - self._last_state_save_at >= max(2.0, float(self.poll_sec)):
                 self._save_state()
                 self._last_state_save_at = loop_t0
+            cycle_due = loop_t0 - self._last_cycle_emit_at >= 30.0
+            poll_late = (
+                poll_interval_ms is not None
+                and poll_interval_ms >= self.poll_sec * 2000
+            )
+            if cycle_due or poll_late:
+                self.emit(
+                    {
+                        "kind": "leader_observer_cycle",
+                        "bagsProcessed": bags_processed,
+                        "cycleDurationMs": int(max(0.0, time.time() - loop_t0) * 1000),
+                        "signaturePollIntervalMs": poll_interval_ms,
+                    }
+                )
+                self._last_cycle_emit_at = loop_t0
             # Sleep until next dense tick (or poll if dense off / no bags).
             open_n = len(self._open_bags())
             if self.dense_ticks and open_n > 0:

@@ -4625,9 +4625,9 @@ const PM2_APPS = [
         LEADER_OBSERVER_HOLDERS_MIN_GAP_SEC: '3600',
         /** Slow Dex snapshot marks (features refresh). */
         LEADER_OBSERVER_LOG_MARKS: '1',
-        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '15',
-        /** 1.11.790 — second-level exit tape for formula recovery. */
-        LEADER_OBSERVER_DENSE_TICKS: '1',
+        LEADER_OBSERVER_MARK_MIN_GAP_SEC: '60',
+        /** 1.11.790 — opt-in second-level exit tape for formula recovery. */
+        LEADER_OBSERVER_DENSE_TICKS: '0',
         LEADER_OBSERVER_DENSE_GAP_SEC: '1',
         LEADER_OBSERVER_DEX_REFRESH_SEC: '15',
         /** 0 = dense-tick ALL open bags (wins + losses); set 1 to TD-only. */
@@ -4637,6 +4637,8 @@ const PM2_APPS = [
          * observer cannot starve the entry path again.
          */
         LEADER_OBSERVER_DENSE_ONLY_TD: '1',
+        LEADER_OBSERVER_TELEMETRY_BUDGET_MS: '1800',
+        LEADER_OBSERVER_TELEMETRY_DEAD_BAG_SEC: '21600',
         LEADER_OBSERVER_PRICE_URL: 'https://api.jup.ag/price/v3',
         /** 1.11.780 — match mild-dip leader-like structural floors. */
         LEADER_OBSERVER_MIN_MCAP_USD: '5000',
