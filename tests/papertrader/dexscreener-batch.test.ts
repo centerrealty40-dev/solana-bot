@@ -180,11 +180,12 @@ describe('1.11.820 DexScreener batch prefetch', () => {
       bypassGate: true,
     });
 
-    expect(calls).toHaveLength(21);
+    expect(calls).toHaveLength(9);
     expect(result.uncoveredMints).toHaveLength(20);
-    expect(result.retriedMints).toHaveLength(20);
-    expect(result.detailsByMint.size).toBe(30);
-    expect(result.resolvedMints).toHaveLength(30);
+    expect(result.retriedMints).toHaveLength(8);
+    expect(result.missedMints).toHaveLength(12);
+    expect(result.detailsByMint.size).toBe(18);
+    expect(result.resolvedMints).toHaveLength(18);
   });
 
   it('returns fresh positive cache details without an HTTP request', async () => {

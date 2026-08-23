@@ -486,6 +486,8 @@ export async function fetchDexScreenerPairDetails(
 
 /** DexScreener accepts up to 30 comma-separated addresses per request. */
 export const DEXSCREENER_BATCH_MAX = 30;
+// Bound fallback requests so structural backfill cannot monopolize the gate.
+const DEXSCREENER_FOLLOW_UP_MAX = 8;
 
 export type DexScreenerBatchPrefetchResult = {
   requests: number;
@@ -558,8 +560,6 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
         pairCreatedAtMs.set(m, mem.details.pairCreatedAtMs);
         resolvedMints.push(m);
         continue;
-      } else if (mem.val) {
-        continue;
       }
     }
     if (isDexQuoteCacheEnabled()) {
@@ -626,7 +626,11 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
         }
         if (pairs.length >= DEXSCREENER_BATCH_MAX && chunkUncovered.length > 0) {
           uncoveredMints.push(...chunkUncovered);
-          for (const mint of chunkUncovered) {
+          for (const [index, mint] of chunkUncovered.entries()) {
+            if (index >= DEXSCREENER_FOLLOW_UP_MAX) {
+              missedMints.push(mint);
+              continue;
+            }
             retriedMints.push(mint);
             const details = await fetchDexScreenerPairDetails(mint, {
               fetchImpl: doFetch,
