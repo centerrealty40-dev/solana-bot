@@ -328,6 +328,20 @@ async function acquireDexScreenerSlot(): Promise<void> {
   if (waitMs > 0) await sleep(waitMs);
 }
 
+async function dexScreenerCooldownActive(): Promise<boolean> {
+  if (!gateEnabled()) return false;
+  let active = false;
+  await withFileLock(gateLockPath(), async () => {
+    const now = Date.now();
+    const state = readGateState();
+    const maxCooldownMs = Math.max(1_000, gate429BackoffMaxMs());
+    const cooldownUntilMs =
+      state.cooldownUntilMs > now + maxCooldownMs ? now + maxCooldownMs : Math.max(now, state.cooldownUntilMs);
+    active = cooldownUntilMs > now;
+  });
+  return active;
+}
+
 async function recordDexScreenerResponse(res: {
   status: number;
   ok: boolean;
@@ -508,7 +522,8 @@ export async function fetchDexScreenerPairDetails(
     /** When true, always HTTP-fetch (still respects global gate + updates shared cache). */
     bypassCache?: boolean;
     /**
-     * When true, skip the shared DexScreener RPM file-gate.
+     * When true, skip the shared DexScreener RPM queue. Active 429 cooldowns
+     * still fail closed without issuing an HTTP request.
      * Use only for tightly self-rate-limited callers (open-bag mark refresh).
      */
     bypassGate?: boolean;
@@ -560,6 +575,11 @@ export async function fetchDexScreenerPairDetails(
     }
   }
 
+  if (opts?.bypassGate === true && (await dexScreenerCooldownActive())) {
+    inProcess.set(mint, { at: nowMs, val: null });
+    return null;
+  }
+
   if (opts?.bypassGate !== true) {
     await acquireDexScreenerSlot();
   }
@@ -603,6 +623,7 @@ export type DexScreenerBatchPrefetchResult = {
   missedMints: string[];
   errorMints: string[];
   rateLimited429: number;
+  cooldownSkipped: number;
   uncoveredMints: string[];
   retriedMints: string[];
   pairCreatedAtMs: Map<string, number | null>;
@@ -654,6 +675,7 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
   const resolvedMints: string[] = [];
   const missedMints: string[] = [];
   let rateLimited429 = 0;
+  let cooldownSkipped = 0;
   const uncoveredMints: string[] = [];
   const retriedMints: string[] = [];
   const pairCreatedAtMs = new Map<string, number | null>();
@@ -698,6 +720,7 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
       missedMints,
       errorMints: [],
       rateLimited429,
+      cooldownSkipped,
       uncoveredMints,
       retriedMints,
       pairCreatedAtMs,
@@ -710,7 +733,15 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
   const errorMints: string[] = [];
   for (let i = 0; i < wanted.length; i += DEXSCREENER_BATCH_MAX) {
     const chunk = wanted.slice(i, i + DEXSCREENER_BATCH_MAX);
-    if (opts?.bypassGate !== true) await acquireDexScreenerSlot();
+    if (opts?.bypassGate === true) {
+      if (await dexScreenerCooldownActive()) {
+        cooldownSkipped += 1;
+        errorMints.push(...chunk);
+        continue;
+      }
+    } else {
+      await acquireDexScreenerSlot();
+    }
     calls += 1;
     const entries: Record<string, CacheEntry> = {};
     for (const m of chunk) entries[m] = { miss: true, fetchedAtMs: nowMs };
@@ -744,6 +775,11 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
               continue;
             }
             retriedMints.push(mint);
+            if (opts?.bypassGate === true && (await dexScreenerCooldownActive())) {
+              cooldownSkipped += 1;
+              missedMints.push(mint);
+              continue;
+            }
             const details = await fetchDexScreenerPairDetails(mint, {
               fetchImpl: doFetch,
               cacheTtlMs: ttlMs,
@@ -805,6 +841,7 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
     missedMints,
     errorMints,
     rateLimited429,
+    cooldownSkipped,
     uncoveredMints,
     retriedMints,
     pairCreatedAtMs,
@@ -834,7 +871,11 @@ export async function fetchDexScreenerPairCreatedAtMany(
   const doFetch = opts?.fetchImpl ?? fetch;
   for (let i = 0; i < wanted.length; i += DEXSCREENER_BATCH_MAX) {
     const chunk = wanted.slice(i, i + DEXSCREENER_BATCH_MAX);
-    if (opts?.bypassGate !== true) await acquireDexScreenerSlot();
+    if (opts?.bypassGate === true) {
+      if (await dexScreenerCooldownActive()) continue;
+    } else {
+      await acquireDexScreenerSlot();
+    }
     try {
       const res = await doFetch(
         `https://api.dexscreener.com/latest/dex/tokens/${chunk.map(encodeURIComponent).join(',')}`,
