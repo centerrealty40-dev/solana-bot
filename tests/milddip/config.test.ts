@@ -540,6 +540,41 @@ describe('mild-dip config exit schema', () => {
   });
 });
 
+describe('mild-dip dust burn configuration', () => {
+  const baseEnv = {
+    MILD_DIP_EXECUTION_MODE: 'paper',
+    MILD_DIP_RPC_URL: 'https://example.invalid',
+  };
+
+  it('defaults disabled with conservative limits and loads overrides', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.dustBurnEnabled).toBe(false);
+    expect(defaults.dustBurnMaxUsd).toBe(0.5);
+    expect(defaults.dustBurnMaxPerPass).toBe(20);
+    expect(defaults.dustBurnMinAgeMs).toBe(21_600_000);
+    expect(defaults.dustBurnSettleMs).toBe(600_000);
+    expect(defaults.dustBurnIntervalMs).toBe(21_600_000);
+    const configured = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_DUST_BURN_ENABLED: '1',
+        MILD_DIP_DUST_BURN_MAX_USD: '0.25',
+        MILD_DIP_DUST_BURN_MAX_PER_PASS: '7',
+        MILD_DIP_DUST_BURN_MIN_AGE_MS: '1000',
+        MILD_DIP_DUST_BURN_SETTLE_MS: '2000',
+        MILD_DIP_DUST_BURN_INTERVAL_MS: '60000',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(configured.dustBurnEnabled).toBe(true);
+    expect(configured.dustBurnMaxUsd).toBe(0.25);
+    expect(configured.dustBurnMaxPerPass).toBe(7);
+    expect(configured.dustBurnMinAgeMs).toBe(1000);
+    expect(configured.dustBurnSettleMs).toBe(2000);
+    expect(configured.dustBurnIntervalMs).toBe(60000);
+  });
+});
+
 describe('mild-dip mirror-only configuration', () => {
   const baseEnv = {
     MILD_DIP_EXECUTION_MODE: 'paper',

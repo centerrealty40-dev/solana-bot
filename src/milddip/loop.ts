@@ -154,6 +154,7 @@ import {
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
+import { burnDustOrphans } from './dust-burn.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -5959,11 +5960,33 @@ export async function runMildDipLoop(
         );
       }
     }
+    if (cfg.dustBurnEnabled && cfg.dustBurnMaxPerPass > 0) {
+      try {
+        const burned = await burnDustOrphans({
+          cfg,
+          state,
+          nowMs: Date.now(),
+          maxBurns: cfg.dustBurnMaxPerPass,
+        });
+        if (burned.candidates > 0) {
+          console.log(
+            `[mild-dip] dustBurn candidates=${burned.candidates} ` +
+              `burned=${burned.burned} failed=${burned.failed} skipped=${burned.skipped}`,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          '[mild-dip] dustBurn startup failed',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
   }
 
   let lastScan = 0;
   let lastMark = 0;
   let lastFeeTopupTickMs = 0;
+  let lastDustBurnTickMs = 0;
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
   let lastStreamPriceStatsMs = 0;
@@ -6081,6 +6104,38 @@ export async function runMildDipLoop(
           await maybeTopUpFeeSol(cfg, nowMs);
         } catch (err) {
           console.warn('[mild-dip] fee-sol topup tick failed', err);
+        }
+      }
+    }
+    if (
+      cfg.dustBurnEnabled &&
+      cfg.dustBurnMaxPerPass > 0 &&
+      nowMs - lastDustBurnTickMs >= cfg.dustBurnIntervalMs
+    ) {
+      lastDustBurnTickMs = nowMs;
+      const runDustBurn = () =>
+        burnDustOrphans({
+          cfg,
+          state,
+          nowMs,
+          maxBurns: cfg.dustBurnMaxPerPass,
+        }).then((burned) => {
+          if (burned.candidates > 0) {
+            console.log(
+              `[mild-dip] dustBurn candidates=${burned.candidates} ` +
+                `burned=${burned.burned} failed=${burned.failed} skipped=${burned.skipped}`,
+            );
+          }
+        });
+      if (opens > 0) {
+        void runDustBurn().catch((err) => {
+          console.warn('[mild-dip] dustBurn tick failed', err);
+        });
+      } else {
+        try {
+          await runDustBurn();
+        } catch (err) {
+          console.warn('[mild-dip] dustBurn tick failed', err);
         }
       }
     }

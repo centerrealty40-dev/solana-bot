@@ -419,6 +419,12 @@ const MildDipConfigSchema = z.object({
   feeSolTopupIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(1_800_000),
   feeSolTopupMinUsd: z.coerce.number().min(0).max(1_000).default(5),
   feeSolTopupBuyUsd: z.coerce.number().positive().max(500).default(20),
+  dustBurnEnabled: z.boolean().default(false),
+  dustBurnMaxUsd: z.coerce.number().min(0).default(0.5),
+  dustBurnMaxPerPass: z.coerce.number().int().min(0).default(20),
+  dustBurnMinAgeMs: z.coerce.number().int().min(0).default(6 * 3_600_000),
+  dustBurnSettleMs: z.coerce.number().int().min(0).default(10 * 60_000),
+  dustBurnIntervalMs: z.coerce.number().int().min(60_000).default(6 * 3_600_000),
   /**
    * Candidate mint sources: comma list —
    * stream,boosts,profiles,leaders,pg_volume,gecko,seed
@@ -1457,6 +1463,12 @@ export function loadMildDipConfig(): MildDipConfig {
     feeSolTopupIntervalMs: process.env.MILD_DIP_FEE_SOL_TOPUP_INTERVAL_MS ?? 1_800_000,
     feeSolTopupMinUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_MIN_USD ?? 5,
     feeSolTopupBuyUsd: process.env.MILD_DIP_FEE_SOL_TOPUP_BUY_USD ?? 20,
+    dustBurnEnabled: envBool('MILD_DIP_DUST_BURN_ENABLED', false),
+    dustBurnMaxUsd: envNum('MILD_DIP_DUST_BURN_MAX_USD', 0.5),
+    dustBurnMaxPerPass: envNum('MILD_DIP_DUST_BURN_MAX_PER_PASS', 20),
+    dustBurnMinAgeMs: envNum('MILD_DIP_DUST_BURN_MIN_AGE_MS', 6 * 3_600_000),
+    dustBurnSettleMs: envNum('MILD_DIP_DUST_BURN_SETTLE_MS', 10 * 60_000),
+    dustBurnIntervalMs: envNum('MILD_DIP_DUST_BURN_INTERVAL_MS', 6 * 3_600_000),
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
     leaderSeedPath:

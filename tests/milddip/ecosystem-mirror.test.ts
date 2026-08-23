@@ -65,6 +65,12 @@ describe('mirror PM2 apps', () => {
       'MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS',
       'MILD_DIP_MIRROR_DUST_CLOSE_USD',
+      'MILD_DIP_DUST_BURN_ENABLED',
+      'MILD_DIP_DUST_BURN_MAX_USD',
+      'MILD_DIP_DUST_BURN_MAX_PER_PASS',
+      'MILD_DIP_DUST_BURN_MIN_AGE_MS',
+      'MILD_DIP_DUST_BURN_SETTLE_MS',
+      'MILD_DIP_DUST_BURN_INTERVAL_MS',
     ]) {
       expect(mirror?.env[key]).toBe(mirror2?.env[key]);
     }
@@ -101,6 +107,19 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC).toBe('45');
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC: '45'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_DUST_CLOSE_USD: '10'");
+    expect(mirror?.env.MILD_DIP_DUST_BURN_ENABLED).toBe('1');
+    expect(mirror2?.env.MILD_DIP_DUST_BURN_ENABLED).toBe('1');
+    expect(mirror?.env.MILD_DIP_DUST_BURN_MAX_USD).toBe('0.5');
+    expect(mirror2?.env.MILD_DIP_DUST_BURN_MAX_USD).toBe('0.5');
+    expect(mirror?.env.MILD_DIP_DUST_BURN_MAX_PER_PASS).toBe('20');
+    expect(mirror2?.env.MILD_DIP_DUST_BURN_MAX_PER_PASS).toBe('20');
+    expect(mirror?.env.MILD_DIP_DUST_BURN_MIN_AGE_MS).toBe('21600000');
+    expect(mirror2?.env.MILD_DIP_DUST_BURN_MIN_AGE_MS).toBe('21600000');
+    expect(mirror?.env.MILD_DIP_DUST_BURN_SETTLE_MS).toBe('600000');
+    expect(mirror2?.env.MILD_DIP_DUST_BURN_SETTLE_MS).toBe('600000');
+    expect(mirror?.env.MILD_DIP_DUST_BURN_INTERVAL_MS).toBe('21600000');
+    expect(mirror2?.env.MILD_DIP_DUST_BURN_INTERVAL_MS).toBe('21600000');
+    expect(ecosystemSource).toContain("MILD_DIP_DUST_BURN_ENABLED: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_OPEN: '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_QUOTE_MINTS: '8'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3'");
