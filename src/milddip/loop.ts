@@ -18,6 +18,7 @@ import {
   appendLeaderGateShadowOutcome,
   attemptMirrorFirstClipLeg,
   attemptMildDipEntry,
+  mirrorFirstClipWindowBaseMs,
   mirrorEntryAttemptOutcome,
   takeLeaderGateShadowDeferSlot,
 } from './entry-attempt.js';
@@ -4392,8 +4393,10 @@ async function tryExits(
           1,
           Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)),
         );
-        const firstFillAtMs =
-          pos.mirrorFirstClipFirstFillAtMs ?? pos.leaderBuyTsMs ?? pos.openedAtMs;
+        const firstFillAtMs = mirrorFirstClipWindowBaseMs(
+          pos.openedAtMs,
+          pos.mirrorFirstClipFirstFillAtMs,
+        );
         const firstFillPrice =
           pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd;
         const firstClipWindowLive =

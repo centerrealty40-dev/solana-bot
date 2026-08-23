@@ -182,6 +182,13 @@ export function mirrorFirstClipLegSize(positionUsd: number, legs: number): numbe
   return positionUsd / normalizedLegs;
 }
 
+export function mirrorFirstClipWindowBaseMs(
+  ownOpenedAtMs: number,
+  persistedFirstFillAtMs?: number,
+): number {
+  return persistedFirstFillAtMs ?? ownOpenedAtMs;
+}
+
 /** Test helper. */
 export function __resetProbeBudgetForTests(): void {
   probeStamps.length = 0;
@@ -1879,6 +1886,8 @@ export async function attemptMildDipEntry(args: {
     ...(isMirror && opts.leaderBuyTsMs != null ? { leaderBuyTsMs: opts.leaderBuyTsMs } : {}),
     ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
     ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
+    ...(isMirror ? { mirrorFirstClipLegsFilled: 1 } : {}),
+    ...(isMirror ? { mirrorFirstClipFirstFillAtMs: nowMs } : {}),
     ...(isMirror ? { mirrorLadderBasisPriceUsd: fillPx, mirrorLadderRungsDone: 0 } : {}),
     peakPriceUsd: fillPx,
     entryMarkPriceUsd,
