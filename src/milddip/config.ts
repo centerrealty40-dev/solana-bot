@@ -814,6 +814,9 @@ const MildDipConfigSchema = z.object({
     leaderSellExitEnabled: z.boolean().default(false),
     leaderSellExitMaxAgeMs: z.coerce.number().int().min(0).default(60_000),
     leaderSellTradesPath: z.string().default('data/milddip/trades.jsonl'),
+    leaderSellLateReconcileIntervalMs: z.coerce.number().int().min(1_000).default(30_000),
+    leaderSellLateReconcileWindowMs: z.coerce.number().int().min(60_000).default(3_600_000),
+    leaderSellLateReconcileTailBytes: z.coerce.number().int().min(64 * 1024).default(2 * 1024 * 1024),
     leaderSellOnlyExit: z.boolean().default(false),
     safetyMaxHoldMs: z.coerce.number().int().min(0).default(0),
     leaders: z.array(z.string()).default([]),
@@ -1785,6 +1788,18 @@ export function loadMildDipConfig(): MildDipConfig {
       leaderSellTradesPath:
         process.env.MILD_DIP_MIRROR_LEADER_SELL_TRADES_PATH?.trim() ||
         path.join('data', 'milddip', 'trades.jsonl'),
+      leaderSellLateReconcileIntervalMs: envNum(
+        'MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_INTERVAL_MS',
+        30_000,
+      ),
+      leaderSellLateReconcileWindowMs: envNum(
+        'MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_WINDOW_MS',
+        3_600_000,
+      ),
+      leaderSellLateReconcileTailBytes: envNum(
+        'MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_TAIL_BYTES',
+        2 * 1024 * 1024,
+      ),
       leaderSellOnlyExit: envBool('MILD_DIP_MIRROR_LEADER_SELL_ONLY', false),
       lossCapUsd: envNum('MILD_DIP_MIRROR_LOSS_CAP_USD', 0),
       safetyMaxHoldMs: envNum('MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS', 0),

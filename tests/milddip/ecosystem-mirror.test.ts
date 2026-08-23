@@ -89,11 +89,11 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain(
       "walletSecret: 'data/live/copy-8zkg.keypair.json'",
     );
-    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('0');
-    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('0');
-    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('0');
-    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('0');
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '0'");
+    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
+    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('1');
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT: '15'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LADDER_DUST_USD: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_OPEN: '0'");
@@ -102,7 +102,7 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_REQUIRE_DIP_CANDLE: '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_FILL_GRACE_MS: '60000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LEADER_SIZE_USD: '20'");
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: '15'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: '20'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS: '120000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS:");
     expect(ecosystemSource).toContain("'3600000,7200000,10800000,14400000,21600000'");
@@ -110,6 +110,15 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS: '120000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '4000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_SELL_ONLY: '1'");
+    expect(ecosystemSource).toContain(
+      "MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_INTERVAL_MS: '30000'",
+    );
+    expect(ecosystemSource).toContain(
+      "MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_WINDOW_MS: '3600000'",
+    );
+    expect(ecosystemSource).toContain(
+      "MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_TAIL_BYTES: '2097152'",
+    );
     expect(ecosystemSource).toContain(
       "MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS: '86400000'",
     );
@@ -129,11 +138,11 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_EXIT_TRAIL_PCT).toBe('0');
     expect(mirror2?.env.MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('50');
-    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('40');
+    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('60');
     expect(mirror?.env.MILD_DIP_MIRROR_OWN_STRUCTURAL_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_OWN_STRUCTURAL_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('60');
-    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('40');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('60');
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_ENABLED: ownExitEnabled ? '1' : '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS: ownExitTimeStopMs");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
