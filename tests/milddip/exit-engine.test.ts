@@ -32,6 +32,9 @@ function pos(partial: Partial<MildDipOpenPosition> & { mint: string }): MildDipO
     lane: partial.lane,
     trailArmed: partial.trailArmed,
     scaleOutDone: partial.scaleOutDone,
+    mirrorLadderBasisPriceUsd: partial.mirrorLadderBasisPriceUsd,
+    mirrorLadderRungsDone: partial.mirrorLadderRungsDone,
+    mirrorAverageDone: partial.mirrorAverageDone,
     mint: partial.mint,
   };
 }
@@ -184,6 +187,45 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     })!;
     expect(off.shouldExit).toBe(false);
     expect(off.reason).toBeNull();
+  });
+
+  it('closes a sold-down mirror remnant but not an untouched position', () => {
+    const mirrorDust = {
+      ...mirrorGates,
+      leaderSellOnly: true,
+      mirrorDustCloseUsd: 10,
+    };
+    const untouched = decideMarkExit({
+      mint: 'mirror-dust-untouched',
+      pos: pos({
+        mint: 'mirror-dust-untouched',
+        lane: 'leader_mirror',
+        sizeUsd: 50,
+      }),
+      markPriceUsd: 15,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates: mirrorDust,
+    })!;
+    expect(untouched.shouldExit).toBe(false);
+    expect(untouched.reason).toBeNull();
+
+    const remnant = decideMarkExit({
+      mint: 'mirror-dust-remnant',
+      pos: pos({
+        mint: 'mirror-dust-remnant',
+        lane: 'leader_mirror',
+        sizeUsd: 8,
+        scaleOutDone: true,
+      }),
+      markPriceUsd: 100,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates: mirrorDust,
+    })!;
+    expect(remnant.shouldExit).toBe(true);
+    expect(remnant.fraction).toBe(1);
+    expect(remnant.reason).toBe('mirror_dust_close');
   });
 
   it('allows the opt-in mirror trail through leader-sell-only mode', () => {

@@ -150,6 +150,7 @@ export function decideMarkExit(args: {
     ladderStepAfterAveragePct?: number;
     ladderSellFraction?: number;
     ladderDustUsd?: number;
+    mirrorDustCloseUsd?: number;
   };
   leaderStyleGates?: {
     profitReboundPct: number;
@@ -515,6 +516,18 @@ export function decideMarkExit(args: {
         : args.mirrorGates.leaderSellOnly === true
           ? false
           : g!.shouldExit;
+    const ladderBasis = pos.mirrorLadderBasisPriceUsd ?? pos.entryPriceUsd;
+    const remainderMarketUsd = (fraction: number): number =>
+      pos.sizeUsd *
+      (decisionMark / Math.max(ladderBasis, 1e-18)) *
+      (1 - fraction);
+    const mirrorPartialSale =
+      pos.scaleOutDone === true || (pos.mirrorLadderRungsDone ?? 0) > 0;
+    const mirrorDustClose =
+      (args.mirrorGates.mirrorDustCloseUsd ?? 0) > 0 &&
+      mirrorPartialSale &&
+      remainderMarketUsd(0) > 0 &&
+      remainderMarketUsd(0) < (args.mirrorGates.mirrorDustCloseUsd ?? 0);
     let ladderFraction = 0;
     let ladderRungIndex: number | null = null;
     if (
@@ -523,7 +536,6 @@ export function decideMarkExit(args: {
       args.mirrorGates.leaderSellOnly === true &&
       args.mirrorGates.ladderStepPct != null
     ) {
-      const ladderBasis = pos.mirrorLadderBasisPriceUsd ?? pos.entryPriceUsd;
       const step = pos.mirrorAverageDone
         ? args.mirrorGates.ladderStepAfterAveragePct ?? 10
         : args.mirrorGates.ladderStepPct ?? 5;
@@ -540,13 +552,9 @@ export function decideMarkExit(args: {
           Math.max(0, args.mirrorGates.ladderSellFraction ?? 0.2),
         );
         ladderFraction = 1 - Math.pow(1 - sellFraction, owed);
-        const remainderMarketUsd =
-          pos.sizeUsd *
-          (decisionMark / Math.max(ladderBasis, 1e-18)) *
-          (1 - ladderFraction);
         if (
-          remainderMarketUsd > 0 &&
-          remainderMarketUsd < (args.mirrorGates.ladderDustUsd ?? 1)
+          remainderMarketUsd(ladderFraction) > 0 &&
+          remainderMarketUsd(ladderFraction) < (args.mirrorGates.ladderDustUsd ?? 1)
         ) {
           ladderFraction = 1;
         }
@@ -563,9 +571,11 @@ export function decideMarkExit(args: {
           ? 'mirror_trail'
           : ownTimeStop
             ? 'mirror_time_stop'
-            : ladderShouldExit
-              ? 'mirror_tp_ladder'
-              : args.mirrorGates.leaderSellOnly === true
+            : mirrorDustClose
+              ? 'mirror_dust_close'
+              : ladderShouldExit
+                ? 'mirror_tp_ladder'
+                : args.mirrorGates.leaderSellOnly === true
                 ? null
                 : g!.reason === 'green_stop'
                       ? 'mirror_stop'
@@ -585,10 +595,10 @@ export function decideMarkExit(args: {
       peakPriceUsd,
       armed,
       justArmed: armed && !wasArmed,
-      shouldExit: mirrorShouldExit || ladderShouldExit,
-      fraction: mirrorShouldExit ? 1 : ladderFraction,
+      shouldExit: mirrorShouldExit || ladderShouldExit || mirrorDustClose,
+      fraction: mirrorShouldExit || mirrorDustClose ? 1 : ladderFraction,
       reason: mirrorReason,
-      tpRungIndex: ladderRungIndex,
+      tpRungIndex: mirrorDustClose ? null : ladderRungIndex,
       mfePct: peakPnl,
       givebackPct: peakDrawdown,
       pnlPct: pnl,

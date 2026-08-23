@@ -64,6 +64,7 @@ describe('mirror PM2 apps', () => {
       'MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS',
+      'MILD_DIP_MIRROR_DUST_CLOSE_USD',
     ]) {
       expect(mirror?.env[key]).toBe(mirror2?.env[key]);
     }
@@ -96,6 +97,7 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT: '15'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LADDER_DUST_USD: '1'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_DUST_CLOSE_USD: '10'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_OPEN: '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MAX_QUOTE_MINTS: '8'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '3'");
