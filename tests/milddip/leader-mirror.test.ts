@@ -107,6 +107,25 @@ describe('leader mirror observation decisions', () => {
     });
   });
 
+  it('uses blockTime for knife waiting without enabling entry grace', () => {
+    expect(at(hit({ pc5m: -10, blockTime: 100 }), 100, 200_000)).toEqual({
+      action: 'wait',
+      waitReason: 'knife_discount',
+    });
+    expect(
+      at(
+        hit({ pc5m: -10, blockTime: 100 }),
+        102.5,
+        700_001,
+        100_000,
+        { ...gates, entryGraceMaxPremiumPct: 3 },
+      ),
+    ).toMatchObject({
+      action: 'skip',
+      reason: 'leader_mirror_premium_cap',
+    });
+  });
+
   it('leaves shallow dips unchanged and waits on green leaders', () => {
     expect(at(hit({ pc5m: -5 }), 101, 200_000, 100_000, gates, 100_000)).toEqual({
       action: 'buy',
@@ -126,6 +145,13 @@ describe('leader mirror observation decisions', () => {
       knifeWait: {
         enteredByDiscount: false,
         enteredByWindowExpiry: true,
+      },
+    });
+    expect(at(hit({ pc5m: -10 }), 93, 800_001, 100_000, gates, 100_000)).toMatchObject({
+      action: 'buy',
+      knifeWait: {
+        enteredByDiscount: true,
+        enteredByWindowExpiry: false,
       },
     });
   });

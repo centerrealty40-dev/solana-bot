@@ -218,55 +218,55 @@ export function evaluateLeaderMirrorObservation(args: {
   const leaderPrice = hit.fillPriceUsd;
   const quotePrice = args.quotePriceUsd;
   const quoteGainPct = (quotePrice / leaderPrice - 1) * 100;
+  let knifeWaitTimestampMs: number | null = null;
+  if (args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)) {
+    knifeWaitTimestampMs = args.leaderBuyTsMs;
+  } else if (
+    typeof hit.blockTime === 'number' &&
+    Number.isFinite(hit.blockTime) &&
+    hit.blockTime > 0
+  ) {
+    knifeWaitTimestampMs = hit.blockTime * 1000;
+  }
   const leaderAgeMs =
-    (args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
-      ? args.leaderBuyTsMs
-      : hit.blockTime != null && Number.isFinite(hit.blockTime) && hit.blockTime > 0
-        ? hit.blockTime * 1000
-        : null) != null
-      ? nowMs -
-        (args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
-          ? args.leaderBuyTsMs
-          : hit.blockTime! * 1000)
+    args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
+      ? nowMs - args.leaderBuyTsMs
       : null;
-  const knifeWaitActive =
+  const knifeWaitAgeMs =
+    knifeWaitTimestampMs != null ? nowMs - knifeWaitTimestampMs : null;
+  const knifeWaitEligible =
     gates.knifeWaitEnabled &&
     pc5m != null &&
-    (pc5m <= gates.knifeWaitPc5mPct || pc5m >= 0) &&
-    leaderAgeMs != null &&
-    leaderAgeMs >= 0 &&
-    leaderAgeMs < gates.knifeWaitWindowMs;
-  const knifeWaitPassed =
-    knifeWaitActive && quoteGainPct <= -Math.abs(gates.knifeWaitDiscountPct);
+    (pc5m <= gates.knifeWaitPc5mPct || pc5m >= 0);
+  const knifeWaitActive =
+    knifeWaitEligible &&
+    knifeWaitAgeMs != null &&
+    knifeWaitAgeMs >= 0 &&
+    knifeWaitAgeMs < gates.knifeWaitWindowMs;
+  const knifeWaitDiscountReached =
+    knifeWaitEligible &&
+    knifeWaitAgeMs != null &&
+    knifeWaitAgeMs >= 0 &&
+    quoteGainPct <= -Math.abs(gates.knifeWaitDiscountPct);
+  const knifeWaitExpired =
+    knifeWaitEligible &&
+    knifeWaitAgeMs != null &&
+    knifeWaitAgeMs >= gates.knifeWaitWindowMs;
   const knifeWaitMetadata =
-    knifeWaitPassed && pc5m != null && leaderAgeMs != null
+    (knifeWaitDiscountReached || knifeWaitExpired) &&
+    pc5m != null &&
+    knifeWaitAgeMs != null
       ? {
-          enteredByDiscount: true,
-          enteredByWindowExpiry: false,
-          waitedMs: Math.max(0, leaderAgeMs),
+          enteredByDiscount: knifeWaitDiscountReached,
+          enteredByWindowExpiry: knifeWaitExpired && !knifeWaitDiscountReached,
+          waitedMs: Math.max(0, knifeWaitAgeMs),
           leaderPc5m: pc5m,
           leaderFillPriceUsd: leaderPrice,
         }
       : undefined;
-  if (knifeWaitActive && !knifeWaitPassed && quoteGainPct > -Math.abs(gates.knifeWaitDiscountPct)) {
+  if (knifeWaitActive && !knifeWaitDiscountReached) {
     return { action: 'wait', waitReason: 'knife_discount' };
   }
-  const knifeWaitExpired =
-    gates.knifeWaitEnabled &&
-    pc5m != null &&
-    (pc5m <= gates.knifeWaitPc5mPct || pc5m >= 0) &&
-    leaderAgeMs != null &&
-    leaderAgeMs >= gates.knifeWaitWindowMs;
-  const expiredKnifeWaitMetadata =
-    knifeWaitExpired && leaderAgeMs != null
-      ? {
-          enteredByDiscount: false,
-          enteredByWindowExpiry: true,
-          waitedMs: Math.max(0, leaderAgeMs),
-          leaderPc5m: pc5m!,
-          leaderFillPriceUsd: leaderPrice,
-        }
-      : knifeWaitMetadata;
   const entryGraceActive =
     leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
   const maxPremiumPct = entryGraceActive
@@ -280,7 +280,7 @@ export function evaluateLeaderMirrorObservation(args: {
       action: 'buy',
       quotePriceUsd: quotePrice,
       mirrorBranch: 'green',
-      ...(expiredKnifeWaitMetadata ? { knifeWait: expiredKnifeWaitMetadata } : {}),
+      ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
     };
   }
   if (requireDipCandle && quoteGainPct >= gates.greenImpulsePct) {
@@ -294,6 +294,6 @@ export function evaluateLeaderMirrorObservation(args: {
   return {
     action: 'buy',
     quotePriceUsd: quotePrice,
-    ...(expiredKnifeWaitMetadata ? { knifeWait: expiredKnifeWaitMetadata } : {}),
+    ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
   };
 }
