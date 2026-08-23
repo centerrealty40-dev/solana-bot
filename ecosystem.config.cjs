@@ -4748,6 +4748,8 @@ function makeMirrorApp({
   ownExitTimeStopMs,
   lossCapUsd,
   maxEntryPc5mPct,
+  positionUsd,
+  averageUsd,
 }) {
   return {
     ...mildDipBotApp,
@@ -4799,7 +4801,7 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_TICK_INTERVAL_MS: '1000',
       MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS: '4',
       MILD_DIP_MIRROR_STRUCTURAL_GAP_MS: '2000',
-      MILD_DIP_MIRROR_POSITION_USD: '30',
+      MILD_DIP_MIRROR_POSITION_USD: positionUsd,
       MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT: maxEntryPc5mPct,
       MILD_DIP_MIRROR_MAX_PC5M_PCT: '0',
       MILD_DIP_MIRROR_ENTRY_GRACE_MS: '60000',
@@ -4816,11 +4818,11 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_LADDER_SELL_FRACTION: '0.2',
       MILD_DIP_MIRROR_LADDER_DUST_USD: '1',
       MILD_DIP_MIRROR_AVERAGE_ENABLED: '1',
-      MILD_DIP_MIRROR_AVERAGE_USD: '20',
+      MILD_DIP_MIRROR_AVERAGE_USD: averageUsd,
       MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS: '3600000,7200000,10800000,14400000,21600000',
       MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS: '120000',
       MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT: '0.5',
-      MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '2',
+      MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '1',
       MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: '15',
       MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT: '15',
       MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS: '120000',
@@ -4851,6 +4853,8 @@ if (mildDipBotApp) {
       ownExitTimeStopMs: '0',
       lossCapUsd: '100',
       maxEntryPc5mPct: '1000',
+      positionUsd: '40',
+      averageUsd: '30',
     }),
     makeMirrorApp({
       name: 'mild-dip-mirror2',
@@ -4864,6 +4868,8 @@ if (mildDipBotApp) {
       ownExitTimeStopMs: '0',
       lossCapUsd: '100',
       maxEntryPc5mPct: '0',
+      positionUsd: '70',
+      averageUsd: '50',
     }),
   );
 }
