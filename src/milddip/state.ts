@@ -31,6 +31,8 @@ export type MildDipOpenPosition = {
   leaderBuySignature?: string;
   leaderMirrorLeader?: string;
   mirrorOriginalEntryPriceUsd?: number;
+  mirrorFirstClipLegsFilled?: number;
+  mirrorFirstClipFirstFillAtMs?: number;
   mirrorLadderBasisPriceUsd?: number;
   mirrorLadderRungsDone?: number;
   mirrorAverageDone?: boolean;
@@ -384,6 +386,17 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
   for (const [mint, value] of Object.entries(raw as Record<string, unknown>)) {
     if (!value || typeof value !== 'object') continue;
     const pos = value as MildDipOpenPosition;
+    if (Number.isFinite(Number(pos.mirrorFirstClipLegsFilled))) {
+      pos.mirrorFirstClipLegsFilled = Math.max(
+        0,
+        Math.floor(Number(pos.mirrorFirstClipLegsFilled)),
+      );
+    } else {
+      delete pos.mirrorFirstClipLegsFilled;
+    }
+    if (!Number.isFinite(Number(pos.mirrorFirstClipFirstFillAtMs))) {
+      delete pos.mirrorFirstClipFirstFillAtMs;
+    }
     const intent = pos.mirrorLeaderSellIntent;
     if (
       intent &&

@@ -16,6 +16,7 @@ import {
 import { closeEmptyAtas } from './close-empty-ata.js';
 import {
   appendLeaderGateShadowOutcome,
+  attemptMirrorFirstClipLeg,
   attemptMildDipEntry,
   mirrorEntryAttemptOutcome,
   takeLeaderGateShadowDeferSlot,
@@ -1372,6 +1373,17 @@ function rememberLeaderSeen(
   }
 }
 
+function isMirrorFirstClipPending(
+  position: MildDipOpenPosition | undefined,
+  configuredLegs: number | undefined,
+): boolean {
+  const legs = Math.max(1, Math.min(2, Math.floor(configuredLegs ?? 1)));
+  return (
+    position?.lane === 'leader_mirror' &&
+    (position.mirrorFirstClipLegsFilled ?? 1) < legs
+  );
+}
+
 async function wakeLeaderMirrors(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -2011,47 +2023,80 @@ async function wakeLeaderMirrors(
         priceChange1hPct: hit.pc1h ?? null,
       },
     };
-    const result = await attemptMildDipEntry({
-      cfg,
-      state,
-      candidate,
-      copyCfg: mildDipToCopyTraderConfig(cfg),
-      nowMs,
-      buyInFlight,
-      resolveEntrySizeUsd,
-      adoptOnChainHolding,
-      opts: {
-        chasePct: 0,
-        trigger: 'leader',
-        skipBounce: true,
-        skipOnchainAdopt: true,
-        freshDexPrebuy: false,
-        softSkipCooldownMs: 1_500,
-        lane: 'fast',
-        mirror: true,
-        mirrorBranch: decision.mirrorBranch,
-        leaderBuyTsMs,
-        leaderBuySignature: hit.signature,
-        leaderMirrorLeader: hit.leader,
-        mirrorExecutionRetryBackoffMs: gates.executionRetryBackoffMs,
-        mirrorExecutionSlippageMultiplier: gates.executionSlippageMultiplier,
-        mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,
-        mirrorPc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
-        mirrorEntryGraceActive: entryGraceActive,
-        mirrorQuoteGainPct:
-          hit.fillPriceUsd != null && hit.fillPriceUsd > 0
-            ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
-            : null,
-        mirrorExit: {
-          armPct: gates.exitArmPct,
-          trailPct: gates.exitTrailPct,
-          stopPct: gates.exitStopPct,
-          maxHoldMs: gates.maxHoldMs,
-          noMoveCutMs: gates.noMoveCutMs,
-          noMoveMinMfePct: gates.noMoveMinMfePct,
-        },
-      },
-    });
+    const copyCfg = mildDipToCopyTraderConfig(cfg);
+    const openMirrorPosition = state.open[mint];
+    const firstClipPending =
+      openMirrorPosition != null &&
+      isMirrorFirstClipPending(openMirrorPosition, cfg.leaderMirror.firstClipLegs);
+    let result =
+      firstClipPending
+        ? await attemptMirrorFirstClipLeg({
+            cfg,
+            state,
+            candidate,
+            copyCfg,
+            nowMs,
+            buyInFlight,
+            resolveEntrySizeUsd,
+          })
+        : await attemptMildDipEntry({
+            cfg,
+            state,
+            candidate,
+            copyCfg,
+            nowMs,
+            buyInFlight,
+            resolveEntrySizeUsd,
+            adoptOnChainHolding,
+            opts: {
+              chasePct: 0,
+              trigger: 'leader',
+              skipBounce: true,
+              skipOnchainAdopt: true,
+              freshDexPrebuy: false,
+              softSkipCooldownMs: 1_500,
+              lane: 'fast',
+              mirror: true,
+              mirrorBranch: decision.mirrorBranch,
+              leaderBuyTsMs,
+              leaderBuySignature: hit.signature,
+              leaderMirrorLeader: hit.leader,
+              mirrorExecutionRetryBackoffMs: gates.executionRetryBackoffMs,
+              mirrorExecutionSlippageMultiplier: gates.executionSlippageMultiplier,
+              mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,
+              mirrorPc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
+              mirrorEntryGraceActive: entryGraceActive,
+              mirrorQuoteGainPct:
+                hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+                  ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
+                  : null,
+              mirrorExit: {
+                armPct: gates.exitArmPct,
+                trailPct: gates.exitTrailPct,
+                stopPct: gates.exitStopPct,
+                noMoveCutMs: gates.noMoveCutMs,
+                noMoveMinMfePct: gates.noMoveMinMfePct,
+                maxHoldMs: gates.maxHoldMs,
+              },
+            },
+          });
+    if (
+      result === 'filled' &&
+      isMirrorFirstClipPending(
+        state.open[mint],
+        cfg.leaderMirror.firstClipLegs,
+      )
+    ) {
+      result = await attemptMirrorFirstClipLeg({
+        cfg,
+        state,
+        candidate,
+        copyCfg,
+        nowMs,
+        buyInFlight,
+        resolveEntrySizeUsd,
+      });
+    }
     const outcome = mirrorEntryAttemptOutcome(result);
     if (outcome === 'filled') {
       if (decision.knifeWait) {
@@ -3690,6 +3735,10 @@ async function attemptMirrorAverage(args: {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
   const g = cfg.leaderMirror;
   if (g.lossCapUsd > 0 && state.mirrorLossCapTriggeredAtMs != null) return;
+  if (
+    (pos.mirrorFirstClipLegsFilled ?? 1) <
+    Math.max(1, Math.min(2, Math.floor(g.firstClipLegs ?? 1)))
+  ) return;
   const averageAttempts = pos.mirrorAverageAttempts ?? 0;
   const averageReference = mirrorAverageReference({
     entryPriceUsd: pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd,
@@ -4339,6 +4388,59 @@ async function tryExits(
       !sellInFlight.has(mint)
     ) {
       if (pos.lane === 'leader_mirror') {
+        const firstClipLegs = Math.max(
+          1,
+          Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)),
+        );
+        const firstFillAtMs =
+          pos.mirrorFirstClipFirstFillAtMs ?? pos.leaderBuyTsMs ?? pos.openedAtMs;
+        const firstFillPrice =
+          pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd;
+        const firstClipWindowLive =
+          (pos.mirrorFirstClipLegsFilled ?? 1) < firstClipLegs &&
+          nowMs - firstFillAtMs <= cfg.leaderMirror.entryGraceMs;
+        const premiumAllowed =
+          firstFillPrice > 0 &&
+          decision.markPriceUsd <=
+            firstFillPrice * (1 + cfg.leaderMirror.maxPremiumPct / 100);
+        if (
+          firstClipWindowLive &&
+          leaderSellEvent == null &&
+          premiumAllowed
+        ) {
+          await attemptMirrorFirstClipLeg({
+            cfg,
+            state,
+            candidate: {
+              mint,
+              symbol: pos.symbol,
+              priceUsd: decision.markPriceUsd,
+              dipSource: 'leader_mirror',
+              metrics: {
+                priceChange5mPct: null,
+                volume5mUsd: null,
+                liquidityUsd,
+                marketCapUsd: null,
+                pairAgeHours: null,
+                dexId: null,
+                buys5m: null,
+                sells5m: null,
+                volume1hUsd: null,
+                priceChange1hPct: null,
+              },
+            },
+            copyCfg: mildDipToCopyTraderConfig(cfg),
+            nowMs,
+            buyInFlight,
+            resolveEntrySizeUsd,
+          });
+        } else if (
+          (pos.mirrorFirstClipLegsFilled ?? 1) < firstClipLegs &&
+          !firstClipWindowLive
+        ) {
+          pos.mirrorFirstClipLegsFilled = firstClipLegs;
+          saveMildDipState(cfg.statePath, state);
+        }
         await attemptMirrorAverage({
           cfg,
           state,

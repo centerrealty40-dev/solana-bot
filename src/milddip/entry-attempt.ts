@@ -177,6 +177,11 @@ export function laneEntryRequestUsd(args: {
   return args.stagedClipUsd;
 }
 
+export function mirrorFirstClipLegSize(positionUsd: number, legs: number): number {
+  const normalizedLegs = Math.max(1, Math.min(2, Math.floor(legs)));
+  return positionUsd / normalizedLegs;
+}
+
 /** Test helper. */
 export function __resetProbeBudgetForTests(): void {
   probeStamps.length = 0;
@@ -1356,11 +1361,19 @@ export async function attemptMildDipEntry(args: {
   });
   const laneRequestUsd =
     probeReason != null ? Math.min(laneRequest, requestedUsd) : laneRequest;
+  const mirrorFirstClipLegs = Math.max(
+    1,
+    Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)),
+  );
+  const mirrorFirstClipRequestUsd =
+    isMirror && mirrorFirstClipLegs > 1
+      ? mirrorFirstClipLegSize(laneRequestUsd, mirrorFirstClipLegs)
+      : laneRequestUsd;
   const sizedRaw = await args.resolveEntrySizeUsd(
     cfg,
     copyCfg,
     nowMs,
-    laneRequestUsd,
+    mirrorFirstClipRequestUsd,
   );
   const sized =
     probeReason != null
@@ -1428,6 +1441,8 @@ export async function attemptMildDipEntry(args: {
     ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
     ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
     ...(isMirror ? { mirrorOriginalEntryPriceUsd: entryPriceUsd } : {}),
+    ...(isMirror ? { mirrorFirstClipLegsFilled: 1 } : {}),
+    ...(isMirror ? { mirrorFirstClipFirstFillAtMs: nowMs } : {}),
     // Peak tracks the mark series from the fill — not the wait_dip trough the
     // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
     peakPriceUsd: entryPriceUsd,
@@ -1915,4 +1930,122 @@ export async function attemptMildDipEntry(args: {
       ` @$${fillPx.toPrecision(4)} lane=${opts.lane} mode=${cfg.executionMode}`,
   );
   return 'filled';
+}
+
+export async function attemptMirrorFirstClipLeg(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  candidate: MildDipCandidate;
+  copyCfg: CopyTraderConfig;
+  nowMs: number;
+  buyInFlight: Set<string>;
+  resolveEntrySizeUsd: (
+    cfg: MildDipConfig,
+    copyCfg: CopyTraderConfig,
+    nowMs: number,
+    wantUsd: number,
+  ) => Promise<{ sizeUsd: number; usdc?: number | null; stop: boolean; reason?: string }>;
+}): Promise<EntryAttemptResult> {
+  const { cfg, state, candidate: c, copyCfg, nowMs, buyInFlight } = args;
+  const pos = state.open[c.mint];
+  const legs = Math.max(1, Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)));
+  if (!pos || pos.lane !== 'leader_mirror' || legs <= 1) return 'skip';
+  const filledLegs = Math.max(0, Math.floor(pos.mirrorFirstClipLegsFilled ?? 1));
+  if (filledLegs >= legs || buyInFlight.has(c.mint)) return 'skip';
+  const legUsd = cfg.leaderMirror.positionUsd / legs;
+  const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, legUsd);
+  if (sized.stop || !(sized.sizeUsd > 0)) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_mirror_first_clip_leg',
+      mint: c.mint,
+      symbol: c.symbol,
+      leg: filledLegs + 1,
+      legs,
+      requestedUsd: legUsd,
+      sizeUsd: 0,
+      ok: false,
+      reason: sized.reason ?? 'no_leg_size',
+    });
+    saveMildDipState(cfg.statePath, state);
+    return 'exec_failed';
+  }
+  buyInFlight.add(c.mint);
+  try {
+    const buy = await executeCopyBuy({
+      cfg: copyCfg,
+      mint: c.mint,
+      symbol: c.symbol,
+      priceUsd: c.priceUsd,
+      sizeUsd: Math.min(legUsd, sized.sizeUsd),
+      kind: 'entry',
+      evalResult: { pass: true, reasons: ['mirror_first_clip_leg'], score: 0 },
+      leaderSignature: `milddip_mirror_first_clip_leg_${c.mint.slice(0, 8)}_${nowMs}`,
+      trigger: 'leader',
+      leaderPriceUsd: c.priceUsd,
+      leaderBuyTs: nowMs,
+      slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
+      slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
+    });
+    if (!buy.ok) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_mirror_first_clip_leg',
+        mint: c.mint,
+        symbol: c.symbol,
+        leg: filledLegs + 1,
+        legs,
+        requestedUsd: legUsd,
+        sizeUsd: Math.min(legUsd, sized.sizeUsd),
+        ok: false,
+        reason: buy.reason ?? 'buy_failed',
+      });
+      saveMildDipState(cfg.statePath, state);
+      return 'exec_failed';
+    }
+    const live = state.open[c.mint];
+    if (!live) return 'exec_failed';
+    const spent = buy.quoteSpentUsd ?? Math.min(legUsd, sized.sizeUsd);
+    const fillPx = buy.priceUsd > 0 ? buy.priceUsd : c.priceUsd;
+    const priorTokens = live.sizeUsd / Math.max(live.entryPriceUsd, 1e-18);
+    const addedTokens = spent / Math.max(fillPx, 1e-18);
+    live.entryPriceUsd = (live.sizeUsd + spent) / (priorTokens + addedTokens);
+    live.sizeUsd += spent;
+    live.mirrorFirstClipLegsFilled = filledLegs + 1;
+    live.mirrorOriginalEntryPriceUsd ??= live.entryPriceUsd;
+    accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
+    const tokenRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
+    if (tokenRaw && /^\d+$/.test(tokenRaw)) {
+      live.tokenRaw = tokenRaw;
+      live.tokenRawSettled = false;
+    }
+    saveMildDipState(cfg.statePath, state);
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_mirror_first_clip_leg',
+      mint: c.mint,
+      symbol: c.symbol,
+      leg: live.mirrorFirstClipLegsFilled,
+      legs,
+      requestedUsd: legUsd,
+      sizeUsd: spent,
+      ok: true,
+      fillPriceUsd: fillPx,
+      signature: buy.signature ?? null,
+    });
+    return 'filled';
+  } catch (err) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_mirror_first_clip_leg',
+      mint: c.mint,
+      symbol: c.symbol,
+      leg: filledLegs + 1,
+      legs,
+      requestedUsd: legUsd,
+      sizeUsd: Math.min(legUsd, sized.sizeUsd),
+      ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+    });
+    saveMildDipState(cfg.statePath, state);
+    return 'exec_failed';
+  } finally {
+    buyInFlight.delete(c.mint);
+  }
 }
