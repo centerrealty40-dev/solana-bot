@@ -192,7 +192,10 @@ import { startMildDipHotMintStream } from './stream.js';
 import { createStreamPriceSampler } from './stream-price-sampler.js';
 import { MildDipPriceRing } from './price-ring.js';
 import { mildDipPairAgeRegistry } from './pair-age-registry.js';
-import { resolveMirrorStructuralMetrics } from './mirror-structural.js';
+import {
+  mirrorOwnStructuralCanApply,
+  resolveMirrorStructuralMetrics,
+} from './mirror-structural.js';
 import {
   DEFAULT_MILD_DIP_TAPE_GATES,
   MildDipTapeShadow,
@@ -1481,6 +1484,10 @@ async function wakeLeaderMirrors(
                 quotePriceUsd: quote?.priceUsd ?? null,
                 registryAgeHours: mildDipPairAgeRegistry.pairAgeHours(mint, nowMs),
                 dex: {
+                  priceUsd: null,
+                  volume5mUsd: null,
+                  priceChange5mPct: null,
+                  priceChange1hPct: null,
                   liquidityUsd: null,
                   marketCapUsd: null,
                   pairAgeHours: null,
@@ -1500,10 +1507,16 @@ async function wakeLeaderMirrors(
             const resolved = ownStructural.get(watch?.hit.mint ?? '');
             if (!watch || watch.hitKey !== startedWatch.hitKey || !resolved) continue;
             const { metrics } = resolved;
+            if (!mirrorOwnStructuralCanApply(metrics, watch.hit.pc5m)) continue;
+            const pc5m = metrics.priceChange5mPct ?? watch.hit.pc5m;
             leaderMirrorWatches.set(watchKey, {
               ...watch,
               hit: {
                 ...watch.hit,
+                priceUsd: metrics.priceUsd ?? watch.hit.priceUsd,
+                pc5m,
+                pc1h: metrics.priceChange1hPct ?? watch.hit.pc1h,
+                vol5m: metrics.volume5mUsd ?? watch.hit.vol5m,
                 liq: metrics.liquidityUsd ?? watch.hit.liq,
                 mcap: metrics.marketCapUsd ?? watch.hit.mcap,
                 ageHours: metrics.pairAgeHours ?? watch.hit.ageHours,
@@ -1580,8 +1593,15 @@ async function wakeLeaderMirrors(
         const resolved = ownStructural.get(mint);
         const ownMetrics = resolved?.metrics;
         const ownSources = resolved?.sources;
-        const resolvedMetrics = ownMetrics
+        const ownCanApply =
+          ownMetrics != null &&
+          mirrorOwnStructuralCanApply(ownMetrics, watch.hit.pc5m);
+        const resolvedMetrics = ownCanApply
           ? {
+              priceUsd: ownMetrics.priceUsd ?? dexMetrics?.priceUsd ?? null,
+              volume5mUsd: ownMetrics.volume5mUsd ?? dexMetrics?.vol5m ?? null,
+              priceChange5mPct: ownMetrics.priceChange5mPct ?? dexMetrics?.pc5m ?? null,
+              priceChange1hPct: ownMetrics.priceChange1hPct ?? dexMetrics?.pc1h ?? null,
               liquidityUsd: ownMetrics.liquidityUsd ?? dexMetrics?.liq ?? null,
               marketCapUsd: ownMetrics.marketCapUsd ?? dexMetrics?.mcap ?? null,
               pairAgeHours: ownMetrics.pairAgeHours ?? dexMetrics?.ageHours ?? null,
@@ -1617,6 +1637,10 @@ async function wakeLeaderMirrors(
         const metrics = dexMetrics
           ? {
               ...dexMetrics,
+              priceUsd: resolvedMetrics?.priceUsd ?? dexMetrics.priceUsd,
+              pc5m: resolvedMetrics?.priceChange5mPct ?? dexMetrics.pc5m,
+              pc1h: resolvedMetrics?.priceChange1hPct ?? dexMetrics.pc1h,
+              vol5m: resolvedMetrics?.volume5mUsd ?? dexMetrics.vol5m,
               liq: resolvedMetrics?.liquidityUsd ?? dexMetrics.liq,
               mcap: resolvedMetrics?.marketCapUsd ?? dexMetrics.mcap,
               ageHours: resolvedMetrics?.pairAgeHours ?? dexMetrics.ageHours,
@@ -1624,10 +1648,10 @@ async function wakeLeaderMirrors(
             }
           : resolvedMetrics
             ? {
-                priceUsd: cached?.priceUsd ?? null,
-                pc5m: cached?.metrics.priceChange5mPct ?? null,
-                pc1h: cached?.metrics.priceChange1hPct ?? null,
-                vol5m: cached?.metrics.volume5mUsd ?? null,
+                priceUsd: resolvedMetrics.priceUsd ?? cached?.priceUsd ?? null,
+                pc5m: resolvedMetrics.priceChange5mPct ?? cached?.metrics.priceChange5mPct ?? null,
+                pc1h: resolvedMetrics.priceChange1hPct ?? cached?.metrics.priceChange1hPct ?? null,
+                vol5m: resolvedMetrics.volume5mUsd ?? cached?.metrics.volume5mUsd ?? null,
                 liq: resolvedMetrics.liquidityUsd,
                 mcap: resolvedMetrics.marketCapUsd,
                 ageHours: resolvedMetrics.pairAgeHours,

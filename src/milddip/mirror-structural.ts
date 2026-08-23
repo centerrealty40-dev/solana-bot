@@ -1,8 +1,8 @@
-import { rpcCall } from "../copytrader/rpc.js";
+import { rpcCall } from '../copytrader/rpc.js';
 import {
   fetchMildDipStructuralFallback,
   type StructuralFallbackSnapshot,
-} from "./structural-fallback.js";
+} from './structural-fallback.js';
 
 type RpcCall = typeof rpcCall;
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
@@ -18,6 +18,10 @@ type SupplyCacheEntry = {
 };
 
 export type MirrorStructuralDexMetrics = {
+  priceUsd: number | null;
+  volume5mUsd: number | null;
+  priceChange5mPct: number | null;
+  priceChange1hPct: number | null;
   liquidityUsd: number | null;
   marketCapUsd: number | null;
   pairAgeHours: number | null;
@@ -25,15 +29,23 @@ export type MirrorStructuralDexMetrics = {
 };
 
 export type MirrorStructuralSources = {
-  liquidity: "gecko" | "dex" | "missing";
-  marketCap: "rpc" | "dex" | "missing";
-  pairAge: "registry" | "gecko" | "dex" | "missing";
+  liquidity: 'gecko' | 'dex' | 'missing';
+  marketCap: 'rpc' | 'dex' | 'missing';
+  pairAge: 'registry' | 'gecko' | 'dex' | 'missing';
 };
 
 export type MirrorStructuralResolution = {
   metrics: MirrorStructuralDexMetrics;
   sources: MirrorStructuralSources;
 };
+
+export function mirrorOwnStructuralCanApply(
+  metrics: MirrorStructuralDexMetrics,
+  existingPc5m: number | null | undefined,
+): boolean {
+  const pc5m = metrics.priceChange5mPct ?? existingPc5m;
+  return pc5m != null && Number.isFinite(pc5m);
+}
 
 const SUPPLY_CACHE_TTL_MS = 30 * 60_000;
 const SUPPLY_NEGATIVE_CACHE_TTL_MS = 60_000;
@@ -72,7 +84,7 @@ async function fetchMintSupply(
         };
       };
     } | null;
-  }>(rpcUrl, "getAccountInfo", [mint, { encoding: "jsonParsed" }], 3);
+  }>(rpcUrl, 'getAccountInfo', [mint, { encoding: 'jsonParsed' }], 3);
   const info = raw?.value?.data?.parsed?.info;
   const supply = finitePositive(info?.supply);
   const decimals = Number(info?.decimals);
@@ -119,14 +131,14 @@ export async function resolveMirrorStructuralMetrics(args: {
   let pairAgeHours = args.registryAgeHours ?? dex.pairAgeHours;
   let marketCapUsd = dex.marketCapUsd;
   const sources: MirrorStructuralSources = {
-    liquidity: liquidityUsd != null ? "dex" : "missing",
-    marketCap: marketCapUsd != null ? "dex" : "missing",
+    liquidity: liquidityUsd != null ? 'dex' : 'missing',
+    marketCap: marketCapUsd != null ? 'dex' : 'missing',
     pairAge:
       args.registryAgeHours != null
-        ? "registry"
+        ? 'registry'
         : pairAgeHours != null
-          ? "dex"
-          : "missing",
+          ? 'dex'
+          : 'missing',
   };
 
   const supply = await fetchMintSupply(
@@ -138,7 +150,7 @@ export async function resolveMirrorStructuralMetrics(args: {
   const rpcMcap = mcapFromSupply(supply, args.quotePriceUsd);
   if (rpcMcap != null) {
     marketCapUsd = rpcMcap;
-    sources.marketCap = "rpc";
+    sources.marketCap = 'rpc';
   }
 
   let fallback: StructuralFallbackSnapshot | null = null;
@@ -152,15 +164,19 @@ export async function resolveMirrorStructuralMetrics(args: {
   }
   if (liquidityUsd == null && fallback?.liquidityUsd != null) {
     liquidityUsd = fallback.liquidityUsd;
-    sources.liquidity = "gecko";
+    sources.liquidity = 'gecko';
   }
   if (pairAgeHours == null && fallback?.pairAgeHours != null) {
     pairAgeHours = fallback.pairAgeHours;
-    sources.pairAge = "gecko";
+    sources.pairAge = 'gecko';
   }
 
   return {
     metrics: {
+      priceUsd: fallback?.priceUsd ?? dex.priceUsd,
+      volume5mUsd: fallback?.volume5mUsd ?? dex.volume5mUsd,
+      priceChange5mPct: fallback?.priceChange5mPct ?? dex.priceChange5mPct,
+      priceChange1hPct: fallback?.priceChange1hPct ?? dex.priceChange1hPct,
       liquidityUsd,
       marketCapUsd,
       pairAgeHours,
@@ -168,9 +184,9 @@ export async function resolveMirrorStructuralMetrics(args: {
     },
     sources: {
       ...sources,
-      liquidity: liquidityUsd == null ? "missing" : sources.liquidity,
-      marketCap: marketCapUsd == null ? "missing" : sources.marketCap,
-      pairAge: pairAgeHours == null ? "missing" : sources.pairAge,
+      liquidity: liquidityUsd == null ? 'missing' : sources.liquidity,
+      marketCap: marketCapUsd == null ? 'missing' : sources.marketCap,
+      pairAge: pairAgeHours == null ? 'missing' : sources.pairAge,
     },
   };
 }

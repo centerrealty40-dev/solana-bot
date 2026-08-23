@@ -1,12 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
+  mirrorOwnStructuralCanApply,
   resetMirrorStructuralStateForTests,
   resolveMirrorStructuralMetrics,
-} from "../../src/milddip/mirror-structural.js";
-import { resetStructuralFallbackStateForTests } from "../../src/milddip/structural-fallback.js";
+} from '../../src/milddip/mirror-structural.js';
+import { resetStructuralFallbackStateForTests } from '../../src/milddip/structural-fallback.js';
 
-const mint = "MirrorStructuralMintxxxxxxxxxxxxxxxxxxxx1";
-const nowMs = Date.parse("2026-08-20T12:00:00.000Z");
+const mint = 'MirrorStructuralMintxxxxxxxxxxxxxxxxxxxx1';
+const nowMs = Date.parse('2026-08-20T12:00:00.000Z');
 
 const fallbackConfig = {
   structuralFallbackEnabled: true,
@@ -14,7 +15,7 @@ const fallbackConfig = {
   structuralFallbackMintGapMs: 0,
   structuralFallbackCacheTtlMs: 15_000,
   structuralFallbackTimeoutMs: 2_500,
-  entry: { allowedDexIds: ["raydium", "pumpswap"] },
+  entry: { allowedDexIds: ['raydium', 'pumpswap'] },
 } as never;
 
 function response(payload: unknown): Response {
@@ -26,50 +27,54 @@ function geckoPool(
 ): Record<string, unknown> {
   return {
     attributes: {
-      base_token_price_usd: "1",
-      reserve_in_usd: "9000",
-      pool_created_at: "2026-08-20T10:00:00.000Z",
+      base_token_price_usd: '1',
+      reserve_in_usd: '9000',
+      volume_usd: { m5: '1200' },
+      price_change_percentage: { m5: '-12', h1: '-20' },
+      pool_created_at: '2026-08-20T10:00:00.000Z',
       ...overrides,
     },
     relationships: {
       base_token: { data: { id: `solana_${mint}` } },
-      dex: { data: { id: "raydium" } },
+      dex: { data: { id: 'raydium' } },
     },
   };
 }
 
-describe("mirror structural own-source resolution", () => {
+describe('mirror structural own-source resolution', () => {
   beforeEach(() => {
     resetMirrorStructuralStateForTests();
     resetStructuralFallbackStateForTests();
   });
 
-  it("calculates mcap from supply and quote, then reuses cached supply", async () => {
-    const rpcImpl = vi
-      .fn()
-      .mockResolvedValue({
-        value: {
-          data: { parsed: { info: { supply: "1000000", decimals: 2 } } },
-        },
-      });
+  it('calculates mcap from supply and quote, then reuses cached supply', async () => {
+    const rpcImpl = vi.fn().mockResolvedValue({
+      value: {
+        data: { parsed: { info: { supply: '1000000', decimals: 2 } } },
+      },
+    });
     const args = {
       mint,
       nowMs,
-      rpcUrl: "https://rpc.example.test",
+      rpcUrl: 'https://rpc.example.test',
       quotePriceUsd: 2,
       registryAgeHours: 2,
       dex: {
+        priceUsd: null,
+        volume5mUsd: null,
+        priceChange5mPct: null,
+        priceChange1hPct: null,
         liquidityUsd: 5000,
         marketCapUsd: null,
         pairAgeHours: 2,
-        dexId: "raydium",
+        dexId: 'raydium',
       },
       fallbackConfig,
       rpcImpl: rpcImpl as never,
     };
     await expect(resolveMirrorStructuralMetrics(args)).resolves.toMatchObject({
       metrics: { marketCapUsd: 20_000 },
-      sources: { marketCap: "rpc" },
+      sources: { marketCap: 'rpc' },
     });
     await resolveMirrorStructuralMetrics({
       ...args,
@@ -79,15 +84,19 @@ describe("mirror structural own-source resolution", () => {
     expect(rpcImpl).toHaveBeenCalledTimes(1);
   });
 
-  it("uses Gecko liquidity and age when Dex has no structural fields", async () => {
+  it('uses Gecko liquidity and age when Dex has no structural fields', async () => {
     const fetchImpl = vi.fn(async () => response({ data: [geckoPool()] }));
     const result = await resolveMirrorStructuralMetrics({
       mint,
       nowMs,
-      rpcUrl: "https://rpc.example.test",
+      rpcUrl: 'https://rpc.example.test',
       quotePriceUsd: null,
       registryAgeHours: null,
       dex: {
+        priceUsd: null,
+        volume5mUsd: null,
+        priceChange5mPct: null,
+        priceChange1hPct: null,
         liquidityUsd: null,
         marketCapUsd: null,
         pairAgeHours: null,
@@ -98,44 +107,58 @@ describe("mirror structural own-source resolution", () => {
       rpcImpl: vi.fn().mockResolvedValue(null) as never,
     });
     expect(result).toMatchObject({
-      metrics: { liquidityUsd: 9000, pairAgeHours: 2 },
-      sources: { liquidity: "gecko", pairAge: "gecko", marketCap: "missing" },
+      metrics: {
+        liquidityUsd: 9000,
+        pairAgeHours: 2,
+        volume5mUsd: 1200,
+        priceChange5mPct: -12,
+        priceChange1hPct: -20,
+      },
+      sources: { liquidity: 'gecko', pairAge: 'gecko', marketCap: 'missing' },
     });
   });
 
-  it("leaves mcap unavailable when token supply is missing", async () => {
+  it('leaves mcap unavailable when token supply is missing', async () => {
     const result = await resolveMirrorStructuralMetrics({
       mint,
       nowMs,
-      rpcUrl: "https://rpc.example.test",
+      rpcUrl: 'https://rpc.example.test',
       quotePriceUsd: 2,
       registryAgeHours: 2,
       dex: {
+        priceUsd: null,
+        volume5mUsd: null,
+        priceChange5mPct: null,
+        priceChange1hPct: null,
         liquidityUsd: 5000,
         marketCapUsd: null,
         pairAgeHours: 2,
-        dexId: "raydium",
+        dexId: 'raydium',
       },
       fallbackConfig,
       rpcImpl: vi.fn().mockResolvedValue(null) as never,
     });
     expect(result.metrics.marketCapUsd).toBeNull();
-    expect(result.sources.marketCap).toBe("missing");
+    expect(result.sources.marketCap).toBe('missing');
   });
 
-  it("uses registry age before GeckoTerminal", async () => {
+  it('uses registry age before GeckoTerminal', async () => {
     const fetchImpl = vi.fn(async () =>
       response({
-        data: [geckoPool({ pool_created_at: "2026-08-20T08:00:00.000Z" })],
+        data: [geckoPool({ pool_created_at: '2026-08-20T08:00:00.000Z' })],
       }),
     );
     const result = await resolveMirrorStructuralMetrics({
       mint,
       nowMs,
-      rpcUrl: "https://rpc.example.test",
+      rpcUrl: 'https://rpc.example.test',
       quotePriceUsd: null,
       registryAgeHours: 7,
       dex: {
+        priceUsd: null,
+        volume5mUsd: null,
+        priceChange5mPct: null,
+        priceChange1hPct: null,
         liquidityUsd: null,
         marketCapUsd: null,
         pairAgeHours: null,
@@ -146,6 +169,24 @@ describe("mirror structural own-source resolution", () => {
       rpcImpl: vi.fn().mockResolvedValue(null) as never,
     });
     expect(result.metrics.pairAgeHours).toBe(7);
-    expect(result.sources.pairAge).toBe("registry");
+    expect(result.sources.pairAge).toBe('registry');
+  });
+
+  it('only permits own structural application when pc5m is available', () => {
+    const metrics = {
+      priceUsd: null,
+      volume5mUsd: null,
+      priceChange5mPct: null,
+      priceChange1hPct: null,
+      liquidityUsd: 9000,
+      marketCapUsd: 100_000,
+      pairAgeHours: 2,
+      dexId: 'raydium',
+    };
+    expect(mirrorOwnStructuralCanApply(metrics, null)).toBe(false);
+    expect(mirrorOwnStructuralCanApply(metrics, 0)).toBe(true);
+    expect(
+      mirrorOwnStructuralCanApply({ ...metrics, priceChange5mPct: -10 }, null),
+    ).toBe(true);
   });
 });
