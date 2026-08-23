@@ -111,6 +111,15 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '4000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_SELL_ONLY: '1'");
     expect(ecosystemSource).toContain(
+      "MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_INTERVAL_MS: '30000'",
+    );
+    expect(ecosystemSource).toContain(
+      "MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_WINDOW_MS: '3600000'",
+    );
+    expect(ecosystemSource).toContain(
+      "MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_TAIL_BYTES: '2097152'",
+    );
+    expect(ecosystemSource).toContain(
       "MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS: '86400000'",
     );
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_MCAP_USD: '50000'");
