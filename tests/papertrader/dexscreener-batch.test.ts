@@ -5,6 +5,7 @@ import { describe, expect, it, beforeEach, afterEach } from 'vitest';
 import {
   DEXSCREENER_BATCH_MAX,
   __resetDexQuoteCacheForTests,
+  fetchDexScreenerPairDetails,
   fetchDexScreenerPairCreatedAtMany,
   nextDexScreenerCooldownAt,
   prefetchDexScreenerPairDetailsMany,
@@ -124,6 +125,16 @@ describe('1.11.820 DexScreener batch prefetch', () => {
     expect(failed.errorMints).toEqual([target]);
     expect(failed.rateLimited429).toBe(1);
     expect(JSON.parse(fs.readFileSync(path.join(dir, 'gate.json'), 'utf8')).total429).toBe(1);
+    fs.writeFileSync(
+      path.join(dir, 'gate.json'),
+      JSON.stringify({
+        nextAllowedMs: Date.now(),
+        cooldownUntilMs: Date.now() - 1,
+        consecutive429: 1,
+        total429: 1,
+        last429AtMs: Date.now(),
+      }),
+    );
     __resetDexQuoteCacheForTests();
     const recovered = await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
       fetchImpl: (async () => ({
@@ -206,6 +217,16 @@ describe('1.11.820 DexScreener batch prefetch', () => {
       nowMs: Date.now(),
       bypassGate: true,
     });
+    fs.writeFileSync(
+      path.join(dir, 'gate.json'),
+      JSON.stringify({
+        nextAllowedMs: Date.now(),
+        cooldownUntilMs: Date.now() - 1,
+        consecutive429: 1,
+        total429: 1,
+        last429AtMs: Date.now(),
+      }),
+    );
     __resetDexQuoteCacheForTests();
     await prefetchDexScreenerPairDetailsManyWithMetadata([target], {
       fetchImpl,
@@ -250,6 +271,74 @@ describe('1.11.820 DexScreener batch prefetch', () => {
     delete process.env.DEXSCREENER_GLOBAL_GATE_PATH;
     delete process.env.DEXSCREENER_GLOBAL_RATE_LIMIT;
     delete process.env.DEXSCREENER_GLOBAL_MAX_RPM;
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('fails closed for bypass requests during cooldown without negative caching', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dex-gate-bypass-'));
+    const gatePath = path.join(dir, 'gate.json');
+    const cachePath = path.join(dir, 'cache.json');
+    const nowMs = Date.now();
+    fs.writeFileSync(
+      gatePath,
+      JSON.stringify({
+        nextAllowedMs: nowMs,
+        cooldownUntilMs: nowMs + 5_000,
+        consecutive429: 2,
+        total429: 2,
+        last429AtMs: nowMs,
+      }),
+    );
+    process.env.DEXSCREENER_GLOBAL_GATE_PATH = gatePath;
+    process.env.DEX_QUOTE_CACHE_PATH = cachePath;
+    process.env.DEX_QUOTE_CACHE_ENABLED = '1';
+    let calls = 0;
+    const fetchImpl = (async () => {
+      calls += 1;
+      return { ok: true, json: async () => ({ pairs: [] }) };
+    }) as never;
+
+    await expect(
+      fetchDexScreenerPairDetails(mint(82), {
+        fetchImpl,
+        nowMs,
+        bypassGate: true,
+      }),
+    ).resolves.toBeNull();
+    const result = await prefetchDexScreenerPairDetailsManyWithMetadata([mint(83)], {
+      fetchImpl,
+      nowMs,
+      bypassGate: true,
+    });
+    expect(result.requests).toBe(0);
+    expect(result.cooldownSkipped).toBe(1);
+    expect(result.errorMints).toEqual([mint(83)]);
+    expect(calls).toBe(0);
+    expect(fs.existsSync(cachePath)).toBe(false);
+
+    __resetDexQuoteCacheForTests();
+    fs.writeFileSync(
+      gatePath,
+      JSON.stringify({
+        nextAllowedMs: nowMs,
+        cooldownUntilMs: nowMs - 1,
+        consecutive429: 2,
+        total429: 2,
+        last429AtMs: nowMs,
+      }),
+    );
+    const recovered = await prefetchDexScreenerPairDetailsManyWithMetadata([mint(83)], {
+      fetchImpl: (async (url: string) => {
+        calls += 1;
+        const target = String(url).split('/tokens/')[1]!.split(',')[0]!;
+        return { ok: true, json: async () => ({ pairs: [pairFor(target)] }) };
+      }) as never,
+      nowMs,
+      bypassGate: true,
+    });
+    expect(recovered.requests).toBe(1);
+    expect(recovered.resolvedMints).toEqual([mint(83)]);
+    expect(calls).toBe(1);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
