@@ -5913,6 +5913,7 @@ export async function runMildDipLoop(
   let lastStreamPriceStatsMs = 0;
   let lastMirrorQuoteStatsMs = 0;
   let lastLeaderSellFeedStatsMs = 0;
+  let lastLeaderSellFeedStaleDropped = 0;
   let lastMirrorWakeMs = 0;
   let mirrorWakeInFlight = false;
 
@@ -5923,10 +5924,13 @@ export async function runMildDipLoop(
     if (leaderSellFeed && nowMs - lastLeaderSellFeedStatsMs >= 30_000) {
       lastLeaderSellFeedStatsMs = nowMs;
       const feedStats = leaderSellFeed.stats();
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'mirror_leader_sell_feed_stats',
-        staleDropped: feedStats.staleDropped,
-      });
+      if (feedStats.staleDropped > lastLeaderSellFeedStaleDropped) {
+        lastLeaderSellFeedStaleDropped = feedStats.staleDropped;
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mirror_leader_sell_feed_stats',
+          staleDropped: feedStats.staleDropped,
+        });
+      }
     }
     reconcileLateLeaderSells(nowMs);
     tickGreenMinuteJupiterRefresh({
