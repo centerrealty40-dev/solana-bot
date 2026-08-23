@@ -2671,6 +2671,7 @@ async function executeQueuedSell(args: {
     'breakeven_stop',
     'dead_set_bounce',
     'liq_drain',
+    'mirror_dust_close',
   ]);
   const retryEligible = !isPartial && retryableFullExitReasons.has(decision.reason);
   const retryReason = retryEligible ? decision.reason : undefined;
@@ -4381,6 +4382,7 @@ async function tryExits(
         ladderStepAfterAveragePct: cfg.leaderMirror.ladderStepAfterAveragePct,
         ladderSellFraction: cfg.leaderMirror.ladderSellFraction,
         ladderDustUsd: cfg.leaderMirror.ladderDustUsd,
+        mirrorDustCloseUsd: cfg.leaderMirror.dustCloseUsd,
       },
       leaderStyleGates: pos.lane === 'leader_style'
         ? {
