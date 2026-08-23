@@ -4404,7 +4404,9 @@ async function tryExits(
         armPct: pos.mirrorExitArmPct ?? cfg.leaderMirror.exitArmPct,
         trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
         ownExitEnabled: cfg.leaderMirror.ownExitEnabled,
-        lossCapActive: mirrorLossCapTriggered(cfg, state),
+        lossCapActive:
+          cfg.leaderMirror.lossCapFlatten &&
+          mirrorLossCapTriggered(cfg, state),
         ownExitTimeStopMs: cfg.leaderMirror.ownExitTimeStopMs,
         leaderSellOnly: cfg.leaderMirror.leaderSellOnlyExit,
         safetyMaxHoldMs: cfg.leaderMirror.safetyMaxHoldMs,
