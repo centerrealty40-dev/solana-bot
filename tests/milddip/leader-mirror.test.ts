@@ -6,6 +6,8 @@ import {
   leaderMirrorHitKey,
   leaderMirrorObservationWindowMs,
   leaderMirrorQuoteMintsCap,
+  leaderMirrorQuoteCoverage,
+  selectLeaderMirrorQuoteKeys,
   type LeaderMirrorGates,
 } from '../../src/milddip/leader-mirror.js';
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
@@ -29,6 +31,7 @@ const gates: LeaderMirrorGates = {
   knifeWaitPc5mPct: -10,
   knifeWaitDiscountPct: 5,
   knifeWaitWindowMs: 600_000,
+  knifeWaitQuoteSlots: 3,
   maxPremiumPct: 2,
   entryGraceMs: 60_000,
   entryGraceMaxPremiumPct: 1,
@@ -60,6 +63,101 @@ const hit = (overrides: Record<string, unknown> = {}) => ({
   mcap: 100_000,
   isAdd: false,
   ...overrides,
+});
+
+describe('leader mirror quote slot rotation', () => {
+  const candidate = (
+    n: number,
+    startedAtMs: number,
+    knifeWaitPending = true,
+    knifeWaitDue = true,
+  ) => ({
+    watchKey: `watch-${n}`,
+    startedAtMs,
+    knifeWaitPending,
+    knifeWaitDue,
+  });
+
+  it('gives knife-wait slots to the least recently quoted watches', () => {
+    expect(
+      selectLeaderMirrorQuoteKeys({
+        entries: [
+          candidate(1, 1_000),
+          candidate(2, 2_000),
+          candidate(3, 3_000),
+          candidate(4, 4_000),
+        ],
+        nowMs: 10_000,
+        entryGraceMs: 60_000,
+        maxQuoteMints: 3,
+        knifeWaitQuoteSlots: 2,
+        lastQuotedAtMs: new Map([
+          ['watch-1', 9_000],
+          ['watch-2', 8_000],
+        ]),
+      }),
+    ).toEqual(['watch-3', 'watch-4']);
+  });
+
+  it('keeps fresh leader entries ahead of knife-wait slots', () => {
+    expect(
+      selectLeaderMirrorQuoteKeys({
+        entries: [
+          candidate(1, 1_000, false),
+          candidate(2, 2_000, false),
+          candidate(3, 3_000),
+          candidate(4, 4_000),
+        ],
+        nowMs: 10_000,
+        entryGraceMs: 60_000,
+        maxQuoteMints: 3,
+        knifeWaitQuoteSlots: 3,
+        lastQuotedAtMs: new Map(),
+      }),
+    ).toEqual(['watch-1', 'watch-2', 'watch-3']);
+  });
+
+  it('does not let knife-wait displace a full fresh cap', () => {
+    expect(
+      selectLeaderMirrorQuoteKeys({
+        entries: [
+          candidate(1, 1_000, false),
+          candidate(2, 2_000, false),
+          candidate(3, 3_000, false),
+          candidate(4, 4_000),
+        ],
+        nowMs: 10_000,
+        entryGraceMs: 60_000,
+        maxQuoteMints: 3,
+        knifeWaitQuoteSlots: 3,
+        lastQuotedAtMs: new Map(),
+      }),
+    ).toEqual(['watch-1', 'watch-2', 'watch-3']);
+  });
+
+  it('reports uncovered knife-wait observations', () => {
+    const entries = [
+      candidate(1, 1_000),
+      candidate(2, 2_000),
+      candidate(3, 3_000),
+    ];
+    expect(
+      leaderMirrorQuoteCoverage(entries, new Set(['watch-1'])),
+    ).toEqual({ waiting: 3, uncovered: 2 });
+  });
+
+  it('does not quote a knife-wait watch before its stale interval', () => {
+    expect(
+      selectLeaderMirrorQuoteKeys({
+        entries: [candidate(1, 1_000, true, false)],
+        nowMs: 10_000,
+        entryGraceMs: 60_000,
+        maxQuoteMints: 8,
+        knifeWaitQuoteSlots: 3,
+        lastQuotedAtMs: new Map([['watch-1', 9_000]]),
+      }),
+    ).toEqual([]);
+  });
 });
 
 const at = (

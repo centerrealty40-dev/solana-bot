@@ -200,6 +200,17 @@ export function tickGreenMinuteJupiterRefresh(args: {
   }
 }
 
+export function releaseGreenMinuteJupiterRefresh(args: {
+  source: ActiveCandidate['source'];
+  keepMints: ReadonlySet<string>;
+}): void {
+  for (const [mint, candidate] of active) {
+    if (candidate.source !== args.source || args.keepMints.has(mint)) continue;
+    if (!inFlight.has(mint)) active.delete(mint);
+  }
+  stats.activeMints = active.size;
+}
+
 function startQuote(
   mint: string,
   candidate: ActiveCandidate,

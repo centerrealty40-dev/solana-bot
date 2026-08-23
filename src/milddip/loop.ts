@@ -37,15 +37,18 @@ import {
 } from './fast-path.js';
 import {
   greenMinuteJupiterStats,
+  releaseGreenMinuteJupiterRefresh,
   requestGreenMinuteJupiterRefresh,
   tickGreenMinuteJupiterRefresh,
 } from './green-minute-jupiter-refresh.js';
 import {
   evaluateLeaderMirrorObservation,
+  leaderMirrorKnifeWaitPending,
   leaderMirrorDecisionSuppressed,
   leaderMirrorHitKey,
   leaderMirrorNeedsStructuralBackfill,
   leaderMirrorObservationWindowMs,
+  selectLeaderMirrorQuoteKeys,
   type LeaderMirrorMetricSource,
 } from './leader-mirror.js';
 import {
@@ -1393,6 +1396,9 @@ async function wakeLeaderMirrors(
         metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
       });
       leaderMirrorDecisions.delete(watchKey);
+      leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
+      leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
+      leaderMirrorQuoteSampleCount.delete(watchKey);
     } else if (!existing) {
       const prior = leaderMirrorDecisions.get(watchKey);
       if (
@@ -1414,6 +1420,9 @@ async function wakeLeaderMirrors(
         expiresAtMs: nowMs + mirrorObserveMs,
         metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
       });
+      leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
+      leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
+      leaderMirrorQuoteSampleCount.delete(watchKey);
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_observe_start',
         mint: hit.mint,
@@ -1523,16 +1532,70 @@ async function wakeLeaderMirrors(
   if (massBackfillEntries.length > 0 && !leaderMirrorStructuralInFlight) {
     launchStructuralBackfill(massBackfillEntries, false);
   }
-  const quoteEntries = prioritizeFreshStructuralEntries(
-    [...leaderMirrorWatches.entries()],
-    nowMs,
-    gates.entryGraceMs ?? 60_000,
-    gates.maxQuoteMints > 0
-      ? Math.floor(gates.maxQuoteMints)
-      : leaderMirrorWatches.size,
-    ([, watch]) => watch.startedAtMs,
+  const quoteSamples = new Map(
+    [...leaderMirrorWatches.entries()].map(([watchKey, watch]) => [
+      watchKey,
+      mildDipPriceRing.lastPriceBySource(
+        watch.hit.mint,
+        'leader_mirror_jupiter',
+        nowMs,
+        gates.quoteMaxAgeMs,
+      ),
+    ]),
   );
-  const quoteKeys = new Set(quoteEntries.map(([watchKey]) => watchKey));
+  const quoteCandidates = [...leaderMirrorWatches.entries()].map(
+    ([watchKey, watch]) => ({
+      watchKey,
+      startedAtMs: watch.startedAtMs,
+      knifeWaitPending: leaderMirrorKnifeWaitPending({
+        hit: watch.hit,
+        nowMs,
+        leaderBuyTsMs:
+          watch.hit.blockTime != null && watch.hit.blockTime > 0
+            ? watch.hit.blockTime * 1000
+            : null,
+        quotePriceUsd: quoteSamples.get(watchKey)?.priceUsd,
+        gates,
+      }),
+      knifeWaitDue:
+        nowMs -
+          (leaderMirrorQuoteLastSelectedAtMs.get(watchKey) ??
+            Number.NEGATIVE_INFINITY) >=
+        gates.staleQuoteIntervalMs,
+    }),
+  );
+  const quoteKeys = new Set(
+    selectLeaderMirrorQuoteKeys({
+      entries: quoteCandidates,
+      nowMs,
+      entryGraceMs: gates.entryGraceMs ?? 60_000,
+      maxQuoteMints: gates.maxQuoteMints,
+      knifeWaitQuoteSlots: gates.knifeWaitQuoteSlots,
+      lastQuotedAtMs: leaderMirrorQuoteLastSelectedAtMs,
+    }),
+  );
+  const knifeWaitPendingByWatchKey = new Map(
+    quoteCandidates.map((candidate) => [
+      candidate.watchKey,
+      candidate.knifeWaitPending,
+    ]),
+  );
+  releaseGreenMinuteJupiterRefresh({
+    source: 'leader_mirror_jupiter',
+    keepMints: new Set(
+      [...quoteKeys]
+        .map((watchKey) => leaderMirrorWatches.get(watchKey)?.hit.mint)
+        .filter((mint): mint is string => mint != null),
+    ),
+  });
+  for (const candidate of quoteCandidates) {
+    if (!candidate.knifeWaitPending) continue;
+    knifeWaitQuoteWaitingKeys.add(candidate.watchKey);
+    if (!quoteKeys.has(candidate.watchKey)) {
+      knifeWaitQuoteUncoveredKeys.add(candidate.watchKey);
+      continue;
+    }
+  }
   let filled = 0;
   for (const [watchKey, watch] of leaderMirrorWatches) {
     const mint = watch.hit.mint;
@@ -1611,29 +1674,43 @@ async function wakeLeaderMirrors(
       continue;
     }
     if (quoteKeys.has(watchKey)) {
-      requestGreenMinuteJupiterRefresh({
+      const quoteRequested = requestGreenMinuteJupiterRefresh({
         mint,
         nowMs,
         snapshotPriceUsd: hit.fillPriceUsd ?? 0,
         enabled: true,
-        minGapMs: entryGraceActive
+        minGapMs: knifeWaitPendingByWatchKey.get(watchKey)
+          ? Math.max(gates.quoteIntervalMs, gates.staleQuoteIntervalMs)
+          : entryGraceActive
           ? gates.quoteIntervalMs
           : Math.max(gates.quoteIntervalMs, gates.staleQuoteIntervalMs),
         ttlMs: Math.max(3 * gates.quoteMaxAgeMs, 30_000),
         maxMints: gates.maxQuoteMints,
         maxInFlight: 16,
-        priority: entryGraceActive ? 1 : 0,
+        priority: knifeWaitPendingByWatchKey.get(watchKey)
+          ? 0
+          : entryGraceActive
+            ? 1
+            : 0,
         probeUsd: gates.positionUsd,
         slippageBps: cfg.slippageBps,
         source: 'leader_mirror_jupiter',
       });
+      if (quoteRequested) {
+        leaderMirrorQuoteLastSelectedAtMs.set(watchKey, nowMs);
+      }
     }
-    const quote = mildDipPriceRing.lastPriceBySource(
-      mint,
-      'leader_mirror_jupiter',
-      nowMs,
-      gates.quoteMaxAgeMs,
-    );
+    const quote = quoteSamples.get(watchKey) ?? null;
+    if (
+      quote &&
+      quote.tsMs > (leaderMirrorQuoteLastSampleTsMs.get(watchKey) ?? 0)
+    ) {
+      leaderMirrorQuoteLastSampleTsMs.set(watchKey, quote.tsMs);
+      leaderMirrorQuoteSampleCount.set(
+        watchKey,
+        (leaderMirrorQuoteSampleCount.get(watchKey) ?? 0) + 1,
+      );
+    }
     const decision = evaluateLeaderMirrorObservation({
       hit,
       quotePriceUsd: quote?.priceUsd,
@@ -1817,6 +1894,7 @@ async function wakeLeaderMirrors(
           entryPriceUsd,
           discountPct,
           waitedMs: decision.knifeWait.waitedMs,
+          quoteCount: leaderMirrorQuoteSampleCount.get(watchKey) ?? 0,
           enteredByDiscount: decision.knifeWait.enteredByDiscount,
           enteredByWindowExpiry: decision.knifeWait.enteredByWindowExpiry,
         });
@@ -1853,6 +1931,13 @@ async function wakeLeaderMirrors(
             : null,
         metricSource: watch.metricSource,
       });
+    }
+  }
+  for (const watchKey of leaderMirrorQuoteSampleCount.keys()) {
+    if (!leaderMirrorWatches.has(watchKey)) {
+      leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
+      leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
+      leaderMirrorQuoteSampleCount.delete(watchKey);
     }
   }
   persistLeaderMirrorWatches(cfg, state);
@@ -3016,6 +3101,11 @@ function leaderMirrorWatchKey(hit: LeaderSeedHit): string {
 }
 const leaderMirrorStructuralAttemptMs = new Map<string, number>();
 const leaderMirrorEntryRetryAfterMs = new Map<string, number>();
+const leaderMirrorQuoteLastSelectedAtMs = new Map<string, number>();
+const leaderMirrorQuoteLastSampleTsMs = new Map<string, number>();
+const leaderMirrorQuoteSampleCount = new Map<string, number>();
+const knifeWaitQuoteWaitingKeys = new Set<string>();
+const knifeWaitQuoteUncoveredKeys = new Set<string>();
 let leaderMirrorStructuralInFlight = false;
 let leaderMirrorStructuralPriorityInFlight = false;
 let leaderMirrorStateHydrated = false;
@@ -3029,6 +3119,9 @@ function hydrateLeaderMirrorWatches(
   leaderMirrorStateHydrated = true;
   leaderMirrorWatches.clear();
   leaderMirrorDecisions.clear();
+  leaderMirrorQuoteLastSelectedAtMs.clear();
+  leaderMirrorQuoteLastSampleTsMs.clear();
+  leaderMirrorQuoteSampleCount.clear();
   const mirrorObserveMs = leaderMirrorObservationWindowMs(cfg.leaderMirror);
   for (const [watchKey, watch] of Object.entries(state.leaderMirrorWatches ?? {})) {
     if (watch.expiresAtMs <= nowMs || state.open[watch.hit.mint]) continue;
@@ -5563,7 +5656,11 @@ export async function runMildDipLoop(
         quoteSuccesses: mirrorJupiter.quoteSuccesses,
         quoteErrors: mirrorJupiter.quoteErrors,
         capRejected: mirrorJupiter.capRejected,
+        knifeWaitWaiting: knifeWaitQuoteWaitingKeys.size,
+        knifeWaitUncovered: knifeWaitQuoteUncoveredKeys.size,
       });
+      knifeWaitQuoteWaitingKeys.clear();
+      knifeWaitQuoteUncoveredKeys.clear();
     }
     if (
       !cfg.leaderMirror.mirrorOnly &&

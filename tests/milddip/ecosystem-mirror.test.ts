@@ -55,6 +55,7 @@ describe('mirror PM2 apps', () => {
       'MILD_DIP_MIRROR_KNIFE_WAIT_PC5M_PCT',
       'MILD_DIP_MIRROR_KNIFE_WAIT_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_KNIFE_WAIT_WINDOW_MS',
+      'MILD_DIP_MIRROR_KNIFE_WAIT_QUOTE_SLOTS',
       'MILD_DIP_MIRROR_MAX_PREMIUM_PCT',
       'MILD_DIP_MIRROR_RETRY_WHILE_LEADER_HOLDS',
       'MILD_DIP_MIRROR_AVERAGE_ENABLED',
@@ -78,6 +79,7 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_KNIFE_WAIT_PC5M_PCT).toBe('-10');
     expect(mirror?.env.MILD_DIP_MIRROR_KNIFE_WAIT_DISCOUNT_PCT).toBe('5');
     expect(mirror?.env.MILD_DIP_MIRROR_KNIFE_WAIT_WINDOW_MS).toBe('600000');
+    expect(mirror?.env.MILD_DIP_MIRROR_KNIFE_WAIT_QUOTE_SLOTS).toBe('3');
     expect(mirror?.env.MILD_DIP_MIRROR_MAX_QUOTE_MINTS).toBe('8');
     expect(ecosystemSource).toContain("name: 'mild-dip-mirror'");
     expect(ecosystemSource).toContain("name: 'mild-dip-mirror2'");
