@@ -4,6 +4,7 @@ import {
   decideLeaderSellExit,
   isLeaderSellEventValidForPosition,
   mirrorLeaderSellRetryDue,
+  selectLatestValidLeaderSellEventForPosition,
   selectNewerLeaderSellEvent,
 } from '../../src/milddip/leader-sell-exit.js';
 
@@ -69,6 +70,25 @@ describe('decideLeaderSellExit', () => {
       blockTimeMs: 100_001,
     });
     expect(selectNewerLeaderSellEvent(event, null)).toEqual(event);
+  });
+
+  it('selects a late sale but rejects a sale before the position opened', () => {
+    expect(
+      selectLatestValidLeaderSellEventForPosition({
+        events: [{ ...event, blockTimeMs: 200_000 }],
+        leader,
+        leaderBuyTsMs: 100_000,
+        openedAtMs: 150_000,
+      }),
+    ).toMatchObject({ blockTimeMs: 200_000 });
+    expect(
+      selectLatestValidLeaderSellEventForPosition({
+        events: [{ ...event, blockTimeMs: 140_000 }],
+        leader,
+        leaderBuyTsMs: 100_000,
+        openedAtMs: 150_000,
+      }),
+    ).toBeNull();
   });
 
   it('drops stale intents before evaluating the same-tick feed sell', () => {

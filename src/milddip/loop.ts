@@ -88,6 +88,7 @@ import {
   decideLeaderSellExit,
   isLeaderSellEventValidForPosition,
   mirrorLeaderSellRetryDue,
+  selectLatestValidLeaderSellEventForPosition,
   selectNewerLeaderSellEvent,
 } from './leader-sell-exit.js';
 import { recoverDeferIsCapped } from './recover-defer.js';
@@ -5158,6 +5159,7 @@ export async function runMildDipLoop(
     ? new LeaderSellFeed(cfg.leaderMirror.leaderSellTradesPath, {
         leaders: cfg.leaderMirror.leaders,
         maxAgeMs: cfg.leaderMirror.leaderSellExitMaxAgeMs,
+        stats: { staleDropped: 0 },
       })
     : null;
   leaderSellFeed?.start();
@@ -5259,6 +5261,72 @@ export async function runMildDipLoop(
     }
     if (changed) saveMildDipState(cfg.statePath, state);
   }
+  let lastLateLeaderSellReconcileMs = 0;
+  const reconcileLateLeaderSells = (nowMs: number): void => {
+    if (
+      !leaderSellFeed ||
+      nowMs - lastLateLeaderSellReconcileMs <
+        cfg.leaderMirror.leaderSellLateReconcileIntervalMs
+    ) {
+      return;
+    }
+    const openMints = new Set(
+      Object.entries(state.open)
+        .filter(
+          ([, pos]) =>
+            pos.lane === 'leader_mirror' &&
+            pos.leaderMirrorLeader &&
+            !pos.mirrorLeaderSellIntent,
+        )
+        .map(([mint]) => mint),
+    );
+    if (openMints.size === 0) return;
+    lastLateLeaderSellReconcileMs = nowMs;
+    const reconciled = reconcileLeaderSellEvents({
+      path: cfg.leaderMirror.leaderSellTradesPath,
+      leaders: cfg.leaderMirror.leaders,
+      openMints,
+      nowMs,
+      windowMs: cfg.leaderMirror.leaderSellLateReconcileWindowMs,
+      tailBytes: cfg.leaderMirror.leaderSellLateReconcileTailBytes,
+    });
+    let changed = false;
+    for (const [mint, pos] of Object.entries(state.open)) {
+      if (
+        !pos ||
+        pos.lane !== 'leader_mirror' ||
+        pos.mirrorLeaderSellIntent
+      ) {
+        continue;
+      }
+      const event = selectLatestValidLeaderSellEventForPosition({
+        events: reconciled.filter((candidate) => candidate.mint === mint),
+        leader: pos.leaderMirrorLeader,
+        leaderBuyTsMs: pos.leaderBuyTsMs,
+        openedAtMs: pos.openedAtMs,
+      });
+      if (!event) continue;
+      pos.mirrorLeaderSellIntent = {
+        leader: event.leader,
+        signature: event.signature,
+        leaderBlockTimeMs: event.blockTimeMs,
+        detectedAtMs: nowMs,
+      };
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_leader_sell_intent',
+        mint: event.mint,
+        symbol: pos.symbol,
+        leader: event.leader,
+        signature: event.signature,
+        leaderBlockTimeMs: event.blockTimeMs,
+        detectedAtMs: nowMs,
+        lagMs: Math.max(0, nowMs - event.blockTimeMs),
+        source: 'late_reconciliation',
+      });
+      changed = true;
+    }
+    if (changed) saveMildDipState(cfg.statePath, state);
+  };
   let priceSampler: ReturnType<typeof createStreamPriceSampler> | null = null;
   const tapeShadowRing = cfg.tapeShadowEnabled && !cfg.leaderMirror.mirrorOnly
     ? new MildDipPriceRing({
@@ -5844,6 +5912,7 @@ export async function runMildDipLoop(
   let lastOwnTapeKnifeMs = 0;
   let lastStreamPriceStatsMs = 0;
   let lastMirrorQuoteStatsMs = 0;
+  let lastLeaderSellFeedStatsMs = 0;
   let lastMirrorWakeMs = 0;
   let mirrorWakeInFlight = false;
 
@@ -5851,6 +5920,15 @@ export async function runMildDipLoop(
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
     const leaderSellEvents = leaderSellFeed?.read(nowMs) ?? [];
+    if (leaderSellFeed && nowMs - lastLeaderSellFeedStatsMs >= 30_000) {
+      lastLeaderSellFeedStatsMs = nowMs;
+      const feedStats = leaderSellFeed.stats();
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_leader_sell_feed_stats',
+        staleDropped: feedStats.staleDropped,
+      });
+    }
+    reconcileLateLeaderSells(nowMs);
     tickGreenMinuteJupiterRefresh({
       nowMs,
       enabled: cfg.green.jupiterMinuteEnabled && !cfg.leaderMirror.mirrorOnly,

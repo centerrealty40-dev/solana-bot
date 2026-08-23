@@ -49,6 +49,29 @@ export function selectNewerLeaderSellEvent(
   return feedEvent.blockTimeMs >= durableEvent.blockTimeMs ? feedEvent : durableEvent;
 }
 
+export function selectLatestValidLeaderSellEventForPosition(args: {
+  events: readonly LeaderSellEvent[];
+  leader?: string | null;
+  leaderBuyTsMs?: number | null;
+  openedAtMs?: number | null;
+}): LeaderSellEvent | null {
+  let latest: LeaderSellEvent | null = null;
+  for (const event of args.events) {
+    if (
+      !isLeaderSellEventValidForPosition({
+        event,
+        leader: args.leader,
+        leaderBuyTsMs: args.leaderBuyTsMs,
+        openedAtMs: args.openedAtMs,
+      })
+    ) {
+      continue;
+    }
+    if (latest == null || event.blockTimeMs > latest.blockTimeMs) latest = event;
+  }
+  return latest;
+}
+
 export function decideLeaderSellExit(args: {
   enabled: boolean;
   lane: string | null | undefined;
