@@ -124,10 +124,10 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_EXIT_ARM_PCT).toBe('2');
     expect(mirror2?.env.MILD_DIP_MIRROR_EXIT_TRAIL_PCT).toBe('0');
     expect(mirror2?.env.MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS).toBe('0');
-    expect(mirror?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('40');
-    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('30');
-    expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('70');
-    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('50');
+    expect(mirror?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('50');
+    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('40');
+    expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('60');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('40');
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_ENABLED: ownExitEnabled ? '1' : '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS: ownExitTimeStopMs");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
