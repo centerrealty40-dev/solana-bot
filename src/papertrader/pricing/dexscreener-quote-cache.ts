@@ -188,6 +188,53 @@ function gateMaxBacklogMs(): number {
   return 30_000;
 }
 
+function gate429BackoffBaseMs(): number {
+  const raw = process.env.DEXSCREENER_429_BACKOFF_BASE_MS?.trim();
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return 5_000;
+}
+
+function gate429BackoffMaxMs(): number {
+  const raw = process.env.DEXSCREENER_429_BACKOFF_MAX_MS?.trim();
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 1_000) return Math.min(120_000, n);
+  }
+  return 120_000;
+}
+
+function retryAfterMs(value: string | null | undefined, nowMs: number): number | null {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const seconds = Number(trimmed);
+  if (Number.isFinite(seconds) && seconds > 0) return seconds * 1_000;
+  const dateMs = Date.parse(trimmed);
+  if (!Number.isFinite(dateMs) || dateMs <= nowMs) return null;
+  return dateMs - nowMs;
+}
+
+export function nextDexScreenerCooldownAt(args: {
+  nowMs: number;
+  retryAfter?: string | null;
+  consecutive429: number;
+}): { cooldownUntilMs: number; consecutive429: number; cooldownMs: number } {
+  const consecutive429 = Math.max(1, Math.trunc(args.consecutive429) + 1);
+  const maxMs = Math.max(1_000, gate429BackoffMaxMs());
+  const baseMs = Math.min(maxMs, Math.max(1_000, gate429BackoffBaseMs()));
+  const retryMs = retryAfterMs(args.retryAfter, args.nowMs);
+  const exponentialMs = baseMs * 2 ** Math.min(consecutive429 - 1, 30);
+  const cooldownMs = Math.min(maxMs, Math.max(1_000, retryMs ?? exponentialMs));
+  return {
+    cooldownUntilMs: args.nowMs + cooldownMs,
+    consecutive429,
+    cooldownMs,
+  };
+}
+
 /**
  * 1.11.796 — compute next grant; clamp stale/runaway `nextAllowedMs` so buy-path
  * Dex slots cannot sleep for tens of minutes behind a flooded gate file.
@@ -216,22 +263,41 @@ export function nextDexScreenerGrantAt(args: {
   };
 }
 
-function readGateState(): { nextAllowedMs: number } {
+type DexScreenerGateState = {
+  nextAllowedMs: number;
+  cooldownUntilMs: number;
+  consecutive429: number;
+  total429: number;
+  last429AtMs: number;
+};
+
+function readGateState(): DexScreenerGateState {
   try {
     const raw = fs.readFileSync(gateStatePath(), 'utf8');
-    const j = JSON.parse(raw) as { nextAllowedMs?: number };
-    const next = j?.nextAllowedMs;
-    return { nextAllowedMs: typeof next === 'number' && Number.isFinite(next) ? next : 0 };
+    const j = JSON.parse(raw) as Partial<DexScreenerGateState>;
+    return {
+      nextAllowedMs: typeof j?.nextAllowedMs === 'number' && Number.isFinite(j.nextAllowedMs) ? j.nextAllowedMs : 0,
+      cooldownUntilMs:
+        typeof j?.cooldownUntilMs === 'number' && Number.isFinite(j.cooldownUntilMs) ? j.cooldownUntilMs : 0,
+      consecutive429:
+        typeof j?.consecutive429 === 'number' && Number.isFinite(j.consecutive429)
+          ? Math.max(0, Math.trunc(j.consecutive429))
+          : 0,
+      total429:
+        typeof j?.total429 === 'number' && Number.isFinite(j.total429) ? Math.max(0, Math.trunc(j.total429)) : 0,
+      last429AtMs:
+        typeof j?.last429AtMs === 'number' && Number.isFinite(j.last429AtMs) ? j.last429AtMs : 0,
+    };
   } catch {
-    return { nextAllowedMs: 0 };
+    return { nextAllowedMs: 0, cooldownUntilMs: 0, consecutive429: 0, total429: 0, last429AtMs: 0 };
   }
 }
 
-function writeGateState(nextAllowedMs: number): void {
+function writeGateState(state: DexScreenerGateState): void {
   const p = gateStatePath();
   fs.mkdirSync(path.dirname(p), { recursive: true });
   const tmp = `${p}.tmp.${process.pid}.${Date.now()}`;
-  fs.writeFileSync(tmp, JSON.stringify({ nextAllowedMs, updatedAt: Date.now() }), 'utf8');
+  fs.writeFileSync(tmp, JSON.stringify({ ...state, updatedAt: Date.now() }), 'utf8');
   fs.renameSync(tmp, p);
 }
 
@@ -242,16 +308,55 @@ async function acquireDexScreenerSlot(): Promise<void> {
   await withFileLock(gateLockPath(), async () => {
     const now = Date.now();
     const state = readGateState();
+    const maxCooldownMs = Math.max(1_000, gate429BackoffMaxMs());
+    const cooldownUntilMs =
+      state.cooldownUntilMs > now + maxCooldownMs ? now + maxCooldownMs : Math.max(now, state.cooldownUntilMs);
     const grant = nextDexScreenerGrantAt({
       nowMs: now,
       nextAllowedMs: state.nextAllowedMs,
       minGapMs,
       maxBacklogMs: gateMaxBacklogMs(),
     });
-    waitMs = grant.waitMs;
-    writeGateState(grant.nextAllowedMs);
+    const grantAt = Math.max(grant.grantAt, cooldownUntilMs);
+    waitMs = Math.max(0, grantAt - now);
+    writeGateState({
+      ...state,
+      nextAllowedMs: grantAt + minGapMs,
+      cooldownUntilMs,
+    });
   });
   if (waitMs > 0) await sleep(waitMs);
+}
+
+async function recordDexScreenerResponse(res: {
+  status: number;
+  ok: boolean;
+  headers?: { get(name: string): string | null };
+}): Promise<boolean> {
+  const nowMs = Date.now();
+  const is429 = res.status === 429;
+  if (!is429 && !res.ok) return false;
+  const retryAfter = res.headers?.get('retry-after');
+  await withFileLock(gateLockPath(), async () => {
+    const state = readGateState();
+    if (is429) {
+      const next = nextDexScreenerCooldownAt({
+        nowMs,
+        retryAfter,
+        consecutive429: state.consecutive429,
+      });
+      writeGateState({
+        ...state,
+        cooldownUntilMs: Math.max(state.cooldownUntilMs, next.cooldownUntilMs),
+        consecutive429: next.consecutive429,
+        total429: state.total429 + 1,
+        last429AtMs: nowMs,
+      });
+    } else {
+      writeGateState({ ...state, cooldownUntilMs: 0, consecutive429: 0 });
+    }
+  });
+  return is429;
 }
 
 function pickBestSolanaPair(
@@ -461,11 +566,13 @@ export async function fetchDexScreenerPairDetails(
 
   let details: DexScreenerPairDetails | null = null;
   let cacheEntry: CacheEntry = { miss: true, fetchedAtMs: nowMs };
+  let rateLimited429 = false;
   try {
     const res = await doFetch(
       `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`,
       { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8_000) },
     );
+    rateLimited429 = await recordDexScreenerResponse(res);
     if (res.ok) {
       const j = (await res.json()) as { pairs?: unknown[] };
       const best = pickBestSolanaPair(j.pairs ?? [], mint, opts?.preferredDex, allowedDexIds);
@@ -476,7 +583,7 @@ export async function fetchDexScreenerPairDetails(
     /* null */
   }
 
-  if (isDexQuoteCacheEnabled()) {
+  if (!rateLimited429 && isDexQuoteCacheEnabled()) {
     await putCachedDexQuotes({ [mint]: cacheEntry }, nowMs);
   }
   const snap = cacheEntryToSnapshot(cacheEntry);
@@ -495,6 +602,7 @@ export type DexScreenerBatchPrefetchResult = {
   resolvedMints: string[];
   missedMints: string[];
   errorMints: string[];
+  rateLimited429: number;
   uncoveredMints: string[];
   retriedMints: string[];
   pairCreatedAtMs: Map<string, number | null>;
@@ -545,6 +653,7 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
   const wanted: string[] = [];
   const resolvedMints: string[] = [];
   const missedMints: string[] = [];
+  let rateLimited429 = 0;
   const uncoveredMints: string[] = [];
   const retriedMints: string[] = [];
   const pairCreatedAtMs = new Map<string, number | null>();
@@ -588,6 +697,7 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
       resolvedMints,
       missedMints,
       errorMints: [],
+      rateLimited429,
       uncoveredMints,
       retriedMints,
       pairCreatedAtMs,
@@ -610,6 +720,8 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
         `https://api.dexscreener.com/latest/dex/tokens/${chunk.map(encodeURIComponent).join(',')}`,
         { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(12_000) },
       );
+      const is429 = await recordDexScreenerResponse(res);
+      if (is429) rateLimited429 += 1;
       if (res.ok) {
         const j = (await res.json()) as { pairs?: unknown[] };
         const pairs = Array.isArray(j.pairs) ? j.pairs : [];
@@ -692,6 +804,7 @@ export async function prefetchDexScreenerPairDetailsManyWithMetadata(
     resolvedMints,
     missedMints,
     errorMints,
+    rateLimited429,
     uncoveredMints,
     retriedMints,
     pairCreatedAtMs,
@@ -727,6 +840,7 @@ export async function fetchDexScreenerPairCreatedAtMany(
         `https://api.dexscreener.com/latest/dex/tokens/${chunk.map(encodeURIComponent).join(',')}`,
         { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(12_000) },
       );
+      await recordDexScreenerResponse(res);
       if (!res.ok) continue;
       const j = (await res.json()) as { pairs?: unknown[] };
       const pairs = Array.isArray(j.pairs) ? j.pairs : [];
@@ -784,11 +898,13 @@ export async function fetchDexScreenerQuoteViaCache(
 
   let snap: DexScreenerMarketSnapshot | null = null;
   let cacheEntry: CacheEntry = { miss: true, fetchedAtMs: nowMs };
+  let rateLimited429 = false;
   try {
     const res = await doFetch(
       `https://api.dexscreener.com/latest/dex/tokens/${encodeURIComponent(mint)}`,
       { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(8_000) },
     );
+    rateLimited429 = await recordDexScreenerResponse(res);
     if (res.ok) {
       const j = (await res.json()) as { pairs?: unknown[] };
       const best = pickBestSolanaPair(j.pairs ?? [], mint);
@@ -799,7 +915,7 @@ export async function fetchDexScreenerQuoteViaCache(
     /* null snap */
   }
 
-  if (isDexQuoteCacheEnabled()) {
+  if (!rateLimited429 && isDexQuoteCacheEnabled()) {
     await putCachedDexQuotes({ [mint]: cacheEntry }, nowMs);
   }
   inProcess.set(mint, { at: nowMs, val: snap });

@@ -335,10 +335,10 @@ const DISCOVERY_COLLECTOR_PIN_ENV = {
 const DEXSCREENER_GATE_ENV = {
   DEXSCREENER_GLOBAL_RATE_LIMIT: '1',
   /**
-   * 120 RPM (minGap=500ms): DexScreener /tokens ~300/min theoretical — stay at 120.
+   * 60 RPM (minGap=1000ms): leave headroom for transient provider throttling.
    * History: 42 RPM (code default without this env) starved marks behind copy-trader.
    */
-  DEXSCREENER_GLOBAL_MAX_RPM: '120',
+  DEXSCREENER_GLOBAL_MAX_RPM: '60',
   DEXSCREENER_GLOBAL_GATE_PATH: path.join(root, 'data/dexscreener-api-gate.json'),
 };
 

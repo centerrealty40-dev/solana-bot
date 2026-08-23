@@ -1470,7 +1470,8 @@ async function wakeLeaderMirrors(
       if (
         result.uncoveredMints.length > 0 ||
         result.retriedMints.length > 0 ||
-        result.errorMints.length > 0
+        result.errorMints.length > 0 ||
+        result.rateLimited429 > 0
       ) {
         appendMildDipJournal(cfg.journalPath, {
           kind: 'leader_mirror_structural_backfill_stats',
@@ -1480,6 +1481,7 @@ async function wakeLeaderMirrors(
           uncoveredMints: result.uncoveredMints.length,
           retriedMints: result.retriedMints.length,
           errorMints: result.errorMints.length,
+          rateLimited429: result.rateLimited429,
           uncoveredMintList: result.uncoveredMints,
           retriedMintList: result.retriedMints,
         });

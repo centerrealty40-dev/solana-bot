@@ -16,7 +16,7 @@ describe('1.11.824 leader seeds order the scan queue', () => {
     // got worse, 82.0s -> 94.1s, because the extra slots pulled in tail mints
     // DexScreener has no data for. The 3s cadence is the part that mattered.
     expect(eco).toContain("MILD_DIP_ENRICH_MAX: '20'");
-    expect(eco).toContain("DEXSCREENER_GLOBAL_MAX_RPM: '120'");
+    expect(eco).toContain("DEXSCREENER_GLOBAL_MAX_RPM: '60'");
     // And the scan no longer drops to a 15s cadence the moment a bag is open.
     expect(eco).toContain("MILD_DIP_SCAN_INTERVAL_WITH_OPENS_MS: '3000'");
   });
