@@ -18,6 +18,35 @@ describe('mild-dip leader-observer contract (1.11.790)', () => {
     expect(eco).toContain('mild-dip-leader-observer');
     expect(eco).toContain('8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ');
     expect(eco).toContain('7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5');
+    expect(eco).toContain('...DEXSCREENER_GATE_ENV');
+  });
+
+  it('python shared Dex gate exposes slot and cooldown calculations', () => {
+    const result = execFileSync(
+      'python3',
+      [
+        '-c',
+        `
+import importlib.util, json, sys
+spec = importlib.util.spec_from_file_location("leader_observer", sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+now = 1_000_000.0
+print(json.dumps({
+  "base": module.next_dex_cooldown(now, None, 0),
+  "retry": module.next_dex_cooldown(now, "2", 1),
+  "slot": module.next_dex_slot_at(now, now + 1000, now + 10000),
+}))
+`,
+        resolve('scripts/milddip/leader-observer.py'),
+      ],
+      { encoding: 'utf8' },
+    );
+    expect(JSON.parse(result)).toEqual({
+      base: [1005000, 1],
+      retry: [1002000, 2],
+      slot: 1010000,
+    });
   });
 
   it('1.11.823 observer runs again, batched, TD-only dense tape', () => {

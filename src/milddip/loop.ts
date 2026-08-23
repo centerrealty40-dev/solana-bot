@@ -193,6 +193,10 @@ import { createStreamPriceSampler } from './stream-price-sampler.js';
 import { MildDipPriceRing } from './price-ring.js';
 import { mildDipPairAgeRegistry } from './pair-age-registry.js';
 import {
+  mirrorOwnStructuralCanApply,
+  resolveMirrorStructuralMetrics,
+} from './mirror-structural.js';
+import {
   DEFAULT_MILD_DIP_TAPE_GATES,
   MildDipTapeShadow,
   type MildDipTapeStructuralSnapshot,
@@ -1462,11 +1466,77 @@ async function wakeLeaderMirrors(
     for (const [watchKey] of entries) leaderMirrorStructuralAttemptMs.set(watchKey, nowMs);
     if (priority) leaderMirrorStructuralPriorityInFlight = true;
     else leaderMirrorStructuralInFlight = true;
-    void prefetchDexScreenerPairDetailsManyWithMetadata(backfillMints, {
-      nowMs,
-      cacheTtlMs: Math.max(gates.structuralGapMs, gates.quoteMaxAgeMs),
-      allowedDexIds: cfg.entry.allowedDexIds,
-    }).then((result) => {
+    const ownStructuralPromise = cfg.mirrorOwnStructuralEnabled
+      ? Promise.all(
+          backfillMints.map(async (mint) => {
+            const quote = mildDipPriceRing.lastPriceBySource(
+              mint,
+              'leader_mirror_jupiter',
+              nowMs,
+              gates.quoteMaxAgeMs,
+            );
+            return [
+              mint,
+              await resolveMirrorStructuralMetrics({
+                mint,
+                nowMs,
+                rpcUrl: cfg.rpcUrl,
+                quotePriceUsd: quote?.priceUsd ?? null,
+                registryAgeHours: mildDipPairAgeRegistry.pairAgeHours(mint, nowMs),
+                dex: {
+                  priceUsd: null,
+                  volume5mUsd: null,
+                  priceChange5mPct: null,
+                  priceChange1hPct: null,
+                  liquidityUsd: null,
+                  marketCapUsd: null,
+                  pairAgeHours: null,
+                  dexId: null,
+                },
+                fallbackConfig: cfg,
+              }),
+            ] as const;
+          }),
+        ).then((items) => new Map(items))
+      : Promise.resolve(new Map());
+    if (cfg.mirrorOwnStructuralEnabled) {
+      void ownStructuralPromise
+        .then((ownStructural) => {
+          for (const [watchKey, startedWatch] of entries) {
+            const watch = leaderMirrorWatches.get(watchKey);
+            const resolved = ownStructural.get(watch?.hit.mint ?? '');
+            if (!watch || watch.hitKey !== startedWatch.hitKey || !resolved) continue;
+            const { metrics } = resolved;
+            if (!mirrorOwnStructuralCanApply(metrics, watch.hit.pc5m)) continue;
+            const pc5m = metrics.priceChange5mPct ?? watch.hit.pc5m;
+            leaderMirrorWatches.set(watchKey, {
+              ...watch,
+              hit: {
+                ...watch.hit,
+                priceUsd: metrics.priceUsd ?? watch.hit.priceUsd,
+                pc5m,
+                pc1h: metrics.priceChange1hPct ?? watch.hit.pc1h,
+                vol5m: metrics.volume5mUsd ?? watch.hit.vol5m,
+                liq: metrics.liquidityUsd ?? watch.hit.liq,
+                mcap: metrics.marketCapUsd ?? watch.hit.mcap,
+                ageHours: metrics.pairAgeHours ?? watch.hit.ageHours,
+              },
+              metricSource: 'backfill',
+            });
+          }
+        })
+        .catch(() => {
+          /* final combined promise journals the failure */
+        });
+    }
+    void Promise.all([
+      prefetchDexScreenerPairDetailsManyWithMetadata(backfillMints, {
+        nowMs,
+        cacheTtlMs: Math.max(gates.structuralGapMs, gates.quoteMaxAgeMs),
+        allowedDexIds: cfg.entry.allowedDexIds,
+      }),
+      ownStructuralPromise,
+    ]).then(async ([result, ownStructural]) => {
       if (
         result.uncoveredMints.length > 0 ||
         result.retriedMints.length > 0 ||
@@ -1494,7 +1564,7 @@ async function wakeLeaderMirrors(
         const mint = watch.hit.mint;
         const details = result.detailsByMint.get(mint);
         const cached = getStructuralCache(mint, nowMs, cfg.fastPathStructuralStaleMs);
-        const metrics = details
+        const dexMetrics = details
           ? {
               priceUsd: details.priceUsd,
               pc5m: details.priceChangeM5Pct,
@@ -1518,6 +1588,74 @@ async function wakeLeaderMirrors(
                 mcap: cached.metrics.marketCapUsd,
                 ageHours: cached.metrics.pairAgeHours,
                 dexId: cached.metrics.dexId,
+              }
+            : null;
+        const resolved = ownStructural.get(mint);
+        const ownMetrics = resolved?.metrics;
+        const ownSources = resolved?.sources;
+        const ownCanApply =
+          ownMetrics != null &&
+          mirrorOwnStructuralCanApply(ownMetrics, watch.hit.pc5m);
+        const resolvedMetrics = ownCanApply
+          ? {
+              priceUsd: ownMetrics.priceUsd ?? dexMetrics?.priceUsd ?? null,
+              volume5mUsd: ownMetrics.volume5mUsd ?? dexMetrics?.vol5m ?? null,
+              priceChange5mPct: ownMetrics.priceChange5mPct ?? dexMetrics?.pc5m ?? null,
+              priceChange1hPct: ownMetrics.priceChange1hPct ?? dexMetrics?.pc1h ?? null,
+              liquidityUsd: ownMetrics.liquidityUsd ?? dexMetrics?.liq ?? null,
+              marketCapUsd: ownMetrics.marketCapUsd ?? dexMetrics?.mcap ?? null,
+              pairAgeHours: ownMetrics.pairAgeHours ?? dexMetrics?.ageHours ?? null,
+              dexId: ownMetrics.dexId ?? dexMetrics?.dexId ?? null,
+            }
+          : null;
+        const resolvedSources = ownSources
+          ? {
+              liquidity:
+                ownMetrics?.liquidityUsd != null ? ownSources.liquidity : dexMetrics?.liq != null ? 'dex' : 'missing',
+              marketCap:
+                ownMetrics?.marketCapUsd != null ? ownSources.marketCap : dexMetrics?.mcap != null ? 'dex' : 'missing',
+              pairAge:
+                ownMetrics?.pairAgeHours != null ? ownSources.pairAge : dexMetrics?.ageHours != null ? 'dex' : 'missing',
+            }
+          : null;
+        if (resolvedSources) {
+          const sourceKey = JSON.stringify(resolvedSources);
+          if (
+            sourceKey !== leaderMirrorStructuralSourceJournal.get(mint) &&
+            Object.values(resolvedSources).some((source) => source !== 'dex')
+          ) {
+            leaderMirrorStructuralSourceJournal.set(mint, sourceKey);
+            appendMildDipJournal(cfg.journalPath, {
+              kind: 'leader_mirror_structural_sources',
+              mint,
+              mcapSource: resolvedSources.marketCap,
+              liquiditySource: resolvedSources.liquidity,
+              ageSource: resolvedSources.pairAge,
+            });
+          }
+        }
+        const metrics = dexMetrics
+          ? {
+              ...dexMetrics,
+              priceUsd: resolvedMetrics?.priceUsd ?? dexMetrics.priceUsd,
+              pc5m: resolvedMetrics?.priceChange5mPct ?? dexMetrics.pc5m,
+              pc1h: resolvedMetrics?.priceChange1hPct ?? dexMetrics.pc1h,
+              vol5m: resolvedMetrics?.volume5mUsd ?? dexMetrics.vol5m,
+              liq: resolvedMetrics?.liquidityUsd ?? dexMetrics.liq,
+              mcap: resolvedMetrics?.marketCapUsd ?? dexMetrics.mcap,
+              ageHours: resolvedMetrics?.pairAgeHours ?? dexMetrics.ageHours,
+              dexId: resolvedMetrics?.dexId ?? dexMetrics.dexId,
+            }
+          : resolvedMetrics
+            ? {
+                priceUsd: resolvedMetrics.priceUsd ?? cached?.priceUsd ?? null,
+                pc5m: resolvedMetrics.priceChange5mPct ?? cached?.metrics.priceChange5mPct ?? null,
+                pc1h: resolvedMetrics.priceChange1hPct ?? cached?.metrics.priceChange1hPct ?? null,
+                vol5m: resolvedMetrics.volume5mUsd ?? cached?.metrics.volume5mUsd ?? null,
+                liq: resolvedMetrics.liquidityUsd,
+                mcap: resolvedMetrics.marketCapUsd,
+                ageHours: resolvedMetrics.pairAgeHours,
+                dexId: resolvedMetrics.dexId,
               }
             : null;
         if (!metrics) continue;
@@ -3139,6 +3277,7 @@ function leaderMirrorWatchKey(hit: LeaderSeedHit): string {
   return `${hit.mint}:${hit.leader ?? ''}`;
 }
 const leaderMirrorStructuralAttemptMs = new Map<string, number>();
+const leaderMirrorStructuralSourceJournal = new Map<string, string>();
 const leaderMirrorEntryRetryAfterMs = new Map<string, number>();
 const leaderMirrorQuoteLastSelectedAtMs = new Map<string, number>();
 const leaderMirrorQuoteLastSampleTsMs = new Map<string, number>();

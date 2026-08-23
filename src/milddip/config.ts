@@ -730,6 +730,8 @@ const MildDipConfigSchema = z.object({
   fastPathStructuralStaleMs: z.coerce.number().int().min(0).max(600_000).default(30_000),
   /** Optional GeckoTerminal structural fallback; disabled by default. */
   structuralFallbackEnabled: z.boolean().default(false),
+  /** Mirror-only own-source structural resolution; disabled by default. */
+  mirrorOwnStructuralEnabled: z.boolean().default(false),
   structuralFallbackMaxPerMin: z.coerce.number().int().min(0).max(60).default(20),
   structuralFallbackMintGapMs: z.coerce.number().int().min(0).max(300_000).default(30_000),
   structuralFallbackCacheTtlMs: z.coerce.number().int().min(0).max(120_000).default(15_000),
@@ -1612,6 +1614,7 @@ export function loadMildDipConfig(): MildDipConfig {
     fastPathStructuralStaleMs:
       process.env.MILD_DIP_FAST_PATH_STRUCTURAL_STALE_MS ?? 30_000,
     structuralFallbackEnabled: envBool('MILD_DIP_STRUCTURAL_FALLBACK_ENABLED', false),
+    mirrorOwnStructuralEnabled: envBool('MILD_DIP_MIRROR_OWN_STRUCTURAL_ENABLED', false),
     structuralFallbackMaxPerMin: envNum('MILD_DIP_STRUCTURAL_FALLBACK_MAX_PER_MIN', 20),
     structuralFallbackMintGapMs: envNum('MILD_DIP_STRUCTURAL_FALLBACK_MINT_GAP_MS', 30_000),
     structuralFallbackCacheTtlMs: envNum(
