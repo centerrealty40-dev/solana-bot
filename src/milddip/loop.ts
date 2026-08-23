@@ -171,7 +171,11 @@ import {
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
-import { hydrateTradeLotsFromOpen, writeUsSellFill } from './trade-journal.js';
+import {
+  hydrateTradeLotsFromOpen,
+  writeUsBuyFill,
+  writeUsSellFill,
+} from './trade-journal.js';
 import {
   accountMirrorCashLeg,
   mirrorOpenMarkValueUsd,
@@ -3686,9 +3690,33 @@ async function attemptStagedEntryAdd(args: {
     }
     const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
     const fillPx = buy.priceUsd || markPriceUsd;
+    const addCostUsd = buy.quoteSpentUsd ?? sized.sizeUsd;
+    try {
+      writeUsBuyFill({
+        tradesPath: cfg.tradesPath,
+        wallet:
+          cfg.walletPubkeyExpected?.trim() ||
+          executionWalletPubkey(copyCfg) ||
+          'unknown',
+        mint: pos.mint,
+        symbol: pos.symbol,
+        ok: true,
+        signature: buy.signature ?? null,
+        sizeUsdIntent: sized.sizeUsd,
+        usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
+        usdcAfter: buy.usdcAfter ?? null,
+        feeSolBefore: buy.feeSolBefore ?? null,
+        feeSolAfter: buy.feeSolAfter ?? null,
+        quoteSpentUsd: buy.quoteSpentUsd ?? addCostUsd,
+        fillPriceUsd: fillPx,
+        dipSource: 'mild_dip_staged_add',
+        nowMs,
+      });
+    } catch {
+      /* never block staged add state updates on journal IO */
+    }
     live.sizeUsd += sized.sizeUsd;
     live.stagedEntryFilledUsd = (live.stagedEntryFilledUsd ?? pos.sizeUsd) + sized.sizeUsd;
-    const addCostUsd = buy.quoteSpentUsd ?? sized.sizeUsd;
     const priorCost = live.stagedEntryTotalCostUsd ?? pos.sizeUsd;
     const priorTokens =
       live.stagedEntryTotalTokenAmount ??
@@ -3814,6 +3842,30 @@ async function attemptMirrorAverage(args: {
     if (!live) return;
     const addUsd = buy.quoteSpentUsd ?? Math.min(g.averageUsd, sized.sizeUsd);
     const fillPx = buy.priceUsd > 0 ? buy.priceUsd : markPriceUsd;
+    try {
+      writeUsBuyFill({
+        tradesPath: cfg.tradesPath,
+        wallet:
+          cfg.walletPubkeyExpected?.trim() ||
+          executionWalletPubkey(copyCfg) ||
+          'unknown',
+        mint: pos.mint,
+        symbol: pos.symbol,
+        ok: true,
+        signature: buy.signature ?? null,
+        sizeUsdIntent: Math.min(g.averageUsd, sized.sizeUsd),
+        usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
+        usdcAfter: buy.usdcAfter ?? null,
+        feeSolBefore: buy.feeSolBefore ?? null,
+        feeSolAfter: buy.feeSolAfter ?? null,
+        quoteSpentUsd: buy.quoteSpentUsd ?? addUsd,
+        fillPriceUsd: fillPx,
+        dipSource: 'mirror_average',
+        nowMs,
+      });
+    } catch {
+      /* never block mirror average state updates on journal IO */
+    }
     const event = buy as unknown as Record<string, unknown>;
     accountMirrorCashLeg(state, event, 'buy');
     const priorTokens = live.sizeUsd / Math.max(live.entryPriceUsd, 1e-18);

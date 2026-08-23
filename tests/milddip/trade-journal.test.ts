@@ -187,4 +187,88 @@ describe('trade-journal cash math', () => {
     const kinds = lines.map((l) => JSON.parse(l).kind);
     expect(kinds).toEqual(['trade_fill', 'trade_fill', 'trade_roundtrip']);
   });
+
+  it('includes an add buy once in the roundtrip cost basis', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trades-add-'));
+    dirs.push(dir);
+    const path = join(dir, 'trades.jsonl');
+    writeUsBuyFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintAdd',
+      ok: true,
+      signature: 'entrySig',
+      sizeUsdIntent: 10,
+      quoteSpentUsd: 10,
+      fillPriceUsd: 1,
+      nowMs: 1_000,
+    });
+    writeUsBuyFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintAdd',
+      ok: true,
+      signature: 'addSig',
+      sizeUsdIntent: 40,
+      quoteSpentUsd: 40,
+      fillPriceUsd: 0.8,
+      dipSource: 'mild_dip_staged_add',
+      nowMs: 2_000,
+    });
+    const { roundtrip } = writeUsSellFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintAdd',
+      ok: true,
+      signature: 'sellSig',
+      sizeUsdIntent: 50,
+      fraction: 1,
+      quoteReceivedUsd: 55,
+      fillPriceUsd: 1.1,
+      nowMs: 3_000,
+    });
+    expect(roundtrip).not.toBeNull();
+    expect(roundtrip!.buyCostUsd).toBe(50);
+    const lines = readFileSync(path, 'utf8').trim().split('\n');
+    expect(lines.map((line) => JSON.parse(line).kind)).toEqual([
+      'trade_fill',
+      'trade_fill',
+      'trade_fill',
+      'trade_roundtrip',
+    ]);
+  });
+
+  it('extends a hydrated initial lot exactly once for an add buy', () => {
+    hydrateTradeLotsFromOpen(
+      { MintHydrated: { sizeUsd: 10, openedAtMs: 500 } },
+      1_000,
+    );
+    const dir = mkdtempSync(join(tmpdir(), 'trades-hydrated-add-'));
+    dirs.push(dir);
+    const path = join(dir, 'trades.jsonl');
+    writeUsBuyFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintHydrated',
+      ok: true,
+      signature: 'addSig',
+      sizeUsdIntent: 40,
+      quoteSpentUsd: 40,
+      fillPriceUsd: 0.8,
+      dipSource: 'mild_dip_staged_add',
+      nowMs: 2_000,
+    });
+    const { roundtrip } = writeUsSellFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintHydrated',
+      ok: true,
+      signature: 'sellSig',
+      sizeUsdIntent: 50,
+      fraction: 1,
+      quoteReceivedUsd: 45,
+      nowMs: 3_000,
+    });
+    expect(roundtrip?.buyCostUsd).toBe(50);
+  });
 });
