@@ -1,4 +1,5 @@
 import { Keypair } from '@solana/web3.js';
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { burnDustOrphans } from '../../src/milddip/dust-burn.js';
 
@@ -156,15 +157,97 @@ describe('dust burn', () => {
     expect(cheap.burned).toBe(1);
   });
 
-  it('honors the per-pass cap', async () => {
-    const rows = [row(), row(), row()];
+  it('confirms skipped no-route twice before burning', async () => {
+    const verdicts = [
+      { kind: 'skipped' as const, reason: 'no-route' as const, ts: 1 },
+      { kind: 'skipped' as const, reason: 'no-route' as const, ts: 2 },
+    ];
     const result = await burnDustOrphans({
-      cfg: cfg({ dustBurnMaxPerPass: 2 }),
+      cfg: cfg(),
+      state: state(),
+      nowMs,
+      deps: {
+        ...deps(),
+        quote: undefined,
+        sleep: async () => {},
+        jupiterQuote: async () => verdicts.shift()!,
+      },
+    });
+    expect(result.burned).toBe(1);
+  });
+
+  it('does not burn when no-route confirmation is not also no-route', async () => {
+    let okCalls = 0;
+    const result = await burnDustOrphans({
+      cfg: cfg(),
+      state: state(),
+      nowMs,
+      deps: {
+        ...deps(),
+        quote: undefined,
+        sleep: async () => {},
+        jupiterQuote: async () => {
+          okCalls += 1;
+          if (okCalls === 1) {
+            return { kind: 'skipped' as const, reason: 'no-route' as const, ts: 1 };
+          }
+          return {
+            kind: 'ok' as const,
+            jupiterPriceUsd: 10,
+            snapshotPriceUsd: 1,
+            slipPct: 0,
+            priceImpactPct: 0,
+            routeHops: 1,
+            source: 'jupiter' as const,
+            ageMs: 1,
+            ts: 2,
+          };
+        },
+      },
+    });
+    let calls = 0;
+    const transportError = await burnDustOrphans({
+      cfg: cfg(),
+      state: state(),
+      nowMs,
+      deps: {
+        ...deps(),
+        quote: undefined,
+        sleep: async () => {},
+        jupiterQuote: async () => {
+          calls += 1;
+          if (calls === 1) {
+            return { kind: 'skipped' as const, reason: 'no-route' as const, ts: 1 };
+          }
+          throw new Error('transport');
+        },
+      },
+    });
+    expect(result.burned).toBe(0);
+    expect(transportError.burned).toBe(0);
+    expect(transportError.skipped).toBe(1);
+  });
+
+  it('honors the per-pass cap', async () => {
+    const rows = [row(), row(), row(), row(), row()];
+    const journalPath = `/tmp/dust-burn-cap-${Date.now()}-${Math.random()}.jsonl`;
+    const result = await burnDustOrphans({
+      cfg: cfg({ dustBurnMaxPerPass: 2, journalPath }),
       state: state(),
       nowMs,
       deps: deps(rows, 0.1),
     });
     expect(result.burned).toBe(2);
-    expect(result.skipped).toBe(1);
+    expect(result.skipped).toBe(3);
+    const entries = readFileSync(journalPath, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line));
+    const capEntries = entries.filter(
+      (entry) =>
+        entry.kind === 'mild_dip_dust_burn_skip' && entry.reason === 'max_per_pass',
+    );
+    expect(capEntries).toHaveLength(1);
+    expect(capEntries[0].skipped).toBe(3);
   });
 });

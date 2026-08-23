@@ -29,8 +29,10 @@ export type DustBurnResult = {
 type DustBurnDeps = {
   list?: typeof listOrphanTokenAccounts;
   quote?: (row: OrphanAtaRow) => Promise<DustBurnQuote>;
+  jupiterQuote?: typeof jupiterQuoteSellPriceUsd;
   burn?: typeof burnAndCloseOne;
   signer?: (secret: string) => Keypair;
+  sleep?: (ms: number) => Promise<void>;
 };
 
 function recentEntryAtMs(state: MildDipState, mint: string): number {
@@ -64,13 +66,23 @@ function skip(
   });
 }
 
-async function defaultQuote(row: OrphanAtaRow): Promise<DustBurnQuote> {
+const QUOTE_GAP_MS = 200;
+const UNROUTABLE_CONFIRM_GAP_MS = 2_000;
+
+async function defaultQuote(
+  row: OrphanAtaRow,
+  quoteFn = jupiterQuoteSellPriceUsd,
+  sleep: (ms: number) => Promise<void> = (ms) =>
+    new Promise((resolve) => setTimeout(resolve, ms)),
+): Promise<DustBurnQuote> {
   const solUsd = getSolUsd();
   const tokenAmount = Number(row.amountRaw) / Math.pow(10, Math.max(0, row.decimals));
   if (!(solUsd > 0) || !(tokenAmount > 0) || !Number.isFinite(tokenAmount)) {
     return { kind: 'unknown', quoteUsd: null };
   }
-  const verdict = await jupiterQuoteSellPriceUsd({
+  // jupiterQuoteSellPriceUsd sizes from usdNotional / snapshotPriceUsd; using
+  // snapshotPriceUsd=1 and the human balance requests exactly the full raw balance.
+  const verdict = await quoteFn({
     mint: row.mint,
     tokenDecimals: row.decimals,
     usdNotional: tokenAmount,
@@ -79,8 +91,22 @@ async function defaultQuote(row: OrphanAtaRow): Promise<DustBurnQuote> {
     slippageBps: 150,
     timeoutMs: 4_000,
   });
-  if (verdict.kind === 'blocked' && verdict.reason === 'no-route') {
-    return { kind: 'unroutable', quoteUsd: null };
+  const isNoRoute = (value: typeof verdict): boolean =>
+    (value.kind === 'blocked' || value.kind === 'skipped') &&
+    value.reason === 'no-route';
+  if (isNoRoute(verdict)) {
+    await sleep(UNROUTABLE_CONFIRM_GAP_MS);
+    const confirmation = await quoteFn({
+      mint: row.mint,
+      tokenDecimals: row.decimals,
+      usdNotional: tokenAmount,
+      solUsd,
+      snapshotPriceUsd: 1,
+      slippageBps: 150,
+      timeoutMs: 4_000,
+    });
+    if (isNoRoute(confirmation)) return { kind: 'unroutable', quoteUsd: null };
+    return { kind: 'unknown', quoteUsd: null };
   }
   if (verdict.kind !== 'ok' || !(verdict.jupiterPriceUsd > 0)) {
     return { kind: 'unknown', quoteUsd: null };
@@ -135,27 +161,30 @@ export async function burnDustOrphans(args: {
   const result = { ...empty, candidates: rows.length };
   const settleMs = Math.max(0, cfg.dustBurnSettleMs);
   const minAgeMs = Math.max(0, cfg.dustBurnMinAgeMs);
-  const quote = args.deps?.quote ?? defaultQuote;
+  const sleep =
+    args.deps?.sleep ??
+    ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  const quote = args.deps?.quote ?? ((row: OrphanAtaRow) =>
+    defaultQuote(row, args.deps?.jupiterQuote, sleep));
   const connection = new Connection(cfg.rpcUrl, 'confirmed');
+  let lastQuoteAtMs = 0;
 
-  for (const row of rows) {
+  for (const [index, row] of rows.entries()) {
     if (result.burned + result.failed >= maxBurns) {
-      result.skipped += 1;
-      skip(cfg, row, 'max_per_pass', nowMs);
-      continue;
+      const remaining = rows.length - index;
+      result.skipped += remaining;
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_dust_burn_skip',
+        reason: 'max_per_pass',
+        skipped: remaining,
+        maxBurns,
+        nowMs,
+      });
+      break;
     }
     if (state.open[row.mint]) {
       result.skipped += 1;
       skip(cfg, row, 'open_position', nowMs);
-      continue;
-    }
-    if (
-      Object.values(state.open ?? {}).some(
-        (pos) => pos.mint === row.mint && pos.mirrorLeaderSellIntent,
-      )
-    ) {
-      result.skipped += 1;
-      skip(cfg, row, 'leader_sell_intent', nowMs);
       continue;
     }
     const entryAtMs = recentEntryAtMs(state, row.mint);
@@ -176,6 +205,11 @@ export async function burnDustOrphans(args: {
 
     let valuation: DustBurnQuote;
     try {
+      const elapsed = lastQuoteAtMs > 0 ? Date.now() - lastQuoteAtMs : QUOTE_GAP_MS;
+      if (lastQuoteAtMs > 0 && elapsed < QUOTE_GAP_MS) {
+        await sleep(QUOTE_GAP_MS - elapsed);
+      }
+      lastQuoteAtMs = Date.now();
       valuation = await quote(row);
     } catch {
       valuation = { kind: 'unknown', quoteUsd: null };
