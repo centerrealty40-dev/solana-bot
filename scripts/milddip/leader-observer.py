@@ -144,6 +144,7 @@ _DEX_MIN_GAP_MS = env_num("LEADER_OBSERVER_DEX_MIN_GAP_MS", 400.0)
 _DEX_BACKOFF_MS = env_num("LEADER_OBSERVER_DEX_BACKOFF_MS", 30_000.0)
 _DEX_CACHE_MS = env_num("LEADER_OBSERVER_DEX_CACHE_MS", 20_000.0)
 _DEX_BATCH_MAX = int(env_num("LEADER_OBSERVER_DEX_BATCH_MAX", 30.0))
+_TELEMETRY_BATCH_MAX = 40
 _dex_last_call_ms = 0.0
 _dex_backoff_until_ms = 0.0
 _dex_cache: dict[str, tuple[float, dict[str, Any] | None]] = {}
@@ -1146,6 +1147,7 @@ class Observer:
         self._last_sig_poll_at = 0.0
         self._last_state_save_at = 0.0
         self._telemetry_cursor: tuple[str, str] | None = None
+        self._last_cycle_emit_at = 0.0
         # 1.11.786 — dual-write cash trade rows next to mild-dip fills.
         trades_env = os.environ.get("LEADER_OBSERVER_TRADES_PATH", "").strip()
         self.trades_path = (
@@ -2176,7 +2178,6 @@ class Observer:
                             "secondsFromPeakToSell": sess.get("secondsFromPeakToSell"),
                         }
                     )
-                    self.emit(base)
                     qdelta = quote.get("quoteUsdDelta")
                     received = (
                         abs(float(qdelta))
@@ -2192,6 +2193,21 @@ class Observer:
                         received, priced = self.counter_leg_usd(cl, True)
                         if received:
                             counter_src = ",".join(m[:8] for m in priced)
+                    base.update(
+                        {
+                            "markPnlPct": sess.get("pnlPctApprox"),
+                            "cashPnlUsd": sess.get("cashPnlUsd"),
+                            "costBasisUsd": sess.get("costBasisUsd"),
+                            "quoteReceivedUsd": received,
+                            "cashSource": (
+                                "observed_delta"
+                                if qdelta
+                                else ("counter_leg" if counter_src else "quote")
+                            ),
+                            "counterLegMints": counter_src,
+                        }
+                    )
+                    self.emit(base)
                     if bag_info.get("isFlat"):
                         self.emit(
                             {
@@ -2414,16 +2430,16 @@ class Observer:
         gap_ms = self.mark_min_gap_sec * 1000
         due = []
         for leader, mint, bag in self._rotating_telemetry_bags():
-            self._telemetry_cursor = (leader, mint)
             if deadline is not None and time.time() >= deadline:
                 break
             if (
                 int(bag.get("lastMarkAtMs") or 0)
                 and now_ms - int(bag.get("lastMarkAtMs") or 0) < gap_ms
             ):
+                self._telemetry_cursor = (leader, mint)
                 continue
             due.append((leader, mint, bag))
-            if len(due) >= _DEX_BATCH_MAX:
+            if len(due) >= _TELEMETRY_BATCH_MAX:
                 break
         # 1.11.819 — one batched call for the whole pass instead of one per bag.
         if due:
@@ -2464,6 +2480,7 @@ class Observer:
                 path = apply_path_metrics(bag, px, float(entry))
             bag["lastMarkAtMs"] = now_ms
             self._set_bag(leader, mint, bag)
+            self._telemetry_cursor = (leader, mint)
             self.emit(
                 self._exit_feature_row(
                     kind="leader_bag_mark",
@@ -2490,16 +2507,17 @@ class Observer:
             return 0
         due: list[tuple[str, str, dict[str, Any]]] = []
         for leader, mint, bag in open_bags:
-            self._telemetry_cursor = (leader, mint)
             if deadline is not None and time.time() >= deadline:
                 break
             if self.dense_only_td and not entry_is_td(bag):
+                self._telemetry_cursor = (leader, mint)
                 continue
             last = int(bag.get("lastDenseAtMs") or 0)
             if last and now_ms - last < gap_ms:
+                self._telemetry_cursor = (leader, mint)
                 continue
             due.append((leader, mint, bag))
-            if len(due) >= 40:
+            if len(due) >= _TELEMETRY_BATCH_MAX:
                 break
         if not due:
             return 0
@@ -2577,6 +2595,7 @@ class Observer:
                 path = apply_path_metrics(bag, float(px), float(entry))
             bag["lastDenseAtMs"] = now_ms
             self._set_bag(leader, mint, bag)
+            self._telemetry_cursor = (leader, mint)
             row = self._exit_feature_row(
                 kind="leader_bag_tick",
                 leader=leader,
@@ -2662,14 +2681,21 @@ class Observer:
             if loop_t0 - self._last_state_save_at >= max(2.0, float(self.poll_sec)):
                 self._save_state()
                 self._last_state_save_at = loop_t0
-            self.emit(
-                {
-                    "kind": "leader_observer_cycle",
-                    "bagsProcessed": bags_processed,
-                    "cycleDurationMs": int(max(0.0, time.time() - loop_t0) * 1000),
-                    "signaturePollIntervalMs": poll_interval_ms,
-                }
+            cycle_due = loop_t0 - self._last_cycle_emit_at >= 30.0
+            poll_late = (
+                poll_interval_ms is not None
+                and poll_interval_ms >= self.poll_sec * 2000
             )
+            if cycle_due or poll_late:
+                self.emit(
+                    {
+                        "kind": "leader_observer_cycle",
+                        "bagsProcessed": bags_processed,
+                        "cycleDurationMs": int(max(0.0, time.time() - loop_t0) * 1000),
+                        "signaturePollIntervalMs": poll_interval_ms,
+                    }
+                )
+                self._last_cycle_emit_at = loop_t0
             # Sleep until next dense tick (or poll if dense off / no bags).
             open_n = len(self._open_bags())
             if self.dense_ticks and open_n > 0:
