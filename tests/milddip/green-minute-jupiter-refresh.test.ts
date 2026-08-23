@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   __resetGreenMinuteJupiterRefreshForTests,
   greenMinuteJupiterStats,
+  releaseGreenMinuteJupiterRefresh,
   requestGreenMinuteJupiterRefresh,
   tickGreenMinuteJupiterRefresh,
 } from '../../src/milddip/green-minute-jupiter-refresh.js';
@@ -150,5 +151,63 @@ describe('GREEN Jupiter minute refresh', () => {
       graceMs: 90_000,
     });
     expect(greenMinuteJupiterStats(3_090_001).quoteAttempts).toBe(1);
+  });
+
+  it('preserves min-gap memory when a candidate slot is released', async () => {
+    const mint = 'GreenJupiterReleasedMintxxxxxxxxxxxxxxxxxxxx1';
+    const quote = async () => 0.002;
+    expect(
+      requestGreenMinuteJupiterRefresh({
+        mint,
+        nowMs: 4_000_000,
+        snapshotPriceUsd: 0.001,
+        enabled: true,
+        minGapMs: 5_000,
+        ttlMs: 30_000,
+        maxMints: 1,
+        maxInFlight: 1,
+        probeUsd: 1,
+        slippageBps: 150,
+        quote,
+        source: 'leader_mirror_jupiter',
+      }),
+    ).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    releaseGreenMinuteJupiterRefresh({
+      source: 'leader_mirror_jupiter',
+      keepMints: new Set(),
+    });
+    expect(
+      requestGreenMinuteJupiterRefresh({
+        mint,
+        nowMs: 4_001_000,
+        snapshotPriceUsd: 0.001,
+        enabled: true,
+        minGapMs: 5_000,
+        ttlMs: 30_000,
+        maxMints: 1,
+        maxInFlight: 1,
+        probeUsd: 1,
+        slippageBps: 150,
+        quote,
+        source: 'leader_mirror_jupiter',
+      }),
+    ).toBe(false);
+    expect(
+      requestGreenMinuteJupiterRefresh({
+        mint,
+        nowMs: 4_005_001,
+        snapshotPriceUsd: 0.001,
+        enabled: true,
+        minGapMs: 5_000,
+        ttlMs: 30_000,
+        maxMints: 1,
+        maxInFlight: 1,
+        probeUsd: 1,
+        slippageBps: 150,
+        quote,
+        source: 'leader_mirror_jupiter',
+      }),
+    ).toBe(true);
   });
 });

@@ -4,7 +4,18 @@ export const LEADER_MIRROR_WALLET = '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH
 
 export type LeaderMirrorDecision =
   | { action: 'wait'; waitReason?: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor' | 'not_dip' | string }
-  | { action: 'buy'; quotePriceUsd: number; mirrorBranch?: 'green' | 'dip' }
+  | {
+      action: 'buy';
+      quotePriceUsd: number;
+      mirrorBranch?: 'green' | 'dip';
+      knifeWait?: {
+        enteredByDiscount: boolean;
+        enteredByWindowExpiry: boolean;
+        waitedMs: number;
+        leaderPc5m: number;
+        leaderFillPriceUsd: number;
+      };
+    }
   | { action: 'skip'; reason: string };
 
 export function leaderMirrorHitKey(hit: LeaderSeedHit): string {
@@ -80,7 +91,150 @@ export type LeaderMirrorGates = {
   requireDipCandle?: boolean;
   leaderFillGraceMs?: number;
   minLeaderSizeUsd?: number;
+  knifeWaitEnabled: boolean;
+  knifeWaitPc5mPct: number;
+  knifeWaitDiscountPct: number;
+  knifeWaitWindowMs: number;
+  knifeWaitQuoteSlots: number;
 };
+
+export type LeaderMirrorQuoteCandidate = {
+  watchKey: string;
+  startedAtMs: number;
+  knifeWaitPending: boolean;
+  knifeWaitDue: boolean;
+};
+
+export function selectLeaderMirrorQuoteKeys(args: {
+  entries: readonly LeaderMirrorQuoteCandidate[];
+  nowMs: number;
+  entryGraceMs: number;
+  maxQuoteMints: number;
+  knifeWaitQuoteSlots: number;
+  lastQuotedAtMs: ReadonlyMap<string, number>;
+}): string[] {
+  const limit =
+    args.maxQuoteMints > 0
+      ? Math.floor(args.maxQuoteMints)
+      : args.entries.length;
+  if (limit <= 0) return [];
+  const fresh = args.entries
+    .filter(
+      (entry) =>
+        !entry.knifeWaitPending &&
+        args.nowMs - entry.startedAtMs <= args.entryGraceMs,
+    )
+    .sort((a, b) => a.startedAtMs - b.startedAtMs);
+  const selected = fresh.slice(0, limit);
+  const selectedKeys = new Set(selected.map((entry) => entry.watchKey));
+  const remaining = Math.max(0, limit - selected.length);
+  if (remaining > 0 && args.knifeWaitQuoteSlots > 0) {
+    const knifeSlots = Math.min(
+      remaining,
+      Math.floor(args.knifeWaitQuoteSlots),
+    );
+    const knife = args.entries
+      .filter(
+        (entry) =>
+          entry.knifeWaitPending &&
+          entry.knifeWaitDue &&
+          !selectedKeys.has(entry.watchKey),
+      )
+      .sort(
+        (a, b) =>
+          (args.lastQuotedAtMs.get(a.watchKey) ?? Number.NEGATIVE_INFINITY) -
+            (args.lastQuotedAtMs.get(b.watchKey) ?? Number.NEGATIVE_INFINITY) ||
+          a.startedAtMs - b.startedAtMs,
+      );
+    for (const entry of knife.slice(0, knifeSlots)) {
+      selected.push(entry);
+      selectedKeys.add(entry.watchKey);
+    }
+  }
+  if (selected.length < limit) {
+    const rest = args.entries
+      .filter(
+        (entry) =>
+          !selectedKeys.has(entry.watchKey) && !entry.knifeWaitPending,
+      )
+      .sort((a, b) => a.startedAtMs - b.startedAtMs);
+    selected.push(...rest.slice(0, limit - selected.length));
+  }
+  return selected.map((entry) => entry.watchKey);
+}
+
+export function leaderMirrorQuoteCoverage(
+  entries: readonly LeaderMirrorQuoteCandidate[],
+  selectedKeys: ReadonlySet<string>,
+): { waiting: number; uncovered: number } {
+  const waiting = entries.filter((entry) => entry.knifeWaitPending).length;
+  const uncovered = entries.filter(
+    (entry) => entry.knifeWaitPending && !selectedKeys.has(entry.watchKey),
+  ).length;
+  return { waiting, uncovered };
+}
+
+export function leaderMirrorKnifeWaitPending(args: {
+  hit: LeaderSeedHit;
+  nowMs: number;
+  leaderBuyTsMs?: number | null;
+  quotePriceUsd?: number | null;
+  gates: Pick<
+    LeaderMirrorGates,
+    | 'knifeWaitEnabled'
+    | 'knifeWaitPc5mPct'
+    | 'knifeWaitDiscountPct'
+    | 'knifeWaitWindowMs'
+  >;
+}): boolean {
+  const { hit, gates } = args;
+  const pc5m = hit.pc5m;
+  if (
+    !gates.knifeWaitEnabled ||
+    pc5m == null ||
+    !Number.isFinite(pc5m) ||
+    !(pc5m <= gates.knifeWaitPc5mPct || pc5m >= 0)
+  ) {
+    return false;
+  }
+  let timestampMs: number | null = null;
+  if (args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)) {
+    timestampMs = args.leaderBuyTsMs;
+  } else if (
+    typeof hit.blockTime === 'number' &&
+    Number.isFinite(hit.blockTime) &&
+    hit.blockTime > 0
+  ) {
+    timestampMs = hit.blockTime * 1000;
+  }
+  if (timestampMs == null) return false;
+  const ageMs = args.nowMs - timestampMs;
+  if (ageMs < 0 || ageMs >= gates.knifeWaitWindowMs) return false;
+  if (
+    args.quotePriceUsd != null &&
+    Number.isFinite(args.quotePriceUsd) &&
+    args.quotePriceUsd > 0 &&
+    hit.fillPriceUsd != null &&
+    hit.fillPriceUsd > 0 &&
+    (args.quotePriceUsd / hit.fillPriceUsd - 1) * 100 <=
+      -Math.abs(gates.knifeWaitDiscountPct)
+  ) {
+    return false;
+  }
+  return true;
+}
+
+export function leaderMirrorObservationWindowMs(gates: Pick<
+  LeaderMirrorGates,
+  'observeMs' | 'knifeWaitEnabled' | 'knifeWaitWindowMs' | 'tickIntervalMs'
+>): number {
+  return Math.max(
+    gates.observeMs,
+    gates.knifeWaitEnabled
+      ? gates.knifeWaitWindowMs + Math.max(1, gates.tickIntervalMs)
+      : 0,
+  );
+}
 
 function finitePositive(value: number | null | undefined): value is number {
   return value != null && Number.isFinite(value) && value > 0;
@@ -191,10 +345,55 @@ export function evaluateLeaderMirrorObservation(args: {
   const leaderPrice = hit.fillPriceUsd;
   const quotePrice = args.quotePriceUsd;
   const quoteGainPct = (quotePrice / leaderPrice - 1) * 100;
+  let knifeWaitTimestampMs: number | null = null;
+  if (args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)) {
+    knifeWaitTimestampMs = args.leaderBuyTsMs;
+  } else if (
+    typeof hit.blockTime === 'number' &&
+    Number.isFinite(hit.blockTime) &&
+    hit.blockTime > 0
+  ) {
+    knifeWaitTimestampMs = hit.blockTime * 1000;
+  }
   const leaderAgeMs =
     args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
       ? nowMs - args.leaderBuyTsMs
       : null;
+  const knifeWaitAgeMs =
+    knifeWaitTimestampMs != null ? nowMs - knifeWaitTimestampMs : null;
+  const knifeWaitEligible =
+    gates.knifeWaitEnabled &&
+    pc5m != null &&
+    (pc5m <= gates.knifeWaitPc5mPct || pc5m >= 0);
+  const knifeWaitActive =
+    knifeWaitEligible &&
+    knifeWaitAgeMs != null &&
+    knifeWaitAgeMs >= 0 &&
+    knifeWaitAgeMs < gates.knifeWaitWindowMs;
+  const knifeWaitDiscountReached =
+    knifeWaitEligible &&
+    knifeWaitAgeMs != null &&
+    knifeWaitAgeMs >= 0 &&
+    quoteGainPct <= -Math.abs(gates.knifeWaitDiscountPct);
+  const knifeWaitExpired =
+    knifeWaitEligible &&
+    knifeWaitAgeMs != null &&
+    knifeWaitAgeMs >= gates.knifeWaitWindowMs;
+  const knifeWaitMetadata =
+    (knifeWaitDiscountReached || knifeWaitExpired) &&
+    pc5m != null &&
+    knifeWaitAgeMs != null
+      ? {
+          enteredByDiscount: knifeWaitDiscountReached,
+          enteredByWindowExpiry: knifeWaitExpired && !knifeWaitDiscountReached,
+          waitedMs: Math.max(0, knifeWaitAgeMs),
+          leaderPc5m: pc5m,
+          leaderFillPriceUsd: leaderPrice,
+        }
+      : undefined;
+  if (knifeWaitActive && !knifeWaitDiscountReached) {
+    return { action: 'wait', waitReason: 'knife_discount' };
+  }
   const entryGraceActive =
     leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
   const maxPremiumPct = entryGraceActive
@@ -204,7 +403,12 @@ export function evaluateLeaderMirrorObservation(args: {
     if (quoteGainPct > gates.greenCorridorPct) {
       return soft('leader_mirror_green_corridor', 'green_corridor', true);
     }
-    return { action: 'buy', quotePriceUsd: quotePrice, mirrorBranch: 'green' };
+    return {
+      action: 'buy',
+      quotePriceUsd: quotePrice,
+      mirrorBranch: 'green',
+      ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
+    };
   }
   if (requireDipCandle && quoteGainPct >= gates.greenImpulsePct) {
     return gates.retryWhileLeaderHolds
@@ -214,5 +418,9 @@ export function evaluateLeaderMirrorObservation(args: {
   if (quoteGainPct > maxPremiumPct) {
     return soft('leader_mirror_premium_cap', 'premium_cap', true);
   }
-  return { action: 'buy', quotePriceUsd: quotePrice };
+  return {
+    action: 'buy',
+    quotePriceUsd: quotePrice,
+    ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
+  };
 }
