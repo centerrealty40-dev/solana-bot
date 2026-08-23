@@ -7,6 +7,7 @@ const PROFIT_FILL_GUARD_REASONS: ReadonlySet<MildDipExitReason> = new Set([
   'mfe_bank_sleeve',
   'peak_giveback',
   'peak_giveback_partial',
+  'mirror_tp_ladder',
 ]);
 const LOSS_FILL_GUARD_REASONS: ReadonlySet<MildDipExitReason> = new Set([
   'never_arm_bounce',

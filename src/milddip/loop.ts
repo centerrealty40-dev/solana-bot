@@ -572,6 +572,8 @@ const lastWaitDipTargetTroughJournalMs = new Map<string, number>();
 const WAIT_DIP_TARGET_TROUGH_JOURNAL_GAP_MS = 15_000;
 const lastStagedAddSkipJournalMs = new Map<string, number>();
 const STAGED_ADD_SKIP_JOURNAL_GAP_MS = 15_000;
+const lastMirrorExitSuppressedJournalMs = new Map<string, number>();
+const MIRROR_EXIT_SUPPRESSED_JOURNAL_GAP_MS = 15_000;
 
 /**
  * Sample the mark path of an open position into the journal so trail widths can
@@ -4325,6 +4327,34 @@ async function tryExits(
       });
       continue;
     }
+    const mirrorFirstClipPending =
+      pos.lane === 'leader_mirror' &&
+      (() => {
+        const firstClipLegs = Math.max(
+          1,
+          Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)),
+        );
+        const firstFillAtMs = mirrorFirstClipWindowBaseMs(
+          pos.openedAtMs,
+          pos.mirrorFirstClipFirstFillAtMs,
+        );
+        return (
+          (pos.mirrorFirstClipLegsFilled ?? 1) < firstClipLegs &&
+          nowMs - firstFillAtMs <= cfg.leaderMirror.entryGraceMs
+        );
+      })();
+    const mirrorLastBuyFillAtMs = Math.max(
+      mirrorFirstClipWindowBaseMs(
+        pos.openedAtMs,
+        pos.mirrorFirstClipFirstFillAtMs,
+      ),
+      pos.mirrorAverageLastFillAtMs ?? 0,
+    );
+    const mirrorEntrySettlementAgeMs = Math.max(0, nowMs - mirrorLastBuyFillAtMs);
+    const mirrorEntrySettling =
+      pos.lane === 'leader_mirror' &&
+      cfg.leaderMirror.ladderMinSettleSec > 0 &&
+      mirrorEntrySettlementAgeMs < cfg.leaderMirror.ladderMinSettleSec * 1_000;
     const decision = decideMarkExit({
       mint,
       pos,
@@ -4383,6 +4413,9 @@ async function tryExits(
         ladderSellFraction: cfg.leaderMirror.ladderSellFraction,
         ladderDustUsd: cfg.leaderMirror.ladderDustUsd,
         mirrorDustCloseUsd: cfg.leaderMirror.dustCloseUsd,
+        mirrorFirstClipPending,
+        mirrorEntrySettling,
+        mirrorEntrySettlementAgeMs,
       },
       leaderStyleGates: pos.lane === 'leader_style'
         ? {
@@ -4404,6 +4437,25 @@ async function tryExits(
     }
 
     maybeJournalMark(cfg, pos, decision, volume5mUsd, liquidityUsd, nowMs, source);
+    if (decision.mirrorExitSuppressedReason != null) {
+      const key = `${mint}:${decision.mirrorExitSuppressedReason}`;
+      const lastSuppressedAtMs = lastMirrorExitSuppressedJournalMs.get(key) ?? 0;
+      if (nowMs - lastSuppressedAtMs >= MIRROR_EXIT_SUPPRESSED_JOURNAL_GAP_MS) {
+        lastMirrorExitSuppressedJournalMs.set(key, nowMs);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_mirror_exit_suppressed',
+          mint,
+          symbol: pos.symbol,
+          reason: decision.mirrorExitSuppressedReason,
+          tokenRawSettled: pos.tokenRawSettled === true,
+          entrySettlementAgeMs: decision.mirrorExitSuppressedReason === 'entry_settling'
+            ? mirrorEntrySettlementAgeMs
+            : null,
+          firstClipLegsFilled: pos.mirrorFirstClipLegsFilled ?? 1,
+          at: nowMs,
+        });
+      }
+    }
 
     const priorLossReclaimWaitStartedAtMs = pos.lossReclaimWaitStartedAtMs;
     applyMarkDecisionToPosition(pos, decision);

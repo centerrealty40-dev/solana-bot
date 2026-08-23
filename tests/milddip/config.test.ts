@@ -651,18 +651,21 @@ describe('mild-dip mirror leader-sell-only configuration', () => {
     const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
     expect(defaults.leaderSellOnlyExit).toBe(false);
     expect(defaults.safetyMaxHoldMs).toBe(0);
+    expect(defaults.ladderMinSettleSec).toBe(45);
     expect(defaults.dustCloseUsd).toBe(10);
     const configured = withConfigEnv(
       {
         ...baseEnv,
         MILD_DIP_MIRROR_LEADER_SELL_ONLY: '1',
         MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS: '86400000',
+        MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC: '0',
         MILD_DIP_MIRROR_DUST_CLOSE_USD: '0',
       },
       () => loadMildDipConfig(),
     ).leaderMirror;
     expect(configured.leaderSellOnlyExit).toBe(true);
     expect(configured.safetyMaxHoldMs).toBe(86_400_000);
+    expect(configured.ladderMinSettleSec).toBe(0);
     expect(configured.dustCloseUsd).toBe(0);
   });
 });
