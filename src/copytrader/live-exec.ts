@@ -92,6 +92,7 @@ export async function readMintBalanceRaw(
       [owner, { mint }, { encoding: 'jsonParsed' }],
       5,
     );
+    if (rows == null) return { ok: false };
     const value = (rows as { value?: unknown[] } | null)?.value ?? [];
     let total = 0n;
     for (const row of value) {
