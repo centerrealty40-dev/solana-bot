@@ -143,7 +143,7 @@ export type OrphanJanitorResult = {
   errors: string[];
 };
 
-async function burnAndCloseOne(args: {
+export async function burnAndCloseOne(args: {
   connection: Connection;
   signer: Keypair;
   row: OrphanAtaRow;
