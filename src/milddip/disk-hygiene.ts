@@ -138,7 +138,7 @@ export async function runMildDipDataRetention(cfg: MildDipDiskHygieneConfig): Pr
         continue;
       }
       const ageDays = (nowMs - stat.mtimeMs) / 86_400_000;
-      if (isDatedJsonl(name) && ageDays > Math.max(2, cfg.compressAfterDays)) {
+      if (isDatedJsonl(name) && ageDays > cfg.compressAfterDays) {
         const target = `${full}.gz`;
         if (fs.existsSync(target)) continue;
         try {
