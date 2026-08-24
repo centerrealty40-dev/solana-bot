@@ -98,7 +98,7 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('120');
-    expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('120');
+    expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('80');
     expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_FLATTEN).toBe('0');
     expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_FLATTEN).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('1');

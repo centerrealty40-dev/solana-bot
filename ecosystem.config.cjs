@@ -4919,7 +4919,7 @@ if (mildDipBotApp) {
       exitArmPct: '2',
       exitTrailPct: '0',
       ownExitTimeStopMs: '0',
-      lossCapUsd: '120',
+      lossCapUsd: '80',
       maxEntryPc5mPct: '1000',
       minLiquidityUsd: '40000',
       minPc1hPct: '10',
