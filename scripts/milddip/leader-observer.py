@@ -1103,6 +1103,8 @@ class Observer:
         self.poll_sec = max(1, int(env_num("LEADER_OBSERVER_POLL_SEC", 5)))
         self.lookback_sec = max(60, int(env_num("LEADER_OBSERVER_LOOKBACK_SEC", 1800)))
         self.sig_limit = max(20, min(100, int(env_num("LEADER_OBSERVER_SIG_LIMIT", 80))))
+        self.catchup_pages = max(1, min(100, int(env_num("LEADER_OBSERVER_CATCHUP_PAGES", 12))))
+        self.signature_cursor: dict[str, str] = {}
         self.max_hours = env_num("LEADER_OBSERVER_MAX_HOURS", 72)
         seed_env = os.environ.get("LEADER_OBSERVER_SEED_PATH", "").strip()
         self.seed_path = Path(seed_env) if seed_env else self.out_dir / "leader-seed.json"
@@ -1229,6 +1231,11 @@ class Observer:
             else:
                 # Legacy list form: no timestamps, so age them out on first prune.
                 self.seen = {str(x): 0 for x in sigs if x}
+            cursors = raw.get("signatureCursor") or {}
+            if isinstance(cursors, dict):
+                self.signature_cursor = {
+                    str(k): str(v) for k, v in cursors.items() if k and v
+                }
             bags = raw.get("bags") or {}
             if isinstance(bags, dict):
                 self.bags = bags  # type: ignore[assignment]
@@ -1367,6 +1374,7 @@ class Observer:
             json.dumps(
                 {
                     "seenSignatures": self.seen,
+                    "signatureCursor": self.signature_cursor,
                     "bags": self.bags,
                     "lastClosedByMint": self.last_closed_by_mint,
                     "lastTradeAtMs": self.last_trade_at_ms,
@@ -1493,6 +1501,95 @@ class Observer:
                 self.bags.pop(leader, None)
         else:
             self.bags[leader][mint] = bag
+
+    def reconcile_open_bags(self) -> None:
+        """Reconcile restored bags against current balances without inventing fills."""
+        now_ms = int(time.time() * 1000)
+        for leader, by_mint in list(self.bags.items()):
+            for mint, bag in list((by_mint or {}).items()):
+                if not isinstance(bag, dict) or float(bag.get("tokenUi") or 0) <= FLAT_UI_EPS:
+                    continue
+                try:
+                    result = rpc_call(
+                        self.rpc,
+                        "getTokenAccountsByOwner",
+                        [leader, {"mint": mint}, {"encoding": "jsonParsed"}],
+                    )
+                    if not isinstance(result, dict) or not isinstance(result.get("value"), list):
+                        raise RuntimeError("malformed token account RPC result")
+                    balance_ui = 0.0
+                    for row in (result.get("value") or []):
+                        try:
+                            amount = ((row.get("account") or {}).get("data") or {}).get("parsed", {}).get("info", {}).get("tokenAmount", {})
+                            if not isinstance(amount, dict):
+                                raise ValueError("malformed token amount")
+                            raw = int(amount.get("amount") or 0)
+                            decimals = int(amount.get("decimals") or 0)
+                            if raw < 0 or decimals < 0:
+                                raise ValueError("invalid token amount")
+                            balance_ui += raw / (10 ** decimals)
+                        except (AttributeError, TypeError, ValueError, ZeroDivisionError) as exc:
+                            raise RuntimeError(f"malformed token account: {exc}") from exc
+                    prior_ui = float(bag.get("tokenUi") or 0)
+                    if balance_ui >= prior_ui - FLAT_UI_EPS:
+                        continue
+                    rec_sig = f"reconcile_{leader[:8]}_{mint[:8]}_{now_ms}"
+                    info = self._update_bag_sell(
+                        leader,
+                        mint,
+                        token_ui=max(0.0, balance_ui),
+                        size_usd=None,
+                        fill_px=None,
+                        block_time=None,
+                        signature=rec_sig,
+                    )
+                    sess = info.get("session") or {}
+                    common = {
+                        "leader": leader,
+                        "mint": mint,
+                        "signature": None,
+                        "reconciliation": True,
+                        "reconciliationReason": "startup_onchain_balance",
+                        "observedSignature": None,
+                        "blockTime": None,
+                        "isFlat": bool(info.get("isFlat")),
+                        "isPartial": bool(info.get("isPartial")),
+                        "bagTokenUi": balance_ui,
+                        "soldUi": sess.get("soldUi"),
+                        "entryPriceUsd": sess.get("entryPriceUsd"),
+                        "exitPriceUsd": None,
+                    }
+                    self.emit({"kind": "leader_sell_observed", **common})
+                    if info.get("isFlat"):
+                        self.emit({
+                            "kind": "leader_session_flat",
+                            **common,
+                            "openedSignature": sess.get("openedSignature"),
+                            "openedBlockTime": sess.get("openedBlockTime"),
+                            "pnlPctApprox": None,
+                            "heldSec": None,
+                            "sizeUsdProceeds": None,
+                            "totalCostUsd": sess.get("totalCostUsd"),
+                            "totalProceedsUsd": sess.get("totalProceedsUsd"),
+                            "cashPnlUsd": None,
+                        })
+                    self.emit({
+                        "kind": "leader_observer_reconciliation",
+                        "leader": leader,
+                        "mint": mint,
+                        "previousTokenUi": prior_ui,
+                        "actualTokenUi": balance_ui,
+                        "isFlat": bool(info.get("isFlat")),
+                    })
+                except Exception as exc:
+                    self.emit({
+                        "kind": "leader_observer_reconciliation_error",
+                        "leader": leader,
+                        "mint": mint,
+                        "reason": str(exc)[:300],
+                        "failClosed": True,
+                    })
+        self._save_state()
 
     def _trade_context(self, leader: str, mint: str, side: str, now_ms: int) -> dict[str, Any]:
         previous_any = self.last_trade_at_ms.get(leader)
@@ -1809,17 +1906,33 @@ class Observer:
         }
 
     def observe_leader(self, leader: str) -> None:
-        sigs = rpc_call(
-            self.rpc,
-            "getSignaturesForAddress",
-            # `commitment` is not optional here. Without it this endpoint answers
-            # at finalized, and on this node finalized lags: measured 2026-08-12,
-            # default/finalized returned a newest signature of 03:46:42 while
-            # `confirmed` returned 08:59:47 — the leader feed was **313 minutes**
-            # behind, so every leader-derived signal (seed, leader-seen gate, the
-            # whole observer dataset) was reading a five-hour-old wallet.
-            [leader, {"limit": self.sig_limit, "commitment": "confirmed"}],
-        ) or []
+        sigs: list[dict[str, Any]] = []
+        before: str | None = None
+        cursor = self.signature_cursor.get(leader)
+        for _ in range(self.catchup_pages):
+            opts: dict[str, Any] = {"limit": self.sig_limit, "commitment": "confirmed"}
+            if before:
+                opts["before"] = before
+            page = rpc_call(
+                self.rpc,
+                "getSignaturesForAddress",
+                [leader, opts],
+            ) or []
+            if not isinstance(page, list) or not page:
+                break
+            sigs.extend(x for x in page if isinstance(x, dict))
+            page_sigs = [x.get("signature") for x in page if isinstance(x, dict) and x.get("signature")]
+            if cursor and cursor in page_sigs:
+                break
+            if len(page) < self.sig_limit:
+                break
+            before = str(page_sigs[-1]) if page_sigs else None
+            if not before:
+                break
+        if sigs:
+            newest = sigs[0].get("signature")
+            if newest:
+                self.signature_cursor[leader] = str(newest)
         cutoff = time.time() - self.lookback_sec
         # Process oldest→newest so bag ledger is chronological within the poll batch.
         ordered = list(reversed(sigs))
@@ -2646,6 +2759,14 @@ class Observer:
             f"maxHours={self.max_hours}",
             flush=True,
         )
+        try:
+            self.reconcile_open_bags()
+        except Exception as exc:
+            self.emit({
+                "kind": "leader_observer_reconciliation_error",
+                "reason": str(exc)[:300],
+                "failClosed": True,
+            })
         while end is None or time.time() < end:
             loop_t0 = time.time()
             poll_interval_ms = None

@@ -98,6 +98,20 @@ export type LeaderMirrorGates = {
   knifeWaitQuoteSlots: number;
 };
 
+export function leaderMirrorObservationFresh(args: {
+  leaderBuyTsMs?: number | null;
+  nowMs: number;
+  maxAgeMs: number;
+}): boolean {
+  return (
+    args.leaderBuyTsMs != null &&
+    Number.isFinite(args.leaderBuyTsMs) &&
+    args.leaderBuyTsMs > 0 &&
+    args.nowMs >= args.leaderBuyTsMs &&
+    args.nowMs - args.leaderBuyTsMs <= args.maxAgeMs
+  );
+}
+
 export type LeaderMirrorQuoteCandidate = {
   watchKey: string;
   startedAtMs: number;

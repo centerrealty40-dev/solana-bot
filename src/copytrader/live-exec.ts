@@ -140,6 +140,7 @@ export async function executeLiveCopyBuy(args: {
   slippageBpsOverride?: number;
   slippageRetryMultiplier?: number;
   slippageRetryMaxBps?: number;
+  beforeSend?: () => Promise<boolean>;
 }): Promise<
   {
     ok: boolean;
@@ -344,6 +345,10 @@ export async function executeLiveCopyBuy(args: {
         continue;
       }
       return { ok: false, priceUsd: lastPriceUsd, reason: lastReason };
+    }
+
+    if (args.beforeSend && !(await args.beforeSend())) {
+      return { ok: false, priceUsd, reason: 'leader_balance_guard_blocked' };
     }
 
     const sent = await sendSwap(cfg, build.b64, {

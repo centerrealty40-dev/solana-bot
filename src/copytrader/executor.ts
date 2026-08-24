@@ -65,6 +65,7 @@ export async function executeCopyBuy(args: {
   slippageBpsOverride?: number;
   slippageRetryMultiplier?: number;
   slippageRetryMaxBps?: number;
+  beforeSend?: () => Promise<boolean>;
 }): Promise<BuyExecutionResult> {
   const { cfg, mint, symbol, priceUsd, sizeUsd, kind, evalResult, leaderSignature, trigger } = args;
 
@@ -109,6 +110,7 @@ export async function executeCopyBuy(args: {
       slippageBpsOverride: args.slippageBpsOverride,
       slippageRetryMultiplier: args.slippageRetryMultiplier,
       slippageRetryMaxBps: args.slippageRetryMaxBps,
+      beforeSend: args.beforeSend,
     });
     appendJsonl(cfg.journalPath, {
       kind: kind === 'add' ? 'copy_add' : 'copy_buy',
