@@ -34,6 +34,22 @@ describe('mild-dip config exit schema', () => {
     MILD_DIP_RPC_URL: 'https://example.invalid',
   };
 
+  it('defaults and loads emergency data retention settings', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.dataRetentionEmergencyEnabled).toBe(true);
+    expect(defaults.dataRetentionEmergencyKeepDays).toBe(2);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_DATA_EMERGENCY_ENABLED: '0',
+        MILD_DIP_DATA_EMERGENCY_KEEP_DAYS: '14',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.dataRetentionEmergencyEnabled).toBe(false);
+    expect(cfg.dataRetentionEmergencyKeepDays).toBe(14);
+  });
+
   it('preserves every key assigned by the exit loader', () => {
     const cfg = withConfigEnv(baseEnv, () => loadMildDipConfig());
     const dropped = loaderExitKeys().filter((key) => !(key in cfg.exit));
