@@ -96,7 +96,6 @@ export type LeaderMirrorGates = {
   knifeWaitDiscountPct: number;
   knifeWaitWindowMs: number;
   knifeWaitQuoteSlots: number;
-  leaderBalanceMaxAgeMs?: number;
 };
 
 export function leaderMirrorObservationFresh(args: {

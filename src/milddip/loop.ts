@@ -1413,10 +1413,31 @@ async function wakeLeaderMirrors(
     max: cfg.leaderSeedMax,
   });
   for (const hit of hits) {
-    if (state.open[hit.mint]) continue;
     const hitKey = leaderMirrorHitKey(hit);
     const watchKey = leaderMirrorWatchKey(hit);
     const existing = leaderMirrorWatches.get(watchKey);
+    if (
+      !leaderMirrorObservationFresh({
+        leaderBuyTsMs: hit.blockTime != null && hit.blockTime > 0 ? hit.blockTime * 1000 : null,
+        nowMs,
+        maxAgeMs: gates.observationMaxAgeMs,
+      })
+    ) {
+      if (!existing || existing.hitKey !== hitKey) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_refusal',
+          mint: hit.mint,
+          leader: hit.leader,
+          reason: 'leader_mirror_observation_stale',
+          leaderBuyTsMs: hit.blockTime != null && hit.blockTime > 0 ? hit.blockTime * 1000 : null,
+          lastSeenAtMs: hit.lastSeenAtMs,
+          maxAgeMs: gates.observationMaxAgeMs,
+          synthetic: hit.blockTime == null || hit.blockTime <= 0,
+        });
+      }
+      continue;
+    }
+    if (state.open[hit.mint]) continue;
     if (existing && existing.hitKey !== hitKey) {
       leaderMirrorWatches.set(watchKey, {
         hit,
@@ -1830,28 +1851,6 @@ async function wakeLeaderMirrors(
       hit.blockTime != null && hit.blockTime > 0
         ? hit.blockTime * 1000
         : hit.lastSeenAtMs;
-    const honestLeaderBuyTsMs =
-      hit.blockTime != null && hit.blockTime > 0
-        ? hit.blockTime * 1000
-        : null;
-    if (!leaderMirrorObservationFresh({
-      leaderBuyTsMs: honestLeaderBuyTsMs,
-      nowMs,
-      maxAgeMs: gates.leaderBalanceMaxAgeMs,
-    })) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'leader_mirror_refusal',
-        mint,
-        leader: hit.leader,
-        reason: 'leader_mirror_observation_stale',
-        leaderBuyTsMs: honestLeaderBuyTsMs,
-        lastSeenAtMs: hit.lastSeenAtMs,
-        maxAgeMs: gates.leaderBalanceMaxAgeMs,
-        synthetic: honestLeaderBuyTsMs == null,
-      });
-      leaderMirrorWatches.delete(watchKey);
-      continue;
-    }
     const leaderBuyTsMsForGrace =
       hit.blockTime != null && hit.blockTime > 0
         ? hit.blockTime * 1000
@@ -3389,6 +3388,26 @@ function hydrateLeaderMirrorWatches(
   const mirrorObserveMs = leaderMirrorObservationWindowMs(cfg.leaderMirror);
   for (const [watchKey, watch] of Object.entries(state.leaderMirrorWatches ?? {})) {
     if (watch.expiresAtMs <= nowMs || state.open[watch.hit.mint]) continue;
+    if (
+      !leaderMirrorObservationFresh({
+        leaderBuyTsMs:
+          watch.hit.blockTime != null && watch.hit.blockTime > 0
+            ? watch.hit.blockTime * 1000
+            : null,
+        nowMs,
+        maxAgeMs: cfg.leaderMirror.observationMaxAgeMs,
+      })
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint: watch.hit.mint,
+        leader: watch.hit.leader,
+        reason: 'leader_mirror_observation_stale',
+        synthetic: true,
+        source: 'watch_hydration',
+      });
+      continue;
+    }
     leaderMirrorWatches.set(
       watchKey,
       watch.expiresAtMs < watch.startedAtMs + mirrorObserveMs
@@ -3537,7 +3556,11 @@ async function attemptLeaderAlignScaleIn(args: {
                 mint,
                 leader: pos.leaderMirrorLeader ?? null,
                 holds,
-                reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+                reason: raw == null
+                  ? 'leader_balance_rpc_error'
+                  : holds
+                    ? 'leader_balance_nonzero'
+                    : 'leader_balance_zero',
               });
               return holds;
             },
@@ -3732,7 +3755,11 @@ async function attemptStagedEntryAdd(args: {
                 mint: pos.mint,
                 leader: pos.leaderMirrorLeader ?? null,
                 holds,
-                reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+              reason: raw == null
+                ? 'leader_balance_rpc_error'
+                : holds
+                  ? 'leader_balance_nonzero'
+                  : 'leader_balance_zero',
               });
               return holds;
             },
@@ -3906,7 +3933,11 @@ async function attemptMirrorAverage(args: {
           mint: pos.mint,
           leader: pos.leaderMirrorLeader ?? null,
           holds,
-          reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+          reason: raw == null
+            ? 'leader_balance_rpc_error'
+            : holds
+              ? 'leader_balance_nonzero'
+              : 'leader_balance_zero',
         });
         return holds;
       },
@@ -5305,6 +5336,23 @@ export async function runMildDipLoop(
       const watchKey = `${event.mint}:${event.leader}`;
       if (leaderMirrorWatches.has(watchKey)) continue;
       const startedAtMs = event.blockTimeMs;
+      if (
+        !leaderMirrorObservationFresh({
+          leaderBuyTsMs: startedAtMs,
+          nowMs: Date.now(),
+          maxAgeMs: cfg.leaderMirror.observationMaxAgeMs,
+        })
+      ) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_refusal',
+          mint: event.mint,
+          leader: event.leader,
+          reason: 'leader_mirror_observation_stale',
+          source: 'trade_reconciliation',
+          synthetic: false,
+        });
+        continue;
+      }
       const expiresAtMs =
         startedAtMs + leaderMirrorObservationWindowMs(cfg.leaderMirror);
       if (expiresAtMs <= Date.now()) continue;
@@ -6091,6 +6139,90 @@ export async function runMildDipLoop(
   let lastLeaderBalanceReconcileMs = 0;
   const leaderFlatConfirmations = new Map<string, number>();
   let mirrorWakeInFlight = false;
+  let leaderBalanceReconcileInFlight = false;
+  let leaderBalanceReconcileCursor = 0;
+
+  const reconcileLeaderBalances = async (nowMs: number): Promise<void> => {
+    const positions = Object.entries(state.open).filter(
+      ([, pos]) => pos.lane === 'leader_mirror' && Boolean(pos.leaderMirrorLeader),
+    );
+    if (positions.length === 0) return;
+    const maxPerPass = Math.max(1, cfg.leaderMirror.leaderBalanceReconcileMaxPerPass);
+    const start = leaderBalanceReconcileCursor % positions.length;
+    const selected = Array.from(
+      { length: Math.min(maxPerPass, positions.length) },
+      (_, index) => positions[(start + index) % positions.length]!,
+    );
+    leaderBalanceReconcileCursor = (start + selected.length) % positions.length;
+    for (const [mint] of selected) {
+      const pos = state.open[mint];
+      if (!pos || pos.lane !== 'leader_mirror' || !pos.leaderMirrorLeader) continue;
+      if (nowMs - pos.openedAtMs < cfg.leaderMirror.leaderBalanceReconcileMinHoldMs) {
+        leaderFlatConfirmations.delete(mint);
+        continue;
+      }
+      const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, mint);
+      if (raw == null) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_reconcile',
+          mint,
+          leader: pos.leaderMirrorLeader,
+          action: 'none',
+          reason: 'rpc_error',
+        });
+        continue;
+      }
+      if (raw > 0n) {
+        leaderFlatConfirmations.delete(mint);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_reconcile',
+          mint,
+          leader: pos.leaderMirrorLeader,
+          action: 'none',
+          reason: 'leader_balance_nonzero',
+          balanceRaw: raw.toString(),
+        });
+        continue;
+      }
+      const confirmations = (leaderFlatConfirmations.get(mint) ?? 0) + 1;
+      leaderFlatConfirmations.set(mint, confirmations);
+      const reconcileAction = leaderFlatReconcileDecision({
+        balanceRaw: raw,
+        confirmations,
+        requiredConfirmations: cfg.leaderMirror.leaderBalanceReconcileConfirmations,
+        openedAtMs: pos.openedAtMs,
+        nowMs,
+        minHoldMs: cfg.leaderMirror.leaderBalanceReconcileMinHoldMs,
+      });
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_balance_reconcile',
+        mint,
+        leader: pos.leaderMirrorLeader,
+        action: reconcileAction,
+        reason: 'leader_balance_zero',
+        confirmations,
+        required: cfg.leaderMirror.leaderBalanceReconcileConfirmations,
+      });
+      if (reconcileAction !== 'exit' || pos.mirrorLeaderSellIntent) continue;
+      pos.mirrorLeaderSellIntent = {
+        leader: pos.leaderMirrorLeader,
+        signature: null,
+        leaderBlockTimeMs: nowMs,
+        detectedAtMs: nowMs,
+      };
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_leader_sell_intent',
+        mint,
+        symbol: pos.symbol,
+        leader: pos.leaderMirrorLeader,
+        signature: null,
+        leaderBlockTimeMs: nowMs,
+        detectedAtMs: nowMs,
+        source: 'balance_reconciliation',
+      });
+      saveMildDipState(cfg.statePath, state);
+    }
+  };
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
@@ -6098,81 +6230,18 @@ export async function runMildDipLoop(
     if (
       cfg.leaderMirror.enabled &&
       cfg.leaderMirror.leaderBalanceReconcileEnabled &&
+      !leaderBalanceReconcileInFlight &&
       nowMs - lastLeaderBalanceReconcileMs >= cfg.leaderMirror.leaderBalanceReconcileIntervalMs
     ) {
       lastLeaderBalanceReconcileMs = nowMs;
-      for (const [mint, pos] of Object.entries(state.open)) {
-        if (pos.lane !== 'leader_mirror') continue;
-        if (!pos.leaderMirrorLeader) continue;
-        if (nowMs - pos.openedAtMs < cfg.leaderMirror.leaderBalanceReconcileMinHoldMs) {
-          leaderFlatConfirmations.delete(mint);
-          continue;
-        }
-        const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, mint);
-        if (raw == null) {
-          appendMildDipJournal(cfg.journalPath, {
-            kind: 'leader_mirror_balance_reconcile',
-            mint,
-            leader: pos.leaderMirrorLeader,
-            action: 'none',
-            reason: 'rpc_error',
-          });
-          continue;
-        }
-        if (raw > 0n) {
-          leaderFlatConfirmations.delete(mint);
-          appendMildDipJournal(cfg.journalPath, {
-            kind: 'leader_mirror_balance_reconcile',
-            mint,
-            leader: pos.leaderMirrorLeader,
-            action: 'none',
-            reason: 'leader_balance_nonzero',
-            balanceRaw: raw.toString(),
-          });
-          continue;
-        }
-        const confirmations = (leaderFlatConfirmations.get(mint) ?? 0) + 1;
-        leaderFlatConfirmations.set(mint, confirmations);
-        const reconcileAction = leaderFlatReconcileDecision({
-          balanceRaw: raw,
-          confirmations,
-          requiredConfirmations: cfg.leaderMirror.leaderBalanceReconcileConfirmations,
-          openedAtMs: pos.openedAtMs,
-          nowMs,
-          minHoldMs: cfg.leaderMirror.leaderBalanceReconcileMinHoldMs,
+      leaderBalanceReconcileInFlight = true;
+      void reconcileLeaderBalances(nowMs)
+        .catch((err) => {
+          console.warn('[mild-dip] leader balance reconciliation failed', err);
+        })
+        .finally(() => {
+          leaderBalanceReconcileInFlight = false;
         });
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'leader_mirror_balance_reconcile',
-          mint,
-          leader: pos.leaderMirrorLeader,
-          action: reconcileAction,
-          reason: 'leader_balance_zero',
-          confirmations,
-          required: cfg.leaderMirror.leaderBalanceReconcileConfirmations,
-        });
-        if (
-          reconcileAction === 'exit' &&
-          !pos.mirrorLeaderSellIntent
-        ) {
-          pos.mirrorLeaderSellIntent = {
-            leader: pos.leaderMirrorLeader,
-            signature: null,
-            leaderBlockTimeMs: nowMs,
-            detectedAtMs: nowMs,
-          };
-          appendMildDipJournal(cfg.journalPath, {
-            kind: 'mirror_leader_sell_intent',
-            mint,
-            symbol: pos.symbol,
-            leader: pos.leaderMirrorLeader,
-            signature: null,
-            leaderBlockTimeMs: nowMs,
-            detectedAtMs: nowMs,
-            source: 'balance_reconciliation',
-          });
-          saveMildDipState(cfg.statePath, state);
-        }
-      }
     }
     if (
       (cfg.dataDiskGuardEnabled && nowMs - lastDiskCheckMs >= 60_000) ||

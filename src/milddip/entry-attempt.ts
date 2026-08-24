@@ -4,7 +4,7 @@
 import { executeCopyBuy } from '../copytrader/executor.js';
 import { resetCopyFundingCache } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
-import { leaderStillHolds } from './leader-balance.js';
+import { readLeaderBalance } from './leader-balance.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { CopyTraderConfig } from '../copytrader/config.js';
 import type { MildDipConfig } from './config.js';
@@ -1599,13 +1599,18 @@ export async function attemptMildDipEntry(args: {
         ? {
             beforeSend: async () => {
               if (!cfg.leaderMirror.leaderBalanceGuardEnabled) return true;
-              const holds = await leaderStillHolds(cfg, opts.leaderMirrorLeader, c.mint);
+              const raw = await readLeaderBalance(cfg, opts.leaderMirrorLeader, c.mint);
+              const holds = raw != null && raw > 0n;
               appendMildDipJournal(cfg.journalPath, {
                 kind: 'leader_mirror_balance_guard',
                 mint: c.mint,
                 leader: opts.leaderMirrorLeader ?? null,
                 holds,
-                reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+                reason: raw == null
+                  ? 'leader_balance_rpc_error'
+                  : holds
+                    ? 'leader_balance_nonzero'
+                    : 'leader_balance_zero',
               });
               return holds;
             },
@@ -2018,13 +2023,18 @@ export async function attemptMirrorFirstClipLeg(args: {
       leaderBuyTs: nowMs,
       beforeSend: async () => {
         if (!cfg.leaderMirror.leaderBalanceGuardEnabled) return true;
-        const holds = await leaderStillHolds(cfg, args.leader, c.mint);
+        const raw = await readLeaderBalance(cfg, args.leader, c.mint);
+        const holds = raw != null && raw > 0n;
         appendMildDipJournal(cfg.journalPath, {
           kind: 'leader_mirror_balance_guard',
           mint: c.mint,
           leader: args.leader ?? null,
           holds,
-          reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+          reason: raw == null
+            ? 'leader_balance_rpc_error'
+            : holds
+              ? 'leader_balance_nonzero'
+              : 'leader_balance_zero',
         });
         return holds;
       },
