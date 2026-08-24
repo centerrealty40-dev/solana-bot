@@ -4924,8 +4924,8 @@ if (mildDipBotApp) {
       minLiquidityUsd: '40000',
       minPc1hPct: '10',
       minPc5mPct: '-10',
-      positionUsd: '60',
-      averageUsd: '60',
+      positionUsd: '30',
+      averageUsd: '20',
     }),
   );
 }

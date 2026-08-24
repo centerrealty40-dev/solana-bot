@@ -177,8 +177,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('40');
     expect(mirror?.env.MILD_DIP_MIRROR_OWN_STRUCTURAL_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_OWN_STRUCTURAL_ENABLED).toBe('1');
-    expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('60');
-    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('60');
+    expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('30');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('20');
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_ENABLED: ownExitEnabled ? '1' : '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS: ownExitTimeStopMs");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
