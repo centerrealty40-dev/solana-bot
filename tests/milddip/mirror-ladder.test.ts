@@ -112,6 +112,31 @@ describe('mirror TP ladder', () => {
     expect(at(105, { sizeUsd: 1.2 })?.fraction).toBeLessThan(1);
   });
 
+  it('takes no rung at all when the step is zero', () => {
+    const decision = decideMarkExit({
+      mint: 'mint',
+      pos: position() as any,
+      markPriceUsd: 500,
+      nowMs: 1_000,
+      mirrorGates: { ...gates, ladderStepPct: 0, ladderStepAfterAveragePct: 0 } as any,
+      gates: {
+        armPct: 2,
+        partialGivebackPct: 3,
+        scaleOutFraction: 0.5,
+        givebackPct: 8,
+        mfeBankEnabled: false,
+        mfeBank1Pct: 8,
+        mfeBank1Fraction: 0.4,
+        mfeBank2Pct: 15,
+        mfeBank2Fraction: 0.4,
+        mfeBankSleeveGivebackPct: 12,
+        tpGridStepPct: 0,
+      } as any,
+    });
+    expect(decision?.shouldExit).toBe(false);
+    expect(decision?.reason).toBeNull();
+  });
+
   it('suppresses ordinary exits while leader-sell-only is active', () => {
     const decision = at(102, { peakPriceUsd: 110, trailArmed: true });
     expect(decision?.shouldExit).toBe(false);
