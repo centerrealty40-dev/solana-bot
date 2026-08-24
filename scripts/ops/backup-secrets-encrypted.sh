@@ -15,7 +15,8 @@ mkdir -p "${BACKUP_DIR}" "${BASE}/data/logs"
 source "${BASE}/scripts/ops/_backup-common.sh"
 load_backup_env
 
-trap 'rc=$?; if [[ $rc -ne 0 ]]; then send_tg_backup "[HEALTH][backup-secrets] FAIL rc=$rc; see ${LOG}"; fi' EXIT
+GPG_COMPLETE=0
+trap 'rc=$?; rm -rf "${STAGING:-}" "${TMPDIR:-}"; if [[ $rc -ne 0 && "${GPG_COMPLETE}" -ne 1 ]]; then rm -f "${TAR:-}" "${ARCHIVE:-}"; fi; if [[ $rc -ne 0 ]]; then send_tg_backup "[HEALTH][backup-secrets] FAIL rc=$rc; see ${LOG}"; fi; exit "$rc"' EXIT
 
 if ! command -v gpg >/dev/null 2>&1; then
   log "gpg not found"
@@ -70,7 +71,9 @@ fi
 tar -C "${STAGING}" -cf "${TAR}" files
 printf '%s' "${PASSPHRASE}" | gpg --batch --yes --passphrase-fd 0 \
   --symmetric --cipher-algo AES256 -o "${ARCHIVE}" "${TAR}"
+GPG_COMPLETE=1
 rm -rf "${STAGING}"
+STAGING=""
 
 log "encrypted archive ok $(basename "${ARCHIVE}")"
 
@@ -88,7 +91,7 @@ else
   log "R2 credentials missing — local encrypted copy only"
 fi
 
-find "${BACKUP_DIR}" -type f -name 'secrets_*.tar.gz.gpg' -mtime +30 -delete || true
+find "${BACKUP_DIR}" -type f -name 'secrets_*.tar.gz.gpg' -mtime +7 -delete || true
 
 send_tg_backup "[HEALTH][backup-secrets] OK ts=${TS}"
 log "secrets backup done"

@@ -17,13 +17,14 @@ for arg in "$@"; do
   esac
 done
 
-mkdir -p "${BACKUP_DIR}/runtime" "${BACKUP_DIR}/journals" "${BASE}/data/logs"
-
 # shellcheck disable=SC1091
 source "${BASE}/scripts/ops/_backup-common.sh"
 load_backup_env
 
-trap 'rc=$?; if [[ $rc -ne 0 ]]; then send_tg_backup "[HEALTH][backup-live] FAIL rc=$rc; see ${LOG}"; fi' EXIT
+RUNTIME_COMPLETE=0
+trap 'rc=$?; if [[ $rc -ne 0 && "${RUNTIME_COMPLETE}" -ne 1 ]]; then rm -f "${RUNTIME_TAR:-}" "${RUNTIME_ZST:-}"; fi; rm -rf "${TMPDIR:-}"; if [[ $rc -ne 0 ]]; then send_tg_backup "[HEALTH][backup-live] FAIL rc=$rc; see ${LOG}"; fi; exit "$rc"' EXIT
+
+mkdir -p "${BACKUP_DIR}/runtime" "${BACKUP_DIR}/journals" "${BASE}/data/logs"
 
 TS=$(date +%Y%m%d-%H%M%S)
 
@@ -64,6 +65,7 @@ if [[ ${#RUNTIME_LIST[@]} -eq 0 ]]; then
 else
   tar -C "${LIVE_DIR}" -cf "${RUNTIME_TAR}" "${RUNTIME_LIST[@]}"
   zstd -q -19 -T0 "${RUNTIME_TAR}" -o "${RUNTIME_ZST}"
+  RUNTIME_COMPLETE=1
   rm -f "${RUNTIME_TAR}"
   log "runtime bundle ok files=${#RUNTIME_LIST[@]} archive=${RUNTIME_ZST}"
 
@@ -76,12 +78,13 @@ else
       exit 1
     fi
     rm -rf "${TMPDIR}"
+    TMPDIR=""
   else
     log "runtime: R2 credentials missing, local only"
   fi
 fi
 
-find "${BACKUP_DIR}/runtime" -type f -name "*.tar.zst" -mtime +30 -delete || true
+find "${BACKUP_DIR}/runtime" -type f -name "*.tar.zst" -mtime +7 -delete || true
 
 # --- journals: local zstd ---
 compress_journal() {
@@ -94,7 +97,10 @@ compress_journal() {
     level=3
     log "journal large file (${size}B) using zstd -${level}"
   fi
-  zstd -q "-${level}" -T0 "${src}" -o "${dest}"
+  if ! zstd -q "-${level}" -T0 "${src}" -o "${dest}"; then
+    rm -f "${dest}"
+    return 1
+  fi
 }
 
 for j in "${LOCAL_JOURNALS[@]}"; do
@@ -125,9 +131,11 @@ if r2_credentials_ok; then
       log "journal R2 ok ${j}"
     else
       rm -rf "${TMPDIR}"
+      TMPDIR=""
       exit 1
     fi
     rm -rf "${TMPDIR}"
+    TMPDIR=""
   done
 fi
 
@@ -138,16 +146,21 @@ if [[ "${R2_FULL}" -eq 1 ]] && r2_credentials_ok; then
     [[ -f "${src}" ]] || continue
     archive="${BACKUP_DIR}/journals/${j%.jsonl}_${TS}_weekly.jsonl.zst"
     log "weekly R2 journal compress start ${j}"
-    zstd -q -10 -T0 "${src}" -o "${archive}"
+    if ! zstd -q -10 -T0 "${src}" -o "${archive}"; then
+      rm -f "${archive}"
+      exit 1
+    fi
     TMPDIR="/tmp/r2_live_weekly_${TS}"
     mkdir -p "${TMPDIR}"
     if r2_put_chunked "${archive}" "live/journals-weekly/${j%.jsonl}_${TS}.jsonl.zst" "${TMPDIR}"; then
       log "weekly R2 journal ok ${j}"
     else
       rm -rf "${TMPDIR}"
+      TMPDIR=""
       exit 1
     fi
     rm -rf "${TMPDIR}"
+    TMPDIR=""
   done
   find "${BACKUP_DIR}/journals" -type f -name "*_weekly.jsonl.zst" -mtime +14 -delete || true
 fi
