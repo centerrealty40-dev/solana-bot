@@ -1,11 +1,13 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import { pipeline } from 'node:stream/promises';
 import { appendMildDipJournal } from './state.js';
 export { rotateMildDipJournal } from './journal-rotation.js';
 
 let diskLow = false;
 let lastLowWarningAtMs = 0;
+let retentionInFlight = false;
 
 export type MildDipDiskHygieneConfig = {
   dataDirs: string[];
@@ -46,16 +48,16 @@ function diskStats(dataDir: string): { freeBytes: number; freePct: number } {
   return { freeBytes, freePct: totalBytes > 0 ? (freeBytes / totalBytes) * 100 : 0 };
 }
 
-export function checkMildDipDiskSpace(cfg: MildDipDiskHygieneConfig): {
+export async function checkMildDipDiskSpace(cfg: MildDipDiskHygieneConfig): Promise<{
   freeBytes: number;
   freePct: number;
-} {
+}> {
   if (!cfg.guardEnabled) return { freeBytes: Number.POSITIVE_INFINITY, freePct: 100 };
   try {
     const first = diskStats(cfg.dataDirs[0] ?? '.');
     const low = first.freeBytes < cfg.minFreeBytes || first.freePct < cfg.minFreePct;
     if (low) {
-      runMildDipDataRetention(cfg);
+      await runMildDipDataRetention(cfg);
       const after = diskStats(cfg.dataDirs[0] ?? '.');
       const stillLow = after.freeBytes < cfg.minFreeBytes || after.freePct < cfg.minFreePct;
       if (!diskLow || Date.now() - lastLowWarningAtMs >= 60_000) {
@@ -90,13 +92,35 @@ export function checkMildDipDiskSpace(cfg: MildDipDiskHygieneConfig): {
   }
 }
 
-export function runMildDipDataRetention(cfg: MildDipDiskHygieneConfig): {
+async function compressFile(source: string, target: string, stat: fs.Stats): Promise<void> {
+  try {
+    await pipeline(
+      fs.createReadStream(source),
+      zlib.createGzip(),
+      fs.createWriteStream(target, { flags: 'wx' }),
+    );
+    fs.utimesSync(target, stat.atime, stat.mtime);
+    fs.unlinkSync(source);
+  } catch (err) {
+    try {
+      fs.unlinkSync(target);
+    } catch {
+      /* Partial output may already be gone. */
+    }
+    throw err;
+  }
+}
+
+export async function runMildDipDataRetention(cfg: MildDipDiskHygieneConfig): Promise<{
   compressed: number;
   deleted: number;
-} {
+}> {
+  if (retentionInFlight) return { compressed: 0, deleted: 0 };
+  retentionInFlight = true;
   let compressed = 0;
   let deleted = 0;
   const nowMs = Date.now();
+  try {
   for (const dataDir of [...new Set(cfg.dataDirs.map((dir) => path.resolve(dir)))]) {
     let names: string[];
     try {
@@ -118,9 +142,7 @@ export function runMildDipDataRetention(cfg: MildDipDiskHygieneConfig): {
         const target = `${full}.gz`;
         if (fs.existsSync(target)) continue;
         try {
-          fs.writeFileSync(target, zlib.gzipSync(fs.readFileSync(full)));
-          fs.utimesSync(target, stat.atime, stat.mtime);
-          fs.unlinkSync(full);
+          await compressFile(full, target, stat);
           compressed += 1;
           journal(cfg, { kind: 'mild_dip_data_compressed', file: full, ageDays: +ageDays.toFixed(2) });
         } catch (err) {
@@ -136,6 +158,10 @@ export function runMildDipDataRetention(cfg: MildDipDiskHygieneConfig): {
         }
       }
     }
+  }
+  }
+  finally {
+    retentionInFlight = false;
   }
   return { compressed, deleted };
 }

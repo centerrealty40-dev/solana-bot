@@ -195,13 +195,15 @@ export function appendTradeJournal(
   try {
     const dir = path.dirname(tradesPath);
     if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+    const line = `${JSON.stringify({ ts: Date.now(), ...event })}\n`;
     rotateMildDipJournal(
       tradesPath,
       Number(process.env.MILD_DIP_TRADES_MAX_BYTES ?? 256 * 1024 * 1024),
+      Buffer.byteLength(line),
     );
     fs.appendFileSync(
       tradesPath,
-      `${JSON.stringify({ ts: Date.now(), ...event })}\n`,
+      line,
       'utf8',
     );
   } catch (err) {

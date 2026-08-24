@@ -656,11 +656,13 @@ export function appendMildDipJournal(
   try {
     const dir = path.dirname(journalPath);
     if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+    const line = `${JSON.stringify({ ts: Date.now(), ...event })}\n`;
     rotateMildDipJournal(
       journalPath,
       Number(process.env.MILD_DIP_JOURNAL_MAX_BYTES ?? 512 * 1024 * 1024),
+      Buffer.byteLength(line),
     );
-    fs.appendFileSync(journalPath, `${JSON.stringify({ ts: Date.now(), ...event })}\n`, 'utf8');
+    fs.appendFileSync(journalPath, line, 'utf8');
   } catch (err) {
     noteMildDipJournalWriteFailure(err);
   }

@@ -6002,7 +6002,7 @@ export async function runMildDipLoop(
     }
     if (cfg.dataRetentionEnabled) {
       try {
-        runMildDipDataRetention(diskHygieneCfg);
+        await runMildDipDataRetention(diskHygieneCfg);
       } catch (err) {
         console.warn('[mild-dip] startup data retention failed', err);
       }
@@ -6033,11 +6033,15 @@ export async function runMildDipLoop(
     ) {
       if (cfg.dataDiskGuardEnabled && nowMs - lastDiskCheckMs >= 60_000) {
         lastDiskCheckMs = nowMs;
-        checkMildDipDiskSpace(diskHygieneCfg);
+        void checkMildDipDiskSpace(diskHygieneCfg).catch((err) => {
+          console.warn('[mild-dip] periodic disk check failed', err);
+        });
       }
       if (cfg.dataRetentionEnabled && nowMs - lastDataRetentionTickMs >= cfg.dataRetentionIntervalMs) {
         lastDataRetentionTickMs = nowMs;
-        runMildDipDataRetention(diskHygieneCfg);
+        void runMildDipDataRetention(diskHygieneCfg).catch((err) => {
+          console.warn('[mild-dip] periodic data retention failed', err);
+        });
       }
     }
     const leaderSellEvents = leaderSellFeed?.read(nowMs) ?? [];

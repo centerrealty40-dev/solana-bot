@@ -7,9 +7,10 @@ import {
   rotateMildDipJournal,
   runMildDipDataRetention,
 } from '../../src/milddip/disk-hygiene.js';
+import { appendMildDipJournal } from '../../src/milddip/state.js';
 
 describe('mild-dip disk hygiene', () => {
-  it('compresses old telemetry while leaving fresh files alone', () => {
+  it('compresses old telemetry while leaving fresh files alone', async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-retention-'));
     const old = path.join(dir, 'custom-feed-20200101.jsonl');
     const fresh = path.join(dir, 'leader-observer-20990101.jsonl');
@@ -17,7 +18,8 @@ describe('mild-dip disk hygiene', () => {
     fs.writeFileSync(fresh, '{"kind":"fresh"}\n');
     fs.utimesSync(old, new Date(0), new Date(0));
     const journal = path.join(dir, 'journal.jsonl');
-    runMildDipDataRetention({
+    const readFile = vi.spyOn(fs, 'readFileSync');
+    await runMildDipDataRetention({
       dataDirs: [dir],
       journalPath: journal,
       compressAfterDays: 2,
@@ -28,8 +30,10 @@ describe('mild-dip disk hygiene', () => {
       guardEnabled: false,
     });
     expect(fs.existsSync(`${old}.gz`)).toBe(true);
+    expect(readFile.mock.calls.some(([file]) => file === old)).toBe(false);
     expect(fs.existsSync(fresh)).toBe(true);
     expect(fs.readFileSync(journal, 'utf8')).toContain('mild_dip_data_compressed');
+    readFile.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
@@ -39,11 +43,24 @@ describe('mild-dip disk hygiene', () => {
     fs.writeFileSync(journal, 'x'.repeat(32));
     expect(rotateMildDipJournal(journal, 8)).toBe(true);
     expect(fs.existsSync(journal)).toBe(false);
-    expect(fs.readdirSync(dir).some((name) => name.endsWith('.jsonl.gz'))).toBe(true);
+    expect(fs.readdirSync(dir).some((name) => name.endsWith('.jsonl'))).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
-  it('runs emergency retention when space is low and journals recovery', () => {
+  it('does not stat the live journal on every append', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-append-'));
+    const journal = path.join(dir, 'journal.jsonl');
+    const stat = vi.spyOn(fs, 'statSync');
+    appendMildDipJournal(journal, { kind: 'one' });
+    const afterFirst = stat.mock.calls.length;
+    appendMildDipJournal(journal, { kind: 'two' });
+    appendMildDipJournal(journal, { kind: 'three' });
+    expect(stat.mock.calls.length).toBe(afterFirst);
+    stat.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('runs emergency retention when space is low and journals recovery', async () => {
     const statfs = vi.spyOn(fs, 'statfsSync');
     statfs.mockReturnValue({
       bavail: 1n,
@@ -61,13 +78,13 @@ describe('mild-dip disk hygiene', () => {
       minFreePct: 5,
       guardEnabled: true,
     };
-    expect(checkMildDipDiskSpace(cfg).freeBytes).toBe(1);
+    expect((await checkMildDipDiskSpace(cfg)).freeBytes).toBe(1);
     statfs.mockReturnValueOnce({
       bavail: 100n,
       bsize: 1n,
       blocks: 100n,
     } as unknown as fs.StatsFs);
-    expect(checkMildDipDiskSpace(cfg).freeBytes).toBe(100);
+    expect((await checkMildDipDiskSpace(cfg)).freeBytes).toBe(100);
     expect(fs.readFileSync(cfg.journalPath, 'utf8')).toContain('mild_dip_disk_recovered');
     statfs.mockRestore();
     fs.rmSync(dir, { recursive: true, force: true });
