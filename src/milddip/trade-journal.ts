@@ -5,11 +5,13 @@
  * source of truth for CF / PnL tests:
  *   data/milddip/trades.jsonl
  *
- * Prefer wallet USDC delta (usdcAfter − usdcBefore). Fall back to Jupiter quote
- * spent/received when the balance peek fails. Never treat mark% as cash.
+ * Prefer the confirmed transaction's USDC token-account delta. Fall back to
+ * Jupiter quote spent/received when transaction metadata is unavailable. Never
+ * treat mark% as cash.
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { transactionUsdcDeltaUsd } from '../copytrader/rpc.js';
 import { noteMildDipJournalWriteFailure } from './state.js';
 import { rotateMildDipJournal } from './journal-rotation.js';
 
@@ -49,7 +51,16 @@ export type TradeFillEvent = {
   dipSource?: string | null;
   source: 'mild_dip' | 'leader_observer';
   leader?: string | null;
-  cashSource?: 'wallet_delta' | 'wallet_delta_stale' | 'quote' | 'observed_delta' | 'none' | null;
+  cashSource?:
+    | 'tx_delta'
+    | 'quote_fallback'
+    | 'wallet_delta'
+    | 'wallet_delta_stale'
+    | 'wallet_delta_duplicate'
+    | 'quote'
+    | 'observed_delta'
+    | 'none'
+    | null;
 };
 
 export type TradeRoundtripEvent = {
@@ -110,17 +121,46 @@ export function hydrateTradeLotsFromOpen(
   return n;
 }
 
+const usedPeekCashPairs = new Set<string>();
+const MAX_USED_PEEK_PAIRS = 10_000;
+
+function rememberPeekPair(key: string): boolean {
+  if (usedPeekCashPairs.has(key)) return false;
+  usedPeekCashPairs.add(key);
+  if (usedPeekCashPairs.size > MAX_USED_PEEK_PAIRS) {
+    const oldest = usedPeekCashPairs.values().next().value;
+    if (typeof oldest === 'string') usedPeekCashPairs.delete(oldest);
+  }
+  return true;
+}
+
+export function resetTradeCashAttributionForTests(): void {
+  usedPeekCashPairs.clear();
+}
+
+export { transactionUsdcDeltaUsd };
+
 export function resolveBuyCash(args: {
   usdcBefore?: number | null;
   usdcAfter?: number | null;
   quoteSpentUsd?: number | null;
   sizeUsdIntent?: number | null;
+  txMeta?: unknown;
+  wallet?: string;
 }): { spentUsd: number; cashDeltaUsd: number | null; cashSource: NonNullable<TradeFillEvent['cashSource']> } {
+  const txDelta = transactionUsdcDeltaUsd(args.txMeta, args.wallet ?? '');
+  if (txDelta != null && txDelta < -1e-6) {
+    return { spentUsd: -txDelta, cashDeltaUsd: txDelta, cashSource: 'tx_delta' };
+  }
   const before = args.usdcBefore;
   const after = args.usdcAfter;
   if (before != null && after != null && Number.isFinite(before) && Number.isFinite(after)) {
     const delta = after - before;
     if (delta < -1e-6) {
+      const key = `${before}:${after}`;
+      if (!rememberPeekPair(`buy:${key}`)) {
+        return { spentUsd: 0, cashDeltaUsd: 0, cashSource: 'wallet_delta_duplicate' };
+      }
       return { spentUsd: -delta, cashDeltaUsd: delta, cashSource: 'wallet_delta' };
     }
     // Concurrent txs can make buy peeks non-decreasing; never substitute Jupiter quote
@@ -137,14 +177,14 @@ export function resolveBuyCash(args: {
     return {
       spentUsd: args.quoteSpentUsd,
       cashDeltaUsd: -args.quoteSpentUsd,
-      cashSource: 'quote',
+      cashSource: 'quote_fallback',
     };
   }
   if (args.sizeUsdIntent != null && args.sizeUsdIntent > 0) {
     return {
       spentUsd: args.sizeUsdIntent,
       cashDeltaUsd: -args.sizeUsdIntent,
-      cashSource: 'quote',
+      cashSource: 'quote_fallback',
     };
   }
   return { spentUsd: 0, cashDeltaUsd: null, cashSource: 'none' };
@@ -154,16 +194,26 @@ export function resolveSellCash(args: {
   usdcBefore?: number | null;
   usdcAfter?: number | null;
   quoteReceivedUsd?: number | null;
+  txMeta?: unknown;
+  wallet?: string;
 }): {
   receivedUsd: number;
   cashDeltaUsd: number | null;
   cashSource: NonNullable<TradeFillEvent['cashSource']>;
 } {
+  const txDelta = transactionUsdcDeltaUsd(args.txMeta, args.wallet ?? '');
+  if (txDelta != null && txDelta > 1e-6) {
+    return { receivedUsd: txDelta, cashDeltaUsd: txDelta, cashSource: 'tx_delta' };
+  }
   const before = args.usdcBefore;
   const after = args.usdcAfter;
   if (before != null && after != null && Number.isFinite(before) && Number.isFinite(after)) {
     const delta = after - before;
     if (delta > 1e-6) {
+      const key = `${before}:${after}`;
+      if (!rememberPeekPair(`sell:${key}`)) {
+        return { receivedUsd: 0, cashDeltaUsd: 0, cashSource: 'wallet_delta_duplicate' };
+      }
       return { receivedUsd: delta, cashDeltaUsd: delta, cashSource: 'wallet_delta' };
     }
     // Stale peek on sell (delta ≤ 0): do not credit Jupiter quote as wallet proceeds.
@@ -173,7 +223,7 @@ export function resolveSellCash(args: {
     return {
       receivedUsd: args.quoteReceivedUsd,
       cashDeltaUsd: args.quoteReceivedUsd,
-      cashSource: 'quote',
+      cashSource: 'quote_fallback',
     };
   }
   return { receivedUsd: 0, cashDeltaUsd: null, cashSource: 'none' };
@@ -296,6 +346,7 @@ export function writeUsBuyFill(args: {
   usdcAfter?: number | null;
   feeSolBefore?: number | null;
   feeSolAfter?: number | null;
+  txMeta?: unknown;
   quoteSpentUsd?: number | null;
   fillPriceUsd?: number | null;
   reason?: string | null;
@@ -307,6 +358,8 @@ export function writeUsBuyFill(args: {
     usdcAfter: args.usdcAfter,
     quoteSpentUsd: args.quoteSpentUsd,
     sizeUsdIntent: args.sizeUsdIntent,
+    txMeta: args.txMeta,
+    wallet: args.wallet,
   });
   const ev: TradeFillEvent = {
     v: TRADE_JOURNAL_VERSION,
@@ -357,6 +410,7 @@ export function writeUsSellFill(args: {
   usdcAfter?: number | null;
   feeSolBefore?: number | null;
   feeSolAfter?: number | null;
+  txMeta?: unknown;
   quoteReceivedUsd?: number | null;
   fillPriceUsd?: number | null;
   markPnlPct?: number | null;
@@ -370,6 +424,8 @@ export function writeUsSellFill(args: {
     usdcBefore: args.usdcBefore,
     usdcAfter: args.usdcAfter,
     quoteReceivedUsd: args.quoteReceivedUsd,
+    txMeta: args.txMeta,
+    wallet: args.wallet,
   });
   const nowMs = args.nowMs ?? Date.now();
   let costBasisUsd: number | null = null;

@@ -8,6 +8,7 @@ import {
   resetTradeLotsForTests,
   resolveBuyCash,
   resolveSellCash,
+  resetTradeCashAttributionForTests,
   writeUsBuyFill,
   writeUsSellFill,
 } from '../../src/milddip/trade-journal.js';
@@ -16,11 +17,12 @@ describe('trade-journal cash math', () => {
   const dirs: string[] = [];
   afterEach(() => {
     resetTradeLotsForTests();
+    resetTradeCashAttributionForTests();
     for (const d of dirs) rmSync(d, { recursive: true, force: true });
     dirs.length = 0;
   });
 
-  it('prefers wallet USDC delta over quote for buys/sells', () => {
+  it('uses unique wallet peeks before quote fallback without transaction metadata', () => {
     const buy = resolveBuyCash({
       usdcBefore: 100,
       usdcAfter: 90.25,
@@ -42,13 +44,65 @@ describe('trade-journal cash math', () => {
 
   it('falls back to quote when balances missing', () => {
     const buy = resolveBuyCash({ quoteSpentUsd: 10, sizeUsdIntent: 12 });
-    expect(buy.cashSource).toBe('quote');
+    expect(buy.cashSource).toBe('quote_fallback');
     expect(buy.spentUsd).toBe(10);
     const sell = resolveSellCash({ quoteReceivedUsd: 11 });
     expect(sell.receivedUsd).toBe(11);
+    expect(sell.cashSource).toBe('quote_fallback');
   });
 
-  it('does not substitute quote when sell wallet peek is stale (delta ≤ 0)', () => {
+  it('uses confirmed transaction USDC delta before balance peeks', () => {
+    const txMeta = {
+      preTokenBalances: [
+        {
+          accountIndex: 2,
+          mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+          owner: 'UsWallet111',
+          uiTokenAmount: { amount: '100000000', decimals: 6 },
+        },
+      ],
+      postTokenBalances: [
+        {
+          accountIndex: 2,
+          mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+          owner: 'UsWallet111',
+          uiTokenAmount: { amount: '112340000', decimals: 6 },
+        },
+      ],
+    };
+    const sell = resolveSellCash({
+      wallet: 'UsWallet111',
+      txMeta,
+      usdcBefore: 100,
+      usdcAfter: 200,
+      quoteReceivedUsd: 9,
+    });
+    expect(sell.cashSource).toBe('tx_delta');
+    expect(sell.receivedUsd).toBeCloseTo(12.34, 6);
+    expect(sell.cashDeltaUsd).toBeCloseTo(12.34, 6);
+  });
+
+  it('credits an identical positive sell peek pair only once', () => {
+    const args = { usdcBefore: 100, usdcAfter: 112.5 };
+    const fills = [resolveSellCash(args), resolveSellCash(args), resolveSellCash(args)];
+    expect(fills.map((fill) => fill.receivedUsd)).toEqual([12.5, 0, 0]);
+    expect(fills.map((fill) => fill.cashSource)).toEqual([
+      'wallet_delta',
+      'wallet_delta_duplicate',
+      'wallet_delta_duplicate',
+    ]);
+    expect(fills.reduce((sum, fill) => sum + fill.cashDeltaUsd!, 0)).toBeCloseTo(12.5, 6);
+  });
+
+  it('protects the symmetric buy peek path from duplicate spending', () => {
+    const args = { usdcBefore: 100, usdcAfter: 90, sizeUsdIntent: 10 };
+    const fills = [resolveBuyCash(args), resolveBuyCash(args)];
+    expect(fills.map((fill) => fill.spentUsd)).toEqual([10, 0]);
+    expect(fills.map((fill) => fill.cashSource)).toEqual(['wallet_delta', 'wallet_delta_duplicate']);
+    expect(fills.reduce((sum, fill) => sum + fill.cashDeltaUsd!, 0)).toBeCloseTo(-10, 6);
+  });
+
+  it('marks stale sell wallet peeks without crediting proceeds', () => {
     const sell = resolveSellCash({
       usdcBefore: 156.77,
       usdcAfter: 123.14,
@@ -63,7 +117,6 @@ describe('trade-journal cash math', () => {
     const buy = resolveBuyCash({
       usdcBefore: 100,
       usdcAfter: 105,
-      quoteSpentUsd: 10,
       sizeUsdIntent: 10,
     });
     expect(buy.cashSource).toBe('wallet_delta_stale');

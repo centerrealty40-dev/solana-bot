@@ -4,6 +4,8 @@ function positive(value: unknown): number | null {
 }
 
 export function buyCashDeltaUsd(event: Record<string, unknown>): number {
+  const confirmed = Number(event.cashDeltaUsd);
+  if (Number.isFinite(confirmed)) return confirmed;
   const quoteSpentUsd = positive(event.quoteSpentUsd);
   if (quoteSpentUsd != null) return -quoteSpentUsd;
   const before = Number(event.usdcBefore);
@@ -13,6 +15,8 @@ export function buyCashDeltaUsd(event: Record<string, unknown>): number {
 }
 
 export function sellCashDeltaUsd(event: Record<string, unknown>): number {
+  const confirmed = Number(event.cashDeltaUsd);
+  if (Number.isFinite(confirmed)) return confirmed;
   const quoteReceivedUsd = positive(event.quoteReceivedUsd);
   if (quoteReceivedUsd != null) return quoteReceivedUsd;
   const before = Number(event.usdcBefore);

@@ -3034,6 +3034,7 @@ async function executeQueuedSell(args: {
       quoteReceivedUsd: refireSettlement
         ? refireSettlement.quoteReceivedUsd
         : sell.quoteReceivedUsd ?? null,
+      txMeta: sell.txMeta,
       fillPriceUsd: refireSettlement ? null : sell.priceUsd || decision.markPriceUsd,
       markPnlPct: refireSettlement ? null : sell.pnlPct ?? decision.pnlPct,
       reason: decision.reason,
@@ -3798,6 +3799,7 @@ async function attemptStagedEntryAdd(args: {
         feeSolBefore: buy.feeSolBefore ?? null,
         feeSolAfter: buy.feeSolAfter ?? null,
         quoteSpentUsd: buy.quoteSpentUsd ?? addCostUsd,
+        txMeta: buy.txMeta,
         fillPriceUsd: fillPx,
         dipSource: 'mild_dip_staged_add',
         nowMs,
@@ -3966,6 +3968,7 @@ async function attemptMirrorAverage(args: {
         feeSolBefore: buy.feeSolBefore ?? null,
         feeSolAfter: buy.feeSolAfter ?? null,
         quoteSpentUsd: buy.quoteSpentUsd ?? addUsd,
+        txMeta: buy.txMeta,
         fillPriceUsd: fillPx,
         dipSource: 'mirror_average',
         nowMs,

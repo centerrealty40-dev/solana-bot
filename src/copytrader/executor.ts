@@ -25,6 +25,8 @@ export type BuyExecutionResult = {
   usdcAfter?: number;
   feeSolBefore?: number;
   feeSolAfter?: number;
+  txMeta?: unknown;
+  cashDeltaUsd?: number;
 };
 
 export type SellExecutionResult = {
@@ -45,6 +47,8 @@ export type SellExecutionResult = {
   usdcAfter?: number;
   feeSolBefore?: number;
   feeSolAfter?: number;
+  txMeta?: unknown;
+  cashDeltaUsd?: number;
 };
 
 export async function executeCopyBuy(args: {
@@ -144,6 +148,8 @@ export async function executeCopyBuy(args: {
       usdcAfter: live.usdcAfter,
       feeSolBefore: live.feeSolBefore,
       feeSolAfter: live.feeSolAfter,
+      txMeta: live.txMeta,
+      cashDeltaUsd: live.cashDeltaUsd,
     };
   }
 
@@ -264,6 +270,8 @@ export async function executeCopySell(args: {
       usdcAfter: live.usdcAfter,
       feeSolBefore: live.feeSolBefore,
       feeSolAfter: live.feeSolAfter,
+      txMeta: live.txMeta,
+      cashDeltaUsd: live.cashDeltaUsd,
     };
   }
 

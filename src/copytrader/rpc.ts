@@ -1,4 +1,5 @@
 import { creditsPerStandardSolanaRpc, recordSolanaRpcCredits } from '../core/rpc/solana-rpc-meter.js';
+import { USDC_MINT } from './quote-mint.js';
 
 type JsonRpcResponse<T> = {
   result?: T;
@@ -105,6 +106,50 @@ export async function fetchParsedTransaction(rpcUrl: string, signature: string):
     ],
     6,
   );
+}
+
+type TokenBalanceRow = {
+  accountIndex?: number;
+  mint?: string;
+  owner?: string;
+  uiTokenAmount?: { amount?: string; decimals?: number };
+};
+
+/** Confirmed transaction USDC delta for one wallet, in USD. */
+export function transactionUsdcDeltaUsd(txMeta: unknown, wallet: string): number | null {
+  if (!txMeta || typeof txMeta !== 'object' || !wallet) return null;
+  const meta = txMeta as { preTokenBalances?: unknown; postTokenBalances?: unknown };
+  if (!Array.isArray(meta.preTokenBalances) || !Array.isArray(meta.postTokenBalances)) return null;
+  const byAccount = new Map<number, { pre: bigint; post: bigint; decimals: number }>();
+  const add = (row: unknown, side: 'pre' | 'post'): void => {
+    if (!row || typeof row !== 'object') return;
+    const r = row as TokenBalanceRow;
+    if (r.mint !== USDC_MINT || r.owner !== wallet) return;
+    const accountIndex = r.accountIndex;
+    const amount = r.uiTokenAmount?.amount;
+    const decimals = r.uiTokenAmount?.decimals;
+    if (
+      typeof accountIndex !== 'number' ||
+      !Number.isInteger(accountIndex) ||
+      typeof amount !== 'string' ||
+      !/^\d+$/.test(amount) ||
+      typeof decimals !== 'number'
+    ) return;
+    const current = byAccount.get(accountIndex) ?? { pre: 0n, post: 0n, decimals };
+    current[side] = BigInt(amount);
+    current.decimals = decimals;
+    byAccount.set(accountIndex, current);
+  };
+  for (const row of meta.preTokenBalances) add(row, 'pre');
+  for (const row of meta.postTokenBalances) add(row, 'post');
+  if (byAccount.size === 0) return null;
+  let rawDelta = 0n;
+  let decimals = 6;
+  for (const balance of byAccount.values()) {
+    rawDelta += balance.post - balance.pre;
+    decimals = balance.decimals;
+  }
+  return Number(rawDelta) / 10 ** decimals;
 }
 
 export async function fetchWalletMintBalanceRaw(
