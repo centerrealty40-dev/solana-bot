@@ -96,8 +96,8 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain(
       "walletSecret: 'data/live/copy-8zkg.keypair.json'",
     );
-    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('0');
-    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('0');
+    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('1');
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '1'");

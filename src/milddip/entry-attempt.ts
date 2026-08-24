@@ -2054,6 +2054,10 @@ export async function attemptMirrorFirstClipLeg(args: {
         sizeUsd: Math.min(legUsd, sized.sizeUsd),
         ok: false,
         reason: buy.reason ?? 'buy_failed',
+        ...(buy.slippageBps != null ? { slippageBps: buy.slippageBps } : {}),
+        ...(buy.buySimRetryAttempt != null
+          ? { buySimAttempts: buy.buySimRetryAttempt + 1 }
+          : {}),
       });
       saveMildDipState(cfg.statePath, state);
       return 'exec_failed';
