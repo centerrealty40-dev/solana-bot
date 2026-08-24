@@ -38,6 +38,8 @@ const gates: LeaderMirrorGates = {
   entryGraceMaxPremiumPct: 1,
   maxEntryPc5mPct: 0,
   maxPreEntryPc5mPct: 0,
+  minPc1hPct: -1000,
+  minPreEntryPc5mPct: -1000,
   requireDeepDump: false,
   deepDumpPc5mPct: -8,
   minLiquidityUsd: 8_000,
@@ -59,6 +61,7 @@ const hit = (overrides: Record<string, unknown> = {}) => ({
   leader: LEADER_MIRROR_WALLET,
   fillPriceUsd: 100,
   pc5m: -8,
+  pc1h: 20,
   liq: 10_000,
   ageHours: 1,
   mcap: 100_000,
@@ -213,6 +216,55 @@ const at = (
   });
 
 describe('leader mirror observation decisions', () => {
+  it('keeps optional momentum floors disabled at the sentinel', () => {
+    expect(at(hit({ pc1h: -50, pc5m: -8 }))).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101,
+    });
+  });
+
+  it('refuses a 1h move below the configured floor', () => {
+    expect(at(hit({ pc1h: 9 }), 101, 110_000, 100_000, {
+      ...gates,
+      minPc1hPct: 10,
+    })).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_pc1h_too_low=9.00<10',
+    });
+  });
+
+  it('refuses when the configured 1h floor has no metric', () => {
+    expect(at(hit({ pc1h: undefined }), 101, 110_000, 100_000, {
+      ...gates,
+      minPc1hPct: 10,
+    })).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_pc1h_missing',
+    });
+  });
+
+  it('refuses a pre-entry 5m move deeper than the configured floor', () => {
+    expect(at(hit({ pc5m: -11 }), 101, 110_000, 100_000, {
+      ...gates,
+      minPreEntryPc5mPct: -10,
+    })).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_pc5m_too_deep=-11.00<-10',
+    });
+  });
+
+  it('accepts candidates above both momentum floors and liquidity floor', () => {
+    expect(at(hit({ pc1h: 10, pc5m: -9, liq: 40_000 }), 101, 110_000, 100_000, {
+      ...gates,
+      minPc1hPct: 10,
+      minPreEntryPc5mPct: -10,
+      minLiquidityUsd: 40_000,
+    })).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101,
+    });
+  });
+
   it('rejects stale and synthetic leader observations', () => {
     expect(leaderMirrorObservationFresh({ leaderBuyTsMs: null, nowMs: 120_000, maxAgeMs: 120_000 })).toBe(false);
     expect(leaderMirrorObservationFresh({ leaderBuyTsMs: 1, nowMs: 120_002, maxAgeMs: 120_000 })).toBe(false);
