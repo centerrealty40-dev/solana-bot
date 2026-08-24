@@ -21,6 +21,8 @@ type WatchdogConfig = {
 
 const restartHistory = new Map<string, number[]>();
 const lastRestart = new Map<string, number>();
+let pm2FailureCount = 0;
+let previousDiskLow = false;
 
 function num(name: string, fallback: number): number {
   const value = Number(process.env[name]);
@@ -75,15 +77,32 @@ export async function watchdogTick(cfg: WatchdogConfig): Promise<void> {
     const free = Number(stat.bavail) * Number(stat.bsize);
     const total = Number(stat.blocks) * Number(stat.bsize);
     diskLow = free < cfg.minFreeBytes || (total > 0 && free / total * 100 < cfg.minFreePct);
-    journal(cfg, { kind: 'mild_dip_watchdog_disk_low', low: diskLow, freeBytes: free, freePct: total > 0 ? free / total * 100 : 0 });
+    if (diskLow && !previousDiskLow) {
+      console.warn(`[mild-dip-watchdog] disk low freeBytes=${free}`);
+      journal(cfg, { kind: 'mild_dip_watchdog_disk_low', freeBytes: free, freePct: total > 0 ? free / total * 100 : 0 });
+    } else if (!diskLow && previousDiskLow) {
+      journal(cfg, { kind: 'mild_dip_watchdog_disk_recovered', freeBytes: free, freePct: total > 0 ? free / total * 100 : 0 });
+    }
+    previousDiskLow = diskLow;
   } catch (err) {
-    journal(cfg, { kind: 'mild_dip_watchdog_disk_low', error: String(err) });
+    journal(cfg, { kind: 'mild_dip_watchdog_error', error: String(err) });
   }
   for (const instance of cfg.watched) {
     const statePath = path.join(instance.dataDir, 'state.json');
     let ageMs = Number.POSITIVE_INFINITY;
     try { ageMs = Date.now() - fs.statSync(statePath).mtimeMs; } catch { /* treated stale */ }
     const online = await pm2Online(instance.app);
+    if (online == null) {
+      pm2FailureCount += 1;
+      console.warn(`[mild-dip-watchdog] PM2 unavailable failures=${pm2FailureCount}`);
+      journal(cfg, {
+        kind: 'mild_dip_watchdog_pm2_unavailable',
+        app: instance.app,
+        failureCount: pm2FailureCount,
+      });
+    } else {
+      pm2FailureCount = 0;
+    }
     const wedged = ageMs > cfg.staleMs;
     journal(cfg, { kind: 'mild_dip_watchdog_tick', app: instance.app, stateAgeMs: ageMs, wedged, online, diskLow });
     if (online == null || (online && !wedged)) continue;
