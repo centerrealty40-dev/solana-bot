@@ -621,6 +621,29 @@ describe('mild-dip mirror green-copy configuration', () => {
   });
 });
 
+describe('mild-dip mirror entry momentum floors', () => {
+  const baseEnv = {
+    MILD_DIP_EXECUTION_MODE: 'paper',
+    MILD_DIP_RPC_URL: 'https://example.invalid',
+  };
+
+  it('keeps optional floors disabled by default and loads overrides', () => {
+    const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
+    expect(defaults.minPc1hPct).toBe(-1000);
+    expect(defaults.minPreEntryPc5mPct).toBe(-1000);
+    const configured = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MIRROR_MIN_PC1H_PCT: '10',
+        MILD_DIP_MIRROR_MIN_PC5M_PCT: '-10',
+      },
+      () => loadMildDipConfig(),
+    ).leaderMirror;
+    expect(configured.minPc1hPct).toBe(10);
+    expect(configured.minPreEntryPc5mPct).toBe(-10);
+  });
+});
+
 describe('mild-dip mirror exit refire configuration', () => {
   const baseEnv = {
     MILD_DIP_EXECUTION_MODE: 'paper',

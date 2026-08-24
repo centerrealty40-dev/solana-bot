@@ -76,6 +76,8 @@ export type LeaderMirrorGates = {
   entryGraceMaxPremiumPct?: number;
   maxEntryPc5mPct: number;
   maxPreEntryPc5mPct: number;
+  minPc1hPct: number;
+  minPreEntryPc5mPct: number;
   requireDeepDump: boolean;
   deepDumpPc5mPct: number;
   minLiquidityUsd: number;
@@ -272,6 +274,7 @@ export function evaluateLeaderMirrorObservation(args: {
 }): LeaderMirrorDecision {
   const { hit, gates, nowMs } = args;
   const pc5m = typeof hit.pc5m === 'number' && Number.isFinite(hit.pc5m) ? hit.pc5m : null;
+  const pc1h = typeof hit.pc1h === 'number' && Number.isFinite(hit.pc1h) ? hit.pc1h : null;
   const liq = typeof hit.liq === 'number' && Number.isFinite(hit.liq) ? hit.liq : null;
   const ageHours = typeof hit.ageHours === 'number' && Number.isFinite(hit.ageHours) ? hit.ageHours : null;
   const mcap = typeof hit.mcap === 'number' && Number.isFinite(hit.mcap) ? hit.mcap : null;
@@ -314,6 +317,28 @@ export function evaluateLeaderMirrorObservation(args: {
   }
   if (liq == null || ageHours == null || mcap == null) {
     return soft('leader_mirror_no_data', 'no_structural', true);
+  }
+  if (gates.minPc1hPct > -1000) {
+    if (pc1h == null) {
+      return { action: 'skip', reason: 'leader_mirror_pc1h_missing' };
+    }
+    if (pc1h < gates.minPc1hPct) {
+      return {
+        action: 'skip',
+        reason: `leader_mirror_pc1h_too_low=${pc1h.toFixed(2)}<${gates.minPc1hPct}`,
+      };
+    }
+  }
+  if (gates.minPreEntryPc5mPct > -1000) {
+    if (pc5m == null) {
+      return { action: 'skip', reason: 'leader_mirror_pc5m_missing' };
+    }
+    if (pc5m < gates.minPreEntryPc5mPct) {
+      return {
+        action: 'skip',
+        reason: `leader_mirror_pc5m_too_deep=${pc5m.toFixed(2)}<${gates.minPreEntryPc5mPct}`,
+      };
+    }
   }
   if (pc5m != null && pc5m > gates.maxEntryPc5mPct) {
     return { action: 'skip', reason: 'leader_mirror_green_direction' };
