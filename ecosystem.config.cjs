@@ -4851,6 +4851,8 @@ function makeMirrorApp({
       MILD_DIP_DUST_BURN_MIN_AGE_MS: '21600000',
       MILD_DIP_DUST_BURN_SETTLE_MS: '600000',
       MILD_DIP_DUST_BURN_INTERVAL_MS: '21600000',
+      MILD_DIP_ORPHAN_SELL_MIN_USD: '0.5',
+      MILD_DIP_ORPHAN_SELL_INTERVAL_MS: '21600000',
       MILD_DIP_MIRROR_AVERAGE_ENABLED: '1',
       MILD_DIP_MIRROR_AVERAGE_USD: averageUsd,
       MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS: '3600000,7200000,10800000,14400000,21600000',
@@ -4908,6 +4910,31 @@ if (mildDipBotApp) {
     }),
   );
 }
+
+PM2_APPS.push({
+  name: 'mild-dip-watchdog',
+  cwd: root,
+  script: path.join(root, 'node_modules/tsx/dist/cli.mjs'),
+  args: 'src/scripts/mild-dip-watchdog.ts',
+  interpreter: 'node',
+  exec_mode: 'fork',
+  instances: 1,
+  autorestart: true,
+  restart_delay: 5000,
+  merge_logs: true,
+  time: true,
+  env: {
+    NODE_ENV: 'production',
+    MILD_DIP_WATCHDOG_INSTANCES: 'mild-dip-mirror:data/milddip-mirror,mild-dip-mirror2:data/milddip-mirror2',
+    MILD_DIP_WATCHDOG_INTERVAL_MS: '60000',
+    MILD_DIP_WATCHDOG_STALE_MS: '480000',
+    MILD_DIP_WATCHDOG_MAX_RESTARTS_PER_HOUR: '4',
+    MILD_DIP_WATCHDOG_COOLDOWN_MS: '300000',
+    MILD_DIP_WATCHDOG_JOURNAL_PATH: path.join(root, 'data/milddip/watchdog-journal.jsonl'),
+    MILD_DIP_DATA_MIN_FREE_BYTES: '2147483648',
+    MILD_DIP_DATA_MIN_FREE_PCT: '5',
+  },
+});
 
 /**
  * Apps filtered out of PM2 on Oscar VPS so `pm2 start/reload ecosystem` cannot revive them.

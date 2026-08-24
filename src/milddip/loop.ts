@@ -154,7 +154,7 @@ import {
 } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
-import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
+import { sweepUnmanagedOrphans } from './orphan-sweep.js';
 import { burnDustOrphans } from './dust-burn.js';
 import {
   loadMildDipHotMints,
@@ -5961,7 +5961,7 @@ export async function runMildDipLoop(
     await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
     if (cfg.orphanSweepEnabled && cfg.orphanSweepMaxSells > 0) {
       try {
-        const swept = await sweepUnmanagedPumpOrphans({
+        const swept = await sweepUnmanagedOrphans({
           cfg,
           state,
           maxSells: cfg.orphanSweepMaxSells,
@@ -6013,6 +6013,7 @@ export async function runMildDipLoop(
   let lastMark = 0;
   let lastFeeTopupTickMs = 0;
   let lastDustBurnTickMs = 0;
+  let lastOrphanSweepTickMs = 0;
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
   let lastStreamPriceStatsMs = 0;
@@ -6151,6 +6152,19 @@ export async function runMildDipLoop(
           console.warn('[mild-dip] fee-sol topup tick failed', err);
         }
       }
+    }
+    if (
+      cfg.orphanSweepEnabled &&
+      cfg.orphanSweepMaxSells > 0 &&
+      nowMs - lastOrphanSweepTickMs >= cfg.orphanSweepIntervalMs
+    ) {
+      lastOrphanSweepTickMs = nowMs;
+      void sweepUnmanagedOrphans({
+        cfg,
+        state,
+        maxSells: cfg.orphanSweepMaxSells,
+        nowMs,
+      }).catch((err) => console.warn('[mild-dip] orphan sweep tick failed', err));
     }
     if (
       cfg.dustBurnEnabled &&

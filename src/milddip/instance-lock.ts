@@ -25,7 +25,7 @@ function emptyLockMinAgeMs(): number {
   return Number.isFinite(value) && value >= 1_000 ? value : 60_000;
 }
 
-function otherMildDipInstanceProcess(lockPath: string): { proven: boolean; live: boolean } {
+export function otherMildDipInstanceProcess(lockPath: string): { proven: boolean; live: boolean } {
   try {
     const entries = fs.readdirSync('/proc', { withFileTypes: true });
     const instanceDir = path.dirname(lockPath);
