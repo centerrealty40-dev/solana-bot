@@ -5,6 +5,7 @@ import {
   LEADER_MIRROR_WALLET,
   leaderMirrorHitKey,
   leaderMirrorObservationWindowMs,
+  leaderMirrorObservationFresh,
   leaderMirrorQuoteMintsCap,
   leaderMirrorQuoteCoverage,
   selectLeaderMirrorQuoteKeys,
@@ -212,6 +213,11 @@ const at = (
   });
 
 describe('leader mirror observation decisions', () => {
+  it('rejects stale and synthetic leader observations', () => {
+    expect(leaderMirrorObservationFresh({ leaderBuyTsMs: null, nowMs: 120_000, maxAgeMs: 120_000 })).toBe(false);
+    expect(leaderMirrorObservationFresh({ leaderBuyTsMs: 1, nowMs: 120_002, maxAgeMs: 120_000 })).toBe(false);
+    expect(leaderMirrorObservationFresh({ leaderBuyTsMs: 100_000, nowMs: 110_000, maxAgeMs: 120_000 })).toBe(true);
+  });
   it('retries execution failures but suppresses genuine refusals', () => {
     expect(mirrorEntryAttemptOutcome('exec_failed')).toBe('retry');
     expect(mirrorEntryAttemptOutcome('skip')).toBe('refused');

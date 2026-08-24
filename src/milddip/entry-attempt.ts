@@ -4,6 +4,7 @@
 import { executeCopyBuy } from '../copytrader/executor.js';
 import { resetCopyFundingCache } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
+import { leaderStillHolds } from './leader-balance.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { CopyTraderConfig } from '../copytrader/config.js';
 import type { MildDipConfig } from './config.js';
@@ -1596,6 +1597,18 @@ export async function attemptMildDipEntry(args: {
       leaderBuyTs: nowMs,
       ...(isMirror
         ? {
+            beforeSend: async () => {
+              if (!cfg.leaderMirror.leaderBalanceGuardEnabled) return true;
+              const holds = await leaderStillHolds(cfg, opts.leaderMirrorLeader, c.mint);
+              appendMildDipJournal(cfg.journalPath, {
+                kind: 'leader_mirror_balance_guard',
+                mint: c.mint,
+                leader: opts.leaderMirrorLeader ?? null,
+                holds,
+                reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+              });
+              return holds;
+            },
             slippageRetryMultiplier: opts.mirrorExecutionSlippageMultiplier,
             slippageRetryMaxBps: opts.mirrorExecutionSlippageMaxBps,
           }
@@ -1963,6 +1976,7 @@ export async function attemptMirrorFirstClipLeg(args: {
     nowMs: number,
     wantUsd: number,
   ) => Promise<{ sizeUsd: number; usdc?: number | null; stop: boolean; reason?: string }>;
+  leader?: string | null;
 }): Promise<EntryAttemptResult> {
   const { cfg, state, candidate: c, copyCfg, nowMs, buyInFlight } = args;
   const pos = state.open[c.mint];
@@ -2002,6 +2016,18 @@ export async function attemptMirrorFirstClipLeg(args: {
       trigger: 'leader',
       leaderPriceUsd: c.priceUsd,
       leaderBuyTs: nowMs,
+      beforeSend: async () => {
+        if (!cfg.leaderMirror.leaderBalanceGuardEnabled) return true;
+        const holds = await leaderStillHolds(cfg, args.leader, c.mint);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_guard',
+          mint: c.mint,
+          leader: args.leader ?? null,
+          holds,
+          reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+        });
+        return holds;
+      },
       slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
       slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
     });

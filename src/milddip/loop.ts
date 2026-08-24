@@ -24,6 +24,7 @@ import {
   takeLeaderGateShadowDeferSlot,
 } from './entry-attempt.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
+import { leaderFlatReconcileDecision, readLeaderBalance } from './leader-balance.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   evaluateFastPathCandidate,
@@ -51,6 +52,7 @@ import {
   leaderMirrorHitKey,
   leaderMirrorNeedsStructuralBackfill,
   leaderMirrorObservationWindowMs,
+  leaderMirrorObservationFresh,
   selectLeaderMirrorQuoteKeys,
   type LeaderMirrorMetricSource,
 } from './leader-mirror.js';
@@ -1828,6 +1830,28 @@ async function wakeLeaderMirrors(
       hit.blockTime != null && hit.blockTime > 0
         ? hit.blockTime * 1000
         : hit.lastSeenAtMs;
+    const honestLeaderBuyTsMs =
+      hit.blockTime != null && hit.blockTime > 0
+        ? hit.blockTime * 1000
+        : null;
+    if (!leaderMirrorObservationFresh({
+      leaderBuyTsMs: honestLeaderBuyTsMs,
+      nowMs,
+      maxAgeMs: gates.leaderBalanceMaxAgeMs,
+    })) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint,
+        leader: hit.leader,
+        reason: 'leader_mirror_observation_stale',
+        leaderBuyTsMs: honestLeaderBuyTsMs,
+        lastSeenAtMs: hit.lastSeenAtMs,
+        maxAgeMs: gates.leaderBalanceMaxAgeMs,
+        synthetic: honestLeaderBuyTsMs == null,
+      });
+      leaderMirrorWatches.delete(watchKey);
+      continue;
+    }
     const leaderBuyTsMsForGrace =
       hit.blockTime != null && hit.blockTime > 0
         ? hit.blockTime * 1000
@@ -2050,6 +2074,7 @@ async function wakeLeaderMirrors(
             nowMs,
             buyInFlight,
             resolveEntrySizeUsd,
+            leader: hit.leader,
           })
         : await attemptMildDipEntry({
             cfg,
@@ -2107,6 +2132,7 @@ async function wakeLeaderMirrors(
         nowMs,
         buyInFlight,
         resolveEntrySizeUsd,
+        leader: hit.leader,
       });
     }
     const outcome = mirrorEntryAttemptOutcome(result);
@@ -3501,6 +3527,22 @@ async function attemptLeaderAlignScaleIn(args: {
       leaderSignature: leaderSig,
       leaderPriceUsd: fillPx,
       leaderBuyTs: hit.blockTime != null ? hit.blockTime * 1000 : nowMs,
+      ...(pos.lane === 'leader_mirror'
+        ? {
+            beforeSend: async () => {
+              const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, mint);
+              const holds = raw != null && raw > 0n;
+              appendMildDipJournal(cfg.journalPath, {
+                kind: 'leader_mirror_balance_guard',
+                mint,
+                leader: pos.leaderMirrorLeader ?? null,
+                holds,
+                reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+              });
+              return holds;
+            },
+          }
+        : {}),
       slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
       slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
     });
@@ -3682,6 +3724,18 @@ async function attemptStagedEntryAdd(args: {
       leaderBuyTs: nowMs,
       ...(pos.lane === 'leader_mirror'
         ? {
+            beforeSend: async () => {
+              const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, pos.mint);
+              const holds = raw != null && raw > 0n;
+              appendMildDipJournal(cfg.journalPath, {
+                kind: 'leader_mirror_balance_guard',
+                mint: pos.mint,
+                leader: pos.leaderMirrorLeader ?? null,
+                holds,
+                reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+              });
+              return holds;
+            },
             slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
             slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
           }
@@ -3844,6 +3898,18 @@ async function attemptMirrorAverage(args: {
       trigger: 'stream',
       leaderPriceUsd: markPriceUsd,
       leaderBuyTs: nowMs,
+      beforeSend: async () => {
+        const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, pos.mint);
+        const holds = raw != null && raw > 0n;
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_guard',
+          mint: pos.mint,
+          leader: pos.leaderMirrorLeader ?? null,
+          holds,
+          reason: holds ? 'leader_balance_nonzero' : 'leader_balance_zero_or_rpc_error',
+        });
+        return holds;
+      },
       slippageRetryMultiplier: g.executionSlippageMultiplier,
       slippageRetryMaxBps: g.executionSlippageMaxBps,
     });
@@ -6022,11 +6088,92 @@ export async function runMildDipLoop(
   let lastLeaderSellFeedStaleDropped = 0;
   let lastMirrorWakeMs = 0;
   let lastDiskCheckMs = 0;
+  let lastLeaderBalanceReconcileMs = 0;
+  const leaderFlatConfirmations = new Map<string, number>();
   let mirrorWakeInFlight = false;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+    if (
+      cfg.leaderMirror.enabled &&
+      cfg.leaderMirror.leaderBalanceReconcileEnabled &&
+      nowMs - lastLeaderBalanceReconcileMs >= cfg.leaderMirror.leaderBalanceReconcileIntervalMs
+    ) {
+      lastLeaderBalanceReconcileMs = nowMs;
+      for (const [mint, pos] of Object.entries(state.open)) {
+        if (pos.lane !== 'leader_mirror') continue;
+        if (!pos.leaderMirrorLeader) continue;
+        if (nowMs - pos.openedAtMs < cfg.leaderMirror.leaderBalanceReconcileMinHoldMs) {
+          leaderFlatConfirmations.delete(mint);
+          continue;
+        }
+        const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, mint);
+        if (raw == null) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'leader_mirror_balance_reconcile',
+            mint,
+            leader: pos.leaderMirrorLeader,
+            action: 'none',
+            reason: 'rpc_error',
+          });
+          continue;
+        }
+        if (raw > 0n) {
+          leaderFlatConfirmations.delete(mint);
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'leader_mirror_balance_reconcile',
+            mint,
+            leader: pos.leaderMirrorLeader,
+            action: 'none',
+            reason: 'leader_balance_nonzero',
+            balanceRaw: raw.toString(),
+          });
+          continue;
+        }
+        const confirmations = (leaderFlatConfirmations.get(mint) ?? 0) + 1;
+        leaderFlatConfirmations.set(mint, confirmations);
+        const reconcileAction = leaderFlatReconcileDecision({
+          balanceRaw: raw,
+          confirmations,
+          requiredConfirmations: cfg.leaderMirror.leaderBalanceReconcileConfirmations,
+          openedAtMs: pos.openedAtMs,
+          nowMs,
+          minHoldMs: cfg.leaderMirror.leaderBalanceReconcileMinHoldMs,
+        });
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_reconcile',
+          mint,
+          leader: pos.leaderMirrorLeader,
+          action: reconcileAction,
+          reason: 'leader_balance_zero',
+          confirmations,
+          required: cfg.leaderMirror.leaderBalanceReconcileConfirmations,
+        });
+        if (
+          reconcileAction === 'exit' &&
+          !pos.mirrorLeaderSellIntent
+        ) {
+          pos.mirrorLeaderSellIntent = {
+            leader: pos.leaderMirrorLeader,
+            signature: null,
+            leaderBlockTimeMs: nowMs,
+            detectedAtMs: nowMs,
+          };
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mirror_leader_sell_intent',
+            mint,
+            symbol: pos.symbol,
+            leader: pos.leaderMirrorLeader,
+            signature: null,
+            leaderBlockTimeMs: nowMs,
+            detectedAtMs: nowMs,
+            source: 'balance_reconciliation',
+          });
+          saveMildDipState(cfg.statePath, state);
+        }
+      }
+    }
     if (
       (cfg.dataDiskGuardEnabled && nowMs - lastDiskCheckMs >= 60_000) ||
       (cfg.dataRetentionEnabled &&
