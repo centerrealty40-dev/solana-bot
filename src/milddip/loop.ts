@@ -6087,6 +6087,8 @@ export async function runMildDipLoop(
     compressAfterDays: cfg.dataRetentionCompressAfterDays,
     deleteAfterDays: cfg.dataRetentionDeleteAfterDays,
     deleteEnabled: cfg.dataRetentionDeleteEnabled,
+    emergencyEnabled: cfg.dataRetentionEmergencyEnabled,
+    emergencyKeepDays: cfg.dataRetentionEmergencyKeepDays,
     minFreeBytes: cfg.dataDiskMinFreeBytes,
     minFreePct: cfg.dataDiskMinFreePct,
     guardEnabled: cfg.dataDiskGuardEnabled,

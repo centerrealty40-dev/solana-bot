@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   checkMildDipDiskSpace,
   rotateMildDipJournal,
+  runMildDipEmergencyRetention,
   runMildDipDataRetention,
 } from '../../src/milddip/disk-hygiene.js';
 import { appendMildDipJournal } from '../../src/milddip/state.js';
@@ -28,6 +29,8 @@ describe('mild-dip disk hygiene', () => {
       minFreeBytes: 0,
       minFreePct: 0,
       guardEnabled: false,
+      emergencyEnabled: false,
+      emergencyKeepDays: 2,
     });
     expect(fs.existsSync(`${old}.gz`)).toBe(true);
     expect(readFile.mock.calls.some(([file]) => file === old)).toBe(false);
@@ -77,6 +80,8 @@ describe('mild-dip disk hygiene', () => {
       minFreeBytes: 10,
       minFreePct: 5,
       guardEnabled: true,
+      emergencyEnabled: false,
+      emergencyKeepDays: 2,
     };
     expect((await checkMildDipDiskSpace(cfg)).freeBytes).toBe(1);
     statfs.mockReturnValueOnce({
@@ -87,6 +92,99 @@ describe('mild-dip disk hygiene', () => {
     expect((await checkMildDipDiskSpace(cfg)).freeBytes).toBe(100);
     expect(fs.readFileSync(cfg.journalPath, 'utf8')).toContain('mild_dip_disk_recovered');
     statfs.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('deletes oldest eligible files until the emergency free-space threshold is met', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-emergency-'));
+    const secondDir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-emergency-'));
+    const oldest = path.join(dir, 'leader-20200101.jsonl');
+    const next = path.join(secondDir, 'observer-20200102.jsonl.gz');
+    const fresh = path.join(dir, 'leader-20990101.jsonl');
+    fs.writeFileSync(oldest, 'oldest');
+    fs.writeFileSync(next, 'next');
+    fs.writeFileSync(fresh, 'fresh');
+    fs.utimesSync(oldest, new Date(0), new Date(0));
+    fs.utimesSync(next, new Date(86_400_000), new Date(86_400_000));
+    const statfs = vi.spyOn(fs, 'statfsSync');
+    statfs
+      .mockReturnValueOnce({ bavail: 1n, bsize: 1n, blocks: 100n } as unknown as fs.StatsFs)
+      .mockReturnValueOnce({ bavail: 1n, bsize: 1n, blocks: 100n } as unknown as fs.StatsFs)
+      .mockReturnValue({ bavail: 100n, bsize: 1n, blocks: 100n } as unknown as fs.StatsFs);
+    const journal = path.join(dir, 'journal.jsonl');
+    const result = await runMildDipEmergencyRetention({
+      dataDirs: [dir, secondDir],
+      journalPath: journal,
+      compressAfterDays: 2,
+      deleteAfterDays: 14,
+      deleteEnabled: true,
+      minFreeBytes: 10,
+      minFreePct: 5,
+      guardEnabled: true,
+      emergencyEnabled: true,
+      emergencyKeepDays: 2,
+    });
+    expect(result).toEqual({ deleted: 2, freedBytes: 10 });
+    expect(fs.existsSync(oldest)).toBe(false);
+    expect(fs.existsSync(next)).toBe(false);
+    expect(fs.existsSync(fresh)).toBe(true);
+    expect(fs.readFileSync(journal, 'utf8')).toContain('mild_dip_data_emergency_deleted');
+    expect(fs.readFileSync(journal, 'utf8')).toContain('mild_dip_emergency_retention');
+    statfs.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(secondDir, { recursive: true, force: true });
+  });
+
+  it('never deletes protected state, journal, trades, lock, or temporary files', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-emergency-protected-'));
+    const names = ['state.json', 'journal.jsonl', 'trades.jsonl', 'worker.lock', 'hot-mints.json.tmp'];
+    for (const name of names) {
+      const file = path.join(dir, name);
+      fs.writeFileSync(file, 'protected');
+      fs.utimesSync(file, new Date(0), new Date(0));
+    }
+    const statfs = vi.spyOn(fs, 'statfsSync').mockReturnValue({
+      bavail: 1n,
+      bsize: 1n,
+      blocks: 100n,
+    } as unknown as fs.StatsFs);
+    const cfg = {
+      dataDirs: [dir],
+      journalPath: path.join(dir, 'journal.jsonl'),
+      compressAfterDays: 2,
+      deleteAfterDays: 14,
+      deleteEnabled: true,
+      minFreeBytes: 10,
+      minFreePct: 5,
+      guardEnabled: true,
+      emergencyEnabled: true,
+      emergencyKeepDays: 2,
+    };
+    expect(await runMildDipEmergencyRetention(cfg)).toEqual({ deleted: 0, freedBytes: 0 });
+    for (const name of names) expect(fs.existsSync(path.join(dir, name))).toBe(true);
+    statfs.mockRestore();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('does nothing when emergency retention is disabled', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-emergency-disabled-'));
+    const file = path.join(dir, 'leader-20200101.jsonl');
+    fs.writeFileSync(file, 'old');
+    fs.utimesSync(file, new Date(0), new Date(0));
+    const result = await runMildDipEmergencyRetention({
+      dataDirs: [dir],
+      journalPath: path.join(dir, 'journal.jsonl'),
+      compressAfterDays: 2,
+      deleteAfterDays: 14,
+      deleteEnabled: true,
+      minFreeBytes: 10,
+      minFreePct: 5,
+      guardEnabled: true,
+      emergencyEnabled: false,
+      emergencyKeepDays: 2,
+    });
+    expect(result).toEqual({ deleted: 0, freedBytes: 0 });
+    expect(fs.existsSync(file)).toBe(true);
     fs.rmSync(dir, { recursive: true, force: true });
   });
 });

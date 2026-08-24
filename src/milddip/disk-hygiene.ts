@@ -8,6 +8,7 @@ export { rotateMildDipJournal } from './journal-rotation.js';
 let diskLow = false;
 let lastLowWarningAtMs = 0;
 let retentionInFlight = false;
+let emergencyRetentionInFlight = false;
 
 export type MildDipDiskHygieneConfig = {
   dataDirs: string[];
@@ -19,6 +20,8 @@ export type MildDipDiskHygieneConfig = {
   minFreeBytes: number;
   minFreePct: number;
   guardEnabled: boolean;
+  emergencyEnabled: boolean;
+  emergencyKeepDays: number;
 };
 
 function isDatedJsonl(name: string): boolean {
@@ -58,8 +61,13 @@ export async function checkMildDipDiskSpace(cfg: MildDipDiskHygieneConfig): Prom
     const low = first.freeBytes < cfg.minFreeBytes || first.freePct < cfg.minFreePct;
     if (low) {
       await runMildDipDataRetention(cfg);
-      const after = diskStats(cfg.dataDirs[0] ?? '.');
-      const stillLow = after.freeBytes < cfg.minFreeBytes || after.freePct < cfg.minFreePct;
+      let after = diskStats(cfg.dataDirs[0] ?? '.');
+      let stillLow = after.freeBytes < cfg.minFreeBytes || after.freePct < cfg.minFreePct;
+      if (stillLow && cfg.emergencyEnabled) {
+        await runMildDipEmergencyRetention(cfg);
+        after = diskStats(cfg.dataDirs[0] ?? '.');
+        stillLow = after.freeBytes < cfg.minFreeBytes || after.freePct < cfg.minFreePct;
+      }
       if (!diskLow || Date.now() - lastLowWarningAtMs >= 60_000) {
         lastLowWarningAtMs = Date.now();
         console.error(
@@ -164,4 +172,82 @@ export async function runMildDipDataRetention(cfg: MildDipDiskHygieneConfig): Pr
     retentionInFlight = false;
   }
   return { compressed, deleted };
+}
+
+export async function runMildDipEmergencyRetention(cfg: MildDipDiskHygieneConfig): Promise<{
+  deleted: number;
+  freedBytes: number;
+}> {
+  if (!cfg.emergencyEnabled || emergencyRetentionInFlight) {
+    return { deleted: 0, freedBytes: 0 };
+  }
+  emergencyRetentionInFlight = true;
+  let deleted = 0;
+  let freedBytes = 0;
+  const nowMs = Date.now();
+  const candidates: Array<{ file: string; bytes: number; mtimeMs: number; ageDays: number }> = [];
+  try {
+    for (const dataDir of [...new Set(cfg.dataDirs.map((dir) => path.resolve(dir)))]) {
+      let names: string[];
+      try {
+        names = fs.readdirSync(dataDir);
+      } catch {
+        continue;
+      }
+      for (const name of names) {
+        if (isProtected(name) || (!isDatedJsonl(name) && !name.endsWith('.jsonl.gz'))) continue;
+        const file = path.join(dataDir, name);
+        try {
+          const stat = fs.statSync(file);
+          const ageDays = (nowMs - stat.mtimeMs) / 86_400_000;
+          if (ageDays > cfg.emergencyKeepDays) {
+            candidates.push({ file, bytes: stat.size, mtimeMs: stat.mtimeMs, ageDays });
+          }
+        } catch {
+          /* Best effort maintenance. */
+        }
+      }
+    }
+    candidates.sort((a, b) => a.mtimeMs - b.mtimeMs);
+    for (const candidate of candidates) {
+      try {
+        fs.unlinkSync(candidate.file);
+        deleted += 1;
+        freedBytes += candidate.bytes;
+        journal(cfg, {
+          kind: 'mild_dip_data_emergency_deleted',
+          file: candidate.file,
+          bytes: candidate.bytes,
+          ageDays: +candidate.ageDays.toFixed(2),
+        });
+      } catch {
+        continue;
+      }
+      try {
+        const after = diskStats(cfg.dataDirs[0] ?? '.');
+        if (after.freeBytes >= cfg.minFreeBytes && after.freePct >= cfg.minFreePct) break;
+      } catch {
+        /* Keep deleting eligible candidates when free-space stats are unavailable. */
+      }
+    }
+  } catch {
+    /* Best effort maintenance. */
+  } finally {
+    emergencyRetentionInFlight = false;
+  }
+  if (deleted > 0) {
+    let freeBytesAfter = 0;
+    try {
+      freeBytesAfter = diskStats(cfg.dataDirs[0] ?? '.').freeBytes;
+    } catch {
+      /* Best effort maintenance. */
+    }
+    journal(cfg, {
+      kind: 'mild_dip_emergency_retention',
+      deleted,
+      freedBytes,
+      freeBytesAfter,
+    });
+  }
+  return { deleted, freedBytes };
 }
