@@ -235,17 +235,19 @@ export async function runMildDipEmergencyRetention(cfg: MildDipDiskHygieneConfig
   } finally {
     emergencyRetentionInFlight = false;
   }
-  let freeBytesAfter = 0;
-  try {
-    freeBytesAfter = diskStats(cfg.dataDirs[0] ?? '.').freeBytes;
-  } catch {
-    /* Best effort maintenance. */
+  if (deleted > 0) {
+    let freeBytesAfter = 0;
+    try {
+      freeBytesAfter = diskStats(cfg.dataDirs[0] ?? '.').freeBytes;
+    } catch {
+      /* Best effort maintenance. */
+    }
+    journal(cfg, {
+      kind: 'mild_dip_emergency_retention',
+      deleted,
+      freedBytes,
+      freeBytesAfter,
+    });
   }
-  journal(cfg, {
-    kind: 'mild_dip_emergency_retention',
-    deleted,
-    freedBytes,
-    freeBytesAfter,
-  });
   return { deleted, freedBytes };
 }
