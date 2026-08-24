@@ -1,5 +1,6 @@
 import { Keypair } from '@solana/web3.js';
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { sweepUnmanagedOrphans } from '../../src/milddip/orphan-sweep.js';
 
 const signer = Keypair.generate();
@@ -88,5 +89,83 @@ describe('orphan sweep', () => {
     });
     expect(result.sold).toBe(1);
     expect(closed).toBe(1);
+  });
+
+  it.each([
+    ['open_position', { open: { [mint]: { mint } } }],
+    ['fresh_entry_or_observation', { recentEntryMsByMint: { [mint]: [9_500] } }],
+    ['fresh_entry_or_observation', {
+      leaderMirrorWatches: { x: { hit: { mint, lastSeenAtMs: 9_000 }, expiresAtMs: 20_000 } },
+    }],
+    ['recent_exit_settling', { lastExitByMint: { [mint]: { atMs: 9_500 } } }],
+  ])('skips %s independently', async (reason, patch) => {
+    let sold = 0;
+    const result = await sweepUnmanagedOrphans({
+      cfg: cfg(),
+      state: state(patch),
+      nowMs: 10_000,
+      deps: deps({ sell: async () => { sold += 1; return { ok: true, priceUsd: 2 }; } }),
+    });
+    expect(result.skipped).toBe(1);
+    expect(sold).toBe(0);
+    expect(readFileSync('/tmp/orphan-sweep-test.jsonl', 'utf8')).toContain(reason);
+  });
+
+  it('leaves low-value and unknown quotes unsold', async () => {
+    for (const quote of [
+      async () => ({ ok: true, usd: 0.49 }),
+      async () => { throw new Error('429'); },
+      async () => ({ ok: false, usd: 0 }),
+    ]) {
+      let sold = 0;
+      const result = await sweepUnmanagedOrphans({
+        cfg: cfg(),
+        state: state(),
+        deps: deps({ quote, sell: async () => { sold += 1; return { ok: true, priceUsd: 2 }; } }),
+      });
+      expect(result.skipped).toBe(1);
+      expect(sold).toBe(0);
+    }
+  });
+
+  it('enforces cap and rechecks state before sending', async () => {
+    const rows = [row, { ...row, mint: Keypair.generate().publicKey.toBase58() }];
+    let sold = 0;
+    const result = await sweepUnmanagedOrphans({
+      cfg: cfg(),
+      state: state(),
+      maxSells: 1,
+      deps: deps({
+        list: async () => rows,
+        sell: async () => { sold += 1; return { ok: true, priceUsd: 2 }; },
+      }),
+    });
+    expect(result.sold).toBe(1);
+    expect(sold).toBe(1);
+    let blocked = 0;
+    const stateAfterListing = state();
+    const blockedResult = await sweepUnmanagedOrphans({
+      cfg: cfg(),
+      state: stateAfterListing,
+      deps: deps({
+        sell: async () => { blocked += 1; return { ok: true, priceUsd: 2 }; },
+        quote: async () => {
+          stateAfterListing.open[mint] = { mint };
+          return { ok: true, usd: 2 };
+        },
+      }),
+    });
+    expect(blockedResult.sold).toBe(0);
+    expect(blocked).toBe(0);
+  });
+
+  it('counts the sale when ATA close throws', async () => {
+    const result = await sweepUnmanagedOrphans({
+      cfg: cfg(),
+      state: state(),
+      deps: deps({ close: async () => { throw new Error('residual'); } }),
+    });
+    expect(result.sold).toBe(1);
+    expect(readFileSync('/tmp/orphan-sweep-trades.jsonl', 'utf8')).toContain('trade_fill');
   });
 });

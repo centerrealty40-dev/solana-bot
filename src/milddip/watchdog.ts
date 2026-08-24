@@ -101,7 +101,12 @@ export async function watchdogTick(cfg: WatchdogConfig, deps: WatchdogDeps = {})
     const statePath = path.join(instance.dataDir, 'state.json');
     let ageMs = Number.POSITIVE_INFINITY;
     try { ageMs = Date.now() - (deps.stat ?? fs.statSync)(statePath).mtimeMs; } catch { /* treated stale */ }
-    const online = await (deps.pm2Online ?? pm2Status)(instance.app);
+    let online: boolean | null;
+    try {
+      online = await (deps.pm2Online ?? pm2Status)(instance.app);
+    } catch {
+      online = null;
+    }
     if (online == null) {
       pm2FailureCount += 1;
       console.warn(`[mild-dip-watchdog] PM2 unavailable failures=${pm2FailureCount}`);
