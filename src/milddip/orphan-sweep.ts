@@ -136,6 +136,7 @@ export async function sweepUnmanagedOrphans(args: {
       usdcBefore: res.usdcBefore, usdcAfter: res.usdcAfter,
       feeSolBefore: res.feeSolBefore, feeSolAfter: res.feeSolAfter,
       quoteReceivedUsd: res.quoteReceivedUsd ?? valuation.usd, fillPriceUsd: res.priceUsd,
+      txMeta: res.txMeta,
       reason: 'mild_dip_orphan_sweep', nowMs,
     });
     result.sold += 1;

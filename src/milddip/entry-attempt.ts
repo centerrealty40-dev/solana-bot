@@ -1807,6 +1807,7 @@ export async function attemptMildDipEntry(args: {
       feeSolBefore: buy.feeSolBefore ?? null,
       feeSolAfter: buy.feeSolAfter ?? null,
       quoteSpentUsd: buy.quoteSpentUsd ?? null,
+      txMeta: buy.txMeta,
       fillPriceUsd: fillPxJournal,
       reason: buy.reason ?? null,
       dipSource: c.dipSource,
