@@ -80,6 +80,17 @@ print(json.dumps({
     expect(py).toContain('signaturePollIntervalMs');
     expect(py).toContain('_rotating_telemetry_bags');
     expect(py).toContain('telemetry_dead_bag_sec');
+    expect(py).toContain('reconcile_open_bags');
+    expect(py).toContain('getTokenAccountsByOwner');
+    expect(py).toContain('"reconciliation": True');
+    expect(py).toContain('failClosed');
+  });
+
+  it('persists a bounded signature cursor and paginates catch-up', () => {
+    expect(py).toContain('signatureCursor');
+    expect(py).toContain('LEADER_OBSERVER_CATCHUP_PAGES');
+    expect(py).toContain('opts["before"]');
+    expect(eco).toContain("LEADER_OBSERVER_CATCHUP_PAGES: '12'");
   });
 
   it('python observer emits dense ticks with exit-formula fields (1.11.790)', () => {

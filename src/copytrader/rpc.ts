@@ -129,3 +129,26 @@ export async function fetchWalletMintBalanceRaw(
   }
   return total;
 }
+
+export async function fetchWalletMintBalanceRawOrNull(
+  rpcUrl: string,
+  wallet: string,
+  mint: string,
+): Promise<bigint | null> {
+  const rows = await rpcCall<{ value?: unknown[] }>(
+    rpcUrl,
+    'getTokenAccountsByOwner',
+    [wallet, { mint }, { encoding: 'jsonParsed' }],
+    5,
+  );
+  if (rows == null) return null;
+  let total = 0n;
+  for (const row of rows.value ?? []) {
+    if (!row || typeof row !== 'object') continue;
+    const account = (row as { account?: { data?: { parsed?: { info?: { tokenAmount?: { amount?: string } } } } } })
+      .account;
+    const amount = account?.data?.parsed?.info?.tokenAmount?.amount;
+    if (typeof amount === 'string' && /^\d+$/.test(amount)) total += BigInt(amount);
+  }
+  return total;
+}

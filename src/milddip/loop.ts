@@ -24,6 +24,7 @@ import {
   takeLeaderGateShadowDeferSlot,
 } from './entry-attempt.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
+import { leaderFlatReconcileDecision, readLeaderBalance } from './leader-balance.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   evaluateFastPathCandidate,
@@ -51,6 +52,7 @@ import {
   leaderMirrorHitKey,
   leaderMirrorNeedsStructuralBackfill,
   leaderMirrorObservationWindowMs,
+  leaderMirrorObservationFresh,
   selectLeaderMirrorQuoteKeys,
   type LeaderMirrorMetricSource,
 } from './leader-mirror.js';
@@ -1411,10 +1413,31 @@ async function wakeLeaderMirrors(
     max: cfg.leaderSeedMax,
   });
   for (const hit of hits) {
-    if (state.open[hit.mint]) continue;
     const hitKey = leaderMirrorHitKey(hit);
     const watchKey = leaderMirrorWatchKey(hit);
     const existing = leaderMirrorWatches.get(watchKey);
+    if (
+      !leaderMirrorObservationFresh({
+        leaderBuyTsMs: hit.blockTime != null && hit.blockTime > 0 ? hit.blockTime * 1000 : null,
+        nowMs,
+        maxAgeMs: gates.observationMaxAgeMs,
+      })
+    ) {
+      if (!existing || existing.hitKey !== hitKey) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_refusal',
+          mint: hit.mint,
+          leader: hit.leader,
+          reason: 'leader_mirror_observation_stale',
+          leaderBuyTsMs: hit.blockTime != null && hit.blockTime > 0 ? hit.blockTime * 1000 : null,
+          lastSeenAtMs: hit.lastSeenAtMs,
+          maxAgeMs: gates.observationMaxAgeMs,
+          synthetic: hit.blockTime == null || hit.blockTime <= 0,
+        });
+      }
+      continue;
+    }
+    if (state.open[hit.mint]) continue;
     if (existing && existing.hitKey !== hitKey) {
       leaderMirrorWatches.set(watchKey, {
         hit,
@@ -2050,6 +2073,7 @@ async function wakeLeaderMirrors(
             nowMs,
             buyInFlight,
             resolveEntrySizeUsd,
+            leader: hit.leader,
           })
         : await attemptMildDipEntry({
             cfg,
@@ -2107,6 +2131,7 @@ async function wakeLeaderMirrors(
         nowMs,
         buyInFlight,
         resolveEntrySizeUsd,
+        leader: hit.leader,
       });
     }
     const outcome = mirrorEntryAttemptOutcome(result);
@@ -3363,6 +3388,26 @@ function hydrateLeaderMirrorWatches(
   const mirrorObserveMs = leaderMirrorObservationWindowMs(cfg.leaderMirror);
   for (const [watchKey, watch] of Object.entries(state.leaderMirrorWatches ?? {})) {
     if (watch.expiresAtMs <= nowMs || state.open[watch.hit.mint]) continue;
+    if (
+      !leaderMirrorObservationFresh({
+        leaderBuyTsMs:
+          watch.hit.blockTime != null && watch.hit.blockTime > 0
+            ? watch.hit.blockTime * 1000
+            : null,
+        nowMs,
+        maxAgeMs: cfg.leaderMirror.observationMaxAgeMs,
+      })
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint: watch.hit.mint,
+        leader: watch.hit.leader,
+        reason: 'leader_mirror_observation_stale',
+        synthetic: true,
+        source: 'watch_hydration',
+      });
+      continue;
+    }
     leaderMirrorWatches.set(
       watchKey,
       watch.expiresAtMs < watch.startedAtMs + mirrorObserveMs
@@ -3501,6 +3546,26 @@ async function attemptLeaderAlignScaleIn(args: {
       leaderSignature: leaderSig,
       leaderPriceUsd: fillPx,
       leaderBuyTs: hit.blockTime != null ? hit.blockTime * 1000 : nowMs,
+      ...(pos.lane === 'leader_mirror'
+        ? {
+            beforeSend: async () => {
+              const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, mint);
+              const holds = raw != null && raw > 0n;
+              appendMildDipJournal(cfg.journalPath, {
+                kind: 'leader_mirror_balance_guard',
+                mint,
+                leader: pos.leaderMirrorLeader ?? null,
+                holds,
+                reason: raw == null
+                  ? 'leader_balance_rpc_error'
+                  : holds
+                    ? 'leader_balance_nonzero'
+                    : 'leader_balance_zero',
+              });
+              return holds;
+            },
+          }
+        : {}),
       slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
       slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
     });
@@ -3682,6 +3747,22 @@ async function attemptStagedEntryAdd(args: {
       leaderBuyTs: nowMs,
       ...(pos.lane === 'leader_mirror'
         ? {
+            beforeSend: async () => {
+              const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, pos.mint);
+              const holds = raw != null && raw > 0n;
+              appendMildDipJournal(cfg.journalPath, {
+                kind: 'leader_mirror_balance_guard',
+                mint: pos.mint,
+                leader: pos.leaderMirrorLeader ?? null,
+                holds,
+              reason: raw == null
+                ? 'leader_balance_rpc_error'
+                : holds
+                  ? 'leader_balance_nonzero'
+                  : 'leader_balance_zero',
+              });
+              return holds;
+            },
             slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
             slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
           }
@@ -3844,6 +3925,22 @@ async function attemptMirrorAverage(args: {
       trigger: 'stream',
       leaderPriceUsd: markPriceUsd,
       leaderBuyTs: nowMs,
+      beforeSend: async () => {
+        const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, pos.mint);
+        const holds = raw != null && raw > 0n;
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_guard',
+          mint: pos.mint,
+          leader: pos.leaderMirrorLeader ?? null,
+          holds,
+          reason: raw == null
+            ? 'leader_balance_rpc_error'
+            : holds
+              ? 'leader_balance_nonzero'
+              : 'leader_balance_zero',
+        });
+        return holds;
+      },
       slippageRetryMultiplier: g.executionSlippageMultiplier,
       slippageRetryMaxBps: g.executionSlippageMaxBps,
     });
@@ -5239,6 +5336,23 @@ export async function runMildDipLoop(
       const watchKey = `${event.mint}:${event.leader}`;
       if (leaderMirrorWatches.has(watchKey)) continue;
       const startedAtMs = event.blockTimeMs;
+      if (
+        !leaderMirrorObservationFresh({
+          leaderBuyTsMs: startedAtMs,
+          nowMs: Date.now(),
+          maxAgeMs: cfg.leaderMirror.observationMaxAgeMs,
+        })
+      ) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_refusal',
+          mint: event.mint,
+          leader: event.leader,
+          reason: 'leader_mirror_observation_stale',
+          source: 'trade_reconciliation',
+          synthetic: false,
+        });
+        continue;
+      }
       const expiresAtMs =
         startedAtMs + leaderMirrorObservationWindowMs(cfg.leaderMirror);
       if (expiresAtMs <= Date.now()) continue;
@@ -6022,11 +6136,113 @@ export async function runMildDipLoop(
   let lastLeaderSellFeedStaleDropped = 0;
   let lastMirrorWakeMs = 0;
   let lastDiskCheckMs = 0;
+  let lastLeaderBalanceReconcileMs = 0;
+  const leaderFlatConfirmations = new Map<string, number>();
   let mirrorWakeInFlight = false;
+  let leaderBalanceReconcileInFlight = false;
+  let leaderBalanceReconcileCursor = 0;
+
+  const reconcileLeaderBalances = async (nowMs: number): Promise<void> => {
+    const positions = Object.entries(state.open).filter(
+      ([, pos]) => pos.lane === 'leader_mirror' && Boolean(pos.leaderMirrorLeader),
+    );
+    if (positions.length === 0) return;
+    const maxPerPass = Math.max(1, cfg.leaderMirror.leaderBalanceReconcileMaxPerPass);
+    const start = leaderBalanceReconcileCursor % positions.length;
+    const selected = Array.from(
+      { length: Math.min(maxPerPass, positions.length) },
+      (_, index) => positions[(start + index) % positions.length]!,
+    );
+    leaderBalanceReconcileCursor = (start + selected.length) % positions.length;
+    for (const [mint] of selected) {
+      const pos = state.open[mint];
+      if (!pos || pos.lane !== 'leader_mirror' || !pos.leaderMirrorLeader) continue;
+      if (nowMs - pos.openedAtMs < cfg.leaderMirror.leaderBalanceReconcileMinHoldMs) {
+        leaderFlatConfirmations.delete(mint);
+        continue;
+      }
+      const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, mint);
+      if (raw == null) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_reconcile',
+          mint,
+          leader: pos.leaderMirrorLeader,
+          action: 'none',
+          reason: 'rpc_error',
+        });
+        continue;
+      }
+      if (raw > 0n) {
+        leaderFlatConfirmations.delete(mint);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_reconcile',
+          mint,
+          leader: pos.leaderMirrorLeader,
+          action: 'none',
+          reason: 'leader_balance_nonzero',
+          balanceRaw: raw.toString(),
+        });
+        continue;
+      }
+      const confirmations = (leaderFlatConfirmations.get(mint) ?? 0) + 1;
+      leaderFlatConfirmations.set(mint, confirmations);
+      const reconcileAction = leaderFlatReconcileDecision({
+        balanceRaw: raw,
+        confirmations,
+        requiredConfirmations: cfg.leaderMirror.leaderBalanceReconcileConfirmations,
+        openedAtMs: pos.openedAtMs,
+        nowMs,
+        minHoldMs: cfg.leaderMirror.leaderBalanceReconcileMinHoldMs,
+      });
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_balance_reconcile',
+        mint,
+        leader: pos.leaderMirrorLeader,
+        action: reconcileAction,
+        reason: 'leader_balance_zero',
+        confirmations,
+        required: cfg.leaderMirror.leaderBalanceReconcileConfirmations,
+      });
+      if (reconcileAction !== 'exit' || pos.mirrorLeaderSellIntent) continue;
+      pos.mirrorLeaderSellIntent = {
+        leader: pos.leaderMirrorLeader,
+        signature: null,
+        leaderBlockTimeMs: nowMs,
+        detectedAtMs: nowMs,
+      };
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_leader_sell_intent',
+        mint,
+        symbol: pos.symbol,
+        leader: pos.leaderMirrorLeader,
+        signature: null,
+        leaderBlockTimeMs: nowMs,
+        detectedAtMs: nowMs,
+        source: 'balance_reconciliation',
+      });
+      saveMildDipState(cfg.statePath, state);
+    }
+  };
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+    if (
+      cfg.leaderMirror.enabled &&
+      cfg.leaderMirror.leaderBalanceReconcileEnabled &&
+      !leaderBalanceReconcileInFlight &&
+      nowMs - lastLeaderBalanceReconcileMs >= cfg.leaderMirror.leaderBalanceReconcileIntervalMs
+    ) {
+      lastLeaderBalanceReconcileMs = nowMs;
+      leaderBalanceReconcileInFlight = true;
+      void reconcileLeaderBalances(nowMs)
+        .catch((err) => {
+          console.warn('[mild-dip] leader balance reconciliation failed', err);
+        })
+        .finally(() => {
+          leaderBalanceReconcileInFlight = false;
+        });
+    }
     if (
       (cfg.dataDiskGuardEnabled && nowMs - lastDiskCheckMs >= 60_000) ||
       (cfg.dataRetentionEnabled &&
