@@ -192,6 +192,7 @@ import {
   accountMirrorCashLeg,
   mirrorOpenMarkValueUsd,
   confirmLossCapObservation,
+  syncMirrorLossCapBaseline,
 } from './mirror-loss-cap.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { maybeTopUpFeeSol } from './fee-sol-topup.js';
@@ -296,24 +297,32 @@ function mirrorLossCapValues(state: MildDipState): {
   return { cashUsd, bagsUsd, drawdownUsd: cashUsd + bagsUsd };
 }
 
-function ensureMirrorLossCapBaseline(
+export function ensureMirrorLossCapBaseline(
   cfg: MildDipConfig,
   state: MildDipState,
   nowMs: number,
 ): void {
-  if (cfg.leaderMirror.lossCapUsd <= 0 || state.mirrorLossCapBaselineAtMs != null) return;
   const bagsUsd = mirrorLossCapValues(state).bagsUsd;
-  state.mirrorTradingCashUsd = -bagsUsd;
-  state.mirrorLossCapBaselineAtMs = nowMs;
+  const result = syncMirrorLossCapBaseline({
+    state,
+    lossCapUsd: cfg.leaderMirror.lossCapUsd,
+    bagsUsd,
+    nowMs,
+  });
+  if (!result.changed) return;
   saveMildDipState(cfg.statePath, state);
+  if (result.reason === 'disabled') return;
   appendMildDipJournal(cfg.journalPath, {
     kind: 'mirror_loss_cap_baseline',
+    reason: result.reason,
+    previousLossCapUsd: result.previousLossCapUsd,
     tradingCashUsd: state.mirrorTradingCashUsd,
     openBagsUsd: bagsUsd,
     openMirror: Object.values(state.open).filter(
       (position) => position.lane === 'leader_mirror',
     ).length,
     baselineAtMs: nowMs,
+    lossCapUsd: cfg.leaderMirror.lossCapUsd,
   });
 }
 
@@ -4034,6 +4043,7 @@ async function tryExits(
   givebackDumpGate: ReturnType<typeof createGivebackDumpGate>,
   leaderSellFeed: LeaderSellFeed | null,
 ): Promise<void> {
+  ensureMirrorLossCapBaseline(cfg, state, nowMs);
   const lossCapValues = mirrorLossCapValues(state);
   if (nowMs - lastMirrorLossCapEvaluationMs >= 5_000) {
     lastMirrorLossCapEvaluationMs = nowMs;

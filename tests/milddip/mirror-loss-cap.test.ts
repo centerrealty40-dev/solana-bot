@@ -4,6 +4,7 @@ import {
   confirmLossCapObservation,
   mirrorOpenMarkValueUsd,
   sellCashDeltaUsd,
+  syncMirrorLossCapBaseline,
 } from '../../src/milddip/mirror-loss-cap.js';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -70,6 +71,7 @@ describe('mirror loss cap cash and mark accounting', () => {
       leaderMirrorDecisions: {},
       recentEntryMsByMint: {},
       mirrorTradingCashUsd: -120,
+      mirrorLossCapBaselineUsd: 100,
       mirrorLossCapPendingDrawdownUsd: -101,
       mirrorLossCapPendingAtMs: 1_000,
       mirrorLossCapTriggeredAtMs: 2_000,
@@ -81,5 +83,102 @@ describe('mirror loss cap cash and mark accounting', () => {
     expect(reloaded.mirrorTradingCashUsd).toBe(-120);
     expect(reloaded.mirrorLossCapPendingDrawdownUsd).toBe(-101);
     expect(reloaded.mirrorLossCapTriggeredAtMs).toBe(2_000);
+  });
+
+  it('rebaselines and clears the latch when the saved threshold is stale', () => {
+    const state = {
+      mirrorTradingCashUsd: -900,
+      mirrorLossCapBaselineAtMs: 1_000,
+      mirrorLossCapBaselineUsd: 100,
+      mirrorLossCapTriggeredAtMs: 2_000,
+      mirrorLossCapTriggeredPnlUsd: -105,
+      mirrorLossCapPendingDrawdownUsd: -101,
+      mirrorLossCapPendingAtMs: 1_500,
+    };
+    const result = syncMirrorLossCapBaseline({
+      state,
+      lossCapUsd: 120,
+      bagsUsd: 80,
+      nowMs: 3_000,
+    });
+    expect(result).toEqual({
+      changed: true,
+      reason: 'threshold_changed',
+      previousLossCapUsd: 100,
+    });
+    expect(state).toMatchObject({
+      mirrorTradingCashUsd: -80,
+      mirrorLossCapBaselineAtMs: 3_000,
+      mirrorLossCapBaselineUsd: 120,
+    });
+    expect(state.mirrorLossCapTriggeredAtMs).toBeUndefined();
+    expect(state.mirrorLossCapTriggeredPnlUsd).toBeUndefined();
+    expect(state.mirrorLossCapPendingDrawdownUsd).toBeUndefined();
+    expect(state.mirrorLossCapPendingAtMs).toBeUndefined();
+  });
+
+  it('rebaselines a legacy baseline with no saved threshold', () => {
+    const state = {
+      mirrorTradingCashUsd: -900,
+      mirrorLossCapBaselineAtMs: 1_000,
+      mirrorLossCapTriggeredAtMs: 2_000,
+      mirrorLossCapTriggeredPnlUsd: -105,
+    };
+    const result = syncMirrorLossCapBaseline({
+      state,
+      lossCapUsd: 120,
+      bagsUsd: 75,
+      nowMs: 3_000,
+    });
+    expect(result.reason).toBe('unknown_threshold');
+    expect(result.previousLossCapUsd).toBeNull();
+    expect(state.mirrorTradingCashUsd).toBe(-75);
+    expect(state.mirrorLossCapBaselineUsd).toBe(120);
+    expect(state.mirrorLossCapTriggeredAtMs).toBeUndefined();
+  });
+
+  it('does not reset a baseline when the threshold is unchanged', () => {
+    const state = {
+      mirrorTradingCashUsd: -80,
+      mirrorLossCapBaselineAtMs: 1_000,
+      mirrorLossCapBaselineUsd: 120,
+      mirrorLossCapTriggeredAtMs: 2_000,
+    };
+    const result = syncMirrorLossCapBaseline({
+      state,
+      lossCapUsd: 120,
+      bagsUsd: 95,
+      nowMs: 3_000,
+    });
+    expect(result).toEqual({
+      changed: false,
+      reason: null,
+      previousLossCapUsd: 120,
+    });
+    expect(state).toEqual({
+      mirrorTradingCashUsd: -80,
+      mirrorLossCapBaselineAtMs: 1_000,
+      mirrorLossCapBaselineUsd: 120,
+      mirrorLossCapTriggeredAtMs: 2_000,
+    });
+  });
+
+  it('clears the latch and baseline metadata while disabled', () => {
+    const state = {
+      mirrorLossCapBaselineAtMs: 1_000,
+      mirrorLossCapBaselineUsd: 120,
+      mirrorLossCapTriggeredAtMs: 2_000,
+      mirrorLossCapTriggeredPnlUsd: -121,
+      mirrorLossCapPendingDrawdownUsd: -120,
+      mirrorLossCapPendingAtMs: 1_500,
+    };
+    const result = syncMirrorLossCapBaseline({
+      state,
+      lossCapUsd: 0,
+      bagsUsd: 80,
+      nowMs: 3_000,
+    });
+    expect(result.reason).toBe('disabled');
+    expect(state).toEqual({});
   });
 });
