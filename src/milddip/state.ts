@@ -6,6 +6,44 @@ import type { MildDipCandidateMetrics } from './gates.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { sanitizeRecentEntryMsByMint } from './entry-churn.js';
 
+let journalWriteFailures = 0;
+let journalWriteLastWarnAtMs = 0;
+let stateSaveFailures = 0;
+let stateSaveFirstFailureAtMs = 0;
+
+function stateSaveFailureLimit(): number {
+  const value = Number(process.env.MILD_DIP_STATE_SAVE_FAILURE_LIMIT ?? 3);
+  return Number.isFinite(value) && value >= 1 ? Math.floor(value) : 3;
+}
+
+export function mildDipPersistenceStats(): {
+  journalWriteFailures: number;
+  stateSaveFailures: number;
+  stateSaveBlocked: boolean;
+} {
+  return {
+    journalWriteFailures,
+    stateSaveFailures,
+    stateSaveBlocked: stateSaveFailures >= stateSaveFailureLimit(),
+  };
+}
+
+export function mildDipStateSaveBlocked(): boolean {
+  return stateSaveFailures >= stateSaveFailureLimit();
+}
+
+export function noteMildDipJournalWriteFailure(err: unknown): void {
+  journalWriteFailures += 1;
+  const nowMs = Date.now();
+  if (nowMs - journalWriteLastWarnAtMs >= 60_000) {
+    journalWriteLastWarnAtMs = nowMs;
+    console.warn(
+      `[mild-dip] journal write failed count=${journalWriteFailures}: ` +
+        `${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
 export type MildDipOpenPosition = {
   mint: string;
   symbol: string;
@@ -583,20 +621,42 @@ export function loadMildDipState(
   }
 }
 
-export function saveMildDipState(statePath: string, state: MildDipState): void {
-  const dir = path.dirname(statePath);
-  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
-  state.updatedAtMs = Date.now();
-  const tmp = `${statePath}.tmp`;
-  fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
-  fs.renameSync(tmp, statePath);
+export function saveMildDipState(statePath: string, state: MildDipState): boolean {
+  try {
+    const dir = path.dirname(statePath);
+    if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+    state.updatedAtMs = Date.now();
+    const tmp = `${statePath}.tmp`;
+    fs.writeFileSync(tmp, `${JSON.stringify(state, null, 2)}\n`, 'utf8');
+    fs.renameSync(tmp, statePath);
+    stateSaveFailures = 0;
+    stateSaveFirstFailureAtMs = 0;
+    return true;
+  } catch (err) {
+    stateSaveFailures += 1;
+    if (stateSaveFirstFailureAtMs === 0) stateSaveFirstFailureAtMs = Date.now();
+    console.error(
+      `[mild-dip] state save failed consecutive=${stateSaveFailures} ` +
+        `path=${statePath}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    if (stateSaveFailures >= stateSaveFailureLimit()) {
+      console.error(
+        `[mild-dip] STATE UNSAVEABLE: blocking new entries after ${stateSaveFailures} consecutive failures; exits remain enabled`,
+      );
+    }
+    return false;
+  }
 }
 
 export function appendMildDipJournal(
   journalPath: string,
   event: Record<string, unknown>,
 ): void {
-  const dir = path.dirname(journalPath);
-  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(journalPath, `${JSON.stringify({ ts: Date.now(), ...event })}\n`, 'utf8');
+  try {
+    const dir = path.dirname(journalPath);
+    if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(journalPath, `${JSON.stringify({ ts: Date.now(), ...event })}\n`, 'utf8');
+  } catch (err) {
+    noteMildDipJournalWriteFailure(err);
+  }
 }

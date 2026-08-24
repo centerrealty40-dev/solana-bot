@@ -52,6 +52,15 @@ const MildDipConfigSchema = z.object({
   /** Cash-accurate fills + roundtrips (us + leaders). CF source of truth. */
   tradesPath: z.string().min(1),
   statePath: z.string().min(1),
+  stateSaveFailureLimit: z.coerce.number().int().min(1).max(100).default(3),
+  dataRetentionEnabled: z.boolean().default(true),
+  dataRetentionCompressAfterDays: z.coerce.number().min(0).max(365).default(2),
+  dataRetentionDeleteAfterDays: z.coerce.number().min(1).max(3650).default(14),
+  dataRetentionDeleteEnabled: z.boolean().default(true),
+  dataRetentionIntervalMs: z.coerce.number().int().min(60_000).default(6 * 3_600_000),
+  dataDiskGuardEnabled: z.boolean().default(true),
+  dataDiskMinFreeBytes: z.coerce.number().min(0).default(2 * 1024 * 1024 * 1024),
+  dataDiskMinFreePct: z.coerce.number().min(0).max(100).default(5),
   /** 1.11.841 — flat $1 across base/thick/micro (live via env). Fallback when liq power law off. */
   positionUsd: z.coerce.number().positive().max(10_000).default(1),
   /**
@@ -1384,6 +1393,15 @@ export function loadMildDipConfig(): MildDipConfig {
     tradesPath:
       process.env.MILD_DIP_TRADES_PATH?.trim() || path.join('data', 'milddip', 'trades.jsonl'),
     statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
+    stateSaveFailureLimit: envNum('MILD_DIP_STATE_SAVE_FAILURE_LIMIT', 3),
+    dataRetentionEnabled: envBool('MILD_DIP_DATA_RETENTION_ENABLED', true),
+    dataRetentionCompressAfterDays: envNum('MILD_DIP_DATA_RETENTION_COMPRESS_AFTER_DAYS', 2),
+    dataRetentionDeleteAfterDays: envNum('MILD_DIP_DATA_RETENTION_DELETE_AFTER_DAYS', 14),
+    dataRetentionDeleteEnabled: envBool('MILD_DIP_DATA_RETENTION_DELETE_ENABLED', true),
+    dataRetentionIntervalMs: envNum('MILD_DIP_DATA_RETENTION_INTERVAL_MS', 6 * 3_600_000),
+    dataDiskGuardEnabled: envBool('MILD_DIP_DATA_DISK_GUARD_ENABLED', true),
+    dataDiskMinFreeBytes: envNum('MILD_DIP_DATA_MIN_FREE_BYTES', 2 * 1024 * 1024 * 1024),
+    dataDiskMinFreePct: envNum('MILD_DIP_DATA_MIN_FREE_PCT', 5),
     positionUsd: process.env.MILD_DIP_POSITION_USD ?? 1,
     sizeLiqPowerCoef: process.env.MILD_DIP_SIZE_LIQ_POWER_COEF ?? 0,
     sizeLiqPowerExp: process.env.MILD_DIP_SIZE_LIQ_POWER_EXP ?? 0.866,

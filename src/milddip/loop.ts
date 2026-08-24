@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
 import { checkCopyFundingGate } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
@@ -173,6 +174,7 @@ import {
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
+import { checkMildDipDiskSpace, runMildDipDataRetention } from './disk-hygiene.js';
 import {
   hydrateTradeLotsFromOpen,
   writeUsBuyFill,
@@ -5937,6 +5939,19 @@ export async function runMildDipLoop(
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 
+  let lastDataRetentionTickMs = 0;
+  const dataDir = path.dirname(cfg.statePath);
+  const diskHygieneCfg = {
+    dataDir,
+    journalPath: cfg.journalPath,
+    compressAfterDays: cfg.dataRetentionCompressAfterDays,
+    deleteAfterDays: cfg.dataRetentionDeleteAfterDays,
+    deleteEnabled: cfg.dataRetentionDeleteEnabled,
+    minFreeBytes: cfg.dataDiskMinFreeBytes,
+    minFreePct: cfg.dataDiskMinFreePct,
+    guardEnabled: cfg.dataDiskGuardEnabled,
+  };
+
   // One-shot: reclaim rent stuck in already-empty ATAs from prior $5 tests.
   if (!opts?.once) {
     await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
@@ -5981,6 +5996,13 @@ export async function runMildDipLoop(
         );
       }
     }
+    if (cfg.dataRetentionEnabled) {
+      try {
+        runMildDipDataRetention(diskHygieneCfg);
+      } catch (err) {
+        console.warn('[mild-dip] startup data retention failed', err);
+      }
+    }
   }
 
   let lastScan = 0;
@@ -5999,6 +6021,17 @@ export async function runMildDipLoop(
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+    if (
+      cfg.dataDiskGuardEnabled ||
+      (cfg.dataRetentionEnabled &&
+        nowMs - lastDataRetentionTickMs >= cfg.dataRetentionIntervalMs)
+    ) {
+      checkMildDipDiskSpace(diskHygieneCfg);
+      if (cfg.dataRetentionEnabled && nowMs - lastDataRetentionTickMs >= cfg.dataRetentionIntervalMs) {
+        lastDataRetentionTickMs = nowMs;
+        runMildDipDataRetention(diskHygieneCfg);
+      }
+    }
     const leaderSellEvents = leaderSellFeed?.read(nowMs) ?? [];
     if (leaderSellFeed && nowMs - lastLeaderSellFeedStatsMs >= 30_000) {
       lastLeaderSellFeedStatsMs = nowMs;

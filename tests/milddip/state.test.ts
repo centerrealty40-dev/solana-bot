@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { loadMildDipState, saveMildDipState } from '../../src/milddip/state.js';
+import { loadMildDipState, mildDipStateSaveBlocked, saveMildDipState } from '../../src/milddip/state.js';
 
 describe('mild-dip state', () => {
   it('persists and hydrates a mirror leader-sell intent', () => {
@@ -114,5 +114,14 @@ describe('mild-dip state', () => {
     expect(loaded.leaderMirrorDecisions?.Mint0).toBeDefined();
     expect(loaded.leaderMirrorDecisions?.Mint519).toBeUndefined();
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('swallows state write failures and blocks entries after the configured limit', () => {
+    const state = { open: {}, cooldownUntilMs: {}, updatedAtMs: 0 };
+    const badPath = path.join('/dev/null', 'milddip-state.json');
+    expect(saveMildDipState(badPath, state)).toBe(false);
+    expect(saveMildDipState(badPath, state)).toBe(false);
+    expect(saveMildDipState(badPath, state)).toBe(false);
+    expect(mildDipStateSaveBlocked()).toBe(true);
   });
 });
