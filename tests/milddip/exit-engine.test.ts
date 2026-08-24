@@ -229,6 +229,31 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     expect(remnant.fraction).toBe(1);
     expect(remnant.reason).toBe('mirror_dust_close');
 
+    const smallDustThreshold = {
+      ...mirrorGates,
+      leaderSellOnly: true,
+      mirrorDustCloseUsd: 3,
+      ladderStepPct: 5,
+      ladderStepAfterAveragePct: 10,
+      ladderSellFraction: 0.2,
+    };
+    const partial = decideMarkExit({
+      mint: 'mirror-dust-below-clip',
+      pos: pos({
+        mint: 'mirror-dust-below-clip',
+        lane: 'leader_mirror',
+        sizeUsd: 8,
+        scaleOutDone: true,
+      }),
+      markPriceUsd: 105,
+      nowMs: 100,
+      gates: gatesForDust,
+      mirrorGates: smallDustThreshold,
+    })!;
+    expect(partial.shouldExit).toBe(true);
+    expect(partial.fraction).toBeCloseTo(0.2);
+    expect(partial.reason).toBe('mirror_tp_ladder');
+
     const dustBlocked = decideMarkExit({
       mint: 'mirror-dust-unsettled',
       pos: pos({
