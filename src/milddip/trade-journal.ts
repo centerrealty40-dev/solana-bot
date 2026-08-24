@@ -11,6 +11,7 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { transactionUsdcDeltaUsd } from '../copytrader/rpc.js';
 import { noteMildDipJournalWriteFailure } from './state.js';
 import { rotateMildDipJournal } from './journal-rotation.js';
 
@@ -120,7 +121,6 @@ export function hydrateTradeLotsFromOpen(
   return n;
 }
 
-const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1';
 const usedPeekCashPairs = new Set<string>();
 const MAX_USED_PEEK_PAIRS = 10_000;
 
@@ -138,55 +138,7 @@ export function resetTradeCashAttributionForTests(): void {
   usedPeekCashPairs.clear();
 }
 
-type TokenBalanceRow = {
-  accountIndex?: number;
-  mint?: string;
-  owner?: string;
-  uiTokenAmount?: { amount?: string; decimals?: number; uiAmount?: number };
-};
-
-export function transactionUsdcDeltaUsd(
-  txMeta: unknown,
-  wallet: string,
-): number | null {
-  if (!txMeta || typeof txMeta !== 'object' || !wallet) return null;
-  const meta = txMeta as {
-    preTokenBalances?: unknown;
-    postTokenBalances?: unknown;
-  };
-  if (!Array.isArray(meta.preTokenBalances) || !Array.isArray(meta.postTokenBalances)) {
-    return null;
-  }
-  const byAccount = new Map<number, { pre: bigint; post: bigint; decimals: number }>();
-  const add = (row: unknown, side: 'pre' | 'post'): void => {
-    if (!row || typeof row !== 'object') return;
-    const r = row as TokenBalanceRow;
-    if (r.mint !== USDC_MINT || r.owner !== wallet) return;
-    const accountIndex = r.accountIndex;
-    if (typeof accountIndex !== 'number' || !Number.isInteger(accountIndex)) return;
-    const amount = r.uiTokenAmount?.amount;
-    const decimals = r.uiTokenAmount?.decimals;
-    if (
-      typeof amount !== 'string' ||
-      !/^\d+$/.test(amount) ||
-      typeof decimals !== 'number'
-    ) return;
-    const current = byAccount.get(accountIndex) ?? { pre: 0n, post: 0n, decimals };
-    current[side] = BigInt(amount);
-    current.decimals = decimals;
-    byAccount.set(accountIndex, current);
-  };
-  for (const row of meta.preTokenBalances) add(row, 'pre');
-  for (const row of meta.postTokenBalances) add(row, 'post');
-  if (byAccount.size === 0) return null;
-  let rawDelta = 0n;
-  let decimals = 6;
-  for (const balance of byAccount.values()) {
-    rawDelta += balance.post - balance.pre;
-    decimals = balance.decimals;
-  }
-  return Number(rawDelta) / 10 ** decimals;
-}
+export { transactionUsdcDeltaUsd };
 
 export function resolveBuyCash(args: {
   usdcBefore?: number | null;
@@ -199,20 +151,6 @@ export function resolveBuyCash(args: {
   const txDelta = transactionUsdcDeltaUsd(args.txMeta, args.wallet ?? '');
   if (txDelta != null && txDelta < -1e-6) {
     return { spentUsd: -txDelta, cashDeltaUsd: txDelta, cashSource: 'tx_delta' };
-  }
-  if (args.quoteSpentUsd != null && args.quoteSpentUsd > 0) {
-    return {
-      spentUsd: args.quoteSpentUsd,
-      cashDeltaUsd: -args.quoteSpentUsd,
-      cashSource: 'quote_fallback',
-    };
-  }
-  if (args.sizeUsdIntent != null && args.sizeUsdIntent > 0 && (args.usdcBefore == null || args.usdcAfter == null)) {
-    return {
-      spentUsd: args.sizeUsdIntent,
-      cashDeltaUsd: -args.sizeUsdIntent,
-      cashSource: 'quote_fallback',
-    };
   }
   const before = args.usdcBefore;
   const after = args.usdcAfter;
@@ -234,6 +172,13 @@ export function resolveBuyCash(args: {
           ? args.quoteSpentUsd
           : 0;
     return { spentUsd: intent, cashDeltaUsd: delta, cashSource: 'wallet_delta_stale' };
+  }
+  if (args.quoteSpentUsd != null && args.quoteSpentUsd > 0) {
+    return {
+      spentUsd: args.quoteSpentUsd,
+      cashDeltaUsd: -args.quoteSpentUsd,
+      cashSource: 'quote_fallback',
+    };
   }
   if (args.sizeUsdIntent != null && args.sizeUsdIntent > 0) {
     return {
@@ -260,13 +205,6 @@ export function resolveSellCash(args: {
   if (txDelta != null && txDelta > 1e-6) {
     return { receivedUsd: txDelta, cashDeltaUsd: txDelta, cashSource: 'tx_delta' };
   }
-  if (args.quoteReceivedUsd != null && args.quoteReceivedUsd > 0) {
-    return {
-      receivedUsd: args.quoteReceivedUsd,
-      cashDeltaUsd: args.quoteReceivedUsd,
-      cashSource: 'quote_fallback',
-    };
-  }
   const before = args.usdcBefore;
   const after = args.usdcAfter;
   if (before != null && after != null && Number.isFinite(before) && Number.isFinite(after)) {
@@ -280,6 +218,13 @@ export function resolveSellCash(args: {
     }
     // Stale peek on sell (delta ≤ 0): do not credit Jupiter quote as wallet proceeds.
     return { receivedUsd: 0, cashDeltaUsd: delta, cashSource: 'wallet_delta_stale' };
+  }
+  if (args.quoteReceivedUsd != null && args.quoteReceivedUsd > 0) {
+    return {
+      receivedUsd: args.quoteReceivedUsd,
+      cashDeltaUsd: args.quoteReceivedUsd,
+      cashSource: 'quote_fallback',
+    };
   }
   return { receivedUsd: 0, cashDeltaUsd: null, cashSource: 'none' };
 }

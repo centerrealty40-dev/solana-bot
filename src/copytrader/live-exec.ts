@@ -15,7 +15,7 @@ import { isRetryableSellSimError, isSlippageClassSimError } from '../live/phase4
 import { isRetryableBuySimError } from '../live/execution-retry-errors.js';
 import { liveSendSignedSwapPipeline } from '../live/phase6-send.js';
 import { getSolUsd } from '../papertrader/pricing.js';
-import { fetchParsedTransaction, rpcCall } from './rpc.js';
+import { fetchParsedTransaction, rpcCall, transactionUsdcDeltaUsd } from './rpc.js';
 import { appendCopyEvent } from './executor.js';
 import { checkQuotePremium, effectiveQuotePremiumCap } from './evaluate.js';
 import { isFullCloseFraction, scaleTokenRaw } from './proportional.js';
@@ -46,43 +46,6 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 /** Re-reads before trusting a zero token balance (node lag after a buy). */
 const SELL_BALANCE_REREADS = 3;
 const SELL_BALANCE_REREAD_GAP_MS = 350;
-const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1';
-
-function confirmedUsdcDeltaUsd(txMeta: unknown, wallet: string): number | undefined {
-  if (!txMeta || typeof txMeta !== 'object') return undefined;
-  const meta = txMeta as { preTokenBalances?: unknown; postTokenBalances?: unknown };
-  if (!Array.isArray(meta.preTokenBalances) || !Array.isArray(meta.postTokenBalances)) return undefined;
-  const balances = new Map<number, { pre: bigint; post: bigint }>();
-  for (const [rows, side] of [
-    [meta.preTokenBalances, 'pre'],
-    [meta.postTokenBalances, 'post'],
-  ] as const) {
-    for (const row of rows) {
-      if (!row || typeof row !== 'object') continue;
-      const r = row as {
-        accountIndex?: number;
-        mint?: string;
-        owner?: string;
-        uiTokenAmount?: { amount?: string };
-      };
-      if (
-        r.mint !== USDC_MINT ||
-        r.owner !== wallet ||
-        !Number.isInteger(r.accountIndex) ||
-        typeof r.uiTokenAmount?.amount !== 'string' ||
-        !/^\d+$/.test(r.uiTokenAmount.amount)
-      ) continue;
-      const current = balances.get(r.accountIndex!) ?? { pre: 0n, post: 0n };
-      current[side] = BigInt(r.uiTokenAmount.amount);
-      balances.set(r.accountIndex!, current);
-    }
-  }
-  if (balances.size === 0) return undefined;
-  let raw = 0n;
-  for (const balance of balances.values()) raw += balance.post - balance.pre;
-  return Number(raw) / 1e6;
-}
-
 function parseRaw(raw: string | null | undefined): bigint {
   return raw && /^\d+$/.test(raw) ? BigInt(raw) : 0n;
 }
@@ -162,7 +125,10 @@ async function sendSwap(
       ...meta,
     });
     const tx = outcome.signature
-      ? await fetchParsedTransaction(cfg.rpcUrl, outcome.signature)
+      ? await Promise.race([
+          fetchParsedTransaction(cfg.rpcUrl, outcome.signature).catch(() => null),
+          new Promise<null>((resolve) => setTimeout(() => resolve(null), 1500)),
+        ])
       : null;
     const txMeta =
       tx && typeof tx === 'object' && tx !== null && 'meta' in tx
@@ -172,7 +138,7 @@ async function sendSwap(
       ok: true,
       signature: outcome.signature,
       txMeta,
-      cashDeltaUsd: confirmedUsdcDeltaUsd(txMeta, signer(cfg).publicKey.toBase58()),
+      cashDeltaUsd: transactionUsdcDeltaUsd(txMeta, signer(cfg).publicKey.toBase58()) ?? undefined,
     };
   }
   appendCopyEvent(cfg, {

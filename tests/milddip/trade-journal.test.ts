@@ -22,24 +22,24 @@ describe('trade-journal cash math', () => {
     dirs.length = 0;
   });
 
-  it('uses quote fallback when transaction metadata is unavailable', () => {
+  it('uses unique wallet peeks before quote fallback without transaction metadata', () => {
     const buy = resolveBuyCash({
       usdcBefore: 100,
       usdcAfter: 90.25,
       quoteSpentUsd: 10,
       sizeUsdIntent: 10,
     });
-    expect(buy.cashSource).toBe('quote_fallback');
-    expect(buy.spentUsd).toBe(10);
-    expect(buy.cashDeltaUsd).toBe(-10);
+    expect(buy.cashSource).toBe('wallet_delta');
+    expect(buy.spentUsd).toBeCloseTo(9.75, 5);
+    expect(buy.cashDeltaUsd).toBeCloseTo(-9.75, 5);
 
     const sell = resolveSellCash({
       usdcBefore: 90.25,
       usdcAfter: 98.1,
       quoteReceivedUsd: 8,
     });
-    expect(sell.cashSource).toBe('quote_fallback');
-    expect(sell.receivedUsd).toBe(8);
+    expect(sell.cashSource).toBe('wallet_delta');
+    expect(sell.receivedUsd).toBeCloseTo(7.85, 5);
   });
 
   it('falls back to quote when balances missing', () => {
@@ -56,7 +56,7 @@ describe('trade-journal cash math', () => {
       preTokenBalances: [
         {
           accountIndex: 2,
-          mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1',
+          mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           owner: 'UsWallet111',
           uiTokenAmount: { amount: '100000000', decimals: 6 },
         },
@@ -64,7 +64,7 @@ describe('trade-journal cash math', () => {
       postTokenBalances: [
         {
           accountIndex: 2,
-          mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1',
+          mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
           owner: 'UsWallet111',
           uiTokenAmount: { amount: '112340000', decimals: 6 },
         },
@@ -102,15 +102,15 @@ describe('trade-journal cash math', () => {
     expect(fills.reduce((sum, fill) => sum + fill.cashDeltaUsd!, 0)).toBeCloseTo(-10, 6);
   });
 
-  it('uses quote fallback when sell wallet peek is stale (delta ≤ 0)', () => {
+  it('marks stale sell wallet peeks without crediting proceeds', () => {
     const sell = resolveSellCash({
       usdcBefore: 156.77,
       usdcAfter: 123.14,
       quoteReceivedUsd: 8.5,
     });
-    expect(sell.cashSource).toBe('quote_fallback');
-    expect(sell.receivedUsd).toBe(8.5);
-    expect(sell.cashDeltaUsd).toBeCloseTo(8.5, 2);
+    expect(sell.cashSource).toBe('wallet_delta_stale');
+    expect(sell.receivedUsd).toBe(0);
+    expect(sell.cashDeltaUsd).toBeCloseTo(-33.63, 2);
   });
 
   it('marks stale buy peek without crediting wallet delta as spend', () => {
@@ -154,8 +154,8 @@ describe('trade-journal cash math', () => {
       nowMs: 2_000,
     });
     expect(roundtrip).not.toBeNull();
-    expect(roundtrip!.cashPnlUsd).toBeCloseTo(2, 5);
-    expect(roundtrip!.sellProceedsUsd).toBe(12);
+    expect(roundtrip!.cashPnlUsd).toBeCloseTo(-10, 5);
+    expect(roundtrip!.sellProceedsUsd).toBe(0);
   });
 
   it('allocates cost pro-rata on partial sells', () => {
@@ -229,7 +229,7 @@ describe('trade-journal cash math', () => {
     });
     expect(fill.cashPnlUsd).toBeCloseTo(-3, 5); // 7 received − 10 cost
     expect(fill.markPnlPct).toBe(-30);
-    expect(fill.cashSource).toBe('quote_fallback');
+    expect(fill.cashSource).toBe('wallet_delta');
     expect(roundtrip).not.toBeNull();
     expect(roundtrip!.cashPnlUsd).toBeCloseTo(-3, 5);
     expect(roundtrip!.buyCostUsd).toBeCloseTo(10, 5);
