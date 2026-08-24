@@ -3863,7 +3863,6 @@ async function attemptMirrorAverage(args: {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
   if (mildDipStateSaveBlocked()) return;
   const g = cfg.leaderMirror;
-  if (g.lossCapUsd > 0 && state.mirrorLossCapTriggeredAtMs != null) return;
   if (
     (pos.mirrorFirstClipLegsFilled ?? 1) <
     Math.max(1, Math.min(2, Math.floor(g.firstClipLegs ?? 1)))
