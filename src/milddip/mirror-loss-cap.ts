@@ -51,6 +51,73 @@ export function accountMirrorCashLeg(
   return delta;
 }
 
+export type MirrorLossCapBaselineState = {
+  mirrorTradingCashUsd?: number;
+  mirrorLossCapBaselineAtMs?: number;
+  mirrorLossCapBaselineUsd?: number;
+  mirrorLossCapTriggeredAtMs?: number;
+  mirrorLossCapTriggeredPnlUsd?: number;
+  mirrorLossCapPendingDrawdownUsd?: number;
+  mirrorLossCapPendingAtMs?: number;
+};
+
+export function syncMirrorLossCapBaseline(args: {
+  state: MirrorLossCapBaselineState;
+  lossCapUsd: number;
+  bagsUsd: number;
+  nowMs: number;
+}): {
+  changed: boolean;
+  reason: 'initial' | 'unknown_threshold' | 'threshold_changed' | 'disabled' | null;
+  previousLossCapUsd: number | null;
+} {
+  const { state, lossCapUsd, bagsUsd, nowMs } = args;
+  const previousLossCapUsd = Number.isFinite(state.mirrorLossCapBaselineUsd)
+    ? state.mirrorLossCapBaselineUsd!
+    : null;
+  if (lossCapUsd <= 0) {
+    const changed =
+      state.mirrorLossCapBaselineAtMs != null ||
+      state.mirrorLossCapBaselineUsd != null ||
+      state.mirrorLossCapTriggeredAtMs != null ||
+      state.mirrorLossCapTriggeredPnlUsd != null ||
+      state.mirrorLossCapPendingDrawdownUsd != null ||
+      state.mirrorLossCapPendingAtMs != null;
+    state.mirrorLossCapBaselineAtMs = undefined;
+    state.mirrorLossCapBaselineUsd = undefined;
+    state.mirrorLossCapTriggeredAtMs = undefined;
+    state.mirrorLossCapTriggeredPnlUsd = undefined;
+    state.mirrorLossCapPendingDrawdownUsd = undefined;
+    state.mirrorLossCapPendingAtMs = undefined;
+    return {
+      changed,
+      reason: changed ? 'disabled' : null,
+      previousLossCapUsd,
+    };
+  }
+  const hasBaseline = state.mirrorLossCapBaselineAtMs != null;
+  const thresholdMatches = previousLossCapUsd === lossCapUsd;
+  if (hasBaseline && thresholdMatches) {
+    return { changed: false, reason: null, previousLossCapUsd };
+  }
+  state.mirrorTradingCashUsd = -bagsUsd;
+  state.mirrorLossCapBaselineAtMs = nowMs;
+  state.mirrorLossCapBaselineUsd = lossCapUsd;
+  state.mirrorLossCapTriggeredAtMs = undefined;
+  state.mirrorLossCapTriggeredPnlUsd = undefined;
+  state.mirrorLossCapPendingDrawdownUsd = undefined;
+  state.mirrorLossCapPendingAtMs = undefined;
+  return {
+    changed: true,
+    reason: !hasBaseline
+      ? 'initial'
+      : previousLossCapUsd == null
+        ? 'unknown_threshold'
+        : 'threshold_changed',
+    previousLossCapUsd,
+  };
+}
+
 export function confirmLossCapObservation(args: {
   drawdownUsd: number;
   capUsd: number;
