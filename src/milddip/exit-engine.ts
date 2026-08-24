@@ -151,6 +151,7 @@ export function decideMarkExit(args: {
     ladderStepPct?: number;
     ladderStepAfterAveragePct?: number;
     ladderSellFraction?: number;
+    ladderMaxRungs?: number;
     ladderDustUsd?: number;
     mirrorDustCloseUsd?: number;
     mirrorFirstClipPending?: boolean;
@@ -555,9 +556,13 @@ export function decideMarkExit(args: {
         : args.mirrorGates.ladderStepPct ?? 5;
       const rungStep = step > 0 ? step : 0;
       const gainPct = ladderBasis > 0 ? (decisionMark / ladderBasis - 1) * 100 : 0;
-      const covered = rungStep > 0 && gainPct >= rungStep
+      const coveredUncapped = rungStep > 0 && gainPct >= rungStep
         ? Math.floor((gainPct + 1e-9) / rungStep)
         : 0;
+      const covered =
+        (args.mirrorGates.ladderMaxRungs ?? 0) > 0
+          ? Math.min(coveredUncapped, Math.floor(args.mirrorGates.ladderMaxRungs!))
+          : coveredUncapped;
       const done = pos.mirrorLadderRungsDone ?? 0;
       const owed = Math.max(0, covered - done);
       if (owed > 0) {
