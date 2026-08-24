@@ -63,7 +63,6 @@ describe('mirror PM2 apps', () => {
       'MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS',
-      'MILD_DIP_MIRROR_DUST_CLOSE_USD',
       'MILD_DIP_DUST_BURN_ENABLED',
       'MILD_DIP_DUST_BURN_MAX_USD',
       'MILD_DIP_DUST_BURN_MAX_PER_PASS',
@@ -98,7 +97,7 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('120');
-    expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('80');
+    expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('50');
     expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_FLATTEN).toBe('0');
     expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_FLATTEN).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('1');
@@ -117,7 +116,14 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC).toBe('45');
     expect(mirror2?.env.MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC).toBe('45');
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC: '45'");
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_DUST_CLOSE_USD: '10'");
+    expect(mirror?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('50');
+    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('40');
+    expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('120');
+    expect(mirror?.env.MILD_DIP_MIRROR_DUST_CLOSE_USD).toBe('10');
+    expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('10');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('7');
+    expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('50');
+    expect(mirror2?.env.MILD_DIP_MIRROR_DUST_CLOSE_USD).toBe('3');
     expect(mirror?.env.MILD_DIP_DUST_BURN_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_DUST_BURN_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_DUST_BURN_MAX_USD).toBe('0.5');
@@ -185,8 +191,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('40');
     expect(mirror?.env.MILD_DIP_MIRROR_OWN_STRUCTURAL_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_OWN_STRUCTURAL_ENABLED).toBe('1');
-    expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('30');
-    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('20');
+    expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('10');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('7');
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_ENABLED: ownExitEnabled ? '1' : '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_OWN_EXIT_TIME_STOP_MS: ownExitTimeStopMs");
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
