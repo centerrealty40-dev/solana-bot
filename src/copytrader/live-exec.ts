@@ -39,6 +39,9 @@ export type LiveCashFillFields = {
   feeSolAfter?: number;
   txMeta?: unknown;
   cashDeltaUsd?: number;
+  slippageBps?: number;
+  buySimRetryAttempt?: number;
+  buySimRetryMaxAttempts?: number;
 };
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
@@ -146,6 +149,19 @@ async function sendSwap(
     status: outcome.kind,
     error: outcome.message,
     txSignature: outcome.signature ?? null,
+    ...(outcome.kind === 'sim_err'
+      ? {
+          simulationProgramId: outcome.simulationProgramId ?? null,
+          simulationLogs: outcome.simulationLogs ?? [],
+          simulationSlippageBps: meta.slippageBps ?? null,
+          simulationBuySimRetryAttempt:
+            meta.quoteSnapshot &&
+            typeof meta.quoteSnapshot === 'object' &&
+            'buySimRetryAttempt' in meta.quoteSnapshot
+              ? meta.quoteSnapshot.buySimRetryAttempt
+              : null,
+        }
+      : {}),
     ...meta,
   });
   return { ok: false, reason: outcome.message };
@@ -226,7 +242,14 @@ export async function executeLiveCopyBuy(args: {
         await sleep(liveCfg.liveBuySimRetryDelayMs);
         continue;
       }
-      return { ok: false, priceUsd: 0, reason: lastReason };
+      return {
+        ok: false,
+        priceUsd: 0,
+        reason: lastReason,
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+        buySimRetryMaxAttempts: maxAttempts,
+      };
     }
 
     const outRaw = quote.quoteResponse.outAmount;
@@ -263,7 +286,14 @@ export async function executeLiveCopyBuy(args: {
         await sleep(liveCfg.liveBuySimRetryDelayMs);
         continue;
       }
-      return { ok: false, priceUsd, reason: lastReason };
+      return {
+        ok: false,
+        priceUsd,
+        reason: lastReason,
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+        buySimRetryMaxAttempts: maxAttempts,
+      };
     }
 
     const currentTpl = tokensPerInLamportFromQuote(quote.quoteResponse);
@@ -289,7 +319,14 @@ export async function executeLiveCopyBuy(args: {
           slippageBps: currentSlippageBps,
           buySimRetryAttempt: attempt,
         });
-        return { ok: false, priceUsd, reason: lastReason };
+        return {
+          ok: false,
+          priceUsd,
+          reason: lastReason,
+          slippageBps: currentSlippageBps,
+          buySimRetryAttempt: attempt,
+          buySimRetryMaxAttempts: maxAttempts,
+        };
       }
     }
 
@@ -319,7 +356,14 @@ export async function executeLiveCopyBuy(args: {
         await sleep(liveCfg.liveBuySimRetryDelayMs);
         continue;
       }
-      return { ok: false, priceUsd, reason: lastReason };
+      return {
+        ok: false,
+        priceUsd,
+        reason: lastReason,
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+        buySimRetryMaxAttempts: maxAttempts,
+      };
     }
 
     if (cfg.quotePremiumGuardPct > 0 || cfg.quotePremiumFirstShotPct > 0) {
@@ -354,7 +398,14 @@ export async function executeLiveCopyBuy(args: {
             buySimRetryAttempt: attempt,
           });
           /** Premium is a pricing gate, not a slippage-class — surface immediately for outer retry. */
-          return { ok: false, priceUsd, reason: verdict.reason };
+          return {
+            ok: false,
+            priceUsd,
+            reason: verdict.reason,
+            slippageBps: currentSlippageBps,
+            buySimRetryAttempt: attempt,
+            buySimRetryMaxAttempts: maxAttempts,
+          };
         }
       }
     }
@@ -370,11 +421,25 @@ export async function executeLiveCopyBuy(args: {
         await sleep(liveCfg.liveBuySimRetryDelayMs);
         continue;
       }
-      return { ok: false, priceUsd: lastPriceUsd, reason: lastReason };
+      return {
+        ok: false,
+        priceUsd: lastPriceUsd,
+        reason: lastReason,
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+        buySimRetryMaxAttempts: maxAttempts,
+      };
     }
 
     if (args.beforeSend && !(await args.beforeSend())) {
-      return { ok: false, priceUsd, reason: 'leader_balance_guard_blocked' };
+      return {
+        ok: false,
+        priceUsd,
+        reason: 'leader_balance_guard_blocked',
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+        buySimRetryMaxAttempts: maxAttempts,
+      };
     }
 
     const sent = await sendSwap(cfg, build.b64, {
@@ -415,6 +480,9 @@ export async function executeLiveCopyBuy(args: {
         feeSolAfter: afterBal?.feeSol,
         txMeta: sent.txMeta,
         cashDeltaUsd: sent.cashDeltaUsd,
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+        buySimRetryMaxAttempts: maxAttempts,
       };
     }
 
@@ -430,6 +498,9 @@ export async function executeLiveCopyBuy(args: {
         feeSolBefore: beforeBal?.feeSol,
         txMeta: sent.txMeta,
         cashDeltaUsd: sent.cashDeltaUsd,
+        slippageBps: currentSlippageBps,
+        buySimRetryAttempt: attempt,
+        buySimRetryMaxAttempts: maxAttempts,
       };
     }
 
@@ -464,6 +535,9 @@ export async function executeLiveCopyBuy(args: {
       reason: lastReason,
       usdcBefore: beforeBal?.quoteUsd,
       feeSolBefore: beforeBal?.feeSol,
+      slippageBps: currentSlippageBps,
+      buySimRetryAttempt: attempt,
+      buySimRetryMaxAttempts: maxAttempts,
     };
   }
 
@@ -473,6 +547,9 @@ export async function executeLiveCopyBuy(args: {
     reason: lastReason,
     usdcBefore: beforeBal?.quoteUsd,
     feeSolBefore: beforeBal?.feeSol,
+    slippageBps: currentSlippageBps,
+    buySimRetryAttempt: maxAttempts - 1,
+    buySimRetryMaxAttempts: maxAttempts,
   };
 }
 

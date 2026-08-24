@@ -27,6 +27,9 @@ export type BuyExecutionResult = {
   feeSolAfter?: number;
   txMeta?: unknown;
   cashDeltaUsd?: number;
+  slippageBps?: number;
+  buySimRetryAttempt?: number;
+  buySimRetryMaxAttempts?: number;
 };
 
 export type SellExecutionResult = {
@@ -136,6 +139,9 @@ export async function executeCopyBuy(args: {
       usdcAfter: live.usdcAfter ?? null,
       feeSolBefore: live.feeSolBefore ?? null,
       feeSolAfter: live.feeSolAfter ?? null,
+      slippageBps: live.slippageBps ?? null,
+      buySimRetryAttempt: live.buySimRetryAttempt ?? null,
+      buySimRetryMaxAttempts: live.buySimRetryMaxAttempts ?? null,
     });
     return {
       ok: live.ok,
@@ -150,6 +156,9 @@ export async function executeCopyBuy(args: {
       feeSolAfter: live.feeSolAfter,
       txMeta: live.txMeta,
       cashDeltaUsd: live.cashDeltaUsd,
+      slippageBps: live.slippageBps,
+      buySimRetryAttempt: live.buySimRetryAttempt,
+      buySimRetryMaxAttempts: live.buySimRetryMaxAttempts,
     };
   }
 

@@ -214,6 +214,8 @@ export type LiveSendPipelineOutcome =
       message: string;
       signature?: string | null;
       preSimUnits?: number | null;
+      simulationLogs?: string[];
+      simulationProgramId?: string | null;
     };
 
 /**
@@ -238,6 +240,8 @@ export async function liveSendSignedSwapPipeline(args: {
         kind: 'sim_err',
         message: sim.kind + (sim.message ? `:${sim.message.slice(0, 400)}` : ''),
         preSimUnits: sim.unitsConsumed ?? null,
+        simulationLogs: sim.simulationLogs,
+        simulationProgramId: sim.simulationProgramId,
       };
     }
     preSimUnits = sim.unitsConsumed ?? null;

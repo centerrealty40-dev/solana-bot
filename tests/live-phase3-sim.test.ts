@@ -6,6 +6,7 @@ import {
   liveSimulateSignedTransaction,
   parseLiveSimulateRpcResult,
   signLiveJupiterSwapBase64,
+  summarizeSimulationLogs,
 } from '../src/live/simulate.js';
 
 function baseCfg(over: Partial<LiveOscarConfig> = {}): LiveOscarConfig {
@@ -51,6 +52,24 @@ describe('parseLiveSimulateRpcResult', () => {
       value: { err: 'InstructionError', logs: [] },
     });
     expect(r.err).toBe('InstructionError');
+  });
+
+  it('summarizes bounded logs and extracts the failed program', () => {
+    const r = summarizeSimulationLogs([
+      'Program pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA invoke [1]',
+      'Program log: Instruction: Buy',
+      'Program log: custom program error: 0x1789',
+      'Program pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA failed: custom program error: 0x1789',
+      'ignored later log',
+    ]);
+    expect(r.programId).toBe('pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA');
+    expect(r.logs).toHaveLength(5);
+    expect(r.logs.join('\n').length).toBeLessThanOrEqual(1_800);
+  });
+
+  it('clips simulation logs to the bounded payload', () => {
+    const r = summarizeSimulationLogs(Array.from({ length: 8 }, () => 'x'.repeat(400)));
+    expect(r.logs.join('\n').length).toBeLessThanOrEqual(1_800);
   });
 });
 
@@ -117,6 +136,34 @@ describe('liveSimulateSignedTransaction', () => {
       expect(out.kind).toBe('sim_failed');
       expect(out.unitsConsumed).toBe(10);
     }
+  });
+
+  it('returns bounded logs and failed program for simulation errors', async () => {
+    vi.spyOn(qnClient, 'qnCall').mockResolvedValue({
+      ok: true,
+      value: {
+        value: {
+          err: { InstructionError: [3, { Custom: 6025 }] },
+          logs: [
+            'Program pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA invoke [1]',
+            'Program log: Instruction: Buy',
+            'Program pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA failed: custom program error: 0x1789',
+          ],
+        },
+      },
+    });
+
+    const out = await liveSimulateSignedTransaction({
+      cfg: baseCfg(),
+      signedTxSerializedBase64: 'AA',
+    });
+
+    expect(out).toMatchObject({
+      ok: false,
+      kind: 'sim_failed',
+      simulationProgramId: 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA',
+      simulationLogs: expect.any(Array),
+    });
   });
 });
 
