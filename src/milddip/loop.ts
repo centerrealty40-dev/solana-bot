@@ -24,7 +24,12 @@ import {
   takeLeaderGateShadowDeferSlot,
 } from './entry-attempt.js';
 import { mildDipToCopyTraderConfig } from './exec-bridge.js';
-import { leaderFlatReconcileDecision, readLeaderBalance } from './leader-balance.js';
+import {
+  leaderBalanceGuardReason,
+  leaderFlatReconcileDecision,
+  readLeaderBalance,
+  readLeaderBalanceForGuard,
+} from './leader-balance.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   evaluateFastPathCandidate,
@@ -3550,18 +3555,19 @@ async function attemptLeaderAlignScaleIn(args: {
       ...(pos.lane === 'leader_mirror'
         ? {
             beforeSend: async () => {
-              const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, mint);
+              const guardRead = await readLeaderBalanceForGuard(
+                cfg,
+                pos.leaderMirrorLeader,
+                mint,
+              );
+              const raw = guardRead.balanceRaw;
               const holds = raw != null && raw > 0n;
               appendMildDipJournal(cfg.journalPath, {
                 kind: 'leader_mirror_balance_guard',
                 mint,
                 leader: pos.leaderMirrorLeader ?? null,
                 holds,
-                reason: raw == null
-                  ? 'leader_balance_rpc_error'
-                  : holds
-                    ? 'leader_balance_nonzero'
-                    : 'leader_balance_zero',
+                reason: leaderBalanceGuardReason(guardRead),
               });
               return holds;
             },
@@ -3749,18 +3755,19 @@ async function attemptStagedEntryAdd(args: {
       ...(pos.lane === 'leader_mirror'
         ? {
             beforeSend: async () => {
-              const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, pos.mint);
+              const guardRead = await readLeaderBalanceForGuard(
+                cfg,
+                pos.leaderMirrorLeader,
+                pos.mint,
+              );
+              const raw = guardRead.balanceRaw;
               const holds = raw != null && raw > 0n;
               appendMildDipJournal(cfg.journalPath, {
                 kind: 'leader_mirror_balance_guard',
                 mint: pos.mint,
                 leader: pos.leaderMirrorLeader ?? null,
                 holds,
-              reason: raw == null
-                ? 'leader_balance_rpc_error'
-                : holds
-                  ? 'leader_balance_nonzero'
-                  : 'leader_balance_zero',
+                reason: leaderBalanceGuardReason(guardRead),
               });
               return holds;
             },
@@ -3928,18 +3935,19 @@ async function attemptMirrorAverage(args: {
       leaderPriceUsd: markPriceUsd,
       leaderBuyTs: nowMs,
       beforeSend: async () => {
-        const raw = await readLeaderBalance(cfg, pos.leaderMirrorLeader, pos.mint);
+        const guardRead = await readLeaderBalanceForGuard(
+          cfg,
+          pos.leaderMirrorLeader,
+          pos.mint,
+        );
+        const raw = guardRead.balanceRaw;
         const holds = raw != null && raw > 0n;
         appendMildDipJournal(cfg.journalPath, {
           kind: 'leader_mirror_balance_guard',
           mint: pos.mint,
           leader: pos.leaderMirrorLeader ?? null,
           holds,
-          reason: raw == null
-            ? 'leader_balance_rpc_error'
-            : holds
-              ? 'leader_balance_nonzero'
-              : 'leader_balance_zero',
+          reason: leaderBalanceGuardReason(guardRead),
         });
         return holds;
       },
@@ -4629,6 +4637,7 @@ async function tryExits(
           await attemptMirrorFirstClipLeg({
             cfg,
             state,
+            leader: pos.leaderMirrorLeader,
             candidate: {
               mint,
               symbol: pos.symbol,
