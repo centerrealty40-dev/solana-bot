@@ -437,6 +437,10 @@ const MildDipConfigSchema = z.object({
   dustBurnMinAgeMs: z.coerce.number().int().min(0).default(6 * 3_600_000),
   dustBurnSettleMs: z.coerce.number().int().min(0).default(10 * 60_000),
   dustBurnIntervalMs: z.coerce.number().int().min(60_000).default(6 * 3_600_000),
+  orphanSellEnabled: z.boolean().default(false),
+  orphanSellMinUsd: z.coerce.number().min(0).default(0.5),
+  orphanSellMaxPerPass: z.coerce.number().int().min(0).default(10),
+  orphanSellIntervalMs: z.coerce.number().int().min(60_000).default(6 * 3_600_000),
   /**
    * Candidate mint sources: comma list —
    * stream,boosts,profiles,leaders,pg_volume,gecko,seed
@@ -1501,6 +1505,10 @@ export function loadMildDipConfig(): MildDipConfig {
     dustBurnMinAgeMs: envNum('MILD_DIP_DUST_BURN_MIN_AGE_MS', 6 * 3_600_000),
     dustBurnSettleMs: envNum('MILD_DIP_DUST_BURN_SETTLE_MS', 10 * 60_000),
     dustBurnIntervalMs: envNum('MILD_DIP_DUST_BURN_INTERVAL_MS', 6 * 3_600_000),
+    orphanSellEnabled: envBool('MILD_DIP_ORPHAN_SELL_ENABLED', false),
+    orphanSellMinUsd: envNum('MILD_DIP_ORPHAN_SELL_MIN_USD', 0.5),
+    orphanSellMaxPerPass: envNum('MILD_DIP_ORPHAN_SELL_MAX_PER_PASS', 10),
+    orphanSellIntervalMs: envNum('MILD_DIP_ORPHAN_SELL_INTERVAL_MS', 6 * 3_600_000),
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',
     seedMintsPath: process.env.MILD_DIP_SEED_MINTS_PATH?.trim() || undefined,
     leaderSeedPath:

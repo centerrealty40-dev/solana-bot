@@ -156,6 +156,7 @@ import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
 import { burnDustOrphans } from './dust-burn.js';
+import { sellOrphanBalances } from './orphan-sell.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -5979,6 +5980,18 @@ export async function runMildDipLoop(
         );
       }
     }
+    if (cfg.orphanSellEnabled && cfg.orphanSellMaxPerPass > 0) {
+      try {
+        await sellOrphanBalances({
+          cfg,
+          state,
+          nowMs: Date.now(),
+          maxSells: cfg.orphanSellMaxPerPass,
+        });
+      } catch (err) {
+        console.warn('[mild-dip] orphan sell startup failed', err);
+      }
+    }
     if (cfg.dustBurnEnabled && cfg.dustBurnMaxPerPass > 0) {
       try {
         const burned = await burnDustOrphans({
@@ -6013,6 +6026,7 @@ export async function runMildDipLoop(
   let lastMark = 0;
   let lastFeeTopupTickMs = 0;
   let lastDustBurnTickMs = 0;
+  let lastOrphanSellTickMs = 0;
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
   let lastStreamPriceStatsMs = 0;
@@ -6151,6 +6165,19 @@ export async function runMildDipLoop(
           console.warn('[mild-dip] fee-sol topup tick failed', err);
         }
       }
+    }
+    if (
+      cfg.orphanSellEnabled &&
+      cfg.orphanSellMaxPerPass > 0 &&
+      nowMs - lastOrphanSellTickMs >= cfg.orphanSellIntervalMs
+    ) {
+      lastOrphanSellTickMs = nowMs;
+      void sellOrphanBalances({
+        cfg,
+        state,
+        nowMs,
+        maxSells: cfg.orphanSellMaxPerPass,
+      }).catch((err) => console.warn('[mild-dip] orphan sell tick failed', err));
     }
     if (
       cfg.dustBurnEnabled &&
