@@ -32,13 +32,17 @@ const position = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 
-const at = (markPriceUsd: number, overrides: Record<string, unknown> = {}) =>
+const at = (
+  markPriceUsd: number,
+  overrides: Record<string, unknown> = {},
+  mirrorGates = gates,
+) =>
   decideMarkExit({
     mint: 'mint',
     pos: position(overrides),
     markPriceUsd,
     nowMs: 1_000,
-    mirrorGates: gates,
+    mirrorGates,
     gates: {
       armPct: 2,
       partialGivebackPct: 3,
@@ -73,6 +77,34 @@ describe('mirror TP ladder', () => {
     });
     expect(at(116, { mirrorLadderRungsDone: 2 })?.tpRungIndex).toBe(3);
     expect(at(116, { mirrorLadderRungsDone: 3 })?.shouldExit).toBe(false);
+  });
+
+  it('caps a sharp move at one ladder rung when configured', () => {
+    const capped = at(
+      130,
+      {},
+      { ...gates, ladderStepPct: 8, ladderSellFraction: 0.5, ladderMaxRungs: 1 },
+    );
+    expect(capped).toMatchObject({
+      shouldExit: true,
+      reason: 'mirror_tp_ladder',
+      tpRungIndex: 1,
+      fraction: 0.5,
+    });
+  });
+
+  it('keeps multiple owed rungs when the ladder cap is disabled', () => {
+    const uncapped = at(
+      130,
+      {},
+      { ...gates, ladderStepPct: 8, ladderSellFraction: 0.5, ladderMaxRungs: 0 },
+    );
+    expect(uncapped).toMatchObject({
+      shouldExit: true,
+      reason: 'mirror_tp_ladder',
+      tpRungIndex: 3,
+      fraction: 1 - Math.pow(0.5, 3),
+    });
   });
 
   it('keeps a $10 clip open after five ladder rungs', () => {

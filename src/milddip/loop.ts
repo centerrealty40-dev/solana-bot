@@ -4536,6 +4536,7 @@ async function tryExits(
         ladderStepPct: cfg.leaderMirror.ladderStepPct,
         ladderStepAfterAveragePct: cfg.leaderMirror.ladderStepAfterAveragePct,
         ladderSellFraction: cfg.leaderMirror.ladderSellFraction,
+        ladderMaxRungs: cfg.leaderMirror.ladderMaxRungs,
         ladderDustUsd: cfg.leaderMirror.ladderDustUsd,
         mirrorDustCloseUsd: cfg.leaderMirror.dustCloseUsd,
         mirrorFirstClipPending,
