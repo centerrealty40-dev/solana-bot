@@ -4898,8 +4898,8 @@ if (mildDipBotApp) {
       ownExitTimeStopMs: '0',
       lossCapUsd: '0',
       maxEntryPc5mPct: '1000',
-      positionUsd: '50',
-      averageUsd: '60',
+      positionUsd: '80',
+      averageUsd: '50',
     }),
     makeMirrorApp({
       name: 'mild-dip-mirror2',
