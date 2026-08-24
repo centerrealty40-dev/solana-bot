@@ -10,6 +10,8 @@
  */
 import fs from 'node:fs';
 import path from 'node:path';
+import { noteMildDipJournalWriteFailure } from './state.js';
+import { rotateMildDipJournal } from './journal-rotation.js';
 
 export const TRADE_JOURNAL_VERSION = 1 as const;
 
@@ -190,13 +192,23 @@ export function appendTradeJournal(
   tradesPath: string,
   event: TradeFillEvent | TradeRoundtripEvent | Record<string, unknown>,
 ): void {
-  const dir = path.dirname(tradesPath);
-  if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
-  fs.appendFileSync(
-    tradesPath,
-    `${JSON.stringify({ ts: Date.now(), ...event })}\n`,
-    'utf8',
-  );
+  try {
+    const dir = path.dirname(tradesPath);
+    if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+    const line = `${JSON.stringify({ ts: Date.now(), ...event })}\n`;
+    rotateMildDipJournal(
+      tradesPath,
+      Number(process.env.MILD_DIP_TRADES_MAX_BYTES ?? 256 * 1024 * 1024),
+      Buffer.byteLength(line),
+    );
+    fs.appendFileSync(
+      tradesPath,
+      line,
+      'utf8',
+    );
+  } catch (err) {
+    noteMildDipJournalWriteFailure(err);
+  }
 }
 
 export function noteBuyLot(mint: string, spentUsd: number, nowMs: number): void {

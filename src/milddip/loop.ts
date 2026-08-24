@@ -1,3 +1,4 @@
+import path from 'node:path';
 import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
 import { checkCopyFundingGate } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
@@ -170,9 +171,11 @@ import {
   loadMildDipState,
   MAX_LEADER_MIRROR_DECISIONS,
   saveMildDipState,
+  mildDipStateSaveBlocked,
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
+import { checkMildDipDiskSpace, runMildDipDataRetention } from './disk-hygiene.js';
 import {
   hydrateTradeLotsFromOpen,
   writeUsBuyFill,
@@ -3437,6 +3440,7 @@ async function attemptLeaderAlignScaleIn(args: {
   wouldReason: string;
 }): Promise<void> {
   const { cfg, state, mint, nowMs, hit, wouldReason } = args;
+  if (mildDipStateSaveBlocked()) return;
   const pos = state.open[mint];
   if (!pos) return;
   if (pos.leaderAlignScaleInDone) return;
@@ -3767,6 +3771,7 @@ async function attemptMirrorAverage(args: {
   leaderHeld: boolean;
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
+  if (mildDipStateSaveBlocked()) return;
   const g = cfg.leaderMirror;
   if (g.lossCapUsd > 0 && state.mirrorLossCapTriggeredAtMs != null) return;
   if (
@@ -5937,6 +5942,20 @@ export async function runMildDipLoop(
       `sources=${cfg.discoverSources} open=${openCount(state)} wallet=${cfg.walletPubkeyExpected ?? 'n/a'}`,
   );
 
+  let lastDataRetentionTickMs = 0;
+  const diskHygieneCfg = {
+    dataDirs: cfg.dataRetentionDirs.length > 0
+      ? cfg.dataRetentionDirs
+      : [path.dirname(cfg.statePath), path.resolve(path.dirname(cfg.statePath), '..', 'milddip')],
+    journalPath: cfg.journalPath,
+    compressAfterDays: cfg.dataRetentionCompressAfterDays,
+    deleteAfterDays: cfg.dataRetentionDeleteAfterDays,
+    deleteEnabled: cfg.dataRetentionDeleteEnabled,
+    minFreeBytes: cfg.dataDiskMinFreeBytes,
+    minFreePct: cfg.dataDiskMinFreePct,
+    guardEnabled: cfg.dataDiskGuardEnabled,
+  };
+
   // One-shot: reclaim rent stuck in already-empty ATAs from prior $5 tests.
   if (!opts?.once) {
     await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
@@ -5981,6 +6000,13 @@ export async function runMildDipLoop(
         );
       }
     }
+    if (cfg.dataRetentionEnabled) {
+      try {
+        await runMildDipDataRetention(diskHygieneCfg);
+      } catch (err) {
+        console.warn('[mild-dip] startup data retention failed', err);
+      }
+    }
   }
 
   let lastScan = 0;
@@ -5994,11 +6020,30 @@ export async function runMildDipLoop(
   let lastLeaderSellFeedStatsMs = 0;
   let lastLeaderSellFeedStaleDropped = 0;
   let lastMirrorWakeMs = 0;
+  let lastDiskCheckMs = 0;
   let mirrorWakeInFlight = false;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+    if (
+      (cfg.dataDiskGuardEnabled && nowMs - lastDiskCheckMs >= 60_000) ||
+      (cfg.dataRetentionEnabled &&
+        nowMs - lastDataRetentionTickMs >= cfg.dataRetentionIntervalMs)
+    ) {
+      if (cfg.dataDiskGuardEnabled && nowMs - lastDiskCheckMs >= 60_000) {
+        lastDiskCheckMs = nowMs;
+        void checkMildDipDiskSpace(diskHygieneCfg).catch((err) => {
+          console.warn('[mild-dip] periodic disk check failed', err);
+        });
+      }
+      if (cfg.dataRetentionEnabled && nowMs - lastDataRetentionTickMs >= cfg.dataRetentionIntervalMs) {
+        lastDataRetentionTickMs = nowMs;
+        void runMildDipDataRetention(diskHygieneCfg).catch((err) => {
+          console.warn('[mild-dip] periodic data retention failed', err);
+        });
+      }
+    }
     const leaderSellEvents = leaderSellFeed?.read(nowMs) ?? [];
     if (leaderSellFeed && nowMs - lastLeaderSellFeedStatsMs >= 30_000) {
       lastLeaderSellFeedStatsMs = nowMs;

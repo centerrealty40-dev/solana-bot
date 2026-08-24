@@ -67,6 +67,7 @@ import {
   saveMildDipState,
   type MildDipState,
 } from './state.js';
+import { mildDipStateSaveBlocked } from './state.js';
 import { writeUsBuyFill } from './trade-journal.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { leaderBuyGateOk } from './leader-seen-gate.js';
@@ -403,6 +404,14 @@ export async function attemptMildDipEntry(args: {
   const { cfg, state, copyCfg, nowMs, buyInFlight, opts } = args;
   const c = args.candidate;
 
+  if (mildDipStateSaveBlocked()) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_entry_blocked',
+      mint: c.mint,
+      reason: 'state_unsaveable',
+    });
+    return 'skip';
+  }
   if (!mirrorOnlyEntryAllowed(cfg.leaderMirror?.mirrorOnly ?? false, opts.mirror === true)) {
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_mirror_only_skip',
@@ -1957,6 +1966,7 @@ export async function attemptMirrorFirstClipLeg(args: {
 }): Promise<EntryAttemptResult> {
   const { cfg, state, candidate: c, copyCfg, nowMs, buyInFlight } = args;
   const pos = state.open[c.mint];
+  if (mildDipStateSaveBlocked()) return 'skip';
   const legs = Math.max(1, Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)));
   if (!pos || pos.lane !== 'leader_mirror' || legs <= 1) return 'skip';
   const filledLegs = Math.max(0, Math.floor(pos.mirrorFirstClipLegsFilled ?? 1));
