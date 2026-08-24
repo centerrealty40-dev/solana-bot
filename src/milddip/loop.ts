@@ -154,7 +154,7 @@ import {
 } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
-import { sweepUnmanagedPumpOrphans } from './orphan-sweep.js';
+import { sweepUnmanagedOrphans } from './orphan-sweep.js';
 import { burnDustOrphans } from './dust-burn.js';
 import {
   loadMildDipHotMints,
@@ -5961,7 +5961,7 @@ export async function runMildDipLoop(
     await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
     if (cfg.orphanSweepEnabled && cfg.orphanSweepMaxSells > 0) {
       try {
-        const swept = await sweepUnmanagedPumpOrphans({
+        const swept = await sweepUnmanagedOrphans({
           cfg,
           state,
           maxSells: cfg.orphanSweepMaxSells,
@@ -6159,7 +6159,7 @@ export async function runMildDipLoop(
       nowMs - lastOrphanSweepTickMs >= cfg.orphanSweepIntervalMs
     ) {
       lastOrphanSweepTickMs = nowMs;
-      void sweepUnmanagedPumpOrphans({
+      void sweepUnmanagedOrphans({
         cfg,
         state,
         maxSells: cfg.orphanSweepMaxSells,

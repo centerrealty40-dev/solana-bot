@@ -18,6 +18,16 @@ type WatchdogConfig = {
   minFreePct: number;
   lockMinAgeMs: number;
 };
+export type WatchdogDeps = {
+  pm2Online?: (app: string) => Promise<boolean | null>;
+  restart?: (app: string) => Promise<boolean>;
+  statfs?: (dir: string) => fs.StatsFs;
+  stat?: (file: string) => fs.Stats;
+  exists?: (file: string) => boolean;
+  read?: (file: string) => string;
+  unlink?: (file: string) => void;
+  owner?: (lockPath: string) => { proven: boolean; live: boolean };
+};
 
 const restartHistory = new Map<string, number[]>();
 const lastRestart = new Map<string, number>();
@@ -55,7 +65,7 @@ function journal(cfg: WatchdogConfig, event: Record<string, unknown>): void {
   try { appendMildDipJournal(cfg.journalPath, event); } catch { /* watchdog must remain alive */ }
 }
 
-async function pm2Online(app: string): Promise<boolean | null> {
+async function pm2Status(app: string): Promise<boolean | null> {
   try {
     const { stdout } = await exec('pm2', ['jlist'], { timeout: 10_000 });
     const rows = JSON.parse(stdout) as Array<{ name?: string; pm2_env?: { status?: string } }>;
@@ -63,17 +73,17 @@ async function pm2Online(app: string): Promise<boolean | null> {
   } catch { return null; }
 }
 
-async function restart(app: string): Promise<boolean> {
+async function restartApp(app: string): Promise<boolean> {
   try {
     await exec('pm2', ['restart', app, '--update-env'], { timeout: 30_000 });
     return true;
   } catch { return false; }
 }
 
-export async function watchdogTick(cfg: WatchdogConfig): Promise<void> {
+export async function watchdogTick(cfg: WatchdogConfig, deps: WatchdogDeps = {}): Promise<void> {
   let diskLow = false;
   try {
-    const stat = fs.statfsSync(cfg.watched[0]?.dataDir ?? '.');
+    const stat = (deps.statfs ?? fs.statfsSync)(cfg.watched[0]?.dataDir ?? '.');
     const free = Number(stat.bavail) * Number(stat.bsize);
     const total = Number(stat.blocks) * Number(stat.bsize);
     diskLow = free < cfg.minFreeBytes || (total > 0 && free / total * 100 < cfg.minFreePct);
@@ -90,8 +100,8 @@ export async function watchdogTick(cfg: WatchdogConfig): Promise<void> {
   for (const instance of cfg.watched) {
     const statePath = path.join(instance.dataDir, 'state.json');
     let ageMs = Number.POSITIVE_INFINITY;
-    try { ageMs = Date.now() - fs.statSync(statePath).mtimeMs; } catch { /* treated stale */ }
-    const online = await pm2Online(instance.app);
+    try { ageMs = Date.now() - (deps.stat ?? fs.statSync)(statePath).mtimeMs; } catch { /* treated stale */ }
+    const online = await (deps.pm2Online ?? pm2Status)(instance.app);
     if (online == null) {
       pm2FailureCount += 1;
       console.warn(`[mild-dip-watchdog] PM2 unavailable failures=${pm2FailureCount}`);
@@ -118,22 +128,22 @@ export async function watchdogTick(cfg: WatchdogConfig): Promise<void> {
     const lockPath = path.join(instance.dataDir, 'mild-dip-bot.lock');
     try {
       let reclaimable = false;
-      if (fs.existsSync(lockPath)) {
-        const stat = fs.statSync(lockPath);
-        const first = fs.readFileSync(lockPath, 'utf8').split(/\r?\n/)[0]?.trim() ?? '';
+      if ((deps.exists ?? fs.existsSync)(lockPath)) {
+        const stat = (deps.stat ?? fs.statSync)(lockPath);
+        const first = (deps.read ?? ((file) => fs.readFileSync(file, 'utf8')))(lockPath).split(/\r?\n/)[0]?.trim() ?? '';
         reclaimable = now - stat.mtimeMs >= cfg.lockMinAgeMs && !/^\d+$/.test(first);
       }
       if (reclaimable) {
-        const owner = otherMildDipInstanceProcess(lockPath);
+        const owner = (deps.owner ?? otherMildDipInstanceProcess)(lockPath);
         if (owner.proven && !owner.live) {
-          fs.unlinkSync(lockPath);
+          (deps.unlink ?? fs.unlinkSync)(lockPath);
           journal(cfg, { kind: 'mild_dip_watchdog_lock_cleared', app: instance.app, lockPath });
         }
       }
     } catch (err) {
       journal(cfg, { kind: 'mild_dip_watchdog_lock_clear_failed', app: instance.app, error: String(err) });
     }
-    if (await restart(instance.app)) {
+    if (await (deps.restart ?? restartApp)(instance.app)) {
       history.push(now);
       lastRestart.set(instance.app, now);
       journal(cfg, { kind: 'mild_dip_watchdog_restart_issued', app: instance.app });

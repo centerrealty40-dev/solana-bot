@@ -45,7 +45,7 @@ async function defaultQuote(row: OrphanAtaRow): Promise<Quote> {
   return Number.isFinite(usd) ? { ok: true, usd } : { ok: false, usd: 0 };
 }
 
-export async function sweepUnmanagedPumpOrphans(args: {
+export async function sweepUnmanagedOrphans(args: {
   cfg: MildDipConfig;
   state: MildDipState;
   maxSells?: number;
