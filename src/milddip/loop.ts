@@ -171,6 +171,7 @@ import {
   loadMildDipState,
   MAX_LEADER_MIRROR_DECISIONS,
   saveMildDipState,
+  mildDipStateSaveBlocked,
   type MildDipOpenPosition,
   type MildDipState,
 } from './state.js';
@@ -3439,6 +3440,7 @@ async function attemptLeaderAlignScaleIn(args: {
   wouldReason: string;
 }): Promise<void> {
   const { cfg, state, mint, nowMs, hit, wouldReason } = args;
+  if (mildDipStateSaveBlocked()) return;
   const pos = state.open[mint];
   if (!pos) return;
   if (pos.leaderAlignScaleInDone) return;
@@ -3769,6 +3771,8 @@ async function attemptMirrorAverage(args: {
   leaderHeld: boolean;
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
+  if (mildDipStateSaveBlocked()) return;
+  if (mildDipStateSaveBlocked()) return;
   const g = cfg.leaderMirror;
   if (g.lossCapUsd > 0 && state.mirrorLossCapTriggeredAtMs != null) return;
   if (
