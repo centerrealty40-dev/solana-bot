@@ -231,6 +231,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
 
     const smallDustThreshold = {
       ...mirrorGates,
+      leaderSellOnly: true,
       mirrorDustCloseUsd: 3,
       ladderStepPct: 5,
       ladderStepAfterAveragePct: 10,
