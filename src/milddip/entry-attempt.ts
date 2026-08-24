@@ -4,7 +4,10 @@
 import { executeCopyBuy } from '../copytrader/executor.js';
 import { resetCopyFundingCache } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
-import { readLeaderBalance } from './leader-balance.js';
+import {
+  leaderBalanceGuardReason,
+  readLeaderBalanceForGuard,
+} from './leader-balance.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { CopyTraderConfig } from '../copytrader/config.js';
 import type { MildDipConfig } from './config.js';
@@ -1599,18 +1602,19 @@ export async function attemptMildDipEntry(args: {
         ? {
             beforeSend: async () => {
               if (!cfg.leaderMirror.leaderBalanceGuardEnabled) return true;
-              const raw = await readLeaderBalance(cfg, opts.leaderMirrorLeader, c.mint);
+              const guardRead = await readLeaderBalanceForGuard(
+                cfg,
+                opts.leaderMirrorLeader,
+                c.mint,
+              );
+              const raw = guardRead.balanceRaw;
               const holds = raw != null && raw > 0n;
               appendMildDipJournal(cfg.journalPath, {
                 kind: 'leader_mirror_balance_guard',
                 mint: c.mint,
                 leader: opts.leaderMirrorLeader ?? null,
                 holds,
-                reason: raw == null
-                  ? 'leader_balance_rpc_error'
-                  : holds
-                    ? 'leader_balance_nonzero'
-                    : 'leader_balance_zero',
+                reason: leaderBalanceGuardReason(guardRead),
               });
               return holds;
             },
@@ -2024,18 +2028,15 @@ export async function attemptMirrorFirstClipLeg(args: {
       leaderBuyTs: nowMs,
       beforeSend: async () => {
         if (!cfg.leaderMirror.leaderBalanceGuardEnabled) return true;
-        const raw = await readLeaderBalance(cfg, args.leader, c.mint);
+        const guardRead = await readLeaderBalanceForGuard(cfg, args.leader, c.mint);
+        const raw = guardRead.balanceRaw;
         const holds = raw != null && raw > 0n;
         appendMildDipJournal(cfg.journalPath, {
           kind: 'leader_mirror_balance_guard',
           mint: c.mint,
           leader: args.leader ?? null,
           holds,
-          reason: raw == null
-            ? 'leader_balance_rpc_error'
-            : holds
-              ? 'leader_balance_nonzero'
-              : 'leader_balance_zero',
+          reason: leaderBalanceGuardReason(guardRead),
         });
         return holds;
       },

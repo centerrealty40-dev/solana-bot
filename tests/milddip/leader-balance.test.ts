@@ -5,7 +5,12 @@ vi.mock('../../src/copytrader/rpc.js', () => ({
   fetchWalletMintBalanceRawOrNull: fetchBalance,
 }));
 
-import { leaderFlatReconcileDecision, leaderStillHolds } from '../../src/milddip/leader-balance.js';
+import {
+  leaderBalanceGuardReason,
+  leaderFlatReconcileDecision,
+  leaderStillHolds,
+  readLeaderBalanceForGuard,
+} from '../../src/milddip/leader-balance.js';
 
 describe('leader balance guard', () => {
   it('uses the program-agnostic mint filter, including Token-2022 accounts', async () => {
@@ -19,6 +24,34 @@ describe('leader balance guard', () => {
     fetchBalance.mockResolvedValue(null);
     const cfg = { rpcUrl: 'https://rpc.example' } as never;
     await expect(leaderStillHolds(cfg, 'leader', 'mint')).resolves.toBe(false);
+  });
+
+  it('distinguishes a missing leader from an RPC failure', async () => {
+    const cfg = { rpcUrl: 'https://rpc.example' } as never;
+    fetchBalance.mockClear();
+    await expect(readLeaderBalanceForGuard(cfg, null, 'mint')).resolves.toEqual({
+      balanceRaw: null,
+      reason: 'leader_missing',
+    });
+    expect(fetchBalance).not.toHaveBeenCalled();
+
+    fetchBalance.mockResolvedValue(null);
+    await expect(readLeaderBalanceForGuard(cfg, 'leader', 'mint')).resolves.toEqual({
+      balanceRaw: null,
+      reason: 'rpc_error',
+    });
+    expect(leaderBalanceGuardReason({ balanceRaw: null, reason: 'leader_missing' })).toBe(
+      'leader_balance_leader_missing',
+    );
+    expect(leaderBalanceGuardReason({ balanceRaw: null, reason: 'rpc_error' })).toBe(
+      'leader_balance_rpc_error',
+    );
+    expect(leaderBalanceGuardReason({ balanceRaw: 0n, reason: null })).toBe(
+      'leader_balance_zero',
+    );
+    expect(leaderBalanceGuardReason({ balanceRaw: 1n, reason: null })).toBe(
+      'leader_balance_nonzero',
+    );
   });
 
   it('requires age and consecutive flat confirmations before exit', () => {
