@@ -3772,7 +3772,6 @@ async function attemptMirrorAverage(args: {
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
   if (mildDipStateSaveBlocked()) return;
-  if (mildDipStateSaveBlocked()) return;
   const g = cfg.leaderMirror;
   if (g.lossCapUsd > 0 && state.mirrorLossCapTriggeredAtMs != null) return;
   if (
@@ -5944,9 +5943,10 @@ export async function runMildDipLoop(
   );
 
   let lastDataRetentionTickMs = 0;
-  const dataDir = path.dirname(cfg.statePath);
   const diskHygieneCfg = {
-    dataDir,
+    dataDirs: cfg.dataRetentionDirs.length > 0
+      ? cfg.dataRetentionDirs
+      : [path.dirname(cfg.statePath), path.resolve(path.dirname(cfg.statePath), '..', 'milddip')],
     journalPath: cfg.journalPath,
     compressAfterDays: cfg.dataRetentionCompressAfterDays,
     deleteAfterDays: cfg.dataRetentionDeleteAfterDays,
@@ -6020,17 +6020,21 @@ export async function runMildDipLoop(
   let lastLeaderSellFeedStatsMs = 0;
   let lastLeaderSellFeedStaleDropped = 0;
   let lastMirrorWakeMs = 0;
+  let lastDiskCheckMs = 0;
   let mirrorWakeInFlight = false;
 
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
     if (
-      cfg.dataDiskGuardEnabled ||
+      (cfg.dataDiskGuardEnabled && nowMs - lastDiskCheckMs >= 60_000) ||
       (cfg.dataRetentionEnabled &&
         nowMs - lastDataRetentionTickMs >= cfg.dataRetentionIntervalMs)
     ) {
-      checkMildDipDiskSpace(diskHygieneCfg);
+      if (cfg.dataDiskGuardEnabled && nowMs - lastDiskCheckMs >= 60_000) {
+        lastDiskCheckMs = nowMs;
+        checkMildDipDiskSpace(diskHygieneCfg);
+      }
       if (cfg.dataRetentionEnabled && nowMs - lastDataRetentionTickMs >= cfg.dataRetentionIntervalMs) {
         lastDataRetentionTickMs = nowMs;
         runMildDipDataRetention(diskHygieneCfg);

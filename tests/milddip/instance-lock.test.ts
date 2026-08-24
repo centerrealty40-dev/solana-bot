@@ -80,4 +80,25 @@ describe('tryAcquireMildDipInstanceLock', () => {
       child.kill();
     }
   });
+
+  it('reclaims an old empty lock when a different instance is live', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-lock-other-'));
+    const otherDir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-lock-other-live-'));
+    tmpDirs.push(dir, otherDir);
+    const lockPath = path.join(dir, 'mild-dip-bot.lock');
+    fs.writeFileSync(lockPath, '', 'utf8');
+    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    const child = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)', 'mild-dip-bot'], {
+      cwd: otherDir,
+      stdio: 'ignore',
+    });
+    try {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      const lock = tryAcquireMildDipInstanceLock(lockPath);
+      expect(lock).not.toBeNull();
+      lock?.release();
+    } finally {
+      child.kill();
+    }
+  });
 });

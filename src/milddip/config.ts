@@ -52,6 +52,7 @@ const MildDipConfigSchema = z.object({
   /** Cash-accurate fills + roundtrips (us + leaders). CF source of truth. */
   tradesPath: z.string().min(1),
   statePath: z.string().min(1),
+  dataRetentionDirs: z.array(z.string().min(1)).default([]),
   stateSaveFailureLimit: z.coerce.number().int().min(1).max(100).default(3),
   dataRetentionEnabled: z.boolean().default(true),
   dataRetentionCompressAfterDays: z.coerce.number().min(0).max(365).default(2),
@@ -61,6 +62,8 @@ const MildDipConfigSchema = z.object({
   dataDiskGuardEnabled: z.boolean().default(true),
   dataDiskMinFreeBytes: z.coerce.number().min(0).default(2 * 1024 * 1024 * 1024),
   dataDiskMinFreePct: z.coerce.number().min(0).max(100).default(5),
+  journalMaxBytes: z.coerce.number().min(0).default(512 * 1024 * 1024),
+  tradesMaxBytes: z.coerce.number().min(0).default(256 * 1024 * 1024),
   /** 1.11.841 — flat $1 across base/thick/micro (live via env). Fallback when liq power law off. */
   positionUsd: z.coerce.number().positive().max(10_000).default(1),
   /**
@@ -1195,6 +1198,12 @@ export function loadMildDipConfig(): MildDipConfig {
     maxOpen: envNum('MILD_DIP_GREEN_MAX_OPEN', 0),
     maxBuysPerHour: envNum('MILD_DIP_GREEN_MAX_BUYS_PER_HOUR', 0),
   };
+  const statePathForData = process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json');
+  const defaultDataDir = path.dirname(statePathForData);
+  const configuredRetentionDirs = (process.env.MILD_DIP_DATA_RETENTION_DIRS ?? '')
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
 
   const entry: MildDipEntryGates = {
     /** 1.11.702 — wider knife floor (default −25 ⇒ pc5m > −25%). */
@@ -1392,7 +1401,10 @@ export function loadMildDipConfig(): MildDipConfig {
       process.env.MILD_DIP_JOURNAL_PATH?.trim() || path.join('data', 'milddip', 'journal.jsonl'),
     tradesPath:
       process.env.MILD_DIP_TRADES_PATH?.trim() || path.join('data', 'milddip', 'trades.jsonl'),
-    statePath: process.env.MILD_DIP_STATE_PATH?.trim() || path.join('data', 'milddip', 'state.json'),
+    statePath: statePathForData,
+    dataRetentionDirs: configuredRetentionDirs.length > 0
+      ? configuredRetentionDirs
+      : [defaultDataDir, path.resolve(defaultDataDir, '..', 'milddip')],
     stateSaveFailureLimit: envNum('MILD_DIP_STATE_SAVE_FAILURE_LIMIT', 3),
     dataRetentionEnabled: envBool('MILD_DIP_DATA_RETENTION_ENABLED', true),
     dataRetentionCompressAfterDays: envNum('MILD_DIP_DATA_RETENTION_COMPRESS_AFTER_DAYS', 2),
@@ -1402,6 +1414,8 @@ export function loadMildDipConfig(): MildDipConfig {
     dataDiskGuardEnabled: envBool('MILD_DIP_DATA_DISK_GUARD_ENABLED', true),
     dataDiskMinFreeBytes: envNum('MILD_DIP_DATA_MIN_FREE_BYTES', 2 * 1024 * 1024 * 1024),
     dataDiskMinFreePct: envNum('MILD_DIP_DATA_MIN_FREE_PCT', 5),
+    journalMaxBytes: envNum('MILD_DIP_JOURNAL_MAX_BYTES', 512 * 1024 * 1024),
+    tradesMaxBytes: envNum('MILD_DIP_TRADES_MAX_BYTES', 256 * 1024 * 1024),
     positionUsd: process.env.MILD_DIP_POSITION_USD ?? 1,
     sizeLiqPowerCoef: process.env.MILD_DIP_SIZE_LIQ_POWER_COEF ?? 0,
     sizeLiqPowerExp: process.env.MILD_DIP_SIZE_LIQ_POWER_EXP ?? 0.866,

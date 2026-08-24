@@ -5,6 +5,7 @@ import type { WaitDipWatchEntry } from './wait-dip.js';
 import type { MildDipCandidateMetrics } from './gates.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { sanitizeRecentEntryMsByMint } from './entry-churn.js';
+import { rotateMildDipJournal } from './journal-rotation.js';
 
 let journalWriteFailures = 0;
 let journalWriteLastWarnAtMs = 0;
@@ -655,6 +656,10 @@ export function appendMildDipJournal(
   try {
     const dir = path.dirname(journalPath);
     if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+    rotateMildDipJournal(
+      journalPath,
+      Number(process.env.MILD_DIP_JOURNAL_MAX_BYTES ?? 512 * 1024 * 1024),
+    );
     fs.appendFileSync(journalPath, `${JSON.stringify({ ts: Date.now(), ...event })}\n`, 'utf8');
   } catch (err) {
     noteMildDipJournalWriteFailure(err);

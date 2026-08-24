@@ -29,7 +29,7 @@ function otherMildDipInstanceProcess(lockPath: string): { proven: boolean; live:
   try {
     const entries = fs.readdirSync('/proc', { withFileTypes: true });
     const instanceDir = path.dirname(lockPath);
-    let inspected = 0;
+    const statePath = path.join(instanceDir, 'state.json');
     for (const entry of entries) {
       if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
       const pid = Number(entry.name);
@@ -42,16 +42,24 @@ function otherMildDipInstanceProcess(lockPath: string): { proven: boolean; live:
         } catch {
           /* Process may exit while it is being inspected. */
         }
-        if (!cmd.includes('mild-dip') && !cmd.includes('milddip') && !cwd.includes(instanceDir)) continue;
-        inspected += 1;
-        if (cwd.includes(instanceDir) || cmd.includes(instanceDir) || cmd.includes('mild-dip-bot')) {
+        let environ = '';
+        try {
+          environ = fs.readFileSync(`/proc/${entry.name}/environ`, 'utf8').replace(/\0/g, '\n');
+        } catch {
+          /* Environment may become unreadable as a process exits. */
+        }
+        if (
+          cwd === instanceDir ||
+          cmd.includes(instanceDir) ||
+          environ.includes(`MILD_DIP_STATE_PATH=${statePath}`)
+        ) {
           return { proven: true, live: true };
         }
       } catch {
         /* Process may exit while it is being inspected. */
       }
     }
-    return { proven: inspected >= 0, live: false };
+    return { proven: true, live: false };
   } catch {
     return { proven: false, live: false };
   }

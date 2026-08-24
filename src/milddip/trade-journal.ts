@@ -11,6 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { noteMildDipJournalWriteFailure } from './state.js';
+import { rotateMildDipJournal } from './journal-rotation.js';
 
 export const TRADE_JOURNAL_VERSION = 1 as const;
 
@@ -194,6 +195,10 @@ export function appendTradeJournal(
   try {
     const dir = path.dirname(tradesPath);
     if (dir && dir !== '.') fs.mkdirSync(dir, { recursive: true });
+    rotateMildDipJournal(
+      tradesPath,
+      Number(process.env.MILD_DIP_TRADES_MAX_BYTES ?? 256 * 1024 * 1024),
+    );
     fs.appendFileSync(
       tradesPath,
       `${JSON.stringify({ ts: Date.now(), ...event })}\n`,
