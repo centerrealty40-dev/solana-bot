@@ -410,13 +410,22 @@ export type EntryAttemptOpts = {
   mirrorQuoteGainPct?: number | null;
 };
 
-export type EntryAttemptResult = 'filled' | 'skip' | 'exec_failed' | 'stop';
+export type EntryAttemptResult = 'filled' | 'skip' | 'exec_failed' | 'stop' | 'no_funds';
+
+export function isFundingShortageReason(reason?: string | null): boolean {
+  return (
+    reason === 'usdc_exhausted' ||
+    reason === 'insufficient_usdc' ||
+    reason?.startsWith('insufficient_fee_sol') === true
+  );
+}
 
 export function mirrorEntryAttemptOutcome(
   result: EntryAttemptResult,
-): 'filled' | 'retry' | 'refused' {
+): 'filled' | 'retry' | 'refused' | 'parked' {
   if (result === 'filled') return 'filled';
   if (result === 'exec_failed') return 'retry';
+  if (result === 'no_funds') return 'parked';
   return 'refused';
 }
 
@@ -1492,9 +1501,9 @@ export async function attemptMildDipEntry(args: {
         console.warn('[mild-dip] urgent fee-sol topup failed', err);
       });
       // Skip this mint; keep scanning others (stop would abort the whole slow lane).
-      return 'skip';
+      return 'no_funds';
     }
-    return 'stop';
+    return isFundingShortageReason(sized.reason) ? 'no_funds' : 'stop';
   }
 
   if (isMildStabilize) {

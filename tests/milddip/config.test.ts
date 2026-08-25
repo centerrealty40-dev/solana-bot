@@ -48,6 +48,9 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.leaderMirror.crossLeaderAverageFullDiscountPct).toBe(50);
     expect(defaults.leaderMirror.crossLeaderAverageMaxTotalFraction).toBe(1);
     expect(defaults.leaderMirror.crossLeaderAverageMinStepUsd).toBe(3);
+    expect(defaults.leaderMirror.fundingParkEnabled).toBe(false);
+    expect(defaults.leaderMirror.fundingParkRetryMs).toBe(30_000);
+    expect(defaults.leaderMirror.fundingParkMax).toBe(10);
     const cfg = withConfigEnv(
       {
         ...baseEnv,
@@ -59,6 +62,9 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_FULL_DISCOUNT_PCT: '60',
         MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TOTAL_FRACTION: '0.9',
         MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_STEP_USD: '4',
+        MILD_DIP_MIRROR_FUNDING_PARK_ENABLED: '1',
+        MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS: '45000',
+        MILD_DIP_MIRROR_FUNDING_PARK_MAX: '7',
       },
       () => loadMildDipConfig(),
     );
@@ -70,6 +76,9 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.leaderMirror.crossLeaderAverageFullDiscountPct).toBe(60);
     expect(cfg.leaderMirror.crossLeaderAverageMaxTotalFraction).toBe(0.9);
     expect(cfg.leaderMirror.crossLeaderAverageMinStepUsd).toBe(4);
+    expect(cfg.leaderMirror.fundingParkEnabled).toBe(true);
+    expect(cfg.leaderMirror.fundingParkRetryMs).toBe(45_000);
+    expect(cfg.leaderMirror.fundingParkMax).toBe(7);
   });
 
   it('defaults and loads emergency data retention settings', () => {

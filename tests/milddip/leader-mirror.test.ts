@@ -8,12 +8,14 @@ import {
   leaderMirrorObservationFresh,
   leaderMirrorQuoteMintsCap,
   leaderMirrorQuoteCoverage,
+  evictFundingParkedWatchKeys,
   selectLeaderMirrorQuoteKeys,
   type LeaderMirrorGates,
 } from '../../src/milddip/leader-mirror.js';
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import {
   mirrorEntryAttemptOutcome,
+  isFundingShortageReason,
   type EntryAttemptResult,
 } from '../../src/milddip/entry-attempt.js';
 
@@ -194,6 +196,36 @@ describe('leader mirror quote slot rotation', () => {
     expect(new Set(selectedOverTime.slice(0, 3))).not.toEqual(
       new Set(selectedOverTime.slice(3, 6)),
     );
+  });
+
+  it('uses parked watches only after fresh and knife-wait candidates', () => {
+    expect(
+      selectLeaderMirrorQuoteKeys({
+        entries: [
+          candidate(1, 1_000, false),
+          { ...candidate(2, 2_000), fundingParked: true },
+          { ...candidate(3, 3_000, false), fundingParked: true },
+        ],
+        nowMs: 10_000,
+        entryGraceMs: 60_000,
+        maxQuoteMints: 2,
+        knifeWaitQuoteSlots: 1,
+        lastQuotedAtMs: new Map(),
+      }),
+    ).toEqual(['watch-1', 'watch-2']);
+  });
+
+  it('evicts the oldest parked watches over the cap', () => {
+    expect(
+      evictFundingParkedWatchKeys(
+        [
+          { watchKey: 'old', fundingParkedAtMs: 100 },
+          { watchKey: 'new', fundingParkedAtMs: 200 },
+          { watchKey: 'fresh' },
+        ],
+        1,
+      ),
+    ).toEqual(['old']);
   });
 });
 
@@ -392,6 +424,11 @@ describe('leader mirror observation decisions', () => {
     expect(mirrorEntryAttemptOutcome('filled')).toBe('filled');
     const result: EntryAttemptResult = 'exec_failed';
     expect(mirrorEntryAttemptOutcome(result)).toBe('retry');
+    expect(mirrorEntryAttemptOutcome('no_funds')).toBe('parked');
+    expect(isFundingShortageReason('usdc_exhausted')).toBe(true);
+    expect(isFundingShortageReason('insufficient_usdc')).toBe(true);
+    expect(isFundingShortageReason('insufficient_fee_sol')).toBe(true);
+    expect(isFundingShortageReason('premium_cap')).toBe(false);
   });
   it('buys after a fresh quote on a dump', () => {
     expect(at()).toEqual({ action: 'buy', quotePriceUsd: 101 });

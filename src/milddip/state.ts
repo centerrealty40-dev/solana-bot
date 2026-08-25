@@ -285,6 +285,7 @@ export type MildDipState = {
       metricSource: 'seed' | 'backfill';
       lastWaitReason?: string;
       lastWaitAtMs?: number;
+      fundingParkedAtMs?: number;
     }
   >;
   leaderMirrorDecisions?: Record<
@@ -507,6 +508,9 @@ function sanitizeLeaderMirrorWatches(
         : {}),
       ...(Number.isFinite(Number(watch.lastWaitAtMs))
         ? { lastWaitAtMs: Number(watch.lastWaitAtMs) }
+        : {}),
+      ...(Number.isFinite(Number(watch.fundingParkedAtMs))
+        ? { fundingParkedAtMs: Number(watch.fundingParkedAtMs) }
         : {}),
     };
   }
