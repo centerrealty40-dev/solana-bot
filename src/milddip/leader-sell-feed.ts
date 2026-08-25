@@ -96,8 +96,7 @@ export type CrossLeaderAverageSkipReason =
   | 'cooldown'
   | 'buy_in_flight'
   | 'sell_in_flight'
-  | 'size_stop'
-  | 'tier_lane';
+  | 'size_stop';
 
 const crossLeaderAverageSkipLastJournaled = new Map<
   string,

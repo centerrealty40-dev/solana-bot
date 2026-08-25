@@ -4163,10 +4163,7 @@ async function attemptCrossLeaderAverage(args: {
     });
   };
   if (!g.crossLeaderAverageEnabled) return;
-  if (pos.lane === 'tier') {
-    skip('tier_lane');
-    return;
-  }
+  if (pos.lane === 'tier') return;
   if (pos.lane !== 'leader_mirror') return;
   if ((pos.mirrorFirstClipLegsFilled ?? 1) < Math.max(1, Math.min(2, Math.floor(g.firstClipLegs ?? 1)))) {
     skip('first_clip_incomplete');
@@ -4216,7 +4213,6 @@ async function attemptCrossLeaderAverage(args: {
   }
   if (mildDipStateSaveBlocked()) return;
   pos.mirrorCrossLeaderAverageLastAttemptAtMs = nowMs;
-  pos.mirrorCrossLeaderAverageSignature = signalKey;
   saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   const amountUsd = g.crossLeaderAverageUsd > 0 ? g.crossLeaderAverageUsd : g.averageUsd;
@@ -4292,6 +4288,7 @@ async function attemptCrossLeaderAverage(args: {
     live.entryPriceUsd = (live.sizeUsd + addUsd) / (priorTokens + addTokens);
     live.sizeUsd += addUsd;
     live.mirrorCrossLeaderAverageCount = (live.mirrorCrossLeaderAverageCount ?? 0) + 1;
+    live.mirrorCrossLeaderAverageSignature = signalKey;
     live.mirrorCrossLeaderAverageFillPriceUsd = fillPx;
     live.mirrorLadderBasisPriceUsd = fillPx;
     live.mirrorLadderRungsDone = 0;
