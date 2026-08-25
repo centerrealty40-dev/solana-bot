@@ -4,7 +4,12 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import {
   LeaderSellFeed,
+  CrossLeaderBuyFeed,
   LEADER_SELL_RECONCILIATION_TAIL_BYTES,
+  parseCrossLeaderBuyLines,
+  crossLeaderAverageDiscountReached,
+  resolveCrossLeaderAverageLeaders,
+  shouldJournalCrossLeaderAverageSkip,
   parseLeaderSellLines,
   reconcileLeaderBuyEvents,
   reconcileLeaderSellEvents,
@@ -180,5 +185,72 @@ describe('leader sell feed parser', () => {
       }),
     ).toEqual([]);
     fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
+describe('cross-leader buy feed', () => {
+  const buy = {
+    kind: 'trade_fill',
+    actor: 'leader',
+    side: 'buy',
+    ok: true,
+    wallet: other,
+    mint: 'MintCross',
+    blockTime: 100,
+    signature: 'cross-sig',
+    fillPriceUsd: 0.5,
+    sizeUsdIntent: 25,
+  };
+
+  it('filters own, stale, and undersized buys and accepts foreign buys', () => {
+    expect(
+      parseCrossLeaderBuyLines(
+        [
+          JSON.stringify(buy),
+          JSON.stringify({ ...buy, wallet: leader }),
+          JSON.stringify({ ...buy, sizeUsdIntent: 19 }),
+          JSON.stringify({ ...buy, blockTime: 1 }),
+        ],
+        110_000,
+        { leaders: [other], maxAgeMs: 20_000, minSizeUsd: 20 },
+      ),
+    ).toMatchObject([{ mint: 'MintCross', leader: other, sizeUsd: 25 }]);
+  });
+
+  it('filters configured cross leaders that belong to this mirror', () => {
+    expect(resolveCrossLeaderAverageLeaders([leader, other], [leader])).toEqual([other]);
+  });
+
+  it('requires the configured discount from the current average entry', () => {
+    expect(crossLeaderAverageDiscountReached(0.91, 1, 10)).toBe(false);
+    expect(crossLeaderAverageDiscountReached(0.90, 1, 10)).toBe(true);
+    expect(crossLeaderAverageDiscountReached(0.85, 1, 10)).toBe(true);
+  });
+
+  it('reads incrementally and buffers the latest event per mint', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cross-leader-feed-'));
+    const file = path.join(dir, 'trades.jsonl');
+    fs.writeFileSync(file, '');
+    const feed = new CrossLeaderBuyFeed(file, {
+      leaders: [other],
+      maxAgeMs: 60_000,
+      minSizeUsd: 20,
+    });
+    feed.start();
+    fs.appendFileSync(file, JSON.stringify(buy));
+    expect(feed.read(110_000)).toEqual([]);
+    fs.appendFileSync(file, '\n');
+    expect(feed.read(110_000)).toHaveLength(1);
+    expect(feed.get('MintCross', 110_000)?.signature).toBe('cross-sig');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
+  it('throttles repeated cross-leader skip reasons', () => {
+    const mint = `CrossThrottle${Date.now()}`;
+    expect(shouldJournalCrossLeaderAverageSkip(mint, 'cooldown', 1_000)).toBe(true);
+    expect(shouldJournalCrossLeaderAverageSkip(mint, 'cooldown', 300_999)).toBe(false);
+    expect(shouldJournalCrossLeaderAverageSkip(mint, 'limit_reached', 300_999)).toBe(true);
+    expect(shouldJournalCrossLeaderAverageSkip(mint, 'limit_reached', 599_999)).toBe(false);
+    expect(shouldJournalCrossLeaderAverageSkip(mint, 'limit_reached', 600_999)).toBe(true);
   });
 });

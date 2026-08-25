@@ -902,6 +902,13 @@ const MildDipConfigSchema = z.object({
     averageExcludeTailMs: z.coerce.number().int().min(0).default(900_000),
     averageTolerancePct: z.coerce.number().min(0).default(0.5),
     averageMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
+    crossLeaderAverageEnabled: z.boolean().default(false),
+    crossLeaderAverageLeaders: z.array(z.string()).default([]),
+    crossLeaderAverageUsd: z.coerce.number().min(0).default(0),
+    crossLeaderAverageMinDiscountPct: z.coerce.number().min(0).default(10),
+    crossLeaderAverageMaxAgeMs: z.coerce.number().int().min(0).default(300_000),
+    crossLeaderAverageMaxTimes: z.coerce.number().int().min(0).default(1),
+    crossLeaderAverageMinLeaderSizeUsd: z.coerce.number().min(0).default(20),
     averageMaxTimes: z.coerce.number().int().min(0).default(2),
     averageMinDiscountPct: z.coerce.number().min(0).default(15),
     averageNextDiscountPct: z.coerce.number().min(0).default(15),
@@ -1936,6 +1943,28 @@ export function loadMildDipConfig(): MildDipConfig {
       averageExcludeTailMs: envNum('MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS', 900_000),
       averageTolerancePct: envNum('MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT', 0.5),
       averageMaxPriceImpactPct: envNum('MILD_DIP_MIRROR_AVERAGE_MAX_PRICE_IMPACT_PCT', 0),
+      crossLeaderAverageEnabled: envBool('MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_ENABLED', false),
+      crossLeaderAverageLeaders: (process.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_LEADERS ?? '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+      crossLeaderAverageUsd: envNum('MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_USD', 0),
+      crossLeaderAverageMinDiscountPct: envNum(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_DISCOUNT_PCT',
+        10,
+      ),
+      crossLeaderAverageMaxAgeMs: envNum(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_AGE_MS',
+        300_000,
+      ),
+      crossLeaderAverageMaxTimes: envNum(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TIMES',
+        1,
+      ),
+      crossLeaderAverageMinLeaderSizeUsd: envNum(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_LEADER_SIZE_USD',
+        20,
+      ),
       averageMaxTimes: envNum('MILD_DIP_MIRROR_AVERAGE_MAX_TIMES', 2),
       averageMinDiscountPct: envNum('MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT', 15),
       averageNextDiscountPct: envNum('MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT', 15),

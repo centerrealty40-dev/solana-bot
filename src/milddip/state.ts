@@ -79,6 +79,10 @@ export type MildDipOpenPosition = {
   mirrorAverageLastFillAtMs?: number;
   mirrorAverageAttempts?: number;
   mirrorAverageLastAttemptAtMs?: number;
+  mirrorCrossLeaderAverageCount?: number;
+  mirrorCrossLeaderAverageLastAttemptAtMs?: number;
+  mirrorCrossLeaderAverageSignature?: string;
+  mirrorCrossLeaderAverageFillPriceUsd?: number;
   /** Running high-water mark from entry (W9.1). */
   peakPriceUsd?: number;
   /** 1.11.919 — when the quarantined mark first appeared, so it can time out. */

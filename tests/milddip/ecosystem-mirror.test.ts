@@ -106,6 +106,24 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT).toBe('2');
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MAX_PRICE_IMPACT_PCT).toBe('5');
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_MAX_PRICE_IMPACT_PCT).toBe('5');
+    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_ENABLED).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_ENABLED).toBe('1');
+    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_LEADERS).toBe(
+      '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
+    );
+    expect(mirror2?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_LEADERS).toBe(
+      '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ',
+    );
+    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_USD).toBe('40');
+    expect(mirror2?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_USD).toBe('10');
+    for (const key of [
+      'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_DISCOUNT_PCT',
+      'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_AGE_MS',
+      'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TIMES',
+      'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_LEADER_SIZE_USD',
+    ]) {
+      expect(mirror?.env[key]).toBe(mirror2?.env[key]);
+    }
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT: '15'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LADDER_DUST_USD: '1'");
