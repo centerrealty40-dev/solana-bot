@@ -4612,8 +4612,8 @@ const PM2_APPS = [
         /** 1.11.816 — must match MILD_DIP_LEADER_SEED_MAX; the seed is a gate now. */
         LEADER_OBSERVER_SEED_MAX: '250',
         LEADER_OBSERVER_SEED_MAX_AGE_SEC: '7200',
-        /** 1.11.790 — sig poll every 5s; dense ticks every 1s while bags open. */
-        LEADER_OBSERVER_POLL_SEC: '5',
+        /** 1.11.1029 — 2s polling trims the median observer detection lag (~4.4s). */
+        LEADER_OBSERVER_POLL_SEC: '2',
         LEADER_OBSERVER_LOOKBACK_SEC: '1800',
         LEADER_OBSERVER_CATCHUP_PAGES: '12',
         LEADER_OBSERVER_SIG_LIMIT: '80',
