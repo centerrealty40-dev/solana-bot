@@ -1429,7 +1429,8 @@ export async function attemptMildDipEntry(args: {
         ? Math.min(cfg.green.positionUsd, knifeCapped)
         : knifeCapped;
   /**
-   * 1.11.898 — first-touch results above describe the old DIP lane.
+   * 1.11.898 — the first position on a coin is sized down. Those numbers
+   * came from the old DIP lane.
    * On the 2026-08-25 eight-day mirror sample, first touch was -0.38% versus
    * +1.75% on the second entry, but the $10 cap fired only 92 of 372 times
    * ($903 turnover); removing it changed the result by at most ±$15.
