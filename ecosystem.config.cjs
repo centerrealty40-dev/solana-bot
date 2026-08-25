@@ -4957,7 +4957,7 @@ if (mildDipBotApp) {
       dustCloseUsd: '3',
       positionUsd: '10',
       averageUsd: '7',
-      tierEnabled: '0',
+      tierEnabled: '1',
       tierIgnoreStructuralFloors: '1',
       tierPositionUsd: '10',
       tierMaxOpen: '5',
