@@ -60,7 +60,7 @@ function eventTimestampMs(row: Record<string, unknown>): number | null {
   return ts != null && ts > 0 ? ts : null;
 }
 
-function readTailLines(
+export function readTailLines(
   file: string,
   tailBytes = LEADER_SELL_RECONCILIATION_TAIL_BYTES,
 ): string[] {
@@ -75,6 +75,228 @@ function readTailLines(
     return rows.filter(Boolean);
   } finally {
     fs.closeSync(fd);
+  }
+}
+
+export type CrossLeaderBuyEvent = {
+  mint: string;
+  leader: string;
+  signature: string | null;
+  blockTimeMs: number;
+  fillPriceUsd: number | null;
+  sizeUsd: number;
+};
+
+export type CrossLeaderAverageSkipReason =
+  | 'first_clip_incomplete'
+  | 'leader_not_held'
+  | 'discount_not_reached'
+  | 'limit_reached'
+  | 'duplicate_signal'
+  | 'cooldown'
+  | 'buy_in_flight'
+  | 'sell_in_flight'
+  | 'size_stop';
+
+const crossLeaderAverageSkipLastJournaled = new Map<
+  string,
+  { reason: CrossLeaderAverageSkipReason; atMs: number }
+>();
+
+export function shouldJournalCrossLeaderAverageSkip(
+  mint: string,
+  reason: CrossLeaderAverageSkipReason,
+  nowMs: number,
+): boolean {
+  const previous = crossLeaderAverageSkipLastJournaled.get(mint);
+  if (
+    previous &&
+    previous.reason === reason &&
+    nowMs - previous.atMs < 5 * 60_000
+  ) return false;
+  crossLeaderAverageSkipLastJournaled.set(mint, { reason, atMs: nowMs });
+  if (crossLeaderAverageSkipLastJournaled.size > 2048) {
+    const oldest = crossLeaderAverageSkipLastJournaled.keys().next().value;
+    if (typeof oldest === 'string') crossLeaderAverageSkipLastJournaled.delete(oldest);
+  }
+  return true;
+}
+
+export type CrossLeaderBuyFeedOptions = {
+  leaders: readonly string[];
+  maxAgeMs: number;
+  minSizeUsd: number;
+};
+
+export function resolveCrossLeaderAverageLeaders(
+  configured: readonly string[],
+  ownLeaders: readonly string[],
+): string[] {
+  const own = new Set(ownLeaders);
+  return configured.filter((leader) => leader && !own.has(leader));
+}
+
+export function crossLeaderAverageDiscountReached(
+  markPriceUsd: number,
+  entryPriceUsd: number,
+  minDiscountPct: number,
+): boolean {
+  return (
+    entryPriceUsd > 0 &&
+    markPriceUsd <= entryPriceUsd * (1 - minDiscountPct / 100)
+  );
+}
+
+export function parseCrossLeaderBuyLines(
+  lines: readonly string[],
+  nowMs: number,
+  options: CrossLeaderBuyFeedOptions,
+): CrossLeaderBuyEvent[] {
+  const allowed = new Set(options.leaders.map((leader) => leader.trim()).filter(Boolean));
+  const result: CrossLeaderBuyEvent[] = [];
+  for (const line of lines) {
+    try {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      if (
+        row.kind !== 'trade_fill' ||
+        row.actor !== 'leader' ||
+        row.side !== 'buy' ||
+        row.ok !== true
+      ) continue;
+      const leader = typeof row.wallet === 'string' && allowed.has(row.wallet)
+        ? row.wallet
+        : '';
+      const mint = typeof row.mint === 'string' ? row.mint : '';
+      const blockTimeMs = eventTimestampMs(row);
+      const sizeUsd = finiteNumber(row.sizeUsdIntent) ?? finiteNumber(row.sizeUsd);
+      if (
+        !leader ||
+        !mint ||
+        blockTimeMs == null ||
+        sizeUsd == null ||
+        sizeUsd < options.minSizeUsd
+      ) continue;
+      if (options.maxAgeMs > 0 && nowMs - blockTimeMs > options.maxAgeMs) continue;
+      result.push({
+        mint,
+        leader,
+        signature: typeof row.signature === 'string' ? row.signature : null,
+        blockTimeMs,
+        fillPriceUsd: finiteNumber(row.fillPriceUsd),
+        sizeUsd,
+      });
+    } catch {
+      // Append-only journals can contain a partial or malformed line.
+    }
+  }
+  return result;
+}
+
+export function reconcileCrossLeaderBuyEvents(options: {
+  path: string;
+  leaders: readonly string[];
+  nowMs: number;
+  maxAgeMs: number;
+  minSizeUsd: number;
+}): CrossLeaderBuyEvent[] {
+  const lines: string[] = [];
+  for (const file of [options.path, `${options.path}.1`]) {
+    try {
+      lines.push(...readTailLines(file));
+    } catch {
+      // Journal rotation and absence are expected during startup.
+    }
+  }
+  const events = parseCrossLeaderBuyLines(lines, options.nowMs, {
+    leaders: options.leaders,
+    maxAgeMs: 0,
+    minSizeUsd: options.minSizeUsd,
+  });
+  const cutoff = options.nowMs - options.maxAgeMs;
+  const latest = new Map<string, CrossLeaderBuyEvent>();
+  for (const event of events) {
+    if (event.blockTimeMs < cutoff) continue;
+    const prior = latest.get(event.mint);
+    if (!prior || event.blockTimeMs > prior.blockTimeMs) {
+      latest.set(event.mint, event);
+    }
+  }
+  return [...latest.values()];
+}
+
+export class CrossLeaderBuyFeed {
+  private offset = 0;
+  private pending = '';
+  private started = false;
+  private readonly buffer = new Map<string, CrossLeaderBuyEvent>();
+  private readonly maxBuffered = 256;
+
+  constructor(
+    private readonly path: string,
+    private readonly options: CrossLeaderBuyFeedOptions,
+  ) {}
+
+  start(): void {
+    this.started = true;
+    this.pending = '';
+    try {
+      this.offset = fs.statSync(this.path).size;
+    } catch {
+      this.offset = 0;
+    }
+  }
+
+  seed(events: readonly CrossLeaderBuyEvent[]): void {
+    for (const event of events) this.buffer.set(event.mint, event);
+  }
+
+  read(nowMs: number): CrossLeaderBuyEvent[] {
+    if (!this.started) this.start();
+    try {
+      const size = fs.statSync(this.path).size;
+      if (size < this.offset) {
+        this.offset = 0;
+        this.pending = '';
+      }
+      if (size === this.offset) {
+        this.prune(nowMs);
+        return [];
+      }
+      const fd = fs.openSync(this.path, 'r');
+      try {
+        const length = size - this.offset;
+        const buffer = Buffer.alloc(length);
+        fs.readSync(fd, buffer, 0, length, this.offset);
+        this.offset = size;
+        const rows = (this.pending + buffer.toString('utf8')).split('\n');
+        this.pending = rows.pop() ?? '';
+        const events = parseCrossLeaderBuyLines(rows, nowMs, this.options);
+        for (const event of events) this.buffer.set(event.mint, event);
+        this.prune(nowMs);
+        while (this.buffer.size > this.maxBuffered) {
+          const oldest = this.buffer.keys().next().value;
+          if (typeof oldest !== 'string') break;
+          this.buffer.delete(oldest);
+        }
+        return events;
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      return [];
+    }
+  }
+
+  get(mint: string, nowMs: number): CrossLeaderBuyEvent | null {
+    this.prune(nowMs);
+    return this.buffer.get(mint) ?? null;
+  }
+
+  private prune(nowMs: number): void {
+    if (this.options.maxAgeMs <= 0) return;
+    for (const [mint, event] of this.buffer) {
+      if (nowMs - event.blockTimeMs > this.options.maxAgeMs) this.buffer.delete(mint);
+    }
   }
 }
 

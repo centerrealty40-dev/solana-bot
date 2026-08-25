@@ -34,6 +34,29 @@ describe('mild-dip config exit schema', () => {
     MILD_DIP_RPC_URL: 'https://example.invalid',
   };
 
+  it('defaults cross-leader averaging off and loads its settings', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.leaderMirror.crossLeaderAverageEnabled).toBe(false);
+    expect(defaults.leaderMirror.crossLeaderAverageLeaders).toEqual([]);
+    expect(defaults.leaderMirror.crossLeaderAverageUsd).toBe(0);
+    expect(defaults.leaderMirror.crossLeaderAverageMinDiscountPct).toBe(10);
+    expect(defaults.leaderMirror.crossLeaderAverageMaxAgeMs).toBe(300_000);
+    expect(defaults.leaderMirror.crossLeaderAverageMaxTimes).toBe(1);
+    expect(defaults.leaderMirror.crossLeaderAverageMinLeaderSizeUsd).toBe(20);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_ENABLED: '1',
+        MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_LEADERS: 'foreign-a, foreign-b',
+        MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_USD: '40',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.leaderMirror.crossLeaderAverageEnabled).toBe(true);
+    expect(cfg.leaderMirror.crossLeaderAverageLeaders).toEqual(['foreign-a', 'foreign-b']);
+    expect(cfg.leaderMirror.crossLeaderAverageUsd).toBe(40);
+  });
+
   it('defaults and loads emergency data retention settings', () => {
     const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(defaults.dataRetentionEmergencyEnabled).toBe(true);

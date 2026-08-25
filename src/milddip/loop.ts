@@ -88,8 +88,15 @@ import {
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import {
   LeaderSellFeed,
+  CrossLeaderBuyFeed,
+  crossLeaderAverageDiscountReached,
+  resolveCrossLeaderAverageLeaders,
+  reconcileCrossLeaderBuyEvents,
+  shouldJournalCrossLeaderAverageSkip,
   reconcileLeaderBuyEvents,
   reconcileLeaderSellEvents,
+  type CrossLeaderBuyEvent,
+  type CrossLeaderAverageSkipReason,
   type LeaderSellEvent,
 } from './leader-sell-feed.js';
 import {
@@ -4133,6 +4140,182 @@ async function attemptMirrorAverage(args: {
   }
 }
 
+async function attemptCrossLeaderAverage(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  pos: MildDipOpenPosition;
+  markPriceUsd: number;
+  nowMs: number;
+  leaderHeld: boolean;
+  signal: CrossLeaderBuyEvent | null;
+}): Promise<void> {
+  const { cfg, state, pos, markPriceUsd, nowMs, leaderHeld, signal } = args;
+  if (!signal) return;
+  const g = cfg.leaderMirror;
+  const skip = (reason: CrossLeaderAverageSkipReason): void => {
+    if (!shouldJournalCrossLeaderAverageSkip(pos.mint, reason, nowMs)) return;
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mirror_cross_leader_skip',
+      mint: pos.mint,
+      reason,
+      foreignLeader: signal.leader,
+      foreignSignature: signal.signature,
+    });
+  };
+  if (!g.crossLeaderAverageEnabled) return;
+  if (pos.lane === 'tier') return;
+  if (pos.lane !== 'leader_mirror') return;
+  if ((pos.mirrorFirstClipLegsFilled ?? 1) < Math.max(1, Math.min(2, Math.floor(g.firstClipLegs ?? 1)))) {
+    skip('first_clip_incomplete');
+    return;
+  }
+  const expectedForeign = new Set(resolveCrossLeaderAverageLeaders(
+    g.crossLeaderAverageLeaders,
+    g.leaders,
+  ));
+  if (!expectedForeign.has(signal.leader)) return;
+  const signalKey =
+    signal.signature ?? `${signal.leader}:${signal.blockTimeMs}:${signal.fillPriceUsd ?? 0}`;
+  if (pos.mirrorCrossLeaderAverageSignature === signalKey) {
+    skip('duplicate_signal');
+    return;
+  }
+  if (!leaderHeld) {
+    skip('leader_not_held');
+    return;
+  }
+  if (!crossLeaderAverageDiscountReached(
+    markPriceUsd,
+    pos.entryPriceUsd,
+    g.crossLeaderAverageMinDiscountPct,
+  )) {
+    skip('discount_not_reached');
+    return;
+  }
+  if ((pos.mirrorCrossLeaderAverageCount ?? 0) >= g.crossLeaderAverageMaxTimes) {
+    skip('limit_reached');
+    return;
+  }
+  if (
+    pos.mirrorCrossLeaderAverageLastAttemptAtMs != null &&
+    nowMs - pos.mirrorCrossLeaderAverageLastAttemptAtMs < 60_000
+  ) {
+    skip('cooldown');
+    return;
+  }
+  if (buyInFlight.has(pos.mint)) {
+    skip('buy_in_flight');
+    return;
+  }
+  if (sellInFlight.has(pos.mint)) {
+    skip('sell_in_flight');
+    return;
+  }
+  if (mildDipStateSaveBlocked()) return;
+  pos.mirrorCrossLeaderAverageLastAttemptAtMs = nowMs;
+  saveMildDipState(cfg.statePath, state);
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
+  const amountUsd = g.crossLeaderAverageUsd > 0 ? g.crossLeaderAverageUsd : g.averageUsd;
+  const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, amountUsd);
+  if (sized.stop || !(sized.sizeUsd > 0)) {
+    skip('size_stop');
+    saveMildDipState(cfg.statePath, state);
+    return;
+  }
+  const discountPct =
+    pos.entryPriceUsd > 0
+      ? (1 - markPriceUsd / pos.entryPriceUsd) * 100
+      : null;
+  buyInFlight.add(pos.mint);
+  try {
+    const buy = await executeCopyBuy({
+      cfg: copyCfg,
+      mint: pos.mint,
+      symbol: pos.symbol,
+      priceUsd: markPriceUsd,
+      sizeUsd: Math.min(amountUsd, sized.sizeUsd),
+      kind: 'add',
+      evalResult: { pass: true, reasons: ['mirror_cross_leader_average'], score: markPriceUsd },
+      leaderSignature: signal.signature ?? `milddip_cross_leader_${pos.mint.slice(0, 8)}_${nowMs}`,
+      trigger: 'stream',
+      leaderPriceUsd: signal.fillPriceUsd ?? markPriceUsd,
+      leaderBuyTs: signal.blockTimeMs,
+      beforeSend: async () => {
+        const guardRead = await readLeaderBalanceForGuard(cfg, pos.leaderMirrorLeader, pos.mint);
+        const holds = guardRead.balanceRaw != null && guardRead.balanceRaw > 0n;
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_balance_guard',
+          mint: pos.mint,
+          leader: pos.leaderMirrorLeader ?? null,
+          holds,
+          reason: leaderBalanceGuardReason(guardRead),
+        });
+        return holds;
+      },
+      slippageRetryMultiplier: g.executionSlippageMultiplier,
+      slippageRetryMaxBps: g.executionSlippageMaxBps,
+      maxPriceImpactPct: g.averageMaxPriceImpactPct,
+    });
+    if (!buy.ok) return;
+    const live = state.open[pos.mint];
+    if (!live) return;
+    const addUsd = buy.quoteSpentUsd ?? Math.min(amountUsd, sized.sizeUsd);
+    const fillPx = buy.priceUsd > 0 ? buy.priceUsd : markPriceUsd;
+    try {
+      writeUsBuyFill({
+        tradesPath: cfg.tradesPath,
+        wallet: cfg.walletPubkeyExpected?.trim() || executionWalletPubkey(copyCfg) || 'unknown',
+        mint: pos.mint,
+        symbol: pos.symbol,
+        ok: true,
+        signature: buy.signature ?? null,
+        sizeUsdIntent: Math.min(amountUsd, sized.sizeUsd),
+        usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
+        usdcAfter: buy.usdcAfter ?? null,
+        feeSolBefore: buy.feeSolBefore ?? null,
+        feeSolAfter: buy.feeSolAfter ?? null,
+        quoteSpentUsd: buy.quoteSpentUsd ?? addUsd,
+        txMeta: buy.txMeta,
+        fillPriceUsd: fillPx,
+        dipSource: 'mirror_cross_leader_average',
+        nowMs,
+      });
+    } catch {}
+    const event = buy as unknown as Record<string, unknown>;
+    accountMirrorCashLeg(state, event, 'buy');
+    const priorTokens = live.sizeUsd / Math.max(live.entryPriceUsd, 1e-18);
+    const addTokens = addUsd / Math.max(fillPx, 1e-18);
+    live.entryPriceUsd = (live.sizeUsd + addUsd) / (priorTokens + addTokens);
+    live.sizeUsd += addUsd;
+    live.mirrorCrossLeaderAverageCount = (live.mirrorCrossLeaderAverageCount ?? 0) + 1;
+    live.mirrorCrossLeaderAverageSignature = signalKey;
+    live.mirrorCrossLeaderAverageFillPriceUsd = fillPx;
+    live.mirrorLadderBasisPriceUsd = fillPx;
+    live.mirrorLadderRungsDone = 0;
+    const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
+    if (raw && /^\d+$/.test(raw)) {
+      live.tokenRaw = raw;
+      live.tokenRawSettled = false;
+    }
+    saveMildDipState(cfg.statePath, state);
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mirror_cross_leader_average',
+      mint: pos.mint,
+      symbol: pos.symbol,
+      foreignLeader: signal.leader,
+      foreignSignature: signal.signature,
+      foreignFillPriceUsd: signal.fillPriceUsd,
+      markPriceUsd,
+      fillPriceUsd: fillPx,
+      amountUsd: addUsd,
+      discountPct,
+      attempt: live.mirrorCrossLeaderAverageCount,
+    });
+  } finally {
+    buyInFlight.delete(pos.mint);
+  }
+}
+
 async function tryExits(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -4141,6 +4324,7 @@ async function tryExits(
   dumpTape: ReturnType<typeof createDumpSellTape>,
   givebackDumpGate: ReturnType<typeof createGivebackDumpGate>,
   leaderSellFeed: LeaderSellFeed | null,
+  crossLeaderBuyFeed: CrossLeaderBuyFeed | null,
 ): Promise<void> {
   ensureMirrorLossCapBaseline(cfg, state, nowMs);
   const lossCapValues = mirrorLossCapValues(state);
@@ -4796,6 +4980,15 @@ async function tryExits(
           markPriceUsd: decision.markPriceUsd,
           nowMs,
           leaderHeld: leaderSellEvent == null,
+        });
+        await attemptCrossLeaderAverage({
+          cfg,
+          state,
+          pos,
+          markPriceUsd: decision.markPriceUsd,
+          nowMs,
+          leaderHeld: leaderSellEvent == null,
+          signal: crossLeaderBuyFeed?.get(mint, nowMs) ?? null,
         });
       }
       if (cfg.leaderMirror.mirrorOnly) continue;
@@ -5454,7 +5647,32 @@ export async function runMildDipLoop(
         stats: { staleDropped: 0 },
       })
     : null;
+  const crossLeaderBuyFeed = cfg.leaderMirror.crossLeaderAverageEnabled
+    ? new CrossLeaderBuyFeed(cfg.leaderMirror.leaderSellTradesPath, {
+        leaders: resolveCrossLeaderAverageLeaders(
+          cfg.leaderMirror.crossLeaderAverageLeaders,
+          cfg.leaderMirror.leaders,
+        ),
+        maxAgeMs: cfg.leaderMirror.crossLeaderAverageMaxAgeMs,
+        minSizeUsd: cfg.leaderMirror.crossLeaderAverageMinLeaderSizeUsd,
+      })
+    : null;
   leaderSellFeed?.start();
+  crossLeaderBuyFeed?.start();
+  if (crossLeaderBuyFeed) {
+    crossLeaderBuyFeed.seed(
+      reconcileCrossLeaderBuyEvents({
+        path: cfg.leaderMirror.leaderSellTradesPath,
+        leaders: resolveCrossLeaderAverageLeaders(
+          cfg.leaderMirror.crossLeaderAverageLeaders,
+          cfg.leaderMirror.leaders,
+        ),
+        nowMs: Date.now(),
+        maxAgeMs: cfg.leaderMirror.crossLeaderAverageMaxAgeMs,
+        minSizeUsd: cfg.leaderMirror.crossLeaderAverageMinLeaderSizeUsd,
+      }),
+    );
+  }
   hydrateLeaderMirrorWatches(cfg, state, Date.now());
   if (cfg.leaderMirror.enabled) {
     const reconciledBuys = reconcileLeaderBuyEvents({
@@ -6397,6 +6615,7 @@ export async function runMildDipLoop(
       }
     }
     const leaderSellEvents = leaderSellFeed?.read(nowMs) ?? [];
+    const crossLeaderBuyEvents = crossLeaderBuyFeed?.read(nowMs) ?? [];
     if (leaderSellFeed && nowMs - lastLeaderSellFeedStatsMs >= 30_000) {
       lastLeaderSellFeedStatsMs = nowMs;
       const feedStats = leaderSellFeed.stats();
@@ -6473,7 +6692,10 @@ export async function runMildDipLoop(
     );
     if (
       opens > 0 &&
-      (nowMs - lastMark >= cfg.markIntervalMs || leaderSellEvents.length > 0 || durableLeaderSell)
+      (nowMs - lastMark >= cfg.markIntervalMs ||
+        leaderSellEvents.length > 0 ||
+        crossLeaderBuyEvents.length > 0 ||
+        durableLeaderSell)
     ) {
       await tryExits(
         cfg,
@@ -6483,6 +6705,7 @@ export async function runMildDipLoop(
         dumpSellTape,
         givebackDumpGate,
         leaderSellFeed,
+        crossLeaderBuyFeed,
       );
       lastMark = Date.now();
       stats.lastMarkAtMs = lastMark;
