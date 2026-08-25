@@ -28,6 +28,7 @@ import {
   evaluateMildDipEntryRisk,
   evaluateRebuyBelowExit,
   evaluateRebuyLiquidityDrop,
+  mildDipLeaderMirrorEntryClipUsd,
   mildDipLeaderMirrorSizeUsd,
   mildDipMicroSizeGatesForSource,
   resolveMildDipWantedSizeUsd,
@@ -1399,7 +1400,14 @@ export async function attemptMildDipEntry(args: {
         })
       : null;
   const mirrorClipUsd = mirrorSizing
-    ? Math.min(mirrorSizing.sizeUsd, knifeCapped)
+    ? mildDipLeaderMirrorEntryClipUsd({
+        lawEnabled: cfg.leaderMirror.sizeLiqCoef > 0,
+        mirrorSizeUsd: mirrorSizing.sizeUsd,
+        positionUsd: cfg.leaderMirror.positionUsd,
+        commonSizeUsd: knifeCapped,
+        rugKnife: rugRisk.tier === 'knife',
+        rugKnifeClipUsd: cfg.rugKnifeClipUsd,
+      })
     : knifeCapped;
   const laneCapped =
     isLeaderStyle && cfg.leaderStyle.positionUsd > 0
@@ -1412,7 +1420,9 @@ export async function attemptMildDipEntry(args: {
           opts.mirrorBranch === 'tier'
             ? cfg.leaderMirror.tierPositionUsd
             : mirrorClipUsd,
-          knifeCapped,
+          opts.mirrorBranch === 'tier' || !mirrorSizing
+            ? knifeCapped
+            : mirrorClipUsd,
         )
       : isGreen && cfg.green.positionUsd > 0
         ? Math.min(cfg.green.positionUsd, knifeCapped)
