@@ -2330,6 +2330,23 @@ export function mildDipLeaderMirrorSizeUsd(
   return { sizeUsd, sizeLiqUsd, sizeRule: 'liq_law' };
 }
 
+export function mildDipLeaderMirrorEntryClipUsd(args: {
+  lawEnabled: boolean;
+  mirrorSizeUsd: number;
+  positionUsd: number;
+  commonSizeUsd: number;
+  rugKnife: boolean;
+  rugKnifeClipUsd: number;
+}): number {
+  if (!args.lawEnabled) {
+    return Math.min(args.positionUsd, args.commonSizeUsd);
+  }
+  if (args.rugKnife && args.rugKnifeClipUsd > 0) {
+    return Math.min(args.rugKnifeClipUsd, args.mirrorSizeUsd);
+  }
+  return args.mirrorSizeUsd;
+}
+
 /**
  * sizeUsd = clamp(minUsd, maxUsd, coef × liquidityUsd^exp).
  * Leader reference: 0.0387 × liq^0.866 — we use ~1.08% of that scale for $1–$30 clips.

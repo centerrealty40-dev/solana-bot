@@ -11,6 +11,7 @@ import {
   isRecoveringFromTrough,
   knifeStabilizeMinMarketCapUsd,
   mildDipLiquidityPowerLawSizeUsd,
+  mildDipLeaderMirrorEntryClipUsd,
   mildDipLeaderMirrorSizeUsd,
   mildDipMicroSizeGatesForSource,
   mayFireSoftLossExit,
@@ -47,6 +48,39 @@ describe('mildDipLeaderMirrorSizeUsd', () => {
     ]) {
       expect(mildDipLeaderMirrorSizeUsd(liq, mirror1).sizeUsd).toBeCloseTo(expected, 1);
     }
+  });
+
+  it('does not inherit the common law cap when mirror sizing is enabled', () => {
+    expect(
+      mildDipLeaderMirrorEntryClipUsd({
+        lawEnabled: true,
+        mirrorSizeUsd: 38.4,
+        positionUsd: 80,
+        commonSizeUsd: 12.42,
+        rugKnife: false,
+        rugKnifeClipUsd: 10,
+      }),
+    ).toBe(38.4);
+    expect(
+      mildDipLeaderMirrorEntryClipUsd({
+        lawEnabled: true,
+        mirrorSizeUsd: 38.4,
+        positionUsd: 80,
+        commonSizeUsd: 12.42,
+        rugKnife: true,
+        rugKnifeClipUsd: 20,
+      }),
+    ).toBe(20);
+    expect(
+      mildDipLeaderMirrorEntryClipUsd({
+        lawEnabled: false,
+        mirrorSizeUsd: 80,
+        positionUsd: 80,
+        commonSizeUsd: 12.42,
+        rugKnife: false,
+        rugKnifeClipUsd: 10,
+      }),
+    ).toBe(12.42);
   });
 
   it('matches the approved mirror2 control points', () => {
