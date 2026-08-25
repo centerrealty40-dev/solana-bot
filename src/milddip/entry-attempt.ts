@@ -124,6 +124,43 @@ export function cooldownBouncePctForSource(args: {
   return args.sharedMaxPct;
 }
 
+export function resolveMirrorEntryRiskFloors(args: {
+  isMirror: boolean;
+  isTier: boolean;
+  tierIgnoreFloors: boolean;
+  mirrorMinPairAgeHours: number;
+  mirrorMinLiquidityUsd: number;
+  mirrorMaxVol5mToLiq: number;
+  defaultMinPairAgeHours: number;
+  defaultMinLiquidityUsd: number;
+  defaultMaxVol5mToLiq: number;
+}): {
+  minPairAgeHours: number;
+  minLiquidityUsd: number;
+  maxVol5mToLiq: number;
+} {
+  if (!args.isMirror) {
+    return {
+      minPairAgeHours: args.defaultMinPairAgeHours,
+      minLiquidityUsd: args.defaultMinLiquidityUsd,
+      maxVol5mToLiq: args.defaultMaxVol5mToLiq,
+    };
+  }
+  const ignore = args.isTier && args.tierIgnoreFloors;
+  return {
+    minPairAgeHours: args.isTier ? 0 : args.mirrorMinPairAgeHours,
+    minLiquidityUsd: ignore ? 0 : args.mirrorMinLiquidityUsd,
+    maxVol5mToLiq: ignore ? 0 : args.mirrorMaxVol5mToLiq,
+  };
+}
+
+export function shouldApplyMirrorEntryStructuralDataVeto(
+  isMirror: boolean,
+  tierIgnoreFloors: boolean,
+): boolean {
+  return isMirror && !tierIgnoreFloors;
+}
+
 /**
  * 1.11.827 — probe buys on re-entry blocks.
  *
@@ -479,6 +516,8 @@ export async function attemptMildDipEntry(args: {
 
   const isMirror = opts.mirror === true;
   const mirrorLane = opts.mirrorBranch === 'tier' ? 'tier' : 'leader_mirror';
+  const isTier = isMirror && opts.mirrorBranch === 'tier';
+  const tierIgnoreFloors = isTier && cfg.leaderMirror.tierIgnoreStructuralFloors === true;
   const isLeaderStyle = opts.leaderStyle === true;
   const leaderGateOk = isMirror || isLeaderStyle || leaderBuyGateOk(cfg, state, c.mint, nowMs);
   const greenLeaderGateBypass =
@@ -897,37 +936,42 @@ export async function attemptMildDipEntry(args: {
   const liveLiquidityUsd = sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd;
   const livePairAgeHours = sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours;
   const liveVolume5mUsd = entryVol5m;
+  const entryRiskFloors = resolveMirrorEntryRiskFloors({
+    isMirror,
+    isTier,
+    tierIgnoreFloors,
+    mirrorMinPairAgeHours: cfg.leaderMirror.minPairAgeHours,
+    mirrorMinLiquidityUsd: cfg.leaderMirror.minLiquidityUsd,
+    mirrorMaxVol5mToLiq: cfg.leaderMirror.maxVol5mToLiq,
+    defaultMinPairAgeHours: isLeaderStyle
+      ? 0
+      : isGreen
+        ? cfg.green.minPairAgeHours
+        : cfg.entryMinPairAgeHours,
+    defaultMinLiquidityUsd: isLeaderStyle
+      ? 0
+      : isGreen
+        ? cfg.green.minLiquidityUsd
+        : cfg.entryMinLiquidityUsd,
+    defaultMaxVol5mToLiq: isLeaderStyle
+      ? 0
+      : isGreen && cfg.green.entryMaxVol5mToLiq > 0
+        ? cfg.green.entryMaxVol5mToLiq
+        : cfg.entryMaxVol5mToLiq,
+  });
   const entryRisk = evaluateMildDipEntryRisk({
     pairAgeHours: livePairAgeHours,
     volume5mUsd: liveVolume5mUsd,
     liquidityUsd: liveLiquidityUsd,
     buys5m: entryBuys5m,
     sells5m: entrySells5m,
-    minPairAgeHours: isMirror
-      ? cfg.leaderMirror.minPairAgeHours
-      : isLeaderStyle
-        ? 0
-      : isGreen
-        ? cfg.green.minPairAgeHours
-        : cfg.entryMinPairAgeHours,
-    maxVol5mToLiq: isMirror
-      ? cfg.leaderMirror.maxVol5mToLiq
-      : isLeaderStyle
-        ? 0
-      : isGreen && cfg.green.entryMaxVol5mToLiq > 0
-        ? cfg.green.entryMaxVol5mToLiq
-        : cfg.entryMaxVol5mToLiq,
-    minLiquidityUsd: isMirror
-      ? cfg.leaderMirror.minLiquidityUsd
-      : isLeaderStyle
-        ? 0
-      : isGreen
-        ? cfg.green.minLiquidityUsd
-        : cfg.entryMinLiquidityUsd,
+    minPairAgeHours: entryRiskFloors.minPairAgeHours,
+    maxVol5mToLiq: entryRiskFloors.maxVol5mToLiq,
+    minLiquidityUsd: entryRiskFloors.minLiquidityUsd,
     minTxns5m: !isMirror && !isGreen ? cfg.entryMinTxns5m : 0,
     minTurnover5mLiq: !isMirror && !isGreen ? cfg.entryMinTurnover5mLiq : 0,
   });
-  if (isMirror) {
+  if (shouldApplyMirrorEntryStructuralDataVeto(isMirror, tierIgnoreFloors)) {
     if (
       liveLiquidityUsd == null ||
       !Number.isFinite(liveLiquidityUsd) ||
@@ -948,7 +992,13 @@ export async function attemptMildDipEntry(args: {
       pairAgeHours: sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours,
       volume5mUsd: entryVol5m,
       liquidityUsd: sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd,
-      entryRiskLane: isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
+      entryRiskLane: isTier
+        ? 'tier'
+        : isLeaderStyle
+          ? 'leader_style'
+          : isGreen
+            ? 'green'
+            : 'dip',
       reasons: entryRisk.reasons,
     });
     state.cooldownUntilMs[c.mint] = nowMs + softCd;
