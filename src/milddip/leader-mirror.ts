@@ -123,7 +123,26 @@ export type LeaderMirrorQuoteCandidate = {
   startedAtMs: number;
   knifeWaitPending: boolean;
   knifeWaitDue: boolean;
+  fundingParked?: boolean;
+  fundingParkedAtMs?: number;
 };
+
+export function evictFundingParkedWatchKeys(
+  entries: readonly { watchKey: string; fundingParkedAtMs?: number }[],
+  maxParked: number,
+): string[] {
+  const parked = entries
+    .filter((entry) => Number.isFinite(entry.fundingParkedAtMs))
+    .sort(
+      (a, b) =>
+        (a.fundingParkedAtMs as number) - (b.fundingParkedAtMs as number),
+    );
+  return maxParked >= 0
+    ? parked
+        .slice(0, Math.max(0, parked.length - maxParked))
+        .map((entry) => entry.watchKey)
+    : [];
+}
 
 export function selectLeaderMirrorQuoteKeys(args: {
   entries: readonly LeaderMirrorQuoteCandidate[];
@@ -142,6 +161,7 @@ export function selectLeaderMirrorQuoteKeys(args: {
     .filter(
       (entry) =>
         !entry.knifeWaitPending &&
+        !entry.fundingParked &&
         args.nowMs - entry.startedAtMs <= args.entryGraceMs,
     )
     .sort((a, b) => a.startedAtMs - b.startedAtMs);
@@ -158,6 +178,7 @@ export function selectLeaderMirrorQuoteKeys(args: {
         (entry) =>
           entry.knifeWaitPending &&
           entry.knifeWaitDue &&
+          !entry.fundingParked &&
           !selectedKeys.has(entry.watchKey),
       )
       .sort(
@@ -174,11 +195,17 @@ export function selectLeaderMirrorQuoteKeys(args: {
   if (selected.length < limit) {
     const rest = args.entries
       .filter(
-        (entry) =>
-          !selectedKeys.has(entry.watchKey) && !entry.knifeWaitPending,
+        (entry) => !selectedKeys.has(entry.watchKey),
       )
       .sort((a, b) => a.startedAtMs - b.startedAtMs);
-    selected.push(...rest.slice(0, limit - selected.length));
+    const freshRest = rest.filter(
+      (entry) => !entry.fundingParked && !entry.knifeWaitPending,
+    );
+    const parkedRest = rest.filter((entry) => entry.fundingParked);
+    selected.push(...freshRest.slice(0, limit - selected.length));
+    if (selected.length < limit) {
+      selected.push(...parkedRest.slice(0, limit - selected.length));
+    }
   }
   return selected.map((entry) => entry.watchKey);
 }

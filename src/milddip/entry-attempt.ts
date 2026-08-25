@@ -408,15 +408,36 @@ export type EntryAttemptOpts = {
   mirrorPc5mKnown?: boolean;
   mirrorEntryGraceActive?: boolean;
   mirrorQuoteGainPct?: number | null;
+  onFundingShortage?: (details: {
+    reason: string;
+    usdc?: number | null;
+  }) => void;
 };
 
-export type EntryAttemptResult = 'filled' | 'skip' | 'exec_failed' | 'stop';
+export type EntryAttemptResult = 'filled' | 'skip' | 'exec_failed' | 'stop' | 'no_funds';
+
+export function isFundingShortageReason(reason?: string | null): boolean {
+  return (
+    reason === 'usdc_exhausted' ||
+    reason === 'insufficient_usdc' ||
+    reason?.startsWith('insufficient_fee_sol') === true
+  );
+}
+
+export function fundingShortageEntryResult(
+  isMirror: boolean,
+  reason?: string | null,
+): 'no_funds' | 'skip' | 'stop' {
+  if (isMirror) return 'no_funds';
+  return reason?.startsWith('insufficient_fee_sol') ? 'skip' : 'stop';
+}
 
 export function mirrorEntryAttemptOutcome(
   result: EntryAttemptResult,
-): 'filled' | 'retry' | 'refused' {
+): 'filled' | 'retry' | 'refused' | 'parked' {
   if (result === 'filled') return 'filled';
   if (result === 'exec_failed') return 'retry';
+  if (result === 'no_funds') return 'parked';
   return 'refused';
 }
 
@@ -1474,7 +1495,10 @@ export async function attemptMildDipEntry(args: {
       ? { ...sizedRaw, sizeUsd: Math.min(sizedRaw.sizeUsd, cfg.probeBlockedUsd) }
       : sizedRaw;
   if (sized.stop || !(sized.sizeUsd > 0)) {
-    if (sized.reason && sized.reason !== 'usdc_exhausted') {
+    if (
+      sized.reason &&
+      (sized.reason !== 'usdc_exhausted' || isMirror)
+    ) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_funding_block',
         mint: c.mint,
@@ -1486,15 +1510,23 @@ export async function attemptMildDipEntry(args: {
         lane: opts.lane,
       });
     }
+    if (isFundingShortageReason(sized.reason)) {
+      opts.onFundingShortage?.({
+        reason: sized.reason as string,
+        usdc: sized.usdc,
+      });
+    }
     // Fee SOL drained — do not wait for the next healthy-path topup tick.
     if (sized.reason?.startsWith('insufficient_fee_sol')) {
       void maybeTopUpFeeSol(cfg, Date.now(), { forceUrgent: true }).catch((err) => {
         console.warn('[mild-dip] urgent fee-sol topup failed', err);
       });
       // Skip this mint; keep scanning others (stop would abort the whole slow lane).
-      return 'skip';
+      return fundingShortageEntryResult(isMirror, sized.reason);
     }
-    return 'stop';
+    return isFundingShortageReason(sized.reason)
+      ? fundingShortageEntryResult(isMirror, sized.reason)
+      : 'stop';
   }
 
   if (isMildStabilize) {

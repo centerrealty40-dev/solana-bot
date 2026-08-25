@@ -58,8 +58,8 @@ import {
   leaderMirrorNeedsStructuralBackfill,
   leaderMirrorObservationWindowMs,
   leaderMirrorObservationFresh,
+  evictFundingParkedWatchKeys,
   selectLeaderMirrorQuoteKeys,
-  type LeaderMirrorMetricSource,
 } from './leader-mirror.js';
 import {
   isKnifeDipPct,
@@ -1794,6 +1794,8 @@ async function wakeLeaderMirrors(
           (leaderMirrorQuoteLastSelectedAtMs.get(watchKey) ??
             Number.NEGATIVE_INFINITY) >=
         gates.staleQuoteIntervalMs,
+      fundingParked: watch.fundingParkedAtMs != null,
+      fundingParkedAtMs: watch.fundingParkedAtMs,
       }),
   );
   const knifeWaitQuoteIntervalMs = Math.max(
@@ -2110,6 +2112,7 @@ async function wakeLeaderMirrors(
     const firstClipPending =
       openMirrorPosition != null &&
       isMirrorFirstClipPending(openMirrorPosition, cfg.leaderMirror.firstClipLegs);
+    let fundingUsdc: number | null = null;
     let result =
       firstClipPending
         ? await attemptMirrorFirstClipLeg({
@@ -2153,6 +2156,9 @@ async function wakeLeaderMirrors(
                 hit.fillPriceUsd != null && hit.fillPriceUsd > 0
                   ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
                   : null,
+              onFundingShortage: ({ usdc }) => {
+                fundingUsdc = usdc ?? null;
+              },
               mirrorExit: {
                 armPct: gates.exitArmPct,
                 trailPct: gates.exitTrailPct,
@@ -2214,6 +2220,53 @@ async function wakeLeaderMirrors(
         watchKey,
         nowMs + gates.executionRetryBackoffMs,
       );
+    } else if (
+      outcome === 'parked' &&
+      cfg.leaderMirror.fundingParkEnabled
+    ) {
+      watch.fundingParkedAtMs ??= nowMs;
+      leaderMirrorEntryRetryAfterMs.set(
+        watchKey,
+        nowMs + cfg.leaderMirror.fundingParkRetryMs,
+      );
+      const parkedCount = [...leaderMirrorWatches.values()].filter(
+        (entry) => entry.fundingParkedAtMs != null,
+      ).length;
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_funding_park',
+        mint,
+        leader: hit.leader,
+        leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        quotePriceUsd: decision.quotePriceUsd ?? null,
+        quoteGainPct:
+          hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+            ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
+            : null,
+        freeUsdc: fundingUsdc,
+        parkedCount,
+      });
+      const evicted = evictFundingParkedWatchKeys(
+        [...leaderMirrorWatches.entries()].map(([key, entry]) => ({
+          watchKey: key,
+          fundingParkedAtMs: entry.fundingParkedAtMs,
+        })),
+        cfg.leaderMirror.fundingParkMax,
+      );
+      for (const evictedKey of evicted) {
+        const evictedWatch = leaderMirrorWatches.get(evictedKey);
+        if (!evictedWatch) continue;
+        leaderMirrorEntryRetryAfterMs.delete(evictedKey);
+        leaderMirrorWatches.delete(evictedKey);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_refusal',
+          mint: evictedWatch.hit.mint,
+          leader: evictedWatch.hit.leader,
+          reason: 'leader_mirror_funding_park_evicted',
+          leaderFillPriceUsd: evictedWatch.hit.fillPriceUsd ?? null,
+          metricSource: evictedWatch.metricSource,
+        });
+      }
+      persistLeaderMirrorWatches(cfg, state);
     } else {
       leaderMirrorEntryRetryAfterMs.delete(watchKey);
       leaderMirrorWatches.delete(watchKey);
@@ -2710,7 +2763,7 @@ async function tryEntriesBody(
       },
     });
     if (result === 'filled') filled += 1;
-    if (result === 'stop') break;
+    if (result === 'stop' || result === 'no_funds') break;
   }
 }
 
@@ -3150,10 +3203,12 @@ async function executeQueuedSell(args: {
       symbol: pos.symbol,
       reason: `post_sell_${decision.reason}`,
     });
+    wakeFundingParkedLeaderMirrorWatches(cfg, state);
     return;
   }
 
   if (sell.ok) {
+    wakeFundingParkedLeaderMirrorWatches(cfg, state);
     const exitPx = sell.priceUsd || decision.markPriceUsd;
     /**
      * Settle against a fresh on-chain read, but never above what the executor
@@ -3391,15 +3446,7 @@ const lastRecoverDeferJournalMs = new Map<string, number>();
 const leaderSeedLookedAtMs = new Map<string, number>();
 const leaderMirrorWatches = new Map<
   string,
-  {
-    hit: LeaderSeedHit;
-    hitKey: string;
-    startedAtMs: number;
-    expiresAtMs: number;
-    metricSource: LeaderMirrorMetricSource;
-    lastWaitReason?: string;
-    lastWaitAtMs?: number;
-  }
+  NonNullable<MildDipState['leaderMirrorWatches']>[string]
 >();
 const leaderMirrorDecisions = new Map<
   string,
@@ -3499,6 +3546,20 @@ function persistLeaderMirrorWatches(cfg: MildDipConfig, state: MildDipState): vo
   state.leaderMirrorWatches = watches;
   state.leaderMirrorDecisions = decisions;
   saveMildDipState(cfg.statePath, state);
+}
+
+function wakeFundingParkedLeaderMirrorWatches(
+  cfg: MildDipConfig,
+  state: MildDipState,
+): void {
+  if (!cfg.leaderMirror.fundingParkEnabled) return;
+  let changed = false;
+  for (const [watchKey, watch] of leaderMirrorWatches) {
+    if (watch.fundingParkedAtMs == null) continue;
+    leaderMirrorEntryRetryAfterMs.delete(watchKey);
+    changed = true;
+  }
+  if (changed) persistLeaderMirrorWatches(cfg, state);
 }
 /** mint → last exit_defer_would_buy journal ts (throttle). */
 const lastExitDeferJournalMs = new Map<string, number>();
