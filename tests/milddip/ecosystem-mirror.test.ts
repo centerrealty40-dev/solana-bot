@@ -72,7 +72,7 @@ describe('mirror PM2 apps', () => {
     ]) {
       expect(mirror?.env[key]).toBe(mirror2?.env[key]);
     }
-    expect(mirror?.env.MILD_DIP_MIRROR_QUOTE_INTERVAL_MS).toBe('1000');
+    expect(mirror?.env.MILD_DIP_MIRROR_QUOTE_INTERVAL_MS).toBe('1500');
     expect(mirror?.env.MILD_DIP_MIRROR_STALE_QUOTE_INTERVAL_MS).toBe('5000');
     expect(mirror?.env.MILD_DIP_MIRROR_MAX_QUOTE_MINTS).toBe('8');
     expect(mirror2?.env.MILD_DIP_MIRROR_STALE_QUOTE_INTERVAL_MS).toBe('5000');
