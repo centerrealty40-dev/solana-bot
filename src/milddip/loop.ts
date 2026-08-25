@@ -90,6 +90,8 @@ import {
   LeaderSellFeed,
   CrossLeaderBuyFeed,
   crossLeaderAverageDiscountReached,
+  crossLeaderAverageRequiresSignal,
+  crossLeaderAverageStepUsd,
   resolveCrossLeaderAverageLeaders,
   reconcileCrossLeaderBuyEvents,
   shouldJournalCrossLeaderAverageSkip,
@@ -4150,16 +4152,25 @@ async function attemptCrossLeaderAverage(args: {
   signal: CrossLeaderBuyEvent | null;
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs, leaderHeld, signal } = args;
-  if (!signal) return;
   const g = cfg.leaderMirror;
+  if (
+    !signal &&
+    crossLeaderAverageRequiresSignal({
+      stepsEnabled: g.crossLeaderAverageStepsEnabled,
+      basePriceUsd: pos.mirrorCrossLeaderAverageBasePriceUsd,
+      baseUsd: pos.mirrorCrossLeaderAverageBaseUsd,
+    })
+  ) return;
+  const stepTrigger = signal ? 'foreign_leader' : 'drawdown';
   const skip = (reason: CrossLeaderAverageSkipReason): void => {
     if (!shouldJournalCrossLeaderAverageSkip(pos.mint, reason, nowMs)) return;
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mirror_cross_leader_skip',
       mint: pos.mint,
       reason,
-      foreignLeader: signal.leader,
-      foreignSignature: signal.signature,
+      foreignLeader: signal?.leader ?? null,
+      foreignSignature: signal?.signature ?? null,
+      stepTrigger,
     });
   };
   if (!g.crossLeaderAverageEnabled) return;
@@ -4173,10 +4184,11 @@ async function attemptCrossLeaderAverage(args: {
     g.crossLeaderAverageLeaders,
     g.leaders,
   ));
-  if (!expectedForeign.has(signal.leader)) return;
-  const signalKey =
-    signal.signature ?? `${signal.leader}:${signal.blockTimeMs}:${signal.fillPriceUsd ?? 0}`;
-  if (pos.mirrorCrossLeaderAverageSignature === signalKey) {
+  if (signal && !expectedForeign.has(signal.leader)) return;
+  const signalKey = signal
+    ? signal.signature ?? `${signal.leader}:${signal.blockTimeMs}:${signal.fillPriceUsd ?? 0}`
+    : `milddip_cross_leader_step_${pos.mint.slice(0, 8)}_${nowMs}`;
+  if (signal && pos.mirrorCrossLeaderAverageSignature === signalKey) {
     skip('duplicate_signal');
     return;
   }
@@ -4184,12 +4196,36 @@ async function attemptCrossLeaderAverage(args: {
     skip('leader_not_held');
     return;
   }
-  if (!crossLeaderAverageDiscountReached(
-    markPriceUsd,
-    pos.entryPriceUsd,
-    g.crossLeaderAverageMinDiscountPct,
-  )) {
+  const basePriceUsd =
+    pos.mirrorCrossLeaderAverageBasePriceUsd ?? pos.entryPriceUsd;
+  const baseUsd = pos.mirrorCrossLeaderAverageBaseUsd ?? pos.sizeUsd;
+  const step = g.crossLeaderAverageStepsEnabled
+    ? crossLeaderAverageStepUsd({
+        markPriceUsd,
+        basePriceUsd,
+        baseUsd,
+        addedUsd: pos.mirrorCrossLeaderAverageUsdTotal ?? 0,
+        minDiscountPct: g.crossLeaderAverageMinDiscountPct,
+        startFraction: g.crossLeaderAverageStartFraction,
+        fullDiscountPct: g.crossLeaderAverageFullDiscountPct,
+        maxTotalFraction: g.crossLeaderAverageMaxTotalFraction,
+        minStepUsd: g.crossLeaderAverageMinStepUsd,
+      })
+    : null;
+  if (
+    (!g.crossLeaderAverageStepsEnabled &&
+      !crossLeaderAverageDiscountReached(
+        markPriceUsd,
+        pos.entryPriceUsd,
+        g.crossLeaderAverageMinDiscountPct,
+      )) ||
+    (g.crossLeaderAverageStepsEnabled && !step)
+  ) {
     skip('discount_not_reached');
+    return;
+  }
+  if (g.crossLeaderAverageStepsEnabled && step && 'reason' in step) {
+    skip(step.reason as CrossLeaderAverageSkipReason);
     return;
   }
   if ((pos.mirrorCrossLeaderAverageCount ?? 0) >= g.crossLeaderAverageMaxTimes) {
@@ -4215,7 +4251,11 @@ async function attemptCrossLeaderAverage(args: {
   pos.mirrorCrossLeaderAverageLastAttemptAtMs = nowMs;
   saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
-  const amountUsd = g.crossLeaderAverageUsd > 0 ? g.crossLeaderAverageUsd : g.averageUsd;
+  const amountUsd = g.crossLeaderAverageStepsEnabled
+    ? step!.stepUsd
+    : g.crossLeaderAverageUsd > 0
+      ? g.crossLeaderAverageUsd
+      : g.averageUsd;
   const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, amountUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     skip('size_stop');
@@ -4236,10 +4276,10 @@ async function attemptCrossLeaderAverage(args: {
       sizeUsd: Math.min(amountUsd, sized.sizeUsd),
       kind: 'add',
       evalResult: { pass: true, reasons: ['mirror_cross_leader_average'], score: markPriceUsd },
-      leaderSignature: signal.signature ?? `milddip_cross_leader_${pos.mint.slice(0, 8)}_${nowMs}`,
+      leaderSignature: signal?.signature ?? signalKey,
       trigger: 'stream',
-      leaderPriceUsd: signal.fillPriceUsd ?? markPriceUsd,
-      leaderBuyTs: signal.blockTimeMs,
+      leaderPriceUsd: signal?.fillPriceUsd ?? markPriceUsd,
+      leaderBuyTs: signal?.blockTimeMs ?? nowMs,
       beforeSend: async () => {
         const guardRead = await readLeaderBalanceForGuard(cfg, pos.leaderMirrorLeader, pos.mint);
         const holds = guardRead.balanceRaw != null && guardRead.balanceRaw > 0n;
@@ -4290,6 +4330,12 @@ async function attemptCrossLeaderAverage(args: {
     live.mirrorCrossLeaderAverageCount = (live.mirrorCrossLeaderAverageCount ?? 0) + 1;
     live.mirrorCrossLeaderAverageSignature = signalKey;
     live.mirrorCrossLeaderAverageFillPriceUsd = fillPx;
+    if (g.crossLeaderAverageStepsEnabled) {
+      live.mirrorCrossLeaderAverageBasePriceUsd ??= basePriceUsd;
+      live.mirrorCrossLeaderAverageBaseUsd ??= baseUsd;
+    }
+    live.mirrorCrossLeaderAverageUsdTotal =
+      (live.mirrorCrossLeaderAverageUsdTotal ?? 0) + addUsd;
     live.mirrorLadderBasisPriceUsd = fillPx;
     live.mirrorLadderRungsDone = 0;
     const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
@@ -4302,13 +4348,19 @@ async function attemptCrossLeaderAverage(args: {
       kind: 'mirror_cross_leader_average',
       mint: pos.mint,
       symbol: pos.symbol,
-      foreignLeader: signal.leader,
-      foreignSignature: signal.signature,
-      foreignFillPriceUsd: signal.fillPriceUsd,
+      foreignLeader: signal?.leader ?? null,
+      foreignSignature: signal?.signature ?? null,
+      foreignFillPriceUsd: signal?.fillPriceUsd ?? null,
+      stepTrigger,
       markPriceUsd,
       fillPriceUsd: fillPx,
       amountUsd: addUsd,
       discountPct,
+      drawdownPct: step?.drawdownPct ?? null,
+      targetFraction: step?.targetFraction ?? null,
+      stepUsd: step?.stepUsd ?? addUsd,
+      addedTotalUsd: live.mirrorCrossLeaderAverageUsdTotal,
+      baseUsd: g.crossLeaderAverageStepsEnabled ? live.mirrorCrossLeaderAverageBaseUsd : null,
       attempt: live.mirrorCrossLeaderAverageCount,
     });
   } finally {

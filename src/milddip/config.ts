@@ -909,6 +909,11 @@ const MildDipConfigSchema = z.object({
     crossLeaderAverageMaxAgeMs: z.coerce.number().int().min(0).default(300_000),
     crossLeaderAverageMaxTimes: z.coerce.number().int().min(0).default(1),
     crossLeaderAverageMinLeaderSizeUsd: z.coerce.number().min(0).default(20),
+    crossLeaderAverageStepsEnabled: z.boolean().default(false),
+    crossLeaderAverageStartFraction: z.coerce.number().min(0).max(1).default(0.3),
+    crossLeaderAverageFullDiscountPct: z.coerce.number().min(0).default(50),
+    crossLeaderAverageMaxTotalFraction: z.coerce.number().min(0).max(1).default(1),
+    crossLeaderAverageMinStepUsd: z.coerce.number().min(0).default(3),
     averageMaxTimes: z.coerce.number().int().min(0).default(2),
     averageMinDiscountPct: z.coerce.number().min(0).default(15),
     averageNextDiscountPct: z.coerce.number().min(0).default(15),
@@ -1964,6 +1969,26 @@ export function loadMildDipConfig(): MildDipConfig {
       crossLeaderAverageMinLeaderSizeUsd: envNum(
         'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_LEADER_SIZE_USD',
         20,
+      ),
+      crossLeaderAverageStepsEnabled: envBool(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_STEPS_ENABLED',
+        false,
+      ),
+      crossLeaderAverageStartFraction: envNum(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_START_FRACTION',
+        0.3,
+      ),
+      crossLeaderAverageFullDiscountPct: envNum(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_FULL_DISCOUNT_PCT',
+        50,
+      ),
+      crossLeaderAverageMaxTotalFraction: envNum(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TOTAL_FRACTION',
+        1,
+      ),
+      crossLeaderAverageMinStepUsd: envNum(
+        'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_STEP_USD',
+        3,
       ),
       averageMaxTimes: envNum('MILD_DIP_MIRROR_AVERAGE_MAX_TIMES', 2),
       averageMinDiscountPct: envNum('MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT', 15),
