@@ -99,6 +99,7 @@ export type LeaderMirrorGates = {
   knifeWaitWindowMs: number;
   knifeWaitQuoteSlots: number;
   tierEnabled?: boolean;
+  tierIgnoreStructuralFloors?: boolean;
   tierPositionUsd?: number;
   tierMaxOpen?: number;
 };
@@ -321,6 +322,15 @@ export function evaluateLeaderMirrorObservation(args: {
   if (liq == null || ageHours == null || mcap == null) {
     return soft('leader_mirror_no_data', 'no_structural', true);
   }
+  const tierIgnoreFloors =
+    gates.tierEnabled === true && gates.tierIgnoreStructuralFloors === true;
+  const tierPc5mFloorMiss =
+    gates.minPreEntryPc5mPct > -1000 &&
+    (pc5m == null || pc5m < gates.minPreEntryPc5mPct);
+  const tierFloorMiss =
+    ageHours < gates.minPairAgeHours ||
+    mcap < gates.minMcapUsd ||
+    (tierIgnoreFloors && (liq < gates.minLiquidityUsd || tierPc5mFloorMiss));
   if (gates.minPc1hPct > -1000) {
     if (pc1h == null) {
       return { action: 'skip', reason: 'leader_mirror_pc1h_missing' };
@@ -334,21 +344,23 @@ export function evaluateLeaderMirrorObservation(args: {
   }
   if (gates.minPreEntryPc5mPct > -1000) {
     if (pc5m == null) {
-      return { action: 'skip', reason: 'leader_mirror_pc5m_missing' };
+      if (!tierIgnoreFloors) {
+        return { action: 'skip', reason: 'leader_mirror_pc5m_missing' };
+      }
     }
-    if (pc5m < gates.minPreEntryPc5mPct) {
-      return {
-        action: 'skip',
-        reason: `leader_mirror_pc5m_too_deep=${pc5m.toFixed(2)}<${gates.minPreEntryPc5mPct}`,
-      };
+    if (pc5m != null && pc5m < gates.minPreEntryPc5mPct) {
+      if (!tierIgnoreFloors) {
+        return {
+          action: 'skip',
+          reason: `leader_mirror_pc5m_too_deep=${pc5m.toFixed(2)}<${gates.minPreEntryPc5mPct}`,
+        };
+      }
     }
   }
   if (pc5m != null && pc5m > gates.maxEntryPc5mPct) {
     return { action: 'skip', reason: 'leader_mirror_green_direction' };
   }
   const greenCandidate = pc5m != null && pc5m > gates.maxPreEntryPc5mPct;
-  const tierFloorMiss =
-    ageHours < gates.minPairAgeHours || mcap < gates.minMcapUsd;
   if (requireDipCandle && pc5m != null) {
     if (gates.greenCopyEnabled && greenCandidate) {
       if (pc5m! >= gates.greenCopyMaxPc5mPct) {
@@ -367,7 +379,9 @@ export function evaluateLeaderMirrorObservation(args: {
     }
   }
   if (liq < gates.minLiquidityUsd) {
-    return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
+    if (!tierIgnoreFloors) {
+      return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
+    }
   }
   if (ageHours < gates.minPairAgeHours) {
     if (!gates.tierEnabled) {

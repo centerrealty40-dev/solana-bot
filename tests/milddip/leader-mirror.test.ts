@@ -290,6 +290,49 @@ describe('leader mirror observation decisions', () => {
     });
   });
 
+  it('allows tier to ignore liquidity and pre-entry pc5m floors when configured', () => {
+    const ignoreFloors = {
+      ...gates,
+      tierEnabled: true,
+      tierIgnoreStructuralFloors: true,
+      minLiquidityUsd: 8_000,
+      minPreEntryPc5mPct: -5,
+    };
+    expect(at(hit({ liq: 7_999 }), 101, 110_000, 100_000, ignoreFloors)).toMatchObject({
+      action: 'buy',
+      mirrorBranch: 'tier',
+    });
+    expect(at(hit({ pc5m: -6 }), 101, 110_000, 100_000, ignoreFloors)).toMatchObject({
+      action: 'buy',
+      mirrorBranch: 'tier',
+    });
+    expect(at(hit({ pc5m: undefined }), 101, 110_000, 100_000, ignoreFloors)).toMatchObject({
+      action: 'buy',
+      mirrorBranch: 'tier',
+    });
+  });
+
+  it('keeps liquidity and pre-entry pc5m floors hard without tier floor override', () => {
+    expect(at(hit({ liq: 7_999 }), 101, 110_000, 100_000, {
+      ...gates,
+      tierEnabled: true,
+      minLiquidityUsd: 8_000,
+    })).toEqual({ action: 'skip', reason: 'leader_mirror_liquidity_floor' });
+    expect(at(hit({ pc5m: -6 }), 101, 110_000, 100_000, {
+      ...gates,
+      tierEnabled: true,
+      minPreEntryPc5mPct: -5,
+    })).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_pc5m_too_deep=-6.00<-5',
+    });
+    expect(at(hit({ pc5m: undefined }), 101, 110_000, 100_000, {
+      ...gates,
+      tierEnabled: true,
+      minPreEntryPc5mPct: -5,
+    })).toEqual({ action: 'skip', reason: 'leader_mirror_pc5m_missing' });
+  });
+
   it('refuses when the configured 1h floor has no metric', () => {
     expect(at(hit({ pc1h: undefined }), 101, 110_000, 100_000, {
       ...gates,
