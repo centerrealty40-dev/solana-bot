@@ -59,6 +59,16 @@ const at = (
   });
 
 describe('mirror TP ladder', () => {
+  it('does not apply the TP ladder to tier positions', () => {
+    const decision = at(
+      130,
+      { lane: 'tier' },
+      { ...gates, leaderSellOnly: true },
+    );
+    expect(decision?.shouldExit).toBe(false);
+    expect(decision?.reason).toBeNull();
+  });
+
   it('fires at +5%, not at +4.9%, and sells 20% of the runner', () => {
     expect(at(104.9)?.shouldExit).toBe(false);
     const decision = at(105);

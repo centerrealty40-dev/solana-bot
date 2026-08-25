@@ -83,7 +83,9 @@ export function decideLeaderSellExit(args: {
   minHoldMs?: number;
 }): LeaderSellExitDecision {
   if (!args.enabled) return { shouldExit: false, reason: 'disabled' };
-  if (args.lane !== 'leader_mirror') return { shouldExit: false, reason: 'wrong_lane' };
+  if (args.lane !== 'leader_mirror' && args.lane !== 'tier') {
+    return { shouldExit: false, reason: 'wrong_lane' };
+  }
   if (!args.event) return { shouldExit: false, reason: 'leader_not_allowed' };
   if (!args.leaders.includes(args.event.leader)) {
     return { shouldExit: false, reason: 'leader_not_allowed' };

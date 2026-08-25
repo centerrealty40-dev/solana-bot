@@ -7,7 +7,7 @@ export type LeaderMirrorDecision =
   | {
       action: 'buy';
       quotePriceUsd: number;
-      mirrorBranch?: 'green' | 'dip';
+      mirrorBranch?: 'green' | 'dip' | 'tier';
       knifeWait?: {
         enteredByDiscount: boolean;
         enteredByWindowExpiry: boolean;
@@ -98,6 +98,9 @@ export type LeaderMirrorGates = {
   knifeWaitDiscountPct: number;
   knifeWaitWindowMs: number;
   knifeWaitQuoteSlots: number;
+  tierEnabled?: boolean;
+  tierPositionUsd?: number;
+  tierMaxOpen?: number;
 };
 
 export function leaderMirrorObservationFresh(args: {
@@ -344,6 +347,8 @@ export function evaluateLeaderMirrorObservation(args: {
     return { action: 'skip', reason: 'leader_mirror_green_direction' };
   }
   const greenCandidate = pc5m != null && pc5m > gates.maxPreEntryPc5mPct;
+  const tierFloorMiss =
+    ageHours < gates.minPairAgeHours || mcap < gates.minMcapUsd;
   if (requireDipCandle && pc5m != null) {
     if (gates.greenCopyEnabled && greenCandidate) {
       if (pc5m! >= gates.greenCopyMaxPc5mPct) {
@@ -365,10 +370,14 @@ export function evaluateLeaderMirrorObservation(args: {
     return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
   }
   if (ageHours < gates.minPairAgeHours) {
-    return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
+    if (!gates.tierEnabled) {
+      return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
+    }
   }
   if (mcap < gates.minMcapUsd) {
-    return { action: 'skip', reason: 'leader_mirror_mcap_floor' };
+    if (!gates.tierEnabled) {
+      return { action: 'skip', reason: 'leader_mirror_mcap_floor' };
+    }
   }
   if (
     args.quotePriceUsd == null ||
@@ -445,7 +454,7 @@ export function evaluateLeaderMirrorObservation(args: {
     return {
       action: 'buy',
       quotePriceUsd: quotePrice,
-      mirrorBranch: 'green',
+      mirrorBranch: gates.tierEnabled && tierFloorMiss ? 'tier' : 'green',
       ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
     };
   }
@@ -460,6 +469,7 @@ export function evaluateLeaderMirrorObservation(args: {
   return {
     action: 'buy',
     quotePriceUsd: quotePrice,
+    ...(gates.tierEnabled && tierFloorMiss ? { mirrorBranch: 'tier' } : {}),
     ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
   };
 }

@@ -26,6 +26,7 @@ describe('decideExitRefire', () => {
 
   it('refires while attempts remain and a balance exists', () => {
     expect(decideExitRefire(base)).toBe('refire');
+    expect(decideExitRefire({ ...base, lane: 'tier' })).toBe('refire');
   });
 
   it('gives up after the configured attempts', () => {

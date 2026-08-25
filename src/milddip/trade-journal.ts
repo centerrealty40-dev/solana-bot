@@ -49,6 +49,7 @@ export type TradeFillEvent = {
   lossReclaimWaitMs?: number | null;
   lossReclaimTargetPct?: number | null;
   dipSource?: string | null;
+  lane?: string | null;
   source: 'mild_dip' | 'leader_observer';
   leader?: string | null;
   cashSource?:
@@ -70,6 +71,7 @@ export type TradeRoundtripEvent = {
   wallet: string;
   mint: string;
   symbol?: string | null;
+  lane?: string | null;
   buyCostUsd: number;
   sellProceedsUsd: number;
   cashPnlUsd: number;
@@ -351,6 +353,7 @@ export function writeUsBuyFill(args: {
   fillPriceUsd?: number | null;
   reason?: string | null;
   dipSource?: string | null;
+  lane?: string | null;
   nowMs?: number;
 }): TradeFillEvent {
   const cash = resolveBuyCash({
@@ -386,6 +389,7 @@ export function writeUsBuyFill(args: {
     fraction: 1,
     reason: args.reason ?? null,
     dipSource: args.dipSource ?? null,
+    ...(args.lane != null ? { lane: args.lane } : {}),
     source: 'mild_dip',
     leader: null,
     cashSource: cash.cashSource,
@@ -415,6 +419,7 @@ export function writeUsSellFill(args: {
   fillPriceUsd?: number | null;
   markPnlPct?: number | null;
   reason?: string | null;
+  lane?: string | null;
   lossExitBounceCap?: 'drawdown' | 'trough_age' | null;
   lossReclaimWaitMs?: number | null;
   lossReclaimTargetPct?: number | null;
@@ -449,6 +454,7 @@ export function writeUsSellFill(args: {
         wallet: args.wallet,
         mint: args.mint,
         symbol: args.symbol ?? null,
+        ...(args.lane != null ? { lane: args.lane } : {}),
         ...sold.roundtrip,
         exitReason: args.reason ?? null,
         lossExitBounceCap: args.lossExitBounceCap ?? null,
@@ -478,6 +484,7 @@ export function writeUsSellFill(args: {
     feeSolAfter: args.feeSolAfter ?? null,
     fillPriceUsd: args.fillPriceUsd ?? null,
     markPnlPct: args.markPnlPct ?? null,
+    ...(args.lane != null ? { lane: args.lane } : {}),
     cashPnlUsd,
     costBasisUsd,
     fraction: args.fraction,
