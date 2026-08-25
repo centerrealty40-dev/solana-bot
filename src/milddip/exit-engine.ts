@@ -473,7 +473,7 @@ export function decideMarkExit(args: {
       decisionSource = 'dex';
     }
   }
-  if (pos.lane === 'leader_mirror' && args.mirrorGates) {
+  if ((pos.lane === 'leader_mirror' || pos.lane === 'tier') && args.mirrorGates) {
     const nowMsMirror = args.nowMs ?? Date.now();
     const heldMsMirror = Math.max(0, nowMsMirror - (pos.openedAtMs || 0));
     const basis = pos.entryPriceUsd;
@@ -535,7 +535,7 @@ export function decideMarkExit(args: {
         : args.mirrorGates.mirrorEntrySettling === true
           ? 'entry_settling'
           : undefined;
-    const mirrorLadderAllowed = mirrorExitBlockReason == null;
+    const mirrorLadderAllowed = mirrorExitBlockReason == null && pos.lane !== 'tier';
     const mirrorDustCandidate =
       (args.mirrorGates.mirrorDustCloseUsd ?? 0) > 0 &&
       mirrorPartialSale &&

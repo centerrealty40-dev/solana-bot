@@ -181,6 +181,7 @@ import {
   mildDipStateSaveBlocked,
   type MildDipOpenPosition,
   type MildDipState,
+  isMirrorLane,
 } from './state.js';
 import { checkMildDipDiskSpace, runMildDipDataRetention } from './disk-hygiene.js';
 import {
@@ -292,7 +293,7 @@ function mirrorLossCapValues(state: MildDipState): {
 } {
   const cashUsd = state.mirrorTradingCashUsd ?? 0;
   const bagsUsd = Object.values(state.open)
-    .filter((position) => position.lane === 'leader_mirror')
+    .filter((position) => isMirrorLane(position.lane))
     .reduce((sum, position) => sum + mirrorOpenMarkValueUsd(position), 0);
   return { cashUsd, bagsUsd, drawdownUsd: cashUsd + bagsUsd };
 }
@@ -319,7 +320,7 @@ export function ensureMirrorLossCapBaseline(
     tradingCashUsd: state.mirrorTradingCashUsd,
     openBagsUsd: bagsUsd,
     openMirror: Object.values(state.open).filter(
-      (position) => position.lane === 'leader_mirror',
+      (position) => isMirrorLane(position.lane),
     ).length,
     baselineAtMs: nowMs,
     lossCapUsd: cfg.leaderMirror.lossCapUsd,
@@ -2038,6 +2039,27 @@ async function wakeLeaderMirrors(
       leaderMirrorWatches.delete(watchKey);
       continue;
     }
+    const isTier = decision.mirrorBranch === 'tier';
+    const openTier = Object.values(state.open).filter(
+      (position) => position.lane === 'tier',
+    ).length;
+    if (isTier && (gates.tierMaxOpen ?? 0) > 0 && openTier >= (gates.tierMaxOpen ?? 0)) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_refusal',
+        mint,
+        reason: 'leader_mirror_tier_exposure_cap',
+        openTier,
+        maxOpen: gates.tierMaxOpen,
+        metricSource: watch.metricSource,
+      });
+      leaderMirrorDecisions.set(watchKey, {
+        hitKey: watch.hitKey,
+        decidedAtMs: nowMs,
+        reason: 'leader_mirror_tier_exposure_cap',
+      });
+      leaderMirrorWatches.delete(watchKey);
+      continue;
+    }
     if (mirrorLossCapTriggered(cfg, state)) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_refusal',
@@ -2840,7 +2862,7 @@ async function executeQueuedSell(args: {
       : retrySlippageBps != null
         ? { slippageBpsOverride: retrySlippageBps }
         : {}),
-    ...(pos.lane === 'leader_mirror'
+    ...(isMirrorLane(pos.lane)
       ? {
           slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
           slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
@@ -2892,7 +2914,7 @@ async function executeQueuedSell(args: {
   while (
     !sell.ok &&
     sell.reason === 'confirm_timeout' &&
-    pos.lane === 'leader_mirror' &&
+    isMirrorLane(pos.lane) &&
     fraction === 1 &&
     cfg.leaderMirror.exitRefireMax > 0
   ) {
@@ -2964,7 +2986,7 @@ async function executeQueuedSell(args: {
     );
   }
 
-  if (pos.lane === 'leader_mirror' && (sell.ok || refireSettlement != null)) {
+  if (isMirrorLane(pos.lane) && (sell.ok || refireSettlement != null)) {
     const cashDelta = refireSettlement
       ? refireSettlement.quoteReceivedUsd ?? 0
       : accountMirrorCashLeg(
@@ -3052,6 +3074,7 @@ async function executeQueuedSell(args: {
       fillPriceUsd: refireSettlement ? null : sell.priceUsd || decision.markPriceUsd,
       markPnlPct: refireSettlement ? null : sell.pnlPct ?? decision.pnlPct,
       reason: decision.reason,
+      lane: pos.lane ?? 'dip',
       lossExitBounceCap: decision.lossExitBounceCap ?? null,
       lossReclaimWaitMs: decision.lossReclaimWaitMs ?? null,
       lossReclaimTargetPct: cfg.exit.lossReclaimTargetPct,
@@ -4067,7 +4090,7 @@ async function tryExits(
           : null,
       capTriggered: mirrorLossCapTriggered(cfg, state),
       openMirror: Object.values(state.open).filter(
-        (position) => position.lane === 'leader_mirror',
+        (position) => isMirrorLane(position.lane),
       ).length,
     });
   }
@@ -4526,17 +4549,27 @@ async function tryExits(
         noMoveMinMfePct: pos.mirrorExitNoMoveMinMfePct ?? cfg.leaderMirror.noMoveMinMfePct,
         armPct: pos.mirrorExitArmPct ?? cfg.leaderMirror.exitArmPct,
         trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
-        ownExitEnabled: cfg.leaderMirror.ownExitEnabled,
+        ownExitEnabled:
+          pos.lane === 'tier' ? false : cfg.leaderMirror.ownExitEnabled,
         lossCapActive:
           cfg.leaderMirror.lossCapFlatten &&
           mirrorLossCapTriggered(cfg, state),
-        ownExitTimeStopMs: cfg.leaderMirror.ownExitTimeStopMs,
-        leaderSellOnly: cfg.leaderMirror.leaderSellOnlyExit,
-        safetyMaxHoldMs: cfg.leaderMirror.safetyMaxHoldMs,
-        ladderStepPct: cfg.leaderMirror.ladderStepPct,
-        ladderStepAfterAveragePct: cfg.leaderMirror.ladderStepAfterAveragePct,
-        ladderSellFraction: cfg.leaderMirror.ladderSellFraction,
-        ladderMaxRungs: cfg.leaderMirror.ladderMaxRungs,
+        ownExitTimeStopMs:
+          pos.lane === 'tier' ? 0 : cfg.leaderMirror.ownExitTimeStopMs,
+        leaderSellOnly:
+          pos.lane === 'tier' ? true : cfg.leaderMirror.leaderSellOnlyExit,
+        safetyMaxHoldMs:
+          pos.lane === 'tier' ? 0 : cfg.leaderMirror.safetyMaxHoldMs,
+        ladderStepPct:
+          pos.lane === 'tier' ? undefined : cfg.leaderMirror.ladderStepPct,
+        ladderStepAfterAveragePct:
+          pos.lane === 'tier'
+            ? undefined
+            : cfg.leaderMirror.ladderStepAfterAveragePct,
+        ladderSellFraction:
+          pos.lane === 'tier' ? undefined : cfg.leaderMirror.ladderSellFraction,
+        ladderMaxRungs:
+          pos.lane === 'tier' ? 0 : cfg.leaderMirror.ladderMaxRungs,
         ladderDustUsd: cfg.leaderMirror.ladderDustUsd,
         mirrorDustCloseUsd: cfg.leaderMirror.dustCloseUsd,
         mirrorFirstClipPending,
@@ -5417,7 +5450,7 @@ export async function runMildDipLoop(
       leaders: cfg.leaderMirror.leaders,
       openMints: new Set(
         Object.entries(state.open)
-          .filter(([, pos]) => pos.lane === 'leader_mirror' && pos.leaderMirrorLeader)
+          .filter(([, pos]) => isMirrorLane(pos.lane) && pos.leaderMirrorLeader)
           .map(([mint]) => mint),
       ),
       nowMs: Date.now(),
@@ -5425,7 +5458,7 @@ export async function runMildDipLoop(
     let changed = false;
     for (const event of reconciled) {
       const pos = state.open[event.mint];
-      if (!pos || pos.lane !== 'leader_mirror' || pos.leaderMirrorLeader !== event.leader) {
+      if (!pos || !isMirrorLane(pos.lane) || pos.leaderMirrorLeader !== event.leader) {
         continue;
       }
       if (
@@ -5472,7 +5505,7 @@ export async function runMildDipLoop(
       Object.entries(state.open)
         .filter(
           ([, pos]) =>
-            pos.lane === 'leader_mirror' &&
+            isMirrorLane(pos.lane) &&
             pos.leaderMirrorLeader &&
             !pos.mirrorLeaderSellIntent,
         )
@@ -5492,7 +5525,7 @@ export async function runMildDipLoop(
     for (const [mint, pos] of Object.entries(state.open)) {
       if (
         !pos ||
-        pos.lane !== 'leader_mirror' ||
+        !isMirrorLane(pos.lane) ||
         pos.mirrorLeaderSellIntent
       ) {
         continue;
@@ -6168,7 +6201,7 @@ export async function runMildDipLoop(
 
   const reconcileLeaderBalances = async (nowMs: number): Promise<void> => {
     const positions = Object.entries(state.open).filter(
-      ([, pos]) => pos.lane === 'leader_mirror' && Boolean(pos.leaderMirrorLeader),
+      ([, pos]) => isMirrorLane(pos.lane) && Boolean(pos.leaderMirrorLeader),
     );
     if (positions.length === 0) return;
     const maxPerPass = Math.max(1, cfg.leaderMirror.leaderBalanceReconcileMaxPerPass);
@@ -6180,7 +6213,7 @@ export async function runMildDipLoop(
     leaderBalanceReconcileCursor = (start + selected.length) % positions.length;
     for (const [mint] of selected) {
       const pos = state.open[mint];
-      if (!pos || pos.lane !== 'leader_mirror' || !pos.leaderMirrorLeader) continue;
+      if (!pos || !isMirrorLane(pos.lane) || !pos.leaderMirrorLeader) continue;
       if (nowMs - pos.openedAtMs < cfg.leaderMirror.leaderBalanceReconcileMinHoldMs) {
         leaderFlatConfirmations.delete(mint);
         continue;
@@ -6356,7 +6389,7 @@ export async function runMildDipLoop(
     // Open-book exits own the loop. Stream-first marks must not wait on scan/Dex.
     const durableLeaderSell = Object.values(state.open).some(
       (pos) =>
-        pos.lane === 'leader_mirror' &&
+        isMirrorLane(pos.lane) &&
         pos.mirrorLeaderSellIntent &&
         mirrorLeaderSellRetryDue(pos.mirrorLeaderSellIntent.lastAttemptAtMs, nowMs),
     );

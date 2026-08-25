@@ -117,7 +117,7 @@ export type MildDipOpenPosition = {
    * managed by `decideGreenExit`, not by the dip ladder: the tape says those
    * names are done within minutes either way, so a trail would only donate.
    */
-  lane?: 'dip' | 'green' | 'leader_mirror' | 'leader_style';
+  lane?: 'dip' | 'green' | 'leader_mirror' | 'tier' | 'leader_style';
   mirrorExitArmPct?: number;
   mirrorExitTrailPct?: number;
   mirrorExitStopPct?: number;
@@ -227,6 +227,10 @@ export type MildDipOpenPosition = {
     lastAttemptAtMs?: number;
   };
 };
+
+export function isMirrorLane(lane: MildDipOpenPosition['lane']): boolean {
+  return lane === 'leader_mirror' || lane === 'tier';
+}
 
 /** Last full exit — block rebuy near the same USD price (no Dex needed). */
 export type MildDipLastExit = {

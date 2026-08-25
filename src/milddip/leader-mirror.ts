@@ -7,7 +7,7 @@ export type LeaderMirrorDecision =
   | {
       action: 'buy';
       quotePriceUsd: number;
-      mirrorBranch?: 'green' | 'dip';
+      mirrorBranch?: 'green' | 'dip' | 'tier';
       knifeWait?: {
         enteredByDiscount: boolean;
         enteredByWindowExpiry: boolean;
@@ -98,6 +98,9 @@ export type LeaderMirrorGates = {
   knifeWaitDiscountPct: number;
   knifeWaitWindowMs: number;
   knifeWaitQuoteSlots: number;
+  tierEnabled?: boolean;
+  tierPositionUsd?: number;
+  tierMaxOpen?: number;
 };
 
 export function leaderMirrorObservationFresh(args: {
@@ -364,11 +367,17 @@ export function evaluateLeaderMirrorObservation(args: {
   if (liq < gates.minLiquidityUsd) {
     return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
   }
+  const tierFloorMiss =
+    ageHours < gates.minPairAgeHours || mcap < gates.minMcapUsd;
   if (ageHours < gates.minPairAgeHours) {
-    return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
+    if (!gates.tierEnabled) {
+      return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
+    }
   }
   if (mcap < gates.minMcapUsd) {
-    return { action: 'skip', reason: 'leader_mirror_mcap_floor' };
+    if (!gates.tierEnabled) {
+      return { action: 'skip', reason: 'leader_mirror_mcap_floor' };
+    }
   }
   if (
     args.quotePriceUsd == null ||
@@ -460,6 +469,7 @@ export function evaluateLeaderMirrorObservation(args: {
   return {
     action: 'buy',
     quotePriceUsd: quotePrice,
+    ...(gates.tierEnabled && tierFloorMiss ? { mirrorBranch: 'tier' } : {}),
     ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
   };
 }

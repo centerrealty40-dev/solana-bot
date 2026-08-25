@@ -9,7 +9,7 @@ export function decideExitRefire(args: {
   onchainRaw: bigint;
   dustRaw: bigint;
 }): ExitRefireDecision {
-  if (args.lane !== 'leader_mirror') return 'give_up';
+  if (args.lane !== 'leader_mirror' && args.lane !== 'tier') return 'give_up';
   if (args.sellReason !== 'confirm_timeout') return 'give_up';
   if (args.fraction !== 1) return 'give_up';
   if (args.maxAttempts <= 0 || args.attemptsUsed >= args.maxAttempts) return 'give_up';

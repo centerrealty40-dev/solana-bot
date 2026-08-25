@@ -164,6 +164,9 @@ describe('decideLeaderSellExit', () => {
 
   it('exits on a fresh configured leader sale', () => {
     expect(decideLeaderSellExit(base)).toEqual({ shouldExit: true, reason: 'leader_sell' });
+    expect(
+      decideLeaderSellExit({ ...base, lane: 'tier' }),
+    ).toEqual({ shouldExit: true, reason: 'leader_sell' });
   });
 
   it('sends the first durable attempt immediately and spaces retries by five seconds', () => {

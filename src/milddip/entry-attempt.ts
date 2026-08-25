@@ -346,7 +346,7 @@ export type EntryAttemptOpts = {
   lane: 'fast' | 'slow';
   leaderStyle?: boolean;
   mirror?: boolean;
-  mirrorBranch?: 'green' | 'dip';
+  mirrorBranch?: 'green' | 'dip' | 'tier';
   leaderBuyTsMs?: number;
   leaderBuySignature?: string;
   leaderMirrorLeader?: string;
@@ -478,6 +478,7 @@ export async function attemptMildDipEntry(args: {
   let probeReason: 'rebuy_below_exit' | 'rebuy_liq_drop' | null = null;
 
   const isMirror = opts.mirror === true;
+  const mirrorLane = opts.mirrorBranch === 'tier' ? 'tier' : 'leader_mirror';
   const isLeaderStyle = opts.leaderStyle === true;
   const leaderGateOk = isMirror || isLeaderStyle || leaderBuyGateOk(cfg, state, c.mint, nowMs);
   const greenLeaderGateBypass =
@@ -1310,8 +1311,16 @@ export async function attemptMildDipEntry(args: {
   const laneCapped =
     isLeaderStyle && cfg.leaderStyle.positionUsd > 0
       ? Math.min(cfg.leaderStyle.positionUsd, knifeCapped)
-      : isMirror && cfg.leaderMirror.positionUsd > 0
-      ? Math.min(cfg.leaderMirror.positionUsd, knifeCapped)
+      : isMirror &&
+          (opts.mirrorBranch === 'tier'
+            ? cfg.leaderMirror.tierPositionUsd
+            : cfg.leaderMirror.positionUsd) > 0
+      ? Math.min(
+          opts.mirrorBranch === 'tier'
+            ? cfg.leaderMirror.tierPositionUsd
+            : cfg.leaderMirror.positionUsd,
+          knifeCapped,
+        )
       : isGreen && cfg.green.positionUsd > 0
         ? Math.min(cfg.green.positionUsd, knifeCapped)
         : knifeCapped;
@@ -1376,14 +1385,22 @@ export async function attemptMildDipEntry(args: {
     leaderStyle: isLeaderStyle,
     leaderStylePositionUsd: cfg.leaderStyle.positionUsd,
     mirror: isMirror,
-    mirrorPositionUsd: cfg.leaderMirror.positionUsd,
+    mirrorPositionUsd:
+      opts.mirrorBranch === 'tier'
+        ? cfg.leaderMirror.tierPositionUsd
+        : cfg.leaderMirror.positionUsd,
     stagedClipUsd: stagedClip.sizeUsd,
   });
   const laneRequestUsd =
     probeReason != null ? Math.min(laneRequest, requestedUsd) : laneRequest;
   const mirrorFirstClipLegs = Math.max(
     1,
-    Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)),
+    Math.min(
+      2,
+      Math.floor(
+        opts.mirrorBranch === 'tier' ? 1 : cfg.leaderMirror.firstClipLegs ?? 1,
+      ),
+    ),
   );
   const mirrorFirstClipRequestUsd =
     isMirror && mirrorFirstClipLegs > 1
@@ -1467,7 +1484,7 @@ export async function attemptMildDipEntry(args: {
     // ring held while the seat was parked (4kZdVs: mfePct=0, trail dead).
     peakPriceUsd: entryPriceUsd,
     entryMarkPriceUsd,
-    lane: isMirror ? 'leader_mirror' : isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
+    lane: isMirror ? mirrorLane : isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
     ...(isMirror && opts.mirrorExit
       ? {
           mirrorExitArmPct: opts.mirrorExit.armPct,
@@ -1533,7 +1550,7 @@ export async function attemptMildDipEntry(args: {
     sizeUsd: sized.sizeUsd,
     priceUsd: entryPriceUsd,
     dipSource: c.dipSource,
-    lane: isMirror ? 'leader_mirror' : isLeaderStyle ? 'leader_style' : opts.lane,
+    lane: isMirror ? mirrorLane : isLeaderStyle ? 'leader_style' : opts.lane,
     trigger: opts.trigger,
     waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
     waitDipMaxPriceUsd: waitDipCeilingPx,
@@ -1660,7 +1677,7 @@ export async function attemptMildDipEntry(args: {
       pc5m: entryPc5m,
       dipSource: c.dipSource,
       structSource: c.structSource ?? null,
-      lane: isMirror ? 'leader_mirror' : opts.lane,
+      lane: isMirror ? mirrorLane : opts.lane,
       trigger: opts.trigger,
       waitDipSignalPriceUsd: c.waitDipSignalPriceUsd ?? null,
       waitDipMaxPriceUsd: waitDipCeilingPx,
@@ -1709,7 +1726,7 @@ export async function attemptMildDipEntry(args: {
     waitDipMarkDumpFromSignalPct: waitDipMarkDump,
     waitDipFillDumpFromSignalPct: waitDipFillDump,
     waitDipMaxPriceUsd: waitDipCeilingPx,
-    lane: isMirror ? 'leader_mirror' : opts.lane,
+    lane: isMirror ? mirrorLane : opts.lane,
     probe: probeReason,
     structSource: c.structSource ?? null,
     impulseMetricsUnknown: c.impulseMetricsUnknown ?? null,
@@ -1815,6 +1832,7 @@ export async function attemptMildDipEntry(args: {
       fillPriceUsd: fillPxJournal,
       reason: buy.reason ?? null,
       dipSource: c.dipSource,
+      lane: isMirror ? mirrorLane : opts.lane,
       nowMs,
     });
   } catch {
@@ -1923,7 +1941,7 @@ export async function attemptMildDipEntry(args: {
     ...(isMirror ? { mirrorLadderBasisPriceUsd: fillPx, mirrorLadderRungsDone: 0 } : {}),
     peakPriceUsd: fillPx,
     entryMarkPriceUsd,
-    lane: isMirror ? 'leader_mirror' : isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
+    lane: isMirror ? mirrorLane : isLeaderStyle ? 'leader_style' : isGreen ? 'green' : 'dip',
     ...(isMirror && opts.mirrorExit
       ? {
           mirrorExitArmPct: opts.mirrorExit.armPct,

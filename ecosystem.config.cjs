@@ -4762,6 +4762,9 @@ function makeMirrorApp({
   dustCloseUsd,
   positionUsd,
   averageUsd,
+  tierEnabled,
+  tierPositionUsd,
+  tierMaxOpen,
 }) {
   return {
     ...mildDipBotApp,
@@ -4877,6 +4880,9 @@ function makeMirrorApp({
       MILD_DIP_ORPHAN_SELL_INTERVAL_MS: '21600000',
       MILD_DIP_MIRROR_AVERAGE_ENABLED: '1',
       MILD_DIP_MIRROR_AVERAGE_USD: averageUsd,
+      MILD_DIP_MIRROR_TIER_ENABLED: tierEnabled,
+      MILD_DIP_MIRROR_TIER_POSITION_USD: tierPositionUsd,
+      MILD_DIP_MIRROR_TIER_MAX_OPEN: tierMaxOpen,
       MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS: '3600000,7200000,10800000,14400000,21600000',
       MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS: '120000',
       MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT: '0.5',
@@ -4922,6 +4928,9 @@ if (mildDipBotApp) {
       dustCloseUsd: '10',
       positionUsd: '50',
       averageUsd: '40',
+      tierEnabled: '1',
+      tierPositionUsd: '10',
+      tierMaxOpen: '5',
     }),
     makeMirrorApp({
       name: 'mild-dip-mirror2',
@@ -4945,6 +4954,9 @@ if (mildDipBotApp) {
       dustCloseUsd: '3',
       positionUsd: '10',
       averageUsd: '7',
+      tierEnabled: '0',
+      tierPositionUsd: '10',
+      tierMaxOpen: '5',
     }),
   );
 }

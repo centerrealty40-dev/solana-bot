@@ -233,6 +233,63 @@ describe('leader mirror observation decisions', () => {
     });
   });
 
+  it('admits candidates rejected only by age or market cap into the tier lane', () => {
+    expect(at(hit({ ageHours: 0.25 }), 101, 110_000, 100_000, {
+      ...gates,
+      tierEnabled: true,
+      minPairAgeHours: 1,
+    })).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101,
+      mirrorBranch: 'tier',
+    });
+    expect(at(hit({ mcap: 4_000 }), 101, 110_000, 100_000, {
+      ...gates,
+      tierEnabled: true,
+      minMcapUsd: 5_000,
+    })).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101,
+      mirrorBranch: 'tier',
+    });
+    expect(at(hit({ ageHours: 0.25, mcap: 4_000 }), 101, 110_000, 100_000, {
+      ...gates,
+      tierEnabled: true,
+      minPairAgeHours: 1,
+      minMcapUsd: 5_000,
+    })).toMatchObject({ action: 'buy', mirrorBranch: 'tier' });
+  });
+
+  it('keeps age and market-cap floors unchanged when tier is disabled', () => {
+    expect(at(hit({ ageHours: 0.25 }), 101, 110_000, 100_000, {
+      ...gates,
+      minPairAgeHours: 1,
+    })).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_pair_age_floor',
+    });
+    expect(at(hit({ mcap: 4_000 }), 101, 110_000, 100_000, {
+      ...gates,
+      minMcapUsd: 5_000,
+    })).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_mcap_floor',
+    });
+  });
+
+  it('does not admit liquidity failures into tier', () => {
+    expect(at(hit({ liq: 7_999, ageHours: 0.25, mcap: 4_000 }), 101, 110_000, 100_000, {
+      ...gates,
+      tierEnabled: true,
+      minLiquidityUsd: 8_000,
+      minPairAgeHours: 1,
+      minMcapUsd: 5_000,
+    })).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_liquidity_floor',
+    });
+  });
+
   it('refuses when the configured 1h floor has no metric', () => {
     expect(at(hit({ pc1h: undefined }), 101, 110_000, 100_000, {
       ...gates,

@@ -608,6 +608,25 @@ describe('mild-dip mirror-only configuration', () => {
       ).leaderMirror.mirrorOnly,
     ).toBe(true);
   });
+
+  it('defaults the tier lane off and loads its sizing and cap', () => {
+    const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
+    expect(defaults.tierEnabled).toBe(false);
+    expect(defaults.tierPositionUsd).toBe(10);
+    expect(defaults.tierMaxOpen).toBe(5);
+    const configured = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_MIRROR_TIER_ENABLED: '1',
+        MILD_DIP_MIRROR_TIER_POSITION_USD: '12',
+        MILD_DIP_MIRROR_TIER_MAX_OPEN: '7',
+      },
+      () => loadMildDipConfig(),
+    ).leaderMirror;
+    expect(configured.tierEnabled).toBe(true);
+    expect(configured.tierPositionUsd).toBe(12);
+    expect(configured.tierMaxOpen).toBe(7);
+  });
 });
 
 describe('mild-dip mirror green-copy configuration', () => {
