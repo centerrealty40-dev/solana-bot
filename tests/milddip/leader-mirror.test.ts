@@ -430,8 +430,14 @@ describe('leader mirror observation decisions', () => {
     expect(isFundingShortageReason('insufficient_usdc')).toBe(true);
     expect(isFundingShortageReason('insufficient_fee_sol')).toBe(true);
     expect(isFundingShortageReason('premium_cap')).toBe(false);
-    expect(fundingShortageEntryResult(true)).toBe('no_funds');
-    expect(fundingShortageEntryResult(false)).toBe('skip');
+    expect(fundingShortageEntryResult(true, 'insufficient_fee_sol')).toBe(
+      'no_funds',
+    );
+    expect(fundingShortageEntryResult(true, 'usdc_exhausted')).toBe('no_funds');
+    expect(fundingShortageEntryResult(false, 'insufficient_fee_sol')).toBe(
+      'skip',
+    );
+    expect(fundingShortageEntryResult(false, 'usdc_exhausted')).toBe('stop');
   });
   it('buys after a fresh quote on a dump', () => {
     expect(at()).toEqual({ action: 'buy', quotePriceUsd: 101 });

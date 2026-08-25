@@ -426,8 +426,10 @@ export function isFundingShortageReason(reason?: string | null): boolean {
 
 export function fundingShortageEntryResult(
   isMirror: boolean,
-): 'no_funds' | 'skip' {
-  return isMirror ? 'no_funds' : 'skip';
+  reason?: string | null,
+): 'no_funds' | 'skip' | 'stop' {
+  if (isMirror) return 'no_funds';
+  return reason?.startsWith('insufficient_fee_sol') ? 'skip' : 'stop';
 }
 
 export function mirrorEntryAttemptOutcome(
@@ -1520,10 +1522,10 @@ export async function attemptMildDipEntry(args: {
         console.warn('[mild-dip] urgent fee-sol topup failed', err);
       });
       // Skip this mint; keep scanning others (stop would abort the whole slow lane).
-      return fundingShortageEntryResult(isMirror);
+      return fundingShortageEntryResult(isMirror, sized.reason);
     }
     return isFundingShortageReason(sized.reason)
-      ? fundingShortageEntryResult(isMirror)
+      ? fundingShortageEntryResult(isMirror, sized.reason)
       : 'stop';
   }
 
