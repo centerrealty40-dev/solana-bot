@@ -96,7 +96,9 @@ export type CrossLeaderAverageSkipReason =
   | 'cooldown'
   | 'buy_in_flight'
   | 'sell_in_flight'
-  | 'size_stop';
+  | 'size_stop'
+  | 'step_too_small'
+  | 'steps_target_reached';
 
 const crossLeaderAverageSkipLastJournaled = new Map<
   string,
@@ -145,6 +147,75 @@ export function crossLeaderAverageDiscountReached(
     entryPriceUsd > 0 &&
     markPriceUsd <= entryPriceUsd * (1 - minDiscountPct / 100)
   );
+}
+
+export type CrossLeaderAverageStepResult =
+  | {
+      stepUsd: number;
+      targetFraction: number;
+      drawdownPct: number;
+    }
+  | {
+      stepUsd: 0;
+      targetFraction: number;
+      drawdownPct: number;
+      reason: 'step_too_small' | 'steps_target_reached';
+    };
+
+export function crossLeaderAverageStepUsd(args: {
+  markPriceUsd: number;
+  basePriceUsd: number;
+  baseUsd: number;
+  addedUsd: number;
+  minDiscountPct: number;
+  startFraction: number;
+  fullDiscountPct: number;
+  maxTotalFraction: number;
+  minStepUsd: number;
+}): CrossLeaderAverageStepResult | null {
+  const {
+    markPriceUsd,
+    basePriceUsd,
+    baseUsd,
+    addedUsd,
+    minDiscountPct,
+    startFraction,
+    fullDiscountPct,
+    maxTotalFraction,
+    minStepUsd,
+  } = args;
+  if (!(markPriceUsd > 0) || !(basePriceUsd > 0) || !(baseUsd > 0)) return null;
+  const drawdownPct = (1 - markPriceUsd / basePriceUsd) * 100;
+  if (drawdownPct < minDiscountPct) return null;
+  const span = Math.max(0, fullDiscountPct - minDiscountPct);
+  const maxFraction = Math.max(0, maxTotalFraction);
+  const start = Math.min(maxFraction, Math.max(0, startFraction));
+  const targetFraction =
+    span > 0
+      ? Math.min(
+          maxFraction,
+          start + ((drawdownPct - minDiscountPct) * (maxFraction - start)) / span,
+        )
+      : maxFraction;
+  const targetUsd = baseUsd * targetFraction;
+  const stepUsd = Math.max(0, targetUsd - Math.max(0, addedUsd));
+  if (!(stepUsd > 0)) {
+    return {
+      stepUsd: 0,
+      targetFraction,
+      drawdownPct,
+      reason: 'steps_target_reached',
+    };
+  }
+  if (stepUsd < minStepUsd) {
+    return {
+      stepUsd: 0,
+      targetFraction,
+      drawdownPct,
+      reason: 'step_too_small',
+    };
+  }
+  return { stepUsd, targetFraction, drawdownPct };
 }
 
 export function parseCrossLeaderBuyLines(

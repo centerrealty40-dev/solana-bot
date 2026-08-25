@@ -90,6 +90,7 @@ import {
   LeaderSellFeed,
   CrossLeaderBuyFeed,
   crossLeaderAverageDiscountReached,
+  crossLeaderAverageStepUsd,
   resolveCrossLeaderAverageLeaders,
   reconcileCrossLeaderBuyEvents,
   shouldJournalCrossLeaderAverageSkip,
@@ -4184,12 +4185,36 @@ async function attemptCrossLeaderAverage(args: {
     skip('leader_not_held');
     return;
   }
-  if (!crossLeaderAverageDiscountReached(
-    markPriceUsd,
-    pos.entryPriceUsd,
-    g.crossLeaderAverageMinDiscountPct,
-  )) {
+  const basePriceUsd =
+    pos.mirrorCrossLeaderAverageBasePriceUsd ?? pos.entryPriceUsd;
+  const baseUsd = pos.mirrorCrossLeaderAverageBaseUsd ?? pos.sizeUsd;
+  const step = g.crossLeaderAverageStepsEnabled
+    ? crossLeaderAverageStepUsd({
+        markPriceUsd,
+        basePriceUsd,
+        baseUsd,
+        addedUsd: pos.mirrorCrossLeaderAverageUsdTotal ?? 0,
+        minDiscountPct: g.crossLeaderAverageMinDiscountPct,
+        startFraction: g.crossLeaderAverageStartFraction,
+        fullDiscountPct: g.crossLeaderAverageFullDiscountPct,
+        maxTotalFraction: g.crossLeaderAverageMaxTotalFraction,
+        minStepUsd: g.crossLeaderAverageMinStepUsd,
+      })
+    : null;
+  if (
+    (!g.crossLeaderAverageStepsEnabled &&
+      !crossLeaderAverageDiscountReached(
+        markPriceUsd,
+        pos.entryPriceUsd,
+        g.crossLeaderAverageMinDiscountPct,
+      )) ||
+    (g.crossLeaderAverageStepsEnabled && !step)
+  ) {
     skip('discount_not_reached');
+    return;
+  }
+  if (g.crossLeaderAverageStepsEnabled && step && 'reason' in step) {
+    skip(step.reason as CrossLeaderAverageSkipReason);
     return;
   }
   if ((pos.mirrorCrossLeaderAverageCount ?? 0) >= g.crossLeaderAverageMaxTimes) {
@@ -4215,7 +4240,11 @@ async function attemptCrossLeaderAverage(args: {
   pos.mirrorCrossLeaderAverageLastAttemptAtMs = nowMs;
   saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
-  const amountUsd = g.crossLeaderAverageUsd > 0 ? g.crossLeaderAverageUsd : g.averageUsd;
+  const amountUsd = g.crossLeaderAverageStepsEnabled
+    ? step!.stepUsd
+    : g.crossLeaderAverageUsd > 0
+      ? g.crossLeaderAverageUsd
+      : g.averageUsd;
   const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, amountUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     skip('size_stop');
@@ -4290,6 +4319,12 @@ async function attemptCrossLeaderAverage(args: {
     live.mirrorCrossLeaderAverageCount = (live.mirrorCrossLeaderAverageCount ?? 0) + 1;
     live.mirrorCrossLeaderAverageSignature = signalKey;
     live.mirrorCrossLeaderAverageFillPriceUsd = fillPx;
+    if (g.crossLeaderAverageStepsEnabled) {
+      live.mirrorCrossLeaderAverageBasePriceUsd ??= basePriceUsd;
+      live.mirrorCrossLeaderAverageBaseUsd ??= baseUsd;
+    }
+    live.mirrorCrossLeaderAverageUsdTotal =
+      (live.mirrorCrossLeaderAverageUsdTotal ?? 0) + addUsd;
     live.mirrorLadderBasisPriceUsd = fillPx;
     live.mirrorLadderRungsDone = 0;
     const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
@@ -4309,6 +4344,11 @@ async function attemptCrossLeaderAverage(args: {
       fillPriceUsd: fillPx,
       amountUsd: addUsd,
       discountPct,
+      drawdownPct: step?.drawdownPct ?? null,
+      targetFraction: step?.targetFraction ?? null,
+      stepUsd: step?.stepUsd ?? addUsd,
+      addedTotalUsd: live.mirrorCrossLeaderAverageUsdTotal,
+      baseUsd: g.crossLeaderAverageStepsEnabled ? live.mirrorCrossLeaderAverageBaseUsd : null,
       attempt: live.mirrorCrossLeaderAverageCount,
     });
   } finally {
