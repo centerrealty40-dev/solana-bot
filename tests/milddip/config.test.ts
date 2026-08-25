@@ -51,6 +51,12 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.leaderMirror.fundingParkEnabled).toBe(false);
     expect(defaults.leaderMirror.fundingParkRetryMs).toBe(30_000);
     expect(defaults.leaderMirror.fundingParkMax).toBe(10);
+    expect(defaults.leaderMirror.tierParkEnabled).toBe(false);
+    expect(defaults.leaderMirror.sizeLiqCoef).toBe(0);
+    expect(defaults.leaderMirror.sizeLiqExp).toBe(0.866);
+    expect(defaults.leaderMirror.sizeLiqMinUsd).toBe(30);
+    expect(defaults.leaderMirror.sizeLiqMaxUsd).toBe(120);
+    expect(defaults.leaderMirror.sizeLiqMaxPoolSharePct).toBe(0);
     const cfg = withConfigEnv(
       {
         ...baseEnv,
@@ -65,6 +71,12 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_MIRROR_FUNDING_PARK_ENABLED: '1',
         MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS: '45000',
         MILD_DIP_MIRROR_FUNDING_PARK_MAX: '7',
+        MILD_DIP_MIRROR_TIER_PARK_ENABLED: '1',
+        MILD_DIP_MIRROR_SIZE_LIQ_COEF: '0.008749',
+        MILD_DIP_MIRROR_SIZE_LIQ_EXP: '0.9',
+        MILD_DIP_MIRROR_SIZE_MIN_USD: '11',
+        MILD_DIP_MIRROR_SIZE_MAX_USD: '99',
+        MILD_DIP_MIRROR_SIZE_MAX_POOL_SHARE_PCT: '0.15',
       },
       () => loadMildDipConfig(),
     );
@@ -79,6 +91,12 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.leaderMirror.fundingParkEnabled).toBe(true);
     expect(cfg.leaderMirror.fundingParkRetryMs).toBe(45_000);
     expect(cfg.leaderMirror.fundingParkMax).toBe(7);
+    expect(cfg.leaderMirror.tierParkEnabled).toBe(true);
+    expect(cfg.leaderMirror.sizeLiqCoef).toBe(0.008749);
+    expect(cfg.leaderMirror.sizeLiqExp).toBe(0.9);
+    expect(cfg.leaderMirror.sizeLiqMinUsd).toBe(11);
+    expect(cfg.leaderMirror.sizeLiqMaxUsd).toBe(99);
+    expect(cfg.leaderMirror.sizeLiqMaxPoolSharePct).toBe(0.15);
   });
 
   it('defaults and loads emergency data retention settings', () => {

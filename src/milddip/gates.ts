@@ -2283,6 +2283,53 @@ export type MildDipLiquidityPowerLawSize = {
   maxUsd: number;
 };
 
+export type MildDipMirrorSizeRule =
+  | 'flat'
+  | 'liq_law'
+  | 'liq_law_floor_no_liq';
+
+export type MildDipMirrorLiquiditySize = {
+  coef: number;
+  exp: number;
+  minUsd: number;
+  maxUsd: number;
+  maxPoolSharePct: number;
+  positionUsd: number;
+};
+
+export function mildDipLeaderMirrorSizeUsd(
+  liquidityUsd: number | null | undefined,
+  law: MildDipMirrorLiquiditySize,
+): {
+  sizeUsd: number;
+  sizeLiqUsd: number | null;
+  sizeRule: MildDipMirrorSizeRule;
+} {
+  const sizeLiqUsd =
+    liquidityUsd != null && Number.isFinite(liquidityUsd) && liquidityUsd > 0
+      ? liquidityUsd
+      : null;
+  if (!(law.coef > 0)) {
+    return { sizeUsd: law.positionUsd, sizeLiqUsd, sizeRule: 'flat' };
+  }
+  if (sizeLiqUsd == null) {
+    return {
+      sizeUsd: Math.min(law.maxUsd, Math.max(law.minUsd, law.minUsd)),
+      sizeLiqUsd: null,
+      sizeRule: 'liq_law_floor_no_liq',
+    };
+  }
+  const raw = law.coef * sizeLiqUsd ** law.exp;
+  const share =
+    law.maxPoolSharePct > 0 ? (law.maxPoolSharePct / 100) * sizeLiqUsd : raw;
+  const capped = Math.min(raw, share);
+  const sizeUsd =
+    Number.isFinite(capped) && capped > 0
+      ? Math.min(law.maxUsd, Math.max(law.minUsd, capped))
+      : Math.min(law.maxUsd, Math.max(law.minUsd, law.minUsd));
+  return { sizeUsd, sizeLiqUsd, sizeRule: 'liq_law' };
+}
+
 /**
  * sizeUsd = clamp(minUsd, maxUsd, coef × liquidityUsd^exp).
  * Leader reference: 0.0387 × liq^0.866 — we use ~1.08% of that scale for $1–$30 clips.
