@@ -6,7 +6,9 @@ import {
   recentMirrorLocalLowCascade,
   parseMirrorOhlcvList,
   mirrorAverageReference,
+  shouldJournalMirrorAverageSkip,
 } from '../../src/milddip/mirror-averaging.js';
+import { resolveBuyMaxPriceImpactPct } from '../../src/copytrader/live-exec.js';
 
 describe('mirror averaging local low', () => {
   it('uses the entry base for the first average and the prior fill for the next', () => {
@@ -140,5 +142,20 @@ describe('mirror averaging local low', () => {
       nowMs: 121_000,
       minHoldMs: 120_000,
     })).toBe(true);
+  });
+
+  it('throttles repeated skip reasons while allowing changes and expiry', () => {
+    const mint = 'mirror-average-throttle-test';
+    expect(shouldJournalMirrorAverageSkip(mint, 'price_not_at_low', 1_000)).toBe(true);
+    expect(shouldJournalMirrorAverageSkip(mint, 'price_not_at_low', 299_000)).toBe(false);
+    expect(shouldJournalMirrorAverageSkip(mint, 'hold_not_reached', 299_000)).toBe(true);
+    expect(shouldJournalMirrorAverageSkip(mint, 'hold_not_reached', 598_999)).toBe(false);
+    expect(shouldJournalMirrorAverageSkip(mint, 'hold_not_reached', 599_000)).toBe(true);
+  });
+
+  it('uses the average override only when it is positive', () => {
+    expect(resolveBuyMaxPriceImpactPct(5, 3)).toBe(5);
+    expect(resolveBuyMaxPriceImpactPct(0, 3)).toBe(3);
+    expect(resolveBuyMaxPriceImpactPct(undefined, 3)).toBe(3);
   });
 });

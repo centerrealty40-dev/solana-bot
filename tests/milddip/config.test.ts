@@ -748,6 +748,7 @@ describe('mild-dip mirror leader-sell-only configuration', () => {
     expect(defaults.leaderSellOnlyExit).toBe(false);
     expect(defaults.safetyMaxHoldMs).toBe(0);
     expect(defaults.ladderEnabled).toBe(true);
+    expect(defaults.averageMaxPriceImpactPct).toBe(0);
     expect(defaults.ladderMinSettleSec).toBe(45);
     expect(defaults.dustCloseUsd).toBe(10);
     const configured = withConfigEnv(
@@ -757,6 +758,7 @@ describe('mild-dip mirror leader-sell-only configuration', () => {
         MILD_DIP_MIRROR_SAFETY_MAX_HOLD_MS: '86400000',
         MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC: '0',
         MILD_DIP_MIRROR_DUST_CLOSE_USD: '0',
+        MILD_DIP_MIRROR_AVERAGE_MAX_PRICE_IMPACT_PCT: '5',
       },
       () => loadMildDipConfig(),
     ).leaderMirror;
@@ -764,5 +766,6 @@ describe('mild-dip mirror leader-sell-only configuration', () => {
     expect(configured.safetyMaxHoldMs).toBe(86_400_000);
     expect(configured.ladderMinSettleSec).toBe(0);
     expect(configured.dustCloseUsd).toBe(0);
+    expect(configured.averageMaxPriceImpactPct).toBe(5);
   });
 });

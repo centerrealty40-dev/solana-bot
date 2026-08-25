@@ -73,6 +73,15 @@ function isRetryableBuyPreSendError(reason: string): boolean {
   return isRetryableBuySimError(reason);
 }
 
+export function resolveBuyMaxPriceImpactPct(
+  override: number | undefined,
+  globalCap: number,
+): number {
+  return override != null && Number.isFinite(override) && override > 0
+    ? override
+    : globalCap;
+}
+
 let cachedSigner: Keypair | null = null;
 
 function signer(cfg: CopyTraderConfig): Keypair {
@@ -182,6 +191,7 @@ export async function executeLiveCopyBuy(args: {
   slippageBpsOverride?: number;
   slippageRetryMultiplier?: number;
   slippageRetryMaxBps?: number;
+  maxPriceImpactPct?: number;
   beforeSend?: () => Promise<boolean>;
 }): Promise<
   {
@@ -204,6 +214,10 @@ export async function executeLiveCopyBuy(args: {
     leaderBuyTs = 0,
   } = args;
   const liveCfg = copyTraderLiveOscarBridge(cfg);
+  const maxPriceImpactPct = resolveBuyMaxPriceImpactPct(
+    args.maxPriceImpactPct,
+    liveCfg.liveBuyMaxPriceImpactPct,
+  );
   const solUsd = getSolUsd();
   const userPk = signer(cfg).publicKey.toBase58();
   const quoteSpec = copyQuoteSpec(cfg);
@@ -266,10 +280,10 @@ export async function executeLiveCopyBuy(args: {
 
     const impactCheck = isQuotePriceImpactTooHigh(
       quote.quoteResponse,
-      liveCfg.liveBuyMaxPriceImpactPct,
+      maxPriceImpactPct,
     );
     if (impactCheck.blocked && impactCheck.pct != null) {
-      lastReason = `route_too_impactful:buy:${impactCheck.pct.toFixed(2)}%>${liveCfg.liveBuyMaxPriceImpactPct}%`;
+      lastReason = `route_too_impactful:buy:${impactCheck.pct.toFixed(2)}%>${maxPriceImpactPct}%`;
       appendCopyEvent(cfg, {
         kind: 'buy_quote_impact_blocked',
         mint,
@@ -278,7 +292,7 @@ export async function executeLiveCopyBuy(args: {
         leaderSignature,
         sizeUsd,
         priceImpactPct: impactCheck.pct,
-        maxPriceImpactPct: liveCfg.liveBuyMaxPriceImpactPct,
+        maxPriceImpactPct,
         slippageBps: currentSlippageBps,
         buySimRetryAttempt: attempt,
       });
