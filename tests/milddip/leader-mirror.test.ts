@@ -15,6 +15,7 @@ import {
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import {
   mirrorEntryAttemptOutcome,
+  fundingShortageEntryResult,
   isFundingShortageReason,
   type EntryAttemptResult,
 } from '../../src/milddip/entry-attempt.js';
@@ -429,6 +430,8 @@ describe('leader mirror observation decisions', () => {
     expect(isFundingShortageReason('insufficient_usdc')).toBe(true);
     expect(isFundingShortageReason('insufficient_fee_sol')).toBe(true);
     expect(isFundingShortageReason('premium_cap')).toBe(false);
+    expect(fundingShortageEntryResult(true)).toBe('no_funds');
+    expect(fundingShortageEntryResult(false)).toBe('skip');
   });
   it('buys after a fresh quote on a dump', () => {
     expect(at()).toEqual({ action: 'buy', quotePriceUsd: 101 });

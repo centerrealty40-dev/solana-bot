@@ -2112,6 +2112,7 @@ async function wakeLeaderMirrors(
     const firstClipPending =
       openMirrorPosition != null &&
       isMirrorFirstClipPending(openMirrorPosition, cfg.leaderMirror.firstClipLegs);
+    let fundingUsdc: number | null = null;
     let result =
       firstClipPending
         ? await attemptMirrorFirstClipLeg({
@@ -2155,6 +2156,9 @@ async function wakeLeaderMirrors(
                 hit.fillPriceUsd != null && hit.fillPriceUsd > 0
                   ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
                   : null,
+              onFundingShortage: ({ usdc }) => {
+                fundingUsdc = usdc ?? null;
+              },
               mirrorExit: {
                 armPct: gates.exitArmPct,
                 trailPct: gates.exitTrailPct,
@@ -2238,7 +2242,7 @@ async function wakeLeaderMirrors(
           hit.fillPriceUsd != null && hit.fillPriceUsd > 0
             ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
             : null,
-        freeUsdc: null,
+        freeUsdc: fundingUsdc,
         parkedCount,
       });
       const evicted = evictFundingParkedWatchKeys(
