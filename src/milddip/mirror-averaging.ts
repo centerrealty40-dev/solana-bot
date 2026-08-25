@@ -1,6 +1,48 @@
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
 type Candle = { tsMs: number; low: number };
+export type MirrorAverageSkipReason =
+  | 'first_clip_incomplete'
+  | 'no_reference'
+  | 'leader_not_held'
+  | 'average_limit_reached'
+  | 'average_attempt_cooldown'
+  | 'average_disabled'
+  | 'buy_in_flight'
+  | 'sell_in_flight'
+  | 'local_low_unavailable'
+  | 'hold_not_reached'
+  | 'price_not_at_low'
+  | 'size_stop';
+
+const mirrorAverageSkipLastJournaled = new Map<
+  string,
+  { reason: MirrorAverageSkipReason; atMs: number }
+>();
+const MIRROR_AVERAGE_SKIP_JOURNAL_THROTTLE_MS = 5 * 60_000;
+const MIRROR_AVERAGE_SKIP_MAX_TRACKED = 2048;
+
+export function shouldJournalMirrorAverageSkip(
+  mint: string,
+  reason: MirrorAverageSkipReason,
+  nowMs: number,
+): boolean {
+  const previous = mirrorAverageSkipLastJournaled.get(mint);
+  if (
+    previous &&
+    previous.reason === reason &&
+    nowMs - previous.atMs < MIRROR_AVERAGE_SKIP_JOURNAL_THROTTLE_MS
+  ) {
+    return false;
+  }
+  mirrorAverageSkipLastJournaled.set(mint, { reason, atMs: nowMs });
+  if (mirrorAverageSkipLastJournaled.size > MIRROR_AVERAGE_SKIP_MAX_TRACKED) {
+    const oldest = mirrorAverageSkipLastJournaled.keys().next().value;
+    if (oldest) mirrorAverageSkipLastJournaled.delete(oldest);
+  }
+  return true;
+}
+
 const poolCache = new Map<string, { pool: string; fetchedAtMs: number }>();
 const candleCache = new Map<string, { candles: Candle[]; fetchedAtMs: number }>();
 

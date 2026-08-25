@@ -142,6 +142,8 @@ import {
   mirrorAveragePriceAllowed,
   mirrorAverageReference,
   mirrorRecentLocalLow,
+  shouldJournalMirrorAverageSkip,
+  type MirrorAverageSkipReason,
 } from './mirror-averaging.js';
 import {
   computeMarkLiquidityTelemetry,
@@ -3895,10 +3897,26 @@ async function attemptMirrorAverage(args: {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
   if (mildDipStateSaveBlocked()) return;
   const g = cfg.leaderMirror;
+  const journalSkip = (
+    reason: MirrorAverageSkipReason,
+    extra: Record<string, unknown> = {},
+  ): void => {
+    if (!shouldJournalMirrorAverageSkip(pos.mint, reason, nowMs)) return;
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mirror_average_skip',
+      mint: pos.mint,
+      reason,
+      markPriceUsd,
+      ...extra,
+    });
+  };
   if (
     (pos.mirrorFirstClipLegsFilled ?? 1) <
     Math.max(1, Math.min(2, Math.floor(g.firstClipLegs ?? 1)))
-  ) return;
+  ) {
+    journalSkip('first_clip_incomplete');
+    return;
+  }
   const averageAttempts = pos.mirrorAverageAttempts ?? 0;
   const averageReference = mirrorAverageReference({
     entryPriceUsd: pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd,
@@ -3907,19 +3925,53 @@ async function attemptMirrorAverage(args: {
     initialDiscountPct: g.averageMinDiscountPct,
     nextDiscountPct: g.averageNextDiscountPct,
   });
-  if (!averageReference) return;
+  if (!averageReference) {
+    journalSkip('no_reference');
+    return;
+  }
   const averageHoldSinceMs =
     averageAttempts > 0
       ? pos.mirrorAverageLastFillAtMs ?? pos.openedAtMs
       : pos.openedAtMs;
+  if (!args.leaderHeld) {
+    journalSkip('leader_not_held', {
+      refEntryPriceUsd: averageReference.entryPriceUsd,
+      minDiscountPct: averageReference.minDiscountPct,
+    });
+    return;
+  }
+  if (averageAttempts >= g.averageMaxTimes) {
+    journalSkip('average_limit_reached', {
+      refEntryPriceUsd: averageReference.entryPriceUsd,
+      minDiscountPct: averageReference.minDiscountPct,
+    });
+    return;
+  }
   if (
-    !args.leaderHeld ||
-    averageAttempts >= g.averageMaxTimes ||
-    (pos.mirrorAverageLastAttemptAtMs != null &&
-      nowMs - pos.mirrorAverageLastAttemptAtMs < 60_000) ||
-    !(g.averageEnabled && g.averageUsd > 0)
-  ) return;
-  if (buyInFlight.has(pos.mint) || sellInFlight.has(pos.mint)) return;
+    pos.mirrorAverageLastAttemptAtMs != null &&
+    nowMs - pos.mirrorAverageLastAttemptAtMs < 60_000
+  ) {
+    journalSkip('average_attempt_cooldown', {
+      refEntryPriceUsd: averageReference.entryPriceUsd,
+      minDiscountPct: averageReference.minDiscountPct,
+    });
+    return;
+  }
+  if (!(g.averageEnabled && g.averageUsd > 0)) {
+    journalSkip('average_disabled', {
+      refEntryPriceUsd: averageReference.entryPriceUsd,
+      minDiscountPct: averageReference.minDiscountPct,
+    });
+    return;
+  }
+  if (buyInFlight.has(pos.mint)) {
+    journalSkip('buy_in_flight');
+    return;
+  }
+  if (sellInFlight.has(pos.mint)) {
+    journalSkip('sell_in_flight');
+    return;
+  }
   const target = await mirrorRecentLocalLow({
     mint: pos.mint,
     nowMs,
@@ -3928,26 +3980,49 @@ async function attemptMirrorAverage(args: {
     entryPriceUsd: averageReference.entryPriceUsd,
     minDiscountPct: averageReference.minDiscountPct,
   });
-  if (
-    target == null ||
-    !mirrorAverageHoldAllowed({
-      openedAtMs: averageHoldSinceMs,
-      nowMs,
-      minHoldMs: g.averageMinHoldMs,
-    }) ||
-    !mirrorAveragePriceAllowed({
-      markPriceUsd,
-      entryPriceUsd: averageReference.entryPriceUsd,
-      targetPriceUsd: target,
-      tolerancePct: g.averageTolerancePct,
+  if (target == null) {
+    journalSkip('local_low_unavailable', {
+      refEntryPriceUsd: averageReference.entryPriceUsd,
       minDiscountPct: averageReference.minDiscountPct,
-    })
-  ) return;
+    });
+    return;
+  }
+  if (!mirrorAverageHoldAllowed({
+    openedAtMs: averageHoldSinceMs,
+    nowMs,
+    minHoldMs: g.averageMinHoldMs,
+  })) {
+    journalSkip('hold_not_reached', {
+      refEntryPriceUsd: averageReference.entryPriceUsd,
+      minDiscountPct: averageReference.minDiscountPct,
+      targetLowPriceUsd: target,
+    });
+    return;
+  }
+  if (!mirrorAveragePriceAllowed({
+    markPriceUsd,
+    entryPriceUsd: averageReference.entryPriceUsd,
+    targetPriceUsd: target,
+    tolerancePct: g.averageTolerancePct,
+    minDiscountPct: averageReference.minDiscountPct,
+  })) {
+    journalSkip('price_not_at_low', {
+      refEntryPriceUsd: averageReference.entryPriceUsd,
+      minDiscountPct: averageReference.minDiscountPct,
+      targetLowPriceUsd: target,
+    });
+    return;
+  }
   pos.mirrorAverageLastAttemptAtMs = nowMs;
   saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
   const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, g.averageUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
+    journalSkip('size_stop', {
+      refEntryPriceUsd: averageReference.entryPriceUsd,
+      minDiscountPct: averageReference.minDiscountPct,
+      targetLowPriceUsd: target,
+    });
     saveMildDipState(cfg.statePath, state);
     return;
   }
@@ -3984,6 +4059,7 @@ async function attemptMirrorAverage(args: {
       },
       slippageRetryMultiplier: g.executionSlippageMultiplier,
       slippageRetryMaxBps: g.executionSlippageMaxBps,
+      maxPriceImpactPct: g.averageMaxPriceImpactPct,
     });
     if (!buy.ok) return;
     const live = state.open[pos.mint];
