@@ -43,18 +43,33 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.leaderMirror.crossLeaderAverageMaxAgeMs).toBe(300_000);
     expect(defaults.leaderMirror.crossLeaderAverageMaxTimes).toBe(1);
     expect(defaults.leaderMirror.crossLeaderAverageMinLeaderSizeUsd).toBe(20);
+    expect(defaults.leaderMirror.crossLeaderAverageStepsEnabled).toBe(false);
+    expect(defaults.leaderMirror.crossLeaderAverageStartFraction).toBe(0.3);
+    expect(defaults.leaderMirror.crossLeaderAverageFullDiscountPct).toBe(50);
+    expect(defaults.leaderMirror.crossLeaderAverageMaxTotalFraction).toBe(1);
+    expect(defaults.leaderMirror.crossLeaderAverageMinStepUsd).toBe(3);
     const cfg = withConfigEnv(
       {
         ...baseEnv,
         MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_ENABLED: '1',
         MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_LEADERS: 'foreign-a, foreign-b',
         MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_USD: '40',
+        MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_STEPS_ENABLED: '1',
+        MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_START_FRACTION: '0.4',
+        MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_FULL_DISCOUNT_PCT: '60',
+        MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TOTAL_FRACTION: '0.9',
+        MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_STEP_USD: '4',
       },
       () => loadMildDipConfig(),
     );
     expect(cfg.leaderMirror.crossLeaderAverageEnabled).toBe(true);
     expect(cfg.leaderMirror.crossLeaderAverageLeaders).toEqual(['foreign-a', 'foreign-b']);
     expect(cfg.leaderMirror.crossLeaderAverageUsd).toBe(40);
+    expect(cfg.leaderMirror.crossLeaderAverageStepsEnabled).toBe(true);
+    expect(cfg.leaderMirror.crossLeaderAverageStartFraction).toBe(0.4);
+    expect(cfg.leaderMirror.crossLeaderAverageFullDiscountPct).toBe(60);
+    expect(cfg.leaderMirror.crossLeaderAverageMaxTotalFraction).toBe(0.9);
+    expect(cfg.leaderMirror.crossLeaderAverageMinStepUsd).toBe(4);
   });
 
   it('defaults and loads emergency data retention settings', () => {

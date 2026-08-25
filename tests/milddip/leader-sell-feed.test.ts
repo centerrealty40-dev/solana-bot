@@ -8,6 +8,8 @@ import {
   LEADER_SELL_RECONCILIATION_TAIL_BYTES,
   parseCrossLeaderBuyLines,
   crossLeaderAverageDiscountReached,
+  crossLeaderAverageRequiresSignal,
+  crossLeaderAverageStepUsd,
   resolveCrossLeaderAverageLeaders,
   shouldJournalCrossLeaderAverageSkip,
   parseLeaderSellLines,
@@ -225,6 +227,124 @@ describe('cross-leader buy feed', () => {
     expect(crossLeaderAverageDiscountReached(0.91, 1, 10)).toBe(false);
     expect(crossLeaderAverageDiscountReached(0.90, 1, 10)).toBe(true);
     expect(crossLeaderAverageDiscountReached(0.85, 1, 10)).toBe(true);
+  });
+
+  it('requires a foreign signal only before the step base is fixed', () => {
+    expect(crossLeaderAverageRequiresSignal({ stepsEnabled: false, basePriceUsd: 1, baseUsd: 100 })).toBe(true);
+    expect(crossLeaderAverageRequiresSignal({ stepsEnabled: true })).toBe(true);
+    expect(crossLeaderAverageRequiresSignal({ stepsEnabled: true, basePriceUsd: 1, baseUsd: 100 })).toBe(false);
+  });
+
+  it('calculates capped cross-leader averaging steps from the original base', () => {
+    expect(
+      crossLeaderAverageStepUsd({
+        markPriceUsd: 0.851,
+        basePriceUsd: 1,
+        baseUsd: 100,
+        addedUsd: 0,
+        minDiscountPct: 15,
+        startFraction: 0.3,
+        fullDiscountPct: 50,
+        maxTotalFraction: 1,
+        minStepUsd: 3,
+      }),
+    ).toBeNull();
+    const firstStep = crossLeaderAverageStepUsd({
+      markPriceUsd: 0.85,
+      basePriceUsd: 1,
+      baseUsd: 100,
+      addedUsd: 0,
+      minDiscountPct: 15,
+      startFraction: 0.3,
+      fullDiscountPct: 50,
+      maxTotalFraction: 1,
+      minStepUsd: 3,
+    });
+    expect(firstStep?.stepUsd).toBeCloseTo(30);
+    expect(firstStep?.targetFraction).toBeCloseTo(0.3);
+    const midStep = crossLeaderAverageStepUsd({
+      markPriceUsd: 0.7,
+      basePriceUsd: 1,
+      baseUsd: 100,
+      addedUsd: 0,
+      minDiscountPct: 15,
+      startFraction: 0.3,
+      fullDiscountPct: 50,
+      maxTotalFraction: 1,
+      minStepUsd: 3,
+    });
+    expect(midStep?.stepUsd).toBeCloseTo(60);
+    expect(midStep?.targetFraction).toBeCloseTo(0.6);
+    expect(
+      crossLeaderAverageStepUsd({
+        markPriceUsd: 0.5,
+        basePriceUsd: 1,
+        baseUsd: 100,
+        addedUsd: 0,
+        minDiscountPct: 15,
+        startFraction: 0.3,
+        fullDiscountPct: 50,
+        maxTotalFraction: 1,
+        minStepUsd: 3,
+      }),
+    ).toMatchObject({ stepUsd: 100, targetFraction: 1 });
+    expect(
+      crossLeaderAverageStepUsd({
+        markPriceUsd: 0.3,
+        basePriceUsd: 1,
+        baseUsd: 100,
+        addedUsd: 100,
+        minDiscountPct: 15,
+        startFraction: 0.3,
+        fullDiscountPct: 50,
+        maxTotalFraction: 1,
+        minStepUsd: 3,
+      }),
+    ).toMatchObject({ stepUsd: 0, targetFraction: 1, reason: 'steps_target_reached' });
+  });
+
+  it('accumulates only the incremental amount for each step', () => {
+    const options = {
+      basePriceUsd: 1,
+      baseUsd: 100,
+      minDiscountPct: 15,
+      startFraction: 0.3,
+      fullDiscountPct: 50,
+      maxTotalFraction: 1,
+      minStepUsd: 3,
+    };
+    expect(crossLeaderAverageStepUsd({ ...options, markPriceUsd: 0.85, addedUsd: 0 })?.stepUsd).toBeCloseTo(30);
+    expect(crossLeaderAverageStepUsd({ ...options, markPriceUsd: 0.7, addedUsd: 30 })?.stepUsd).toBeCloseTo(30);
+    expect(crossLeaderAverageStepUsd({ ...options, markPriceUsd: 0.5, addedUsd: 60 })?.stepUsd).toBeCloseTo(40);
+  });
+
+  it('rejects steps below the minimum and invalid base size', () => {
+    expect(
+      crossLeaderAverageStepUsd({
+        markPriceUsd: 0.85,
+        basePriceUsd: 1,
+        baseUsd: 9,
+        addedUsd: 0,
+        minDiscountPct: 15,
+        startFraction: 0.3,
+        fullDiscountPct: 50,
+        maxTotalFraction: 1,
+        minStepUsd: 3,
+      }),
+    ).toMatchObject({ stepUsd: 0, reason: 'step_too_small' });
+    expect(
+      crossLeaderAverageStepUsd({
+        markPriceUsd: 0.5,
+        basePriceUsd: 1,
+        baseUsd: 0,
+        addedUsd: 0,
+        minDiscountPct: 15,
+        startFraction: 0.3,
+        fullDiscountPct: 50,
+        maxTotalFraction: 1,
+        minStepUsd: 3,
+      }),
+    ).toBeNull();
   });
 
   it('reads incrementally and buffers the latest event per mint', () => {
