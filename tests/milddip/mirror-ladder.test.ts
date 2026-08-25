@@ -117,6 +117,28 @@ describe('mirror TP ladder', () => {
     });
   });
 
+  it('disables ladder exits when ladderEnabled is false', () => {
+    const decision = at(
+      130,
+      {},
+      { ...gates, ladderEnabled: false },
+    );
+    expect(decision?.shouldExit).toBe(false);
+    expect(decision?.reason).toBeNull();
+    expect(decision?.tpRungIndex).toBeNull();
+  });
+
+  it('does not create a new rung when a disabled ladder has prior state', () => {
+    const decision = at(
+      130,
+      { mirrorLadderRungsDone: 2 },
+      { ...gates, ladderEnabled: false },
+    );
+    expect(decision?.shouldExit).toBe(false);
+    expect(decision?.reason).toBeNull();
+    expect(decision?.tpRungIndex).toBeNull();
+  });
+
   it('keeps a $10 clip open after five ladder rungs', () => {
     const decision = at(125, { sizeUsd: 10 });
     expect(decision?.tpRungIndex).toBe(5);

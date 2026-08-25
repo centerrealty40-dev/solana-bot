@@ -747,6 +747,7 @@ describe('mild-dip mirror leader-sell-only configuration', () => {
     const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
     expect(defaults.leaderSellOnlyExit).toBe(false);
     expect(defaults.safetyMaxHoldMs).toBe(0);
+    expect(defaults.ladderEnabled).toBe(true);
     expect(defaults.ladderMinSettleSec).toBe(45);
     expect(defaults.dustCloseUsd).toBe(10);
     const configured = withConfigEnv(

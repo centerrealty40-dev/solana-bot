@@ -108,10 +108,12 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_LADDER_STEP_PCT).toBe('8');
     expect(mirror?.env.MILD_DIP_MIRROR_LADDER_STEP_AFTER_AVG_PCT).toBe('16');
     expect(mirror?.env.MILD_DIP_MIRROR_LADDER_SELL_FRACTION).toBe('0.5');
+    expect(mirror?.env.MILD_DIP_MIRROR_LADDER_ENABLED).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_LADDER_MAX_RUNGS).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_LADDER_STEP_PCT).toBe('5');
     expect(mirror2?.env.MILD_DIP_MIRROR_LADDER_STEP_AFTER_AVG_PCT).toBe('10');
     expect(mirror2?.env.MILD_DIP_MIRROR_LADDER_SELL_FRACTION).toBe('0.2');
+    expect(mirror2?.env.MILD_DIP_MIRROR_LADDER_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_LADDER_MAX_RUNGS).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC).toBe('45');
     expect(mirror2?.env.MILD_DIP_MIRROR_LADDER_MIN_SETTLE_SEC).toBe('45');
