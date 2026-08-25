@@ -2111,6 +2111,34 @@ export async function attemptMirrorFirstClipLeg(args: {
       slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
       slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
     });
+    const fillPx = buy.priceUsd > 0 ? buy.priceUsd : c.priceUsd;
+    try {
+      writeUsBuyFill({
+        tradesPath: cfg.tradesPath,
+        wallet:
+          cfg.walletPubkeyExpected?.trim() ||
+          executionWalletPubkey(copyCfg) ||
+          'unknown',
+        mint: c.mint,
+        symbol: c.symbol,
+        ok: buy.ok,
+        signature: buy.signature ?? null,
+        sizeUsdIntent: Math.min(legUsd, sized.sizeUsd),
+        usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
+        usdcAfter: buy.usdcAfter ?? null,
+        feeSolBefore: buy.feeSolBefore ?? null,
+        feeSolAfter: buy.feeSolAfter ?? null,
+        quoteSpentUsd: buy.quoteSpentUsd ?? null,
+        txMeta: buy.txMeta,
+        fillPriceUsd: fillPx,
+        reason: buy.reason ?? null,
+        dipSource: 'mirror_first_clip_leg',
+        lane: 'leader_mirror',
+        nowMs,
+      });
+    } catch {
+      /* never block mirror first clip leg on journal IO */
+    }
     if (!buy.ok) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_mirror_first_clip_leg',
@@ -2133,7 +2161,6 @@ export async function attemptMirrorFirstClipLeg(args: {
     const live = state.open[c.mint];
     if (!live) return 'exec_failed';
     const spent = buy.quoteSpentUsd ?? Math.min(legUsd, sized.sizeUsd);
-    const fillPx = buy.priceUsd > 0 ? buy.priceUsd : c.priceUsd;
     const priorTokens = live.sizeUsd / Math.max(live.entryPriceUsd, 1e-18);
     const addedTokens = spent / Math.max(fillPx, 1e-18);
     live.entryPriceUsd = (live.sizeUsd + spent) / (priorTokens + addedTokens);
