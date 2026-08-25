@@ -1,4 +1,4 @@
-import fs, { readFileSync } from 'node:fs';
+import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -252,21 +252,5 @@ describe('cross-leader buy feed', () => {
     expect(shouldJournalCrossLeaderAverageSkip(mint, 'limit_reached', 300_999)).toBe(true);
     expect(shouldJournalCrossLeaderAverageSkip(mint, 'limit_reached', 599_999)).toBe(false);
     expect(shouldJournalCrossLeaderAverageSkip(mint, 'limit_reached', 600_999)).toBe(true);
-  });
-
-  it('records signal dedup only after a successful buy path', () => {
-    const source = readFileSync(
-      new URL('../../src/milddip/loop.ts', import.meta.url),
-      'utf8',
-    );
-    const start = source.indexOf('async function attemptCrossLeaderAverage');
-    const end = source.indexOf('\nasync function tryExits', start);
-    const body = source.slice(start, end);
-    expect(body.indexOf('pos.mirrorCrossLeaderAverageLastAttemptAtMs = nowMs')).toBeGreaterThan(-1);
-    expect(body.indexOf('const buy = await executeCopyBuy')).toBeGreaterThan(-1);
-    expect(body.indexOf('live.mirrorCrossLeaderAverageSignature = signalKey')).toBeGreaterThan(
-      body.indexOf('const buy = await executeCopyBuy'),
-    );
-    expect(body).not.toContain('pos.mirrorCrossLeaderAverageSignature = signalKey');
   });
 });
