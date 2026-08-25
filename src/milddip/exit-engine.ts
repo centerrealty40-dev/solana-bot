@@ -148,6 +148,7 @@ export function decideMarkExit(args: {
     ownExitEnabled?: boolean;
     ownExitTimeStopMs?: number;
     safetyMaxHoldMs?: number;
+    ladderEnabled?: boolean;
     ladderStepPct?: number;
     ladderStepAfterAveragePct?: number;
     ladderSellFraction?: number;
@@ -549,7 +550,8 @@ export function decideMarkExit(args: {
       !safetyCut &&
       !ownShouldExit &&
       args.mirrorGates.leaderSellOnly === true &&
-      args.mirrorGates.ladderStepPct != null
+      args.mirrorGates.ladderStepPct != null &&
+      args.mirrorGates.ladderEnabled !== false
     ) {
       const step = pos.mirrorAverageDone
         ? args.mirrorGates.ladderStepAfterAveragePct ?? 10

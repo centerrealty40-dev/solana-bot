@@ -4568,6 +4568,8 @@ async function tryExits(
             : cfg.leaderMirror.ladderStepAfterAveragePct,
         ladderSellFraction:
           pos.lane === 'tier' ? undefined : cfg.leaderMirror.ladderSellFraction,
+        ladderEnabled:
+          pos.lane === 'tier' ? true : cfg.leaderMirror.ladderEnabled,
         ladderMaxRungs:
           pos.lane === 'tier' ? 0 : cfg.leaderMirror.ladderMaxRungs,
         ladderDustUsd: cfg.leaderMirror.ladderDustUsd,
