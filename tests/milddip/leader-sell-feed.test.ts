@@ -8,6 +8,7 @@ import {
   LEADER_SELL_RECONCILIATION_TAIL_BYTES,
   parseCrossLeaderBuyLines,
   crossLeaderAverageDiscountReached,
+  crossLeaderAverageRequiresSignal,
   crossLeaderAverageStepUsd,
   resolveCrossLeaderAverageLeaders,
   shouldJournalCrossLeaderAverageSkip,
@@ -226,6 +227,12 @@ describe('cross-leader buy feed', () => {
     expect(crossLeaderAverageDiscountReached(0.91, 1, 10)).toBe(false);
     expect(crossLeaderAverageDiscountReached(0.90, 1, 10)).toBe(true);
     expect(crossLeaderAverageDiscountReached(0.85, 1, 10)).toBe(true);
+  });
+
+  it('requires a foreign signal only before the step base is fixed', () => {
+    expect(crossLeaderAverageRequiresSignal({ stepsEnabled: false, basePriceUsd: 1, baseUsd: 100 })).toBe(true);
+    expect(crossLeaderAverageRequiresSignal({ stepsEnabled: true })).toBe(true);
+    expect(crossLeaderAverageRequiresSignal({ stepsEnabled: true, basePriceUsd: 1, baseUsd: 100 })).toBe(false);
   });
 
   it('calculates capped cross-leader averaging steps from the original base', () => {

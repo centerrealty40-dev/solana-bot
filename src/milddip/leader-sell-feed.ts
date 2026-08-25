@@ -149,6 +149,20 @@ export function crossLeaderAverageDiscountReached(
   );
 }
 
+export function crossLeaderAverageRequiresSignal(args: {
+  stepsEnabled: boolean;
+  basePriceUsd?: number;
+  baseUsd?: number;
+}): boolean {
+  return !(
+    args.stepsEnabled &&
+    args.basePriceUsd != null &&
+    args.basePriceUsd > 0 &&
+    args.baseUsd != null &&
+    args.baseUsd > 0
+  );
+}
+
 export type CrossLeaderAverageStepResult =
   | {
       stepUsd: number;

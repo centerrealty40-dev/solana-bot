@@ -90,6 +90,7 @@ import {
   LeaderSellFeed,
   CrossLeaderBuyFeed,
   crossLeaderAverageDiscountReached,
+  crossLeaderAverageRequiresSignal,
   crossLeaderAverageStepUsd,
   resolveCrossLeaderAverageLeaders,
   reconcileCrossLeaderBuyEvents,
@@ -4151,16 +4152,25 @@ async function attemptCrossLeaderAverage(args: {
   signal: CrossLeaderBuyEvent | null;
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs, leaderHeld, signal } = args;
-  if (!signal) return;
   const g = cfg.leaderMirror;
+  if (
+    !signal &&
+    crossLeaderAverageRequiresSignal({
+      stepsEnabled: g.crossLeaderAverageStepsEnabled,
+      basePriceUsd: pos.mirrorCrossLeaderAverageBasePriceUsd,
+      baseUsd: pos.mirrorCrossLeaderAverageBaseUsd,
+    })
+  ) return;
+  const stepTrigger = signal ? 'foreign_leader' : 'drawdown';
   const skip = (reason: CrossLeaderAverageSkipReason): void => {
     if (!shouldJournalCrossLeaderAverageSkip(pos.mint, reason, nowMs)) return;
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mirror_cross_leader_skip',
       mint: pos.mint,
       reason,
-      foreignLeader: signal.leader,
-      foreignSignature: signal.signature,
+      foreignLeader: signal?.leader ?? null,
+      foreignSignature: signal?.signature ?? null,
+      stepTrigger,
     });
   };
   if (!g.crossLeaderAverageEnabled) return;
@@ -4174,10 +4184,11 @@ async function attemptCrossLeaderAverage(args: {
     g.crossLeaderAverageLeaders,
     g.leaders,
   ));
-  if (!expectedForeign.has(signal.leader)) return;
-  const signalKey =
-    signal.signature ?? `${signal.leader}:${signal.blockTimeMs}:${signal.fillPriceUsd ?? 0}`;
-  if (pos.mirrorCrossLeaderAverageSignature === signalKey) {
+  if (signal && !expectedForeign.has(signal.leader)) return;
+  const signalKey = signal
+    ? signal.signature ?? `${signal.leader}:${signal.blockTimeMs}:${signal.fillPriceUsd ?? 0}`
+    : `milddip_cross_leader_step_${pos.mint.slice(0, 8)}_${nowMs}`;
+  if (signal && pos.mirrorCrossLeaderAverageSignature === signalKey) {
     skip('duplicate_signal');
     return;
   }
@@ -4265,10 +4276,10 @@ async function attemptCrossLeaderAverage(args: {
       sizeUsd: Math.min(amountUsd, sized.sizeUsd),
       kind: 'add',
       evalResult: { pass: true, reasons: ['mirror_cross_leader_average'], score: markPriceUsd },
-      leaderSignature: signal.signature ?? `milddip_cross_leader_${pos.mint.slice(0, 8)}_${nowMs}`,
+      leaderSignature: signal?.signature ?? signalKey,
       trigger: 'stream',
-      leaderPriceUsd: signal.fillPriceUsd ?? markPriceUsd,
-      leaderBuyTs: signal.blockTimeMs,
+      leaderPriceUsd: signal?.fillPriceUsd ?? markPriceUsd,
+      leaderBuyTs: signal?.blockTimeMs ?? nowMs,
       beforeSend: async () => {
         const guardRead = await readLeaderBalanceForGuard(cfg, pos.leaderMirrorLeader, pos.mint);
         const holds = guardRead.balanceRaw != null && guardRead.balanceRaw > 0n;
@@ -4337,9 +4348,10 @@ async function attemptCrossLeaderAverage(args: {
       kind: 'mirror_cross_leader_average',
       mint: pos.mint,
       symbol: pos.symbol,
-      foreignLeader: signal.leader,
-      foreignSignature: signal.signature,
-      foreignFillPriceUsd: signal.fillPriceUsd,
+      foreignLeader: signal?.leader ?? null,
+      foreignSignature: signal?.signature ?? null,
+      foreignFillPriceUsd: signal?.fillPriceUsd ?? null,
+      stepTrigger,
       markPriceUsd,
       fillPriceUsd: fillPx,
       amountUsd: addUsd,
