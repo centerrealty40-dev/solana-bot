@@ -2347,6 +2347,18 @@ export function mildDipLeaderMirrorEntryClipUsd(args: {
   return args.mirrorSizeUsd;
 }
 
+export function mildDipFirstTouchCapUsd(args: {
+  firstTouchUsd: number;
+  lawEnabled: boolean;
+  isMirrorLane: boolean;
+  lawMinUsd: number;
+}): number {
+  if (args.lawEnabled && args.isMirrorLane) {
+    return Math.max(args.firstTouchUsd, args.lawMinUsd);
+  }
+  return args.firstTouchUsd;
+}
+
 /**
  * sizeUsd = clamp(minUsd, maxUsd, coef × liquidityUsd^exp).
  * Leader reference: 0.0387 × liq^0.866 — we use ~1.08% of that scale for $1–$30 clips.

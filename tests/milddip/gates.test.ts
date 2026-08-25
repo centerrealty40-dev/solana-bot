@@ -12,6 +12,7 @@ import {
   knifeStabilizeMinMarketCapUsd,
   mildDipLiquidityPowerLawSizeUsd,
   mildDipLeaderMirrorEntryClipUsd,
+  mildDipFirstTouchCapUsd,
   mildDipLeaderMirrorSizeUsd,
   mildDipMicroSizeGatesForSource,
   mayFireSoftLossExit,
@@ -81,6 +82,43 @@ describe('mildDipLeaderMirrorSizeUsd', () => {
         rugKnifeClipUsd: 10,
       }),
     ).toBe(12.42);
+  });
+
+  it('raises only non-tier mirror first touch to the law floor', () => {
+    expect(
+      mildDipFirstTouchCapUsd({
+        firstTouchUsd: 10,
+        lawEnabled: true,
+        isMirrorLane: true,
+        lawMinUsd: 30,
+      }),
+    ).toBe(30);
+    expect(
+      mildDipFirstTouchCapUsd({
+        firstTouchUsd: 10,
+        lawEnabled: true,
+        isMirrorLane: true,
+        lawMinUsd: 10,
+      }),
+    ).toBe(10);
+    for (const isMirrorLane of [false, true]) {
+      expect(
+        mildDipFirstTouchCapUsd({
+          firstTouchUsd: 10,
+          lawEnabled: false,
+          isMirrorLane,
+          lawMinUsd: 30,
+        }),
+      ).toBe(10);
+    }
+    expect(
+      mildDipFirstTouchCapUsd({
+        firstTouchUsd: 10,
+        lawEnabled: true,
+        isMirrorLane: false,
+        lawMinUsd: 30,
+      }),
+    ).toBe(10);
   });
 
   it('matches the approved mirror2 control points', () => {
