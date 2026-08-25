@@ -4977,7 +4977,7 @@ if (mildDipBotApp) {
       ladderStepPct: '5',
       ladderStepAfterAvgPct: '10',
       ladderSellFraction: '0.2',
-      ladderEnabled: '1',
+      ladderEnabled: '0',
       ladderMaxRungs: '0',
       dustCloseUsd: '3',
       positionUsd: '10',
