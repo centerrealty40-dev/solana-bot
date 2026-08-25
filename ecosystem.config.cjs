@@ -4936,7 +4936,7 @@ if (mildDipBotApp) {
       lossCapUsd: '50',
       maxEntryPc5mPct: '1000',
       minLiquidityUsd: '40000',
-      minPc1hPct: '10',
+      minPc1hPct: '-1000',
       minPc5mPct: '-10',
       ladderStepPct: '5',
       ladderStepAfterAvgPct: '10',
