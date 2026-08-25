@@ -96,6 +96,13 @@ export function shouldApplyGreenTurnDumpGate(
   return !isGreen || greenTurnDumpGate;
 }
 
+export function shouldApplyDipReentryGuards(
+  isLeaderStyle: boolean,
+  isMirror: boolean,
+): boolean {
+  return !isLeaderStyle && !isMirror;
+}
+
 export function greenLeaderGateBypassAllowed(
   cfg: MildDipConfig,
   dipSource: MildDipCandidate['dipSource'],
@@ -1080,7 +1087,7 @@ export async function attemptMildDipEntry(args: {
   }
 
   // Always on (incl. fast-path): do not rebuy near last exit USD price.
-  if (!isLeaderStyle && cfg.rebuyBelowExitPct > 0) {
+  if (shouldApplyDipReentryGuards(isLeaderStyle, isMirror) && cfg.rebuyBelowExitPct > 0) {
     const last = state.lastExitByMint?.[c.mint];
     const markPx = freshPx ?? entryPriceUsd;
     const rebuy = evaluateRebuyBelowExit({
@@ -1140,7 +1147,7 @@ export async function attemptMildDipEntry(args: {
   }
 
   // 1.11.797 — after loss exit: skip if Dex liq fell vs exit snapshot.
-  if (!isLeaderStyle && cfg.rebuyLiqDropEnabled) {
+  if (shouldApplyDipReentryGuards(isLeaderStyle, isMirror) && cfg.rebuyLiqDropEnabled) {
     const last = state.lastExitByMint?.[c.mint];
     const curLiq = sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd;
     const liqDrop = evaluateRebuyLiquidityDrop({

@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { greenLeaderGateBypassAllowed } from '../../src/milddip/entry-attempt.js';
+import {
+  greenLeaderGateBypassAllowed,
+  shouldApplyDipReentryGuards,
+} from '../../src/milddip/entry-attempt.js';
 import { loadMildDipConfig } from '../../src/milddip/config.js';
 import {
   resetFastPathStateForTests,
@@ -14,6 +17,13 @@ const state = {
 } as MildDipState;
 
 describe('GREEN-only leader-seen bypass', () => {
+  it('applies dip re-entry guards only outside leader-style and mirror entries', () => {
+    expect(shouldApplyDipReentryGuards(false, false)).toBe(true);
+    expect(shouldApplyDipReentryGuards(true, false)).toBe(false);
+    expect(shouldApplyDipReentryGuards(false, true)).toBe(false);
+    expect(shouldApplyDipReentryGuards(true, true)).toBe(false);
+  });
+
   it('allows only green momentum when the GREEN gate is disabled', () => {
     const cfg = {
       green: { enabled: true },
