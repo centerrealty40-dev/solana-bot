@@ -705,6 +705,28 @@ describe('leader mirror observation decisions', () => {
     });
   });
 
+  it('keeps green candidates below structural floors out of the primary lane', () => {
+    const green = {
+      ...gates,
+      greenCopyEnabled: true,
+      greenCorridorPct: 1.5,
+      maxEntryPc5mPct: 100,
+      tierEnabled: true,
+    };
+    expect(at(hit({ pc5m: 8, mcap: 4_000 }), 101.5, 110_000, 100_000, green)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101.5,
+      mirrorBranch: 'tier',
+    });
+    expect(at(hit({ pc5m: 8, mcap: 4_000 }), 101.5, 110_000, 100_000, {
+      ...green,
+      tierEnabled: false,
+    })).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_mcap_floor',
+    });
+  });
+
   it('waits outside the green corridor until observe expires', () => {
     const green = { ...gates, greenCopyEnabled: true, greenCorridorPct: 1.5, maxEntryPc5mPct: 100 };
     expect(at(hit({ pc5m: 8 }), 103, 110_000, 100_000, green)).toEqual({ action: 'wait', waitReason: 'green_corridor' });

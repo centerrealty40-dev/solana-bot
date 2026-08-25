@@ -347,6 +347,8 @@ export function evaluateLeaderMirrorObservation(args: {
     return { action: 'skip', reason: 'leader_mirror_green_direction' };
   }
   const greenCandidate = pc5m != null && pc5m > gates.maxPreEntryPc5mPct;
+  const tierFloorMiss =
+    ageHours < gates.minPairAgeHours || mcap < gates.minMcapUsd;
   if (requireDipCandle && pc5m != null) {
     if (gates.greenCopyEnabled && greenCandidate) {
       if (pc5m! >= gates.greenCopyMaxPc5mPct) {
@@ -367,8 +369,6 @@ export function evaluateLeaderMirrorObservation(args: {
   if (liq < gates.minLiquidityUsd) {
     return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
   }
-  const tierFloorMiss =
-    ageHours < gates.minPairAgeHours || mcap < gates.minMcapUsd;
   if (ageHours < gates.minPairAgeHours) {
     if (!gates.tierEnabled) {
       return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
@@ -454,7 +454,7 @@ export function evaluateLeaderMirrorObservation(args: {
     return {
       action: 'buy',
       quotePriceUsd: quotePrice,
-      mirrorBranch: 'green',
+      mirrorBranch: gates.tierEnabled && tierFloorMiss ? 'tier' : 'green',
       ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
     };
   }
