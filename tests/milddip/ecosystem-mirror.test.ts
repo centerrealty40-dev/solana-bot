@@ -51,6 +51,8 @@ describe('mirror PM2 apps', () => {
       'MILD_DIP_MIRROR_FUNDING_PARK_ENABLED',
       'MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS',
       'MILD_DIP_MIRROR_FUNDING_PARK_MAX',
+      'MILD_DIP_MIRROR_TIER_PARK_ENABLED',
+      'MILD_DIP_MIRROR_TIER_MAX_OPEN',
       'MILD_DIP_MIRROR_TICK_INTERVAL_MS',
       'MILD_DIP_MIRROR_STRUCTURAL_GAP_MS',
       'MILD_DIP_MIRROR_KNIFE_WAIT_ENABLED',
@@ -87,6 +89,10 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS).toBe('30000');
     expect(mirror?.env.MILD_DIP_MIRROR_FUNDING_PARK_MAX).toBe('10');
     expect(mirror2?.env.MILD_DIP_MIRROR_FUNDING_PARK_MAX).toBe('10');
+    expect(mirror?.env.MILD_DIP_MIRROR_TIER_PARK_ENABLED).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_TIER_PARK_ENABLED).toBe('1');
+    expect(mirror?.env.MILD_DIP_MIRROR_TIER_MAX_OPEN).toBe('12');
+    expect(mirror2?.env.MILD_DIP_MIRROR_TIER_MAX_OPEN).toBe('12');
     expect(mirror?.env.MILD_DIP_MIRROR_TICK_INTERVAL_MS).toBe('1000');
     expect(mirror?.env.MILD_DIP_MIRROR_QUOTE_MAX_AGE_MS).toBe('4000');
     expect(mirror?.env.MILD_DIP_MIRROR_STRUCTURAL_GAP_MS).toBe('2000');
@@ -168,7 +174,7 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_TIER_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_TIER_IGNORE_FLOORS).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_TIER_POSITION_USD).toBe('10');
-    expect(mirror?.env.MILD_DIP_MIRROR_TIER_MAX_OPEN).toBe('5');
+    expect(mirror?.env.MILD_DIP_MIRROR_TIER_MAX_OPEN).toBe('12');
     expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('120');
     expect(mirror?.env.MILD_DIP_MIRROR_DUST_CLOSE_USD).toBe('10');
     expect(mirror2?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('10');

@@ -4907,6 +4907,7 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_TIER_IGNORE_FLOORS: tierIgnoreStructuralFloors,
       MILD_DIP_MIRROR_TIER_POSITION_USD: tierPositionUsd,
       MILD_DIP_MIRROR_TIER_MAX_OPEN: tierMaxOpen,
+      MILD_DIP_MIRROR_TIER_PARK_ENABLED: '1',
       MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS: '3600000,7200000,10800000,14400000,21600000',
       MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS: '120000',
       MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT: '2',
@@ -4961,7 +4962,7 @@ if (mildDipBotApp) {
       tierEnabled: '1',
       tierIgnoreStructuralFloors: '0',
       tierPositionUsd: '10',
-      tierMaxOpen: '5',
+      tierMaxOpen: '12',
     }),
     makeMirrorApp({
       name: 'mild-dip-mirror2',
@@ -4993,7 +4994,7 @@ if (mildDipBotApp) {
       tierEnabled: '1',
       tierIgnoreStructuralFloors: '1',
       tierPositionUsd: '10',
-      tierMaxOpen: '5',
+      tierMaxOpen: '12',
     }),
   );
 }

@@ -2057,6 +2057,49 @@ async function wakeLeaderMirrors(
       (position) => position.lane === 'tier',
     ).length;
     if (isTier && (gates.tierMaxOpen ?? 0) > 0 && openTier >= (gates.tierMaxOpen ?? 0)) {
+      if (cfg.leaderMirror.tierParkEnabled) {
+        watch.fundingParkedAtMs ??= nowMs;
+        leaderMirrorEntryRetryAfterMs.set(
+          watchKey,
+          nowMs + cfg.leaderMirror.fundingParkRetryMs,
+        );
+        const parkedCount = [...leaderMirrorWatches.values()].filter(
+          (entry) => entry.fundingParkedAtMs != null,
+        ).length;
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_tier_park',
+          mint,
+          leader: hit.leader,
+          leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+          quotePriceUsd: quote?.priceUsd ?? null,
+          openTier,
+          maxOpen: gates.tierMaxOpen,
+          parkedCount,
+        });
+        const evicted = evictFundingParkedWatchKeys(
+          [...leaderMirrorWatches.entries()].map(([key, entry]) => ({
+            watchKey: key,
+            fundingParkedAtMs: entry.fundingParkedAtMs,
+          })),
+          cfg.leaderMirror.fundingParkMax,
+        );
+        for (const evictedKey of evicted) {
+          const evictedWatch = leaderMirrorWatches.get(evictedKey);
+          if (!evictedWatch) continue;
+          leaderMirrorEntryRetryAfterMs.delete(evictedKey);
+          leaderMirrorWatches.delete(evictedKey);
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'leader_mirror_refusal',
+            mint: evictedWatch.hit.mint,
+            leader: evictedWatch.hit.leader,
+            reason: 'leader_mirror_funding_park_evicted',
+            leaderFillPriceUsd: evictedWatch.hit.fillPriceUsd ?? null,
+            metricSource: evictedWatch.metricSource,
+          });
+        }
+        persistLeaderMirrorWatches(cfg, state);
+        continue;
+      }
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_refusal',
         mint,

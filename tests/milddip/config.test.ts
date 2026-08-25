@@ -51,6 +51,7 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.leaderMirror.fundingParkEnabled).toBe(false);
     expect(defaults.leaderMirror.fundingParkRetryMs).toBe(30_000);
     expect(defaults.leaderMirror.fundingParkMax).toBe(10);
+    expect(defaults.leaderMirror.tierParkEnabled).toBe(false);
     const cfg = withConfigEnv(
       {
         ...baseEnv,
@@ -65,6 +66,7 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_MIRROR_FUNDING_PARK_ENABLED: '1',
         MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS: '45000',
         MILD_DIP_MIRROR_FUNDING_PARK_MAX: '7',
+        MILD_DIP_MIRROR_TIER_PARK_ENABLED: '1',
       },
       () => loadMildDipConfig(),
     );
@@ -79,6 +81,7 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.leaderMirror.fundingParkEnabled).toBe(true);
     expect(cfg.leaderMirror.fundingParkRetryMs).toBe(45_000);
     expect(cfg.leaderMirror.fundingParkMax).toBe(7);
+    expect(cfg.leaderMirror.tierParkEnabled).toBe(true);
   });
 
   it('defaults and loads emergency data retention settings', () => {
