@@ -11,6 +11,7 @@ import {
   isRecoveringFromTrough,
   knifeStabilizeMinMarketCapUsd,
   mildDipLiquidityPowerLawSizeUsd,
+  mildDipLeaderMirrorSizeUsd,
   mildDipMicroSizeGatesForSource,
   mayFireSoftLossExit,
   profitExitMinHoldApplies,
@@ -23,6 +24,56 @@ import {
   type MildDipExitGates,
 } from '../../src/milddip/gates.js';
 import { retrySlippageBpsForAttempt } from '../../src/milddip/exit-retry.js';
+
+describe('mildDipLeaderMirrorSizeUsd', () => {
+  const mirror1 = {
+    coef: 0.008749,
+    exp: 0.866,
+    minUsd: 30,
+    maxUsd: 120,
+    maxPoolSharePct: 0.15,
+    positionUsd: 80,
+  };
+  const mirror2 = { ...mirror1, coef: 0.001094, minUsd: 10, maxUsd: 30, positionUsd: 10 };
+
+  it('matches the approved mirror1 control points', () => {
+    for (const [liq, expected] of [
+      [15_000, 30],
+      [25_000, 37.5],
+      [40_000, 60],
+      [60_000, 90],
+      [100_000, 120],
+      [500_000, 120],
+    ]) {
+      expect(mildDipLeaderMirrorSizeUsd(liq, mirror1).sizeUsd).toBeCloseTo(expected, 1);
+    }
+  });
+
+  it('matches the approved mirror2 control points', () => {
+    for (const [liq, expected] of [
+      [15_000, 10],
+      [60_000, 15],
+      [100_000, 23.4],
+      [200_000, 30],
+    ]) {
+      expect(mildDipLeaderMirrorSizeUsd(liq, mirror2).sizeUsd).toBeCloseTo(expected, 1);
+    }
+  });
+
+  it('keeps flat fallback and floors unknown liquidity', () => {
+    expect(mildDipLeaderMirrorSizeUsd(40_000, { ...mirror1, coef: 0 })).toEqual({
+      sizeUsd: 80,
+      sizeLiqUsd: 40_000,
+      sizeRule: 'flat',
+    });
+    expect(mildDipLeaderMirrorSizeUsd(null, mirror1)).toEqual({
+      sizeUsd: 30,
+      sizeLiqUsd: null,
+      sizeRule: 'liq_law_floor_no_liq',
+    });
+    expect(mildDipLeaderMirrorSizeUsd(0, mirror1).sizeUsd).toBe(30);
+  });
+});
 
 function metrics(partial: Partial<MildDipCandidateMetrics>): MildDipCandidateMetrics {
   return {

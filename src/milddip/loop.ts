@@ -4129,7 +4129,12 @@ async function attemptMirrorAverage(args: {
   pos.mirrorAverageLastAttemptAtMs = nowMs;
   saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
-  const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, g.averageUsd);
+  const averageBaseUsd = pos.mirrorInitialClipUsd ?? pos.sizeUsd;
+  const averageTargetUsd =
+    g.sizeLiqCoef > 0 && g.positionUsd > 0
+      ? (g.averageUsd / g.positionUsd) * averageBaseUsd
+      : g.averageUsd;
+  const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, averageTargetUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     journalSkip('size_stop', {
       refEntryPriceUsd: averageReference.entryPriceUsd,
@@ -4146,7 +4151,7 @@ async function attemptMirrorAverage(args: {
       mint: pos.mint,
       symbol: pos.symbol,
       priceUsd: markPriceUsd,
-      sizeUsd: Math.min(g.averageUsd, sized.sizeUsd),
+      sizeUsd: Math.min(averageTargetUsd, sized.sizeUsd),
       kind: 'add',
       evalResult: { pass: true, reasons: ['mirror_local_low_average'], score: target },
       leaderSignature: `milddip_mirror_average_${pos.mint.slice(0, 8)}_${nowMs}`,
@@ -4177,7 +4182,8 @@ async function attemptMirrorAverage(args: {
     if (!buy.ok) return;
     const live = state.open[pos.mint];
     if (!live) return;
-    const addUsd = buy.quoteSpentUsd ?? Math.min(g.averageUsd, sized.sizeUsd);
+    const addUsd =
+      buy.quoteSpentUsd ?? Math.min(averageTargetUsd, sized.sizeUsd);
     const fillPx = buy.priceUsd > 0 ? buy.priceUsd : markPriceUsd;
     try {
       writeUsBuyFill({
@@ -4302,7 +4308,10 @@ async function attemptCrossLeaderAverage(args: {
   }
   const basePriceUsd =
     pos.mirrorCrossLeaderAverageBasePriceUsd ?? pos.entryPriceUsd;
-  const baseUsd = pos.mirrorCrossLeaderAverageBaseUsd ?? pos.sizeUsd;
+  const baseUsd =
+    pos.mirrorCrossLeaderAverageBaseUsd ??
+    pos.mirrorInitialClipUsd ??
+    pos.sizeUsd;
   const step = g.crossLeaderAverageStepsEnabled
     ? crossLeaderAverageStepUsd({
         markPriceUsd,
@@ -4355,11 +4364,16 @@ async function attemptCrossLeaderAverage(args: {
   pos.mirrorCrossLeaderAverageLastAttemptAtMs = nowMs;
   saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
-  const amountUsd = g.crossLeaderAverageStepsEnabled
+  const configuredAmountUsd = g.crossLeaderAverageStepsEnabled
     ? step!.stepUsd
     : g.crossLeaderAverageUsd > 0
       ? g.crossLeaderAverageUsd
       : g.averageUsd;
+  const amountUsd =
+    !g.crossLeaderAverageStepsEnabled && g.sizeLiqCoef > 0 && g.positionUsd > 0
+      ? (configuredAmountUsd / g.positionUsd) *
+        (pos.mirrorInitialClipUsd ?? pos.sizeUsd)
+      : configuredAmountUsd;
   const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, amountUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     skip('size_stop');

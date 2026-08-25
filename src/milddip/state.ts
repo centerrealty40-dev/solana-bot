@@ -70,6 +70,7 @@ export type MildDipOpenPosition = {
   leaderBuySignature?: string;
   leaderMirrorLeader?: string;
   mirrorOriginalEntryPriceUsd?: number;
+  mirrorInitialClipUsd?: number;
   mirrorFirstClipLegsFilled?: number;
   mirrorFirstClipFirstFillAtMs?: number;
   mirrorLadderBasisPriceUsd?: number;

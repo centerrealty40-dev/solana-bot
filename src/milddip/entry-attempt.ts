@@ -28,6 +28,7 @@ import {
   evaluateMildDipEntryRisk,
   evaluateRebuyBelowExit,
   evaluateRebuyLiquidityDrop,
+  mildDipLeaderMirrorSizeUsd,
   mildDipMicroSizeGatesForSource,
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
@@ -1386,17 +1387,31 @@ export async function attemptMildDipEntry(args: {
     nowMs - entryMarkSample.tsMs <= ENTRY_MARK_MAX_AGE_MS
       ? entryMarkSample.priceUsd
       : undefined;
+  const mirrorSizing =
+    isMirror && !isTier
+      ? mildDipLeaderMirrorSizeUsd(sizeMetrics.liquidityUsd, {
+          coef: cfg.leaderMirror.sizeLiqCoef,
+          exp: cfg.leaderMirror.sizeLiqExp,
+          minUsd: cfg.leaderMirror.sizeLiqMinUsd,
+          maxUsd: cfg.leaderMirror.sizeLiqMaxUsd,
+          maxPoolSharePct: cfg.leaderMirror.sizeLiqMaxPoolSharePct,
+          positionUsd: cfg.leaderMirror.positionUsd,
+        })
+      : null;
+  const mirrorClipUsd = mirrorSizing
+    ? Math.min(mirrorSizing.sizeUsd, knifeCapped)
+    : knifeCapped;
   const laneCapped =
     isLeaderStyle && cfg.leaderStyle.positionUsd > 0
       ? Math.min(cfg.leaderStyle.positionUsd, knifeCapped)
       : isMirror &&
           (opts.mirrorBranch === 'tier'
             ? cfg.leaderMirror.tierPositionUsd
-            : cfg.leaderMirror.positionUsd) > 0
+            : mirrorClipUsd) > 0
       ? Math.min(
           opts.mirrorBranch === 'tier'
             ? cfg.leaderMirror.tierPositionUsd
-            : cfg.leaderMirror.positionUsd,
+            : mirrorClipUsd,
           knifeCapped,
         )
       : isGreen && cfg.green.positionUsd > 0
@@ -1466,7 +1481,7 @@ export async function attemptMildDipEntry(args: {
     mirrorPositionUsd:
       opts.mirrorBranch === 'tier'
         ? cfg.leaderMirror.tierPositionUsd
-        : cfg.leaderMirror.positionUsd,
+        : mirrorClipUsd,
     stagedClipUsd: stagedClip.sizeUsd,
   });
   const laneRequestUsd =
@@ -1567,6 +1582,9 @@ export async function attemptMildDipEntry(args: {
     ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
     ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
     ...(isMirror ? { mirrorOriginalEntryPriceUsd: entryPriceUsd } : {}),
+    ...(isMirror
+      ? { mirrorInitialClipUsd: sized.sizeUsd * mirrorFirstClipLegs }
+      : {}),
     ...(isMirror ? { mirrorFirstClipLegsFilled: 1 } : {}),
     ...(isMirror ? { mirrorFirstClipFirstFillAtMs: nowMs } : {}),
     // Peak tracks the mark series from the fill — not the wait_dip trough the
@@ -1663,6 +1681,12 @@ export async function attemptMildDipEntry(args: {
     streamDumpExtentFromPeakPct: c.streamDumpExtentFromPeakPct ?? null,
     greenExitProfile: isGreen ? greenExitProfile : null,
     ...(opts.mirrorBranch ? { mirrorBranch: opts.mirrorBranch } : {}),
+    ...(mirrorSizing
+      ? {
+          sizeLiqUsd: mirrorSizing.sizeLiqUsd,
+          sizeRule: mirrorSizing.sizeRule,
+        }
+      : {}),
   });
 
   const leaderSig = `milddip_${opts.lane}_${c.mint.slice(0, 8)}_${nowMs}`;
@@ -1800,6 +1824,12 @@ export async function attemptMildDipEntry(args: {
     mint: c.mint,
     symbol: c.symbol,
     sizeUsd: sized.sizeUsd,
+    ...(mirrorSizing
+      ? {
+          sizeLiqUsd: mirrorSizing.sizeLiqUsd,
+          sizeRule: mirrorSizing.sizeRule,
+        }
+      : {}),
     priceUsd: fillPxJournal,
     signalPriceUsd: c.priceUsd,
     pc5m: entryPc5m,
@@ -2025,6 +2055,12 @@ export async function attemptMildDipEntry(args: {
     ...(isMirror && opts.leaderBuyTsMs != null ? { leaderBuyTsMs: opts.leaderBuyTsMs } : {}),
     ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
     ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
+    ...(isMirror
+      ? {
+          mirrorInitialClipUsd:
+            (buy.quoteSpentUsd ?? sized.sizeUsd) * mirrorFirstClipLegs,
+        }
+      : {}),
     ...(isMirror ? { mirrorFirstClipLegsFilled: 1 } : {}),
     ...(isMirror ? { mirrorFirstClipFirstFillAtMs: nowMs } : {}),
     ...(isMirror ? { mirrorLadderBasisPriceUsd: fillPx, mirrorLadderRungsDone: 0 } : {}),
@@ -2102,7 +2138,7 @@ export async function attemptMirrorFirstClipLeg(args: {
   if (!pos || pos.lane !== 'leader_mirror' || legs <= 1) return 'skip';
   const filledLegs = Math.max(0, Math.floor(pos.mirrorFirstClipLegsFilled ?? 1));
   if (filledLegs >= legs || buyInFlight.has(c.mint)) return 'skip';
-  const legUsd = cfg.leaderMirror.positionUsd / legs;
+  const legUsd = (pos.mirrorInitialClipUsd ?? pos.sizeUsd) / legs;
   const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, legUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     appendMildDipJournal(cfg.journalPath, {
@@ -2204,6 +2240,7 @@ export async function attemptMirrorFirstClipLeg(args: {
     const addedTokens = spent / Math.max(fillPx, 1e-18);
     live.entryPriceUsd = (live.sizeUsd + spent) / (priorTokens + addedTokens);
     live.sizeUsd += spent;
+    live.mirrorInitialClipUsd ??= spent * legs;
     live.mirrorFirstClipLegsFilled = filledLegs + 1;
     live.mirrorOriginalEntryPriceUsd ??= live.entryPriceUsd;
     accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
