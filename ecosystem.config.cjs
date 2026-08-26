@@ -4968,7 +4968,7 @@ if (mildDipBotApp) {
       sizeLiqCoef: '0.008749',
       sizeLiqExp: '0.866',
       sizeLiqMinUsd: '40',
-      sizeLiqMaxUsd: '150',
+      sizeLiqMaxUsd: '120',
       sizeLiqMaxPoolSharePct: '0.15',
       averageUsd: '64',
       crossLeaderAverageEnabled: '1',

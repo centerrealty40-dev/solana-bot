@@ -96,7 +96,7 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_LIQ_COEF).toBe('0.008749');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_LIQ_EXP).toBe('0.866');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MIN_USD).toBe('40');
-    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MAX_USD).toBe('150');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MAX_USD).toBe('120');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MAX_POOL_SHARE_PCT).toBe('0.15');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_LIQ_COEF).toBe('0.001094');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_LIQ_EXP).toBe('0.866');
