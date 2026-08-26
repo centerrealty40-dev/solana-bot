@@ -147,6 +147,7 @@ import {
 } from './leader-style.js';
 import { validateStreamDexPrice } from './price-sanity.js';
 import {
+  mirrorAverageDeepDiscountTarget,
   mirrorAverageHoldAllowed,
   mirrorAveragePriceAllowed,
   mirrorAverageReference,
@@ -4088,7 +4089,7 @@ async function attemptMirrorAverage(args: {
     journalSkip('sell_in_flight');
     return;
   }
-  const target = await mirrorRecentLocalLow({
+  const localLow = await mirrorRecentLocalLow({
     mint: pos.mint,
     nowMs,
     windowsMs: g.averageWindowsMs,
@@ -4096,6 +4097,15 @@ async function attemptMirrorAverage(args: {
     entryPriceUsd: averageReference.entryPriceUsd,
     minDiscountPct: averageReference.minDiscountPct,
   });
+  const deepDiscountTarget = g.averageDeepDiscountEnabled
+    ? mirrorAverageDeepDiscountTarget({
+        markPriceUsd,
+        entryPriceUsd: averageReference.entryPriceUsd,
+        minDiscountPct: averageReference.minDiscountPct,
+      })
+    : null;
+  const target = localLow ?? deepDiscountTarget;
+  const targetSource = localLow != null ? 'local_low' : 'deep_discount';
   if (target == null) {
     journalSkip('local_low_unavailable', {
       refEntryPriceUsd: averageReference.entryPriceUsd,
@@ -4156,7 +4166,11 @@ async function attemptMirrorAverage(args: {
       priceUsd: markPriceUsd,
       sizeUsd: Math.min(averageTargetUsd, sized.sizeUsd),
       kind: 'add',
-      evalResult: { pass: true, reasons: ['mirror_local_low_average'], score: target },
+      evalResult: {
+        pass: true,
+        reasons: [`mirror_${targetSource}_average`],
+        score: target,
+      },
       leaderSignature: `milddip_mirror_average_${pos.mint.slice(0, 8)}_${nowMs}`,
       trigger: 'stream',
       leaderPriceUsd: markPriceUsd,
@@ -4236,6 +4250,7 @@ async function attemptMirrorAverage(args: {
       mint: pos.mint,
       symbol: pos.symbol,
       targetPriceUsd: target,
+      targetSource,
       markPriceUsd,
       fillPriceUsd: fillPx,
       amountUsd: addUsd,

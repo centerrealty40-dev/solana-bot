@@ -67,6 +67,16 @@ export function mirrorAveragePriceAllowed(args: {
   );
 }
 
+export function mirrorAverageDeepDiscountTarget(args: {
+  markPriceUsd: number;
+  entryPriceUsd: number;
+  minDiscountPct: number;
+}): number | null {
+  if (!(args.markPriceUsd > 0) || !(args.entryPriceUsd > 0)) return null;
+  const targetPrice = args.entryPriceUsd * (1 - args.minDiscountPct / 100);
+  return args.markPriceUsd <= targetPrice ? args.markPriceUsd : null;
+}
+
 export function mirrorAverageHoldAllowed(args: {
   openedAtMs: number;
   nowMs: number;
