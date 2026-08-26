@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+  mirrorAverageDeepDiscountTarget,
   mirrorAverageHoldAllowed,
   mirrorAveragePriceAllowed,
   recentMirrorLocalLow,
@@ -129,6 +130,14 @@ describe('mirror averaging local low', () => {
     expect(mirrorAveragePriceAllowed({ ...base, markPriceUsd: 99 })).toBe(false);
     expect(mirrorAveragePriceAllowed({ ...base, markPriceUsd: 97 })).toBe(true);
     expect(mirrorAveragePriceAllowed({ ...base, markPriceUsd: 99 })).toBe(false);
+  });
+
+  it('falls back to the mark price when it is already below the discount target', () => {
+    const base = { entryPriceUsd: 100, minDiscountPct: 30 };
+    expect(mirrorAverageDeepDiscountTarget({ ...base, markPriceUsd: 71 })).toBeNull();
+    expect(mirrorAverageDeepDiscountTarget({ ...base, markPriceUsd: 70 })).toBe(70);
+    expect(mirrorAverageDeepDiscountTarget({ ...base, markPriceUsd: 46 })).toBe(46);
+    expect(mirrorAverageDeepDiscountTarget({ ...base, markPriceUsd: 0 })).toBeNull();
   });
 
   it('waits for the minimum hold after opening', () => {

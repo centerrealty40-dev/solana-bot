@@ -131,6 +131,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_MAX_TIMES).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT).toBe('2');
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT).toBe('2');
+    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_DEEP_DISCOUNT_ENABLED).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_DEEP_DISCOUNT_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MAX_PRICE_IMPACT_PCT).toBe('5');
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_MAX_PRICE_IMPACT_PCT).toBe('5');
     expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_ENABLED).toBe('1');

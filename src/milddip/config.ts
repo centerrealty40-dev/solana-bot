@@ -910,6 +910,7 @@ const MildDipConfigSchema = z.object({
     averageWindowsMs: z.array(z.coerce.number().int().min(60_000)).min(1).default(DEFAULT_MIRROR_AVERAGE_WINDOWS_MS),
     averageExcludeTailMs: z.coerce.number().int().min(0).default(900_000),
     averageTolerancePct: z.coerce.number().min(0).default(0.5),
+    averageDeepDiscountEnabled: z.boolean().default(true),
     averageMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
     crossLeaderAverageEnabled: z.boolean().default(false),
     crossLeaderAverageLeaders: z.array(z.string()).default([]),
@@ -1965,6 +1966,10 @@ export function loadMildDipConfig(): MildDipConfig {
       averageWindowsMs: envMirrorAverageWindowsMs(),
       averageExcludeTailMs: envNum('MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS', 900_000),
       averageTolerancePct: envNum('MILD_DIP_MIRROR_AVERAGE_TOLERANCE_PCT', 0.5),
+      averageDeepDiscountEnabled: envBool(
+        'MILD_DIP_MIRROR_AVERAGE_DEEP_DISCOUNT_ENABLED',
+        true,
+      ),
       averageMaxPriceImpactPct: envNum('MILD_DIP_MIRROR_AVERAGE_MAX_PRICE_IMPACT_PCT', 0),
       crossLeaderAverageEnabled: envBool('MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_ENABLED', false),
       crossLeaderAverageLeaders: (process.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_LEADERS ?? '')
