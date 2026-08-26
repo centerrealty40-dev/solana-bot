@@ -4954,7 +4954,8 @@ if (mildDipBotApp) {
       ownExitTimeStopMs: '0',
       lossCapUsd: '120',
       maxEntryPc5mPct: '1000',
-      minLiquidityUsd: '4000',
+      // Pools under $20k lose money on every measured cut of the book.
+      minLiquidityUsd: '20000',
       minPc1hPct: '-1000',
       minPc5mPct: '-1000',
       ladderStepPct: '8',

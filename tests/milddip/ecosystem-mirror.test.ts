@@ -231,7 +231,7 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS:");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS: '120000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LIQUIDITY_USD: '4000'");
-    expect(mirror?.env.MILD_DIP_MIRROR_MIN_LIQUIDITY_USD).toBe('4000');
+    expect(mirror?.env.MILD_DIP_MIRROR_MIN_LIQUIDITY_USD).toBe('20000');
     expect(mirror2?.env.MILD_DIP_MIRROR_MIN_LIQUIDITY_USD).toBe('40000');
     expect(mirror?.env.MILD_DIP_MIRROR_MIN_PC1H_PCT).toBe('-1000');
     expect(mirror?.env.MILD_DIP_MIRROR_MIN_PC5M_PCT).toBe('-1000');
