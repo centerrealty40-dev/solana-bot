@@ -1437,6 +1437,9 @@ async function wakeLeaderMirrors(
   const hits = readLeaderSeedHits(cfg.leaderSeedPath, nowMs, {
     maxAgeMs: Math.min(gates.hitMaxAgeMs, 600_000),
     max: cfg.leaderSeedMax,
+    // Two leaders buying one mint must keep both hits: mint-only dedupe hides
+    // the hit of the leader this wallet mirrors (watch key is mint:leader).
+    dedupeBy: 'mint_leader',
   });
   for (const hit of hits) {
     const hitKey = leaderMirrorHitKey(hit);

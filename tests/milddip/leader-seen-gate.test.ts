@@ -52,6 +52,27 @@ describe('1.11.816 leader-seen entry gate', () => {
     ).toBeGreaterThan(40);
   });
 
+  it('mint_leader dedupe keeps a co-buy of two leaders on one mint', () => {
+    const mint = 'A'.repeat(40);
+    const rows = [
+      { mint, lastSeenAtMs: NOW - 1_000, leader: '7BNaxx' },
+      { mint, lastSeenAtMs: NOW - 2_000, leader: '8zkg' },
+    ];
+    const byMint = parseLeaderSeedHits({ hits: rows }, NOW, { maxAgeMs: 60_000, max: 40 });
+    expect(byMint.map((h) => h.leader)).toEqual(['7BNaxx']);
+    const byMintLeader = parseLeaderSeedHits({ hits: rows }, NOW, {
+      maxAgeMs: 60_000,
+      max: 40,
+      dedupeBy: 'mint_leader',
+    });
+    expect(byMintLeader.map((h) => h.leader)).toEqual(['7BNaxx', '8zkg']);
+  });
+
+  it('mirror wake reads seed hits per leader', () => {
+    const loop = readFileSync(resolve('src/milddip/loop.ts'), 'utf8');
+    expect(loop).toContain("dedupeBy: 'mint_leader'");
+  });
+
   it('1.11.817 schema allows the seed size the gate needs', () => {
     const cfg = readFileSync(resolve('src/milddip/config.ts'), 'utf8');
     // 80 was a wake-hint ceiling; as a gate the seed must hold ~2h of flow.

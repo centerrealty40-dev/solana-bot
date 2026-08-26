@@ -104,10 +104,11 @@ export function readLeaderSeedMints(
 export function parseLeaderSeedHits(
   payload: LeaderSeedFile | null | undefined,
   nowMs: number,
-  opts?: { maxAgeMs?: number; max?: number },
+  opts?: { maxAgeMs?: number; max?: number; dedupeBy?: 'mint' | 'mint_leader' },
 ): LeaderSeedHit[] {
   const maxAgeMs = Math.max(0, opts?.maxAgeMs ?? 2 * 3_600_000);
   const max = Math.max(0, Math.floor(opts?.max ?? 40));
+  const dedupeBy = opts?.dedupeBy ?? 'mint';
   const hits = Array.isArray(payload?.hits) ? payload!.hits! : [];
   const rows = hits
     .filter(
@@ -123,8 +124,9 @@ export function parseLeaderSeedHits(
   const out: LeaderSeedHit[] = [];
   const seen = new Set<string>();
   for (const h of rows) {
-    if (seen.has(h.mint)) continue;
-    seen.add(h.mint);
+    const key = dedupeBy === 'mint_leader' ? `${h.mint}:${h.leader ?? ''}` : h.mint;
+    if (seen.has(key)) continue;
+    seen.add(key);
     out.push({ ...h });
     if (out.length >= max) break;
   }
@@ -134,7 +136,7 @@ export function parseLeaderSeedHits(
 export function readLeaderSeedHits(
   filePath: string | undefined,
   nowMs: number,
-  opts?: { maxAgeMs?: number; max?: number },
+  opts?: { maxAgeMs?: number; max?: number; dedupeBy?: 'mint' | 'mint_leader' },
 ): LeaderSeedHit[] {
   if (!filePath) return [];
   try {
