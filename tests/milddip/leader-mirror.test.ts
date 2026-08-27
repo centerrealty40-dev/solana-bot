@@ -320,6 +320,31 @@ describe('leader mirror observation decisions', () => {
     });
   });
 
+  it('buys without structural data when structural gates are disabled', () => {
+    expect(
+      at(
+        hit({ liq: undefined, mcap: undefined, ageHours: undefined, pc5m: undefined }),
+        101,
+        110_000,
+        100_000,
+        {
+          ...gates,
+          structuralGatesEnabled: false,
+          greenImpulsePct: 50,
+        },
+      ),
+    ).toEqual({ action: 'buy', quotePriceUsd: 101 });
+    expect(
+      at(
+        hit({ liq: undefined, mcap: undefined, ageHours: undefined, pc5m: undefined }),
+        104,
+        110_000,
+        100_000,
+        { ...gates, structuralGatesEnabled: false },
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'premium_cap' });
+  });
+
   it('refuses a 1h move below the configured floor', () => {
     expect(at(hit({ pc1h: 9 }), 101, 110_000, 100_000, {
       ...gates,

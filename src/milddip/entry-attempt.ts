@@ -29,6 +29,7 @@ import {
   evaluateRebuyBelowExit,
   evaluateRebuyLiquidityDrop,
   mildDipFirstTouchCapUsd,
+  mildDipMirrorLeaderSizeUsd,
   mildDipLeaderMirrorEntryClipUsd,
   mildDipLeaderMirrorSizeUsd,
   mildDipMicroSizeGatesForSource,
@@ -139,6 +140,7 @@ export function resolveMirrorEntryRiskFloors(args: {
   isMirror: boolean;
   isTier: boolean;
   tierIgnoreFloors: boolean;
+  structuralGatesEnabled?: boolean;
   mirrorMinPairAgeHours: number;
   mirrorMinLiquidityUsd: number;
   mirrorMaxVol5mToLiq: number;
@@ -157,6 +159,9 @@ export function resolveMirrorEntryRiskFloors(args: {
       maxVol5mToLiq: args.defaultMaxVol5mToLiq,
     };
   }
+  if (args.structuralGatesEnabled === false) {
+    return { minPairAgeHours: 0, minLiquidityUsd: 0, maxVol5mToLiq: 0 };
+  }
   const ignore = args.isTier && args.tierIgnoreFloors;
   return {
     minPairAgeHours: args.isTier ? 0 : args.mirrorMinPairAgeHours,
@@ -168,8 +173,9 @@ export function resolveMirrorEntryRiskFloors(args: {
 export function shouldApplyMirrorEntryStructuralDataVeto(
   isMirror: boolean,
   tierIgnoreFloors: boolean,
+  structuralGatesEnabled = true,
 ): boolean {
-  return isMirror && !tierIgnoreFloors;
+  return isMirror && structuralGatesEnabled && !tierIgnoreFloors;
 }
 
 /**
@@ -429,6 +435,8 @@ export type EntryAttemptOpts = {
   mirrorQuoteGainPct?: number | null;
   /** Leader fill price — anchor for the mirror premium guard on the quote. */
   mirrorLeaderFillPriceUsd?: number | null;
+  mirrorLeaderSizeUsd?: number | null;
+  mirrorLeaderMcapUsd?: number | null;
   /** Premium cap (%) the mirror buy must respect against the leader fill. */
   mirrorMaxPremiumPct?: number | null;
   onFundingShortage?: (details: {
@@ -991,6 +999,7 @@ export async function attemptMildDipEntry(args: {
     isMirror,
     isTier,
     tierIgnoreFloors,
+    structuralGatesEnabled: cfg.leaderMirror.structuralGatesEnabled,
     mirrorMinPairAgeHours: cfg.leaderMirror.minPairAgeHours,
     mirrorMinLiquidityUsd: cfg.leaderMirror.minLiquidityUsd,
     mirrorMaxVol5mToLiq: cfg.leaderMirror.maxVol5mToLiq,
@@ -1022,7 +1031,13 @@ export async function attemptMildDipEntry(args: {
     minTxns5m: !isMirror && !isGreen ? cfg.entryMinTxns5m : 0,
     minTurnover5mLiq: !isMirror && !isGreen ? cfg.entryMinTurnover5mLiq : 0,
   });
-  if (shouldApplyMirrorEntryStructuralDataVeto(isMirror, tierIgnoreFloors)) {
+  if (
+    shouldApplyMirrorEntryStructuralDataVeto(
+      isMirror,
+      tierIgnoreFloors,
+      cfg.leaderMirror.structuralGatesEnabled,
+    )
+  ) {
     if (
       liveLiquidityUsd == null ||
       !Number.isFinite(liveLiquidityUsd) ||
@@ -1422,10 +1437,23 @@ export async function attemptMildDipEntry(args: {
           positionUsd: cfg.leaderMirror.positionUsd,
         })
       : null;
+  const mirrorLeaderSize =
+    isMirror && !isTier
+      ? mildDipMirrorLeaderSizeUsd({
+          leaderBuyUsd: opts.mirrorLeaderSizeUsd,
+          fraction: cfg.leaderMirror.sizeFromLeaderFraction,
+          minUsd: cfg.leaderMirror.sizeFromLeaderMinUsd,
+          maxUsd: cfg.leaderMirror.sizeFromLeaderMaxUsd,
+          mcapUsd: opts.mirrorLeaderMcapUsd,
+          smallMcapUsd: cfg.leaderMirror.sizeFromLeaderSmallMcapUsd,
+          smallClipUsd: cfg.leaderMirror.sizeFromLeaderSmallClipUsd,
+        })
+      : null;
+  const mirrorSizeUsd = mirrorLeaderSize ?? mirrorSizing?.sizeUsd;
   const mirrorClipUsd = mirrorSizing
     ? mildDipLeaderMirrorEntryClipUsd({
-        lawEnabled: cfg.leaderMirror.sizeLiqCoef > 0,
-        mirrorSizeUsd: mirrorSizing.sizeUsd,
+        lawEnabled: cfg.leaderMirror.sizeLiqCoef > 0 || mirrorLeaderSize != null,
+        mirrorSizeUsd: mirrorSizeUsd ?? mirrorSizing.sizeUsd,
         positionUsd: cfg.leaderMirror.positionUsd,
         commonSizeUsd: knifeCapped,
         rugKnife: rugRisk.tier === 'knife',
@@ -1464,7 +1492,13 @@ export async function attemptMildDipEntry(args: {
     firstTouchUsd: cfg.firstTouchPositionUsd,
     lawEnabled: cfg.leaderMirror.sizeLiqCoef > 0,
     isMirrorLane: isMirror && !isTier,
-    lawMinUsd: cfg.leaderMirror.sizeLiqMinUsd,
+    lawMinUsd:
+      mirrorLeaderSize != null
+        ? Math.max(
+            cfg.leaderMirror.sizeLiqMinUsd,
+            cfg.leaderMirror.sizeFromLeaderMinUsd,
+          )
+        : cfg.leaderMirror.sizeLiqMinUsd,
   });
   const familiarityCapped = firstTouch
     ? Math.min(firstTouchCapUsd, laneCapped)

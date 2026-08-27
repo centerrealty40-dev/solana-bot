@@ -1476,7 +1476,11 @@ async function wakeLeaderMirrors(
         hitKey,
         startedAtMs: nowMs,
         expiresAtMs: nowMs + mirrorObserveMs,
-        metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
+        metricSource: leaderMirrorNeedsStructuralBackfill(
+          hit,
+          gates.requireDipCandle,
+          gates.structuralGatesEnabled,
+        ) ? 'backfill' : 'seed',
       });
       leaderMirrorDecisions.delete(watchKey);
       leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
@@ -1501,7 +1505,11 @@ async function wakeLeaderMirrors(
         hitKey,
         startedAtMs: nowMs,
         expiresAtMs: nowMs + mirrorObserveMs,
-        metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
+        metricSource: leaderMirrorNeedsStructuralBackfill(
+          hit,
+          gates.requireDipCandle,
+          gates.structuralGatesEnabled,
+        ) ? 'backfill' : 'seed',
       });
       leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
       leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
@@ -1513,7 +1521,11 @@ async function wakeLeaderMirrors(
         leaderFillPriceUsd: hit.fillPriceUsd ?? null,
         pc5m: hit.pc5m ?? null,
         pc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
-        metricSource: leaderMirrorNeedsStructuralBackfill(hit, gates.requireDipCandle) ? 'backfill' : 'seed',
+        metricSource: leaderMirrorNeedsStructuralBackfill(
+          hit,
+          gates.requireDipCandle,
+          gates.structuralGatesEnabled,
+        ) ? 'backfill' : 'seed',
         observeMs: gates.observeMs,
       });
     }
@@ -1521,7 +1533,11 @@ async function wakeLeaderMirrors(
   const structuralCandidates = [...leaderMirrorWatches.entries()]
     .filter(
       ([watchKey, watch]) =>
-        leaderMirrorNeedsStructuralBackfill(watch.hit, gates.requireDipCandle) &&
+        leaderMirrorNeedsStructuralBackfill(
+          watch.hit,
+          gates.requireDipCandle,
+          gates.structuralGatesEnabled,
+        ) &&
         nowMs - (leaderMirrorStructuralAttemptMs.get(watchKey) ?? 0) >= gates.structuralGapMs,
     );
   const backfillEntries = prioritizeFreshStructuralEntries(
@@ -2208,6 +2224,8 @@ async function wakeLeaderMirrors(
               leaderBuyTsMs,
               leaderBuySignature: hit.signature,
               leaderMirrorLeader: hit.leader,
+              mirrorLeaderSizeUsd: hit.sizeUsd ?? null,
+              mirrorLeaderMcapUsd: hit.mcap ?? null,
               mirrorExecutionRetryBackoffMs: gates.executionRetryBackoffMs,
               mirrorExecutionSlippageMultiplier: gates.executionSlippageMultiplier,
               mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,
@@ -5900,7 +5918,11 @@ export async function runMildDipLoop(
         hitKey,
         startedAtMs,
         expiresAtMs,
-        metricSource: leaderMirrorNeedsStructuralBackfill(hit, cfg.leaderMirror.requireDipCandle)
+        metricSource: leaderMirrorNeedsStructuralBackfill(
+          hit,
+          cfg.leaderMirror.requireDipCandle,
+          cfg.leaderMirror.structuralGatesEnabled,
+        )
           ? 'backfill'
           : 'seed',
       });
