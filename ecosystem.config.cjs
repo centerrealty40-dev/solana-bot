@@ -4752,6 +4752,7 @@ function makeMirrorApp({
   ownExitTimeStopMs,
   lossCapUsd,
   maxEntryPc5mPct,
+  entryGraceMaxPremiumPct,
   minLiquidityUsd,
   minPc1hPct,
   minPc5mPct,
@@ -4869,7 +4870,7 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_MIN_PC1H_PCT: minPc1hPct,
       MILD_DIP_MIRROR_MIN_PC5M_PCT: minPc5mPct,
       MILD_DIP_MIRROR_ENTRY_GRACE_MS: '60000',
-      MILD_DIP_MIRROR_ENTRY_GRACE_MAX_PREMIUM_PCT: '1',
+      MILD_DIP_MIRROR_ENTRY_GRACE_MAX_PREMIUM_PCT: entryGraceMaxPremiumPct,
       MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ: '2',
       MILD_DIP_MIRROR_REQUIRE_DEEP_DUMP: '0',
       MILD_DIP_MIRROR_DEEP_DUMP_PCT: '-8',
@@ -4955,6 +4956,8 @@ if (mildDipBotApp) {
       ownExitTimeStopMs: '0',
       lossCapUsd: '120',
       maxEntryPc5mPct: '1000',
+      /** 1.11.1042 — first clip inside the first minute pays up to +5%. */
+      entryGraceMaxPremiumPct: '5',
       // Pools under $20k lose money on every measured cut of the book.
       minLiquidityUsd: '20000',
       minPc1hPct: '-1000',
@@ -4993,6 +4996,7 @@ if (mildDipBotApp) {
       ownExitTimeStopMs: '0',
       lossCapUsd: '50',
       maxEntryPc5mPct: '1000',
+      entryGraceMaxPremiumPct: '1',
       minLiquidityUsd: '40000',
       minPc1hPct: '-1000',
       minPc5mPct: '-10',
