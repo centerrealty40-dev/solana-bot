@@ -2225,6 +2225,7 @@ async function wakeLeaderMirrors(
               leaderBuySignature: hit.signature,
               leaderMirrorLeader: hit.leader,
               mirrorLeaderSizeUsd: hit.sizeUsd ?? null,
+              mirrorLeaderMcapUsd: hit.mcap ?? null,
               mirrorExecutionRetryBackoffMs: gates.executionRetryBackoffMs,
               mirrorExecutionSlippageMultiplier: gates.executionSlippageMultiplier,
               mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,

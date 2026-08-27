@@ -4783,6 +4783,8 @@ function makeMirrorApp({
   sizeFromLeaderFraction = '0',
   sizeFromLeaderMinUsd = '50',
   sizeFromLeaderMaxUsd = '200',
+  sizeFromLeaderSmallMcapUsd = '0',
+  sizeFromLeaderSmallClipUsd = '0',
 }) {
   return {
     ...mildDipBotApp,
@@ -4874,6 +4876,8 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_SIZE_FROM_LEADER_FRACTION: sizeFromLeaderFraction,
       MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD: sizeFromLeaderMinUsd,
       MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD: sizeFromLeaderMaxUsd,
+      MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_MCAP_USD: sizeFromLeaderSmallMcapUsd,
+      MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_CLIP_USD: sizeFromLeaderSmallClipUsd,
       MILD_DIP_MIRROR_FIRST_CLIP_LEGS: '2',
       MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT: maxEntryPc5mPct,
       MILD_DIP_MIRROR_MAX_PC5M_PCT: '0',
@@ -4989,6 +4993,8 @@ if (mildDipBotApp) {
       sizeFromLeaderFraction: '0.5',
       sizeFromLeaderMinUsd: '50',
       sizeFromLeaderMaxUsd: '200',
+      sizeFromLeaderSmallMcapUsd: '40000',
+      sizeFromLeaderSmallClipUsd: '30',
       averageUsd: '64',
       crossLeaderAverageEnabled: '1',
       crossLeaderAverageLeaders: '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',

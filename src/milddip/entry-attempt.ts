@@ -436,6 +436,7 @@ export type EntryAttemptOpts = {
   /** Leader fill price — anchor for the mirror premium guard on the quote. */
   mirrorLeaderFillPriceUsd?: number | null;
   mirrorLeaderSizeUsd?: number | null;
+  mirrorLeaderMcapUsd?: number | null;
   /** Premium cap (%) the mirror buy must respect against the leader fill. */
   mirrorMaxPremiumPct?: number | null;
   onFundingShortage?: (details: {
@@ -1443,6 +1444,9 @@ export async function attemptMildDipEntry(args: {
           fraction: cfg.leaderMirror.sizeFromLeaderFraction,
           minUsd: cfg.leaderMirror.sizeFromLeaderMinUsd,
           maxUsd: cfg.leaderMirror.sizeFromLeaderMaxUsd,
+          mcapUsd: opts.mirrorLeaderMcapUsd,
+          smallMcapUsd: cfg.leaderMirror.sizeFromLeaderSmallMcapUsd,
+          smallClipUsd: cfg.leaderMirror.sizeFromLeaderSmallClipUsd,
         })
       : null;
   const mirrorSizeUsd = mirrorLeaderSize ?? mirrorSizing?.sizeUsd;

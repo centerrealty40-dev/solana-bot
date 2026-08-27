@@ -13,6 +13,7 @@ import {
   mildDipLiquidityPowerLawSizeUsd,
   mildDipLeaderMirrorEntryClipUsd,
   mildDipFirstTouchCapUsd,
+  mildDipMirrorLeaderSizeUsd,
   mildDipLeaderMirrorSizeUsd,
   mildDipMicroSizeGatesForSource,
   mayFireSoftLossExit,
@@ -141,6 +142,31 @@ describe('mildDipLeaderMirrorSizeUsd', () => {
     ]) {
       expect(mildDipLeaderMirrorSizeUsd(liq, mirror2).sizeUsd).toBeCloseTo(expected, 1);
     }
+  });
+
+  it('uses a fixed clip below the configured small-cap threshold', () => {
+    const base = {
+      fraction: 0.5,
+      minUsd: 50,
+      maxUsd: 200,
+      smallMcapUsd: 40_000,
+      smallClipUsd: 30,
+    };
+    expect(mildDipMirrorLeaderSizeUsd({ ...base, leaderBuyUsd: 90, mcapUsd: 35_000 })).toBe(30);
+    expect(mildDipMirrorLeaderSizeUsd({ ...base, leaderBuyUsd: 90, mcapUsd: 45_000 })).toBe(50);
+    expect(mildDipMirrorLeaderSizeUsd({ ...base, leaderBuyUsd: 90, mcapUsd: null })).toBe(50);
+    expect(mildDipMirrorLeaderSizeUsd({ ...base, leaderBuyUsd: 500, mcapUsd: 35_000 })).toBe(30);
+    expect(mildDipMirrorLeaderSizeUsd({ ...base, leaderBuyUsd: 500, mcapUsd: 100_000 })).toBe(200);
+    expect(
+      mildDipMirrorLeaderSizeUsd({
+        leaderBuyUsd: 90,
+        fraction: 0.5,
+        minUsd: 50,
+        maxUsd: 200,
+        smallMcapUsd: 0,
+        smallClipUsd: 30,
+      }),
+    ).toBe(50);
   });
 
   it('keeps flat fallback and floors unknown liquidity', () => {

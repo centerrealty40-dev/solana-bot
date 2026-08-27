@@ -878,6 +878,8 @@ const MildDipConfigSchema = z.object({
     sizeFromLeaderFraction: z.coerce.number().min(0).max(10).default(0),
     sizeFromLeaderMinUsd: z.coerce.number().min(0).max(10_000).default(50),
     sizeFromLeaderMaxUsd: z.coerce.number().min(0).max(10_000).default(200),
+    sizeFromLeaderSmallMcapUsd: z.coerce.number().min(0).max(10_000_000).default(0),
+    sizeFromLeaderSmallClipUsd: z.coerce.number().min(0).max(10_000).default(0),
     firstClipLegs: z.coerce.number().int().min(1).max(2).default(1),
     maxVol5mToLiq: z.coerce.number().min(0).default(2),
     maxEntryPc5mPct: z.coerce.number().max(1000).default(0),
@@ -1938,6 +1940,14 @@ export function loadMildDipConfig(): MildDipConfig {
       sizeFromLeaderFraction: envNum('MILD_DIP_MIRROR_SIZE_FROM_LEADER_FRACTION', 0),
       sizeFromLeaderMinUsd: envNum('MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD', 50),
       sizeFromLeaderMaxUsd: envNum('MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD', 200),
+      sizeFromLeaderSmallMcapUsd: envNum(
+        'MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_MCAP_USD',
+        0,
+      ),
+      sizeFromLeaderSmallClipUsd: envNum(
+        'MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_CLIP_USD',
+        0,
+      ),
       firstClipLegs: envNum('MILD_DIP_MIRROR_FIRST_CLIP_LEGS', 1),
       maxVol5mToLiq: envNum('MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ', 2),
       maxEntryPc5mPct: envNum('MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT', 0),

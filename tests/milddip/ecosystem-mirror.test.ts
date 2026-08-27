@@ -187,6 +187,10 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_FRACTION).toBe('0.5');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD).toBe('50');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('200');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_MCAP_USD).toBe('40000');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_CLIP_USD).toBe('30');
+    expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_MCAP_USD).toBe('0');
+    expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_CLIP_USD).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_USD).toBe('64');
     expect(mirror?.env.MILD_DIP_MIRROR_TIER_ENABLED).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_TIER_IGNORE_FLOORS).toBe('0');
