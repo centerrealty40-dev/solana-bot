@@ -4992,7 +4992,7 @@ if (mildDipBotApp) {
       sizeLiqMaxPoolSharePct: '0.15',
       sizeFromLeaderFraction: '0.5',
       sizeFromLeaderMinUsd: '50',
-      sizeFromLeaderMaxUsd: '200',
+      sizeFromLeaderMaxUsd: '130',
       sizeFromLeaderSmallMcapUsd: '40000',
       sizeFromLeaderSmallClipUsd: '30',
       averageUsd: '64',
