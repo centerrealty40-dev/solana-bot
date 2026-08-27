@@ -69,6 +69,8 @@ export type MildDipOpenPosition = {
   leaderBuyTsMs?: number;
   leaderBuySignature?: string;
   leaderMirrorLeader?: string;
+  /** Leader fill price the premium cap of later legs is measured against. */
+  mirrorLeaderFillPriceUsd?: number;
   mirrorOriginalEntryPriceUsd?: number;
   mirrorInitialClipUsd?: number;
   mirrorFirstClipLegsFilled?: number;

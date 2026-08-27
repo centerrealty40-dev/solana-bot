@@ -52,6 +52,8 @@ import {
 } from './green-minute-jupiter-refresh.js';
 import {
   evaluateLeaderMirrorObservation,
+  mirrorPremiumCapPct,
+  mirrorQuoteWithinPremiumCap,
   leaderMirrorKnifeWaitPending,
   leaderMirrorDecisionSuppressed,
   leaderMirrorHitKey,
@@ -1891,6 +1893,15 @@ async function wakeLeaderMirrors(
       leaderBuyTsMsForGrace != null &&
       nowMs - leaderBuyTsMsForGrace >= 0 &&
       nowMs - leaderBuyTsMsForGrace <= (gates.entryGraceMs ?? 60_000);
+    // The grace premium belongs to the very first buy of the clip; once a leg is
+    // filled every follow-up (leg 2, retry, next clip) keeps the steady cap.
+    const mirrorFirstBuyPending = state.open[mint] == null;
+    const mirrorPremiumCap = mirrorPremiumCapPct({
+      maxPremiumPct: gates.maxPremiumPct,
+      entryGraceMaxPremiumPct: gates.entryGraceMaxPremiumPct,
+      entryGraceActive,
+      firstClipPending: mirrorFirstBuyPending,
+    });
     const leaderSellDecision = decideLeaderSellExit({
       enabled: cfg.leaderMirror.leaderSellExitEnabled,
       lane: 'leader_mirror',
@@ -1975,6 +1986,7 @@ async function wakeLeaderMirrors(
       nowMs,
       watchStartedAtMs: watch.startedAtMs,
       gates,
+      firstClipPending: mirrorFirstBuyPending,
     });
     if (decision.action === 'wait') {
       const waitReason = decision.waitReason ?? 'unknown';
@@ -2171,6 +2183,8 @@ async function wakeLeaderMirrors(
             buyInFlight,
             resolveEntrySizeUsd,
             leader: hit.leader,
+            leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+            maxPremiumPct: gates.maxPremiumPct,
           })
         : await attemptMildDipEntry({
             cfg,
@@ -2199,6 +2213,8 @@ async function wakeLeaderMirrors(
               mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,
               mirrorPc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
               mirrorEntryGraceActive: entryGraceActive,
+              mirrorLeaderFillPriceUsd: hit.fillPriceUsd ?? null,
+              mirrorMaxPremiumPct: mirrorPremiumCap,
               mirrorQuoteGainPct:
                 hit.fillPriceUsd != null && hit.fillPriceUsd > 0
                   ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
@@ -2232,6 +2248,9 @@ async function wakeLeaderMirrors(
         buyInFlight,
         resolveEntrySizeUsd,
         leader: hit.leader,
+        leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+        // Leg 2 is a follow-up buy: the grace premium belonged to leg 1 only.
+        maxPremiumPct: gates.maxPremiumPct,
       });
     }
     const outcome = mirrorEntryAttemptOutcome(result);
@@ -5118,10 +5137,17 @@ async function tryExits(
         const firstClipWindowLive =
           (pos.mirrorFirstClipLegsFilled ?? 1) < firstClipLegs &&
           nowMs - firstFillAtMs <= cfg.leaderMirror.entryGraceMs;
-        const premiumAllowed =
-          firstFillPrice > 0 &&
-          decision.markPriceUsd <=
-            firstFillPrice * (1 + cfg.leaderMirror.maxPremiumPct / 100);
+        // Premium of a late leg is measured against the leader fill when known:
+        // our own leg-1 fill already carries the grace premium on top of it.
+        const premiumAnchorPriceUsd =
+          pos.mirrorLeaderFillPriceUsd != null && pos.mirrorLeaderFillPriceUsd > 0
+            ? pos.mirrorLeaderFillPriceUsd
+            : firstFillPrice;
+        const premiumAllowed = mirrorQuoteWithinPremiumCap({
+          quotePriceUsd: decision.markPriceUsd,
+          leaderFillPriceUsd: premiumAnchorPriceUsd,
+          maxPremiumPct: cfg.leaderMirror.maxPremiumPct,
+        });
         if (
           firstClipWindowLive &&
           leaderSellEvent == null &&

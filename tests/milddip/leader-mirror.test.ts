@@ -9,6 +9,8 @@ import {
   leaderMirrorQuoteMintsCap,
   leaderMirrorQuoteCoverage,
   evictFundingParkedWatchKeys,
+  mirrorPremiumCapPct,
+  mirrorQuoteWithinPremiumCap,
   selectLeaderMirrorQuoteKeys,
   type LeaderMirrorGates,
 } from '../../src/milddip/leader-mirror.js';
@@ -237,6 +239,7 @@ const at = (
   start = 100_000,
   decisionGates = gates,
   leaderBuyTsMs: number | null | undefined = undefined,
+  firstClipPending: boolean | undefined = undefined,
 ) =>
   evaluateLeaderMirrorObservation({
     hit: h,
@@ -246,7 +249,67 @@ const at = (
     watchStartedAtMs: start,
     gates: decisionGates,
     leaderBuyTsMs,
+    firstClipPending,
   });
+
+describe('mirror premium cap', () => {
+  const caps = { maxPremiumPct: 1, entryGraceMaxPremiumPct: 5 };
+
+  it('grants the grace cap only to the pending first clip', () => {
+    expect(
+      mirrorPremiumCapPct({ ...caps, entryGraceActive: true, firstClipPending: true }),
+    ).toBe(5);
+    expect(
+      mirrorPremiumCapPct({ ...caps, entryGraceActive: true, firstClipPending: false }),
+    ).toBe(1);
+    expect(
+      mirrorPremiumCapPct({ ...caps, entryGraceActive: false, firstClipPending: true }),
+    ).toBe(1);
+  });
+
+  it('falls back to the steady cap when no grace cap is configured', () => {
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: 1,
+        entryGraceActive: true,
+        firstClipPending: true,
+      }),
+    ).toBe(1);
+  });
+
+  it('measures the quote against the leader fill', () => {
+    // Leg 2 of the production incident: +8.67% over the leader fill.
+    expect(
+      mirrorQuoteWithinPremiumCap({
+        quotePriceUsd: 0.00016274565762032473,
+        leaderFillPriceUsd: 0.00014976183514721602,
+        maxPremiumPct: 1,
+      }),
+    ).toBe(false);
+    expect(
+      mirrorQuoteWithinPremiumCap({
+        quotePriceUsd: 101,
+        leaderFillPriceUsd: 100,
+        maxPremiumPct: 1,
+      }),
+    ).toBe(true);
+    // Unknown leader fill cannot block the buy; a missing quote always does.
+    expect(
+      mirrorQuoteWithinPremiumCap({
+        quotePriceUsd: 101,
+        leaderFillPriceUsd: null,
+        maxPremiumPct: 1,
+      }),
+    ).toBe(true);
+    expect(
+      mirrorQuoteWithinPremiumCap({
+        quotePriceUsd: 0,
+        leaderFillPriceUsd: 100,
+        maxPremiumPct: 1,
+      }),
+    ).toBe(false);
+  });
+});
 
 describe('leader mirror observation decisions', () => {
   it('keeps optional momentum floors disabled at the sentinel', () => {
@@ -508,6 +571,28 @@ describe('leader mirror observation decisions', () => {
       action: 'wait',
       waitReason: 'knife_discount',
     });
+  });
+
+  it('keeps the steady premium cap once the first clip leg is filled', () => {
+    const prod = {
+      ...gates,
+      requireDipCandle: false,
+      retryWhileLeaderHolds: true,
+      maxPremiumPct: 1,
+      entryGraceMaxPremiumPct: 5,
+    };
+    // Same instant and same +3% quote as the first leg, but the clip already
+    // has a filled leg: only the steady +1% cap applies.
+    expect(
+      at(hit({ pc5m: -5 }), 103, 130_000, 100_000, prod, 100_000, false),
+    ).toEqual({ action: 'wait', waitReason: 'premium_cap' });
+    expect(
+      at(hit({ pc5m: -5 }), 100.5, 130_000, 100_000, prod, 100_000, false),
+    ).toEqual({ action: 'buy', quotePriceUsd: 100.5 });
+    // A knife cannot be bypassed by the grace cap for a follow-up buy either.
+    expect(
+      at(hit({ pc5m: -10 }), 103, 130_000, 100_000, prod, 100_000, false),
+    ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
   });
 
   it('leaves shallow dips unchanged and waits on green leaders', () => {
