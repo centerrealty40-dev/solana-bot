@@ -203,13 +203,19 @@ export function upsertLeaderSeedMint(
   } catch {
     hits = [];
   }
-  const byMint = new Map<string, LeaderSeedHit>();
+  /**
+   * Keyed by mint+leader: two leaders buying one mint must keep both hits,
+   * otherwise the later write overwrites the hit of the leader a mirror wallet
+   * follows (and mixes leader/signature/fill of two different buys).
+   */
+  const seedKey = (mint: string, leader?: string): string => `${mint}:${leader ?? ''}`;
+  const byMintLeader = new Map<string, LeaderSeedHit>();
   for (const h of hits) {
     if (!h?.mint || h.mint.length < 32 || typeof h.lastSeenAtMs !== 'number') continue;
     if (nowMs - h.lastSeenAtMs > maxAgeMs) continue;
-    byMint.set(h.mint, h);
+    byMintLeader.set(seedKey(h.mint, h.leader), h);
   }
-  const prev = byMint.get(hit.mint);
+  const prev = byMintLeader.get(seedKey(hit.mint, hit.leader));
   const mergedHit: LeaderSeedHit = {
     mint: hit.mint,
     lastSeenAtMs: Math.max(prev?.lastSeenAtMs ?? 0, hit.lastSeenAtMs),
@@ -244,8 +250,8 @@ export function upsertLeaderSeedMint(
     const v = hit[k] ?? prev?.[k];
     if (v != null) (mergedHit as LeaderSeedHit)[k] = v as never;
   }
-  byMint.set(hit.mint, mergedHit);
-  const merged = [...byMint.values()]
+  byMintLeader.set(seedKey(hit.mint, hit.leader), mergedHit);
+  const merged = [...byMintLeader.values()]
     .sort((a, b) => b.lastSeenAtMs - a.lastSeenAtMs)
     .slice(0, max);
   const dir = path.dirname(filePath);

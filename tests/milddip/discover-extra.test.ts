@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
+  parseLeaderSeedHits,
   parseLeaderSeedMints,
   resetDiscoverExtraCachesForTests,
   upsertLeaderSeedMint,
@@ -53,7 +54,7 @@ describe('leader seed sidecar', () => {
     );
     upsertLeaderSeedMint(
       file,
-      { mint: M1, lastSeenAtMs: 2000, leader: 'L2', signature: 's2' },
+      { mint: M1, lastSeenAtMs: 2000, leader: 'L1', signature: 's2' },
       { nowMs: 2000, max: 40, maxAgeMs: 7_200_000 },
     );
     upsertLeaderSeedMint(
@@ -72,5 +73,46 @@ describe('leader seed sidecar', () => {
       M1,
       M2,
     ]);
+  });
+
+  it('keeps both leaders when they buy one mint together', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'milddip-seed-'));
+    tmpDirs.push(dir);
+    const file = path.join(dir, 'leader-seed.json');
+    upsertLeaderSeedMint(
+      file,
+      { mint: M1, lastSeenAtMs: 1000, leader: 'L1', signature: 's1', fillPriceUsd: 1 },
+      { nowMs: 1000, max: 40, maxAgeMs: 7_200_000 },
+    );
+    upsertLeaderSeedMint(
+      file,
+      { mint: M1, lastSeenAtMs: 1100, leader: 'L2', signature: 's2', fillPriceUsd: 2 },
+      { nowMs: 1100, max: 40, maxAgeMs: 7_200_000 },
+    );
+    const raw = JSON.parse(fs.readFileSync(file, 'utf8')) as {
+      hits: Array<{
+        mint: string;
+        leader?: string;
+        signature?: string;
+        fillPriceUsd?: number;
+      }>;
+    };
+    expect(raw.hits).toHaveLength(2);
+    expect(
+      raw.hits.map((h) => [h.leader, h.signature, h.fillPriceUsd]),
+    ).toEqual([
+      ['L2', 's2', 2],
+      ['L1', 's1', 1],
+    ]);
+    expect(
+      parseLeaderSeedHits(raw, 1200, {
+        maxAgeMs: 7_200_000,
+        max: 40,
+        dedupeBy: 'mint_leader',
+      }).map((h) => h.leader),
+    ).toEqual(['L2', 'L1']);
+    expect(
+      parseLeaderSeedMints(raw, 1200, { maxAgeMs: 7_200_000, max: 40 }),
+    ).toEqual([M1]);
   });
 });
