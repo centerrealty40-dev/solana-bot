@@ -480,14 +480,18 @@ export function evaluateLeaderMirrorObservation(args: {
           leaderFillPriceUsd: leaderPrice,
         }
       : undefined;
-  if (knifeWaitActive && !knifeWaitDiscountReached) {
-    return { action: 'wait', waitReason: 'knife_discount' };
-  }
   const entryGraceActive =
     leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
   const maxPremiumPct = entryGraceActive
     ? entryGraceMaxPremiumPct
     : gates.maxPremiumPct;
+  if (knifeWaitActive && !knifeWaitDiscountReached) {
+    // Inside the entry grace the first clip pays up to entryGraceMaxPremiumPct
+    // instead of waiting out the knife window; later clips keep waiting.
+    if (!(entryGraceActive && quoteGainPct <= maxPremiumPct)) {
+      return { action: 'wait', waitReason: 'knife_discount' };
+    }
+  }
   if (requireDipCandle && gates.greenCopyEnabled && greenCandidate) {
     if (quoteGainPct > gates.greenCorridorPct) {
       return soft('leader_mirror_green_corridor', 'green_corridor', true);

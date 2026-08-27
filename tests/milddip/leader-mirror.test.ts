@@ -477,6 +477,39 @@ describe('leader mirror observation decisions', () => {
     });
   });
 
+  it('pays the entry-grace premium on the first clip instead of waiting out the knife', () => {
+    const prod = {
+      ...gates,
+      requireDipCandle: false,
+      retryWhileLeaderHolds: true,
+      entryGraceMaxPremiumPct: 5,
+    };
+    // 30 s after the leader fill: +3% premium is inside the grace cap.
+    expect(at(hit({ pc5m: -10 }), 103, 130_000, 100_000, prod, 100_000)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 103,
+    });
+    // Above the grace cap the knife wait keeps holding the entry.
+    expect(at(hit({ pc5m: -10 }), 106, 130_000, 100_000, prod, 100_000)).toEqual({
+      action: 'wait',
+      waitReason: 'knife_discount',
+    });
+    // Without a knife the grace cap itself is the boundary.
+    expect(at(hit({ pc5m: -5 }), 106, 130_000, 100_000, prod, 100_000)).toEqual({
+      action: 'wait',
+      waitReason: 'premium_cap',
+    });
+    expect(at(hit({ pc5m: -5 }), 104, 130_000, 100_000, prod, 100_000)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 104,
+    });
+    // Past the grace window the knife wait still holds the entry.
+    expect(at(hit({ pc5m: -10 }), 103, 200_000, 100_000, prod, 100_000)).toEqual({
+      action: 'wait',
+      waitReason: 'knife_discount',
+    });
+  });
+
   it('leaves shallow dips unchanged and waits on green leaders', () => {
     expect(at(hit({ pc5m: -5 }), 101, 200_000, 100_000, gates, 100_000)).toEqual({
       action: 'buy',
