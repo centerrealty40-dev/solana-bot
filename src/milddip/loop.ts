@@ -3550,26 +3550,6 @@ function hydrateLeaderMirrorWatches(
   const mirrorObserveMs = leaderMirrorObservationWindowMs(cfg.leaderMirror);
   for (const [watchKey, watch] of Object.entries(state.leaderMirrorWatches ?? {})) {
     if (watch.expiresAtMs <= nowMs || state.open[watch.hit.mint]) continue;
-    if (
-      !leaderMirrorObservationFresh({
-        leaderBuyTsMs:
-          watch.hit.blockTime != null && watch.hit.blockTime > 0
-            ? watch.hit.blockTime * 1000
-            : null,
-        nowMs,
-        maxAgeMs: cfg.leaderMirror.observationMaxAgeMs,
-      })
-    ) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'leader_mirror_refusal',
-        mint: watch.hit.mint,
-        leader: watch.hit.leader,
-        reason: 'leader_mirror_observation_stale',
-        synthetic: true,
-        source: 'watch_hydration',
-      });
-      continue;
-    }
     leaderMirrorWatches.set(
       watchKey,
       watch.expiresAtMs < watch.startedAtMs + mirrorObserveMs
@@ -5901,23 +5881,6 @@ export async function runMildDipLoop(
       const watchKey = `${event.mint}:${event.leader}`;
       if (leaderMirrorWatches.has(watchKey)) continue;
       const startedAtMs = event.blockTimeMs;
-      if (
-        !leaderMirrorObservationFresh({
-          leaderBuyTsMs: startedAtMs,
-          nowMs: Date.now(),
-          maxAgeMs: cfg.leaderMirror.observationMaxAgeMs,
-        })
-      ) {
-        appendMildDipJournal(cfg.journalPath, {
-          kind: 'leader_mirror_refusal',
-          mint: event.mint,
-          leader: event.leader,
-          reason: 'leader_mirror_observation_stale',
-          source: 'trade_reconciliation',
-          synthetic: false,
-        });
-        continue;
-      }
       const expiresAtMs =
         startedAtMs + leaderMirrorObservationWindowMs(cfg.leaderMirror);
       if (expiresAtMs <= Date.now()) continue;
