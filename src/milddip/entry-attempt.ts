@@ -43,6 +43,7 @@ import { mildDipPriceRing } from './price-ring.js';
 import { validateStreamDexPrice } from './price-sanity.js';
 import { evaluateSignalPriceFreshness } from './signal-price-freshness.js';
 import { accountMirrorCashLeg } from './mirror-loss-cap.js';
+import { mirrorQuoteWithinPremiumCap } from './leader-mirror.js';
 
 /**
  * How fresh a ring sample must be to serve as the movement baseline. Dex marks
@@ -411,6 +412,10 @@ export type EntryAttemptOpts = {
   mirrorPc5mKnown?: boolean;
   mirrorEntryGraceActive?: boolean;
   mirrorQuoteGainPct?: number | null;
+  /** Leader fill price — anchor for the mirror premium guard on the quote. */
+  mirrorLeaderFillPriceUsd?: number | null;
+  /** Premium cap (%) the mirror buy must respect against the leader fill. */
+  mirrorMaxPremiumPct?: number | null;
   onFundingShortage?: (details: {
     reason: string;
     usdc?: number | null;
@@ -1583,6 +1588,11 @@ export async function attemptMildDipEntry(args: {
     ...(isMirror && opts.leaderBuyTsMs != null ? { leaderBuyTsMs: opts.leaderBuyTsMs } : {}),
     ...(isMirror && opts.leaderBuySignature ? { leaderBuySignature: opts.leaderBuySignature } : {}),
     ...(isMirror && opts.leaderMirrorLeader ? { leaderMirrorLeader: opts.leaderMirrorLeader } : {}),
+    ...(isMirror &&
+    opts.mirrorLeaderFillPriceUsd != null &&
+    opts.mirrorLeaderFillPriceUsd > 0
+      ? { mirrorLeaderFillPriceUsd: opts.mirrorLeaderFillPriceUsd }
+      : {}),
     ...(isMirror ? { mirrorOriginalEntryPriceUsd: entryPriceUsd } : {}),
     ...(isMirror
       ? { mirrorInitialClipUsd: sized.sizeUsd * mirrorFirstClipLegs }
@@ -1692,6 +1702,15 @@ export async function attemptMildDipEntry(args: {
   });
 
   const leaderSig = `milddip_${opts.lane}_${c.mint.slice(0, 8)}_${nowMs}`;
+  // Mirror premium is measured against the leader fill, not against our own
+  // quote: anchoring on the quote let a re-quote drift stack on top of the cap.
+  const mirrorPremiumAnchorUsd =
+    isMirror &&
+    opts.mirrorLeaderFillPriceUsd != null &&
+    opts.mirrorLeaderFillPriceUsd > 0 &&
+    opts.mirrorMaxPremiumPct != null
+      ? opts.mirrorLeaderFillPriceUsd
+      : null;
   const buyCopyCfg: CopyTraderConfig = isWaitDip
     ? {
         ...copyCfg,
@@ -1700,12 +1719,20 @@ export async function attemptMildDipEntry(args: {
         quotePremiumFirstShotPct: 0,
         quotePremiumGraceMs: 0,
       }
-    : copyCfg;
+    : mirrorPremiumAnchorUsd != null
+      ? {
+          ...copyCfg,
+          buyPriceMaxPremiumPct: Math.max(0, opts.mirrorMaxPremiumPct!),
+          quotePremiumGuardPct: Math.max(0, opts.mirrorMaxPremiumPct!),
+          quotePremiumFirstShotPct: 0,
+          quotePremiumGraceMs: 0,
+        }
+      : copyCfg;
   // Jupiter guard anchors to signal ceiling (not ready mark).
   const buyLeaderPriceUsd =
     isWaitDip && waitDipCeilingPx != null && waitDipCeilingPx > 0
       ? waitDipCeilingPx
-      : entryPriceUsd;
+      : (mirrorPremiumAnchorUsd ?? entryPriceUsd);
   let buy: Awaited<ReturnType<typeof executeCopyBuy>>;
   try {
     buy = await executeCopyBuy({
@@ -2132,6 +2159,10 @@ export async function attemptMirrorFirstClipLeg(args: {
     wantUsd: number,
   ) => Promise<{ sizeUsd: number; usdc?: number | null; stop: boolean; reason?: string }>;
   leader?: string | null;
+  /** Leader fill price the premium cap is measured against. */
+  leaderFillPriceUsd?: number | null;
+  /** Premium cap (%) for this leg; defaults to the steady mirror cap. */
+  maxPremiumPct?: number | null;
 }): Promise<EntryAttemptResult> {
   const { cfg, state, candidate: c, copyCfg, nowMs, buyInFlight } = args;
   const pos = state.open[c.mint];
@@ -2140,6 +2171,33 @@ export async function attemptMirrorFirstClipLeg(args: {
   if (!pos || pos.lane !== 'leader_mirror' || legs <= 1) return 'skip';
   const filledLegs = Math.max(0, Math.floor(pos.mirrorFirstClipLegsFilled ?? 1));
   if (filledLegs >= legs || buyInFlight.has(c.mint)) return 'skip';
+  const leaderFillPriceUsd =
+    args.leaderFillPriceUsd ?? pos.mirrorLeaderFillPriceUsd ?? null;
+  const legMaxPremiumPct = Math.max(
+    0,
+    args.maxPremiumPct ?? cfg.leaderMirror.maxPremiumPct,
+  );
+  if (
+    !mirrorQuoteWithinPremiumCap({
+      quotePriceUsd: c.priceUsd,
+      leaderFillPriceUsd,
+      maxPremiumPct: legMaxPremiumPct,
+    })
+  ) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_mirror_first_clip_leg',
+      mint: c.mint,
+      symbol: c.symbol,
+      leg: filledLegs + 1,
+      legs,
+      ok: false,
+      reason: 'premium_cap',
+      quotePriceUsd: c.priceUsd,
+      leaderFillPriceUsd,
+      maxPremiumPct: legMaxPremiumPct,
+    });
+    return 'skip';
+  }
   const legUsd = (pos.mirrorInitialClipUsd ?? pos.sizeUsd) / legs;
   const sized = await args.resolveEntrySizeUsd(cfg, copyCfg, nowMs, legUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
@@ -2159,8 +2217,17 @@ export async function attemptMirrorFirstClipLeg(args: {
   }
   buyInFlight.add(c.mint);
   try {
+    const legPremiumAnchored = leaderFillPriceUsd != null && leaderFillPriceUsd > 0;
     const buy = await executeCopyBuy({
-      cfg: copyCfg,
+      cfg: legPremiumAnchored
+        ? {
+            ...copyCfg,
+            buyPriceMaxPremiumPct: legMaxPremiumPct,
+            quotePremiumGuardPct: legMaxPremiumPct,
+            quotePremiumFirstShotPct: 0,
+            quotePremiumGraceMs: 0,
+          }
+        : copyCfg,
       mint: c.mint,
       symbol: c.symbol,
       priceUsd: c.priceUsd,
@@ -2169,7 +2236,7 @@ export async function attemptMirrorFirstClipLeg(args: {
       evalResult: { pass: true, reasons: ['mirror_first_clip_leg'], score: 0 },
       leaderSignature: `milddip_mirror_first_clip_leg_${c.mint.slice(0, 8)}_${nowMs}`,
       trigger: 'leader',
-      leaderPriceUsd: c.priceUsd,
+      leaderPriceUsd: legPremiumAnchored ? leaderFillPriceUsd : c.priceUsd,
       leaderBuyTs: nowMs,
       beforeSend: async () => {
         if (!cfg.leaderMirror.leaderBalanceGuardEnabled) return true;

@@ -36,6 +36,34 @@ export function leaderMirrorDecisionSuppressed(args: {
   );
 }
 
+/**
+ * Premium cap for a mirror buy against the leader fill. The wider entry-grace
+ * cap belongs to the first buy of the clip only; any follow-up buy — second leg,
+ * retry after a fill, later clip, averaging — keeps the steady cap.
+ */
+export function mirrorPremiumCapPct(args: {
+  maxPremiumPct: number;
+  entryGraceMaxPremiumPct?: number;
+  entryGraceActive: boolean;
+  firstClipPending: boolean;
+}): number {
+  return args.entryGraceActive && args.firstClipPending
+    ? (args.entryGraceMaxPremiumPct ?? args.maxPremiumPct)
+    : args.maxPremiumPct;
+}
+
+/** Quote is buyable only while it stays inside the cap over the leader fill. */
+export function mirrorQuoteWithinPremiumCap(args: {
+  quotePriceUsd?: number | null;
+  leaderFillPriceUsd?: number | null;
+  maxPremiumPct: number;
+}): boolean {
+  const { quotePriceUsd, leaderFillPriceUsd, maxPremiumPct } = args;
+  if (!(quotePriceUsd != null && quotePriceUsd > 0)) return false;
+  if (!(leaderFillPriceUsd != null && leaderFillPriceUsd > 0)) return true;
+  return quotePriceUsd <= leaderFillPriceUsd * (1 + maxPremiumPct / 100);
+}
+
 export function leaderMirrorQuoteMintsCap(
   activeWatchCount: number,
   configuredCap: number,
@@ -302,6 +330,8 @@ export function evaluateLeaderMirrorObservation(args: {
   nowMs: number;
   watchStartedAtMs: number;
   gates: LeaderMirrorGates;
+  /** False once our first clip is complete — later buys keep the steady cap. */
+  firstClipPending?: boolean;
 }): LeaderMirrorDecision {
   const { hit, gates, nowMs } = args;
   const pc5m = typeof hit.pc5m === 'number' && Number.isFinite(hit.pc5m) ? hit.pc5m : null;
@@ -480,11 +510,16 @@ export function evaluateLeaderMirrorObservation(args: {
           leaderFillPriceUsd: leaderPrice,
         }
       : undefined;
-  const entryGraceActive =
+  const graceWindowActive =
     leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
-  const maxPremiumPct = entryGraceActive
-    ? entryGraceMaxPremiumPct
-    : gates.maxPremiumPct;
+  const firstClipPending = args.firstClipPending !== false;
+  const entryGraceActive = graceWindowActive && firstClipPending;
+  const maxPremiumPct = mirrorPremiumCapPct({
+    maxPremiumPct: gates.maxPremiumPct,
+    entryGraceMaxPremiumPct,
+    entryGraceActive: graceWindowActive,
+    firstClipPending,
+  });
   if (knifeWaitActive && !knifeWaitDiscountReached) {
     // Inside the entry grace the first clip pays up to entryGraceMaxPremiumPct
     // instead of waiting out the knife window; later clips keep waiting.
