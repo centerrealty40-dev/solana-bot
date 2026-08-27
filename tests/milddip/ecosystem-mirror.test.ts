@@ -11,7 +11,7 @@ const ecosystemSource = readFileSync(
   'utf8',
 );
 
-const mirrorApps = ecosystem.apps.filter((app) =>
+const mirrorApps = ecosystem.allApps.filter((app) =>
   ['mild-dip-mirror', 'mild-dip-mirror2'].includes(app.name),
 );
 const mirror = mirrorApps.find((app) => app.name === 'mild-dip-mirror');
@@ -286,18 +286,26 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
   });
 
-  it('does not exclude either mirror from the Oscar VPS export', () => {
+  it('keeps mirror1 in the Oscar VPS export and excludes the stopped mirror2', () => {
     const excludedAppsBlock = ecosystemSource.match(
       /const OSCAR_VPS_EXCLUDED_APPS = new Set\(\[([\s\S]*?)\]\);/,
     )?.[1];
     expect(excludedAppsBlock).not.toContain("'mild-dip-mirror',");
-    expect(excludedAppsBlock).not.toContain("'mild-dip-mirror2',");
+    expect(excludedAppsBlock).toContain("'mild-dip-mirror2',");
+  });
+
+  it('keeps the watchdog off the stopped mirror2', () => {
+    const watchdog = ecosystem.apps.find((app) => app.name === 'mild-dip-watchdog');
+    expect(watchdog?.env.MILD_DIP_WATCHDOG_INSTANCES).toBe(
+      'mild-dip-mirror:data/milddip-mirror',
+    );
   });
 
   it('keeps the disabled dip bot definition for internal consumers only', () => {
     expect(ecosystem.apps.some((app) => app.name === 'mild-dip-bot')).toBe(false);
     expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-bot')).toBe(true);
     expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror')).toBe(true);
-    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror2')).toBe(true);
+    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror2')).toBe(false);
+    expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-mirror2')).toBe(true);
   });
 });
