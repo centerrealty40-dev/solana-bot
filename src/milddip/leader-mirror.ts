@@ -76,7 +76,9 @@ export type LeaderMirrorMetricSource = 'seed' | 'backfill';
 export function leaderMirrorNeedsStructuralBackfill(
   hit: LeaderSeedHit,
   requireDipCandle = true,
+  structuralGatesEnabled = true,
 ): boolean {
+  if (!structuralGatesEnabled) return false;
   return (
     (requireDipCandle && (hit.pc5m == null || !Number.isFinite(hit.pc5m))) ||
     hit.liq == null ||
@@ -130,6 +132,7 @@ export type LeaderMirrorGates = {
   tierIgnoreStructuralFloors?: boolean;
   tierPositionUsd?: number;
   tierMaxOpen?: number;
+  structuralGatesEnabled?: boolean;
 };
 
 export function leaderMirrorObservationFresh(args: {
@@ -339,7 +342,8 @@ export function evaluateLeaderMirrorObservation(args: {
   const liq = typeof hit.liq === 'number' && Number.isFinite(hit.liq) ? hit.liq : null;
   const ageHours = typeof hit.ageHours === 'number' && Number.isFinite(hit.ageHours) ? hit.ageHours : null;
   const mcap = typeof hit.mcap === 'number' && Number.isFinite(hit.mcap) ? hit.mcap : null;
-  const requireDipCandle = gates.requireDipCandle !== false;
+  const structuralGatesEnabled = gates.structuralGatesEnabled !== false;
+  const requireDipCandle = structuralGatesEnabled && gates.requireDipCandle !== false;
   const leaderFillGraceMs = Math.max(0, gates.leaderFillGraceMs ?? 60_000);
   const entryGraceMs = Math.max(0, gates.entryGraceMs ?? 60_000);
   const entryGraceMaxPremiumPct = gates.entryGraceMaxPremiumPct ?? 1;
@@ -376,19 +380,22 @@ export function evaluateLeaderMirrorObservation(args: {
   ) {
     return { action: 'skip', reason: 'leader_mirror_leader_size_floor' };
   }
-  if (liq == null || ageHours == null || mcap == null) {
+  let tierFloorMiss = false;
+  let greenCandidate = false;
+  if (structuralGatesEnabled && (liq == null || ageHours == null || mcap == null)) {
     return soft('leader_mirror_no_data', 'no_structural', true);
   }
-  const tierIgnoreFloors =
-    gates.tierEnabled === true && gates.tierIgnoreStructuralFloors === true;
-  const tierPc5mFloorMiss =
-    gates.minPreEntryPc5mPct > -1000 &&
-    (pc5m == null || pc5m < gates.minPreEntryPc5mPct);
-  const tierFloorMiss =
-    ageHours < gates.minPairAgeHours ||
-    mcap < gates.minMcapUsd ||
-    (tierIgnoreFloors && (liq < gates.minLiquidityUsd || tierPc5mFloorMiss));
-  if (gates.minPc1hPct > -1000) {
+  if (structuralGatesEnabled) {
+    const tierIgnoreFloors =
+      gates.tierEnabled === true && gates.tierIgnoreStructuralFloors === true;
+    const tierPc5mFloorMiss =
+      gates.minPreEntryPc5mPct > -1000 &&
+      (pc5m == null || pc5m < gates.minPreEntryPc5mPct);
+    tierFloorMiss =
+      ageHours! < gates.minPairAgeHours ||
+      mcap! < gates.minMcapUsd ||
+      (tierIgnoreFloors && (liq! < gates.minLiquidityUsd || tierPc5mFloorMiss));
+    if (gates.minPc1hPct > -1000) {
     if (pc1h == null) {
       return { action: 'skip', reason: 'leader_mirror_pc1h_missing' };
     }
@@ -398,8 +405,8 @@ export function evaluateLeaderMirrorObservation(args: {
         reason: `leader_mirror_pc1h_too_low=${pc1h.toFixed(2)}<${gates.minPc1hPct}`,
       };
     }
-  }
-  if (gates.minPreEntryPc5mPct > -1000) {
+    }
+    if (gates.minPreEntryPc5mPct > -1000) {
     if (pc5m == null) {
       if (!tierIgnoreFloors) {
         return { action: 'skip', reason: 'leader_mirror_pc5m_missing' };
@@ -413,12 +420,12 @@ export function evaluateLeaderMirrorObservation(args: {
         };
       }
     }
-  }
-  if (pc5m != null && pc5m > gates.maxEntryPc5mPct) {
-    return { action: 'skip', reason: 'leader_mirror_green_direction' };
-  }
-  const greenCandidate = pc5m != null && pc5m > gates.maxPreEntryPc5mPct;
-  if (requireDipCandle && pc5m != null) {
+    }
+    if (pc5m != null && pc5m > gates.maxEntryPc5mPct) {
+      return { action: 'skip', reason: 'leader_mirror_green_direction' };
+    }
+    greenCandidate = pc5m != null && pc5m > gates.maxPreEntryPc5mPct;
+    if (requireDipCandle && pc5m != null) {
     if (gates.greenCopyEnabled && greenCandidate) {
       if (pc5m! >= gates.greenCopyMaxPc5mPct) {
         return { action: 'skip', reason: 'leader_mirror_green_blowoff' };
@@ -434,20 +441,21 @@ export function evaluateLeaderMirrorObservation(args: {
         return softQuality('leader_mirror_pre_entry_floor');
       }
     }
-  }
-  if (liq < gates.minLiquidityUsd) {
-    if (!tierIgnoreFloors) {
-      return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
     }
-  }
-  if (ageHours < gates.minPairAgeHours) {
-    if (!gates.tierEnabled) {
-      return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
+    if (liq! < gates.minLiquidityUsd) {
+      if (!tierIgnoreFloors) {
+        return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
+      }
     }
-  }
-  if (mcap < gates.minMcapUsd) {
-    if (!gates.tierEnabled) {
-      return { action: 'skip', reason: 'leader_mirror_mcap_floor' };
+    if (ageHours! < gates.minPairAgeHours) {
+      if (!gates.tierEnabled) {
+        return { action: 'skip', reason: 'leader_mirror_pair_age_floor' };
+      }
+    }
+    if (mcap! < gates.minMcapUsd) {
+      if (!gates.tierEnabled) {
+        return { action: 'skip', reason: 'leader_mirror_mcap_floor' };
+      }
     }
   }
   if (
@@ -538,7 +546,7 @@ export function evaluateLeaderMirrorObservation(args: {
       ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
     };
   }
-  if (requireDipCandle && quoteGainPct >= gates.greenImpulsePct) {
+  if (quoteGainPct >= gates.greenImpulsePct) {
     return gates.retryWhileLeaderHolds
       ? { action: 'wait', waitReason: 'premium_cap' }
       : { action: 'skip', reason: 'leader_mirror_green_impulse' };
