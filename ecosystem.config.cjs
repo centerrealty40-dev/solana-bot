@@ -5035,7 +5035,7 @@ PM2_APPS.push({
   time: true,
   env: {
     NODE_ENV: 'production',
-    MILD_DIP_WATCHDOG_INSTANCES: 'mild-dip-mirror:data/milddip-mirror,mild-dip-mirror2:data/milddip-mirror2',
+    MILD_DIP_WATCHDOG_INSTANCES: 'mild-dip-mirror:data/milddip-mirror',
     MILD_DIP_WATCHDOG_INTERVAL_MS: '60000',
     MILD_DIP_WATCHDOG_STALE_MS: '480000',
     MILD_DIP_WATCHDOG_MAX_RESTARTS_PER_HOUR: '4',
@@ -5059,6 +5059,8 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'copy-trader-8zkg-mirror',
   /** 1.11.1040 — operator permanently disabled mild-dip-bot; reload must not revive it. */
   'mild-dip-bot',
+  /** 1.11.1041 — operator stopped mild-dip-mirror2; reload/watchdog must not revive it. */
+  'mild-dip-mirror2',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',
