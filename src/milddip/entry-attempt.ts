@@ -1455,15 +1455,6 @@ export async function attemptMildDipEntry(args: {
         rugKnife: rugRisk.tier === 'knife',
         rugKnifeClipUsd: cfg.rugKnifeClipUsd,
       })
-    : mirrorLeaderSize != null
-      ? mildDipLeaderMirrorEntryClipUsd({
-          lawEnabled: true,
-          mirrorSizeUsd: mirrorLeaderSize,
-          positionUsd: cfg.leaderMirror.positionUsd,
-          commonSizeUsd: knifeCapped,
-          rugKnife: rugRisk.tier === 'knife',
-          rugKnifeClipUsd: cfg.rugKnifeClipUsd,
-        })
     : knifeCapped;
   const laneCapped =
     isLeaderStyle && cfg.leaderStyle.positionUsd > 0
@@ -1497,7 +1488,13 @@ export async function attemptMildDipEntry(args: {
     firstTouchUsd: cfg.firstTouchPositionUsd,
     lawEnabled: cfg.leaderMirror.sizeLiqCoef > 0,
     isMirrorLane: isMirror && !isTier,
-    lawMinUsd: cfg.leaderMirror.sizeLiqMinUsd,
+    lawMinUsd:
+      mirrorLeaderSize != null
+        ? Math.max(
+            cfg.leaderMirror.sizeLiqMinUsd,
+            cfg.leaderMirror.sizeFromLeaderMinUsd,
+          )
+        : cfg.leaderMirror.sizeLiqMinUsd,
   });
   const familiarityCapped = firstTouch
     ? Math.min(firstTouchCapUsd, laneCapped)

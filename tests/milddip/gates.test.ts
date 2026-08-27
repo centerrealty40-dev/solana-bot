@@ -121,6 +121,17 @@ describe('mildDipLeaderMirrorSizeUsd', () => {
     ).toBe(10);
   });
 
+  it('does not lower leader-sized first touch below its configured minimum', () => {
+    expect(
+      mildDipFirstTouchCapUsd({
+        firstTouchUsd: 10,
+        lawEnabled: true,
+        isMirrorLane: true,
+        lawMinUsd: Math.max(30, 50),
+      }),
+    ).toBe(50);
+  });
+
   it('matches the approved mirror2 control points', () => {
     for (const [liq, expected] of [
       [15_000, 10],

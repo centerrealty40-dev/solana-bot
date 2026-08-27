@@ -546,7 +546,7 @@ export function evaluateLeaderMirrorObservation(args: {
       ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
     };
   }
-  if (quoteGainPct >= gates.greenImpulsePct) {
+  if (requireDipCandle && quoteGainPct >= gates.greenImpulsePct) {
     return gates.retryWhileLeaderHolds
       ? { action: 'wait', waitReason: 'premium_cap' }
       : { action: 'skip', reason: 'leader_mirror_green_impulse' };
