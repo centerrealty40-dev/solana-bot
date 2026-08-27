@@ -1429,20 +1429,23 @@ class Observer:
         except Exception:
             hits = []
         cutoff = ts_ms - self.seed_max_age_sec * 1000
-        by_mint: dict[str, dict[str, Any]] = {}
+        by_mint_leader: dict[tuple[str, str], dict[str, Any]] = {}
         for h in hits:
             if not isinstance(h, dict):
                 continue
             m = str(h.get("mint") or "")
+            h_leader = str(h.get("leader") or "")
             last = h.get("lastSeenAtMs")
             if len(m) < 32 or not isinstance(last, (int, float)):
                 continue
             if int(last) < cutoff:
                 continue
-            by_mint[m] = dict(h)
-            by_mint[m]["mint"] = m
-            by_mint[m]["lastSeenAtMs"] = int(last)
-        prev = by_mint.get(mint) or {}
+            key = (m, h_leader)
+            by_mint_leader[key] = dict(h)
+            by_mint_leader[key]["mint"] = m
+            by_mint_leader[key]["lastSeenAtMs"] = int(last)
+        key = (mint, leader)
+        prev = by_mint_leader.get(key) or {}
         hit = {
             "mint": mint,
             "lastSeenAtMs": max(int(prev.get("lastSeenAtMs") or 0), ts_ms),
@@ -1475,9 +1478,9 @@ class Observer:
                 v = dex.get(src_key)
                 if v is not None:
                     hit[dst_key] = v
-        by_mint[mint] = hit
+        by_mint_leader[key] = hit
         merged = sorted(
-            by_mint.values(),
+            by_mint_leader.values(),
             key=lambda x: int(x.get("lastSeenAtMs") or 0),
             reverse=True,
         )[: self.seed_max]
