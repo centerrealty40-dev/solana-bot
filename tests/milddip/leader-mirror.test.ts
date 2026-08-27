@@ -17,6 +17,7 @@ import {
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import {
   mirrorEntryAttemptOutcome,
+  mirrorEntryStructuralDataVetoIsTransient,
   fundingShortageEntryResult,
   isFundingShortageReason,
   type EntryAttemptResult,
@@ -501,6 +502,24 @@ describe('leader mirror observation decisions', () => {
       'skip',
     );
     expect(fundingShortageEntryResult(false, 'usdc_exhausted')).toBe('stop');
+  });
+
+  it('treats a missing Dex snapshot as retryable, other vetoes as final', () => {
+    expect(
+      mirrorEntryStructuralDataVetoIsTransient([
+        'mirror_missing_live_structural_data',
+      ]),
+    ).toBe(true);
+    expect(
+      mirrorEntryStructuralDataVetoIsTransient([
+        'mirror_missing_live_structural_data',
+        'liquidity_floor',
+      ]),
+    ).toBe(false);
+    expect(mirrorEntryStructuralDataVetoIsTransient(['liquidity_floor'])).toBe(
+      false,
+    );
+    expect(mirrorEntryStructuralDataVetoIsTransient([])).toBe(false);
   });
   it('buys after a fresh quote on a dump', () => {
     expect(at()).toEqual({ action: 'buy', quotePriceUsd: 101 });
