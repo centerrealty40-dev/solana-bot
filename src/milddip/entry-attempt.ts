@@ -173,6 +173,21 @@ export function shouldApplyMirrorEntryStructuralDataVeto(
 }
 
 /**
+ * 1.11.1049 — a missing Dex snapshot is a data gap, not a verdict.
+ *
+ * The mirror gate is fail-closed on live liquidity/vol5m, so an empty
+ * DexScreener answer refused the leader hit for good. When that veto is the
+ * only reason, the attempt is retried while the observation is alive.
+ */
+export function mirrorEntryStructuralDataVetoIsTransient(
+  reasons: readonly string[],
+): boolean {
+  return (
+    reasons.length === 1 && reasons[0] === 'mirror_missing_live_structural_data'
+  );
+}
+
+/**
  * 1.11.827 — probe buys on re-entry blocks.
  *
  * `rebuy_liq_drop` and `rebuy_below_exit` are the two biggest re-entry blockers
@@ -1038,7 +1053,9 @@ export async function attemptMildDipEntry(args: {
       reasons: entryRisk.reasons,
     });
     state.cooldownUntilMs[c.mint] = nowMs + softCd;
-    return 'skip';
+    return isMirror && mirrorEntryStructuralDataVetoIsTransient(entryRisk.reasons)
+      ? 'exec_failed'
+      : 'skip';
   }
 
   // 1.11.773 — final turn→dump choke (fresh vol/liq/pc5m when available).
