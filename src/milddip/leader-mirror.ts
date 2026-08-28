@@ -111,6 +111,7 @@ export type LeaderMirrorGates = {
   requireDeepDump: boolean;
   deepDumpPc5mPct: number;
   minLiquidityUsd: number;
+  minVol5mUsd?: number;
   minPairAgeHours: number;
   minMcapUsd: number;
   maxOpen: number;
@@ -340,6 +341,7 @@ export function evaluateLeaderMirrorObservation(args: {
   const pc5m = typeof hit.pc5m === 'number' && Number.isFinite(hit.pc5m) ? hit.pc5m : null;
   const pc1h = typeof hit.pc1h === 'number' && Number.isFinite(hit.pc1h) ? hit.pc1h : null;
   const liq = typeof hit.liq === 'number' && Number.isFinite(hit.liq) ? hit.liq : null;
+  const vol5m = typeof hit.vol5m === 'number' && Number.isFinite(hit.vol5m) ? hit.vol5m : null;
   const ageHours = typeof hit.ageHours === 'number' && Number.isFinite(hit.ageHours) ? hit.ageHours : null;
   const mcap = typeof hit.mcap === 'number' && Number.isFinite(hit.mcap) ? hit.mcap : null;
   const structuralGatesEnabled = gates.structuralGatesEnabled !== false;
@@ -446,6 +448,17 @@ export function evaluateLeaderMirrorObservation(args: {
       if (!tierIgnoreFloors) {
         return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
       }
+    }
+    if (
+      (gates.minVol5mUsd ?? 0) > 0 &&
+      vol5m != null &&
+      vol5m < gates.minVol5mUsd! &&
+      !tierIgnoreFloors
+    ) {
+      return {
+        action: 'skip',
+        reason: `leader_mirror_vol5m_floor=${vol5m.toFixed(0)}<${gates.minVol5mUsd}`,
+      };
     }
     if (ageHours! < gates.minPairAgeHours) {
       if (!gates.tierEnabled) {
