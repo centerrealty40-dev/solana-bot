@@ -1935,7 +1935,7 @@ async function wakeLeaderMirrors(
             ageResolved: metrics?.ageHours != null,
             dexMs,
             ownMs,
-            dexBypassed,
+            dexBypassAttempted: dexBypassed,
             dexCooldownSkipped,
           });
         }
@@ -2125,8 +2125,7 @@ async function wakeLeaderMirrors(
       mirrorFirstBuyPending &&
       (entryGraceActive ||
         (pc5mKnownAtMs != null &&
-          nowMs - pc5mKnownAtMs <=
-            LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS &&
+          nowMs - pc5mKnownAtMs <= (gates.entryGraceMs ?? 60_000) &&
           (leaderBuyTsMsForGrace == null ||
             pc5mKnownAtMs - leaderBuyTsMsForGrace <=
               LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS)));

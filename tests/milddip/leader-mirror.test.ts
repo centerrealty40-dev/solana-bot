@@ -404,12 +404,36 @@ describe('mirror premium cap', () => {
       at(
         hit({ pc5m: 5 }),
         103.85,
+        213_001,
+        100_000,
+        prod,
+        100_000,
+        true,
+        153_000,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
+    expect(
+      at(
+        hit({ pc5m: 5 }),
+        103.85,
         453_001,
         100_000,
         prod,
         100_000,
         true,
         153_000,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
+    expect(
+      at(
+        hit({ pc5m: 5 }),
+        103.85,
+        400_001,
+        100_000,
+        prod,
+        100_000,
+        true,
+        400_001,
       ),
     ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
     expect(

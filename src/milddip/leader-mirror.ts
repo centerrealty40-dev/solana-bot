@@ -575,7 +575,7 @@ export function evaluateLeaderMirrorObservation(args: {
     (graceWindowActive ||
       (args.pc5mKnownAtMs != null &&
         nowMs - args.pc5mKnownAtMs <=
-          LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS &&
+          entryGraceMs &&
         (args.leaderBuyTsMs == null ||
           args.pc5mKnownAtMs - args.leaderBuyTsMs <=
             LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS)));
