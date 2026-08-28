@@ -1444,19 +1444,15 @@ export async function attemptMildDipEntry(args: {
       : null;
   const mirrorLeaderSize =
     isMirror && !isTier
-      ? opts.mirrorIgnoreStructuralFloors === true &&
-        (!Number.isFinite(opts.mirrorLeaderMcapUsd) ||
-          (opts.mirrorLeaderMcapUsd ?? 0) <= 0)
-        ? cfg.leaderMirror.sizeFromLeaderSmallClipUsd || 30
-        : mildDipMirrorLeaderSizeUsd({
-            leaderBuyUsd: opts.mirrorLeaderSizeUsd,
-            fraction: cfg.leaderMirror.sizeFromLeaderFraction,
-            minUsd: cfg.leaderMirror.sizeFromLeaderMinUsd,
-            maxUsd: cfg.leaderMirror.sizeFromLeaderMaxUsd,
-            mcapUsd: opts.mirrorLeaderMcapUsd,
-            smallMcapUsd: cfg.leaderMirror.sizeFromLeaderSmallMcapUsd,
-            smallClipUsd: cfg.leaderMirror.sizeFromLeaderSmallClipUsd,
-          })
+      ? mildDipMirrorLeaderSizeUsd({
+          leaderBuyUsd: opts.mirrorLeaderSizeUsd,
+          fraction: cfg.leaderMirror.sizeFromLeaderFraction,
+          minUsd: cfg.leaderMirror.sizeFromLeaderMinUsd,
+          maxUsd: cfg.leaderMirror.sizeFromLeaderMaxUsd,
+          mcapUsd: opts.mirrorLeaderMcapUsd,
+          smallMcapUsd: cfg.leaderMirror.sizeFromLeaderSmallMcapUsd,
+          smallClipUsd: cfg.leaderMirror.sizeFromLeaderSmallClipUsd,
+        })
       : null;
   const mirrorSizeUsd = mirrorLeaderSize ?? mirrorSizing?.sizeUsd;
   const mirrorClipUsd = mirrorSizing
