@@ -99,7 +99,7 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MAX_USD).toBe('200');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MAX_POOL_SHARE_PCT).toBe('0.15');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD).toBe('30');
-    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('120');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('200');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_LIQ_COEF).toBe('0.001094');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_LIQ_EXP).toBe('0.866');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_MIN_USD).toBe('10');
@@ -194,7 +194,7 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_STRUCTURAL_GATES_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_FRACTION).toBe('0.5');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD).toBe('30');
-    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('120');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('200');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_MCAP_USD).toBe('40000');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_CLIP_USD).toBe('30');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_MCAP_USD).toBe('0');
