@@ -53,6 +53,7 @@ describe('leader mirror quote refresh gap', () => {
 const gates: LeaderMirrorGates = {
   enabled: true,
   greenCopyEnabled: false,
+  greenInstantEnabled: false,
   greenCorridorPct: 1.5,
   greenCopyMaxPc5mPct: 40,
   leaders: [LEADER_MIRROR_WALLET],
@@ -481,6 +482,93 @@ describe('mirror premium cap', () => {
         maxPremiumPct: 1,
       }),
     ).toBe(false);
+  });
+});
+
+describe('instant green mirror follow', () => {
+  const instantGates: LeaderMirrorGates = {
+    ...gates,
+    greenInstantEnabled: true,
+    requireDipCandle: false,
+    greenMaxPremiumPct: 10,
+    maxPremiumPct: -0.5,
+    retryWhileLeaderHolds: true,
+  };
+
+  it('buys immediately on a fresh green quote without structural data', () => {
+    expect(
+      at(
+        hit({ liq: null, mcap: null, ageHours: null, vol5m: null, pc5m: null }),
+        103.85,
+        120_000,
+        100_000,
+        instantGates,
+        100_000,
+      ),
+    ).toEqual({
+      action: 'buy',
+      quotePriceUsd: 103.85,
+      mirrorBranch: 'green',
+      bypassStructuralFloors: true,
+      greenInstant: true,
+    });
+  });
+
+  it('keeps the structural wait when instant green is disabled', () => {
+    expect(
+      at(
+        hit({ liq: null, mcap: null, ageHours: null, vol5m: null, pc5m: null }),
+        103.85,
+        120_000,
+        100_000,
+        { ...instantGates, greenInstantEnabled: false },
+        100_000,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'no_structural' });
+  });
+
+  it.each([
+    ['below leader fill', 97],
+    ['above green cap', 112],
+  ])('does not bypass floors when quote is %s', (_label, quote) => {
+    expect(
+      at(
+        hit({ liq: null, mcap: null, ageHours: null, vol5m: null, pc5m: null }),
+        quote,
+        120_000,
+        100_000,
+        instantGates,
+        100_000,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'no_structural' });
+  });
+
+  it('does not bypass floors after grace, on a second leg, or with a stale quote', () => {
+    const emptyHit = hit({
+      liq: null,
+      mcap: null,
+      ageHours: null,
+      vol5m: null,
+      pc5m: null,
+    });
+    expect(at(emptyHit, 103.85, 190_000, 100_000, instantGates, 100_000)).toEqual({
+      action: 'wait',
+      waitReason: 'no_structural',
+    });
+    expect(
+      at(emptyHit, 103.85, 120_000, 100_000, instantGates, 100_000, false),
+    ).toEqual({ action: 'wait', waitReason: 'no_structural' });
+    expect(
+      evaluateLeaderMirrorObservation({
+        hit: emptyHit,
+        quotePriceUsd: 103.85,
+        quoteTsMs: 100_000,
+        nowMs: 120_000,
+        watchStartedAtMs: 100_000,
+        gates: instantGates,
+        leaderBuyTsMs: 100_000,
+      }),
+    ).toEqual({ action: 'wait', waitReason: 'no_structural' });
   });
 });
 

@@ -416,6 +416,7 @@ export type EntryAttemptOpts = {
   leaderStyle?: boolean;
   mirror?: boolean;
   mirrorBranch?: 'green' | 'dip' | 'tier';
+  mirrorIgnoreStructuralFloors?: boolean;
   leaderBuyTsMs?: number;
   leaderBuySignature?: string;
   leaderMirrorLeader?: string;
@@ -1000,7 +1001,9 @@ export async function attemptMildDipEntry(args: {
     isMirror,
     isTier,
     tierIgnoreFloors,
-    structuralGatesEnabled: cfg.leaderMirror.structuralGatesEnabled,
+    structuralGatesEnabled:
+      cfg.leaderMirror.structuralGatesEnabled &&
+      opts.mirrorIgnoreStructuralFloors !== true,
     mirrorMinPairAgeHours: cfg.leaderMirror.minPairAgeHours,
     mirrorMinLiquidityUsd: cfg.leaderMirror.minLiquidityUsd,
     mirrorMaxVol5mToLiq: cfg.leaderMirror.maxVol5mToLiq,
@@ -1036,7 +1039,8 @@ export async function attemptMildDipEntry(args: {
     shouldApplyMirrorEntryStructuralDataVeto(
       isMirror,
       tierIgnoreFloors,
-      cfg.leaderMirror.structuralGatesEnabled,
+      cfg.leaderMirror.structuralGatesEnabled &&
+        opts.mirrorIgnoreStructuralFloors !== true,
     )
   ) {
     if (
@@ -1440,15 +1444,19 @@ export async function attemptMildDipEntry(args: {
       : null;
   const mirrorLeaderSize =
     isMirror && !isTier
-      ? mildDipMirrorLeaderSizeUsd({
-          leaderBuyUsd: opts.mirrorLeaderSizeUsd,
-          fraction: cfg.leaderMirror.sizeFromLeaderFraction,
-          minUsd: cfg.leaderMirror.sizeFromLeaderMinUsd,
-          maxUsd: cfg.leaderMirror.sizeFromLeaderMaxUsd,
-          mcapUsd: opts.mirrorLeaderMcapUsd,
-          smallMcapUsd: cfg.leaderMirror.sizeFromLeaderSmallMcapUsd,
-          smallClipUsd: cfg.leaderMirror.sizeFromLeaderSmallClipUsd,
-        })
+      ? opts.mirrorIgnoreStructuralFloors === true &&
+        (!Number.isFinite(opts.mirrorLeaderMcapUsd) ||
+          (opts.mirrorLeaderMcapUsd ?? 0) <= 0)
+        ? cfg.leaderMirror.sizeFromLeaderSmallClipUsd || 30
+        : mildDipMirrorLeaderSizeUsd({
+            leaderBuyUsd: opts.mirrorLeaderSizeUsd,
+            fraction: cfg.leaderMirror.sizeFromLeaderFraction,
+            minUsd: cfg.leaderMirror.sizeFromLeaderMinUsd,
+            maxUsd: cfg.leaderMirror.sizeFromLeaderMaxUsd,
+            mcapUsd: opts.mirrorLeaderMcapUsd,
+            smallMcapUsd: cfg.leaderMirror.sizeFromLeaderSmallMcapUsd,
+            smallClipUsd: cfg.leaderMirror.sizeFromLeaderSmallClipUsd,
+          })
       : null;
   const mirrorSizeUsd = mirrorLeaderSize ?? mirrorSizing?.sizeUsd;
   const mirrorClipUsd = mirrorSizing
