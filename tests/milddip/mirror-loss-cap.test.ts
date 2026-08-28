@@ -12,8 +12,49 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { loadMildDipState, saveMildDipState } from '../../src/milddip/state.js';
+import { mirrorLossCapValues } from '../../src/milddip/loop.js';
 
 describe('mirror loss cap cash and mark accounting', () => {
+  const openMirrorState = (sizeUsd: number, markPriceUsd: number, cashUsd: number) =>
+    ({
+      open: {
+        mint: {
+          lane: 'leader_mirror',
+          sizeUsd,
+          entryPriceUsd: 1,
+          lastMarkPriceUsd: markPriceUsd,
+        },
+      },
+      mirrorTradingCashUsd: cashUsd,
+    }) as Parameters<typeof mirrorLossCapValues>[0];
+
+  it('uses open cost basis instead of mark value for drawdown', () => {
+    expect(mirrorLossCapValues(openMirrorState(100, 0.5, -100))).toEqual({
+      cashUsd: -100,
+      bagsUsd: 100,
+      bagsMarkUsd: 50,
+      drawdownUsd: 0,
+    });
+    expect(mirrorLossCapValues(openMirrorState(0, 0.5, -50))).toMatchObject({
+      bagsUsd: 0,
+      bagsMarkUsd: 0,
+      drawdownUsd: -50,
+    });
+    expect(mirrorLossCapValues(openMirrorState(50, 0.5, -75))).toMatchObject({
+      bagsUsd: 50,
+      bagsMarkUsd: 25,
+      drawdownUsd: -25,
+    });
+  });
+
+  it('treats averaging as cost basis growth, not a loss', () => {
+    expect(mirrorLossCapValues(openMirrorState(150, 0.5, -150))).toMatchObject({
+      bagsUsd: 150,
+      bagsMarkUsd: 75,
+      drawdownUsd: 0,
+    });
+  });
+
   it('resets the loss-cap window at the Moscow calendar boundary', () => {
     const before = Date.parse('2026-08-14T20:59:59.000Z');
     const after = Date.parse('2026-08-14T21:00:00.000Z');
@@ -144,6 +185,7 @@ describe('mirror loss cap cash and mark accounting', () => {
       leaderMirrorDecisions: {},
       recentEntryMsByMint: {},
       mirrorTradingCashUsd: -120,
+      mirrorLossCapBasis: 'mark',
       mirrorLossCapBaselineUsd: 100,
       mirrorLossCapPendingDrawdownUsd: -101,
       mirrorLossCapPendingAtMs: 1_000,
@@ -154,6 +196,7 @@ describe('mirror loss cap cash and mark accounting', () => {
     saveMildDipState(file, state);
     const reloaded = loadMildDipState(file);
     expect(reloaded.mirrorTradingCashUsd).toBe(-120);
+    expect(reloaded.mirrorLossCapBasis).toBe('mark');
     expect(reloaded.mirrorLossCapPendingDrawdownUsd).toBe(-101);
     expect(reloaded.mirrorLossCapTriggeredAtMs).toBe(2_000);
   });
@@ -161,6 +204,7 @@ describe('mirror loss cap cash and mark accounting', () => {
   it('rebaselines and clears the latch when the saved threshold is stale', () => {
     const state = {
       mirrorTradingCashUsd: -900,
+      mirrorLossCapBasis: 'realized',
       mirrorLossCapBaselineAtMs: 1_000,
       mirrorLossCapBaselineUsd: 100,
       mirrorLossCapTriggeredAtMs: 2_000,
@@ -203,16 +247,74 @@ describe('mirror loss cap cash and mark accounting', () => {
       bagsUsd: 75,
       nowMs: 3_000,
     });
-    expect(result.reason).toBe('unknown_threshold');
+    expect(result.reason).toBe('basis_changed');
     expect(result.previousLossCapUsd).toBeNull();
     expect(state.mirrorTradingCashUsd).toBe(-75);
     expect(state.mirrorLossCapBaselineUsd).toBe(120);
     expect(state.mirrorLossCapTriggeredAtMs).toBeUndefined();
   });
 
+  it('rebaselines a legacy mark basis once and persists realized basis', () => {
+    const state = {
+      mirrorTradingCashUsd: -900,
+      mirrorLossCapBasis: 'mark' as const,
+      mirrorLossCapBaselineAtMs: 1_000,
+      mirrorLossCapBaselineUsd: 150,
+      mirrorLossCapTriggeredAtMs: 2_000,
+      mirrorLossCapPendingDrawdownUsd: -151,
+      mirrorLossCapPendingAtMs: 1_500,
+    };
+    const result = syncMirrorLossCapBaseline({
+      state,
+      lossCapUsd: 150,
+      bagsUsd: 100,
+      nowMs: 3_000,
+    });
+    expect(result).toEqual({
+      changed: true,
+      reason: 'basis_changed',
+      previousLossCapUsd: 150,
+    });
+    expect(state).toMatchObject({
+      mirrorTradingCashUsd: -100,
+      mirrorLossCapBasis: 'realized',
+      mirrorLossCapBaselineAtMs: 3_000,
+      mirrorLossCapBaselineUsd: 150,
+    });
+    expect(state.mirrorLossCapTriggeredAtMs).toBeUndefined();
+    expect(state.mirrorLossCapPendingAtMs).toBeUndefined();
+
+    const second = syncMirrorLossCapBaseline({
+      state,
+      lossCapUsd: 150,
+      bagsUsd: 80,
+      nowMs: 4_000,
+    });
+    expect(second.changed).toBe(false);
+    expect(state.mirrorTradingCashUsd).toBe(-100);
+  });
+
+  it('rebaselines a legacy baseline with no basis marker', () => {
+    const state = {
+      mirrorTradingCashUsd: -900,
+      mirrorLossCapBaselineAtMs: 1_000,
+      mirrorLossCapBaselineUsd: 150,
+    };
+    const result = syncMirrorLossCapBaseline({
+      state,
+      lossCapUsd: 150,
+      bagsUsd: 100,
+      nowMs: 3_000,
+    });
+    expect(result.reason).toBe('basis_changed');
+    expect(state.mirrorTradingCashUsd).toBe(-100);
+    expect(state.mirrorLossCapBasis).toBe('realized');
+  });
+
   it('does not reset a baseline when the threshold is unchanged', () => {
     const state = {
       mirrorTradingCashUsd: -80,
+      mirrorLossCapBasis: 'realized',
       mirrorLossCapBaselineAtMs: 1_000,
       mirrorLossCapBaselineUsd: 120,
       mirrorLossCapTriggeredAtMs: 2_000,
@@ -230,6 +332,7 @@ describe('mirror loss cap cash and mark accounting', () => {
     });
     expect(state).toEqual({
       mirrorTradingCashUsd: -80,
+      mirrorLossCapBasis: 'realized',
       mirrorLossCapBaselineAtMs: 1_000,
       mirrorLossCapBaselineUsd: 120,
       mirrorLossCapTriggeredAtMs: 2_000,
@@ -252,6 +355,9 @@ describe('mirror loss cap cash and mark accounting', () => {
       nowMs: 3_000,
     });
     expect(result.reason).toBe('disabled');
-    expect(state).toEqual({});
+    expect(state).toMatchObject({
+      mirrorLossCapBasis: 'realized',
+    });
+    expect(state.mirrorLossCapBaselineAtMs).toBeUndefined();
   });
 });
