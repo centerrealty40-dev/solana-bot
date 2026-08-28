@@ -282,9 +282,10 @@ describe('mirror premium cap', () => {
     expect(
       mirrorPremiumCapPct({
         maxPremiumPct: -0.5,
+        entryGraceMaxPremiumPct: -0.5,
         greenMaxPremiumPct: 10,
         greenCandle: true,
-        entryGraceActive: false,
+        entryGraceActive: true,
         firstClipPending: true,
       }),
     ).toBe(10);
@@ -292,8 +293,28 @@ describe('mirror premium cap', () => {
       mirrorPremiumCapPct({
         maxPremiumPct: -0.5,
         greenMaxPremiumPct: 10,
-        greenCandle: false,
+        greenCandle: true,
         entryGraceActive: false,
+        firstClipPending: true,
+      }),
+    ).toBe(-0.5);
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: -0.5,
+        entryGraceMaxPremiumPct: -0.5,
+        greenMaxPremiumPct: 10,
+        greenCandle: true,
+        entryGraceActive: true,
+        firstClipPending: false,
+      }),
+    ).toBe(-0.5);
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: -0.5,
+        entryGraceMaxPremiumPct: -0.5,
+        greenMaxPremiumPct: 10,
+        greenCandle: false,
+        entryGraceActive: true,
         firstClipPending: true,
       }),
     ).toBe(-0.5);
@@ -302,7 +323,7 @@ describe('mirror premium cap', () => {
         maxPremiumPct: -0.5,
         greenMaxPremiumPct: -1000,
         greenCandle: true,
-        entryGraceActive: false,
+        entryGraceActive: true,
         firstClipPending: true,
       }),
     ).toBe(-0.5);
@@ -736,17 +757,17 @@ describe('leader mirror observation decisions', () => {
       maxEntryPc5mPct: 1_000,
       greenMaxPremiumPct: 10,
     };
-    expect(at(hit({ pc5m: 5 }), 108, 110_000, 100_000, greenPremiumGates)).toEqual({
+    expect(at(hit({ pc5m: 5 }), 108, 110_000, 100_000, greenPremiumGates, 100_000)).toEqual({
       action: 'buy',
       quotePriceUsd: 108,
     });
-    expect(at(hit({ pc5m: -5 }), 108, 110_000, 100_000, greenPremiumGates)).toEqual({
+    expect(at(hit({ pc5m: -5 }), 108, 110_000, 100_000, greenPremiumGates, 100_000)).toEqual({
       action: 'wait',
       waitReason: 'premium_cap',
     });
   });
 
-  it('allows green premium during knife-wait after entry grace expires', () => {
+  it('rejects green premium during knife-wait after entry grace expires', () => {
     const knifePremiumGates = {
       ...gates,
       requireDipCandle: false,
@@ -762,7 +783,7 @@ describe('leader mirror observation decisions', () => {
         knifePremiumGates,
         undefined,
       ),
-    ).toEqual({ action: 'buy', quotePriceUsd: 108 });
+    ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
     expect(
       at(
         hit({ pc5m: -11, blockTime: 109 }),

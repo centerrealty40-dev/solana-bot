@@ -49,14 +49,18 @@ export function mirrorPremiumCapPct(args: {
   entryGraceActive: boolean;
   firstClipPending: boolean;
 }): number {
-  const base = args.entryGraceActive && args.firstClipPending
+  const graceActive = args.entryGraceActive && args.firstClipPending;
+  const base = graceActive
     ? (args.entryGraceMaxPremiumPct ?? args.maxPremiumPct)
     : args.maxPremiumPct;
-  return args.greenCandle === true &&
+  const greenApplicable =
+    args.greenCandle === true &&
     args.greenMaxPremiumPct != null &&
-    args.greenMaxPremiumPct > -1000
-    ? Math.max(base, args.greenMaxPremiumPct)
-    : base;
+    args.greenMaxPremiumPct > -1000;
+  if (graceActive && greenApplicable) {
+    return Math.max(base, args.greenMaxPremiumPct ?? base);
+  }
+  return base;
 }
 
 /** Quote is buyable only while it stays inside the cap over the leader fill. */
@@ -545,6 +549,7 @@ export function evaluateLeaderMirrorObservation(args: {
   const firstClipPending = args.firstClipPending !== false;
   const entryGraceActive = graceWindowActive && firstClipPending;
   const greenPremiumCapActive =
+    entryGraceActive &&
     greenCandle &&
     gates.greenMaxPremiumPct != null &&
     gates.greenMaxPremiumPct > -1000;
@@ -559,7 +564,7 @@ export function evaluateLeaderMirrorObservation(args: {
   if (knifeWaitActive && !knifeWaitDiscountReached) {
     // Inside the entry grace the first clip pays up to entryGraceMaxPremiumPct
     // instead of waiting out the knife window; later clips keep waiting.
-    if (!((entryGraceActive || greenPremiumCapActive) && quoteGainPct <= maxPremiumPct)) {
+    if (!(entryGraceActive && quoteGainPct <= maxPremiumPct)) {
       return { action: 'wait', waitReason: 'knife_discount' };
     }
   }
