@@ -164,7 +164,7 @@ describe('mirror PM2 apps', () => {
     ]) {
       expect(mirror?.env[key]).toBe(mirror2?.env[key]);
     }
-    expect(mirror?.env.MILD_DIP_MIRROR_MIN_VOL5M_USD).toBe('2000');
+    expect(mirror?.env.MILD_DIP_MIRROR_MIN_VOL5M_USD).toBe('500');
     expect(mirror2?.env.MILD_DIP_MIRROR_MIN_VOL5M_USD).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT).toBe('50');
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT).toBe('30');
