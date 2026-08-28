@@ -746,6 +746,35 @@ describe('leader mirror observation decisions', () => {
     });
   });
 
+  it('allows green premium during knife-wait after entry grace expires', () => {
+    const knifePremiumGates = {
+      ...gates,
+      requireDipCandle: false,
+      maxEntryPc5mPct: 1_000,
+      greenMaxPremiumPct: 10,
+    };
+    expect(
+      at(
+        hit({ pc5m: 5, blockTime: 109 }),
+        108,
+        110_000,
+        100_000,
+        knifePremiumGates,
+        undefined,
+      ),
+    ).toEqual({ action: 'buy', quotePriceUsd: 108 });
+    expect(
+      at(
+        hit({ pc5m: -11, blockTime: 109 }),
+        108,
+        110_000,
+        100_000,
+        knifePremiumGates,
+        undefined,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
+  });
+
   it('waits through premium and refuses after the window', () => {
     expect(at(hit(), 103, 110_000)).toEqual({ action: 'wait', waitReason: 'premium_cap' });
     expect(at(hit(), 103, 150_000)).toMatchObject({ action: 'skip', reason: 'leader_mirror_premium_cap' });

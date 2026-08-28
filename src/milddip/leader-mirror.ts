@@ -544,6 +544,10 @@ export function evaluateLeaderMirrorObservation(args: {
     leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
   const firstClipPending = args.firstClipPending !== false;
   const entryGraceActive = graceWindowActive && firstClipPending;
+  const greenPremiumCapActive =
+    greenCandle &&
+    gates.greenMaxPremiumPct != null &&
+    gates.greenMaxPremiumPct > -1000;
   const maxPremiumPct = mirrorPremiumCapPct({
     maxPremiumPct: gates.maxPremiumPct,
     entryGraceMaxPremiumPct,
@@ -555,7 +559,7 @@ export function evaluateLeaderMirrorObservation(args: {
   if (knifeWaitActive && !knifeWaitDiscountReached) {
     // Inside the entry grace the first clip pays up to entryGraceMaxPremiumPct
     // instead of waiting out the knife window; later clips keep waiting.
-    if (!(entryGraceActive && quoteGainPct <= maxPremiumPct)) {
+    if (!((entryGraceActive || greenPremiumCapActive) && quoteGainPct <= maxPremiumPct)) {
       return { action: 'wait', waitReason: 'knife_discount' };
     }
   }
@@ -574,9 +578,7 @@ export function evaluateLeaderMirrorObservation(args: {
     requireDipCandle &&
     quoteGainPct >= gates.greenImpulsePct &&
     !(
-      greenCandle &&
-      gates.greenMaxPremiumPct != null &&
-      gates.greenMaxPremiumPct > -1000 &&
+      greenPremiumCapActive &&
       quoteGainPct <= maxPremiumPct
     )
   ) {
