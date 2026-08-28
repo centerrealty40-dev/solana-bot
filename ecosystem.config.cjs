@@ -4989,7 +4989,7 @@ if (mildDipBotApp) {
        */
       entryGraceMaxPremiumPct: '-0.5',
       maxPremiumPct: '-0.5',
-      minLiquidityUsd: '20000',
+      minLiquidityUsd: '12000',
       minVol5mUsd: '2000',
       minMcapUsd: '50000',
       minPairAgeHours: '1',
@@ -5009,7 +5009,7 @@ if (mildDipBotApp) {
       sizeLiqMaxPoolSharePct: '0.15',
       sizeFromLeaderFraction: '0.5',
       sizeFromLeaderMinUsd: '30',
-      sizeFromLeaderMaxUsd: '30',
+      sizeFromLeaderMaxUsd: '100',
       sizeFromLeaderSmallMcapUsd: '40000',
       sizeFromLeaderSmallClipUsd: '30',
       // 1.11.1057 — замер закрытых сделок показал положительный эффект усреднения
