@@ -63,6 +63,20 @@ export function mirrorPremiumCapPct(args: {
   return base;
 }
 
+export function mirrorQuoteRefreshGapMs(args: {
+  quoteIntervalMs: number;
+  staleQuoteIntervalMs: number;
+  quoteMaxAgeMs: number;
+  entryGraceActive: boolean;
+  knifeWaitPending: boolean;
+}): number {
+  if (args.entryGraceActive) return Math.max(0, args.quoteIntervalMs);
+  return Math.max(
+    500,
+    Math.min(args.staleQuoteIntervalMs, args.quoteMaxAgeMs - 1000),
+  );
+}
+
 /** Quote is buyable only while it stays inside the cap over the leader fill. */
 export function mirrorQuoteWithinPremiumCap(args: {
   quotePriceUsd?: number | null;

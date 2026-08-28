@@ -10,6 +10,7 @@ import {
   leaderMirrorQuoteCoverage,
   evictFundingParkedWatchKeys,
   mirrorPremiumCapPct,
+  mirrorQuoteRefreshGapMs,
   mirrorQuoteWithinPremiumCap,
   selectLeaderMirrorQuoteKeys,
   type LeaderMirrorGates,
@@ -22,6 +23,32 @@ import {
   isFundingShortageReason,
   type EntryAttemptResult,
 } from '../../src/milddip/entry-attempt.js';
+
+describe('leader mirror quote refresh gap', () => {
+  it('uses the regular interval during entry grace', () => {
+    expect(
+      mirrorQuoteRefreshGapMs({
+        quoteIntervalMs: 1000,
+        staleQuoteIntervalMs: 5000,
+        quoteMaxAgeMs: 4000,
+        entryGraceActive: true,
+        knifeWaitPending: false,
+      }),
+    ).toBe(1000);
+  });
+
+  it('keeps refresh inside freshness outside grace and during knife wait', () => {
+    const args = {
+      quoteIntervalMs: 1000,
+      staleQuoteIntervalMs: 3000,
+      quoteMaxAgeMs: 5000,
+      entryGraceActive: false,
+      knifeWaitPending: false,
+    };
+    expect(mirrorQuoteRefreshGapMs(args)).toBe(3000);
+    expect(mirrorQuoteRefreshGapMs({ ...args, knifeWaitPending: true })).toBe(3000);
+  });
+});
 
 const gates: LeaderMirrorGates = {
   enabled: true,

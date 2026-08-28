@@ -117,6 +117,22 @@ async function defaultQuote(args: {
     : null;
 }
 
+export async function fetchGreenMinuteJupiterQuote(args: {
+  mint: string;
+  snapshotPriceUsd: number;
+  probeUsd: number;
+  slippageBps: number;
+  tokenDecimals?: number;
+}): Promise<number | null> {
+  return defaultQuote({
+    mint: args.mint,
+    snapshotPriceUsd: args.snapshotPriceUsd,
+    probeUsd: args.probeUsd,
+    slippageBps: args.slippageBps,
+    tokenDecimals: args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? 6,
+  });
+}
+
 /**
  * Register a currently evaluated GREEN candidate and, when due, start one
  * bounded quote. The caller invokes this on fast-path evaluation ticks.

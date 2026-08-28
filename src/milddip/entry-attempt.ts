@@ -430,6 +430,7 @@ export type EntryAttemptOpts = {
   mirrorExecutionRetryBackoffMs?: number;
   mirrorExecutionSlippageMultiplier?: number;
   mirrorExecutionSlippageMaxBps?: number;
+  mirrorExecutionStartSlippageBps?: number;
   mirrorPc5mKnown?: boolean;
   mirrorEntryGraceActive?: boolean;
   mirrorQuoteGainPct?: number | null;
@@ -1830,6 +1831,10 @@ export async function attemptMildDipEntry(args: {
             },
             slippageRetryMultiplier: opts.mirrorExecutionSlippageMultiplier,
             slippageRetryMaxBps: opts.mirrorExecutionSlippageMaxBps,
+            ...(opts.mirrorExecutionStartSlippageBps != null &&
+            opts.mirrorExecutionStartSlippageBps > 0
+              ? { slippageBpsOverride: opts.mirrorExecutionStartSlippageBps }
+              : {}),
           }
         : {}),
     });
@@ -2305,6 +2310,9 @@ export async function attemptMirrorFirstClipLeg(args: {
       },
       slippageRetryMultiplier: cfg.leaderMirror.executionSlippageMultiplier,
       slippageRetryMaxBps: cfg.leaderMirror.executionSlippageMaxBps,
+      ...(cfg.leaderMirror.executionStartSlippageBps > 0
+        ? { slippageBpsOverride: cfg.leaderMirror.executionStartSlippageBps }
+        : {}),
     });
     const fillPx = buy.priceUsd > 0 ? buy.priceUsd : c.priceUsd;
     try {

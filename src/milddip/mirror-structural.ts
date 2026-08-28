@@ -7,7 +7,7 @@ import {
 type RpcCall = typeof rpcCall;
 type FetchLike = (input: string | URL, init?: RequestInit) => Promise<Response>;
 
-type MintSupply = {
+export type MintSupply = {
   supply: number;
   decimals: number;
 };
@@ -56,7 +56,7 @@ function finitePositive(value: unknown): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-async function fetchMintSupply(
+export async function fetchMirrorMintSupply(
   rpcUrl: string,
   mint: string,
   nowMs: number,
@@ -125,6 +125,7 @@ export async function resolveMirrorStructuralMetrics(args: {
   fallbackConfig: Parameters<typeof fetchMildDipStructuralFallback>[1];
   fetchImpl?: FetchLike;
   rpcImpl?: RpcCall;
+  supplyPromise?: Promise<MintSupply | null>;
 }): Promise<MirrorStructuralResolution> {
   const { dex } = args;
   let liquidityUsd = dex.liquidityUsd;
@@ -141,13 +142,16 @@ export async function resolveMirrorStructuralMetrics(args: {
           : 'missing',
   };
 
-  const supply = await fetchMintSupply(
-    args.rpcUrl,
-    args.mint,
-    args.nowMs,
-    args.rpcImpl ?? rpcCall,
-  );
-  const rpcMcap = mcapFromSupply(supply, args.quotePriceUsd);
+  const supply =
+    args.supplyPromise ??
+    fetchMirrorMintSupply(
+      args.rpcUrl,
+      args.mint,
+      args.nowMs,
+      args.rpcImpl ?? rpcCall,
+    );
+  const resolvedSupply = await supply;
+  const rpcMcap = mcapFromSupply(resolvedSupply, args.quotePriceUsd);
   if (rpcMcap != null) {
     marketCapUsd = rpcMcap;
     sources.marketCap = 'rpc';

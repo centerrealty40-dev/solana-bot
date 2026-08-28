@@ -2,6 +2,7 @@ import path from 'node:path';
 import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
 import { checkCopyFundingGate } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
+import { rpcCall } from '../copytrader/rpc.js';
 import type { MildDipConfig } from './config.js';
 import {
   collectCandidateMints,
@@ -46,6 +47,7 @@ import {
 } from './fast-path.js';
 import {
   greenMinuteJupiterStats,
+  fetchGreenMinuteJupiterQuote,
   releaseGreenMinuteJupiterRefresh,
   requestGreenMinuteJupiterRefresh,
   tickGreenMinuteJupiterRefresh,
@@ -53,6 +55,7 @@ import {
 import {
   evaluateLeaderMirrorObservation,
   mirrorPremiumCapPct,
+  mirrorQuoteRefreshGapMs,
   mirrorQuoteWithinPremiumCap,
   leaderMirrorKnifeWaitPending,
   leaderMirrorDecisionSuppressed,
@@ -229,6 +232,7 @@ import { MildDipPriceRing } from './price-ring.js';
 import { mildDipPairAgeRegistry } from './pair-age-registry.js';
 import {
   mirrorOwnStructuralCanApply,
+  fetchMirrorMintSupply,
   resolveMirrorStructuralMetrics,
 } from './mirror-structural.js';
 import {
@@ -1521,6 +1525,7 @@ async function wakeLeaderMirrors(
       leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
       leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
       leaderMirrorQuoteSampleCount.delete(watchKey);
+      leaderMirrorFreshStructuralKeys.add(watchKey);
     } else if (!existing) {
       const prior = leaderMirrorDecisions.get(watchKey);
       if (
@@ -1549,6 +1554,7 @@ async function wakeLeaderMirrors(
       leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
       leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
       leaderMirrorQuoteSampleCount.delete(watchKey);
+      leaderMirrorFreshStructuralKeys.add(watchKey);
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_observe_start',
         mint: hit.mint,
@@ -1564,6 +1570,31 @@ async function wakeLeaderMirrors(
         observeMs: gates.observeMs,
       });
     }
+  }
+  const freshStructuralEntries = [...leaderMirrorFreshStructuralKeys]
+    .map((watchKey) => [watchKey, leaderMirrorWatches.get(watchKey)] as const)
+    .filter(
+      (entry): entry is [
+        string,
+        NonNullable<typeof entry[1]>,
+      ] =>
+        entry[1] != null &&
+        nowMs - entry[1].startedAtMs <= (gates.entryGraceMs ?? 60_000) &&
+        leaderMirrorNeedsStructuralBackfill(
+          entry[1].hit,
+          gates.requireDipCandle,
+          gates.structuralGatesEnabled,
+        ),
+    )
+    .slice(0, 2);
+  for (const watchKey of leaderMirrorFreshStructuralKeys) {
+    if (!freshStructuralEntries.some(([key]) => key === watchKey)) {
+      leaderMirrorFreshStructuralKeys.delete(watchKey);
+    }
+  }
+  for (const [watchKey] of freshStructuralEntries) {
+    leaderMirrorFreshStructuralKeys.delete(watchKey);
+    leaderMirrorStructuralAttemptMs.set(watchKey, nowMs);
   }
   const structuralCandidates = [...leaderMirrorWatches.entries()]
     .filter(
@@ -1590,21 +1621,68 @@ async function wakeLeaderMirrors(
   const launchStructuralBackfill = (
     entries: typeof backfillEntries,
     priority: boolean,
+    fresh = false,
   ): void => {
     if (entries.length === 0) return;
     const backfillMints = [...new Set(entries.map(([, watch]) => watch.hit.mint))];
     for (const [watchKey] of entries) leaderMirrorStructuralAttemptMs.set(watchKey, nowMs);
-    if (priority) leaderMirrorStructuralPriorityInFlight = true;
-    else leaderMirrorStructuralInFlight = true;
-    const ownStructuralPromise = cfg.mirrorOwnStructuralEnabled
+    if (!fresh) {
+      if (priority) leaderMirrorStructuralPriorityInFlight = true;
+      else leaderMirrorStructuralInFlight = true;
+    }
+    const freshQuotePromise: Promise<
+      Map<string, { priceUsd: number | null; source: 'ring' | 'direct' }>
+    > = fresh
       ? Promise.all(
           backfillMints.map(async (mint) => {
-            const quote = mildDipPriceRing.lastPriceBySource(
+            const ringQuote = mildDipPriceRing.lastPriceBySource(
               mint,
               'leader_mirror_jupiter',
               nowMs,
               gates.quoteMaxAgeMs,
             );
+            if (ringQuote) {
+              return [mint, { priceUsd: ringQuote.priceUsd, source: 'ring' as const }] as const;
+            }
+            const startedWatch = entries.find(([, watch]) => watch.hit.mint === mint)?.[1];
+            const priceUsd = await fetchGreenMinuteJupiterQuote({
+              mint,
+              snapshotPriceUsd: startedWatch?.hit.fillPriceUsd ?? 0,
+              probeUsd: gates.positionUsd,
+              slippageBps: cfg.slippageBps,
+            });
+            if (priceUsd != null) {
+              mildDipPriceRing.note(mint, priceUsd, {
+                tsMs: Date.now(),
+                source: 'leader_mirror_jupiter',
+              });
+            }
+            return [mint, { priceUsd, source: 'direct' as const }] as const;
+          }),
+        ).then(
+          (items) =>
+            new Map<string, { priceUsd: number | null; source: 'ring' | 'direct' }>(
+              items,
+            ),
+        )
+      : Promise.resolve(new Map());
+    const ownStructuralPromise = cfg.mirrorOwnStructuralEnabled
+      ? Promise.all(
+          backfillMints.map(async (mint) => {
+            const [quoteMap, supply] = await Promise.all([
+              freshQuotePromise,
+              fresh
+                ? fetchMirrorMintSupply(cfg.rpcUrl, mint, nowMs, rpcCall)
+                : Promise.resolve(null),
+            ]);
+            const quote = fresh
+              ? quoteMap.get(mint)
+              : mildDipPriceRing.lastPriceBySource(
+                  mint,
+                  'leader_mirror_jupiter',
+                  nowMs,
+                  gates.quoteMaxAgeMs,
+                );
             return [
               mint,
               await resolveMirrorStructuralMetrics({
@@ -1624,6 +1702,7 @@ async function wakeLeaderMirrors(
                   dexId: null,
                 },
                 fallbackConfig: cfg,
+                ...(fresh ? { supplyPromise: Promise.resolve(supply) } : {}),
               }),
             ] as const;
           }),
@@ -1788,6 +1867,18 @@ async function wakeLeaderMirrors(
                 dexId: resolvedMetrics.dexId,
               }
             : null;
+        if (fresh) {
+          const freshQuote = (await freshQuotePromise).get(mint);
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'leader_mirror_fresh_structural',
+            mint,
+            elapsedMs: Math.max(0, Date.now() - nowMs),
+            quoteSource: freshQuote?.source ?? 'none',
+            liquidityResolved: metrics?.liq != null,
+            marketCapResolved: metrics?.mcap != null,
+            ageResolved: metrics?.ageHours != null,
+          });
+        }
         if (!metrics) continue;
         const hit: LeaderSeedHit = {
           ...watch.hit,
@@ -1811,10 +1902,18 @@ async function wakeLeaderMirrors(
         mints: backfillMints.length,
       });
     }).finally(() => {
-      if (priority) leaderMirrorStructuralPriorityInFlight = false;
-      else leaderMirrorStructuralInFlight = false;
+      if (!fresh) {
+        if (priority) leaderMirrorStructuralPriorityInFlight = false;
+        else leaderMirrorStructuralInFlight = false;
+      }
     });
   };
+  if (freshStructuralEntries.length > 0) {
+    for (const [watchKey] of freshStructuralEntries) {
+      leaderMirrorStructuralAttemptMs.set(watchKey, nowMs);
+    }
+    launchStructuralBackfill(freshStructuralEntries, false, true);
+  }
   if (priorityEntries.length > 0 && !leaderMirrorStructuralPriorityInFlight) {
     launchStructuralBackfill(priorityEntries, true);
   }
@@ -1855,10 +1954,13 @@ async function wakeLeaderMirrors(
       fundingParkedAtMs: watch.fundingParkedAtMs,
       }),
   );
-  const knifeWaitQuoteIntervalMs = Math.max(
-    gates.quoteIntervalMs,
-    gates.staleQuoteIntervalMs,
-  );
+  const knifeWaitQuoteIntervalMs = mirrorQuoteRefreshGapMs({
+    quoteIntervalMs: gates.quoteIntervalMs,
+    staleQuoteIntervalMs: gates.staleQuoteIntervalMs,
+    quoteMaxAgeMs: gates.quoteMaxAgeMs,
+    entryGraceActive: false,
+    knifeWaitPending: true,
+  });
   if (
     knifeWaitQuoteWindowStartedAtMs === 0 ||
     nowMs - knifeWaitQuoteWindowStartedAtMs >= knifeWaitQuoteIntervalMs
@@ -1996,11 +2098,13 @@ async function wakeLeaderMirrors(
         nowMs,
         snapshotPriceUsd: hit.fillPriceUsd ?? 0,
         enabled: true,
-        minGapMs: knifeWaitPendingByWatchKey.get(watchKey)
-          ? Math.max(gates.quoteIntervalMs, gates.staleQuoteIntervalMs)
-          : entryGraceActive
-          ? gates.quoteIntervalMs
-          : Math.max(gates.quoteIntervalMs, gates.staleQuoteIntervalMs),
+        minGapMs: mirrorQuoteRefreshGapMs({
+          quoteIntervalMs: gates.quoteIntervalMs,
+          staleQuoteIntervalMs: gates.staleQuoteIntervalMs,
+          quoteMaxAgeMs: gates.quoteMaxAgeMs,
+          entryGraceActive,
+          knifeWaitPending: knifeWaitPendingByWatchKey.get(watchKey) === true,
+        }),
         ttlMs: Math.max(3 * gates.quoteMaxAgeMs, 30_000),
         maxMints: gates.maxQuoteMints,
         maxInFlight: 16,
@@ -2266,6 +2370,7 @@ async function wakeLeaderMirrors(
               mirrorExecutionRetryBackoffMs: gates.executionRetryBackoffMs,
               mirrorExecutionSlippageMultiplier: gates.executionSlippageMultiplier,
               mirrorExecutionSlippageMaxBps: gates.executionSlippageMaxBps,
+              mirrorExecutionStartSlippageBps: gates.executionStartSlippageBps,
               mirrorPc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
               mirrorEntryGraceActive: entryGraceActive,
               mirrorLeaderFillPriceUsd: hit.fillPriceUsd ?? null,
@@ -3577,6 +3682,7 @@ function leaderMirrorWatchKey(hit: LeaderSeedHit): string {
   return `${hit.mint}:${hit.leader ?? ''}`;
 }
 const leaderMirrorStructuralAttemptMs = new Map<string, number>();
+const leaderMirrorFreshStructuralKeys = new Set<string>();
 const leaderMirrorStructuralSourceJournal = new Map<string, string>();
 const leaderMirrorEntryRetryAfterMs = new Map<string, number>();
 const leaderMirrorQuoteLastSelectedAtMs = new Map<string, number>();

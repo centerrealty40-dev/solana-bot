@@ -277,6 +277,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_MAX_PREMIUM_PCT).toBe('-0.5');
     expect(mirror?.env.MILD_DIP_MIRROR_GREEN_MAX_PREMIUM_PCT).toBe('10');
     expect(mirror2?.env.MILD_DIP_MIRROR_GREEN_MAX_PREMIUM_PCT).toBe('-1000');
+    expect(mirror?.env.MILD_DIP_MIRROR_EXEC_START_SLIPPAGE_BPS).toBe('400');
+    expect(mirror2?.env.MILD_DIP_MIRROR_EXEC_START_SLIPPAGE_BPS).toBe('0');
     expect(mirror?.env.MILD_DIP_MAX_CHASE_PCT).toBe('6');
     expect(mirror2?.env.MILD_DIP_MAX_CHASE_PCT).toBe('6');
     expect(ecosystemSource).toContain("maxPremiumPct = '1'");
