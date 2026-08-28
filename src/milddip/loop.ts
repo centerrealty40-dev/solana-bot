@@ -207,6 +207,7 @@ import {
   accountMirrorCashLeg,
   mirrorOpenMarkValueUsd,
   confirmLossCapObservation,
+  maybeResetMirrorLossCapDay,
   syncMirrorLossCapBaseline,
 } from './mirror-loss-cap.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
@@ -338,6 +339,40 @@ export function ensureMirrorLossCapBaseline(
     ).length,
     baselineAtMs: nowMs,
     lossCapUsd: cfg.leaderMirror.lossCapUsd,
+  });
+}
+
+function maybeResetMirrorLossCapDayForLoop(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): void {
+  const previousDayKey = state.mirrorLossCapDayKey;
+  const result = maybeResetMirrorLossCapDay({
+    state,
+    lossCapUsd: cfg.leaderMirror.lossCapUsd,
+    bagsUsd: mirrorLossCapValues(state).bagsUsd,
+    nowMs,
+    tzOffsetMinutes: cfg.leaderMirror.lossCapResetTzOffsetMinutes,
+    enabled: cfg.leaderMirror.lossCapDailyReset,
+  });
+  const dayKeyRecorded =
+    cfg.leaderMirror.lossCapDailyReset &&
+    cfg.leaderMirror.lossCapUsd > 0 &&
+    previousDayKey == null &&
+    state.mirrorLossCapDayKey === result.dayKey;
+  if (result.reset || dayKeyRecorded) {
+    saveMildDipState(cfg.statePath, state);
+  }
+  if (!result.reset) return;
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'mirror_loss_cap_day_reset',
+    previousDayKey: result.previousDayKey,
+    dayKey: result.dayKey,
+    lossCapUsd: cfg.leaderMirror.lossCapUsd,
+    openBagsUsd: mirrorLossCapValues(state).bagsUsd,
+    tzOffsetMinutes: cfg.leaderMirror.lossCapResetTzOffsetMinutes,
+    nowMs,
   });
 }
 
@@ -4532,6 +4567,7 @@ async function tryExits(
   crossLeaderBuyFeed: CrossLeaderBuyFeed | null,
 ): Promise<void> {
   ensureMirrorLossCapBaseline(cfg, state, nowMs);
+  maybeResetMirrorLossCapDayForLoop(cfg, state, nowMs);
   const lossCapValues = mirrorLossCapValues(state);
   if (nowMs - lastMirrorLossCapEvaluationMs >= 5_000) {
     lastMirrorLossCapEvaluationMs = nowMs;
@@ -5794,6 +5830,7 @@ export async function runMildDipLoop(
     mirrorObserveMs: cfg.leaderMirror.observeMs,
   });
   ensureMirrorLossCapBaseline(cfg, state, Date.now());
+  maybeResetMirrorLossCapDayForLoop(cfg, state, Date.now());
   maybeTriggerMirrorLossCap(
     cfg,
     state,

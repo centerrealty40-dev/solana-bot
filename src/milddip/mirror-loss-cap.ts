@@ -53,6 +53,7 @@ export function accountMirrorCashLeg(
 
 export type MirrorLossCapBaselineState = {
   mirrorTradingCashUsd?: number;
+  mirrorLossCapDayKey?: string;
   mirrorLossCapBaselineAtMs?: number;
   mirrorLossCapBaselineUsd?: number;
   mirrorLossCapTriggeredAtMs?: number;
@@ -60,6 +61,44 @@ export type MirrorLossCapBaselineState = {
   mirrorLossCapPendingDrawdownUsd?: number;
   mirrorLossCapPendingAtMs?: number;
 };
+
+export function mirrorLossCapDayKey(
+  nowMs: number,
+  tzOffsetMinutes: number,
+): string {
+  return new Date(nowMs + tzOffsetMinutes * 60_000).toISOString().slice(0, 10);
+}
+
+export function maybeResetMirrorLossCapDay(args: {
+  state: MirrorLossCapBaselineState & { mirrorLossCapDayKey?: string };
+  lossCapUsd: number;
+  bagsUsd: number;
+  nowMs: number;
+  tzOffsetMinutes: number;
+  enabled: boolean;
+}): { reset: boolean; previousDayKey: string | null; dayKey: string } {
+  const dayKey = mirrorLossCapDayKey(args.nowMs, args.tzOffsetMinutes);
+  const previousDayKey = args.state.mirrorLossCapDayKey ?? null;
+  if (!args.enabled || args.lossCapUsd <= 0) {
+    return { reset: false, previousDayKey, dayKey };
+  }
+  if (previousDayKey == null) {
+    args.state.mirrorLossCapDayKey = dayKey;
+    return { reset: false, previousDayKey, dayKey };
+  }
+  if (previousDayKey === dayKey) {
+    return { reset: false, previousDayKey, dayKey };
+  }
+  args.state.mirrorTradingCashUsd = -args.bagsUsd;
+  args.state.mirrorLossCapBaselineAtMs = args.nowMs;
+  args.state.mirrorLossCapBaselineUsd = args.lossCapUsd;
+  args.state.mirrorLossCapTriggeredAtMs = undefined;
+  args.state.mirrorLossCapTriggeredPnlUsd = undefined;
+  args.state.mirrorLossCapPendingDrawdownUsd = undefined;
+  args.state.mirrorLossCapPendingAtMs = undefined;
+  args.state.mirrorLossCapDayKey = dayKey;
+  return { reset: true, previousDayKey, dayKey };
+}
 
 export function syncMirrorLossCapBaseline(args: {
   state: MirrorLossCapBaselineState;
