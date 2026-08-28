@@ -296,6 +296,7 @@ export type MildDipState = {
     { hitKey: string; decidedAtMs: number; reason: string }
   >;
   mirrorTradingCashUsd?: number;
+  mirrorLossCapDayKey?: string;
   mirrorLossCapBaselineAtMs?: number;
   mirrorLossCapBaselineUsd?: number;
   mirrorLossCapTriggeredAtMs?: number;
@@ -619,6 +620,10 @@ export function loadMildDipState(
         Number.isFinite(Number(parsed.mirrorTradingCashUsd))
           ? Number(parsed.mirrorTradingCashUsd)
           : 0,
+      ...(typeof parsed.mirrorLossCapDayKey === 'string' &&
+      parsed.mirrorLossCapDayKey.length > 0
+        ? { mirrorLossCapDayKey: parsed.mirrorLossCapDayKey }
+        : {}),
       ...(Number.isFinite(Number(parsed.mirrorLossCapBaselineAtMs))
         ? { mirrorLossCapBaselineAtMs: Number(parsed.mirrorLossCapBaselineAtMs) }
         : {}),
