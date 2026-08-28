@@ -4755,6 +4755,7 @@ function makeMirrorApp({
   lossCapResetTzOffsetMin = '180',
   maxEntryPc5mPct,
   entryGraceMaxPremiumPct,
+  maxPremiumPct = '1',
   minLiquidityUsd,
   minPairAgeHours = '1',
   minMcapUsd,
@@ -4897,7 +4898,7 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_KNIFE_WAIT_DISCOUNT_PCT: '2',
       MILD_DIP_MIRROR_KNIFE_WAIT_WINDOW_MS: '600000',
       MILD_DIP_MIRROR_KNIFE_WAIT_QUOTE_SLOTS: '3',
-      MILD_DIP_MIRROR_MAX_PREMIUM_PCT: '1',
+      MILD_DIP_MIRROR_MAX_PREMIUM_PCT: maxPremiumPct,
       MILD_DIP_MAX_CHASE_PCT: '6',
       MILD_DIP_MIRROR_RETRY_WHILE_LEADER_HOLDS: '1',
       MILD_DIP_MIRROR_LADDER_STEP_PCT: ladderStepPct,
@@ -4976,8 +4977,13 @@ if (mildDipBotApp) {
       lossCapDailyReset: '1',
       lossCapResetTzOffsetMin: '180',
       maxEntryPc5mPct: '1000',
-      /** 1.11.1042 — first clip inside the first minute pays up to +5%. */
-      entryGraceMaxPremiumPct: '5',
+      /**
+       * 1.11.1056 — вход только по скидке к филлу лидера: замер закрытых сделок
+       * дал у зелёных входов ROI ниже дипа во всех окнах (12 ч −7.1% против
+       * −4.3%, вся история +21% против +27%).
+       */
+      entryGraceMaxPremiumPct: '-0.5',
+      maxPremiumPct: '-0.5',
       minLiquidityUsd: '20000',
       minMcapUsd: '50000',
       minPairAgeHours: '1',
