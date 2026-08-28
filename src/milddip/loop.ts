@@ -2405,6 +2405,29 @@ async function wakeLeaderMirrors(
         priceChange1hPct: hit.pc1h ?? null,
       },
     };
+    if (decision.greenInstant) {
+      const leaderTimestampMs =
+        hit.blockTime != null && hit.blockTime > 0
+          ? hit.blockTime * 1000
+          : leaderBuyTsMs;
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_green_instant',
+        mint,
+        leader: hit.leader,
+        quoteGainPct:
+          hit.fillPriceUsd != null && hit.fillPriceUsd > 0
+            ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
+            : null,
+        leaderAgeMs:
+          leaderTimestampMs != null
+            ? Math.max(0, nowMs - leaderTimestampMs)
+            : null,
+        liqKnown: hit.liq != null && Number.isFinite(hit.liq),
+        mcapKnown: hit.mcap != null && Number.isFinite(hit.mcap),
+        ageKnown: hit.ageHours != null && Number.isFinite(hit.ageHours),
+        vol5mKnown: hit.vol5m != null && Number.isFinite(hit.vol5m),
+      });
+    }
     const copyCfg = mildDipToCopyTraderConfig(cfg);
     const openMirrorPosition = state.open[mint];
     const firstClipPending =
@@ -2444,6 +2467,8 @@ async function wakeLeaderMirrors(
               lane: 'fast',
               mirror: true,
               mirrorBranch: decision.mirrorBranch,
+              mirrorIgnoreStructuralFloors:
+                decision.bypassStructuralFloors === true,
               leaderBuyTsMs,
               leaderBuySignature: hit.signature,
               leaderMirrorLeader: hit.leader,

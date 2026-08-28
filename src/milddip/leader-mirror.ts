@@ -9,6 +9,8 @@ export type LeaderMirrorDecision =
       action: 'buy';
       quotePriceUsd: number;
       mirrorBranch?: 'green' | 'dip' | 'tier';
+      bypassStructuralFloors?: boolean;
+      greenInstant?: boolean;
       knifeWait?: {
         enteredByDiscount: boolean;
         enteredByWindowExpiry: boolean;
@@ -124,6 +126,7 @@ export function leaderMirrorNeedsStructuralBackfill(
 export type LeaderMirrorGates = {
   enabled: boolean;
   greenCopyEnabled: boolean;
+  greenInstantEnabled?: boolean;
   greenCorridorPct: number;
   greenCopyMaxPc5mPct: number;
   leaders: string[];
@@ -351,6 +354,13 @@ function finitePositive(value: number | null | undefined): value is number {
   return value != null && Number.isFinite(value) && value > 0;
 }
 
+function quoteGainPctForInstant(
+  quotePriceUsd: number,
+  leaderFillPriceUsd: number,
+): number {
+  return (quotePriceUsd / leaderFillPriceUsd - 1) * 100;
+}
+
 export function leaderMirrorWalletAllowed(
   hit: LeaderSeedHit,
   leaders: readonly string[],
@@ -415,6 +425,45 @@ export function evaluateLeaderMirrorObservation(args: {
     hit.sizeUsd < gates.minLeaderSizeUsd!
   ) {
     return { action: 'skip', reason: 'leader_mirror_leader_size_floor' };
+  }
+  const firstClipPending = args.firstClipPending !== false;
+  const leaderTimestampMs =
+    args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
+      ? args.leaderBuyTsMs
+      : typeof hit.blockTime === 'number' &&
+          Number.isFinite(hit.blockTime) &&
+          hit.blockTime > 0
+        ? hit.blockTime * 1000
+        : null;
+  const leaderAgeForInstantMs =
+    leaderTimestampMs != null ? nowMs - leaderTimestampMs : null;
+  const quoteFresh =
+    finitePositive(args.quotePriceUsd) &&
+    args.quoteTsMs != null &&
+    Number.isFinite(args.quoteTsMs) &&
+    gates.quoteMaxAgeMs > 0 &&
+    nowMs - args.quoteTsMs <= gates.quoteMaxAgeMs;
+  if (
+    gates.greenInstantEnabled === true &&
+    firstClipPending &&
+    leaderAgeForInstantMs != null &&
+    leaderAgeForInstantMs >= 0 &&
+    leaderAgeForInstantMs <= entryGraceMs &&
+    quoteFresh &&
+    finitePositive(args.quotePriceUsd) &&
+    quoteGainPctForInstant(args.quotePriceUsd, hit.fillPriceUsd) >= 0 &&
+    gates.greenMaxPremiumPct != null &&
+    gates.greenMaxPremiumPct > -1000 &&
+    quoteGainPctForInstant(args.quotePriceUsd, hit.fillPriceUsd) <=
+      gates.greenMaxPremiumPct
+  ) {
+    return {
+      action: 'buy',
+      quotePriceUsd: args.quotePriceUsd,
+      mirrorBranch: 'green',
+      bypassStructuralFloors: true,
+      greenInstant: true,
+    };
   }
   let tierFloorMiss = false;
   let greenCandidate = false;
@@ -529,10 +578,6 @@ export function evaluateLeaderMirrorObservation(args: {
   ) {
     knifeWaitTimestampMs = hit.blockTime * 1000;
   }
-  const leaderAgeMs =
-    args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
-      ? nowMs - args.leaderBuyTsMs
-      : null;
   const knifeWaitAgeMs =
     knifeWaitTimestampMs != null ? nowMs - knifeWaitTimestampMs : null;
   const knifeWaitEligible =
@@ -565,9 +610,12 @@ export function evaluateLeaderMirrorObservation(args: {
           leaderFillPriceUsd: leaderPrice,
         }
       : undefined;
+  const leaderAgeMs =
+    args.leaderBuyTsMs != null && Number.isFinite(args.leaderBuyTsMs)
+      ? nowMs - args.leaderBuyTsMs
+      : null;
   const graceWindowActive =
     leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
-  const firstClipPending = args.firstClipPending !== false;
   const entryGraceActive = graceWindowActive && firstClipPending;
   const greenGraceActive =
     greenCandle &&

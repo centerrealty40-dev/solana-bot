@@ -61,4 +61,20 @@ describe('mirror tier entry risk floors', () => {
     });
     expect(shouldApplyMirrorEntryStructuralDataVeto(true, false)).toBe(true);
   });
+
+  it('removes mirror floors when the instant green path requests the bypass', () => {
+    expect(resolveMirrorEntryRiskFloors({
+      ...mirrorFloors,
+      ...defaults,
+      isMirror: true,
+      isTier: false,
+      tierIgnoreFloors: false,
+      structuralGatesEnabled: false,
+    })).toEqual({
+      minPairAgeHours: 0,
+      minLiquidityUsd: 0,
+      maxVol5mToLiq: 0,
+    });
+    expect(shouldApplyMirrorEntryStructuralDataVeto(true, false, false)).toBe(false);
+  });
 });
