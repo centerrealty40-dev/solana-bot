@@ -345,6 +345,22 @@ describe('leader mirror observation decisions', () => {
     ).toEqual({ action: 'wait', waitReason: 'premium_cap' });
   });
 
+  it('applies the optional 5m volume floor without failing open on missing volume', () => {
+    const volumeGates = { ...gates, minVol5mUsd: 2_000 };
+    expect(at(hit({ vol5m: 1_999 }), 101, 110_000, 100_000, volumeGates)).toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_vol5m_floor=1999<2000',
+    });
+    expect(at(hit({ vol5m: 2_001 }), 101, 110_000, 100_000, volumeGates)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101,
+    });
+    expect(at(hit({ vol5m: null }), 101, 110_000, 100_000, volumeGates)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 101,
+    });
+  });
+
   it('refuses a 1h move below the configured floor', () => {
     expect(at(hit({ pc1h: 9 }), 101, 110_000, 100_000, {
       ...gates,

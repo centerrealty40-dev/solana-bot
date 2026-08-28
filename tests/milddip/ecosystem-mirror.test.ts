@@ -63,7 +63,6 @@ describe('mirror PM2 apps', () => {
       'MILD_DIP_MIRROR_AVERAGE_ENABLED',
       'MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS',
       'MILD_DIP_MIRROR_AVERAGE_EXCLUDE_TAIL_MS',
-      'MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS',
       'MILD_DIP_DUST_BURN_ENABLED',
@@ -99,8 +98,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MIN_USD).toBe('30');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MAX_USD).toBe('200');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_MAX_POOL_SHARE_PCT).toBe('0.15');
-    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD).toBe('30');
-    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('120');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD).toBe('10');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('80');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_LIQ_COEF).toBe('0.001094');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_LIQ_EXP).toBe('0.866');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_MIN_USD).toBe('10');
@@ -151,25 +150,29 @@ describe('mirror PM2 apps', () => {
     );
     expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_USD).toBe('64');
     expect(mirror2?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_USD).toBe('10');
-    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_STEPS_ENABLED).toBe('1');
+    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_STEPS_ENABLED).toBe('0');
     expect(mirror2?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_STEPS_ENABLED).toBe('1');
     for (const key of [
-      'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_AGE_MS',
       'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_START_FRACTION',
       'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_FULL_DISCOUNT_PCT',
       'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TOTAL_FRACTION',
-      'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TIMES',
       'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_LEADER_SIZE_USD',
       'MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_STEP_USD',
     ]) {
       expect(mirror?.env[key]).toBe(mirror2?.env[key]);
     }
-    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_DISCOUNT_PCT).toBe('15');
+    expect(mirror?.env.MILD_DIP_MIRROR_MIN_VOL5M_USD).toBe('2000');
+    expect(mirror2?.env.MILD_DIP_MIRROR_MIN_VOL5M_USD).toBe('0');
+    expect(mirror?.env.MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT).toBe('50');
+    expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT).toBe('30');
+    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_DISCOUNT_PCT).toBe('50');
+    expect(mirror2?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_DISCOUNT_PCT).toBe('15');
     expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_START_FRACTION).toBe('0.3');
     expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_FULL_DISCOUNT_PCT).toBe('50');
     expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TOTAL_FRACTION).toBe('1');
-    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TIMES).toBe('3');
+    expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TIMES).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MAX_TIMES).toBe('3');
     expect(mirror?.env.MILD_DIP_MIRROR_CROSS_LEADER_AVERAGE_MIN_STEP_USD).toBe('3');
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MAX_TIMES: '1'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT: '15'");
@@ -190,8 +193,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_POSITION_USD).toBe('80');
     expect(mirror?.env.MILD_DIP_MIRROR_STRUCTURAL_GATES_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_FRACTION).toBe('0.5');
-    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD).toBe('30');
-    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('120');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MIN_USD).toBe('10');
+    expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_MAX_USD).toBe('80');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_MCAP_USD).toBe('40000');
     expect(mirror?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_CLIP_USD).toBe('30');
     expect(mirror2?.env.MILD_DIP_MIRROR_SIZE_FROM_LEADER_SMALL_MCAP_USD).toBe('0');
@@ -240,7 +243,7 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_REQUIRE_DIP_CANDLE: '0'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_LEADER_FILL_GRACE_MS: '60000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_LEADER_SIZE_USD: '20'");
-    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: '30'");
+    expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT: averageMinDiscountPct");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS: '120000'");
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_AVERAGE_WINDOWS_MS:");
     expect(ecosystemSource).toContain("'3600000,7200000,10800000,14400000,21600000'");
