@@ -5009,7 +5009,7 @@ if (mildDipBotApp) {
       sizeLiqMaxPoolSharePct: '0.15',
       sizeFromLeaderFraction: '0.5',
       sizeFromLeaderMinUsd: '30',
-      sizeFromLeaderMaxUsd: '200',
+      sizeFromLeaderMaxUsd: '30',
       sizeFromLeaderSmallMcapUsd: '40000',
       sizeFromLeaderSmallClipUsd: '30',
       // 1.11.1057 — замер закрытых сделок показал положительный эффект усреднения
