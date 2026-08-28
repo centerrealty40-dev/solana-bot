@@ -606,12 +606,12 @@ describe('leader mirror observation decisions', () => {
   });
 
   it('applies the optional 5m volume floor and stays open when volume is unknown', () => {
-    const volumeGates = { ...gates, minVol5mUsd: 2_000 };
-    expect(at(hit({ vol5m: 1_999 }), 101, 110_000, 100_000, volumeGates)).toEqual({
+    const volumeGates = { ...gates, minVol5mUsd: 500 };
+    expect(at(hit({ vol5m: 499 }), 101, 110_000, 100_000, volumeGates)).toEqual({
       action: 'skip',
-      reason: 'leader_mirror_vol5m_floor=1999<2000',
+      reason: 'leader_mirror_vol5m_floor=499<500',
     });
-    expect(at(hit({ vol5m: 2_001 }), 101, 110_000, 100_000, volumeGates)).toEqual({
+    expect(at(hit({ vol5m: 501 }), 101, 110_000, 100_000, volumeGates)).toEqual({
       action: 'buy',
       quotePriceUsd: 101,
     });

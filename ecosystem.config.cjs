@@ -4999,7 +4999,7 @@ if (mildDipBotApp) {
       executionStartSlippageBps: '400',
       greenInstantEnabled: '1',
       minLiquidityUsd: '12000',
-      minVol5mUsd: '2000',
+      minVol5mUsd: '500',
       minMcapUsd: '50000',
       minPairAgeHours: '1',
       minPc1hPct: '-1000',
