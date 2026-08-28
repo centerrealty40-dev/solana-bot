@@ -345,7 +345,7 @@ describe('leader mirror observation decisions', () => {
     ).toEqual({ action: 'wait', waitReason: 'premium_cap' });
   });
 
-  it('applies the optional 5m volume floor without failing open on missing volume', () => {
+  it('applies the optional 5m volume floor and stays open when volume is unknown', () => {
     const volumeGates = { ...gates, minVol5mUsd: 2_000 };
     expect(at(hit({ vol5m: 1_999 }), 101, 110_000, 100_000, volumeGates)).toEqual({
       action: 'skip',
