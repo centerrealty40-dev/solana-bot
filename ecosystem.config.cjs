@@ -4796,6 +4796,7 @@ function makeMirrorApp({
   executionStartSlippageBps = '0',
   greenInstantEnabled = '0',
   maxVol5mToLiq = '2',
+  firstTouchPositionUsd,
 }) {
   return {
     ...mildDipBotApp,
@@ -4970,6 +4971,9 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_NO_MOVE_CUT_MS: '600000',
       MILD_DIP_MIRROR_NO_MOVE_MIN_MFE_PCT: '2',
       MILD_DIP_MIRROR_MAX_HOLD_MS: '3600000',
+      ...(firstTouchPositionUsd != null
+        ? { MILD_DIP_FIRST_TOUCH_POSITION_USD: firstTouchPositionUsd }
+        : {}),
     },
   };
 }
@@ -5000,6 +5004,7 @@ if (mildDipBotApp) {
       executionStartSlippageBps: '400',
       greenInstantEnabled: '1',
       maxVol5mToLiq: '0',
+      firstTouchPositionUsd: '0',
       minLiquidityUsd: '12000',
       minVol5mUsd: '500',
       minMcapUsd: '50000',
