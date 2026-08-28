@@ -81,6 +81,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror?.env.MILD_DIP_MIRROR_MIN_LIQUIDITY_USD).toBe('12000');
     expect(mirror?.env.MILD_DIP_MIRROR_MIN_PAIR_AGE_HOURS).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_MIN_MCAP_USD).toBe('50000');
+    expect(mirror?.env.MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ).toBe('0');
+    expect(mirror2?.env.MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ).toBe('2');
     expect(mirror?.env.MILD_DIP_MIRROR_STALE_QUOTE_INTERVAL_MS).toBe('5000');
     expect(mirror?.env.MILD_DIP_MIRROR_MAX_QUOTE_MINTS).toBe('8');
     expect(mirror2?.env.MILD_DIP_MIRROR_STALE_QUOTE_INTERVAL_MS).toBe('5000');

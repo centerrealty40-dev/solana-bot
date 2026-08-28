@@ -4795,6 +4795,7 @@ function makeMirrorApp({
   sizeFromLeaderSmallClipUsd = '0',
   executionStartSlippageBps = '0',
   greenInstantEnabled = '0',
+  maxVol5mToLiq = '2',
 }) {
   return {
     ...mildDipBotApp,
@@ -4896,7 +4897,7 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_MIN_PC5M_PCT: minPc5mPct,
       MILD_DIP_MIRROR_ENTRY_GRACE_MS: '60000',
       MILD_DIP_MIRROR_ENTRY_GRACE_MAX_PREMIUM_PCT: entryGraceMaxPremiumPct,
-      MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ: '2',
+      MILD_DIP_MIRROR_MAX_VOL5M_TO_LIQ: maxVol5mToLiq,
       MILD_DIP_MIRROR_REQUIRE_DEEP_DUMP: '0',
       MILD_DIP_MIRROR_DEEP_DUMP_PCT: '-8',
       MILD_DIP_MIRROR_GREEN_IMPULSE_PCT: '5',
@@ -4998,6 +4999,7 @@ if (mildDipBotApp) {
       greenMaxPremiumPct: '10',
       executionStartSlippageBps: '400',
       greenInstantEnabled: '1',
+      maxVol5mToLiq: '0',
       minLiquidityUsd: '12000',
       minVol5mUsd: '500',
       minMcapUsd: '50000',
