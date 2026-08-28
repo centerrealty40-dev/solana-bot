@@ -53,6 +53,7 @@ export function accountMirrorCashLeg(
 
 export type MirrorLossCapBaselineState = {
   mirrorTradingCashUsd?: number;
+  mirrorLossCapBasis?: 'mark' | 'realized';
   mirrorLossCapDayKey?: string;
   mirrorLossCapBaselineAtMs?: number;
   mirrorLossCapBaselineUsd?: number;
@@ -90,6 +91,7 @@ export function maybeResetMirrorLossCapDay(args: {
     return { reset: false, previousDayKey, dayKey };
   }
   args.state.mirrorTradingCashUsd = -args.bagsUsd;
+  args.state.mirrorLossCapBasis = 'realized';
   args.state.mirrorLossCapBaselineAtMs = args.nowMs;
   args.state.mirrorLossCapBaselineUsd = args.lossCapUsd;
   args.state.mirrorLossCapTriggeredAtMs = undefined;
@@ -107,10 +109,17 @@ export function syncMirrorLossCapBaseline(args: {
   nowMs: number;
 }): {
   changed: boolean;
-  reason: 'initial' | 'unknown_threshold' | 'threshold_changed' | 'disabled' | null;
+  reason:
+    | 'initial'
+    | 'unknown_threshold'
+    | 'threshold_changed'
+    | 'basis_changed'
+    | 'disabled'
+    | null;
   previousLossCapUsd: number | null;
 } {
   const { state, lossCapUsd, bagsUsd, nowMs } = args;
+  const basisChanged = state.mirrorLossCapBasis !== 'realized';
   const previousLossCapUsd = Number.isFinite(state.mirrorLossCapBaselineUsd)
     ? state.mirrorLossCapBaselineUsd!
     : null;
@@ -121,13 +130,15 @@ export function syncMirrorLossCapBaseline(args: {
       state.mirrorLossCapTriggeredAtMs != null ||
       state.mirrorLossCapTriggeredPnlUsd != null ||
       state.mirrorLossCapPendingDrawdownUsd != null ||
-      state.mirrorLossCapPendingAtMs != null;
+      state.mirrorLossCapPendingAtMs != null ||
+      basisChanged;
     state.mirrorLossCapBaselineAtMs = undefined;
     state.mirrorLossCapBaselineUsd = undefined;
     state.mirrorLossCapTriggeredAtMs = undefined;
     state.mirrorLossCapTriggeredPnlUsd = undefined;
     state.mirrorLossCapPendingDrawdownUsd = undefined;
     state.mirrorLossCapPendingAtMs = undefined;
+    state.mirrorLossCapBasis = 'realized';
     return {
       changed,
       reason: changed ? 'disabled' : null,
@@ -136,10 +147,11 @@ export function syncMirrorLossCapBaseline(args: {
   }
   const hasBaseline = state.mirrorLossCapBaselineAtMs != null;
   const thresholdMatches = previousLossCapUsd === lossCapUsd;
-  if (hasBaseline && thresholdMatches) {
+  if (hasBaseline && thresholdMatches && !basisChanged) {
     return { changed: false, reason: null, previousLossCapUsd };
   }
   state.mirrorTradingCashUsd = -bagsUsd;
+  state.mirrorLossCapBasis = 'realized';
   state.mirrorLossCapBaselineAtMs = nowMs;
   state.mirrorLossCapBaselineUsd = lossCapUsd;
   state.mirrorLossCapTriggeredAtMs = undefined;
@@ -148,7 +160,9 @@ export function syncMirrorLossCapBaseline(args: {
   state.mirrorLossCapPendingAtMs = undefined;
   return {
     changed: true,
-    reason: !hasBaseline
+    reason: basisChanged
+      ? 'basis_changed'
+      : !hasBaseline
       ? 'initial'
       : previousLossCapUsd == null
         ? 'unknown_threshold'

@@ -306,16 +306,20 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 let lastMirrorLossCapStatusMs = 0;
 let lastMirrorLossCapEvaluationMs = 0;
 
-function mirrorLossCapValues(state: MildDipState): {
+export function mirrorLossCapValues(state: MildDipState): {
   cashUsd: number;
   bagsUsd: number;
+  bagsMarkUsd: number;
   drawdownUsd: number;
 } {
   const cashUsd = state.mirrorTradingCashUsd ?? 0;
   const bagsUsd = Object.values(state.open)
     .filter((position) => isMirrorLane(position.lane))
+    .reduce((sum, position) => sum + Math.max(0, position.sizeUsd), 0);
+  const bagsMarkUsd = Object.values(state.open)
+    .filter((position) => isMirrorLane(position.lane))
     .reduce((sum, position) => sum + mirrorOpenMarkValueUsd(position), 0);
-  return { cashUsd, bagsUsd, drawdownUsd: cashUsd + bagsUsd };
+  return { cashUsd, bagsUsd, bagsMarkUsd, drawdownUsd: cashUsd + bagsUsd };
 }
 
 export function ensureMirrorLossCapBaseline(
@@ -323,11 +327,11 @@ export function ensureMirrorLossCapBaseline(
   state: MildDipState,
   nowMs: number,
 ): void {
-  const bagsUsd = mirrorLossCapValues(state).bagsUsd;
+  const lossCapValues = mirrorLossCapValues(state);
   const result = syncMirrorLossCapBaseline({
     state,
     lossCapUsd: cfg.leaderMirror.lossCapUsd,
-    bagsUsd,
+    bagsUsd: lossCapValues.bagsUsd,
     nowMs,
   });
   if (!result.changed) return;
@@ -338,7 +342,8 @@ export function ensureMirrorLossCapBaseline(
     reason: result.reason,
     previousLossCapUsd: result.previousLossCapUsd,
     tradingCashUsd: state.mirrorTradingCashUsd,
-    openBagsUsd: bagsUsd,
+    openBagsUsd: lossCapValues.bagsMarkUsd,
+    openBagsCostUsd: lossCapValues.bagsUsd,
     openMirror: Object.values(state.open).filter(
       (position) => isMirrorLane(position.lane),
     ).length,
@@ -375,7 +380,8 @@ function maybeResetMirrorLossCapDayForLoop(
     previousDayKey: result.previousDayKey,
     dayKey: result.dayKey,
     lossCapUsd: cfg.leaderMirror.lossCapUsd,
-    openBagsUsd: mirrorLossCapValues(state).bagsUsd,
+    openBagsUsd: mirrorLossCapValues(state).bagsMarkUsd,
+    openBagsCostUsd: mirrorLossCapValues(state).bagsUsd,
     tzOffsetMinutes: cfg.leaderMirror.lossCapResetTzOffsetMinutes,
     nowMs,
   });
@@ -4810,7 +4816,8 @@ async function tryExits(
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mirror_realized_loss_cap_status',
       tradingCashUsd: lossCapValues.cashUsd,
-      openBagsUsd: lossCapValues.bagsUsd,
+      openBagsUsd: lossCapValues.bagsMarkUsd,
+      openBagsCostUsd: lossCapValues.bagsUsd,
       drawdownUsd: lossCapValues.drawdownUsd,
       baselineAtMs: state.mirrorLossCapBaselineAtMs ?? null,
       lossCapUsd: cfg.leaderMirror.lossCapUsd,
