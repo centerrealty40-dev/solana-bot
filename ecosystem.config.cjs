@@ -5007,7 +5007,7 @@ if (mildDipBotApp) {
       sizeLiqMinUsd: '30',
       sizeLiqMaxUsd: '200',
       sizeLiqMaxPoolSharePct: '0.15',
-      sizeFromLeaderFraction: '0.5',
+      sizeFromLeaderFraction: '0.25',
       sizeFromLeaderMinUsd: '30',
       sizeFromLeaderMaxUsd: '100',
       sizeFromLeaderSmallMcapUsd: '40000',
