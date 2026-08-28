@@ -1,6 +1,7 @@
 import type { LeaderSeedHit } from './discover-extra.js';
 
 export const LEADER_MIRROR_WALLET = '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5';
+export const LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS = 300_000;
 
 export type LeaderMirrorDecision =
   | { action: 'wait'; waitReason?: 'no_structural' | 'no_quote' | 'premium_cap' | 'green_corridor' | 'not_dip' | string }
@@ -46,6 +47,7 @@ export function mirrorPremiumCapPct(args: {
   entryGraceMaxPremiumPct?: number;
   greenMaxPremiumPct?: number;
   greenCandle?: boolean;
+  greenGraceActive?: boolean;
   entryGraceActive: boolean;
   firstClipPending: boolean;
 }): number {
@@ -57,7 +59,11 @@ export function mirrorPremiumCapPct(args: {
     args.greenCandle === true &&
     args.greenMaxPremiumPct != null &&
     args.greenMaxPremiumPct > -1000;
-  if (graceActive && greenApplicable) {
+  if (
+    args.firstClipPending &&
+    greenApplicable &&
+    (args.greenGraceActive ?? args.entryGraceActive)
+  ) {
     return Math.max(base, args.greenMaxPremiumPct ?? base);
   }
   return base;
@@ -362,6 +368,7 @@ export function evaluateLeaderMirrorObservation(args: {
   gates: LeaderMirrorGates;
   /** False once our first clip is complete — later buys keep the steady cap. */
   firstClipPending?: boolean;
+  pc5mKnownAtMs?: number | null;
 }): LeaderMirrorDecision {
   const { hit, gates, nowMs } = args;
   const pc5m = typeof hit.pc5m === 'number' && Number.isFinite(hit.pc5m) ? hit.pc5m : null;
@@ -562,11 +569,16 @@ export function evaluateLeaderMirrorObservation(args: {
     leaderAgeMs != null && leaderAgeMs >= 0 && leaderAgeMs <= entryGraceMs;
   const firstClipPending = args.firstClipPending !== false;
   const entryGraceActive = graceWindowActive && firstClipPending;
-  const greenPremiumCapActive =
-    entryGraceActive &&
+  const greenGraceActive =
     greenCandle &&
-    gates.greenMaxPremiumPct != null &&
-    gates.greenMaxPremiumPct > -1000;
+    firstClipPending &&
+    (graceWindowActive ||
+      (args.pc5mKnownAtMs != null &&
+        nowMs - args.pc5mKnownAtMs <=
+          entryGraceMs &&
+        (args.leaderBuyTsMs == null ||
+          args.pc5mKnownAtMs - args.leaderBuyTsMs <=
+            LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS)));
   const maxPremiumPct = mirrorPremiumCapPct({
     maxPremiumPct: gates.maxPremiumPct,
     entryGraceMaxPremiumPct,
@@ -574,11 +586,12 @@ export function evaluateLeaderMirrorObservation(args: {
     greenCandle,
     entryGraceActive: graceWindowActive,
     firstClipPending,
+    greenGraceActive,
   });
   if (knifeWaitActive && !knifeWaitDiscountReached) {
     // Inside the entry grace the first clip pays up to entryGraceMaxPremiumPct
     // instead of waiting out the knife window; later clips keep waiting.
-    if (!(entryGraceActive && quoteGainPct <= maxPremiumPct)) {
+    if (!((entryGraceActive || greenGraceActive) && quoteGainPct <= maxPremiumPct)) {
       return { action: 'wait', waitReason: 'knife_discount' };
     }
   }
@@ -597,7 +610,7 @@ export function evaluateLeaderMirrorObservation(args: {
     requireDipCandle &&
     quoteGainPct >= gates.greenImpulsePct &&
     !(
-      greenPremiumCapActive &&
+      greenGraceActive &&
       quoteGainPct <= maxPremiumPct
     )
   ) {

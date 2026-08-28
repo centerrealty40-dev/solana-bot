@@ -268,6 +268,7 @@ const at = (
   decisionGates = gates,
   leaderBuyTsMs: number | null | undefined = undefined,
   firstClipPending: boolean | undefined = undefined,
+  pc5mKnownAtMs: number | null | undefined = undefined,
 ) =>
   evaluateLeaderMirrorObservation({
     hit: h,
@@ -278,6 +279,7 @@ const at = (
     gates: decisionGates,
     leaderBuyTsMs,
     firstClipPending,
+    pc5mKnownAtMs,
   });
 
 describe('mirror premium cap', () => {
@@ -354,6 +356,98 @@ describe('mirror premium cap', () => {
         firstClipPending: true,
       }),
     ).toBe(-0.5);
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: -0.5,
+        greenMaxPremiumPct: 10,
+        greenCandle: true,
+        greenGraceActive: true,
+        entryGraceActive: false,
+        firstClipPending: true,
+      }),
+    ).toBe(10);
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: -0.5,
+        greenMaxPremiumPct: 10,
+        greenCandle: true,
+        greenGraceActive: true,
+        entryGraceActive: false,
+        firstClipPending: false,
+      }),
+    ).toBe(-0.5);
+  });
+
+  it('opens the green cap from the time pc5m becomes known', () => {
+    const prod = {
+      ...gates,
+      requireDipCandle: false,
+      retryWhileLeaderHolds: true,
+      maxPremiumPct: -0.5,
+      entryGraceMaxPremiumPct: -0.5,
+      greenMaxPremiumPct: 10,
+      maxEntryPc5mPct: 10,
+    };
+    expect(
+      at(
+        hit({ pc5m: 5 }),
+        103.85,
+        153_000,
+        100_000,
+        prod,
+        100_000,
+        true,
+        153_000,
+      ),
+    ).toEqual({ action: 'buy', quotePriceUsd: 103.85 });
+    expect(
+      at(
+        hit({ pc5m: 5 }),
+        103.85,
+        213_001,
+        100_000,
+        prod,
+        100_000,
+        true,
+        153_000,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
+    expect(
+      at(
+        hit({ pc5m: 5 }),
+        103.85,
+        453_001,
+        100_000,
+        prod,
+        100_000,
+        true,
+        153_000,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
+    expect(
+      at(
+        hit({ pc5m: 5 }),
+        103.85,
+        400_001,
+        100_000,
+        prod,
+        100_000,
+        true,
+        400_001,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'knife_discount' });
+    expect(
+      at(
+        hit({ pc5m: -5 }),
+        103.85,
+        153_000,
+        100_000,
+        prod,
+        100_000,
+        true,
+        153_000,
+      ),
+    ).toEqual({ action: 'wait', waitReason: 'premium_cap' });
   });
 
   it('measures the quote against the leader fill', () => {

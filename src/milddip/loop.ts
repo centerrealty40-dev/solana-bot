@@ -56,6 +56,7 @@ import {
   evaluateLeaderMirrorObservation,
   mirrorPremiumCapPct,
   mirrorQuoteRefreshGapMs,
+  LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS,
   mirrorQuoteWithinPremiumCap,
   leaderMirrorKnifeWaitPending,
   leaderMirrorDecisionSuppressed,
@@ -1525,6 +1526,7 @@ async function wakeLeaderMirrors(
       leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
       leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
       leaderMirrorQuoteSampleCount.delete(watchKey);
+      leaderMirrorPc5mKnownAtMs.delete(watchKey);
       leaderMirrorFreshStructuralKeys.add(watchKey);
     } else if (!existing) {
       const prior = leaderMirrorDecisions.get(watchKey);
@@ -1718,6 +1720,14 @@ async function wakeLeaderMirrors(
             const { metrics } = resolved;
             if (!mirrorOwnStructuralCanApply(metrics, watch.hit.pc5m)) continue;
             const pc5m = metrics.priceChange5mPct ?? watch.hit.pc5m;
+            if (
+              !leaderMirrorPc5mKnownAtMs.has(watchKey) &&
+              !(watch.hit.pc5m != null && Number.isFinite(watch.hit.pc5m)) &&
+              pc5m != null &&
+              Number.isFinite(pc5m)
+            ) {
+              leaderMirrorPc5mKnownAtMs.set(watchKey, Date.now());
+            }
             leaderMirrorWatches.set(watchKey, {
               ...watch,
               hit: {
@@ -1738,14 +1748,60 @@ async function wakeLeaderMirrors(
           /* final combined promise journals the failure */
         });
     }
-    void Promise.all([
-      prefetchDexScreenerPairDetailsManyWithMetadata(backfillMints, {
+    const ownStartedAtMs = Date.now();
+    const ownTimedPromise = ownStructuralPromise.then((value) => ({
+      value,
+      elapsedMs: Math.max(0, Date.now() - ownStartedAtMs),
+    }));
+    const dexStartedAtMs = Date.now();
+    const dexPromise = (async () => {
+      const options = {
         nowMs,
         cacheTtlMs: Math.max(gates.structuralGapMs, gates.quoteMaxAgeMs),
         allowedDexIds: cfg.entry.allowedDexIds,
-      }),
-      ownStructuralPromise,
-    ]).then(async ([result, ownStructural]) => {
+      };
+      if (!fresh) {
+        return {
+          result: await prefetchDexScreenerPairDetailsManyWithMetadata(
+            backfillMints,
+            options,
+          ),
+          dexBypassed: false,
+          dexCooldownSkipped: 0,
+          dexMs: Math.max(0, Date.now() - dexStartedAtMs),
+        };
+      }
+      const bypassResult =
+        await prefetchDexScreenerPairDetailsManyWithMetadata(backfillMints, {
+          ...options,
+          bypassGate: true,
+        });
+      const missingDetails = backfillMints.some(
+        (mint) => !bypassResult.detailsByMint.has(mint),
+      );
+      if (bypassResult.cooldownSkipped > 0 || missingDetails) {
+        const fallbackResult =
+          await prefetchDexScreenerPairDetailsManyWithMetadata(
+            backfillMints,
+            options,
+          );
+        return {
+          result: fallbackResult,
+          dexBypassed: true,
+          dexCooldownSkipped: bypassResult.cooldownSkipped,
+          dexMs: Math.max(0, Date.now() - dexStartedAtMs),
+        };
+      }
+      return {
+        result: bypassResult,
+        dexBypassed: true,
+        dexCooldownSkipped: bypassResult.cooldownSkipped,
+        dexMs: Math.max(0, Date.now() - dexStartedAtMs),
+      };
+    })();
+    void Promise.all([dexPromise, ownTimedPromise]).then(async ([dex, own]) => {
+      const { result, dexBypassed, dexCooldownSkipped, dexMs } = dex;
+      const { value: ownStructural, elapsedMs: ownMs } = own;
       if (
         result.uncoveredMints.length > 0 ||
         result.retriedMints.length > 0 ||
@@ -1877,6 +1933,10 @@ async function wakeLeaderMirrors(
             liquidityResolved: metrics?.liq != null,
             marketCapResolved: metrics?.mcap != null,
             ageResolved: metrics?.ageHours != null,
+            dexMs,
+            ownMs,
+            dexBypassAttempted: dexBypassed,
+            dexCooldownSkipped,
           });
         }
         if (!metrics) continue;
@@ -1891,6 +1951,14 @@ async function wakeLeaderMirrors(
           ageHours: metrics.ageHours ?? watch.hit.ageHours,
           dexId: metrics.dexId ?? watch.hit.dexId,
         };
+        if (
+          !leaderMirrorPc5mKnownAtMs.has(watchKey) &&
+          !(watch.hit.pc5m != null && Number.isFinite(watch.hit.pc5m)) &&
+          hit.pc5m != null &&
+          Number.isFinite(hit.pc5m)
+        ) {
+          leaderMirrorPc5mKnownAtMs.set(watchKey, Date.now());
+        }
         if (leaderMirrorWatches.has(watchKey)) {
           leaderMirrorWatches.set(watchKey, { ...watch, hit, metricSource: 'backfill' });
         }
@@ -2049,6 +2117,18 @@ async function wakeLeaderMirrors(
     // The grace premium belongs to the very first buy of the clip; once a leg is
     // filled every follow-up (leg 2, retry, next clip) keeps the steady cap.
     const mirrorFirstBuyPending = state.open[mint] == null;
+    const pc5mKnownAtMs = leaderMirrorPc5mKnownAtMs.get(watchKey) ?? null;
+    const greenGraceActive =
+      hit.pc5m != null &&
+      Number.isFinite(hit.pc5m) &&
+      hit.pc5m > 0 &&
+      mirrorFirstBuyPending &&
+      (entryGraceActive ||
+        (pc5mKnownAtMs != null &&
+          nowMs - pc5mKnownAtMs <= (gates.entryGraceMs ?? 60_000) &&
+          (leaderBuyTsMsForGrace == null ||
+            pc5mKnownAtMs - leaderBuyTsMsForGrace <=
+              LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS)));
     const mirrorPremiumCap = mirrorPremiumCapPct({
       maxPremiumPct: gates.maxPremiumPct,
       entryGraceMaxPremiumPct: gates.entryGraceMaxPremiumPct,
@@ -2056,6 +2136,7 @@ async function wakeLeaderMirrors(
       greenCandle: hit.pc5m != null && Number.isFinite(hit.pc5m) && hit.pc5m > 0,
       entryGraceActive,
       firstClipPending: mirrorFirstBuyPending,
+      greenGraceActive,
     });
     const leaderSellDecision = decideLeaderSellExit({
       enabled: cfg.leaderMirror.leaderSellExitEnabled,
@@ -2144,6 +2225,7 @@ async function wakeLeaderMirrors(
       watchStartedAtMs: watch.startedAtMs,
       gates,
       firstClipPending: mirrorFirstBuyPending,
+      pc5mKnownAtMs,
     });
     if (decision.action === 'wait') {
       const waitReason = decision.waitReason ?? 'unknown';
@@ -2523,6 +2605,13 @@ async function wakeLeaderMirrors(
       leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
       leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
       leaderMirrorQuoteSampleCount.delete(watchKey);
+    }
+  }
+  for (const watchKey of leaderMirrorPc5mKnownAtMs.keys()) {
+    if (!leaderMirrorWatches.has(watchKey)) {
+      leaderMirrorPc5mKnownAtMs.delete(watchKey);
+      leaderMirrorFreshStructuralKeys.delete(watchKey);
+      leaderMirrorStructuralAttemptMs.delete(watchKey);
     }
   }
   persistLeaderMirrorWatches(cfg, state);
@@ -3683,6 +3772,7 @@ function leaderMirrorWatchKey(hit: LeaderSeedHit): string {
 }
 const leaderMirrorStructuralAttemptMs = new Map<string, number>();
 const leaderMirrorFreshStructuralKeys = new Set<string>();
+const leaderMirrorPc5mKnownAtMs = new Map<string, number>();
 const leaderMirrorStructuralSourceJournal = new Map<string, string>();
 const leaderMirrorEntryRetryAfterMs = new Map<string, number>();
 const leaderMirrorQuoteLastSelectedAtMs = new Map<string, number>();
@@ -3704,6 +3794,7 @@ function hydrateLeaderMirrorWatches(
   if (leaderMirrorStateHydrated) return;
   leaderMirrorStateHydrated = true;
   leaderMirrorWatches.clear();
+  leaderMirrorPc5mKnownAtMs.clear();
   leaderMirrorDecisions.clear();
   leaderMirrorQuoteLastSelectedAtMs.clear();
   leaderMirrorQuoteLastSampleTsMs.clear();
@@ -3732,7 +3823,12 @@ function persistLeaderMirrorWatches(cfg: MildDipConfig, state: MildDipState): vo
   const nowMs = Date.now();
   const retentionMs = Math.max(cfg.leaderMirror.observeMs * 2, 5 * 60_000);
   for (const [key, watch] of leaderMirrorWatches) {
-    if (watch.expiresAtMs <= nowMs) leaderMirrorWatches.delete(key);
+    if (watch.expiresAtMs <= nowMs) {
+      leaderMirrorWatches.delete(key);
+      leaderMirrorPc5mKnownAtMs.delete(key);
+      leaderMirrorFreshStructuralKeys.delete(key);
+      leaderMirrorStructuralAttemptMs.delete(key);
+    }
   }
   for (const [key, decision] of leaderMirrorDecisions) {
     if (decision.decidedAtMs < nowMs - retentionMs) leaderMirrorDecisions.delete(key);
