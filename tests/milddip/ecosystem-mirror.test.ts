@@ -16,6 +16,7 @@ const mirrorApps = ecosystem.allApps.filter((app) =>
 );
 const mirror = mirrorApps.find((app) => app.name === 'mild-dip-mirror');
 const mirror2 = mirrorApps.find((app) => app.name === 'mild-dip-mirror2');
+const mildDip = ecosystem.allApps.find((app) => app.name === 'mild-dip-bot');
 
 describe('mirror PM2 apps', () => {
   it('exports both mirror processes with independent leaders and shared strategy', () => {
@@ -131,6 +132,9 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_AVERAGE_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('150');
     expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('50');
+    expect(mirror?.env.MILD_DIP_FIRST_TOUCH_POSITION_USD).toBe('0');
+    expect(mirror2?.env.MILD_DIP_FIRST_TOUCH_POSITION_USD).toBe('10');
+    expect(mildDip?.env.MILD_DIP_FIRST_TOUCH_POSITION_USD).toBe('10');
     expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_FLATTEN).toBe('0');
     expect(mirror2?.env.MILD_DIP_MIRROR_LOSS_CAP_FLATTEN).toBe('0');
     expect(mirror?.env.MILD_DIP_MIRROR_LOSS_CAP_DAILY_RESET).toBe('1');
