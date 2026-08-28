@@ -1950,6 +1950,8 @@ async function wakeLeaderMirrors(
     const mirrorPremiumCap = mirrorPremiumCapPct({
       maxPremiumPct: gates.maxPremiumPct,
       entryGraceMaxPremiumPct: gates.entryGraceMaxPremiumPct,
+      greenMaxPremiumPct: gates.greenMaxPremiumPct,
+      greenCandle: hit.pc5m != null && Number.isFinite(hit.pc5m) && hit.pc5m > 0,
       entryGraceActive,
       firstClipPending: mirrorFirstBuyPending,
     });

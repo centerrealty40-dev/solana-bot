@@ -44,12 +44,19 @@ export function leaderMirrorDecisionSuppressed(args: {
 export function mirrorPremiumCapPct(args: {
   maxPremiumPct: number;
   entryGraceMaxPremiumPct?: number;
+  greenMaxPremiumPct?: number;
+  greenCandle?: boolean;
   entryGraceActive: boolean;
   firstClipPending: boolean;
 }): number {
-  return args.entryGraceActive && args.firstClipPending
+  const base = args.entryGraceActive && args.firstClipPending
     ? (args.entryGraceMaxPremiumPct ?? args.maxPremiumPct)
     : args.maxPremiumPct;
+  return args.greenCandle === true &&
+    args.greenMaxPremiumPct != null &&
+    args.greenMaxPremiumPct > -1000
+    ? Math.max(base, args.greenMaxPremiumPct)
+    : base;
 }
 
 /** Quote is buyable only while it stays inside the cap over the leader fill. */
@@ -102,6 +109,7 @@ export type LeaderMirrorGates = {
   greenImpulsePct: number;
   runUpPc5mPct: number;
   maxPremiumPct: number;
+  greenMaxPremiumPct?: number;
   entryGraceMs?: number;
   entryGraceMaxPremiumPct?: number;
   maxEntryPc5mPct: number;
@@ -339,6 +347,7 @@ export function evaluateLeaderMirrorObservation(args: {
 }): LeaderMirrorDecision {
   const { hit, gates, nowMs } = args;
   const pc5m = typeof hit.pc5m === 'number' && Number.isFinite(hit.pc5m) ? hit.pc5m : null;
+  const greenCandle = pc5m != null && pc5m > 0;
   const pc1h = typeof hit.pc1h === 'number' && Number.isFinite(hit.pc1h) ? hit.pc1h : null;
   const liq = typeof hit.liq === 'number' && Number.isFinite(hit.liq) ? hit.liq : null;
   const vol5m = typeof hit.vol5m === 'number' && Number.isFinite(hit.vol5m) ? hit.vol5m : null;
@@ -538,6 +547,8 @@ export function evaluateLeaderMirrorObservation(args: {
   const maxPremiumPct = mirrorPremiumCapPct({
     maxPremiumPct: gates.maxPremiumPct,
     entryGraceMaxPremiumPct,
+    greenMaxPremiumPct: gates.greenMaxPremiumPct,
+    greenCandle,
     entryGraceActive: graceWindowActive,
     firstClipPending,
   });
@@ -559,7 +570,16 @@ export function evaluateLeaderMirrorObservation(args: {
       ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
     };
   }
-  if (requireDipCandle && quoteGainPct >= gates.greenImpulsePct) {
+  if (
+    requireDipCandle &&
+    quoteGainPct >= gates.greenImpulsePct &&
+    !(
+      greenCandle &&
+      gates.greenMaxPremiumPct != null &&
+      gates.greenMaxPremiumPct > -1000 &&
+      quoteGainPct <= maxPremiumPct
+    )
+  ) {
     return gates.retryWhileLeaderHolds
       ? { action: 'wait', waitReason: 'premium_cap' }
       : { action: 'skip', reason: 'leader_mirror_green_impulse' };

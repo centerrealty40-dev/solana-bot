@@ -278,6 +278,36 @@ describe('mirror premium cap', () => {
     ).toBe(1);
   });
 
+  it('raises the cap only for green candles when configured', () => {
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: -0.5,
+        greenMaxPremiumPct: 10,
+        greenCandle: true,
+        entryGraceActive: false,
+        firstClipPending: true,
+      }),
+    ).toBe(10);
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: -0.5,
+        greenMaxPremiumPct: 10,
+        greenCandle: false,
+        entryGraceActive: false,
+        firstClipPending: true,
+      }),
+    ).toBe(-0.5);
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: -0.5,
+        greenMaxPremiumPct: -1000,
+        greenCandle: true,
+        entryGraceActive: false,
+        firstClipPending: true,
+      }),
+    ).toBe(-0.5);
+  });
+
   it('measures the quote against the leader fill', () => {
     // Leg 2 of the production incident: +8.67% over the leader fill.
     expect(
@@ -697,6 +727,23 @@ describe('leader mirror observation decisions', () => {
     expect(at(hit(), 106, 110_000, 100_000, { ...gates, retryWhileLeaderHolds: true }))
       .toEqual({ action: 'wait', waitReason: 'premium_cap' });
     expect(at(hit({ pc5m: 10 }), 101)).toMatchObject({ action: 'skip', reason: 'leader_mirror_green_direction' });
+  });
+
+  it('allows configured premium for green candles but not dips', () => {
+    const greenPremiumGates = {
+      ...gates,
+      requireDipCandle: false,
+      maxEntryPc5mPct: 1_000,
+      greenMaxPremiumPct: 10,
+    };
+    expect(at(hit({ pc5m: 5 }), 108, 110_000, 100_000, greenPremiumGates)).toEqual({
+      action: 'buy',
+      quotePriceUsd: 108,
+    });
+    expect(at(hit({ pc5m: -5 }), 108, 110_000, 100_000, greenPremiumGates)).toEqual({
+      action: 'wait',
+      waitReason: 'premium_cap',
+    });
   });
 
   it('waits through premium and refuses after the window', () => {

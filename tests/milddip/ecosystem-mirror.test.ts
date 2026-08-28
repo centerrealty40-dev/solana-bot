@@ -275,6 +275,8 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("MILD_DIP_MIRROR_MIN_MCAP_USD: '50000'");
     expect(mirror2?.env.MILD_DIP_MIRROR_MAX_PREMIUM_PCT).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_MAX_PREMIUM_PCT).toBe('-0.5');
+    expect(mirror?.env.MILD_DIP_MIRROR_GREEN_MAX_PREMIUM_PCT).toBe('10');
+    expect(mirror2?.env.MILD_DIP_MIRROR_GREEN_MAX_PREMIUM_PCT).toBe('-1000');
     expect(mirror?.env.MILD_DIP_MAX_CHASE_PCT).toBe('6');
     expect(mirror2?.env.MILD_DIP_MAX_CHASE_PCT).toBe('6');
     expect(ecosystemSource).toContain("maxPremiumPct = '1'");
