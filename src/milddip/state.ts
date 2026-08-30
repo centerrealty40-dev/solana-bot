@@ -131,6 +131,7 @@ export type MildDipOpenPosition = {
    * names are done within minutes either way, so a trail would only donate.
    */
   lane?: 'dip' | 'green' | 'leader_mirror' | 'tier' | 'leader_style';
+  manualAdopted?: boolean;
   mirrorExitArmPct?: number;
   mirrorExitTrailPct?: number;
   mirrorExitStopPct?: number;
@@ -488,6 +489,7 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
     } else {
       delete pos.mirrorLeaderSellIntent;
     }
+    if (pos.manualAdopted !== true) delete pos.manualAdopted;
     out[mint] = pos;
   }
   return out;

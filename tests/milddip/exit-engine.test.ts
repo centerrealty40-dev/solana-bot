@@ -126,6 +126,45 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     mirrorEntrySettling: false,
   };
 
+  it('manual adoption uses only its peak trail', () => {
+    const manual = {
+      ...mirrorGates,
+      ownExitEnabled: true,
+      leaderSellOnly: true,
+      ladderEnabled: false,
+      ladderMaxRungs: 0,
+      ownExitTimeStopMs: 0,
+      safetyMaxHoldMs: 0,
+      maxHoldMs: 0,
+      noMoveCutMs: 0,
+      stopPct: 0,
+      armPct: 3,
+      trailPct: 8,
+    };
+    const base = {
+      mint: 'manual-trail',
+      pos: pos({
+        mint: 'manual-trail',
+        lane: 'leader_mirror',
+        manualAdopted: true,
+        entryPriceUsd: 100,
+        peakPriceUsd: 100,
+      }),
+      gates: gatesForDust,
+      mirrorGates: manual,
+    };
+    expect(decideMarkExit({ ...base, markPriceUsd: 102, nowMs: 1_000 })?.shouldExit).toBe(false);
+    expect(decideMarkExit({ ...base, markPriceUsd: 110, nowMs: 2_000 })?.shouldExit).toBe(false);
+    const exit = decideMarkExit({
+      ...base,
+      pos: { ...base.pos, peakPriceUsd: 110, trailArmed: true },
+      markPriceUsd: 101,
+      nowMs: 3_000,
+    })!;
+    expect(exit.reason).toBe('mirror_trail');
+    expect(exit.shouldExit).toBe(true);
+  });
+
   it.each([
     ['mirror_stop', { markPriceUsd: 90, nowMs: 100 }],
     ['mirror_trail', { markPriceUsd: 108, nowMs: 100, peakPriceUsd: 120 }],

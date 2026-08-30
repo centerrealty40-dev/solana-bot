@@ -4801,6 +4801,7 @@ function makeMirrorApp({
   executionStartSlippageBps = '0',
   greenInstantEnabled = '0',
   greenIgnoreLiquidityFloor = false,
+  manualAdoptEnabled = false,
   maxVol5mToLiq = '2',
   firstTouchPositionUsd,
   fundingParkMax = '10',
@@ -4928,6 +4929,9 @@ function makeMirrorApp({
       ...(greenIgnoreLiquidityFloor
         ? { MILD_DIP_MIRROR_GREEN_IGNORE_LIQUIDITY_FLOOR: '1' }
         : {}),
+      ...(manualAdoptEnabled
+        ? { MILD_DIP_MIRROR_MANUAL_ADOPT: '1' }
+        : {}),
       MILD_DIP_MAX_CHASE_PCT: '6',
       MILD_DIP_MIRROR_RETRY_WHILE_LEADER_HOLDS: '1',
       MILD_DIP_MIRROR_LADDER_STEP_PCT: ladderStepPct,
@@ -5034,6 +5038,7 @@ if (mildDipBotApp) {
       executionStartSlippageBps: '400',
       greenInstantEnabled: '1',
       greenIgnoreLiquidityFloor: true,
+      manualAdoptEnabled: true,
       maxVol5mToLiq: '0',
       firstTouchPositionUsd: '0',
       fundingParkMax: '60',

@@ -188,6 +188,7 @@ import {
 import { parseTokenRaw, settleAfterSuccessfulSell } from './sell-settle.js';
 import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedOrphans } from './orphan-sweep.js';
+import { adoptManualHoldings } from './manual-adopt.js';
 import { burnDustOrphans } from './dust-burn.js';
 import {
   loadMildDipHotMints,
@@ -4610,6 +4611,7 @@ async function attemptMirrorAverage(args: {
   leaderHeld: boolean;
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
+  if (pos.manualAdopted === true) return;
   if (mildDipStateSaveBlocked()) return;
   const g = cfg.leaderMirror;
   const journalSkip = (
@@ -5623,23 +5625,29 @@ async function tryExits(
       mirrorGates: {
         trailEnabled: cfg.leaderMirror.ownExitEnabled,
         takeProfitPct: 0,
-        stopPct: pos.mirrorExitStopPct ?? cfg.leaderMirror.exitStopPct,
-        maxHoldMs: pos.mirrorExitMaxHoldMs ?? cfg.leaderMirror.maxHoldMs,
-        noMoveCutMs: pos.mirrorExitNoMoveCutMs ?? cfg.leaderMirror.noMoveCutMs,
+        stopPct: pos.manualAdopted ? 0 : pos.mirrorExitStopPct ?? cfg.leaderMirror.exitStopPct,
+        maxHoldMs: pos.manualAdopted ? 0 : pos.mirrorExitMaxHoldMs ?? cfg.leaderMirror.maxHoldMs,
+        noMoveCutMs: pos.manualAdopted ? 0 : pos.mirrorExitNoMoveCutMs ?? cfg.leaderMirror.noMoveCutMs,
         noMoveMinMfePct: pos.mirrorExitNoMoveMinMfePct ?? cfg.leaderMirror.noMoveMinMfePct,
         armPct: pos.mirrorExitArmPct ?? cfg.leaderMirror.exitArmPct,
         trailPct: pos.mirrorExitTrailPct ?? cfg.leaderMirror.exitTrailPct,
-        ownExitEnabled:
-          pos.lane === 'tier' ? false : cfg.leaderMirror.ownExitEnabled,
+        ownExitEnabled: pos.manualAdopted
+          ? true
+          : pos.lane === 'tier' ? false : cfg.leaderMirror.ownExitEnabled,
         lossCapActive:
           cfg.leaderMirror.lossCapFlatten &&
           mirrorLossCapTriggered(cfg, state),
-        ownExitTimeStopMs:
-          pos.lane === 'tier' ? 0 : cfg.leaderMirror.ownExitTimeStopMs,
+        ownExitTimeStopMs: pos.manualAdopted
+          ? 0
+          : pos.lane === 'tier' ? 0 : cfg.leaderMirror.ownExitTimeStopMs,
         leaderSellOnly:
-          pos.lane === 'tier' ? true : cfg.leaderMirror.leaderSellOnlyExit,
+          pos.manualAdopted
+            ? true
+            : pos.lane === 'tier' ? true : cfg.leaderMirror.leaderSellOnlyExit,
         safetyMaxHoldMs:
-          pos.lane === 'tier' ? 0 : cfg.leaderMirror.safetyMaxHoldMs,
+          pos.manualAdopted
+            ? 0
+            : pos.lane === 'tier' ? 0 : cfg.leaderMirror.safetyMaxHoldMs,
         ladderStepPct:
           pos.lane === 'tier' ? undefined : cfg.leaderMirror.ladderStepPct,
         ladderStepAfterAveragePct:
@@ -5649,9 +5657,13 @@ async function tryExits(
         ladderSellFraction:
           pos.lane === 'tier' ? undefined : cfg.leaderMirror.ladderSellFraction,
         ladderEnabled:
-          pos.lane === 'tier' ? true : cfg.leaderMirror.ladderEnabled,
+          pos.manualAdopted
+            ? false
+            : pos.lane === 'tier' ? true : cfg.leaderMirror.ladderEnabled,
         ladderMaxRungs:
-          pos.lane === 'tier' ? 0 : cfg.leaderMirror.ladderMaxRungs,
+          pos.manualAdopted
+            ? 0
+            : pos.lane === 'tier' ? 0 : cfg.leaderMirror.ladderMaxRungs,
         ladderDustUsd: cfg.leaderMirror.ladderDustUsd,
         mirrorDustCloseUsd: cfg.leaderMirror.dustCloseUsd,
         mirrorFirstClipPending,
@@ -7255,6 +7267,22 @@ export async function runMildDipLoop(
   // One-shot: reclaim rent stuck in already-empty ATAs from prior $5 tests.
   if (!opts?.once) {
     await reclaimEmptyAta(cfg, { reason: 'startup_sweep' });
+    if (cfg.leaderMirror.manualAdoptEnabled) {
+      try {
+        const adopted = await adoptManualHoldings({ cfg, state });
+        if (adopted.candidates > 0) {
+          console.log(
+            `[mild-dip] manualAdopt candidates=${adopted.candidates} ` +
+              `adopted=${adopted.adopted} skipped=${adopted.skipped}`,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          '[mild-dip] manual adoption failed',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
     if (cfg.orphanSweepEnabled && cfg.orphanSweepMaxSells > 0) {
       try {
         const swept = await sweepUnmanagedOrphans({
@@ -7310,6 +7338,7 @@ export async function runMildDipLoop(
   let lastFeeTopupTickMs = 0;
   let lastDustBurnTickMs = 0;
   let lastOrphanSweepTickMs = 0;
+  let lastManualAdoptTickMs = 0;
   let lastLeaderWakeMs = 0;
   let lastOwnTapeKnifeMs = 0;
   let lastStreamPriceStatsMs = 0;
@@ -7613,6 +7642,18 @@ export async function runMildDipLoop(
         maxSells: cfg.orphanSweepMaxSells,
         nowMs,
       }).catch((err) => console.warn('[mild-dip] orphan sweep tick failed', err));
+    }
+    if (
+      cfg.leaderMirror.manualAdoptEnabled &&
+      nowMs - lastManualAdoptTickMs >= cfg.leaderMirror.manualAdoptIntervalMs
+    ) {
+      lastManualAdoptTickMs = nowMs;
+      void adoptManualHoldings({ cfg, state, nowMs }).catch((err) => {
+        console.warn(
+          '[mild-dip] manual adoption tick failed',
+          err instanceof Error ? err.message : err,
+        );
+      });
     }
     if (
       cfg.dustBurnEnabled &&
