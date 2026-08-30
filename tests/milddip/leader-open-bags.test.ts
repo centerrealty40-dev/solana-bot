@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   leaderOpenBagDropReason,
+  leaderOpenBagRearmDecision,
   selectLeaderOpenBagRetryKeys,
   upsertLeaderOpenBag,
   type LeaderOpenBagEntry,
@@ -76,5 +77,38 @@ describe('leader open bags', () => {
         activeWatch: false,
       }),
     ).toBeNull();
+  });
+
+  it('treats zero max age as unlimited', () => {
+    expect(
+      leaderOpenBagDropReason({
+        nowMs: 10_000_000,
+        entry: entry({ leaderBuyAtMs: 1_000 }),
+        maxAgeMs: 0,
+        leaderHolds: true,
+        weHoldPosition: false,
+        activeWatch: false,
+      }),
+    ).toBeNull();
+  });
+
+  it('prioritizes already-traded and cooldown rearm decisions', () => {
+    const args = {
+      nowMs: 2_000,
+      entry: entry({ leaderBuyAtMs: 1_000 }),
+      maxAgeMs: 0,
+      cooldownUntilMs: 0,
+      alreadyTraded: true,
+      leaderHolds: true,
+      weHoldPosition: false,
+      activeWatch: false,
+    };
+    expect(leaderOpenBagRearmDecision(args)).toBe('already_traded');
+    expect(
+      leaderOpenBagRearmDecision({ ...args, alreadyTraded: false, cooldownUntilMs: 3_000 }),
+    ).toBe('cooldown');
+    expect(
+      leaderOpenBagRearmDecision({ ...args, alreadyTraded: false, cooldownUntilMs: 0, weHoldPosition: true }),
+    ).toBe('already_open');
   });
 });

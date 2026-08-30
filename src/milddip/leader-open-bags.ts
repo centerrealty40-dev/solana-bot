@@ -70,10 +70,30 @@ export function leaderOpenBagDropReason(args: {
   activeWatch: boolean;
 }): null | 'leader_flat' | 'expired' | 'already_open' | 'active_watch' {
   if (!args.leaderHolds) return 'leader_flat';
-  if (args.maxAgeMs >= 0 && args.nowMs - args.entry.leaderBuyAtMs > args.maxAgeMs) {
+  if (args.maxAgeMs > 0 && args.nowMs - args.entry.leaderBuyAtMs > args.maxAgeMs) {
     return 'expired';
   }
   if (args.weHoldPosition) return 'already_open';
   if (args.activeWatch) return 'active_watch';
   return null;
+}
+
+export type LeaderOpenBagRearmDecision =
+  | ReturnType<typeof leaderOpenBagDropReason>
+  | 'already_traded'
+  | 'cooldown';
+
+export function leaderOpenBagRearmDecision(args: {
+  nowMs: number;
+  entry: LeaderOpenBagEntry;
+  maxAgeMs: number;
+  cooldownUntilMs: number;
+  alreadyTraded: boolean;
+  leaderHolds: boolean;
+  weHoldPosition: boolean;
+  activeWatch: boolean;
+}): LeaderOpenBagRearmDecision {
+  if (args.alreadyTraded) return 'already_traded';
+  if (args.cooldownUntilMs > args.nowMs) return 'cooldown';
+  return leaderOpenBagDropReason(args);
 }

@@ -33,6 +33,7 @@ import {
 } from './leader-balance.js';
 import {
   leaderOpenBagDropReason,
+  leaderOpenBagRearmDecision,
   selectLeaderOpenBagRetryKeys,
   upsertLeaderOpenBag,
   type LeaderOpenBagEntry,
@@ -3951,7 +3952,9 @@ function dropLeaderOpenBag(
   cfg: MildDipConfig,
   state: MildDipState,
   key: string,
-  reason: NonNullable<ReturnType<typeof leaderOpenBagDropReason>>,
+  reason:
+    | NonNullable<ReturnType<typeof leaderOpenBagDropReason>>
+    | 'already_traded',
 ): boolean {
   const entry = state.mirrorLeaderOpenBags?.[key];
   if (!entry) return false;
@@ -4021,7 +4024,10 @@ async function rearmLeaderOpenBags(
       changed = dropLeaderOpenBag(cfg, state, key, 'leader_flat') || changed;
       continue;
     }
-    if (nowMs - entry.leaderBuyAtMs > gates.leaderOpenBagMaxAgeMs) {
+    if (
+      gates.leaderOpenBagMaxAgeMs > 0 &&
+      nowMs - entry.leaderBuyAtMs > gates.leaderOpenBagMaxAgeMs
+    ) {
       changed = dropLeaderOpenBag(cfg, state, key, 'expired') || changed;
       continue;
     }
@@ -4031,10 +4037,16 @@ async function rearmLeaderOpenBags(
       changed = true;
       continue;
     }
-    const reason = leaderOpenBagDropReason({
+    const recentEntries = state.recentEntryMsByMint?.[entry.mint] ?? [];
+    const alreadyTraded =
+      (state.lastExitByMint?.[entry.mint]?.atMs ?? 0) > entry.leaderBuyAtMs ||
+      recentEntries.some((atMs) => atMs > entry.leaderBuyAtMs);
+    const reason = leaderOpenBagRearmDecision({
       nowMs,
       entry,
       maxAgeMs: gates.leaderOpenBagMaxAgeMs,
+      cooldownUntilMs: state.cooldownUntilMs[entry.mint] ?? 0,
+      alreadyTraded,
       leaderHolds: balanceRead.balanceRaw != null && balanceRead.balanceRaw > 0n,
       weHoldPosition: state.open[entry.mint] != null,
       activeWatch: leaderMirrorWatches.has(`${entry.mint}:${entry.leader}`),
@@ -4042,7 +4054,7 @@ async function rearmLeaderOpenBags(
     if (reason) {
       entry.lastReason = reason;
       changed = true;
-      if (reason !== 'active_watch' && reason !== 'already_open') {
+      if (reason !== 'active_watch' && reason !== 'cooldown') {
         changed = dropLeaderOpenBag(cfg, state, key, reason) || changed;
       }
       continue;
