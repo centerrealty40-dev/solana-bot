@@ -866,7 +866,7 @@ const MildDipConfigSchema = z.object({
     leaderOpenBagRetryEnabled: z.boolean().default(false),
     leaderOpenBagRetryIntervalMs: z.coerce.number().int().min(5_000).default(60_000),
     leaderOpenBagMaxAgeMs: z.coerce.number().int().min(0).default(21_600_000),
-    leaderOpenBagMaxEntries: z.coerce.number().int().min(1).default(60),
+    leaderOpenBagMaxEntries: z.coerce.number().int().min(0).default(60),
     leaderOpenBagMaxPerPass: z.coerce.number().int().min(1).max(100).default(5),
     leaderOpenBagMinFreeUsd: z.coerce.number().min(0).default(0),
     safetyMaxHoldMs: z.coerce.number().int().min(0).default(0),

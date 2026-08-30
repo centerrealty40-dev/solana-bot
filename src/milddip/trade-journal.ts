@@ -119,6 +119,7 @@ export function resetTradeLotsForTests(): void {
 export function hydrateTradeLots(
   persisted: Record<string, Partial<TradeLot>> | undefined,
   nowMs = Date.now(),
+  openMints: ReadonlySet<string> = new Set(),
 ): number {
   let n = 0;
   const ttlMs = 7 * 24 * 60 * 60_000;
@@ -132,7 +133,7 @@ export function hydrateTradeLots(
       !(totalCostUsd >= 0) ||
       !(proceedsUsd >= 0) ||
       !(openedAtMs > 0) ||
-      nowMs - openedAtMs > ttlMs
+      nowMs - openedAtMs > ttlMs && !openMints.has(mint)
     ) continue;
     lots.set(mint, {
       mint,
@@ -238,6 +239,22 @@ export function resolveBuyCash(args: {
     };
   }
   return { spentUsd: 0, cashDeltaUsd: null, cashSource: 'none' };
+}
+
+/** Cash booking for a landed adoption must never turn a real holding into a zero-cost buy. */
+export function resolveAdoptedBuyCash(
+  fill: Pick<TradeFillEvent, 'cashDeltaUsd' | 'cashSource' | 'quoteSpentUsd'>,
+  sizeUsdIntent: number,
+): { spentUsd: number; cashDeltaAppliedUsd: number } {
+  const source = fill.cashSource;
+  const spentUsd =
+    source === 'tx_delta' || source === 'wallet_delta'
+      ? Math.max(0, -(fill.cashDeltaUsd ?? 0))
+      : Math.max(0, Number(fill.quoteSpentUsd ?? sizeUsdIntent));
+  return {
+    spentUsd,
+    cashDeltaAppliedUsd: -spentUsd,
+  };
 }
 
 export function resolveSellCash(args: {

@@ -215,6 +215,8 @@ import {
   hydrateTradeLots,
   snapshotTradeLots,
   setTradeLotPersistence,
+  noteBuyLot,
+  resolveAdoptedBuyCash,
   writeUsBuyFill,
   writeUsSellFill,
 } from './trade-journal.js';
@@ -869,14 +871,24 @@ function adoptOnChainHolding(args: {
       nowMs,
     });
     if (args.mirrorLane === true) {
-      const spentUsd = -Math.min(0, Number(fill.cashDeltaUsd ?? 0));
-      accountMirrorCashLeg(state, fill as unknown as Record<string, unknown>, 'buy');
+      const source = fill.cashSource;
+      const { spentUsd, cashDeltaAppliedUsd } = resolveAdoptedBuyCash(
+        fill,
+        args.sizeUsdIntent ?? cfg.positionUsd,
+      );
+      const bookedSpentUsd = Math.max(0, Number(fill.quoteSpentUsd ?? 0));
+      if (spentUsd > bookedSpentUsd) {
+        noteBuyLot(mint, spentUsd - bookedSpentUsd, nowMs);
+      }
+      state.mirrorTradingCashUsd =
+        (state.mirrorTradingCashUsd ?? 0) + cashDeltaAppliedUsd;
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mirror_adopted_fill_booked',
         mint,
         signature: args.signature ?? null,
         spentUsd,
-        cashSource: fill.cashSource ?? 'quote_fallback',
+        cashSource: source ?? 'quote_fallback',
+        cashDeltaApplied: cashDeltaAppliedUsd,
       });
     }
   }
@@ -6418,7 +6430,11 @@ export async function runMildDipLoop(
   };
   loopStatsRef = stats;
 
-  const persistedLotsHydrated = hydrateTradeLots(state.mirrorTradeLots, Date.now());
+  const persistedLotsHydrated = hydrateTradeLots(
+    state.mirrorTradeLots,
+    Date.now(),
+    new Set(Object.keys(state.open ?? {})),
+  );
   const lotsHydrated = hydrateTradeLotsFromOpen(state.open ?? {}, Date.now());
   setTradeLotPersistence((snapshot) => {
     state.mirrorTradeLots = snapshot;

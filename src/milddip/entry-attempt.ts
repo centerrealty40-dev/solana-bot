@@ -7,6 +7,7 @@ import {
   resetCopyFundingCache,
 } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
+import { fetchParsedTransaction } from '../copytrader/rpc.js';
 import {
   leaderBalanceGuardReason,
   readLeaderBalanceForGuard,
@@ -1863,6 +1864,11 @@ export async function attemptMildDipEntry(args: {
       rawAfterThrow && /^\d+$/.test(rawAfterThrow) ? BigInt(rawAfterThrow) : 0n;
     if (onchainAfterThrow > HOLDING_DUST_RAW) {
       const landedBuy = typeof buy === 'undefined' ? null : buy;
+      const adoptedTxMeta =
+        landedBuy?.txMeta ??
+        (landedBuy?.signature
+          ? await fetchParsedTransaction(cfg.rpcUrl, landedBuy.signature)
+          : null);
       args.adoptOnChainHolding({
         cfg,
         state,
@@ -1877,7 +1883,7 @@ export async function attemptMildDipEntry(args: {
         usdcBefore: landedBuy?.usdcBefore ?? sized.usdc ?? null,
         usdcAfter: landedBuy?.usdcAfter ?? balancesAfterThrow?.quoteUsd ?? null,
         quoteSpentUsd: landedBuy?.quoteSpentUsd ?? null,
-        txMeta: landedBuy?.txMeta,
+        txMeta: adoptedTxMeta,
         lane: isMirror ? mirrorLane : opts.lane,
         mirrorLane: isMirror,
         bookFill: true,
@@ -2105,6 +2111,11 @@ export async function attemptMildDipEntry(args: {
     const onchainAfterFail =
       rawAfterFail && /^\d+$/.test(rawAfterFail) ? BigInt(rawAfterFail) : 0n;
     if (onchainAfterFail > HOLDING_DUST_RAW) {
+      const adoptedTxMeta =
+        buy.txMeta ??
+        (buy.signature
+          ? await fetchParsedTransaction(cfg.rpcUrl, buy.signature)
+          : null);
       args.adoptOnChainHolding({
         cfg,
         state,
@@ -2119,7 +2130,7 @@ export async function attemptMildDipEntry(args: {
         usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
         usdcAfter: buy.usdcAfter ?? balancesAfterFail?.quoteUsd ?? null,
         quoteSpentUsd: buy.quoteSpentUsd ?? null,
-        txMeta: buy.txMeta,
+        txMeta: adoptedTxMeta,
         lane: isMirror ? mirrorLane : opts.lane,
         mirrorLane: isMirror,
         bookFill: true,

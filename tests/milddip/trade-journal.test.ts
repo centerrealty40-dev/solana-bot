@@ -11,6 +11,7 @@ import {
   resolveSellCash,
   snapshotTradeLots,
   resetTradeCashAttributionForTests,
+  resolveAdoptedBuyCash,
   writeUsBuyFill,
   writeUsSellFill,
 } from '../../src/milddip/trade-journal.js';
@@ -85,6 +86,39 @@ describe('trade-journal cash math', () => {
     expect(sell.cashDeltaUsd).toBeCloseTo(12.34, 6);
   });
 
+  it('uses exact adopted buy transaction delta over stale balance intent', () => {
+    const txMeta = {
+      preTokenBalances: [{
+        accountIndex: 2,
+        mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+        owner: 'UsWallet111',
+        uiTokenAmount: { amount: '100000000', decimals: 6 },
+      }],
+      postTokenBalances: [{
+        accountIndex: 2,
+        mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+        owner: 'UsWallet111',
+        uiTokenAmount: { amount: '87650000', decimals: 6 },
+      }],
+    };
+    const fill = resolveBuyCash({
+      wallet: 'UsWallet111',
+      txMeta,
+      usdcBefore: 100,
+      usdcAfter: 100,
+      sizeUsdIntent: 30,
+    });
+    expect(fill.cashSource).toBe('tx_delta');
+    expect(fill.spentUsd).toBeCloseTo(12.35, 6);
+    expect(resolveAdoptedBuyCash({
+      ...fill,
+      quoteSpentUsd: fill.spentUsd,
+    }, 30)).toEqual({
+      spentUsd: 12.35,
+      cashDeltaAppliedUsd: -12.35,
+    });
+  });
+
   it('credits an identical positive sell peek pair only once', () => {
     const args = { usdcBefore: 100, usdcAfter: 112.5 };
     const fills = [resolveSellCash(args), resolveSellCash(args), resolveSellCash(args)];
@@ -125,6 +159,69 @@ describe('trade-journal cash math', () => {
     expect(buy.cashSource).toBe('wallet_delta_stale');
     expect(buy.spentUsd).toBe(10);
     expect(buy.cashDeltaUsd).toBeCloseTo(5, 5);
+  });
+
+  it('books stale and duplicate adopted buys at intent rather than zero', () => {
+    const stale = writeUsBuyFill({
+      tradesPath: '/dev/null/milddip-trades.jsonl',
+      wallet: 'UsWallet111',
+      mint: 'MintStaleAdopt',
+      ok: true,
+      sizeUsdIntent: 10,
+      usdcBefore: 100,
+      usdcAfter: 105,
+      nowMs: 1_000,
+    });
+    writeUsBuyFill({
+      tradesPath: '/dev/null/milddip-trades.jsonl',
+      wallet: 'UsWallet111',
+      mint: 'MintDuplicateAdopt',
+      ok: true,
+      sizeUsdIntent: 10,
+      usdcBefore: 100,
+      usdcAfter: 90,
+      nowMs: 1_001,
+    });
+    const duplicate = writeUsBuyFill({
+      tradesPath: '/dev/null/milddip-trades.jsonl',
+      wallet: 'UsWallet111',
+      mint: 'MintDuplicateAdopt',
+      ok: true,
+      sizeUsdIntent: 10,
+      usdcBefore: 100,
+      usdcAfter: 90,
+      nowMs: 1_002,
+    });
+    expect(resolveAdoptedBuyCash(stale, 10)).toEqual({
+      spentUsd: 10,
+      cashDeltaAppliedUsd: -10,
+    });
+    expect(resolveAdoptedBuyCash(duplicate, 10)).toEqual({
+      spentUsd: 10,
+      cashDeltaAppliedUsd: -10,
+    });
+  });
+
+  it('keeps open persisted lots beyond the seven-day cleanup TTL', () => {
+    const old = {
+      MintOpenOld: {
+        mint: 'MintOpenOld',
+        costUsd: 12,
+        totalCostUsd: 12,
+        proceedsUsd: 0,
+        openedAtMs: 1,
+      },
+      MintClosedOld: {
+        mint: 'MintClosedOld',
+        costUsd: 12,
+        totalCostUsd: 12,
+        proceedsUsd: 0,
+        openedAtMs: 1,
+      },
+    };
+    expect(hydrateTradeLots(old, 8 * 24 * 60 * 60_000, new Set(['MintOpenOld']))).toBe(1);
+    expect(snapshotTradeLots().MintOpenOld.totalCostUsd).toBe(12);
+    expect(snapshotTradeLots().MintClosedOld).toBeUndefined();
   });
 
   it('stale sell peek yields lossy roundtrip instead of quote-inflated win', () => {
