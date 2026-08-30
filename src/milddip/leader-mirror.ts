@@ -11,6 +11,7 @@ export type LeaderMirrorDecision =
       mirrorBranch?: 'green' | 'dip' | 'tier';
       bypassStructuralFloors?: boolean;
       greenInstant?: boolean;
+      ignoreLiquidityFloor?: boolean;
       knifeWait?: {
         enteredByDiscount: boolean;
         enteredByWindowExpiry: boolean;
@@ -483,10 +484,18 @@ export function evaluateLeaderMirrorObservation(args: {
       mirrorBranch: 'green',
       bypassStructuralFloors: true,
       greenInstant: true,
+      ...(gates.greenIgnoreLiquidityFloor
+        ? { ignoreLiquidityFloor: true }
+        : {}),
     };
   }
   let tierFloorMiss = false;
   let greenCandidate = false;
+  const greenForFloors =
+    gates.greenIgnoreLiquidityFloor === true &&
+    ((pc5m != null && pc5m > gates.maxPreEntryPc5mPct) ||
+      (finitePositive(args.quotePriceUsd) &&
+        args.quotePriceUsd! >= hit.fillPriceUsd));
   if (structuralGatesEnabled && (liq == null || ageHours == null || mcap == null)) {
     return soft('leader_mirror_no_data', 'no_structural', true);
   }
@@ -547,11 +556,6 @@ export function evaluateLeaderMirrorObservation(args: {
       }
     }
     }
-    const greenForFloors =
-      gates.greenIgnoreLiquidityFloor === true &&
-      ((pc5m != null && pc5m > gates.maxPreEntryPc5mPct) ||
-        (finitePositive(args.quotePriceUsd) &&
-          args.quotePriceUsd! >= hit.fillPriceUsd));
     if (liq! < gates.minLiquidityUsd) {
       if (!tierIgnoreFloors && !greenForFloors) {
         return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
@@ -676,6 +680,7 @@ export function evaluateLeaderMirrorObservation(args: {
       action: 'buy',
       quotePriceUsd: quotePrice,
       mirrorBranch: gates.tierEnabled && tierFloorMiss ? 'tier' : 'green',
+      ...(greenForFloors ? { ignoreLiquidityFloor: true } : {}),
       ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
     };
   }
@@ -698,6 +703,7 @@ export function evaluateLeaderMirrorObservation(args: {
     action: 'buy',
     quotePriceUsd: quotePrice,
     ...(gates.tierEnabled && tierFloorMiss ? { mirrorBranch: 'tier' } : {}),
+    ...(greenForFloors ? { ignoreLiquidityFloor: true } : {}),
     ...(knifeWaitMetadata ? { knifeWait: knifeWaitMetadata } : {}),
   };
 }

@@ -155,6 +155,7 @@ export function resolveMirrorEntryRiskFloors(args: {
   mirrorMinPairAgeHours: number;
   mirrorMinLiquidityUsd: number;
   mirrorMaxVol5mToLiq: number;
+  mirrorIgnoreLiquidityFloor?: boolean;
   defaultMinPairAgeHours: number;
   defaultMinLiquidityUsd: number;
   defaultMaxVol5mToLiq: number;
@@ -176,7 +177,10 @@ export function resolveMirrorEntryRiskFloors(args: {
   const ignore = args.isTier && args.tierIgnoreFloors;
   return {
     minPairAgeHours: args.isTier ? 0 : args.mirrorMinPairAgeHours,
-    minLiquidityUsd: ignore ? 0 : args.mirrorMinLiquidityUsd,
+    minLiquidityUsd:
+      ignore || args.mirrorIgnoreLiquidityFloor === true
+        ? 0
+        : args.mirrorMinLiquidityUsd,
     maxVol5mToLiq: ignore ? 0 : args.mirrorMaxVol5mToLiq,
   };
 }
@@ -428,6 +432,7 @@ export type EntryAttemptOpts = {
   mirror?: boolean;
   mirrorBranch?: 'green' | 'dip' | 'tier';
   mirrorIgnoreStructuralFloors?: boolean;
+  mirrorIgnoreLiquidityFloor?: boolean;
   leaderBuyTsMs?: number;
   leaderBuySignature?: string;
   leaderMirrorLeader?: string;
@@ -1027,6 +1032,7 @@ export async function attemptMildDipEntry(args: {
     mirrorMinPairAgeHours: cfg.leaderMirror.minPairAgeHours,
     mirrorMinLiquidityUsd: cfg.leaderMirror.minLiquidityUsd,
     mirrorMaxVol5mToLiq: cfg.leaderMirror.maxVol5mToLiq,
+    mirrorIgnoreLiquidityFloor: opts.mirrorIgnoreLiquidityFloor,
     defaultMinPairAgeHours: isLeaderStyle
       ? 0
       : isGreen

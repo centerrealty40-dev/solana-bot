@@ -2560,6 +2560,8 @@ async function wakeLeaderMirrors(
               mirrorBranch: decision.mirrorBranch,
               mirrorIgnoreStructuralFloors:
                 decision.bypassStructuralFloors === true,
+              mirrorIgnoreLiquidityFloor:
+                decision.ignoreLiquidityFloor === true,
               leaderBuyTsMs,
               leaderBuySignature: hit.signature,
               leaderMirrorLeader: hit.leader,
