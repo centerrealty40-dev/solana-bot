@@ -380,6 +380,33 @@ describe('mirror premium cap', () => {
     ).toBe(-0.5);
   });
 
+  it('raises the cap for instant green when pc5m is unknown', () => {
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: 1,
+        greenMaxPremiumPct: 10,
+        greenCandle: false,
+        greenGraceActive: false,
+        greenInstant: true,
+        entryGraceActive: false,
+        firstClipPending: true,
+      }),
+    ).toBe(10);
+  });
+
+  it('keeps the base cap without instant green', () => {
+    expect(
+      mirrorPremiumCapPct({
+        maxPremiumPct: 1,
+        greenMaxPremiumPct: 10,
+        greenCandle: false,
+        greenGraceActive: false,
+        entryGraceActive: false,
+        firstClipPending: true,
+      }),
+    ).toBe(1);
+  });
+
   it('opens the green cap from the time pc5m becomes known', () => {
     const prod = {
       ...gates,

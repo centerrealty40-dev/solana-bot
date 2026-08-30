@@ -2500,6 +2500,19 @@ async function wakeLeaderMirrors(
         vol5mKnown: hit.vol5m != null && Number.isFinite(hit.vol5m),
       });
     }
+    const buyPremiumCap = decision.greenInstant
+      ? mirrorPremiumCapPct({
+          maxPremiumPct: gates.maxPremiumPct,
+          entryGraceMaxPremiumPct: gates.entryGraceMaxPremiumPct,
+          greenMaxPremiumPct: gates.greenMaxPremiumPct,
+          greenCandle:
+            hit.pc5m != null && Number.isFinite(hit.pc5m) && hit.pc5m > 0,
+          entryGraceActive,
+          firstClipPending: mirrorFirstBuyPending,
+          greenGraceActive,
+          greenInstant: true,
+        })
+      : mirrorPremiumCap;
     const copyCfg = mildDipToCopyTraderConfig(cfg);
     const openMirrorPosition = state.open[mint];
     const firstClipPending =
@@ -2553,7 +2566,7 @@ async function wakeLeaderMirrors(
               mirrorPc5mKnown: hit.pc5m != null && Number.isFinite(hit.pc5m),
               mirrorEntryGraceActive: entryGraceActive,
               mirrorLeaderFillPriceUsd: hit.fillPriceUsd ?? null,
-              mirrorMaxPremiumPct: mirrorPremiumCap,
+              mirrorMaxPremiumPct: buyPremiumCap,
               mirrorQuoteGainPct:
                 hit.fillPriceUsd != null && hit.fillPriceUsd > 0
                   ? (decision.quotePriceUsd / hit.fillPriceUsd - 1) * 100
