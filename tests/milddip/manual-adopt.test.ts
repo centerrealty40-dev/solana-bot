@@ -1,7 +1,6 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { readFileSync as readText } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { MildDipConfig } from '../../src/milddip/config.js';
 import { adoptManualHoldings } from '../../src/milddip/manual-adopt.js';
@@ -133,18 +132,20 @@ describe('manual holding adoption', () => {
     expect(readFileSync(cfg.journalPath, 'utf8')).toContain(`"reason":"${reason}"`);
   });
 
-  it('does not block the first clip for manual adoption and guards cross-leader averaging', () => {
-    const manual = {
+  it('never leaves a manual position waiting for a second clip leg', () => {
+    const base = {
       mint,
       symbol: 'manual',
       entryPriceUsd: 1,
       sizeUsd: 40,
+      tokenRaw: '1000000000',
       openedAtMs: 1,
-      manualAdopted: true,
+      entryPc5mPct: null,
+      buySignature: null,
+      lane: 'leader_mirror' as const,
       mirrorFirstClipLegsFilled: 1,
     };
-    expect(isMirrorFirstClipPending(manual, 2)).toBe(false);
-    const source = readText(new URL('../../src/milddip/loop.ts', import.meta.url), 'utf8');
-    expect(source).toContain('if (pos.manualAdopted === true) return;');
+    expect(isMirrorFirstClipPending(base, 2)).toBe(true);
+    expect(isMirrorFirstClipPending({ ...base, manualAdopted: true }, 2)).toBe(false);
   });
 });
