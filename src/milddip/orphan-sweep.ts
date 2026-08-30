@@ -25,14 +25,14 @@ function recentEntry(state: MildDipState, mint: string): number {
   return (state.recentEntryMsByMint?.[mint] ?? []).reduce((a, b) => Math.max(a, Number(b)), 0);
 }
 
-function activeObservation(state: MildDipState, mint: string, nowMs: number): boolean {
+export function activeObservation(state: MildDipState, mint: string, nowMs: number): boolean {
   return Object.values(state.leaderMirrorWatches ?? {}).some(
     (watch) => watch.hit.mint === mint && watch.expiresAtMs > nowMs &&
       watch.hit.lastSeenAtMs > 0 && watch.hit.lastSeenAtMs <= nowMs,
   );
 }
 
-async function defaultQuote(row: OrphanAtaRow): Promise<Quote> {
+export async function quoteOrphanHolding(row: OrphanAtaRow): Promise<Quote> {
   const solUsd = getSolUsd();
   const tokenAmount = Number(row.amountRaw) / Math.pow(10, Math.max(0, row.decimals));
   if (!(solUsd > 0) || !(tokenAmount > 0) || !Number.isFinite(tokenAmount)) return { ok: false, usd: 0 };
@@ -94,7 +94,7 @@ export async function sweepUnmanagedOrphans(args: {
       skip('recent_exit_settling'); continue;
     }
     let valuation: Quote;
-    try { valuation = await (args.deps?.quote ?? defaultQuote)(row); }
+    try { valuation = await (args.deps?.quote ?? quoteOrphanHolding)(row); }
     catch { valuation = { ok: false, usd: 0 }; }
     if (!valuation.ok || valuation.usd < cfg.orphanSellMinUsd) {
       skip(valuation.ok ? 'below_min_usd' : 'quote_unknown'); continue;

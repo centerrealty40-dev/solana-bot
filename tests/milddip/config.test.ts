@@ -37,6 +37,11 @@ describe('mild-dip config exit schema', () => {
   it('defaults cross-leader averaging off and loads its settings', () => {
     const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(defaults.leaderMirror.crossLeaderAverageEnabled).toBe(false);
+    expect(defaults.leaderMirror.manualAdoptEnabled).toBe(false);
+    expect(defaults.leaderMirror.manualAdoptMinUsd).toBe(20);
+    expect(defaults.leaderMirror.manualAdoptArmPct).toBe(3);
+    expect(defaults.leaderMirror.manualAdoptTrailPct).toBe(8);
+    expect(defaults.leaderMirror.manualAdoptIntervalMs).toBe(300_000);
     expect(defaults.leaderMirror.crossLeaderAverageLeaders).toEqual([]);
     expect(defaults.leaderMirror.crossLeaderAverageUsd).toBe(0);
     expect(defaults.leaderMirror.crossLeaderAverageMinDiscountPct).toBe(10);
