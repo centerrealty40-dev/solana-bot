@@ -2,8 +2,12 @@
  * Shared buy attempt used by slow enrich lane and stream/leader fast-path.
  */
 import { executeCopyBuy } from '../copytrader/executor.js';
-import { resetCopyFundingCache } from '../copytrader/funding-gate.js';
+import {
+  peekCopyQuoteBalances,
+  resetCopyFundingCache,
+} from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
+import { fetchParsedTransaction } from '../copytrader/rpc.js';
 import {
   leaderBalanceGuardReason,
   readLeaderBalanceForGuard,
@@ -82,6 +86,13 @@ import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { leaderBuyGateOk } from './leader-seen-gate.js';
 
 const HOLDING_DUST_RAW = 1000n;
+
+/** `getTransaction` returns the whole transaction; cash math needs its `meta`. */
+function parsedTransactionMeta(tx: unknown): unknown {
+  return tx && typeof tx === 'object' && 'meta' in tx
+    ? (tx as { meta?: unknown }).meta ?? null
+    : null;
+}
 
 export function greenExitProfileForTape(
   cfg: Pick<MildDipConfig, 'green'>,
@@ -500,6 +511,15 @@ export async function attemptMildDipEntry(args: {
     priceUsd: number;
     pc5m: number | null;
     nowMs: number;
+    sizeUsdIntent?: number;
+    signature?: string | null;
+    usdcBefore?: number | null;
+    usdcAfter?: number | null;
+    quoteSpentUsd?: number | null;
+    txMeta?: unknown;
+    lane?: string | null;
+    mirrorLane?: boolean;
+    bookFill?: boolean;
   }) => void;
   opts: EntryAttemptOpts;
 }): Promise<EntryAttemptResult> {
@@ -1789,7 +1809,7 @@ export async function attemptMildDipEntry(args: {
     isWaitDip && waitDipCeilingPx != null && waitDipCeilingPx > 0
       ? waitDipCeilingPx
       : (mirrorPremiumAnchorUsd ?? entryPriceUsd);
-  let buy: Awaited<ReturnType<typeof executeCopyBuy>>;
+  let buy: Awaited<ReturnType<typeof executeCopyBuy>> | undefined;
   try {
     buy = await executeCopyBuy({
       cfg: buyCopyCfg,
@@ -1846,9 +1866,20 @@ export async function attemptMildDipEntry(args: {
     buyInFlight.delete(c.mint);
     // Buy threw — only drop reserved seat if chain is still empty (landed tx race).
     const rawAfterThrow = await fetchMintBalanceRaw(copyCfg, c.mint);
+    const balancesAfterThrow = await peekCopyQuoteBalances(copyCfg).catch(() => null);
     const onchainAfterThrow =
       rawAfterThrow && /^\d+$/.test(rawAfterThrow) ? BigInt(rawAfterThrow) : 0n;
     if (onchainAfterThrow > HOLDING_DUST_RAW) {
+      const landedBuy = typeof buy === 'undefined' ? null : buy;
+      const adoptedTxMeta =
+        landedBuy?.txMeta ??
+        (landedBuy?.signature
+          ? parsedTransactionMeta(
+              await fetchParsedTransaction(cfg.rpcUrl, landedBuy.signature).catch(
+                () => null,
+              ),
+            )
+          : null);
       args.adoptOnChainHolding({
         cfg,
         state,
@@ -1858,6 +1889,15 @@ export async function attemptMildDipEntry(args: {
         priceUsd: entryPriceUsd,
         pc5m: entryPc5m,
         nowMs,
+        sizeUsdIntent: sized.sizeUsd,
+        signature: landedBuy?.signature ?? null,
+        usdcBefore: landedBuy?.usdcBefore ?? sized.usdc ?? null,
+        usdcAfter: landedBuy?.usdcAfter ?? balancesAfterThrow?.quoteUsd ?? null,
+        quoteSpentUsd: landedBuy?.quoteSpentUsd ?? null,
+        txMeta: adoptedTxMeta,
+        lane: isMirror ? mirrorLane : opts.lane,
+        mirrorLane: isMirror,
+        bookFill: true,
       });
     } else {
       delete state.open[c.mint];
@@ -2078,9 +2118,19 @@ export async function attemptMildDipEntry(args: {
     buyInFlight.delete(c.mint);
     // Soft-fail buy must not orphan a landed fill (RPC/quote said no, chain yes).
     const rawAfterFail = await fetchMintBalanceRaw(copyCfg, c.mint);
+    const balancesAfterFail = await peekCopyQuoteBalances(copyCfg).catch(() => null);
     const onchainAfterFail =
       rawAfterFail && /^\d+$/.test(rawAfterFail) ? BigInt(rawAfterFail) : 0n;
     if (onchainAfterFail > HOLDING_DUST_RAW) {
+      const adoptedTxMeta =
+        buy.txMeta ??
+        (buy.signature
+          ? parsedTransactionMeta(
+              await fetchParsedTransaction(cfg.rpcUrl, buy.signature).catch(
+                () => null,
+              ),
+            )
+          : null);
       args.adoptOnChainHolding({
         cfg,
         state,
@@ -2090,6 +2140,15 @@ export async function attemptMildDipEntry(args: {
         priceUsd: buy.priceUsd || entryPriceUsd,
         pc5m: entryPc5m,
         nowMs,
+        sizeUsdIntent: sized.sizeUsd,
+        signature: buy.signature ?? null,
+        usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
+        usdcAfter: buy.usdcAfter ?? balancesAfterFail?.quoteUsd ?? null,
+        quoteSpentUsd: buy.quoteSpentUsd ?? null,
+        txMeta: adoptedTxMeta,
+        lane: isMirror ? mirrorLane : opts.lane,
+        mirrorLane: isMirror,
+        bookFill: true,
       });
       if (isGreen && state.open[c.mint]) {
         Object.assign(state.open[c.mint], { lane: 'green', ...fixedGreenExit });
