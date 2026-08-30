@@ -47,6 +47,21 @@ describe('mirror tier entry risk floors', () => {
     expect(shouldApplyMirrorEntryStructuralDataVeto(true, false)).toBe(true);
   });
 
+  it('removes only the mirror liquidity floor when requested', () => {
+    expect(resolveMirrorEntryRiskFloors({
+      ...mirrorFloors,
+      ...defaults,
+      isMirror: true,
+      isTier: false,
+      tierIgnoreFloors: false,
+      mirrorIgnoreLiquidityFloor: true,
+    })).toEqual({
+      minPairAgeHours: 1,
+      minLiquidityUsd: 0,
+      maxVol5mToLiq: 2,
+    });
+  });
+
   it('preserves all ordinary mirror floors', () => {
     expect(resolveMirrorEntryRiskFloors({
       ...mirrorFloors,

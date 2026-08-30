@@ -10,6 +10,7 @@ import {
   leaderMirrorQuoteCoverage,
   evictFundingParkedWatchKeys,
   mirrorPremiumCapPct,
+  mirrorExecPremiumCapPct,
   mirrorQuoteRefreshGapMs,
   mirrorQuoteWithinPremiumCap,
   selectLeaderMirrorQuoteKeys,
@@ -407,6 +408,43 @@ describe('mirror premium cap', () => {
     ).toBe(1);
   });
 
+  it('adds execution slack only to first buys', () => {
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 1,
+        slackPct: 2,
+        firstBuy: true,
+      }),
+    ).toBe(3);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 1,
+        slackPct: 2,
+        firstBuy: false,
+      }),
+    ).toBe(1);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 1,
+        slackPct: 0,
+        firstBuy: true,
+      }),
+    ).toBe(1);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 1,
+        firstBuy: true,
+      }),
+    ).toBe(1);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 10,
+        slackPct: 2,
+        firstBuy: true,
+      }),
+    ).toBe(12);
+  });
+
   it('opens the green cap from the time pc5m becomes known', () => {
     const prod = {
       ...gates,
@@ -555,6 +593,23 @@ describe('instant green mirror follow', () => {
     ).toEqual({ action: 'wait', waitReason: 'no_structural' });
   });
 
+  it('propagates the liquidity-floor bypass on instant green', () => {
+    expect(
+      at(
+        hit({ liq: null, mcap: null, ageHours: null, vol5m: null, pc5m: null }),
+        103.85,
+        120_000,
+        100_000,
+        { ...instantGates, greenIgnoreLiquidityFloor: true },
+        100_000,
+      ),
+    ).toMatchObject({
+      action: 'buy',
+      greenInstant: true,
+      ignoreLiquidityFloor: true,
+    });
+  });
+
   it.each([
     ['below leader fill', 97],
     ['above green cap', 112],
@@ -597,6 +652,54 @@ describe('instant green mirror follow', () => {
         leaderBuyTsMs: 100_000,
       }),
     ).toEqual({ action: 'wait', waitReason: 'no_structural' });
+  });
+});
+
+describe('green liquidity-floor decision metadata', () => {
+  it('propagates the green liquidity-floor bypass to a green decision', () => {
+    const result = at(
+      hit({ pc5m: 5, liq: 1_000 }),
+      100,
+      120_000,
+      100_000,
+      {
+        ...gates,
+        greenCopyEnabled: true,
+        greenCopyMaxPc5mPct: 40,
+        greenIgnoreLiquidityFloor: true,
+        maxEntryPc5mPct: 100,
+      },
+      100_000,
+    );
+    expect(result.action).toBe('buy');
+    expect(result.ignoreLiquidityFloor).toBe(true);
+  });
+
+  it('does not propagate the bypass when disabled or not green', () => {
+    const disabled = at(
+      hit({ pc5m: 5, liq: 1_000 }),
+      100,
+      120_000,
+      100_000,
+      {
+        ...gates,
+        greenCopyEnabled: true,
+        greenCopyMaxPc5mPct: 40,
+        maxEntryPc5mPct: 100,
+      },
+      100_000,
+    );
+    expect(disabled.ignoreLiquidityFloor).toBeFalsy();
+
+    const red = at(
+      hit({ pc5m: -1, liq: 1_000 }),
+      99,
+      120_000,
+      100_000,
+      { ...gates, greenIgnoreLiquidityFloor: true },
+      100_000,
+    );
+    expect(red.ignoreLiquidityFloor).toBeFalsy();
   });
 });
 
