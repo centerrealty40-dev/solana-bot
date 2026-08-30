@@ -5016,7 +5016,7 @@ if (mildDipBotApp) {
        * дал у зелёных входов ROI ниже дипа во всех окнах (12 ч −7.1% против
        * −4.3%, вся история +21% против +27%).
        */
-      entryGraceMaxPremiumPct: '-0.5',
+      entryGraceMaxPremiumPct: '1',
       maxPremiumPct: '1',
       greenMaxPremiumPct: '10',
       executionStartSlippageBps: '400',
