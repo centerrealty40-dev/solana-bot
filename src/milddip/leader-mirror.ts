@@ -50,6 +50,7 @@ export function mirrorPremiumCapPct(args: {
   greenMaxPremiumPct?: number;
   greenCandle?: boolean;
   greenGraceActive?: boolean;
+  greenInstant?: boolean;
   entryGraceActive: boolean;
   firstClipPending: boolean;
 }): number {
@@ -61,6 +62,13 @@ export function mirrorPremiumCapPct(args: {
     args.greenCandle === true &&
     args.greenMaxPremiumPct != null &&
     args.greenMaxPremiumPct > -1000;
+  if (
+    args.greenInstant === true &&
+    args.greenMaxPremiumPct != null &&
+    args.greenMaxPremiumPct > -1000
+  ) {
+    return Math.max(base, args.greenMaxPremiumPct);
+  }
   if (
     args.firstClipPending &&
     greenApplicable &&
