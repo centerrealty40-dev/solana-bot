@@ -14,7 +14,6 @@ import {
   noteBuyLot,
   snapshotTradeLots,
   writeUsBuyFill,
-  type TradeFillEvent,
 } from './trade-journal.js';
 import { HOLDING_DUST_RAW } from './sell-empty-guard.js';
 
@@ -135,9 +134,8 @@ export async function adoptManualHoldings(args: {
       ...(state.recentEntryMsByMint[row.mint] ?? []),
       nowMs,
     ];
-    let fill: TradeFillEvent;
     try {
-      fill = writeUsBuyFill({
+      writeUsBuyFill({
         tradesPath: cfg.tradesPath,
         wallet: owner,
         mint: row.mint,
@@ -153,30 +151,7 @@ export async function adoptManualHoldings(args: {
       });
     } catch {
       noteBuyLot(row.mint, valuation.usd, nowMs);
-      fill = {
-        v: 1,
-        kind: 'trade_fill',
-        actor: 'us',
-        wallet: owner,
-        mint: row.mint,
-        symbol: pos.symbol,
-        side: 'buy',
-        ok: true,
-        signature: null,
-        sizeUsdIntent: valuation.usd,
-        quoteSpentUsd: valuation.usd,
-        cashDeltaUsd: -valuation.usd,
-        fillPriceUsd: entryPriceUsd,
-        fraction: 1,
-        reason: 'mild_dip_manual_adopt',
-        lane: 'leader_mirror',
-        source: 'mild_dip',
-        leader: null,
-        cashSource: 'quote_fallback',
-      };
     }
-    const bookedUsd = Math.max(valuation.usd, Number(fill.quoteSpentUsd ?? 0));
-    if (bookedUsd > valuation.usd) noteBuyLot(row.mint, bookedUsd - valuation.usd, nowMs);
     state.mirrorTradeLots = snapshotTradeLots();
     state.mirrorTradingCashUsd = (state.mirrorTradingCashUsd ?? 0) - valuation.usd;
     saveMildDipState(cfg.statePath, state);

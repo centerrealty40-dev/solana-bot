@@ -1524,13 +1524,14 @@ function rememberLeaderSeen(
   }
 }
 
-function isMirrorFirstClipPending(
+export function isMirrorFirstClipPending(
   position: MildDipOpenPosition | undefined,
   configuredLegs: number | undefined,
 ): boolean {
   const legs = Math.max(1, Math.min(2, Math.floor(configuredLegs ?? 1)));
   return (
     position?.lane === 'leader_mirror' &&
+    position.manualAdopted !== true &&
     (position.mirrorFirstClipLegsFilled ?? 1) < legs
   );
 }
@@ -4936,6 +4937,7 @@ async function attemptCrossLeaderAverage(args: {
   if (!g.crossLeaderAverageEnabled) return;
   if (pos.lane === 'tier') return;
   if (pos.lane !== 'leader_mirror') return;
+  if (pos.manualAdopted === true) return;
   if ((pos.mirrorFirstClipLegsFilled ?? 1) < Math.max(1, Math.min(2, Math.floor(g.firstClipLegs ?? 1)))) {
     skip('first_clip_incomplete');
     return;

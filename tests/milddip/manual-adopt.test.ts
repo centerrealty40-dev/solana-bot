@@ -1,9 +1,11 @@
 import { mkdtempSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { readFileSync as readText } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { MildDipConfig } from '../../src/milddip/config.js';
 import { adoptManualHoldings } from '../../src/milddip/manual-adopt.js';
+import { isMirrorFirstClipPending } from '../../src/milddip/loop.js';
 import type { MildDipState } from '../../src/milddip/state.js';
 
 const mint = 'ManualAdoptMint111111111111111111111111111111';
@@ -129,5 +131,20 @@ describe('manual holding adoption', () => {
     expect(result.adopted).toBe(0);
     expect(result.skipped).toBe(1);
     expect(readFileSync(cfg.journalPath, 'utf8')).toContain(`"reason":"${reason}"`);
+  });
+
+  it('does not block the first clip for manual adoption and guards cross-leader averaging', () => {
+    const manual = {
+      mint,
+      symbol: 'manual',
+      entryPriceUsd: 1,
+      sizeUsd: 40,
+      openedAtMs: 1,
+      manualAdopted: true,
+      mirrorFirstClipLegsFilled: 1,
+    };
+    expect(isMirrorFirstClipPending(manual, 2)).toBe(false);
+    const source = readText(new URL('../../src/milddip/loop.ts', import.meta.url), 'utf8');
+    expect(source).toContain('if (pos.manualAdopted === true) return;');
   });
 });
