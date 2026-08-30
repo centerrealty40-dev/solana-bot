@@ -87,6 +87,13 @@ import { leaderBuyGateOk } from './leader-seen-gate.js';
 
 const HOLDING_DUST_RAW = 1000n;
 
+/** `getTransaction` returns the whole transaction; cash math needs its `meta`. */
+function parsedTransactionMeta(tx: unknown): unknown {
+  return tx && typeof tx === 'object' && 'meta' in tx
+    ? (tx as { meta?: unknown }).meta ?? null
+    : null;
+}
+
 export function greenExitProfileForTape(
   cfg: Pick<MildDipConfig, 'green'>,
   tapeRet1mPct: number | null | undefined,
@@ -1867,7 +1874,11 @@ export async function attemptMildDipEntry(args: {
       const adoptedTxMeta =
         landedBuy?.txMeta ??
         (landedBuy?.signature
-          ? await fetchParsedTransaction(cfg.rpcUrl, landedBuy.signature)
+          ? parsedTransactionMeta(
+              await fetchParsedTransaction(cfg.rpcUrl, landedBuy.signature).catch(
+                () => null,
+              ),
+            )
           : null);
       args.adoptOnChainHolding({
         cfg,
@@ -2114,7 +2125,11 @@ export async function attemptMildDipEntry(args: {
       const adoptedTxMeta =
         buy.txMeta ??
         (buy.signature
-          ? await fetchParsedTransaction(cfg.rpcUrl, buy.signature)
+          ? parsedTransactionMeta(
+              await fetchParsedTransaction(cfg.rpcUrl, buy.signature).catch(
+                () => null,
+              ),
+            )
           : null);
       args.adoptOnChainHolding({
         cfg,
