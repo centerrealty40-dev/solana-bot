@@ -127,6 +127,7 @@ export type LeaderMirrorGates = {
   enabled: boolean;
   greenCopyEnabled: boolean;
   greenInstantEnabled?: boolean;
+  greenIgnoreLiquidityFloor?: boolean;
   greenCorridorPct: number;
   greenCopyMaxPc5mPct: number;
   leaders: string[];
@@ -527,8 +528,13 @@ export function evaluateLeaderMirrorObservation(args: {
       }
     }
     }
+    const greenForFloors =
+      gates.greenIgnoreLiquidityFloor === true &&
+      ((pc5m != null && pc5m > gates.maxPreEntryPc5mPct) ||
+        (finitePositive(args.quotePriceUsd) &&
+          args.quotePriceUsd! >= hit.fillPriceUsd));
     if (liq! < gates.minLiquidityUsd) {
-      if (!tierIgnoreFloors) {
+      if (!tierIgnoreFloors && !greenForFloors) {
         return { action: 'skip', reason: 'leader_mirror_liquidity_floor' };
       }
     }

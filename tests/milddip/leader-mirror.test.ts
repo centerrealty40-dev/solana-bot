@@ -54,6 +54,7 @@ const gates: LeaderMirrorGates = {
   enabled: true,
   greenCopyEnabled: false,
   greenInstantEnabled: false,
+  greenIgnoreLiquidityFloor: false,
   greenCorridorPct: 1.5,
   greenCopyMaxPc5mPct: 40,
   leaders: [LEADER_MIRROR_WALLET],
@@ -729,6 +730,52 @@ describe('leader mirror observation decisions', () => {
       tierEnabled: true,
       minPreEntryPc5mPct: -5,
     })).toEqual({ action: 'skip', reason: 'leader_mirror_pc5m_missing' });
+  });
+
+  it('allows a green entry below the liquidity floor only when enabled', () => {
+    const green = { ...hit(), pc5m: 5, liq: 7_999 };
+    expect(at(green, 101, 110_000, 100_000, {
+      ...gates,
+      greenCopyEnabled: true,
+      greenCopyMaxPc5mPct: 40,
+      greenIgnoreLiquidityFloor: true,
+      maxEntryPc5mPct: 100,
+    })).not.toEqual({
+      action: 'skip',
+      reason: 'leader_mirror_liquidity_floor',
+    });
+    expect(at(green, 101, 110_000, 100_000, {
+      ...gates,
+      greenCopyEnabled: true,
+      greenCopyMaxPc5mPct: 40,
+      greenIgnoreLiquidityFloor: false,
+      maxEntryPc5mPct: 100,
+    })).toEqual({ action: 'skip', reason: 'leader_mirror_liquidity_floor' });
+  });
+
+  it('requires the green quote corridor when pc5m is not green', () => {
+    expect(at({ ...hit(), pc5m: -5, liq: 7_999 }, 99, 110_000, 100_000, {
+      ...gates,
+      greenIgnoreLiquidityFloor: true,
+    })).toEqual({ action: 'skip', reason: 'leader_mirror_liquidity_floor' });
+  });
+
+  it('keeps market-cap and age floors hard for green entries', () => {
+    const greenGates = {
+      ...gates,
+      greenCopyEnabled: true,
+      greenCopyMaxPc5mPct: 40,
+      greenIgnoreLiquidityFloor: true,
+      maxEntryPc5mPct: 100,
+    };
+    expect(at({ ...hit(), pc5m: 5, ageHours: 0.25 }, 101, 110_000, 100_000, {
+      ...greenGates,
+      minPairAgeHours: 1,
+    })).toEqual({ action: 'skip', reason: 'leader_mirror_pair_age_floor' });
+    expect(at({ ...hit(), pc5m: 5, mcap: 4_000 }, 101, 110_000, 100_000, {
+      ...greenGates,
+      minMcapUsd: 5_000,
+    })).toEqual({ action: 'skip', reason: 'leader_mirror_mcap_floor' });
   });
 
   it('refuses when the configured 1h floor has no metric', () => {

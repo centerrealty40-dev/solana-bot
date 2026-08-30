@@ -36,6 +36,8 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_MAX_ENTRY_PC5M_PCT).toBe('1000');
     expect(mirror?.env.MILD_DIP_MIRROR_GREEN_INSTANT_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_GREEN_INSTANT_ENABLED).toBe('0');
+    expect(mirror?.env.MILD_DIP_MIRROR_GREEN_IGNORE_LIQUIDITY_FLOOR).toBe('1');
+    expect(mirror2?.env.MILD_DIP_MIRROR_GREEN_IGNORE_LIQUIDITY_FLOOR).toBeUndefined();
     expect(mirror?.env.MILD_DIP_WALLET_PUBKEY).not.toBe(
       mirror2?.env.MILD_DIP_WALLET_PUBKEY,
     );
