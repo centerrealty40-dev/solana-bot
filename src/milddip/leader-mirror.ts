@@ -79,6 +79,17 @@ export function mirrorPremiumCapPct(args: {
   return base;
 }
 
+export function mirrorExecPremiumCapPct(args: {
+  decisionCapPct: number;
+  slackPct?: number;
+  firstBuy: boolean;
+}): number {
+  return (
+    args.decisionCapPct +
+    (args.firstBuy && (args.slackPct ?? 0) > 0 ? args.slackPct ?? 0 : 0)
+  );
+}
+
 export function mirrorQuoteRefreshGapMs(args: {
   quoteIntervalMs: number;
   staleQuoteIntervalMs: number;

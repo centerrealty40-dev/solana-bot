@@ -845,6 +845,7 @@ const MildDipConfigSchema = z.object({
     greenCopyEnabled: z.boolean().default(false),
     greenInstantEnabled: z.boolean().default(false),
     greenIgnoreLiquidityFloor: z.boolean().default(false),
+    execPremiumSlackPct: z.coerce.number().min(0).default(0),
     manualAdoptEnabled: z.boolean().default(false),
     manualAdoptMinUsd: z.coerce.number().min(0).default(20),
     manualAdoptArmPct: z.coerce.number().min(0).default(3),
@@ -1921,6 +1922,10 @@ export function loadMildDipConfig(): MildDipConfig {
       greenIgnoreLiquidityFloor: envBool(
         'MILD_DIP_MIRROR_GREEN_IGNORE_LIQUIDITY_FLOOR',
         false,
+      ),
+      execPremiumSlackPct: envNum(
+        'MILD_DIP_MIRROR_EXEC_PREMIUM_SLACK_PCT',
+        0,
       ),
       manualAdoptEnabled: envBool('MILD_DIP_MIRROR_MANUAL_ADOPT', false),
       manualAdoptMinUsd: envNum('MILD_DIP_MIRROR_MANUAL_ADOPT_MIN_USD', 20),

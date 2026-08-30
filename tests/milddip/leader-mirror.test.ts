@@ -10,6 +10,7 @@ import {
   leaderMirrorQuoteCoverage,
   evictFundingParkedWatchKeys,
   mirrorPremiumCapPct,
+  mirrorExecPremiumCapPct,
   mirrorQuoteRefreshGapMs,
   mirrorQuoteWithinPremiumCap,
   selectLeaderMirrorQuoteKeys,
@@ -405,6 +406,43 @@ describe('mirror premium cap', () => {
         firstClipPending: true,
       }),
     ).toBe(1);
+  });
+
+  it('adds execution slack only to first buys', () => {
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 1,
+        slackPct: 2,
+        firstBuy: true,
+      }),
+    ).toBe(3);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 1,
+        slackPct: 2,
+        firstBuy: false,
+      }),
+    ).toBe(1);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 1,
+        slackPct: 0,
+        firstBuy: true,
+      }),
+    ).toBe(1);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 1,
+        firstBuy: true,
+      }),
+    ).toBe(1);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 10,
+        slackPct: 2,
+        firstBuy: true,
+      }),
+    ).toBe(12);
   });
 
   it('opens the green cap from the time pc5m becomes known', () => {

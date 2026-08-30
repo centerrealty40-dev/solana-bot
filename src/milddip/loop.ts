@@ -62,6 +62,7 @@ import {
 import {
   evaluateLeaderMirrorObservation,
   mirrorPremiumCapPct,
+  mirrorExecPremiumCapPct,
   mirrorQuoteRefreshGapMs,
   LEADER_MIRROR_GREEN_PC5M_MAX_AGE_AFTER_BUY_MS,
   mirrorQuoteWithinPremiumCap,
@@ -2500,7 +2501,7 @@ async function wakeLeaderMirrors(
         vol5mKnown: hit.vol5m != null && Number.isFinite(hit.vol5m),
       });
     }
-    const buyPremiumCap = decision.greenInstant
+    const decisionPremiumCap = decision.greenInstant
       ? mirrorPremiumCapPct({
           maxPremiumPct: gates.maxPremiumPct,
           entryGraceMaxPremiumPct: gates.entryGraceMaxPremiumPct,
@@ -2511,8 +2512,13 @@ async function wakeLeaderMirrors(
           firstClipPending: mirrorFirstBuyPending,
           greenGraceActive,
           greenInstant: true,
-        })
+      })
       : mirrorPremiumCap;
+    const buyPremiumCap = mirrorExecPremiumCapPct({
+      decisionCapPct: decisionPremiumCap,
+      slackPct: gates.execPremiumSlackPct,
+      firstBuy: mirrorFirstBuyPending,
+    });
     const copyCfg = mildDipToCopyTraderConfig(cfg);
     const openMirrorPosition = state.open[mint];
     const firstClipPending =
