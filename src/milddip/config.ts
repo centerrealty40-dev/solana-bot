@@ -844,6 +844,7 @@ const MildDipConfigSchema = z.object({
     mirrorOnly: z.boolean().default(false),
     greenCopyEnabled: z.boolean().default(false),
     greenInstantEnabled: z.boolean().default(false),
+    greenIgnoreLiquidityFloor: z.boolean().default(false),
     requireDipCandle: z.boolean().default(true),
     greenCorridorPct: z.coerce.number().min(0).default(1.5),
     greenCopyMaxPc5mPct: z.coerce.number().min(0).default(40),
@@ -1910,6 +1911,10 @@ export function loadMildDipConfig(): MildDipConfig {
       greenCopyEnabled: envBool('MILD_DIP_MIRROR_GREEN_COPY_ENABLED', false),
       greenInstantEnabled: envBool(
         'MILD_DIP_MIRROR_GREEN_INSTANT_ENABLED',
+        false,
+      ),
+      greenIgnoreLiquidityFloor: envBool(
+        'MILD_DIP_MIRROR_GREEN_IGNORE_LIQUIDITY_FLOOR',
         false,
       ),
       requireDipCandle: envBool('MILD_DIP_MIRROR_REQUIRE_DIP_CANDLE', true),

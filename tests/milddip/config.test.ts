@@ -750,6 +750,7 @@ describe('mild-dip mirror green-copy configuration', () => {
   it('uses safe defaults and loads green-copy overrides', () => {
     const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).leaderMirror;
     expect(defaults.greenCopyEnabled).toBe(false);
+    expect(defaults.greenIgnoreLiquidityFloor).toBe(false);
     expect(defaults.greenCorridorPct).toBe(1.5);
     expect(defaults.greenCopyMaxPc5mPct).toBe(40);
 
@@ -757,12 +758,14 @@ describe('mild-dip mirror green-copy configuration', () => {
       {
         ...baseEnv,
         MILD_DIP_MIRROR_GREEN_COPY_ENABLED: '1',
+        MILD_DIP_MIRROR_GREEN_IGNORE_LIQUIDITY_FLOOR: '1',
         MILD_DIP_MIRROR_GREEN_CORRIDOR_PCT: '2.25',
         MILD_DIP_MIRROR_GREEN_MAX_PC5M_PCT: '55',
       },
       () => loadMildDipConfig(),
     ).leaderMirror;
     expect(configured.greenCopyEnabled).toBe(true);
+    expect(configured.greenIgnoreLiquidityFloor).toBe(true);
     expect(configured.greenCorridorPct).toBe(2.25);
     expect(configured.greenCopyMaxPc5mPct).toBe(55);
   });
