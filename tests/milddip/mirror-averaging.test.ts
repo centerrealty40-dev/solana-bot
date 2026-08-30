@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   mirrorAverageDeepDiscountTarget,
+  mirrorAverageLevel,
+  mirrorAverageSizeUsd,
   mirrorAverageHoldAllowed,
   mirrorAveragePriceAllowed,
   recentMirrorLocalLow,
@@ -166,5 +168,59 @@ describe('mirror averaging local low', () => {
     expect(resolveBuyMaxPriceImpactPct(5, 3)).toBe(5);
     expect(resolveBuyMaxPriceImpactPct(0, 3)).toBe(3);
     expect(resolveBuyMaxPriceImpactPct(undefined, 3)).toBe(3);
+  });
+
+  it('selects configured levels once from the original entry', () => {
+    const first = mirrorAverageLevel({
+      levelsPct: [25, 50],
+      completedLevelsPct: [],
+      attempts: 0,
+      entryPriceUsd: 100,
+      initialDiscountPct: 15,
+      nextDiscountPct: 15,
+    });
+    const second = mirrorAverageLevel({
+      levelsPct: [25, 50],
+      completedLevelsPct: [25],
+      attempts: 1,
+      entryPriceUsd: 100,
+      lastAverageFillPriceUsd: 75,
+      initialDiscountPct: 15,
+      nextDiscountPct: 15,
+    });
+    expect(first).toEqual({ level: 25, minDiscountPct: 25 });
+    expect(second).toEqual({ level: 50, minDiscountPct: 50 });
+    expect(mirrorAverageLevel({
+      levelsPct: [25, 50],
+      completedLevelsPct: [25, 50],
+      attempts: 2,
+      entryPriceUsd: 100,
+      initialDiscountPct: 15,
+      nextDiscountPct: 15,
+    })).toBeNull();
+  });
+
+  it('sizes bag-mark averages with fallback, free balance, and hard cap', () => {
+    expect(mirrorAverageSizeUsd({
+      mode: 'bag_mark',
+      flatUsd: 10,
+      bagMarkUsd: 65,
+      maxUsd: 200,
+      freeUsd: 100,
+    })).toBe(65);
+    expect(mirrorAverageSizeUsd({
+      mode: 'bag_mark',
+      flatUsd: 10,
+      bagMarkUsd: 0,
+      maxUsd: 200,
+      freeUsd: 100,
+    })).toBe(10);
+    expect(mirrorAverageSizeUsd({
+      mode: 'bag_mark',
+      flatUsd: 50,
+      bagMarkUsd: 300,
+      maxUsd: 200,
+      freeUsd: 80,
+    })).toBe(80);
   });
 });

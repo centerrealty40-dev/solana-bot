@@ -160,9 +160,11 @@ import {
 import { validateStreamDexPrice } from './price-sanity.js';
 import {
   mirrorAverageDeepDiscountTarget,
+  mirrorAverageLevel,
   mirrorAverageHoldAllowed,
   mirrorAveragePriceAllowed,
   mirrorAverageReference,
+  mirrorAverageSizeUsd,
   mirrorRecentLocalLow,
   shouldJournalMirrorAverageSkip,
   type MirrorAverageSkipReason,
@@ -210,6 +212,9 @@ import {
 import { checkMildDipDiskSpace, runMildDipDataRetention } from './disk-hygiene.js';
 import {
   hydrateTradeLotsFromOpen,
+  hydrateTradeLots,
+  snapshotTradeLots,
+  setTradeLotPersistence,
   writeUsBuyFill,
   writeUsSellFill,
 } from './trade-journal.js';
@@ -820,6 +825,15 @@ function adoptOnChainHolding(args: {
   priceUsd: number;
   pc5m: number | null;
   nowMs: number;
+  sizeUsdIntent?: number;
+  signature?: string | null;
+  usdcBefore?: number | null;
+  usdcAfter?: number | null;
+  quoteSpentUsd?: number | null;
+  txMeta?: unknown;
+  lane?: string | null;
+  mirrorLane?: boolean;
+  bookFill?: boolean;
 }): void {
   const { cfg, state, mint, symbol, tokenRaw, priceUsd, pc5m, nowMs } = args;
   const sizeUsd =
@@ -837,6 +851,35 @@ function adoptOnChainHolding(args: {
     trailArmed: false,
   };
   state.open[mint] = pos;
+  if (args.bookFill) {
+    const fill = writeUsBuyFill({
+      tradesPath: cfg.tradesPath,
+      wallet: cfg.walletPubkeyExpected?.trim() || 'unknown',
+      mint,
+      symbol,
+      ok: true,
+      signature: args.signature ?? null,
+      sizeUsdIntent: args.sizeUsdIntent ?? cfg.positionUsd,
+      usdcBefore: args.usdcBefore ?? null,
+      usdcAfter: args.usdcAfter ?? null,
+      quoteSpentUsd: args.quoteSpentUsd ?? null,
+      txMeta: args.txMeta,
+      fillPriceUsd: priceUsd > 0 ? priceUsd : null,
+      lane: args.lane,
+      nowMs,
+    });
+    if (args.mirrorLane === true) {
+      const spentUsd = -Math.min(0, Number(fill.cashDeltaUsd ?? 0));
+      accountMirrorCashLeg(state, fill as unknown as Record<string, unknown>, 'buy');
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_adopted_fill_booked',
+        mint,
+        signature: args.signature ?? null,
+        spentUsd,
+        cashSource: fill.cashSource ?? 'quote_fallback',
+      });
+    }
+  }
   if (priceUsd > 0) {
     mildDipPriceRing.note(mint, priceUsd, { tsMs: nowMs, source: 'dex' });
   }
@@ -4102,6 +4145,42 @@ async function rearmLeaderOpenBags(
   return rearmed;
 }
 
+async function reconcileMirrorCash(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+): Promise<void> {
+  const intervalMs = cfg.leaderMirror.cashReconcileIntervalMs;
+  if (intervalMs <= 0) return;
+  const balances = await peekCopyQuoteBalances(mildDipToCopyTraderConfig(cfg), nowMs);
+  const usdcNow = balances?.quoteUsd;
+  if (usdcNow == null || !Number.isFinite(usdcNow)) return;
+  const checkpointAtMs = state.mirrorCashReconcileAtMs;
+  const checkpointUsdc = state.mirrorCashReconcileUsdc;
+  const checkpointCash = state.mirrorCashReconcileCashUsd;
+  if (
+    checkpointAtMs != null &&
+    checkpointUsdc != null &&
+    checkpointCash != null
+  ) {
+    const walletDelta = usdcNow - checkpointUsdc;
+    const cashLedgerDelta = (state.mirrorTradingCashUsd ?? 0) - checkpointCash;
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mirror_cash_reconcile',
+      checkpointAtMs,
+      usdcNow,
+      usdcCheckpoint: checkpointUsdc,
+      cashLedgerDelta,
+      walletDelta,
+      gapUsd: walletDelta - cashLedgerDelta,
+    });
+  }
+  state.mirrorCashReconcileAtMs = nowMs;
+  state.mirrorCashReconcileUsdc = usdcNow;
+  state.mirrorCashReconcileCashUsd = state.mirrorTradingCashUsd ?? 0;
+  saveMildDipState(cfg.statePath, state);
+}
+
 function wakeFundingParkedLeaderMirrorWatches(
   cfg: MildDipConfig,
   state: MildDipState,
@@ -4542,13 +4621,30 @@ async function attemptMirrorAverage(args: {
     return;
   }
   const averageAttempts = pos.mirrorAverageAttempts ?? 0;
-  const averageReference = mirrorAverageReference({
+  const averageLevel = mirrorAverageLevel({
+    levelsPct: g.averageLevelsPct,
+    completedLevelsPct: pos.mirrorAverageLevelsDone ?? [],
+    attempts: averageAttempts,
     entryPriceUsd: pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd,
     lastAverageFillPriceUsd: pos.mirrorAverageFillPriceUsd,
-    attempts: averageAttempts,
     initialDiscountPct: g.averageMinDiscountPct,
     nextDiscountPct: g.averageNextDiscountPct,
   });
+  const averageReference = averageLevel
+    ? {
+        entryPriceUsd:
+          g.averageLevelsPct.length > 0
+            ? pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd
+            : mirrorAverageReference({
+                entryPriceUsd: pos.mirrorOriginalEntryPriceUsd ?? pos.entryPriceUsd,
+                lastAverageFillPriceUsd: pos.mirrorAverageFillPriceUsd,
+                attempts: averageAttempts,
+                initialDiscountPct: g.averageMinDiscountPct,
+                nextDiscountPct: g.averageNextDiscountPct,
+              })?.entryPriceUsd ?? pos.entryPriceUsd,
+        minDiscountPct: averageLevel.minDiscountPct,
+      }
+    : null;
   if (!averageReference) {
     journalSkip('no_reference');
     return;
@@ -4649,11 +4745,19 @@ async function attemptMirrorAverage(args: {
   pos.mirrorAverageLastAttemptAtMs = nowMs;
   saveMildDipState(cfg.statePath, state);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
+  const bagMarkUsd =
+    markPriceUsd > 0 ? mirrorOpenMarkValueUsd(pos, markPriceUsd) : null;
   const averageBaseUsd = pos.mirrorInitialClipUsd ?? pos.sizeUsd;
-  const averageTargetUsd =
+  const flatTargetUsd =
     g.sizeLiqCoef > 0 && g.positionUsd > 0
       ? (g.averageUsd / g.positionUsd) * averageBaseUsd
       : g.averageUsd;
+  const averageTargetUsd = mirrorAverageSizeUsd({
+    mode: g.averageSizeMode,
+    flatUsd: flatTargetUsd,
+    bagMarkUsd,
+    maxUsd: g.averageMaxUsd,
+  });
   const sized = await resolveEntrySizeUsd(cfg, copyCfg, nowMs, averageTargetUsd);
   if (sized.stop || !(sized.sizeUsd > 0)) {
     journalSkip('size_stop', {
@@ -4720,7 +4824,7 @@ async function attemptMirrorAverage(args: {
         symbol: pos.symbol,
         ok: true,
         signature: buy.signature ?? null,
-        sizeUsdIntent: Math.min(g.averageUsd, sized.sizeUsd),
+        sizeUsdIntent: Math.min(averageTargetUsd, sized.sizeUsd),
         usdcBefore: buy.usdcBefore ?? sized.usdc ?? null,
         usdcAfter: buy.usdcAfter ?? null,
         feeSolBefore: buy.feeSolBefore ?? null,
@@ -4744,6 +4848,10 @@ async function attemptMirrorAverage(args: {
     live.mirrorAverageAttempts = (live.mirrorAverageAttempts ?? 0) + 1;
     live.mirrorAverageFillPriceUsd = fillPx;
     live.mirrorAverageLastFillAtMs = nowMs;
+    const completedLevels = live.mirrorAverageLevelsDone ?? [];
+    if (g.averageLevelsPct.length > 0 && averageLevel) {
+      live.mirrorAverageLevelsDone = [...completedLevels, averageLevel.level];
+    }
     live.mirrorLadderBasisPriceUsd = fillPx;
     live.mirrorLadderRungsDone = 0;
     const raw = await fetchMintBalanceRaw(copyCfg, pos.mint);
@@ -4761,6 +4869,9 @@ async function attemptMirrorAverage(args: {
       markPriceUsd,
       fillPriceUsd: fillPx,
       amountUsd: addUsd,
+      level: averageLevel?.level ?? null,
+      sizeMode: g.averageSizeMode,
+      bagMarkUsd,
       attempt: live.mirrorAverageAttempts,
       newEntryPriceUsd: live.entryPriceUsd,
     });
@@ -6307,10 +6418,20 @@ export async function runMildDipLoop(
   };
   loopStatsRef = stats;
 
+  const persistedLotsHydrated = hydrateTradeLots(state.mirrorTradeLots, Date.now());
   const lotsHydrated = hydrateTradeLotsFromOpen(state.open ?? {}, Date.now());
+  setTradeLotPersistence((snapshot) => {
+    state.mirrorTradeLots = snapshot;
+    saveMildDipState(cfg.statePath, state);
+  });
+  if (persistedLotsHydrated > 0) {
+    console.log(`[mild-dip] hydrated persistent trade lots: ${persistedLotsHydrated}`);
+  }
   if (lotsHydrated > 0) {
     console.log(`[mild-dip] hydrated trade lots from open state: ${lotsHydrated}`);
   }
+  state.mirrorTradeLots = snapshotTradeLots();
+  saveMildDipState(cfg.statePath, state);
 
   const hotLoaded = loadMildDipHotMints(cfg.hotMintsPath);
   const ringLoaded = loadMildDipPriceRing(cfg.priceRingPath);
@@ -7188,6 +7309,8 @@ export async function runMildDipLoop(
   let leaderBalanceReconcileCursor = 0;
   let leaderOpenBagRearmInFlight = false;
   let lastLeaderOpenBagRearmMs = 0;
+  let mirrorCashReconcileInFlight = false;
+  let lastMirrorCashReconcileMs = 0;
 
   const reconcileLeaderBalances = async (nowMs: number): Promise<void> => {
     const positions = Object.entries(state.open).filter(
@@ -7330,6 +7453,25 @@ export async function runMildDipLoop(
         })
         .finally(() => {
           leaderOpenBagRearmInFlight = false;
+        });
+    }
+    if (
+      cfg.leaderMirror.cashReconcileIntervalMs > 0 &&
+      !mirrorCashReconcileInFlight &&
+      nowMs - lastMirrorCashReconcileMs >=
+        cfg.leaderMirror.cashReconcileIntervalMs
+    ) {
+      lastMirrorCashReconcileMs = nowMs;
+      mirrorCashReconcileInFlight = true;
+      void reconcileMirrorCash(cfg, state, nowMs)
+        .catch((err) => {
+          console.warn(
+            '[mild-dip] mirror cash reconciliation failed',
+            err instanceof Error ? err.message : err,
+          );
+        })
+        .finally(() => {
+          mirrorCashReconcileInFlight = false;
         });
     }
     if (leaderSellFeed && nowMs - lastLeaderSellFeedStatsMs >= 30_000) {

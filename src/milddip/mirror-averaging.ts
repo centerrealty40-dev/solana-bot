@@ -106,6 +106,44 @@ export function mirrorAverageReference(args: {
   };
 }
 
+export function mirrorAverageLevel(args: {
+  levelsPct: readonly number[];
+  completedLevelsPct: readonly number[];
+  attempts: number;
+  entryPriceUsd: number;
+  lastAverageFillPriceUsd?: number;
+  initialDiscountPct: number;
+  nextDiscountPct: number;
+}): { level: number; minDiscountPct: number } | null {
+  if (args.levelsPct.length > 0) {
+    const level = args.levelsPct.find(
+      (value) => !args.completedLevelsPct.includes(value),
+    );
+    return level == null ? null : { level, minDiscountPct: level };
+  }
+  const reference = mirrorAverageReference(args);
+  return reference
+    ? { level: reference.minDiscountPct, minDiscountPct: reference.minDiscountPct }
+    : null;
+}
+
+export function mirrorAverageSizeUsd(args: {
+  mode: 'flat' | 'bag_mark';
+  flatUsd: number;
+  bagMarkUsd?: number | null;
+  maxUsd: number;
+  freeUsd?: number | null;
+}): number {
+  const requested =
+    args.mode === 'bag_mark' && args.bagMarkUsd != null && args.bagMarkUsd > 0
+      ? args.bagMarkUsd
+      : args.flatUsd;
+  const capped = args.maxUsd > 0 ? Math.min(requested, args.maxUsd) : requested;
+  return args.freeUsd != null && args.freeUsd >= 0
+    ? Math.min(capped, args.freeUsd)
+    : capped;
+}
+
 export function parseMirrorOhlcvList(raw: unknown): Candle[] {
   if (!Array.isArray(raw)) return [];
   return raw.flatMap((row) => {

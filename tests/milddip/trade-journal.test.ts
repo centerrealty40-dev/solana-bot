@@ -4,14 +4,17 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   allocateSellCost,
+  hydrateTradeLots,
   hydrateTradeLotsFromOpen,
   resetTradeLotsForTests,
   resolveBuyCash,
   resolveSellCash,
+  snapshotTradeLots,
   resetTradeCashAttributionForTests,
   writeUsBuyFill,
   writeUsSellFill,
 } from '../../src/milddip/trade-journal.js';
+import { accountMirrorCashLeg } from '../../src/milddip/mirror-loss-cap.js';
 
 describe('trade-journal cash math', () => {
   const dirs: string[] = [];
@@ -191,6 +194,30 @@ describe('trade-journal cash math', () => {
     expect(fill.cashPnlUsd).toBeCloseTo(-4, 5);
   });
 
+  it('restores persisted lots before open-state fallback', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trades-persist-'));
+    dirs.push(dir);
+    const path = join(dir, 'trades.jsonl');
+    writeUsBuyFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintPersist',
+      ok: true,
+      sizeUsdIntent: 10,
+      quoteSpentUsd: 12,
+      nowMs: 1_000,
+    });
+    const persisted = snapshotTradeLots();
+    resetTradeLotsForTests();
+    expect(hydrateTradeLots(persisted, 2_000)).toBe(1);
+    expect(hydrateTradeLotsFromOpen({
+      MintPersist: { sizeUsd: 99, openedAtMs: 1_000 },
+      MintFallback: { sizeUsd: 7, openedAtMs: 1_000 },
+    }, 2_000)).toBe(1);
+    expect(snapshotTradeLots().MintPersist.totalCostUsd).toBe(12);
+    expect(snapshotTradeLots().MintFallback.totalCostUsd).toBe(7);
+  });
+
   it('writes trade_fill + trade_roundtrip with cash PnL (not mark%)', () => {
     const dir = mkdtempSync(join(tmpdir(), 'trades-'));
     dirs.push(dir);
@@ -239,6 +266,30 @@ describe('trade-journal cash math', () => {
     expect(lines).toHaveLength(3); // buy fill, sell fill, roundtrip
     const kinds = lines.map((l) => JSON.parse(l).kind);
     expect(kinds).toEqual(['trade_fill', 'trade_fill', 'trade_roundtrip']);
+  });
+
+  it('books an adopted landed fill into the trade journal and mirror cash', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'trades-adopt-'));
+    dirs.push(dir);
+    const path = join(dir, 'trades.jsonl');
+    const fill = writeUsBuyFill({
+      tradesPath: path,
+      wallet: 'UsWallet111',
+      mint: 'MintAdopted',
+      ok: true,
+      signature: 'landedSig',
+      sizeUsdIntent: 30,
+      usdcBefore: 100,
+      usdcAfter: 72.5,
+      nowMs: 1_000,
+      lane: 'fast',
+    });
+    const state = { mirrorTradingCashUsd: 100 };
+    accountMirrorCashLeg(state, fill as unknown as Record<string, unknown>, 'buy');
+    expect(fill.cashSource).toBe('wallet_delta');
+    expect(fill.cashDeltaUsd).toBe(-27.5);
+    expect(state.mirrorTradingCashUsd).toBe(72.5);
+    expect(readFileSync(path, 'utf8')).toContain('"signature":"landedSig"');
   });
 
   it('includes an add buy once in the roundtrip cost basis', () => {

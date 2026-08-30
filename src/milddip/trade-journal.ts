@@ -84,7 +84,7 @@ export type TradeRoundtripEvent = {
   leader?: string | null;
 };
 
-type TradeLot = {
+export type TradeLot = {
   mint: string;
   costUsd: number;
   totalCostUsd: number;
@@ -93,9 +93,57 @@ type TradeLot = {
 };
 
 const lots = new Map<string, TradeLot>();
+let persistLots: ((snapshot: Record<string, TradeLot>) => void) | null = null;
+
+export function setTradeLotPersistence(
+  persist: ((snapshot: Record<string, TradeLot>) => void) | null,
+): void {
+  persistLots = persist;
+}
+
+export function snapshotTradeLots(): Record<string, TradeLot> {
+  return Object.fromEntries(
+    [...lots.entries()].map(([mint, lot]) => [mint, { ...lot }]),
+  );
+}
+
+function persistTradeLots(): void {
+  persistLots?.(snapshotTradeLots());
+}
 
 export function resetTradeLotsForTests(): void {
   lots.clear();
+  persistLots = null;
+}
+
+export function hydrateTradeLots(
+  persisted: Record<string, Partial<TradeLot>> | undefined,
+  nowMs = Date.now(),
+): number {
+  let n = 0;
+  const ttlMs = 7 * 24 * 60 * 60_000;
+  for (const [mint, raw] of Object.entries(persisted ?? {})) {
+    const costUsd = Number(raw.costUsd);
+    const totalCostUsd = Number(raw.totalCostUsd);
+    const proceedsUsd = Number(raw.proceedsUsd);
+    const openedAtMs = Number(raw.openedAtMs);
+    if (
+      !(costUsd >= 0) ||
+      !(totalCostUsd >= 0) ||
+      !(proceedsUsd >= 0) ||
+      !(openedAtMs > 0) ||
+      nowMs - openedAtMs > ttlMs
+    ) continue;
+    lots.set(mint, {
+      mint,
+      costUsd,
+      totalCostUsd,
+      proceedsUsd,
+      openedAtMs,
+    });
+    n += 1;
+  }
+  return n;
 }
 
 /**
@@ -274,11 +322,13 @@ export function noteBuyLot(mint: string, spentUsd: number, nowMs: number): void 
       proceedsUsd: 0,
       openedAtMs: nowMs,
     });
+    persistTradeLots();
     return;
   }
   prev.costUsd += add;
   prev.totalCostUsd += add;
   lots.set(mint, prev);
+  persistTradeLots();
 }
 
 export function noteSellLot(args: {
@@ -330,9 +380,11 @@ export function noteSellLot(args: {
       closedAtMs: args.nowMs,
     };
     lots.delete(args.mint);
+    persistTradeLots();
     return { costBasisUsd, cashPnlUsd, flat: true, roundtrip };
   }
   lots.set(args.mint, lot);
+  persistTradeLots();
   return { costBasisUsd, cashPnlUsd, flat: false, roundtrip: null };
 }
 

@@ -4,6 +4,7 @@ import type { KnifeWatchEntry } from './knife-stabilize.js';
 import type { WaitDipWatchEntry } from './wait-dip.js';
 import type { MildDipCandidateMetrics } from './gates.js';
 import type { LeaderOpenBagEntry } from './leader-open-bags.js';
+import type { TradeLot } from './trade-journal.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { sanitizeRecentEntryMsByMint } from './entry-churn.js';
 import { rotateMildDipJournal } from './journal-rotation.js';
@@ -83,6 +84,7 @@ export type MildDipOpenPosition = {
   mirrorAverageLastFillAtMs?: number;
   mirrorAverageAttempts?: number;
   mirrorAverageLastAttemptAtMs?: number;
+  mirrorAverageLevelsDone?: number[];
   mirrorCrossLeaderAverageCount?: number;
   mirrorCrossLeaderAverageLastAttemptAtMs?: number;
   mirrorCrossLeaderAverageSignature?: string;
@@ -298,6 +300,10 @@ export type MildDipState = {
   >;
   mirrorLeaderOpenBags?: Record<string, LeaderOpenBagEntry>;
   mirrorTradingCashUsd?: number;
+  mirrorTradeLots?: Record<string, TradeLot>;
+  mirrorCashReconcileAtMs?: number;
+  mirrorCashReconcileUsdc?: number;
+  mirrorCashReconcileCashUsd?: number;
   mirrorLossCapBasis?: 'mark' | 'realized';
   mirrorLossCapDayKey?: string;
   mirrorLossCapBaselineAtMs?: number;
@@ -487,6 +493,27 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
   return out;
 }
 
+function sanitizeTradeLots(raw: unknown): Record<string, TradeLot> {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: Record<string, TradeLot> = {};
+  for (const [mint, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const lot = value as Partial<TradeLot>;
+    const costUsd = Number(lot.costUsd);
+    const totalCostUsd = Number(lot.totalCostUsd);
+    const proceedsUsd = Number(lot.proceedsUsd);
+    const openedAtMs = Number(lot.openedAtMs);
+    if (
+      !(costUsd >= 0) ||
+      !(totalCostUsd >= 0) ||
+      !(proceedsUsd >= 0) ||
+      !(openedAtMs > 0)
+    ) continue;
+    out[mint] = { mint, costUsd, totalCostUsd, proceedsUsd, openedAtMs };
+  }
+  return out;
+}
+
 function sanitizeLeaderMirrorWatches(
   raw: unknown,
   nowMs: number,
@@ -615,6 +642,7 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     mirrorLeaderOpenBags: {},
     recentEntryMsByMint: {},
     mirrorTradingCashUsd: 0,
+    mirrorTradeLots: {},
     mirrorLossCapBasis: 'realized',
     updatedAtMs: nowMs,
   };
@@ -664,6 +692,16 @@ export function loadMildDipState(
         Number.isFinite(Number(parsed.mirrorTradingCashUsd))
           ? Number(parsed.mirrorTradingCashUsd)
           : 0,
+      mirrorTradeLots: sanitizeTradeLots(parsed.mirrorTradeLots),
+      ...(Number.isFinite(Number(parsed.mirrorCashReconcileAtMs))
+        ? { mirrorCashReconcileAtMs: Number(parsed.mirrorCashReconcileAtMs) }
+        : {}),
+      ...(Number.isFinite(Number(parsed.mirrorCashReconcileUsdc))
+        ? { mirrorCashReconcileUsdc: Number(parsed.mirrorCashReconcileUsdc) }
+        : {}),
+      ...(Number.isFinite(Number(parsed.mirrorCashReconcileCashUsd))
+        ? { mirrorCashReconcileCashUsd: Number(parsed.mirrorCashReconcileCashUsd) }
+        : {}),
       ...(parsed.mirrorLossCapBasis === 'mark' ||
       parsed.mirrorLossCapBasis === 'realized'
         ? { mirrorLossCapBasis: parsed.mirrorLossCapBasis }

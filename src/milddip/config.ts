@@ -31,6 +31,20 @@ function envMirrorAverageWindowsMs(): number[] {
   return values.length > 0 ? [...new Set(values)].sort((a, b) => a - b) : [...DEFAULT_MIRROR_AVERAGE_WINDOWS_MS];
 }
 
+function envMirrorAverageLevelsPct(): number[] {
+  const raw = process.env.MILD_DIP_MIRROR_AVERAGE_LEVELS_PCT?.trim();
+  if (!raw) return [];
+  const parts = raw.split(',').map((value) => value.trim());
+  const values = parts.map((value) => Number(value));
+  if (
+    parts.some((part) => part.length === 0) ||
+    values.some((value) => !Number.isFinite(value) || value <= 0 || value >= 100)
+  ) {
+    return [];
+  }
+  return [...new Set(values)].sort((a, b) => a - b);
+}
+
 function envBool(name: string, fallback: boolean): boolean {
   const v = process.env[name]?.trim().toLowerCase();
   if (!v) return fallback;
@@ -840,6 +854,7 @@ const MildDipConfigSchema = z.object({
     leaderSellLateReconcileIntervalMs: z.coerce.number().int().min(1_000).default(30_000),
     leaderSellLateReconcileWindowMs: z.coerce.number().int().min(60_000).default(3_600_000),
     leaderSellLateReconcileTailBytes: z.coerce.number().int().min(64 * 1024).default(2 * 1024 * 1024),
+    cashReconcileIntervalMs: z.coerce.number().int().min(0).default(300_000),
     leaderSellOnlyExit: z.boolean().default(false),
     leaderBalanceGuardEnabled: z.boolean().default(true),
     observationMaxAgeMs: z.coerce.number().int().min(1_000).default(120_000),
@@ -851,7 +866,7 @@ const MildDipConfigSchema = z.object({
     leaderOpenBagRetryEnabled: z.boolean().default(false),
     leaderOpenBagRetryIntervalMs: z.coerce.number().int().min(5_000).default(60_000),
     leaderOpenBagMaxAgeMs: z.coerce.number().int().min(0).default(21_600_000),
-    leaderOpenBagMaxEntries: z.coerce.number().int().min(0).default(60),
+    leaderOpenBagMaxEntries: z.coerce.number().int().min(1).default(60),
     leaderOpenBagMaxPerPass: z.coerce.number().int().min(1).max(100).default(5),
     leaderOpenBagMinFreeUsd: z.coerce.number().min(0).default(0),
     safetyMaxHoldMs: z.coerce.number().int().min(0).default(0),
@@ -922,6 +937,9 @@ const MildDipConfigSchema = z.object({
     dustCloseUsd: z.coerce.number().min(0).default(10),
     averageEnabled: z.boolean().default(false),
     averageUsd: z.coerce.number().min(0).default(20),
+    averageLevelsPct: z.array(z.coerce.number().min(0).max(100)).default([]),
+    averageSizeMode: z.enum(['flat', 'bag_mark']).default('flat'),
+    averageMaxUsd: z.coerce.number().min(0).default(0),
     averageWindowsMs: z.array(z.coerce.number().int().min(60_000)).min(1).default(DEFAULT_MIRROR_AVERAGE_WINDOWS_MS),
     averageExcludeTailMs: z.coerce.number().int().min(0).default(900_000),
     averageTolerancePct: z.coerce.number().min(0).default(0.5),
@@ -1915,6 +1933,10 @@ export function loadMildDipConfig(): MildDipConfig {
         'MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_TAIL_BYTES',
         2 * 1024 * 1024,
       ),
+      cashReconcileIntervalMs: envNum(
+        'MILD_DIP_MIRROR_CASH_RECONCILE_INTERVAL_MS',
+        300_000,
+      ),
       leaderSellOnlyExit: envBool('MILD_DIP_MIRROR_LEADER_SELL_ONLY', false),
       leaderBalanceGuardEnabled: envBool('MILD_DIP_MIRROR_LEADER_BALANCE_GUARD_ENABLED', true),
       observationMaxAgeMs: envNum('MILD_DIP_MIRROR_OBSERVATION_MAX_AGE_MS', 120_000),
@@ -2063,6 +2085,12 @@ export function loadMildDipConfig(): MildDipConfig {
       averageMaxTimes: envNum('MILD_DIP_MIRROR_AVERAGE_MAX_TIMES', 2),
       averageMinDiscountPct: envNum('MILD_DIP_MIRROR_AVERAGE_MIN_DISCOUNT_PCT', 15),
       averageNextDiscountPct: envNum('MILD_DIP_MIRROR_AVERAGE_NEXT_DISCOUNT_PCT', 15),
+      averageLevelsPct: envMirrorAverageLevelsPct(),
+      averageSizeMode:
+        process.env.MILD_DIP_MIRROR_AVERAGE_SIZE_MODE?.trim() === 'bag_mark'
+          ? 'bag_mark'
+          : 'flat',
+      averageMaxUsd: envNum('MILD_DIP_MIRROR_AVERAGE_MAX_USD', 0),
       averageMinHoldMs: envNum('MILD_DIP_MIRROR_AVERAGE_MIN_HOLD_MS', 120_000),
       cooldownMs: envNum('MILD_DIP_MIRROR_COOLDOWN_MS', 900_000),
       executionRetryBackoffMs: envNum('MILD_DIP_MIRROR_EXEC_RETRY_BACKOFF_MS', 3_000),

@@ -117,6 +117,20 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.leaderMirror.sizeLiqMaxPoolSharePct).toBe(0.15);
   });
 
+  it('parses configured mirror averaging and cash reconciliation settings', () => {
+    const cfg = withConfigEnv({
+      ...baseEnv,
+      MILD_DIP_MIRROR_AVERAGE_LEVELS_PCT: '50, 25, 25',
+      MILD_DIP_MIRROR_AVERAGE_SIZE_MODE: 'bag_mark',
+      MILD_DIP_MIRROR_AVERAGE_MAX_USD: '200',
+      MILD_DIP_MIRROR_CASH_RECONCILE_INTERVAL_MS: '123456',
+    }, () => loadMildDipConfig());
+    expect(cfg.leaderMirror.averageLevelsPct).toEqual([25, 50]);
+    expect(cfg.leaderMirror.averageSizeMode).toBe('bag_mark');
+    expect(cfg.leaderMirror.averageMaxUsd).toBe(200);
+    expect(cfg.leaderMirror.cashReconcileIntervalMs).toBe(123456);
+  });
+
   it('defaults and loads emergency data retention settings', () => {
     const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
     expect(defaults.dataRetentionEmergencyEnabled).toBe(true);
