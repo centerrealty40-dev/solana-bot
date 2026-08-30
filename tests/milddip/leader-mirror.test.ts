@@ -414,6 +414,7 @@ describe('mirror premium cap', () => {
         decisionCapPct: 1,
         slackPct: 2,
         firstBuy: true,
+        graceActive: true,
       }),
     ).toBe(3);
     expect(
@@ -421,6 +422,7 @@ describe('mirror premium cap', () => {
         decisionCapPct: 1,
         slackPct: 2,
         firstBuy: false,
+        graceActive: true,
       }),
     ).toBe(1);
     expect(
@@ -428,12 +430,14 @@ describe('mirror premium cap', () => {
         decisionCapPct: 1,
         slackPct: 0,
         firstBuy: true,
+        graceActive: true,
       }),
     ).toBe(1);
     expect(
       mirrorExecPremiumCapPct({
         decisionCapPct: 1,
         firstBuy: true,
+        graceActive: true,
       }),
     ).toBe(1);
     expect(
@@ -441,8 +445,17 @@ describe('mirror premium cap', () => {
         decisionCapPct: 10,
         slackPct: 2,
         firstBuy: true,
+        graceActive: true,
       }),
     ).toBe(12);
+    expect(
+      mirrorExecPremiumCapPct({
+        decisionCapPct: 0,
+        slackPct: 2,
+        firstBuy: true,
+        graceActive: false,
+      }),
+    ).toBe(0);
   });
 
   it('opens the green cap from the time pc5m becomes known', () => {

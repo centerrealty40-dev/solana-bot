@@ -5035,7 +5035,7 @@ if (mildDipBotApp) {
        * −4.3%, вся история +21% против +27%).
        */
       entryGraceMaxPremiumPct: '1',
-      maxPremiumPct: '1',
+      maxPremiumPct: '0',
       greenMaxPremiumPct: '10',
       executionStartSlippageBps: '400',
       greenInstantEnabled: '1',

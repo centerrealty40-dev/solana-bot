@@ -2518,6 +2518,8 @@ async function wakeLeaderMirrors(
       decisionCapPct: decisionPremiumCap,
       slackPct: gates.execPremiumSlackPct,
       firstBuy: mirrorFirstBuyPending,
+      graceActive:
+        entryGraceActive || greenGraceActive || decision.greenInstant === true,
     });
     const copyCfg = mildDipToCopyTraderConfig(cfg);
     const openMirrorPosition = state.open[mint];

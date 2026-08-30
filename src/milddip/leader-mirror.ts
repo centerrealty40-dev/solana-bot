@@ -84,10 +84,13 @@ export function mirrorExecPremiumCapPct(args: {
   decisionCapPct: number;
   slackPct?: number;
   firstBuy: boolean;
+  graceActive: boolean;
 }): number {
   return (
     args.decisionCapPct +
-    (args.firstBuy && (args.slackPct ?? 0) > 0 ? args.slackPct ?? 0 : 0)
+    (args.firstBuy && args.graceActive && (args.slackPct ?? 0) > 0
+      ? args.slackPct ?? 0
+      : 0)
   );
 }
 
