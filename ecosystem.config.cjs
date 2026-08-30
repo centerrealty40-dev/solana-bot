@@ -4798,6 +4798,13 @@ function makeMirrorApp({
   greenInstantEnabled = '0',
   maxVol5mToLiq = '2',
   firstTouchPositionUsd,
+  fundingParkMax = '10',
+  leaderOpenBagEnabled = '',
+  leaderOpenBagRetryMs = '60000',
+  leaderOpenBagMaxAgeMs = '21600000',
+  leaderOpenBagMaxEntries = '60',
+  leaderOpenBagMaxPerPass = '5',
+  leaderOpenBagMinFreeUsd = '0',
 }) {
   return {
     ...mildDipBotApp,
@@ -4877,7 +4884,7 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_MAX_QUOTE_MINTS: '8',
       MILD_DIP_MIRROR_FUNDING_PARK_ENABLED: '1',
       MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS: '30000',
-      MILD_DIP_MIRROR_FUNDING_PARK_MAX: '10',
+      MILD_DIP_MIRROR_FUNDING_PARK_MAX: fundingParkMax,
       MILD_DIP_MIRROR_TICK_INTERVAL_MS: '1000',
       MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS: '4',
       MILD_DIP_MIRROR_STRUCTURAL_GAP_MS: '2000',
@@ -4975,6 +4982,16 @@ function makeMirrorApp({
       ...(firstTouchPositionUsd != null
         ? { MILD_DIP_FIRST_TOUCH_POSITION_USD: firstTouchPositionUsd }
         : {}),
+      ...(leaderOpenBagEnabled
+        ? {
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_ENABLED: leaderOpenBagEnabled,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_RETRY_MS: leaderOpenBagRetryMs,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_AGE_MS: leaderOpenBagMaxAgeMs,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_ENTRIES: leaderOpenBagMaxEntries,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_PER_PASS: leaderOpenBagMaxPerPass,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_MIN_FREE_USD: leaderOpenBagMinFreeUsd,
+          }
+        : {}),
     },
   };
 }
@@ -4999,14 +5016,16 @@ if (mildDipBotApp) {
        * дал у зелёных входов ROI ниже дипа во всех окнах (12 ч −7.1% против
        * −4.3%, вся история +21% против +27%).
        */
-      entryGraceMaxPremiumPct: '-0.5',
-      maxPremiumPct: '-0.5',
+      entryGraceMaxPremiumPct: '1',
+      maxPremiumPct: '1',
       greenMaxPremiumPct: '10',
       executionStartSlippageBps: '400',
       greenInstantEnabled: '1',
       maxVol5mToLiq: '0',
       firstTouchPositionUsd: '0',
-      minLiquidityUsd: '12000',
+      fundingParkMax: '60',
+      leaderOpenBagEnabled: '1',
+      minLiquidityUsd: '30000',
       minVol5mUsd: '500',
       minMcapUsd: '50000',
       minPairAgeHours: '1',
@@ -5018,25 +5037,25 @@ if (mildDipBotApp) {
       ladderEnabled: '0',
       ladderMaxRungs: '1',
       dustCloseUsd: '2',
-      positionUsd: '50',
+      positionUsd: '10',
       sizeLiqCoef: '0.008749',
       sizeLiqExp: '0.866',
-      sizeLiqMinUsd: '50',
+      sizeLiqMinUsd: '10',
       sizeLiqMaxUsd: '50',
       sizeLiqMaxPoolSharePct: '0.15',
       sizeFromLeaderFraction: '0.25',
-      sizeFromLeaderMinUsd: '50',
+      sizeFromLeaderMinUsd: '10',
       sizeFromLeaderMaxUsd: '50',
       sizeFromLeaderSmallMcapUsd: '40000',
-      sizeFromLeaderSmallClipUsd: '50',
+      sizeFromLeaderSmallClipUsd: '10',
       firstClipLegs: '1',
       // 1.11.1057 — замер закрытых сделок показал положительный эффект усреднения
       // только глубже −50%; пол vol5m $2k отсекает покупки в мёртвых малых пулах.
-      averageUsd: '50',
+      averageUsd: '10',
       averageMinDiscountPct: '50',
       crossLeaderAverageEnabled: '1',
       crossLeaderAverageLeaders: '7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5',
-      crossLeaderAverageUsd: '50',
+      crossLeaderAverageUsd: '10',
       crossLeaderAverageStepsEnabled: '0',
       crossLeaderAverageMinDiscountPct: '50',
       crossLeaderAverageMaxTimes: '1',

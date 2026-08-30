@@ -78,6 +78,31 @@ describe('mild-dip state', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('persists and validates leader open bags', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-open-bag-state-'));
+    const statePath = path.join(dir, 'state.json');
+    const state = {
+      open: {},
+      cooldownUntilMs: {},
+      mirrorLeaderOpenBags: {
+        'MintOpen|LeaderOpen': {
+          mint: 'MintOpen1111111111111111111111111111111111',
+          leader: 'LeaderOpen111111111111111111111111111111111',
+          fillPriceUsd: 2,
+          sizeUsd: 50,
+          leaderBuyAtMs: 10_000,
+          lastCheckAtMs: 20_000,
+          lastReason: 'tracked',
+        },
+      },
+      updatedAtMs: 20_000,
+    };
+    saveMildDipState(statePath, state);
+    const loaded = loadMildDipState(statePath);
+    expect(loaded.mirrorLeaderOpenBags).toEqual(state.mirrorLeaderOpenBags);
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('prunes stale mirror decisions and keeps only newest entries', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-state-prune-'));
     const statePath = path.join(dir, 'state.json');
