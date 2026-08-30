@@ -51,6 +51,12 @@ describe('mild-dip config exit schema', () => {
     expect(defaults.leaderMirror.fundingParkEnabled).toBe(false);
     expect(defaults.leaderMirror.fundingParkRetryMs).toBe(30_000);
     expect(defaults.leaderMirror.fundingParkMax).toBe(10);
+    expect(defaults.leaderMirror.leaderOpenBagRetryEnabled).toBe(false);
+    expect(defaults.leaderMirror.leaderOpenBagRetryIntervalMs).toBe(60_000);
+    expect(defaults.leaderMirror.leaderOpenBagMaxAgeMs).toBe(21_600_000);
+    expect(defaults.leaderMirror.leaderOpenBagMaxEntries).toBe(60);
+    expect(defaults.leaderMirror.leaderOpenBagMaxPerPass).toBe(5);
+    expect(defaults.leaderMirror.leaderOpenBagMinFreeUsd).toBe(0);
     expect(defaults.leaderMirror.tierParkEnabled).toBe(false);
     expect(defaults.leaderMirror.sizeLiqCoef).toBe(0);
     expect(defaults.leaderMirror.sizeLiqExp).toBe(0.866);
@@ -71,6 +77,12 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_MIRROR_FUNDING_PARK_ENABLED: '1',
         MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS: '45000',
         MILD_DIP_MIRROR_FUNDING_PARK_MAX: '7',
+        MILD_DIP_MIRROR_LEADER_OPEN_BAG_ENABLED: '1',
+        MILD_DIP_MIRROR_LEADER_OPEN_BAG_RETRY_MS: '45000',
+        MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_AGE_MS: '7200000',
+        MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_ENTRIES: '12',
+        MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_PER_PASS: '3',
+        MILD_DIP_MIRROR_LEADER_OPEN_BAG_MIN_FREE_USD: '25',
         MILD_DIP_MIRROR_TIER_PARK_ENABLED: '1',
         MILD_DIP_MIRROR_SIZE_LIQ_COEF: '0.008749',
         MILD_DIP_MIRROR_SIZE_LIQ_EXP: '0.9',
@@ -91,6 +103,12 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.leaderMirror.fundingParkEnabled).toBe(true);
     expect(cfg.leaderMirror.fundingParkRetryMs).toBe(45_000);
     expect(cfg.leaderMirror.fundingParkMax).toBe(7);
+    expect(cfg.leaderMirror.leaderOpenBagRetryEnabled).toBe(true);
+    expect(cfg.leaderMirror.leaderOpenBagRetryIntervalMs).toBe(45_000);
+    expect(cfg.leaderMirror.leaderOpenBagMaxAgeMs).toBe(7_200_000);
+    expect(cfg.leaderMirror.leaderOpenBagMaxEntries).toBe(12);
+    expect(cfg.leaderMirror.leaderOpenBagMaxPerPass).toBe(3);
+    expect(cfg.leaderMirror.leaderOpenBagMinFreeUsd).toBe(25);
     expect(cfg.leaderMirror.tierParkEnabled).toBe(true);
     expect(cfg.leaderMirror.sizeLiqCoef).toBe(0.008749);
     expect(cfg.leaderMirror.sizeLiqExp).toBe(0.9);
@@ -113,6 +131,18 @@ describe('mild-dip config exit schema', () => {
     );
     expect(cfg.dataRetentionEmergencyEnabled).toBe(false);
     expect(cfg.dataRetentionEmergencyKeepDays).toBe(14);
+  });
+
+  it('rejects an open-bag retry interval below five seconds', () => {
+    expect(() =>
+      withConfigEnv(
+        {
+          ...baseEnv,
+          MILD_DIP_MIRROR_LEADER_OPEN_BAG_RETRY_MS: '4999',
+        },
+        () => loadMildDipConfig(),
+      ),
+    ).toThrow();
   });
 
   it('preserves every key assigned by the exit loader', () => {

@@ -1,6 +1,6 @@
 import path from 'node:path';
 import { executeCopyBuy, executeCopySell } from '../copytrader/executor.js';
-import { checkCopyFundingGate } from '../copytrader/funding-gate.js';
+import { checkCopyFundingGate, peekCopyQuoteBalances } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
 import { rpcCall } from '../copytrader/rpc.js';
 import type { MildDipConfig } from './config.js';
@@ -31,6 +31,12 @@ import {
   readLeaderBalance,
   readLeaderBalanceForGuard,
 } from './leader-balance.js';
+import {
+  leaderOpenBagDropReason,
+  selectLeaderOpenBagRetryKeys,
+  upsertLeaderOpenBag,
+  type LeaderOpenBagEntry,
+} from './leader-open-bags.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   evaluateFastPathCandidate,
@@ -146,7 +152,6 @@ import { retrySlippageBpsForAttempt } from './exit-retry.js';
 import { prioritizeFreshStructuralEntries } from './structural-priority.js';
 import { decideExitRefire } from './exit-refire.js';
 import { resolveExitMarkFromRing } from './exit-mark.js';
-import { peekCopyQuoteBalances } from '../copytrader/funding-gate.js';
 import {
   evaluateLeaderStyleEntry,
   shouldJournalLeaderStyleSkip,
@@ -1515,6 +1520,9 @@ async function wakeLeaderMirrors(
       }
       continue;
     }
+    if (gates.leaderOpenBagRetryEnabled) {
+      trackLeaderOpenBag(cfg, state, hit, nowMs);
+    }
     if (state.open[hit.mint]) continue;
     if (existing && existing.hitKey !== hitKey) {
       leaderMirrorWatches.set(watchKey, {
@@ -2614,6 +2622,9 @@ async function wakeLeaderMirrors(
         decidedAtMs: nowMs,
         reason: 'leader_mirror_execution_skip',
       });
+      if (cfg.leaderMirror.leaderOpenBagRetryEnabled) {
+        trackLeaderOpenBag(cfg, state, hit, Date.now());
+      }
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_refusal',
         mint,
@@ -3880,6 +3891,203 @@ function persistLeaderMirrorWatches(cfg: MildDipConfig, state: MildDipState): vo
   state.leaderMirrorWatches = watches;
   state.leaderMirrorDecisions = decisions;
   saveMildDipState(cfg.statePath, state);
+}
+
+function trackLeaderOpenBag(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  hit: LeaderSeedHit,
+  nowMs: number,
+): void {
+  if (
+    !hit.leader ||
+    !(hit.fillPriceUsd && hit.fillPriceUsd > 0) ||
+    !(hit.sizeUsd && hit.sizeUsd > 0)
+  ) {
+    return;
+  }
+  const leaderBuyAtMs =
+    hit.blockTime != null && hit.blockTime > 0
+      ? hit.blockTime * 1000
+      : hit.lastSeenAtMs;
+  if (!(leaderBuyAtMs > 0)) return;
+  const key = `${hit.mint}|${hit.leader}`;
+  const previous = state.mirrorLeaderOpenBags?.[key];
+  const entry: LeaderOpenBagEntry = {
+    mint: hit.mint,
+    leader: hit.leader,
+    fillPriceUsd: hit.fillPriceUsd,
+    sizeUsd: hit.sizeUsd,
+    leaderBuyAtMs,
+    lastCheckAtMs: previous?.lastCheckAtMs ?? 0,
+    lastReason: previous?.lastReason ?? 'tracked',
+  };
+  if (
+    previous &&
+    previous.fillPriceUsd === entry.fillPriceUsd &&
+    previous.sizeUsd === entry.sizeUsd &&
+    previous.leaderBuyAtMs === entry.leaderBuyAtMs
+  ) {
+    return;
+  }
+  if (!state.mirrorLeaderOpenBags) state.mirrorLeaderOpenBags = {};
+  upsertLeaderOpenBag(
+    state.mirrorLeaderOpenBags,
+    entry,
+    cfg.leaderMirror.leaderOpenBagMaxEntries,
+  );
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'leader_mirror_open_bag_track',
+    mint: entry.mint,
+    leader: entry.leader,
+    leaderFillPriceUsd: entry.fillPriceUsd,
+    sizeUsd: entry.sizeUsd,
+    ageMs: Math.max(0, nowMs - entry.leaderBuyAtMs),
+  });
+  saveMildDipState(cfg.statePath, state);
+}
+
+function dropLeaderOpenBag(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  key: string,
+  reason: NonNullable<ReturnType<typeof leaderOpenBagDropReason>>,
+): boolean {
+  const entry = state.mirrorLeaderOpenBags?.[key];
+  if (!entry) return false;
+  delete state.mirrorLeaderOpenBags?.[key];
+  const watchKey = `${entry.mint}:${entry.leader}`;
+  leaderMirrorEntryRetryAfterMs.delete(watchKey);
+  leaderMirrorWatches.delete(watchKey);
+  leaderMirrorDecisions.delete(watchKey);
+  appendMildDipJournal(cfg.journalPath, {
+    kind: 'leader_mirror_open_bag_drop',
+    mint: entry.mint,
+    leader: entry.leader,
+    reason,
+  });
+  return true;
+}
+
+function dropLeaderOpenBagsForSellEvents(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  events: readonly LeaderSellEvent[],
+): boolean {
+  let changed = false;
+  for (const event of events) {
+    for (const [key, entry] of Object.entries(state.mirrorLeaderOpenBags ?? {})) {
+      if (entry.mint !== event.mint || entry.leader !== event.leader) continue;
+      changed = dropLeaderOpenBag(cfg, state, key, 'leader_flat') || changed;
+    }
+  }
+  if (changed) saveMildDipState(cfg.statePath, state);
+  return changed;
+}
+
+async function rearmLeaderOpenBags(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  nowMs: number,
+  leaderSellFeed: LeaderSellFeed | null,
+): Promise<number> {
+  const gates = cfg.leaderMirror;
+  const entries = state.mirrorLeaderOpenBags ?? {};
+  if (!gates.leaderOpenBagRetryEnabled || Object.keys(entries).length === 0) return 0;
+  hydrateLeaderMirrorWatches(cfg, state, nowMs);
+  const copyCfg = mildDipToCopyTraderConfig(cfg);
+  const balances = await peekCopyQuoteBalances(copyCfg, nowMs);
+  if (!balances) return 0;
+  const minFreeUsd = Math.max(
+    gates.leaderOpenBagMinFreeUsd,
+    gates.sizeFromLeaderMinUsd,
+  );
+  if (balances.quoteUsd + 1e-6 < minFreeUsd) return 0;
+  const keys = selectLeaderOpenBagRetryKeys({
+    entries,
+    nowMs,
+    intervalMs: gates.leaderOpenBagRetryIntervalMs,
+    maxPerPass: gates.leaderOpenBagMaxPerPass,
+  });
+  if (keys.length === 0) return 0;
+  let changed = false;
+  let rearmed = 0;
+  for (const key of keys) {
+    const entry = state.mirrorLeaderOpenBags?.[key];
+    if (!entry) continue;
+    entry.lastCheckAtMs = nowMs;
+    const feedSell = leaderSellFeed?.get(entry.mint, nowMs);
+    if (feedSell?.leader === entry.leader) {
+      changed = dropLeaderOpenBag(cfg, state, key, 'leader_flat') || changed;
+      continue;
+    }
+    if (nowMs - entry.leaderBuyAtMs > gates.leaderOpenBagMaxAgeMs) {
+      changed = dropLeaderOpenBag(cfg, state, key, 'expired') || changed;
+      continue;
+    }
+    const balanceRead = await readLeaderBalanceForGuard(cfg, entry.leader, entry.mint);
+    if (balanceRead.reason === 'rpc_error') {
+      entry.lastReason = 'rpc_error';
+      changed = true;
+      continue;
+    }
+    const reason = leaderOpenBagDropReason({
+      nowMs,
+      entry,
+      maxAgeMs: gates.leaderOpenBagMaxAgeMs,
+      leaderHolds: balanceRead.balanceRaw != null && balanceRead.balanceRaw > 0n,
+      weHoldPosition: state.open[entry.mint] != null,
+      activeWatch: leaderMirrorWatches.has(`${entry.mint}:${entry.leader}`),
+    });
+    if (reason) {
+      entry.lastReason = reason;
+      changed = true;
+      if (reason !== 'active_watch' && reason !== 'already_open') {
+        changed = dropLeaderOpenBag(cfg, state, key, reason) || changed;
+      }
+      continue;
+    }
+    const hit: LeaderSeedHit = {
+      mint: entry.mint,
+      leader: entry.leader,
+      fillPriceUsd: entry.fillPriceUsd,
+      sizeUsd: entry.sizeUsd,
+      lastSeenAtMs: entry.leaderBuyAtMs,
+      blockTime: Math.floor(entry.leaderBuyAtMs / 1000),
+    };
+    const watchKey = leaderMirrorWatchKey(hit);
+    leaderMirrorWatches.set(watchKey, {
+      hit,
+      hitKey: leaderMirrorHitKey(hit),
+      startedAtMs: nowMs - Math.max(gates.entryGraceMs ?? 60_000, 1) - 1,
+      expiresAtMs: nowMs + leaderMirrorObservationWindowMs(gates),
+      metricSource: 'seed',
+    });
+    leaderMirrorDecisions.delete(watchKey);
+    leaderMirrorEntryRetryAfterMs.delete(watchKey);
+    leaderMirrorQuoteLastSelectedAtMs.delete(watchKey);
+    leaderMirrorQuoteLastSampleTsMs.delete(watchKey);
+    leaderMirrorQuoteSampleCount.delete(watchKey);
+    leaderMirrorPc5mKnownAtMs.delete(watchKey);
+    leaderMirrorFreshStructuralKeys.add(watchKey);
+    entry.lastReason = 'rearmed';
+    changed = true;
+    rearmed += 1;
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'leader_mirror_open_bag_rearm',
+      mint: entry.mint,
+      leader: entry.leader,
+      leaderFillPriceUsd: entry.fillPriceUsd,
+      freeUsdc: balances.quoteUsd,
+      ageMs: Math.max(0, nowMs - entry.leaderBuyAtMs),
+    });
+  }
+  if (changed) {
+    state.leaderMirrorWatches = Object.fromEntries(leaderMirrorWatches);
+    state.leaderMirrorDecisions = Object.fromEntries(leaderMirrorDecisions);
+    saveMildDipState(cfg.statePath, state);
+  }
+  return rearmed;
 }
 
 function wakeFundingParkedLeaderMirrorWatches(
@@ -6966,6 +7174,8 @@ export async function runMildDipLoop(
   let mirrorWakeInFlight = false;
   let leaderBalanceReconcileInFlight = false;
   let leaderBalanceReconcileCursor = 0;
+  let leaderOpenBagRearmInFlight = false;
+  let lastLeaderOpenBagRearmMs = 0;
 
   const reconcileLeaderBalances = async (nowMs: number): Promise<void> => {
     const positions = Object.entries(state.open).filter(
@@ -7088,6 +7298,28 @@ export async function runMildDipLoop(
     }
     const leaderSellEvents = leaderSellFeed?.read(nowMs) ?? [];
     const crossLeaderBuyEvents = crossLeaderBuyFeed?.read(nowMs) ?? [];
+    if (cfg.leaderMirror.leaderOpenBagRetryEnabled) {
+      dropLeaderOpenBagsForSellEvents(cfg, state, leaderSellEvents);
+    }
+    if (
+      cfg.leaderMirror.leaderOpenBagRetryEnabled &&
+      !leaderOpenBagRearmInFlight &&
+      nowMs - lastLeaderOpenBagRearmMs >=
+        cfg.leaderMirror.leaderOpenBagRetryIntervalMs
+    ) {
+      lastLeaderOpenBagRearmMs = nowMs;
+      leaderOpenBagRearmInFlight = true;
+      void rearmLeaderOpenBags(cfg, state, nowMs, leaderSellFeed)
+        .catch((err) => {
+          console.warn(
+            '[mild-dip] leader open-bag rearm failed',
+            err instanceof Error ? err.message : err,
+          );
+        })
+        .finally(() => {
+          leaderOpenBagRearmInFlight = false;
+        });
+    }
     if (leaderSellFeed && nowMs - lastLeaderSellFeedStatsMs >= 30_000) {
       lastLeaderSellFeedStatsMs = nowMs;
       const feedStats = leaderSellFeed.stats();

@@ -51,7 +51,6 @@ describe('mirror PM2 apps', () => {
       'MILD_DIP_MIRROR_MAX_QUOTE_MINTS',
       'MILD_DIP_MIRROR_FUNDING_PARK_ENABLED',
       'MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS',
-      'MILD_DIP_MIRROR_FUNDING_PARK_MAX',
       'MILD_DIP_MIRROR_TIER_PARK_ENABLED',
       'MILD_DIP_MIRROR_TIER_MAX_OPEN',
       'MILD_DIP_MIRROR_TICK_INTERVAL_MS',
@@ -92,8 +91,24 @@ describe('mirror PM2 apps', () => {
     expect(mirror2?.env.MILD_DIP_MIRROR_FUNDING_PARK_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS).toBe('30000');
     expect(mirror2?.env.MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS).toBe('30000');
-    expect(mirror?.env.MILD_DIP_MIRROR_FUNDING_PARK_MAX).toBe('10');
+    expect(mirror?.env.MILD_DIP_MIRROR_FUNDING_PARK_MAX).toBe('60');
     expect(mirror2?.env.MILD_DIP_MIRROR_FUNDING_PARK_MAX).toBe('10');
+    expect(mirror?.env.MILD_DIP_MIRROR_LEADER_OPEN_BAG_ENABLED).toBe('1');
+    expect(mirror?.env.MILD_DIP_MIRROR_LEADER_OPEN_BAG_RETRY_MS).toBe('60000');
+    expect(mirror?.env.MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_AGE_MS).toBe('21600000');
+    expect(mirror?.env.MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_ENTRIES).toBe('60');
+    expect(mirror?.env.MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_PER_PASS).toBe('5');
+    expect(mirror?.env.MILD_DIP_MIRROR_LEADER_OPEN_BAG_MIN_FREE_USD).toBe('0');
+    for (const key of [
+      'MILD_DIP_MIRROR_LEADER_OPEN_BAG_ENABLED',
+      'MILD_DIP_MIRROR_LEADER_OPEN_BAG_RETRY_MS',
+      'MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_AGE_MS',
+      'MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_ENTRIES',
+      'MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_PER_PASS',
+      'MILD_DIP_MIRROR_LEADER_OPEN_BAG_MIN_FREE_USD',
+    ]) {
+      expect(mirror2?.env[key]).toBeUndefined();
+    }
     expect(mirror?.env.MILD_DIP_MIRROR_TIER_PARK_ENABLED).toBe('1');
     expect(mirror2?.env.MILD_DIP_MIRROR_TIER_PARK_ENABLED).toBe('1');
     expect(mirror?.env.MILD_DIP_MIRROR_TIER_MAX_OPEN).toBe('12');

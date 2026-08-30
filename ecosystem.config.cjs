@@ -4798,6 +4798,13 @@ function makeMirrorApp({
   greenInstantEnabled = '0',
   maxVol5mToLiq = '2',
   firstTouchPositionUsd,
+  fundingParkMax = '10',
+  leaderOpenBagEnabled = '',
+  leaderOpenBagRetryMs = '60000',
+  leaderOpenBagMaxAgeMs = '21600000',
+  leaderOpenBagMaxEntries = '60',
+  leaderOpenBagMaxPerPass = '5',
+  leaderOpenBagMinFreeUsd = '0',
 }) {
   return {
     ...mildDipBotApp,
@@ -4877,7 +4884,7 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_MAX_QUOTE_MINTS: '8',
       MILD_DIP_MIRROR_FUNDING_PARK_ENABLED: '1',
       MILD_DIP_MIRROR_FUNDING_PARK_RETRY_MS: '30000',
-      MILD_DIP_MIRROR_FUNDING_PARK_MAX: '10',
+      MILD_DIP_MIRROR_FUNDING_PARK_MAX: fundingParkMax,
       MILD_DIP_MIRROR_TICK_INTERVAL_MS: '1000',
       MILD_DIP_MIRROR_STRUCTURAL_MAX_MINTS: '4',
       MILD_DIP_MIRROR_STRUCTURAL_GAP_MS: '2000',
@@ -4975,6 +4982,16 @@ function makeMirrorApp({
       ...(firstTouchPositionUsd != null
         ? { MILD_DIP_FIRST_TOUCH_POSITION_USD: firstTouchPositionUsd }
         : {}),
+      ...(leaderOpenBagEnabled
+        ? {
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_ENABLED: leaderOpenBagEnabled,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_RETRY_MS: leaderOpenBagRetryMs,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_AGE_MS: leaderOpenBagMaxAgeMs,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_ENTRIES: leaderOpenBagMaxEntries,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_PER_PASS: leaderOpenBagMaxPerPass,
+            MILD_DIP_MIRROR_LEADER_OPEN_BAG_MIN_FREE_USD: leaderOpenBagMinFreeUsd,
+          }
+        : {}),
     },
   };
 }
@@ -5006,6 +5023,8 @@ if (mildDipBotApp) {
       greenInstantEnabled: '1',
       maxVol5mToLiq: '0',
       firstTouchPositionUsd: '0',
+      fundingParkMax: '60',
+      leaderOpenBagEnabled: '1',
       minLiquidityUsd: '12000',
       minVol5mUsd: '500',
       minMcapUsd: '50000',

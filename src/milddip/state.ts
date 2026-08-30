@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { KnifeWatchEntry } from './knife-stabilize.js';
 import type { WaitDipWatchEntry } from './wait-dip.js';
 import type { MildDipCandidateMetrics } from './gates.js';
+import type { LeaderOpenBagEntry } from './leader-open-bags.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { sanitizeRecentEntryMsByMint } from './entry-churn.js';
 import { rotateMildDipJournal } from './journal-rotation.js';
@@ -295,6 +296,7 @@ export type MildDipState = {
     string,
     { hitKey: string; decidedAtMs: number; reason: string }
   >;
+  mirrorLeaderOpenBags?: Record<string, LeaderOpenBagEntry>;
   mirrorTradingCashUsd?: number;
   mirrorLossCapBasis?: 'mark' | 'realized';
   mirrorLossCapDayKey?: string;
@@ -562,6 +564,44 @@ function sanitizeLeaderMirrorDecisions(
   return out;
 }
 
+function sanitizeLeaderOpenBags(
+  raw: unknown,
+): MildDipState['mirrorLeaderOpenBags'] {
+  if (!raw || typeof raw !== 'object') return {};
+  const out: NonNullable<MildDipState['mirrorLeaderOpenBags']> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    if (!value || typeof value !== 'object') continue;
+    const entry = value as Partial<LeaderOpenBagEntry>;
+    if (
+      typeof entry.mint !== 'string' ||
+      entry.mint.length < 32 ||
+      typeof entry.leader !== 'string' ||
+      entry.leader.length < 32
+    ) continue;
+    const fillPriceUsd = Number(entry.fillPriceUsd);
+    const sizeUsd = Number(entry.sizeUsd);
+    const leaderBuyAtMs = Number(entry.leaderBuyAtMs);
+    const lastCheckAtMs = Number(entry.lastCheckAtMs);
+    if (
+      !(fillPriceUsd > 0) ||
+      !(sizeUsd > 0) ||
+      !(leaderBuyAtMs > 0) ||
+      !(lastCheckAtMs >= 0) ||
+      typeof entry.lastReason !== 'string'
+    ) continue;
+    out[key] = {
+      mint: entry.mint,
+      leader: entry.leader,
+      fillPriceUsd,
+      sizeUsd,
+      leaderBuyAtMs,
+      lastCheckAtMs,
+      lastReason: entry.lastReason,
+    };
+  }
+  return out;
+}
+
 export function emptyMildDipState(nowMs = Date.now()): MildDipState {
   return {
     open: {},
@@ -572,6 +612,7 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     waitDipWatch: {},
     leaderMirrorWatches: {},
     leaderMirrorDecisions: {},
+    mirrorLeaderOpenBags: {},
     recentEntryMsByMint: {},
     mirrorTradingCashUsd: 0,
     mirrorLossCapBasis: 'realized',
@@ -617,6 +658,7 @@ export function loadMildDipState(
         nowMs,
         mirrorObserveMs,
       ),
+      mirrorLeaderOpenBags: sanitizeLeaderOpenBags(parsed.mirrorLeaderOpenBags),
       recentEntryMsByMint: sanitizeRecentEntryMsByMint(parsed.recentEntryMsByMint),
       mirrorTradingCashUsd:
         Number.isFinite(Number(parsed.mirrorTradingCashUsd))
