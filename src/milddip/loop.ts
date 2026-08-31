@@ -102,6 +102,11 @@ import {
 } from './exit-engine.js';
 import { MONEY_MOTIVATED_EXIT_REASONS, shouldDeferSoftExit } from './exit-defer.js';
 import {
+  GREEN_WOULD_BUY_HOLD_REASONS,
+  greenLaneGatesFrom,
+  shouldHoldGreenExitWouldBuy,
+} from './green-would-buy.js';
+import {
   LeaderSellFeed,
   CrossLeaderBuyFeed,
   crossLeaderAverageDiscountReached,
@@ -4281,6 +4286,8 @@ function wakeFundingParkedLeaderMirrorWatches(
 }
 /** mint → last exit_defer_would_buy journal ts (throttle). */
 const lastExitDeferJournalMs = new Map<string, number>();
+/** mint → last green_exit_hold_would_rebuy journal ts (throttle). */
+const lastGreenExitHoldJournalMs = new Map<string, number>();
 /** mint → last leader_align_defer journal ts (throttle). */
 const lastLeaderAlignJournalMs = new Map<string, number>();
 
@@ -6054,6 +6061,125 @@ async function tryExits(
        * entry gate took it again ninety-eight seconds later, 7.7% lower, where
        * the ladder banked two rungs. One brain, not two hands.
        */
+      if (
+        cfg.greenExitHoldWouldBuyEnabled &&
+        decision.reason != null &&
+        GREEN_WOULD_BUY_HOLD_REASONS.has(decision.reason)
+      ) {
+        const om = readOpenMarkMetrics(mint, nowMs);
+        const sw = mildDipPriceRing.streamWindowMetrics(
+          mint,
+          cfg.cooldownBounceLookbackMs,
+          nowMs,
+        );
+        const tape = mildDipPriceRing.tapeMinuteMetrics(
+          mint,
+          nowMs,
+          60_000,
+          360_000,
+          180_000,
+          greenTapeMinuteOptions(cfg),
+        );
+        const metricsAgeMs = om ? Math.max(0, nowMs - om.tsMs) : null;
+        const greenRunnerRelax = leaderActiveNow({
+          gates: {
+            enabled: cfg.green.runnerRelaxEnabled,
+            windowMs: cfg.green.runnerLeaderActiveMs,
+          },
+          nowMs,
+          leaderSeenAtMs: state.leaderSeenMints?.[mint] ?? null,
+          seedHitAtMs: leaderSeedHitByMint(leaderHits, mint)?.lastSeenAtMs ?? null,
+        });
+        const greenGates = greenLaneGatesFrom(cfg.green, greenRunnerRelax);
+        const greenInput = {
+          pc5mPct: om?.pc5mPct ?? null,
+          pc1hPct: null,
+          volume5mUsd: om?.volume5mUsd ?? null,
+          volume1hUsd: null,
+          liquidityUsd: om?.liquidityUsd ?? null,
+          buys5m: null,
+          sells5m: null,
+          pairAgeHours:
+            mildDipPairAgeRegistry.pairAgeHours(mint, nowMs) ?? pos.entryPairAgeHours ?? null,
+          dumpExtentFromPeakPct: sw.dumpExtentFromPeakPct,
+          rallyIntoPeakPct: sw.rallyIntoPeakPct,
+          bounceFromTroughPct: sw.bounceFromTroughPct,
+          tapeRet1mPct: tape.tapeRet1mPct,
+          tapePrior5mPct: tape.tapePrior5mPct,
+        };
+        const holdVerdict = shouldHoldGreenExitWouldBuy({
+          reason: decision.reason,
+          enabled: cfg.greenExitHoldWouldBuyEnabled,
+          maxTotalMs: cfg.greenExitHoldWouldBuyMaxMs,
+          deferredMsSoFar: pos.greenExitHoldMs ?? 0,
+          metricsAgeMs,
+          greenGates,
+          input: greenInput,
+        });
+        const syntheticVerdict =
+          holdVerdict.reasons.includes('hold_budget_spent')
+            ? shouldHoldGreenExitWouldBuy({
+                reason: decision.reason,
+                enabled: cfg.greenExitHoldWouldBuyEnabled,
+                maxTotalMs: 0,
+                deferredMsSoFar: pos.greenExitHoldMs ?? 0,
+                metricsAgeMs,
+                greenGates,
+                input: greenInput,
+              })
+            : holdVerdict;
+        if (
+          holdVerdict.hold ||
+          (holdVerdict.reasons.includes('hold_budget_spent') &&
+            syntheticVerdict.hold &&
+            (pos.greenExitHoldReentries ?? 0) < cfg.greenExitHoldWouldBuyMaxReentries)
+        ) {
+          const synthetic = !holdVerdict.hold;
+          if (synthetic) {
+            pos.peakPriceUsd = decision.markPriceUsd;
+            pos.trailArmed = false;
+            pos.greenExitHoldMs = 0;
+            pos.greenExitHoldAtMs = nowMs;
+            pos.greenExitHoldReentries = (pos.greenExitHoldReentries ?? 0) + 1;
+          } else {
+            const sinceLast =
+              pos.greenExitHoldAtMs != null ? Math.max(0, nowMs - pos.greenExitHoldAtMs) : 0;
+            pos.greenExitHoldMs =
+              (pos.greenExitHoldMs ?? 0) + Math.min(sinceLast, cfg.markDexRefreshMs * 4);
+            pos.greenExitHoldAtMs = nowMs;
+          }
+          const lastJ = lastGreenExitHoldJournalMs.get(mint) ?? 0;
+          if (nowMs - lastJ >= 5_000) {
+            lastGreenExitHoldJournalMs.set(mint, nowMs);
+            appendMildDipJournal(cfg.journalPath, {
+              kind: synthetic ? 'green_exit_synthetic_reentry' : 'green_exit_hold_would_rebuy',
+              mint,
+              symbol: pos.symbol,
+              wouldReason: decision.reason,
+              pnlPct: +decision.pnlPct.toFixed(2),
+              markPx: decision.markPriceUsd,
+              entryPx: pos.entryPriceUsd,
+              tapeRet1mPct: tape.tapeRet1mPct,
+              tapePrior5mPct: tape.tapePrior5mPct,
+              dumpFromPeakPct: sw.dumpExtentFromPeakPct,
+              liq: om?.liquidityUsd ?? null,
+              vol5m: om?.volume5mUsd ?? null,
+              runnerRelax: greenRunnerRelax,
+              heldMs: pos.greenExitHoldMs,
+              budgetMs: cfg.greenExitHoldWouldBuyMaxMs,
+              reentries: pos.greenExitHoldReentries ?? 0,
+            });
+          }
+          continue;
+        }
+        appendMildDipJournal(cfg.journalPath, {
+            kind: 'green_exit_hold_declined',
+            mint,
+            symbol: pos.symbol,
+            wouldReason: decision.reason,
+            declinedBy: holdVerdict.reasons.slice(0, 4).join(','),
+          });
+      }
       if (cfg.exitDeferWouldBuyEnabled) {
         const om = readOpenMarkMetrics(mint, nowMs);
         const held = Math.max(0, nowMs - pos.openedAtMs);

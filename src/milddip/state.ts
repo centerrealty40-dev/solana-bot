@@ -210,6 +210,12 @@ export type MildDipOpenPosition = {
   exitDeferredMs?: number;
   /** Wall clock of the last such deferral, for accumulating the budget. */
   exitDeferredAtMs?: number;
+  /** Cumulative ms a green exit was held because green would buy again. */
+  greenExitHoldMs?: number;
+  /** Wall clock of the last green exit hold, for accumulating the budget. */
+  greenExitHoldAtMs?: number;
+  /** Synthetic green re-entries used after the hold budget was spent. */
+  greenExitHoldReentries?: number;
   /** 1.11.994 — start of the small-loss reclaim wait, if active. */
   lossReclaimWaitStartedAtMs?: number;
   /** 1.11.994 — the reclaim wait is one-shot for a position. */
@@ -475,6 +481,11 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
     }
     if (!Number.isFinite(Number(pos.mirrorFirstClipFirstFillAtMs))) {
       delete pos.mirrorFirstClipFirstFillAtMs;
+    }
+    for (const key of ['greenExitHoldMs', 'greenExitHoldAtMs', 'greenExitHoldReentries'] as const) {
+      const value = Number(pos[key]);
+      if (Number.isFinite(value) && value >= 0) pos[key] = value;
+      else delete pos[key];
     }
     const intent = pos.mirrorLeaderSellIntent;
     if (

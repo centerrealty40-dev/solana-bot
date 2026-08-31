@@ -413,6 +413,15 @@ describe('mirror PM2 apps', () => {
     expect(own2?.env.MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT).toBe('0');
     expect(own2?.env.MILD_DIP_RECOVER_DEFER).toBe('0');
     expect(own2?.env.MILD_DIP_EXIT_HARD_TIME_STOP_MS).toBe('2400000');
+    expect(own2?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY).toBe('1');
+    expect(own2?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_MS).toBe('120000');
+    expect(own2?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_REENTRIES).toBe('2');
+    expect(mirror?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY).toBeUndefined();
+    expect(mirror2?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY).toBeUndefined();
+    expect(mirror?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_MS).toBeUndefined();
+    expect(mirror2?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_MS).toBeUndefined();
+    expect(mirror?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_REENTRIES).toBeUndefined();
+    expect(mirror2?.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_REENTRIES).toBeUndefined();
     expect(own2?.env.MILD_DIP_EXIT_TP_GRID_STEP_PCT).toBe('0');
     expect(own2?.env.MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT).toBe('0');
     expect(mirror?.env.MILD_DIP_EXIT_TP_GRID_STEP_PCT).toBe('8');

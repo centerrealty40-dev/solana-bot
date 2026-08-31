@@ -371,6 +371,9 @@ const MildDipConfigSchema = z.object({
   exitDeferWouldBuyEnabled: z.boolean().default(false),
   /** Cumulative ms one bag may hold a soft exit this way. */
   exitDeferWouldBuyMaxMs: z.coerce.number().int().min(0).max(3_600_000).default(600_000),
+  greenExitHoldWouldBuyEnabled: z.boolean().default(false),
+  greenExitHoldWouldBuyMaxMs: z.coerce.number().int().min(0).max(1_800_000).default(120_000),
+  greenExitHoldWouldBuyMaxReentries: z.coerce.number().int().min(0).max(10).default(2),
   recoverDeferEnabled: z.boolean().default(false),
   recoverDeferLookbackMs: z.coerce.number().int().min(30_000).max(3_600_000).default(300_000),
   recoverDeferMinBouncePct: z.coerce.number().min(0).max(50).default(3),
@@ -1929,6 +1932,11 @@ export function loadMildDipConfig(): MildDipConfig {
     exitMinSpacingMs: process.env.MILD_DIP_EXIT_MIN_SPACING_MS ?? 10_000,
     exitDeferWouldBuyEnabled: envBool('MILD_DIP_EXIT_DEFER_WOULD_BUY', false),
     exitDeferWouldBuyMaxMs: process.env.MILD_DIP_EXIT_DEFER_WOULD_BUY_MAX_MS ?? 600_000,
+    greenExitHoldWouldBuyEnabled: envBool('MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY', false),
+    greenExitHoldWouldBuyMaxMs:
+      process.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_MS ?? 120_000,
+    greenExitHoldWouldBuyMaxReentries:
+      process.env.MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_REENTRIES ?? 2,
     recoverDeferEnabled: envBool('MILD_DIP_RECOVER_DEFER', false),
     recoverDeferLookbackMs: process.env.MILD_DIP_RECOVER_DEFER_LOOKBACK_MS ?? 300_000,
     recoverDeferMinBouncePct: process.env.MILD_DIP_RECOVER_DEFER_MIN_BOUNCE_PCT ?? 3,

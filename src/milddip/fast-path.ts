@@ -6,6 +6,7 @@
  */
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import { evaluateGreenLane } from './green-lane.js';
+import { greenLaneGatesFrom } from './green-would-buy.js';
 import { requestGreenMinuteJupiterRefresh } from './green-minute-jupiter-refresh.js';
 import {
   confirmedTroughGatePasses,
@@ -41,13 +42,7 @@ import {
   turnDumpKnifeBranchLive,
 } from './turn-dump.js';
 
-export function effectiveRunnerTapeCap(
-  relax: boolean,
-  runnerValue: number,
-  normalValue: number,
-): number {
-  return relax ? (runnerValue > 0 ? runnerValue : Number.POSITIVE_INFINITY) : normalValue;
-}
+export { effectiveRunnerTapeCap } from './green-would-buy.js';
 
 function turnDumpArgsFromCfg(
   cfg: MildDipConfig,
@@ -932,25 +927,7 @@ export async function evaluateFastPathCandidate(
       leaderSeenAtMs,
       seedHitAtMs: seedHit?.lastSeenAtMs ?? null,
     });
-    const effMinLiquidityUsd = greenRunnerRelax
-      ? cfg.green.runnerMinLiquidityUsd
-      : cfg.green.minLiquidityUsd;
-    const effMinPairAgeHours = greenRunnerRelax
-      ? cfg.green.runnerMinPairAgeHours
-      : cfg.green.minPairAgeHours;
-    const effMaxBounceFromTroughPct = greenRunnerRelax
-      ? cfg.green.runnerMaxBounceFromTroughPct
-      : cfg.green.maxBounceFromTroughPct;
-    const effMaxTapeRet1mPct = effectiveRunnerTapeCap(
-      greenRunnerRelax,
-      cfg.green.runnerMaxTapeRet1mPct,
-      cfg.green.maxTapeRet1mPct,
-    );
-    const effMaxTapePrior5mPct = effectiveRunnerTapeCap(
-      greenRunnerRelax,
-      cfg.green.runnerMaxTapePrior5mPct,
-      cfg.green.maxTapePrior5mPct,
-    );
+    const greenGates = greenLaneGatesFrom(cfg.green, greenRunnerRelax);
     const dexImpulse =
       struct.metrics.priceChange5mPct != null &&
       struct.metrics.priceChange5mPct >= Math.max(cfg.green.minPc5mPct, 0);
@@ -995,28 +972,7 @@ export async function evaluateFastPathCandidate(
         sells5m: struct.metrics.sells5m,
         pairAgeHours: struct.metrics.pairAgeHours,
       },
-      {
-        enabled: true,
-        minTurnover5mLiq: cfg.green.minTurnover5mLiq,
-        minVolume5mUsd: cfg.green.minVolume5mUsd,
-        minVolume1hUsd: cfg.green.minVolume1hUsd,
-        minPc5mPct: cfg.green.minPc5mPct,
-        maxPc5mPct: cfg.green.maxPc5mPct,
-        maxRallyIntoPeakPct: cfg.green.maxRallyIntoPeakPct,
-        maxBounceFromTroughPct: effMaxBounceFromTroughPct,
-        minDumpFromPeakPct: cfg.green.minDumpFromPeakPct,
-        tapeMinuteGatesEnabled: cfg.green.tapeMinuteGatesEnabled,
-        minTapeRet1mPct: cfg.green.minTapeRet1mPct,
-        maxTapePrior5mPct: effMaxTapePrior5mPct,
-        requirePc1h: cfg.green.requirePc1h,
-        minPc1hPct: cfg.green.minPc1hPct,
-        minBuys5m: cfg.green.minBuys5m,
-        maxBuyShare5m: cfg.green.maxBuyShare5m,
-        minLiquidityUsd: effMinLiquidityUsd,
-        minPairAgeHours: effMinPairAgeHours,
-        maxRet1mPct: cfg.green.maxRet1mPct,
-        maxTapeRet1mPct: effMaxTapeRet1mPct,
-      },
+      greenGates,
     );
     if (g.pass) {
       return {
@@ -1063,14 +1019,14 @@ export async function evaluateFastPathCandidate(
         ageH: struct.metrics.pairAgeHours,
         buyShare: g.buyShare,
         runnerRelax: greenRunnerRelax,
-        effMinLiquidityUsd,
-        effMinPairAgeHours,
-        effMaxBounceFromTroughPct,
-        effMaxTapeRet1mPct: Number.isFinite(effMaxTapeRet1mPct)
-          ? effMaxTapeRet1mPct
+        effMinLiquidityUsd: greenGates.minLiquidityUsd,
+        effMinPairAgeHours: greenGates.minPairAgeHours,
+        effMaxBounceFromTroughPct: greenGates.maxBounceFromTroughPct,
+        effMaxTapeRet1mPct: Number.isFinite(greenGates.maxTapeRet1mPct)
+          ? greenGates.maxTapeRet1mPct
           : null,
-        effMaxTapePrior5mPct: Number.isFinite(effMaxTapePrior5mPct)
-          ? effMaxTapePrior5mPct
+        effMaxTapePrior5mPct: Number.isFinite(greenGates.maxTapePrior5mPct ?? 0)
+          ? (greenGates.maxTapePrior5mPct ?? null)
           : null,
       });
     }
