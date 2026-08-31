@@ -978,6 +978,8 @@ const MildDipConfigSchema = z.object({
     ownExitEnabled: z.boolean().default(false),
     ownExitTimeStopMs: z.coerce.number().int().min(0).default(0),
     lossCapUsd: z.coerce.number().min(0).default(0),
+    /** 1.11.1085 — optionally include every lane in the shared daily loss cap. */
+    lossCapAllLanes: z.boolean().default(false),
     lossCapFlatten: z.boolean().default(false),
     lossCapDailyReset: z.boolean().default(false),
     lossCapResetTzOffsetMinutes: z.coerce.number().int().min(-720).max(840).default(180),
@@ -1975,6 +1977,8 @@ export function loadMildDipConfig(): MildDipConfig {
       leaderOpenBagMaxPerPass: envNum('MILD_DIP_MIRROR_LEADER_OPEN_BAG_MAX_PER_PASS', 5),
       leaderOpenBagMinFreeUsd: envNum('MILD_DIP_MIRROR_LEADER_OPEN_BAG_MIN_FREE_USD', 0),
       lossCapUsd: envNum('MILD_DIP_MIRROR_LOSS_CAP_USD', 0),
+      /** 1.11.1085 — own discovery needs the same cap while mirrors stay lane-scoped. */
+      lossCapAllLanes: envBool('MILD_DIP_LOSS_CAP_ALL_LANES', false),
       lossCapFlatten: envBool('MILD_DIP_MIRROR_LOSS_CAP_FLATTEN', false),
       lossCapDailyReset: envBool('MILD_DIP_MIRROR_LOSS_CAP_DAILY_RESET', false),
       lossCapResetTzOffsetMinutes: envNum(

@@ -47,6 +47,11 @@ function cfg(journalPath: string, overrides?: Partial<MildDipConfig>): MildDipCo
     leaderGateShadowDeferMaxPerHour: 60,
     journalPath,
     deniedMints: [],
+    leaderMirror: {
+      mirrorOnly: false,
+      lossCapUsd: 0,
+      lossCapAllLanes: false,
+    },
     ...overrides,
   } as MildDipConfig;
 }
