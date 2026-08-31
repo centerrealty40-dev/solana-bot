@@ -446,6 +446,19 @@ describe('mild-dip config exit schema', () => {
     expect(eco).toContain("MILD_DIP_EXIT_LOSS_RECLAIM_MAX_WAIT_MS: '3600000'");
   });
 
+  it('loads green rally and bounce caps', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_GREEN_MAX_RALLY_INTO_PEAK_PCT: '20',
+        MILD_DIP_GREEN_MAX_BOUNCE_FROM_TROUGH_PCT: '25',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.green.maxRallyIntoPeakPct).toBe(20);
+    expect(cfg.green.maxBounceFromTroughPct).toBe(25);
+  });
+
   it('keeps ecosystem staged-add anchor keys aligned with the config loader', () => {
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
     const keys = [

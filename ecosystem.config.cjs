@@ -5188,12 +5188,14 @@ if (mildDipBotApp) {
       ),
       MILD_DIP_LEADER_SEED_PATH: path.join(
         root,
-        'data/milddip-own2/leader-seed-empty.json',
+        'data/milddip/leader-seed.json',
       ),
       MILD_DIP_MIRROR_ENABLED: '0',
       MILD_DIP_MIRROR_ONLY: '0',
       MILD_DIP_GREEN_ENABLED: '1',
-      MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
+      MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '1',
+      MILD_DIP_GREEN_MAX_RALLY_INTO_PEAK_PCT: '20',
+      MILD_DIP_GREEN_MAX_BOUNCE_FROM_TROUGH_PCT: '25',
       MILD_DIP_GREEN_POSITION_USD: '5',
       MILD_DIP_POSITION_USD: '5',
       MILD_DIP_SIZE_MIN_USD: '5',
@@ -5213,6 +5215,9 @@ if (mildDipBotApp) {
       MILD_DIP_MAX_OPEN_POSITIONS: '12',
       MILD_DIP_REQUIRE_LEADER_SEEN: '1',
       MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
+      MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
+      MILD_DIP_LEADER_SEED_MAX: '250',
+      MILD_DIP_LEADER_SEED_MAX_AGE_MS: '7200000',
     },
   });
 }
