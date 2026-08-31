@@ -85,8 +85,7 @@ import { writeUsBuyFill } from './trade-journal.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { leaderBuyGateOk } from './leader-seen-gate.js';
 import { leaderActiveNow } from './leader-active.js';
-
-const HOLDING_DUST_RAW = 1000n;
+import { adoptReadReplaysClosedBag, HOLDING_DUST_RAW } from './sell-empty-guard.js';
 
 /** `getTransaction` returns the whole transaction; cash math needs its `meta`. */
 function parsedTransactionMeta(tx: unknown): unknown {
@@ -2232,7 +2231,14 @@ export async function attemptMildDipEntry(args: {
     const balancesAfterFail = await peekCopyQuoteBalances(copyCfg).catch(() => null);
     const onchainAfterFail =
       rawAfterFail && /^\d+$/.test(rawAfterFail) ? BigInt(rawAfterFail) : 0n;
-    if (onchainAfterFail > HOLDING_DUST_RAW) {
+    const lastExit = state.lastExitByMint?.[c.mint];
+    const adoptReplaysClosedBag = adoptReadReplaysClosedBag({
+      onchainRaw: onchainAfterFail,
+      lastExitAtMs: lastExit?.atMs ?? null,
+      lastExitPreExitTokenRaw: lastExit?.preExitTokenRaw ?? null,
+      nowMs,
+    });
+    if (onchainAfterFail > HOLDING_DUST_RAW && !adoptReplaysClosedBag) {
       const adoptedTxMeta =
         buy.txMeta ??
         (buy.signature
@@ -2279,6 +2285,17 @@ export async function attemptMildDipEntry(args: {
         greenExitProfile: isGreen ? greenExitProfile : null,
       });
     } else {
+      if (adoptReplaysClosedBag) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mild_dip_buy_fail_adopt_skip_stale',
+          mint: c.mint,
+          symbol: c.symbol,
+          reason: buy.reason ?? null,
+          tokenRaw: onchainAfterFail.toString(),
+          lastExitAtMs: lastExit?.atMs ?? null,
+          lastExitPreExitTokenRaw: lastExit?.preExitTokenRaw ?? null,
+        });
+      }
       delete state.open[c.mint];
       state.cooldownUntilMs[c.mint] =
         nowMs +

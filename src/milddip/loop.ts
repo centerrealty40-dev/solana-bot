@@ -722,6 +722,7 @@ function maybeJournalMark(
     !newPeak &&
     !decision.shouldExit &&
     decision.markQuarantineForceReleased !== true &&
+    decision.markQuarantineForceReleaseVetoedByDex !== true &&
     nowMs - last < cfg.markJournalMs
   ) return;
   lastMarkJournalMs.set(pos.mint, nowMs);
@@ -774,6 +775,8 @@ function maybeJournalMark(
     // these, so offline analysis must drop them rather than read zeros.
     quarantined: decision.markQuarantined === true,
     quarantineForceReleased: decision.markQuarantineForceReleased === true,
+    quarantineForceReleaseVetoedByDex:
+      decision.markQuarantineForceReleaseVetoedByDex === true,
     quarantineBlindMs: decision.markQuarantineBlindMs ?? null,
     quarantineAcceptedSource:
       decision.markQuarantineForceReleased === true ? source : null,
@@ -3625,7 +3628,7 @@ async function executeQueuedSell(args: {
     lossCooldownMs: cfg.lossCooldownMs,
   });
 
-  const noteLastExit = (exitPx: number): void => {
+  const noteLastExit = (exitPx: number, preExitTokenRaw?: string | null): void => {
     if (!(exitPx > 0)) return;
     if (!state.lastExitByMint) state.lastExitByMint = {};
     // Prefer live Dex open-mark liq; fall back to entry snapshot.
@@ -3642,6 +3645,9 @@ async function executeQueuedSell(args: {
       atMs: nowMs,
       pnlPct: +realizedPnl.toFixed(2),
       ...(liq != null ? { liquidityUsd: liq } : {}),
+      ...(preExitTokenRaw != null && /^\d+$/.test(preExitTokenRaw)
+        ? { preExitTokenRaw }
+        : {}),
     };
     // 1.11.783 — pin to hot buffer so stream wake / sampler keep the name.
     mildDipHotMints.note(mint, nowMs);
@@ -3653,7 +3659,7 @@ async function executeQueuedSell(args: {
     if (state.open[mint]) {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
-      noteLastExit(exitPx);
+      noteLastExit(exitPx, pos.tokenRaw ?? null);
       saveMildDipState(cfg.statePath, state);
     }
     appendMildDipJournal(cfg.journalPath, {
@@ -3776,7 +3782,7 @@ async function executeQueuedSell(args: {
     if (state.open[mint]) {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
-      noteLastExit(exitPx);
+      noteLastExit(exitPx, sell.tokenRawBefore ?? pos.tokenRaw ?? null);
       saveMildDipState(cfg.statePath, state);
     }
     appendMildDipJournal(cfg.journalPath, {
@@ -3854,7 +3860,7 @@ async function executeQueuedSell(args: {
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
       // 1.11.783 — drop_empty was wiping the bag without lastExit → post-exit wake blind.
-      noteLastExit(decision.markPriceUsd || pos.entryPriceUsd);
+      noteLastExit(decision.markPriceUsd || pos.entryPriceUsd, pos.tokenRaw ?? null);
       saveMildDipState(cfg.statePath, state);
     }
     appendMildDipJournal(cfg.journalPath, {

@@ -1350,6 +1350,56 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
+  describe('a green bag refuses an unbacked stream print (own2 8np28cju)', () => {
+    // Entry 0.00021854, peak 0.00022356, then a single stream tick at
+    // 0.00017138 (-20.33%) fired green_trail while the fill came back at
+    // 0.00021903 (+0.22%): the price never existed.
+    const gGreen = { ...gates, markJumpConfirmPct: 10, markJumpConfirmStreamPct: 8 };
+    const greenGates = {
+      takeProfitPct: 30,
+      stopPct: 6,
+      maxHoldMs: 600_000,
+      trailEnabled: true,
+      armPct: 2,
+      trailPct: 10,
+    };
+    const bag = (): MildDipOpenPosition =>
+      pos({
+        mint: 'green-phantom',
+        lane: 'green',
+        entryPriceUsd: 0.00021854,
+        peakPriceUsd: 0.00022356,
+        lastMarkPriceUsd: 0.00022356,
+        trailArmed: true,
+        openedAtMs: 1_000_000,
+      });
+    const at = (p: MildDipOpenPosition, px: number, nowMs: number) =>
+      decideMarkExit({
+        mint: p.mint,
+        pos: p,
+        markPriceUsd: px,
+        gates: gGreen,
+        greenGates,
+        nowMs,
+        markSource: 'stream',
+        dexCrossCheckPx: null,
+      })!;
+
+    it('parks the phantom print instead of trailing out on it', () => {
+      const p = bag();
+      const phantom = at(p, 0.00017138, 1_010_000);
+      expect(phantom.shouldExit).not.toBe(true);
+      expect(phantom.markQuarantined).toBe(true);
+      expect(phantom.peakPriceUsd).toBe(0.00022356);
+      applyMarkDecisionToPosition(p, phantom);
+
+      const real = at(p, 0.00021903, 1_011_000);
+      expect(real.markQuarantined).not.toBe(true);
+      expect(real.markDiscardStreamOutlier).not.toBe(true);
+      expect(real.shouldExit).not.toBe(true);
+    });
+  });
+
   describe('bounded green quarantine blindness (1.11.959)', () => {
     const g = {
       ...gates,
@@ -1378,6 +1428,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       nowMs: number,
       price = 118,
       gatesOverride = g,
+      dexCrossCheckPx: number | null = null,
     ) {
       return decideMarkExit({
         mint: p.mint,
@@ -1387,6 +1438,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         markQuarantineGreenMaxMs: gatesOverride.markQuarantineGreenMaxMs,
         nowMs,
         markSource: 'stream',
+        dexCrossCheckPx,
       })!;
     }
 
@@ -1402,6 +1454,25 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(released.markQuarantineForceReleased).toBe(true);
       expect(released.markQuarantineBlindMs).toBe(11_000);
       expect(released.pnlPct).toBeCloseTo(18, 6);
+    });
+
+    it('vetoes force-release when the live Dex contradicts the stream', () => {
+      const p = armedGreen();
+      const first = quarantine(p, 1_010_000, 118, g, 100);
+      expect(first.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, first);
+
+      const vetoed = quarantine(p, 1_021_000, 118, g, 100);
+      expect(vetoed.markQuarantineForceReleased).not.toBe(true);
+      expect(vetoed.markQuarantineForceReleaseVetoedByDex).toBe(true);
+      expect(vetoed.markQuarantined).toBe(true);
+      expect(vetoed.peakPriceUsd).toBe(130);
+
+      const silentDex = armedGreen();
+      const silentFirst = quarantine(silentDex, 1_010_000, 118);
+      applyMarkDecisionToPosition(silentDex, silentFirst);
+      const released = quarantine(silentDex, 1_021_000, 118);
+      expect(released.markQuarantineForceReleased).toBe(true);
     });
 
     it('keeps the blind clock running across changing quarantined prices', () => {

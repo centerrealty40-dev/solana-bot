@@ -78,6 +78,24 @@ describe('mild-dip state', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('keeps a digit-only pre-exit balance and drops garbage', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-last-exit-'));
+    const statePath = path.join(dir, 'state.json');
+    saveMildDipState(statePath, {
+      open: {},
+      cooldownUntilMs: {},
+      lastExitByMint: {
+        MintKept1111111111111111111111111111111111: { priceUsd: 1, atMs: 1_000, preExitTokenRaw: '22878791411' },
+        MintJunk1111111111111111111111111111111111: { priceUsd: 1, atMs: 1_000, preExitTokenRaw: 'not-a-number' },
+      },
+      updatedAtMs: 1_000,
+    });
+    const loaded = loadMildDipState(statePath);
+    expect(loaded.lastExitByMint?.MintKept1111111111111111111111111111111111?.preExitTokenRaw).toBe('22878791411');
+    expect(loaded.lastExitByMint?.MintJunk1111111111111111111111111111111111?.preExitTokenRaw).toBeUndefined();
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('persists and validates leader open bags', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-open-bag-state-'));
     const statePath = path.join(dir, 'state.json');

@@ -38,3 +38,27 @@ export function verdictDropEmptyOnNoBalance(args: {
   }
   return { drop: true, reason: 'confirmed_empty' };
 }
+
+
+/** Window in which a post-exit balance read may still replay the sold bag. */
+export const POST_EXIT_ADOPT_STALE_WINDOW_MS = 120_000;
+
+/**
+ * A read identical to the bag a confirmed exit just sold is the RPC replaying a
+ * pre-sell slot, not a landed fill.
+ */
+export function adoptReadReplaysClosedBag(args: {
+  onchainRaw: bigint;
+  lastExitAtMs: number | null | undefined;
+  lastExitPreExitTokenRaw: string | null | undefined;
+  nowMs: number;
+  windowMs?: number;
+}): boolean {
+  const raw = args.lastExitPreExitTokenRaw;
+  if (raw == null || !/^\d+$/.test(raw)) return false;
+  const at = args.lastExitAtMs;
+  if (at == null || !(at > 0)) return false;
+  const window = args.windowMs ?? POST_EXIT_ADOPT_STALE_WINDOW_MS;
+  if (args.nowMs - at > window || args.nowMs < at) return false;
+  return args.onchainRaw === BigInt(raw);
+}

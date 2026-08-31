@@ -261,6 +261,8 @@ export type MildDipLastExit = {
   pnlPct?: number;
   /** Dex pool liquidity at (or near) exit — rebuy liq-drop baseline. */
   liquidityUsd?: number | null;
+  /** Pre-exit on-chain raw balance; an identical read afterwards is a replayed slot. */
+  preExitTokenRaw?: string | null;
 };
 
 export type MildDipState = {
@@ -448,6 +450,9 @@ function sanitizeLastExitByMint(raw: unknown): Record<string, MildDipLastExit> {
       ...(Number.isFinite(pnlPct) ? { pnlPct } : {}),
       ...(Number.isFinite(liquidityUsd) && liquidityUsd > 0
         ? { liquidityUsd }
+        : {}),
+      ...(typeof o.preExitTokenRaw === 'string' && /^\d+$/.test(o.preExitTokenRaw)
+        ? { preExitTokenRaw: o.preExitTokenRaw }
         : {}),
     };
   }

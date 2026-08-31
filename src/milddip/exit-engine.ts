@@ -32,6 +32,61 @@ export function resolveEntryMarkBasis(pos: MildDipOpenPosition): number | null {
   return Math.abs(raw / pos.entryPriceUsd - 1) <= ENTRY_MARK_MAX_GAP_FRAC ? raw : null;
 }
 
+/** Stream print the live Dex reading contradicts can never release the quarantine. */
+export function streamPrintContradictsDex(args: {
+  markSource: string | null | undefined;
+  markPriceUsd: number;
+  dexCrossCheckPx: number | null | undefined;
+  jumpLimitPct: number;
+}): boolean {
+  if (args.markSource !== 'stream') return false;
+  const dex = args.dexCrossCheckPx;
+  if (dex == null || !Number.isFinite(dex) || dex <= 0) return false;
+  if (!(args.jumpLimitPct > 0)) return false;
+  return Math.abs(args.markPriceUsd / dex - 1) * 100 > args.jumpLimitPct;
+}
+
+export type GreenStreamMarkVerdict = 'use' | 'quarantine' | 'discard';
+
+/**
+ * A single stream print no second feed backs cannot decide a green exit.
+ * Dex agreement, or a second non-identical stream tick, makes it real.
+ */
+export function judgeGreenStreamMark(args: {
+  markSource: string | null | undefined;
+  markPriceUsd: number;
+  lastMarkPriceUsd: number | null | undefined;
+  dexCrossCheckPx: number | null | undefined;
+  pendingMarkPriceUsd: number | null | undefined;
+  pendingMarkAtMs: number | null | undefined;
+  nowMs: number;
+  jumpLimitPct: number;
+  quarantineMaxMs: number;
+}): GreenStreamMarkVerdict {
+  if (args.markSource !== 'stream') return 'use';
+  if (!(args.jumpLimitPct > 0)) return 'use';
+  const last = args.lastMarkPriceUsd;
+  if (last == null || !Number.isFinite(last) || !(last > 0)) return 'use';
+  if (Math.abs(args.markPriceUsd / last - 1) * 100 <= args.jumpLimitPct) return 'use';
+  const pending = args.pendingMarkPriceUsd;
+  const identicalRepeat = pending != null && pending > 0 && args.markPriceUsd === pending;
+  const agedOut =
+    args.quarantineMaxMs > 0 &&
+    args.pendingMarkAtMs != null &&
+    args.pendingMarkAtMs > 0 &&
+    args.nowMs - args.pendingMarkAtMs >= args.quarantineMaxMs;
+  const dex = args.dexCrossCheckPx;
+  if (dex != null && Number.isFinite(dex) && dex > 0) {
+    if (Math.abs(args.markPriceUsd / dex - 1) * 100 <= args.jumpLimitPct) return 'use';
+    return identicalRepeat && agedOut ? 'discard' : 'quarantine';
+  }
+  if (pending != null && pending > 0 && !identicalRepeat) {
+    if (Math.abs(args.markPriceUsd / pending - 1) * 100 <= args.jumpLimitPct) return 'use';
+    return 'quarantine';
+  }
+  return identicalRepeat && agedOut ? 'discard' : 'quarantine';
+}
+
 export type MarkExitDecision = {
   mint: string;
   markPriceUsd: number;
@@ -50,6 +105,7 @@ export type MarkExitDecision = {
   markQuarantined?: boolean;
   /** 1.11.959 — green armed quarantine accepted after the blind-window cap. */
   markQuarantineForceReleased?: boolean;
+  markQuarantineForceReleaseVetoedByDex?: boolean;
   markQuarantineSinceMs?: number;
   markQuarantineBlindMs?: number;
   /** 1.11.921 — drop a stream outlier Dex never saw; pending clears, last mark stays. */
@@ -201,6 +257,56 @@ export function decideMarkExit(args: {
     const heldMsGreen = Math.max(0, nowMsGreen - (pos.openedAtMs || 0));
     const basis =
       resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
+    const greenJumpLimit =
+      args.markSource === 'stream' && gates.markJumpConfirmStreamPct > 0
+        ? gates.markJumpConfirmStreamPct
+        : gates.markJumpConfirmPct > 0
+          ? gates.markJumpConfirmPct
+          : 0;
+    const greenMarkVerdict = judgeGreenStreamMark({
+      markSource: args.markSource,
+      markPriceUsd,
+      lastMarkPriceUsd: pos.lastMarkPriceUsd,
+      dexCrossCheckPx: args.dexCrossCheckPx,
+      pendingMarkPriceUsd: pos.pendingMarkPriceUsd,
+      pendingMarkAtMs: pos.pendingMarkAtMs,
+      nowMs: nowMsGreen,
+      jumpLimitPct: greenJumpLimit,
+      quarantineMaxMs: args.markJumpConfirmMaxMs ?? 8_000,
+    });
+    if (greenMarkVerdict !== 'use') {
+      const greenQuarantineSinceMs =
+        pos.markQuarantineSinceMs ?? pos.pendingMarkAtMs ?? nowMsGreen;
+      return {
+        mint,
+        markPriceUsd:
+          greenMarkVerdict === 'discard' ? pos.lastMarkPriceUsd ?? basis : markPriceUsd,
+        entryMarketPriceUsd: null,
+        peakPriceUsd: Math.max(pos.peakPriceUsd ?? basis, basis),
+        armed: pos.trailArmed === true,
+        justArmed: false,
+        shouldExit: false,
+        fraction: 0,
+        reason: null,
+        tpRungIndex: null,
+        markSource: args.markSource ?? null,
+        ...(greenMarkVerdict === 'discard'
+          ? { markDiscardStreamOutlier: true }
+          : { markQuarantined: true }),
+        markQuarantineSinceMs: greenQuarantineSinceMs,
+        mfePct: 0,
+        givebackPct: 0,
+        pnlPct: 0,
+        gainPct: 0,
+        gainBasisPriceUsd: basis,
+        pnlPctVsFill: 0,
+        bounceOffTroughPct: 0,
+        troughAgeMs: 0,
+        volFadeSamples: [...(pos.volFadeSamples ?? [])],
+        postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+        postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+      };
+    }
     const pnl = (markPriceUsd / basis - 1) * 100;
     const peakPriceUsd = Math.max(pos.peakPriceUsd ?? basis, markPriceUsd);
     const peakPnl = (peakPriceUsd / basis - 1) * 100;
@@ -271,6 +377,7 @@ export function decideMarkExit(args: {
   const lastMark = pos.lastMarkPriceUsd;
   let armedTrailUsesDex = false;
   let forceReleaseGreenQuarantine = false;
+  let forceReleaseVetoedByDex = false;
   let quarantineSinceMs: number | undefined;
   let quarantineBlindMs = 0;
   if (jumpLimit > 0 && lastMark != null && lastMark > 0) {
@@ -344,11 +451,18 @@ export function decideMarkExit(args: {
           ? pos.pendingMarkAtMs
           : seenAtMs);
       quarantineBlindMs = Math.max(0, seenAtMs - quarantineSinceMs);
+      forceReleaseVetoedByDex = streamPrintContradictsDex({
+        markSource: args.markSource,
+        markPriceUsd,
+        dexCrossCheckPx: args.dexCrossCheckPx,
+        jumpLimitPct: jumpLimit,
+      });
       forceReleaseGreenQuarantine =
         (args.markQuarantineGreenMaxMs ?? 0) > 0 &&
         quarantineBlindMs >= (args.markQuarantineGreenMaxMs ?? 0) &&
         pos.trailArmed === true &&
-        markPriceUsd >= pos.entryPriceUsd;
+        markPriceUsd >= pos.entryPriceUsd &&
+        !forceReleaseVetoedByDex;
       if (forceReleaseGreenQuarantine) acceptQuarantined = true;
       /**
        * 1.11.923 — stream confirmation is not confirmation without Dex.
@@ -390,6 +504,9 @@ export function decideMarkExit(args: {
               tpRungIndex: null,
               markSource: args.markSource ?? null,
               markDiscardStreamOutlier: true,
+              ...(forceReleaseVetoedByDex
+                ? { markQuarantineForceReleaseVetoedByDex: true }
+                : {}),
               markQuarantineSinceMs: quarantineSinceMs,
               mfePct: 0,
               givebackPct: 0,
@@ -444,6 +561,9 @@ export function decideMarkExit(args: {
             postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
             postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
             markQuarantined: true,
+            ...(forceReleaseVetoedByDex
+              ? { markQuarantineForceReleaseVetoedByDex: true }
+              : {}),
             markQuarantineSinceMs: quarantineSinceMs,
           };
         }
@@ -809,7 +929,9 @@ export function decideMarkExit(args: {
           markQuarantineSinceMs: quarantineSinceMs,
           markQuarantineBlindMs: quarantineBlindMs,
         }
-      : {}),
+      : forceReleaseVetoedByDex
+        ? { markQuarantineForceReleaseVetoedByDex: true }
+        : {}),
   };
 }
 
