@@ -411,6 +411,12 @@ describe('mirror PM2 apps', () => {
     expect(own2?.env.MILD_DIP_GREEN_RUNNER_MAX_BOUNCE_FROM_TROUGH_PCT).toBe('0');
     expect(own2?.env.MILD_DIP_GREEN_RUNNER_MAX_TAPE_RET1M_PCT).toBe('0');
     expect(own2?.env.MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT).toBe('0');
+    expect(own2?.env.MILD_DIP_RECOVER_DEFER).toBe('0');
+    expect(own2?.env.MILD_DIP_EXIT_HARD_TIME_STOP_MS).toBe('2400000');
+    expect(mirror?.env.MILD_DIP_RECOVER_DEFER).toBe('1');
+    expect(mirror2?.env.MILD_DIP_RECOVER_DEFER).toBe('1');
+    expect(mirror?.env.MILD_DIP_EXIT_HARD_TIME_STOP_MS).toBe('5400000');
+    expect(mirror2?.env.MILD_DIP_EXIT_HARD_TIME_STOP_MS).toBe('5400000');
     expect(own2?.env.MILD_DIP_GREEN_POSITION_USD).toBe('5');
     expect(own2?.env.MILD_DIP_POSITION_USD).toBe('5');
     expect(own2?.env.MILD_DIP_SIZE_MIN_USD).toBe('5');
