@@ -722,6 +722,7 @@ function maybeJournalMark(
     !newPeak &&
     !decision.shouldExit &&
     decision.markQuarantineForceReleased !== true &&
+    decision.markQuarantineForceReleaseVetoedByDex !== true &&
     nowMs - last < cfg.markJournalMs
   ) return;
   lastMarkJournalMs.set(pos.mint, nowMs);
@@ -774,6 +775,8 @@ function maybeJournalMark(
     // these, so offline analysis must drop them rather than read zeros.
     quarantined: decision.markQuarantined === true,
     quarantineForceReleased: decision.markQuarantineForceReleased === true,
+    quarantineForceReleaseVetoedByDex:
+      decision.markQuarantineForceReleaseVetoedByDex === true,
     quarantineBlindMs: decision.markQuarantineBlindMs ?? null,
     quarantineAcceptedSource:
       decision.markQuarantineForceReleased === true ? source : null,

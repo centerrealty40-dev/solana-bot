@@ -1378,6 +1378,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       nowMs: number,
       price = 118,
       gatesOverride = g,
+      dexCrossCheckPx: number | null = null,
     ) {
       return decideMarkExit({
         mint: p.mint,
@@ -1387,6 +1388,7 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         markQuarantineGreenMaxMs: gatesOverride.markQuarantineGreenMaxMs,
         nowMs,
         markSource: 'stream',
+        dexCrossCheckPx,
       })!;
     }
 
@@ -1402,6 +1404,25 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
       expect(released.markQuarantineForceReleased).toBe(true);
       expect(released.markQuarantineBlindMs).toBe(11_000);
       expect(released.pnlPct).toBeCloseTo(18, 6);
+    });
+
+    it('vetoes force-release when the live Dex contradicts the stream', () => {
+      const p = armedGreen();
+      const first = quarantine(p, 1_010_000, 118, g, 100);
+      expect(first.markQuarantined).toBe(true);
+      applyMarkDecisionToPosition(p, first);
+
+      const vetoed = quarantine(p, 1_021_000, 118, g, 100);
+      expect(vetoed.markQuarantineForceReleased).not.toBe(true);
+      expect(vetoed.markQuarantineForceReleaseVetoedByDex).toBe(true);
+      expect(vetoed.markQuarantined).toBe(true);
+      expect(vetoed.peakPriceUsd).toBe(130);
+
+      const silentDex = armedGreen();
+      const silentFirst = quarantine(silentDex, 1_010_000, 118);
+      applyMarkDecisionToPosition(silentDex, silentFirst);
+      const released = quarantine(silentDex, 1_021_000, 118);
+      expect(released.markQuarantineForceReleased).toBe(true);
     });
 
     it('keeps the blind clock running across changing quarantined prices', () => {
