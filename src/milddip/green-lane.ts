@@ -2,7 +2,8 @@
  * Green lane — momentum entries, the class the leaders label `green`.
  *
  * This is not the dip strategy with a different threshold. It is the opposite
- * trade and it needs the opposite exit, so it lives apart.
+ * trade and it needs the opposite exit, so it lives apart. Its shape gates can
+ * also be parameterized for pullback entries.
  *
  * ## Entry, from the sampler
  *
@@ -53,6 +54,7 @@ export type GreenLaneGates = {
   maxPc5mPct: number;
   maxRallyIntoPeakPct: number;
   maxBounceFromTroughPct: number;
+  minDumpFromPeakPct: number;
   /** Use own stream minute returns instead of Dex pc5m bounds. */
   tapeMinuteGatesEnabled?: boolean;
   minTapeRet1mPct?: number;
@@ -78,6 +80,7 @@ export type GreenLaneGates = {
    * the lane on a field we may not have.
    */
   maxRet1mPct: number;
+  maxTapeRet1mPct: number;
 };
 
 export type GreenLaneInput = {
@@ -91,6 +94,7 @@ export type GreenLaneInput = {
   pairAgeHours: number | null | undefined;
   /** Optional; skipped when absent. */
   ret1mPct?: number | null;
+  dumpExtentFromPeakPct?: number | null;
   rallyIntoPeakPct?: number | null;
   bounceFromTroughPct?: number | null;
   tapeRet1mPct?: number | null;
@@ -159,6 +163,7 @@ export function evaluateGreenLane(
   const liq = num(input.liquidityUsd);
   const buys = num(input.buys5m);
   const ret1m = num(input.ret1mPct);
+  const dump = num(input.dumpExtentFromPeakPct);
   const rallyIntoPeak = num(input.rallyIntoPeakPct);
   const bounceFromTrough = num(input.bounceFromTroughPct);
   const tapeGatesEnabled = gates.tapeMinuteGatesEnabled === true;
@@ -174,6 +179,9 @@ export function evaluateGreenLane(
     } else {
       if (tapeRet1m < (gates.minTapeRet1mPct ?? 0)) {
         fail.push(`tapeRet1m=${tapeRet1m}`);
+      }
+      if (tapeRet1m > gates.maxTapeRet1mPct) {
+        fail.push(`tapeRet1m_max=${tapeRet1m.toFixed(2)}`);
       }
       if (tapePrior5m > (gates.maxTapePrior5mPct ?? 0)) {
         fail.push(`tapePrior5m=${tapePrior5m}`);
@@ -220,7 +228,24 @@ export function evaluateGreenLane(
   if (!tapeGatesEnabled && ret1m != null && ret1m > gates.maxRet1mPct) {
     fail.push(`ret1m=${ret1m.toFixed(2)}`);
   }
-  if (gates.maxRallyIntoPeakPct > 0 && rallyIntoPeak != null && rallyIntoPeak >= gates.maxRallyIntoPeakPct) {
+  const dipRequired = gates.minDumpFromPeakPct > 0;
+  if (dipRequired) {
+    if (dump == null) {
+      fail.push('green_dump_unknown');
+    } else if (Math.abs(dump) + 1e-9 < gates.minDumpFromPeakPct) {
+      fail.push(`green_dump_shallow=${dump.toFixed(2)}`);
+    }
+  }
+  const dipOk =
+    dipRequired &&
+    dump != null &&
+    Math.abs(dump) + 1e-9 >= gates.minDumpFromPeakPct;
+  if (
+    !dipOk &&
+    gates.maxRallyIntoPeakPct > 0 &&
+    rallyIntoPeak != null &&
+    rallyIntoPeak >= gates.maxRallyIntoPeakPct
+  ) {
     fail.push(`green_rally_into_peak=${rallyIntoPeak.toFixed(2)}`);
   }
   if (gates.maxBounceFromTroughPct > 0 && bounceFromTrough != null && bounceFromTrough >= gates.maxBounceFromTroughPct) {
@@ -235,6 +260,7 @@ export function evaluateGreenLane(
         ? [`tapeRet1m=${tapeRet1m!.toFixed(1)}`, `tapePrior5m=${tapePrior5m!.toFixed(1)}`]
         : [`pc5m=${pc5m!.toFixed(1)}`]),
       ...(pc1h == null ? [] : [`pc1h=${pc1h.toFixed(1)}`]),
+      ...(dipRequired ? [`dump=${dump!.toFixed(1)}`] : []),
       `turnover=${turnover!.toFixed(2)}`,
     ],
     turnover,

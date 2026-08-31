@@ -36,6 +36,7 @@ const gates: GreenLaneGates = {
   maxPc5mPct: 0,
   maxRallyIntoPeakPct: 0,
   maxBounceFromTroughPct: 0,
+  minDumpFromPeakPct: 0,
   requirePc1h: true,
   minPc1hPct: 20,
   minBuys5m: 43,
@@ -43,6 +44,7 @@ const gates: GreenLaneGates = {
   minLiquidityUsd: 6_000,
   minPairAgeHours: 0.05,
   maxRet1mPct: 0,
+  maxTapeRet1mPct: 1000,
 };
 
 /** A row that clears everything, so each test can spoil one field. */
@@ -287,6 +289,95 @@ describe('evaluateGreenLane', () => {
     expect(evaluateGreenLane({ ...ok, rallyIntoPeakPct: 99, bounceFromTroughPct: 99 }, gates).pass).toBe(true);
   });
 
+  it('admits a leader pullback and rejects the late rebound', () => {
+    const own2Gates: GreenLaneGates = {
+      ...gates,
+      minPc5mPct: -25,
+      minPc1hPct: -15,
+      minDumpFromPeakPct: 10,
+      maxTapeRet1mPct: 2,
+      minTapeRet1mPct: -100,
+      maxTapePrior5mPct: 10,
+      maxRallyIntoPeakPct: 20,
+      maxBounceFromTroughPct: 25,
+      tapeMinuteGatesEnabled: true,
+      minLiquidityUsd: 20_000,
+      minPairAgeHours: 1,
+      minTurnover5mLiq: 0.03,
+      minVolume5mUsd: 150,
+      minVolume1hUsd: 0,
+      minBuys5m: 0,
+      maxBuyShare5m: 0.65,
+      requirePc1h: false,
+    };
+    const leaderPullback = evaluateGreenLane(
+      {
+        pc5mPct: -2.92,
+        pc1hPct: -8.18,
+        dumpExtentFromPeakPct: -20.74,
+        rallyIntoPeakPct: 24.62,
+        bounceFromTroughPct: 0,
+        tapeRet1mPct: -4.91,
+        tapePrior5mPct: -1.05,
+        volume5mUsd: 10_510.11,
+        volume1hUsd: 60_000,
+        liquidityUsd: 48_516.14,
+        buys5m: 40,
+        sells5m: 60,
+        pairAgeHours: 38.9,
+      },
+      own2Gates,
+    );
+    expect(leaderPullback.pass).toBe(true);
+    expect(leaderPullback.reasons).toContain('dump=-20.7');
+
+    const lateRebound = evaluateGreenLane(
+      {
+        pc5mPct: 6.46,
+        pc1hPct: 3.89,
+        dumpExtentFromPeakPct: -21.22,
+        rallyIntoPeakPct: 1.45,
+        bounceFromTroughPct: 0,
+        tapeRet1mPct: 5.90,
+        tapePrior5mPct: 3.33,
+        volume5mUsd: 1_868.35,
+        volume1hUsd: 60_000,
+        liquidityUsd: 50_411.72,
+        buys5m: 56.76,
+        sells5m: 43.24,
+        pairAgeHours: 39,
+      },
+      own2Gates,
+    );
+    expect(lateRebound.pass).toBe(false);
+    expect(lateRebound.reasons).toContain('tapeRet1m_max=5.90');
+  });
+
+  it('requires a sufficiently deep dump when configured', () => {
+    const own2Gates = {
+      ...gates,
+      minPc5mPct: -25,
+      minPc1hPct: -15,
+      minDumpFromPeakPct: 10,
+      requirePc1h: false,
+    };
+    expect(
+      evaluateGreenLane({ ...ok, dumpExtentFromPeakPct: -3 }, own2Gates).reasons,
+    ).toContain('green_dump_shallow=-3.00');
+    expect(
+      evaluateGreenLane({ ...ok, dumpExtentFromPeakPct: null }, own2Gates).reasons,
+    ).toContain('green_dump_unknown');
+  });
+
+  it('keeps the rally cap active when no dump is required', () => {
+    const result = evaluateGreenLane(
+      { ...ok, rallyIntoPeakPct: 24.62 },
+      { ...gates, maxRallyIntoPeakPct: 20, minDumpFromPeakPct: 0 },
+    );
+    expect(result.pass).toBe(false);
+    expect(result.reasons).toContain('green_rally_into_peak=24.62');
+  });
+
   it('uses own tape minute gates and ignores Dex pc5m and maxRet1m', () => {
     const tapeGates = {
       ...gates,
@@ -294,6 +385,7 @@ describe('evaluateGreenLane', () => {
       minTapeRet1mPct: 5,
       maxTapePrior5mPct: 10,
       maxRet1mPct: 0,
+      maxTapeRet1mPct: 1000,
     };
     const v = evaluateGreenLane(
       {
