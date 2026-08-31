@@ -5248,8 +5248,6 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'copy-trader-8zkg-mirror',
   /** 1.11.1040 — operator permanently disabled mild-dip-bot; reload must not revive it. */
   'mild-dip-bot',
-  /** 1.11.1085 — own-discovery bot is started explicitly, not by ecosystem reload. */
-  'mild-dip-own2',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',
