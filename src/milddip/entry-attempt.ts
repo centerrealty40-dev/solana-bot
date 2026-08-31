@@ -148,6 +148,37 @@ export function cooldownBouncePctForSource(args: {
   return args.sharedMaxPct;
 }
 
+export function resolveGreenEntryRiskFloors(args: {
+  runnerRelax: boolean;
+  minPairAgeHours: number;
+  minLiquidityUsd: number;
+  entryMaxVol5mToLiq: number;
+  runnerMinPairAgeHours: number;
+  runnerMinLiquidityUsd: number;
+  runnerEntryMaxVol5mToLiq: number;
+  fallbackMaxVol5mToLiq: number;
+}): {
+  minPairAgeHours: number;
+  minLiquidityUsd: number;
+  maxVol5mToLiq: number;
+} {
+  if (args.runnerRelax) {
+    return {
+      minPairAgeHours: args.runnerMinPairAgeHours,
+      minLiquidityUsd: args.runnerMinLiquidityUsd,
+      maxVol5mToLiq: args.runnerEntryMaxVol5mToLiq,
+    };
+  }
+  return {
+    minPairAgeHours: args.minPairAgeHours,
+    minLiquidityUsd: args.minLiquidityUsd,
+    maxVol5mToLiq:
+      args.entryMaxVol5mToLiq > 0
+        ? args.entryMaxVol5mToLiq
+        : args.fallbackMaxVol5mToLiq,
+  };
+}
+
 export function resolveMirrorEntryRiskFloors(args: {
   isMirror: boolean;
   isTier: boolean;
@@ -1067,6 +1098,27 @@ export async function attemptMildDipEntry(args: {
   const liveLiquidityUsd = sizeMetrics.liquidityUsd ?? c.metrics.liquidityUsd;
   const livePairAgeHours = sizeMetrics.pairAgeHours ?? c.metrics.pairAgeHours;
   const liveVolume5mUsd = entryVol5m;
+  const greenRunnerRelax =
+    isGreen &&
+    (c.greenRunnerRelax === true ||
+      leaderActiveNow({
+        gates: {
+          enabled: cfg.green.runnerRelaxEnabled,
+          windowMs: cfg.green.runnerLeaderActiveMs,
+        },
+        nowMs,
+        leaderSeenAtMs,
+      }));
+  const greenEntryRiskFloors = resolveGreenEntryRiskFloors({
+    runnerRelax: greenRunnerRelax,
+    minPairAgeHours: cfg.green.minPairAgeHours,
+    minLiquidityUsd: cfg.green.minLiquidityUsd,
+    entryMaxVol5mToLiq: cfg.green.entryMaxVol5mToLiq,
+    runnerMinPairAgeHours: cfg.green.runnerMinPairAgeHours,
+    runnerMinLiquidityUsd: cfg.green.runnerMinLiquidityUsd,
+    runnerEntryMaxVol5mToLiq: cfg.green.runnerEntryMaxVol5mToLiq,
+    fallbackMaxVol5mToLiq: cfg.entryMaxVol5mToLiq,
+  });
   const entryRiskFloors = resolveMirrorEntryRiskFloors({
     isMirror,
     isTier,
@@ -1081,17 +1133,17 @@ export async function attemptMildDipEntry(args: {
     defaultMinPairAgeHours: isLeaderStyle
       ? 0
       : isGreen
-        ? cfg.green.minPairAgeHours
+        ? greenEntryRiskFloors.minPairAgeHours
         : cfg.entryMinPairAgeHours,
     defaultMinLiquidityUsd: isLeaderStyle
       ? 0
       : isGreen
-        ? cfg.green.minLiquidityUsd
+        ? greenEntryRiskFloors.minLiquidityUsd
         : cfg.entryMinLiquidityUsd,
     defaultMaxVol5mToLiq: isLeaderStyle
       ? 0
-      : isGreen && cfg.green.entryMaxVol5mToLiq > 0
-        ? cfg.green.entryMaxVol5mToLiq
+      : isGreen
+        ? greenEntryRiskFloors.maxVol5mToLiq
         : cfg.entryMaxVol5mToLiq,
   });
   const entryRisk = evaluateMildDipEntryRisk({
@@ -1141,6 +1193,10 @@ export async function attemptMildDipEntry(args: {
           : isGreen
             ? 'green'
             : 'dip',
+      runnerRelax: greenRunnerRelax,
+      effMinPairAgeHours: entryRiskFloors.minPairAgeHours,
+      effMinLiquidityUsd: entryRiskFloors.minLiquidityUsd,
+      effMaxVol5mToLiq: entryRiskFloors.maxVol5mToLiq,
       reasons: entryRisk.reasons,
     });
     state.cooldownUntilMs[c.mint] = nowMs + softCd;
