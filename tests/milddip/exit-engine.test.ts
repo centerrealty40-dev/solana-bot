@@ -1350,6 +1350,56 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
     });
   });
 
+  describe('a green bag refuses an unbacked stream print (own2 8np28cju)', () => {
+    // Entry 0.00021854, peak 0.00022356, then a single stream tick at
+    // 0.00017138 (-20.33%) fired green_trail while the fill came back at
+    // 0.00021903 (+0.22%): the price never existed.
+    const gGreen = { ...gates, markJumpConfirmPct: 10, markJumpConfirmStreamPct: 8 };
+    const greenGates = {
+      takeProfitPct: 30,
+      stopPct: 6,
+      maxHoldMs: 600_000,
+      trailEnabled: true,
+      armPct: 2,
+      trailPct: 10,
+    };
+    const bag = (): MildDipOpenPosition =>
+      pos({
+        mint: 'green-phantom',
+        lane: 'green',
+        entryPriceUsd: 0.00021854,
+        peakPriceUsd: 0.00022356,
+        lastMarkPriceUsd: 0.00022356,
+        trailArmed: true,
+        openedAtMs: 1_000_000,
+      });
+    const at = (p: MildDipOpenPosition, px: number, nowMs: number) =>
+      decideMarkExit({
+        mint: p.mint,
+        pos: p,
+        markPriceUsd: px,
+        gates: gGreen,
+        greenGates,
+        nowMs,
+        markSource: 'stream',
+        dexCrossCheckPx: null,
+      })!;
+
+    it('parks the phantom print instead of trailing out on it', () => {
+      const p = bag();
+      const phantom = at(p, 0.00017138, 1_010_000);
+      expect(phantom.shouldExit).not.toBe(true);
+      expect(phantom.markQuarantined).toBe(true);
+      expect(phantom.peakPriceUsd).toBe(0.00022356);
+      applyMarkDecisionToPosition(p, phantom);
+
+      const real = at(p, 0.00021903, 1_011_000);
+      expect(real.markQuarantined).not.toBe(true);
+      expect(real.markDiscardStreamOutlier).not.toBe(true);
+      expect(real.shouldExit).not.toBe(true);
+    });
+  });
+
   describe('bounded green quarantine blindness (1.11.959)', () => {
     const g = {
       ...gates,

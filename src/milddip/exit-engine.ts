@@ -46,6 +46,47 @@ export function streamPrintContradictsDex(args: {
   return Math.abs(args.markPriceUsd / dex - 1) * 100 > args.jumpLimitPct;
 }
 
+export type GreenStreamMarkVerdict = 'use' | 'quarantine' | 'discard';
+
+/**
+ * A single stream print no second feed backs cannot decide a green exit.
+ * Dex agreement, or a second non-identical stream tick, makes it real.
+ */
+export function judgeGreenStreamMark(args: {
+  markSource: string | null | undefined;
+  markPriceUsd: number;
+  lastMarkPriceUsd: number | null | undefined;
+  dexCrossCheckPx: number | null | undefined;
+  pendingMarkPriceUsd: number | null | undefined;
+  pendingMarkAtMs: number | null | undefined;
+  nowMs: number;
+  jumpLimitPct: number;
+  quarantineMaxMs: number;
+}): GreenStreamMarkVerdict {
+  if (args.markSource !== 'stream') return 'use';
+  if (!(args.jumpLimitPct > 0)) return 'use';
+  const last = args.lastMarkPriceUsd;
+  if (last == null || !Number.isFinite(last) || !(last > 0)) return 'use';
+  if (Math.abs(args.markPriceUsd / last - 1) * 100 <= args.jumpLimitPct) return 'use';
+  const pending = args.pendingMarkPriceUsd;
+  const identicalRepeat = pending != null && pending > 0 && args.markPriceUsd === pending;
+  const agedOut =
+    args.quarantineMaxMs > 0 &&
+    args.pendingMarkAtMs != null &&
+    args.pendingMarkAtMs > 0 &&
+    args.nowMs - args.pendingMarkAtMs >= args.quarantineMaxMs;
+  const dex = args.dexCrossCheckPx;
+  if (dex != null && Number.isFinite(dex) && dex > 0) {
+    if (Math.abs(args.markPriceUsd / dex - 1) * 100 <= args.jumpLimitPct) return 'use';
+    return identicalRepeat && agedOut ? 'discard' : 'quarantine';
+  }
+  if (pending != null && pending > 0 && !identicalRepeat) {
+    if (Math.abs(args.markPriceUsd / pending - 1) * 100 <= args.jumpLimitPct) return 'use';
+    return 'quarantine';
+  }
+  return identicalRepeat && agedOut ? 'discard' : 'quarantine';
+}
+
 export type MarkExitDecision = {
   mint: string;
   markPriceUsd: number;
@@ -216,6 +257,56 @@ export function decideMarkExit(args: {
     const heldMsGreen = Math.max(0, nowMsGreen - (pos.openedAtMs || 0));
     const basis =
       resolveEntryMarkBasis(pos) ?? pos.entryPriceUsd;
+    const greenJumpLimit =
+      args.markSource === 'stream' && gates.markJumpConfirmStreamPct > 0
+        ? gates.markJumpConfirmStreamPct
+        : gates.markJumpConfirmPct > 0
+          ? gates.markJumpConfirmPct
+          : 0;
+    const greenMarkVerdict = judgeGreenStreamMark({
+      markSource: args.markSource,
+      markPriceUsd,
+      lastMarkPriceUsd: pos.lastMarkPriceUsd,
+      dexCrossCheckPx: args.dexCrossCheckPx,
+      pendingMarkPriceUsd: pos.pendingMarkPriceUsd,
+      pendingMarkAtMs: pos.pendingMarkAtMs,
+      nowMs: nowMsGreen,
+      jumpLimitPct: greenJumpLimit,
+      quarantineMaxMs: args.markJumpConfirmMaxMs ?? 8_000,
+    });
+    if (greenMarkVerdict !== 'use') {
+      const greenQuarantineSinceMs =
+        pos.markQuarantineSinceMs ?? pos.pendingMarkAtMs ?? nowMsGreen;
+      return {
+        mint,
+        markPriceUsd:
+          greenMarkVerdict === 'discard' ? pos.lastMarkPriceUsd ?? basis : markPriceUsd,
+        entryMarketPriceUsd: null,
+        peakPriceUsd: Math.max(pos.peakPriceUsd ?? basis, basis),
+        armed: pos.trailArmed === true,
+        justArmed: false,
+        shouldExit: false,
+        fraction: 0,
+        reason: null,
+        tpRungIndex: null,
+        markSource: args.markSource ?? null,
+        ...(greenMarkVerdict === 'discard'
+          ? { markDiscardStreamOutlier: true }
+          : { markQuarantined: true }),
+        markQuarantineSinceMs: greenQuarantineSinceMs,
+        mfePct: 0,
+        givebackPct: 0,
+        pnlPct: 0,
+        gainPct: 0,
+        gainBasisPriceUsd: basis,
+        pnlPctVsFill: 0,
+        bounceOffTroughPct: 0,
+        troughAgeMs: 0,
+        volFadeSamples: [...(pos.volFadeSamples ?? [])],
+        postEntryTroughPriceUsd: pos.postEntryTroughUsd ?? pos.entryPriceUsd,
+        postEntryTroughAtMs: pos.postEntryTroughAtMs ?? pos.openedAtMs,
+      };
+    }
     const pnl = (markPriceUsd / basis - 1) * 100;
     const peakPriceUsd = Math.max(pos.peakPriceUsd ?? basis, markPriceUsd);
     const peakPnl = (peakPriceUsd / basis - 1) * 100;
