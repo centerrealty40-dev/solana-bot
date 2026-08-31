@@ -1025,6 +1025,7 @@ export async function evaluateFastPathCandidate(
         priceUsd: struct.priceUsd,
         metrics: struct.metrics,
         dipSource: 'green_momentum',
+        greenRunnerRelax,
         tapeRet1mPct: tapeMinute.tapeRet1mPct,
         tapePrior5mPct: tapeMinute.tapePrior5mPct,
         tapeSampleCount: tapeMinute.sampleCount,

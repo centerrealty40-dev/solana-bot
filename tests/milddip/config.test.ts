@@ -544,6 +544,7 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_GREEN_RUNNER_MAX_BOUNCE_FROM_TROUGH_PCT: '12',
         MILD_DIP_GREEN_RUNNER_MAX_TAPE_RET1M_PCT: '40',
         MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT: '30',
+        MILD_DIP_GREEN_RUNNER_ENTRY_MAX_VOL5M_TO_LIQ: '4',
       },
       () => loadMildDipConfig(),
     );
@@ -556,6 +557,10 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.green.runnerMaxBounceFromTroughPct).toBe(12);
     expect(cfg.green.runnerMaxTapeRet1mPct).toBe(40);
     expect(cfg.green.runnerMaxTapePrior5mPct).toBe(30);
+    expect(cfg.green.runnerEntryMaxVol5mToLiq).toBe(4);
+
+    const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig());
+    expect(defaults.green.runnerEntryMaxVol5mToLiq).toBe(0);
   });
 
   it('loads mild-stabilize live lane budgets and trough settings', () => {

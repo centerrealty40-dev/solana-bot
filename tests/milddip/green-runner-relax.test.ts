@@ -5,6 +5,8 @@ import {
   type GreenLaneInput,
 } from '../../src/milddip/green-lane.js';
 import { effectiveRunnerTapeCap } from '../../src/milddip/fast-path.js';
+import { resolveGreenEntryRiskFloors } from '../../src/milddip/entry-attempt.js';
+import { evaluateMildDipEntryRisk } from '../../src/milddip/gates.js';
 
 const snapshot: GreenLaneInput = {
   pc5mPct: 72.01,
@@ -43,6 +45,24 @@ const sharedGates: GreenLaneGates = {
   minPairAgeHours: 1,
   maxRet1mPct: 0,
   maxTapeRet1mPct: 1000,
+};
+
+const freshRunnerPair = {
+  pairAgeHours: 0.01,
+  volume5mUsd: 12_000,
+  liquidityUsd: 17_900,
+  buys5m: 60,
+  sells5m: 40,
+};
+
+const greenFloorArgs = {
+  minPairAgeHours: 1,
+  minLiquidityUsd: 20_000,
+  entryMaxVol5mToLiq: 0,
+  runnerMinPairAgeHours: 0,
+  runnerMinLiquidityUsd: 8_000,
+  runnerEntryMaxVol5mToLiq: 0,
+  fallbackMaxVol5mToLiq: 2,
 };
 
 describe('GREEN runner relaxation', () => {
@@ -112,5 +132,86 @@ describe('GREEN runner relaxation', () => {
     );
     expect(shallow.pass).toBe(false);
     expect(shallow.reasons.some((reason) => reason.includes('green_dump_shallow'))).toBe(true);
+  });
+
+  it('runner relaxation propagates to the entry-risk floors', () => {
+    const floors = resolveGreenEntryRiskFloors({ ...greenFloorArgs, runnerRelax: true });
+    expect(floors).toEqual({
+      minPairAgeHours: 0,
+      minLiquidityUsd: 8_000,
+      maxVol5mToLiq: 0,
+    });
+
+    const verdict = evaluateMildDipEntryRisk({
+      ...freshRunnerPair,
+      minPairAgeHours: floors.minPairAgeHours,
+      minLiquidityUsd: floors.minLiquidityUsd,
+      maxVol5mToLiq: floors.maxVol5mToLiq,
+    });
+    expect(verdict.pass).toBe(true);
+    expect(
+      verdict.reasons.some(
+        (reason) =>
+          reason.includes('pair_too_young') ||
+          reason.includes('liq_too_thin') ||
+          reason.includes('vol_liq_churn_too_high'),
+      ),
+    ).toBe(false);
+  });
+
+  it('keeps the standard green entry-risk floors without relaxation', () => {
+    const floors = resolveGreenEntryRiskFloors({ ...greenFloorArgs, runnerRelax: false });
+    expect(floors).toEqual({
+      minPairAgeHours: 1,
+      minLiquidityUsd: 20_000,
+      maxVol5mToLiq: 2,
+    });
+
+    const verdict = evaluateMildDipEntryRisk({
+      ...freshRunnerPair,
+      minPairAgeHours: floors.minPairAgeHours,
+      minLiquidityUsd: floors.minLiquidityUsd,
+      maxVol5mToLiq: floors.maxVol5mToLiq,
+    });
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons.some((reason) => reason.includes('pair_too_young'))).toBe(true);
+    expect(verdict.reasons.some((reason) => reason.includes('liq_too_thin'))).toBe(true);
+  });
+
+  it('respects a configured runner liquidity floor while relaxed', () => {
+    const floors = resolveGreenEntryRiskFloors({
+      ...greenFloorArgs,
+      runnerRelax: true,
+      runnerMinLiquidityUsd: 50_000,
+    });
+    expect(floors.minLiquidityUsd).toBe(50_000);
+
+    const verdict = evaluateMildDipEntryRisk({
+      ...freshRunnerPair,
+      minPairAgeHours: floors.minPairAgeHours,
+      minLiquidityUsd: floors.minLiquidityUsd,
+      maxVol5mToLiq: floors.maxVol5mToLiq,
+    });
+    expect(verdict.pass).toBe(false);
+    expect(verdict.reasons.some((reason) => reason.includes('liq_too_thin'))).toBe(true);
+  });
+
+  it('falls back to the shared churn cap when the green cap is unset', () => {
+    expect(
+      resolveGreenEntryRiskFloors({
+        ...greenFloorArgs,
+        runnerRelax: false,
+        entryMaxVol5mToLiq: 0,
+        fallbackMaxVol5mToLiq: 3,
+      }).maxVol5mToLiq,
+    ).toBe(3);
+    expect(
+      resolveGreenEntryRiskFloors({
+        ...greenFloorArgs,
+        runnerRelax: false,
+        entryMaxVol5mToLiq: 5,
+        fallbackMaxVol5mToLiq: 3,
+      }).maxVol5mToLiq,
+    ).toBe(5);
   });
 });

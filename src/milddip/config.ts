@@ -811,6 +811,8 @@ const MildDipConfigSchema = z.object({
     runnerMaxTapeRet1mPct: z.coerce.number().min(0).max(10_000).default(0),
     /** Runner prior-tape cap; 0 disables the cap while runner relaxation is active. */
     runnerMaxTapePrior5mPct: z.coerce.number().min(0).max(10_000).default(0),
+    /** Runner churn cap; 0 disables the cap while runner relaxation is active. */
+    runnerEntryMaxVol5mToLiq: z.coerce.number().min(0).default(0),
     tapeMinuteGatesEnabled: z.boolean().default(false),
     minTapeRet1mPct: z.coerce.number().min(-100).max(1000).default(5),
     maxTapePrior5mPct: z.coerce.number().min(-100).max(1000).default(10),
@@ -1259,6 +1261,10 @@ export function loadMildDipConfig(): MildDipConfig {
     ),
     runnerMaxTapeRet1mPct: envNum('MILD_DIP_GREEN_RUNNER_MAX_TAPE_RET1M_PCT', 0),
     runnerMaxTapePrior5mPct: envNum('MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT', 0),
+    runnerEntryMaxVol5mToLiq: envNum(
+      'MILD_DIP_GREEN_RUNNER_ENTRY_MAX_VOL5M_TO_LIQ',
+      0,
+    ),
     tapeMinuteGatesEnabled: envBool('MILD_DIP_GREEN_TAPE_GATES_ENABLED', false),
     minTapeRet1mPct: envNum('MILD_DIP_GREEN_MIN_RET1M_PCT', 5),
     maxTapePrior5mPct: envNum('MILD_DIP_GREEN_MAX_PRIOR5M_PCT', 10),
