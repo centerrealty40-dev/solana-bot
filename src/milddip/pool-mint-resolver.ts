@@ -14,7 +14,9 @@ type AccountInfo = {
 export type PoolMintResolverStats = {
   cacheHits: number;
   queued: number;
+  coalesced: number;
   dropped: number;
+  negativeSkips: number;
   resolved: number;
   rejected: number;
   rpcCalls: number;
@@ -39,7 +41,9 @@ export class PoolMintResolver {
   private readonly counters = {
     cacheHits: 0,
     queued: 0,
+    coalesced: 0,
     dropped: 0,
+    negativeSkips: 0,
     resolved: 0,
     rejected: 0,
     rpcCalls: 0,
@@ -79,7 +83,7 @@ export class PoolMintResolver {
     const negativeUntil = this.negative.get(pool);
     if (negativeUntil != null) {
       if (negativeUntil > Date.now()) {
-        this.counters.dropped += 1;
+        this.counters.negativeSkips += 1;
         return;
       }
       this.negative.delete(pool);
@@ -87,10 +91,14 @@ export class PoolMintResolver {
     const existing = this.pending.get(pool);
     if (existing) {
       existing.push({ tsMs, signature });
-      this.counters.dropped += 1;
+      this.counters.coalesced += 1;
       return;
     }
-    if (this.inFlight.has(pool) || this.queue.length >= (this.opts.maxQueue ?? 5000)) {
+    if (this.inFlight.has(pool)) {
+      this.counters.coalesced += 1;
+      return;
+    }
+    if (this.queue.length >= (this.opts.maxQueue ?? 5000)) {
       this.counters.dropped += 1;
       return;
     }

@@ -8,7 +8,9 @@
   Изменения относятся только к discovery-пути `solana-alpha`; платформенные
   файлы не затрагивались. Rollback: отключить новые возможности env-флагами
   `MILD_DIP_STREAM_EVENT_DECODE_ENABLED=0` и
-  `MILD_DIP_STREAM_POOL_RESOLVE_ENABLED=0`.
+  `MILD_DIP_STREAM_POOL_RESOLVE_ENABLED=0`. Декодер принимает текущий layout
+  pool account и его совместимые расширения, а resolver отдельно считает
+  coalesced-события и пропуски отрицательного кэша.
 
 ## [1.11.1088] — 2026-08-31
 

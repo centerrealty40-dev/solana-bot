@@ -37,6 +37,7 @@ describe('PoolMintResolver', () => {
     expect(onMint).toHaveBeenCalledWith(mint, 14, 'sig-5');
     expect(fetchAccounts).toHaveBeenCalledTimes(2);
     expect(resolver.stats().cacheHits).toBe(1);
+    expect(resolver.stats().coalesced).toBe(1);
     resolver.stop();
   });
 
@@ -59,7 +60,8 @@ describe('PoolMintResolver', () => {
     await waitFor(() => resolver.stats().rejected === 1);
     resolver.enqueue(pool, 3);
     expect(fetchAccounts).toHaveBeenCalledTimes(2);
-    expect(resolver.stats().dropped).toBeGreaterThanOrEqual(1);
+    expect(resolver.stats().dropped).toBe(1);
+    expect(resolver.stats().negativeSkips).toBe(1);
     expect(resolver.stats().rejected).toBe(1);
     resolver.stop();
   });

@@ -20,11 +20,11 @@ export const PUMPFUN_MINT_OFFSET = 8;
 export const PUMPSWAP_POOL_OFFSET = 120;
 export const PUMPSWAP_POOL_BASE_MINT_OFFSET = 43;
 export const PUMPSWAP_POOL_QUOTE_MINT_OFFSET = 75;
-export const PUMPSWAP_POOL_ACCOUNT_LENGTH = 301;
+export const PUMPSWAP_POOL_ACCOUNT_MIN_LENGTH = 301;
 export const PUMPSWAP_POOL_OWNER = 'pAMMBay6oceH9fJKBRHGP5D4bD4sWpmSwMn52FMfXEA';
 export const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 export const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
-export const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4Nq7nY9K3nX2T7QYwQyQ';
+export const USDT_MINT = 'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB';
 
 const QUOTE_MINTS = new Set([WSOL_MINT, USDC_MINT, USDT_MINT]);
 
@@ -83,7 +83,7 @@ export function parseStreamEvents(logs: string[]): { mints: string[]; pools: str
 
 export function decodePoolTokenMint(data: Uint8Array): string | null {
   if (
-    data.length !== PUMPSWAP_POOL_ACCOUNT_LENGTH ||
+    data.length < PUMPSWAP_POOL_ACCOUNT_MIN_LENGTH ||
     !sameBytes(data, 0, PUMPSWAP_POOL_ACCOUNT_DISCRIMINATOR)
   ) {
     return null;

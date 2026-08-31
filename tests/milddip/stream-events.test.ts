@@ -29,6 +29,9 @@ describe('mild-dip stream event decoding', () => {
     expect(decodePoolTokenMint(Buffer.from(baseAccount, 'base64'))).toBe(
       'Cb8sgkM1veaDMCVPKxwQSDbm3r8dfUzmRVmiNCZypump',
     );
+    expect(decodePoolTokenMint(Buffer.concat([Buffer.from(baseAccount, 'base64'), Buffer.alloc(16)]))).toBe(
+      'Cb8sgkM1veaDMCVPKxwQSDbm3r8dfUzmRVmiNCZypump',
+    );
     expect(decodePoolTokenMint(Buffer.from(quoteAccount, 'base64'))).toBe(
       '98Rir1yLorXsiNiHjTDNqDoyZrZ7CT7KwkRLN9Db8ery',
     );
