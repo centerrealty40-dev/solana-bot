@@ -574,17 +574,17 @@ export async function attemptMildDipEntry(args: {
     });
     return 'skip';
   }
+  const leaderSeenAtMs = state.leaderSeenMints?.[c.mint] ?? null;
+  const leaderActive = leaderActiveNow({
+    gates: {
+      enabled: cfg.reentryLeaderActiveEnabled,
+      windowMs: cfg.reentryLeaderActiveMs,
+    },
+    nowMs,
+    leaderSeenAtMs,
+  });
   if (!opts.leaderStyle && (state.cooldownUntilMs[c.mint] ?? 0) > nowMs) {
     const cooldownUntilMs = state.cooldownUntilMs[c.mint] ?? 0;
-    const leaderSeenAtMs = state.leaderSeenMints?.[c.mint] ?? null;
-    const leaderActive = leaderActiveNow({
-      gates: {
-        enabled: cfg.reentryLeaderActiveEnabled,
-        windowMs: cfg.reentryLeaderActiveMs,
-      },
-      nowMs,
-      leaderSeenAtMs,
-    });
     if (!leaderActive) return 'skip';
     const previous = cooldownLeaderBypassLastByMint.get(c.mint) ?? 0;
     if (nowMs - previous >= COOLDOWN_LEADER_BYPASS_JOURNAL_GAP_MS) {
@@ -599,15 +599,6 @@ export async function attemptMildDipEntry(args: {
       });
     }
   }
-  const leaderSeenAtMs = state.leaderSeenMints?.[c.mint] ?? null;
-  const leaderActive = leaderActiveNow({
-    gates: {
-      enabled: cfg.reentryLeaderActiveEnabled,
-      windowMs: cfg.reentryLeaderActiveMs,
-    },
-    nowMs,
-    leaderSeenAtMs,
-  });
   const journalLeaderReentryBypass = (
     gate: 'rebuy_below_exit' | 'cooldown_bounce',
   ): void => {

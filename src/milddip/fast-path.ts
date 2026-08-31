@@ -35,7 +35,6 @@ import {
   fetchMildDipStructuralFallback,
   type StructuralFallbackSnapshot,
 } from './structural-fallback.js';
-
 import {
   evaluateTurnDumpGate,
   metricsHotDeepDumpOk,
