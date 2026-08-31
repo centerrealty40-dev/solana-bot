@@ -397,6 +397,11 @@ describe('mirror PM2 apps', () => {
     expect(own2?.env.MILD_DIP_GREEN_REQUIRE_LEADER_SEEN).toBe('1');
     expect(own2?.env.MILD_DIP_GREEN_MAX_RALLY_INTO_PEAK_PCT).toBe('20');
     expect(own2?.env.MILD_DIP_GREEN_MAX_BOUNCE_FROM_TROUGH_PCT).toBe('25');
+    expect(own2?.env.MILD_DIP_GREEN_MIN_PC5M_PCT).toBe('-25');
+    expect(own2?.env.MILD_DIP_GREEN_MIN_PC1H_PCT).toBe('-15');
+    expect(own2?.env.MILD_DIP_GREEN_MIN_RET1M_PCT).toBe('-100');
+    expect(own2?.env.MILD_DIP_GREEN_MAX_TAPE_RET1M_PCT).toBe('2');
+    expect(own2?.env.MILD_DIP_GREEN_MIN_DUMP_FROM_PEAK_PCT).toBe('10');
     expect(own2?.env.MILD_DIP_GREEN_POSITION_USD).toBe('5');
     expect(own2?.env.MILD_DIP_POSITION_USD).toBe('5');
     expect(own2?.env.MILD_DIP_SIZE_MIN_USD).toBe('5');

@@ -916,11 +916,15 @@ export async function evaluateFastPathCandidate(
   if (cfg.green.enabled) {
     const dexImpulse =
       struct.metrics.priceChange5mPct != null &&
-      struct.metrics.priceChange5mPct >= cfg.green.minPc5mPct;
+      struct.metrics.priceChange5mPct >= Math.max(cfg.green.minPc5mPct, 0);
     const streamImpulse =
       greenStreamRally != null &&
       greenStreamRally >= cfg.green.jupiterMinuteStreamImpulsePct;
-    if (dexImpulse || streamImpulse) {
+    const dipShape =
+      cfg.green.minDumpFromPeakPct > 0 &&
+      streamDump != null &&
+      Math.abs(streamDump) >= cfg.green.minDumpFromPeakPct;
+    if (dexImpulse || streamImpulse || dipShape) {
       requestGreenMinuteJupiterRefresh({
         mint,
         nowMs,
@@ -942,6 +946,7 @@ export async function evaluateFastPathCandidate(
       {
         pc5mPct: struct.metrics.priceChange5mPct,
         pc1hPct: struct.metrics.priceChange1hPct,
+        dumpExtentFromPeakPct: streamWindow.dumpExtentFromPeakPct,
         rallyIntoPeakPct: streamWindow.rallyIntoPeakPct,
         bounceFromTroughPct: streamWindow.bounceFromTroughPct,
         tapeRet1mPct: tapeMinute.tapeRet1mPct,
@@ -962,6 +967,7 @@ export async function evaluateFastPathCandidate(
         maxPc5mPct: cfg.green.maxPc5mPct,
         maxRallyIntoPeakPct: cfg.green.maxRallyIntoPeakPct,
         maxBounceFromTroughPct: cfg.green.maxBounceFromTroughPct,
+        minDumpFromPeakPct: cfg.green.minDumpFromPeakPct,
         tapeMinuteGatesEnabled: cfg.green.tapeMinuteGatesEnabled,
         minTapeRet1mPct: cfg.green.minTapeRet1mPct,
         maxTapePrior5mPct: cfg.green.maxTapePrior5mPct,
@@ -972,6 +978,7 @@ export async function evaluateFastPathCandidate(
         minLiquidityUsd: cfg.green.minLiquidityUsd,
         minPairAgeHours: cfg.green.minPairAgeHours,
         maxRet1mPct: cfg.green.maxRet1mPct,
+        maxTapeRet1mPct: cfg.green.maxTapeRet1mPct,
       },
     );
     if (g.pass) {
