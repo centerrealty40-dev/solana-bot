@@ -1385,6 +1385,17 @@ describe('decideMarkExit / applyMarkDecisionToPosition', () => {
         dexCrossCheckPx: null,
       })!;
 
+    it('does not arm on entry-mark slippage when mark equals the fill', () => {
+      const p = bag();
+      p.entryMarkPriceUsd = p.entryPriceUsd * 0.97;
+      p.peakPriceUsd = p.entryPriceUsd;
+      p.lastMarkPriceUsd = p.entryPriceUsd;
+      p.trailArmed = false;
+      const decision = at(p, p.entryPriceUsd, 1_010_000);
+      expect(decision.armed).toBe(false);
+      expect(decision.shouldExit).toBe(false);
+    });
+
     it('parks the phantom print instead of trailing out on it', () => {
       const p = bag();
       const phantom = at(p, 0.00017138, 1_010_000);

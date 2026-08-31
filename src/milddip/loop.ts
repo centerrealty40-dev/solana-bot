@@ -6048,6 +6048,10 @@ async function tryExits(
         peakPx: decision.peakPriceUsd,
         armPct: cfg.exit.armPct,
         mfePct: +decision.mfePct.toFixed(2),
+        mfeVsFillPct:
+          pos.entryPriceUsd > 0
+            ? +((decision.peakPriceUsd / pos.entryPriceUsd - 1) * 100).toFixed(2)
+            : null,
       });
       console.log(
         `[mild-dip] ARM ${pos.symbol} mint=${mint.slice(0, 8)}… mfe=${decision.mfePct.toFixed(1)}% peak=$${decision.peakPriceUsd.toPrecision(4)}`,

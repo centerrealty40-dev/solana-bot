@@ -314,10 +314,21 @@ export function decideMarkExit(args: {
       ? (1 - markPriceUsd / peakPriceUsd) * 100
       : 0;
     const wasArmed = pos.trailArmed === true;
-    const g = decideGreenExit(pnl, heldMsGreen, args.greenGates, peakPnl, peakDrawdown);
+    const fill = pos.entryPriceUsd;
+    const pnlVsFill = (markPriceUsd / fill - 1) * 100;
+    const peakPnlVsFill = (peakPriceUsd / fill - 1) * 100;
+    const g = decideGreenExit(
+      pnl,
+      heldMsGreen,
+      args.greenGates,
+      peakPnl,
+      peakDrawdown,
+      pnlVsFill,
+      peakPnlVsFill,
+    );
     const armed =
       args.greenGates.trailEnabled === true &&
-      (wasArmed || peakPnl >= (args.greenGates.armPct ?? 10));
+      (wasArmed || peakPnlVsFill >= (args.greenGates.armPct ?? 10));
     return {
       mint,
       markPriceUsd,

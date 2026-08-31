@@ -299,16 +299,21 @@ export function decideGreenExit(
   gates: GreenExitGates,
   peakPnlPct = 0,
   peakDrawdownPct = 0,
+  pnlVsFillPct?: number,
+  peakPnlVsFillPct?: number,
 ): { shouldExit: boolean; reason: GreenExitReason } {
   if (!Number.isFinite(pnlPct)) return { shouldExit: false, reason: null };
+  const pnlFill = pnlVsFillPct ?? pnlPct;
+  const peakFill = peakPnlVsFillPct ?? peakPnlPct;
   const trailEnabled = gates.trailEnabled === true;
-  const armed = trailEnabled && peakPnlPct >= (gates.armPct ?? 10);
+  const armed = trailEnabled && peakFill >= (gates.armPct ?? 10);
   if (gates.stopPct > 0 && pnlPct <= -gates.stopPct) {
     return { shouldExit: true, reason: 'green_stop' };
   }
   if (
     trailEnabled &&
     armed &&
+    pnlFill > 0 &&
     gates.trailPct != null &&
     gates.trailPct > 0 &&
     peakDrawdownPct + 1e-9 >= gates.trailPct
