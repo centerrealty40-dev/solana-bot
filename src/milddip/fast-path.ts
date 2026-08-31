@@ -30,6 +30,7 @@ import { mildDipPairAgeRegistry } from './pair-age-registry.js';
 import type { LeaderSeedHit } from './discover-extra.js';
 import { isLeaderFreshCoBuy } from './discover-extra.js';
 import { appendMildDipJournal } from './state.js';
+import { leaderActiveNow } from './leader-active.js';
 import {
   fetchMildDipStructuralFallback,
   type StructuralFallbackSnapshot,
@@ -914,6 +915,24 @@ export async function evaluateFastPathCandidate(
    * on dip P&L.
    */
   if (cfg.green.enabled) {
+    const greenRunnerRelax = leaderActiveNow({
+      gates: {
+        enabled: cfg.green.runnerRelaxEnabled,
+        windowMs: cfg.green.runnerLeaderActiveMs,
+      },
+      nowMs,
+      leaderSeenAtMs,
+      seedHitAtMs: seedHit?.lastSeenAtMs ?? null,
+    });
+    const effMinLiquidityUsd = greenRunnerRelax
+      ? cfg.green.runnerMinLiquidityUsd
+      : cfg.green.minLiquidityUsd;
+    const effMinPairAgeHours = greenRunnerRelax
+      ? cfg.green.runnerMinPairAgeHours
+      : cfg.green.minPairAgeHours;
+    const effMaxBounceFromTroughPct = greenRunnerRelax
+      ? cfg.green.runnerMaxBounceFromTroughPct
+      : cfg.green.maxBounceFromTroughPct;
     const dexImpulse =
       struct.metrics.priceChange5mPct != null &&
       struct.metrics.priceChange5mPct >= Math.max(cfg.green.minPc5mPct, 0);
@@ -966,7 +985,7 @@ export async function evaluateFastPathCandidate(
         minPc5mPct: cfg.green.minPc5mPct,
         maxPc5mPct: cfg.green.maxPc5mPct,
         maxRallyIntoPeakPct: cfg.green.maxRallyIntoPeakPct,
-        maxBounceFromTroughPct: cfg.green.maxBounceFromTroughPct,
+        maxBounceFromTroughPct: effMaxBounceFromTroughPct,
         minDumpFromPeakPct: cfg.green.minDumpFromPeakPct,
         tapeMinuteGatesEnabled: cfg.green.tapeMinuteGatesEnabled,
         minTapeRet1mPct: cfg.green.minTapeRet1mPct,
@@ -975,8 +994,8 @@ export async function evaluateFastPathCandidate(
         minPc1hPct: cfg.green.minPc1hPct,
         minBuys5m: cfg.green.minBuys5m,
         maxBuyShare5m: cfg.green.maxBuyShare5m,
-        minLiquidityUsd: cfg.green.minLiquidityUsd,
-        minPairAgeHours: cfg.green.minPairAgeHours,
+        minLiquidityUsd: effMinLiquidityUsd,
+        minPairAgeHours: effMinPairAgeHours,
         maxRet1mPct: cfg.green.maxRet1mPct,
         maxTapeRet1mPct: cfg.green.maxTapeRet1mPct,
       },
@@ -1024,6 +1043,10 @@ export async function evaluateFastPathCandidate(
         turnover: g.turnover,
         ageH: struct.metrics.pairAgeHours,
         buyShare: g.buyShare,
+        runnerRelax: greenRunnerRelax,
+        effMinLiquidityUsd,
+        effMinPairAgeHours,
+        effMaxBounceFromTroughPct,
       });
     }
     if (greenOnly) return null;

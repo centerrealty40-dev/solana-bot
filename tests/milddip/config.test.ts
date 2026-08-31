@@ -531,6 +531,29 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.greenMaxCooldownBouncePct).toBe(100);
   });
 
+  it('loads leader-active re-entry and runner relaxation settings', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_REENTRY_LEADER_ACTIVE: '1',
+        MILD_DIP_REENTRY_LEADER_ACTIVE_MS: '120000',
+        MILD_DIP_GREEN_RUNNER_RELAX: '1',
+        MILD_DIP_GREEN_RUNNER_LEADER_ACTIVE_MS: '180000',
+        MILD_DIP_GREEN_RUNNER_MIN_PAIR_AGE_HOURS: '0.25',
+        MILD_DIP_GREEN_RUNNER_MIN_LIQUIDITY_USD: '8000',
+        MILD_DIP_GREEN_RUNNER_MAX_BOUNCE_FROM_TROUGH_PCT: '12',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.reentryLeaderActiveEnabled).toBe(true);
+    expect(cfg.reentryLeaderActiveMs).toBe(120_000);
+    expect(cfg.green.runnerRelaxEnabled).toBe(true);
+    expect(cfg.green.runnerLeaderActiveMs).toBe(180_000);
+    expect(cfg.green.runnerMinPairAgeHours).toBe(0.25);
+    expect(cfg.green.runnerMinLiquidityUsd).toBe(8_000);
+    expect(cfg.green.runnerMaxBounceFromTroughPct).toBe(12);
+  });
+
   it('loads mild-stabilize live lane budgets and trough settings', () => {
     const cfg = withConfigEnv(
       {

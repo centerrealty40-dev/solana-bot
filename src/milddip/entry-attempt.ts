@@ -84,6 +84,7 @@ import { mildDipStateSaveBlocked } from './state.js';
 import { writeUsBuyFill } from './trade-journal.js';
 import { executionWalletPubkey } from '../copytrader/position-reconcile.js';
 import { leaderBuyGateOk } from './leader-seen-gate.js';
+import { leaderActiveNow } from './leader-active.js';
 
 const HOLDING_DUST_RAW = 1000n;
 
@@ -224,6 +225,8 @@ const leaderGateShadowStamps: number[] = [];
 const leaderGateShadowLastByMint = new Map<string, number>();
 const leaderGateShadowDeferStamps: number[] = [];
 const leaderGateShadowDeferLastByMint = new Map<string, number>();
+const cooldownLeaderBypassLastByMint = new Map<string, number>();
+const COOLDOWN_LEADER_BYPASS_JOURNAL_GAP_MS = 10_000;
 
 function takeProbeSlot(cfg: MildDipConfig, nowMs: number): boolean {
   if (!probeOverrideAllowed(cfg.probeBlockedEnabled, cfg.probeBlockedUsd)) return false;
@@ -569,7 +572,31 @@ export async function attemptMildDipEntry(args: {
     });
     return 'skip';
   }
-  if (!opts.leaderStyle && (state.cooldownUntilMs[c.mint] ?? 0) > nowMs) return 'skip';
+  if (!opts.leaderStyle && (state.cooldownUntilMs[c.mint] ?? 0) > nowMs) {
+    const cooldownUntilMs = state.cooldownUntilMs[c.mint] ?? 0;
+    const leaderSeenAtMs = state.leaderSeenMints?.[c.mint] ?? null;
+    const leaderActive = leaderActiveNow({
+      gates: {
+        enabled: cfg.reentryLeaderActiveEnabled,
+        windowMs: cfg.reentryLeaderActiveMs,
+      },
+      nowMs,
+      leaderSeenAtMs,
+    });
+    if (!leaderActive) return 'skip';
+    const previous = cooldownLeaderBypassLastByMint.get(c.mint) ?? 0;
+    if (nowMs - previous >= COOLDOWN_LEADER_BYPASS_JOURNAL_GAP_MS) {
+      cooldownLeaderBypassLastByMint.set(c.mint, nowMs);
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_cooldown_leader_bypass',
+        mint: c.mint,
+        lane: opts.lane,
+        cooldownRemainingMs: Math.max(0, cooldownUntilMs - nowMs),
+        leaderSeenAgeMs: leaderSeenAtMs == null ? null : nowMs - leaderSeenAtMs,
+        windowMs: cfg.reentryLeaderActiveMs,
+      });
+    }
+  }
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
   if (c.dipSource === 'green_momentum' && !cfg.green.enabled) {
     appendMildDipJournal(cfg.journalPath, {
