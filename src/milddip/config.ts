@@ -430,6 +430,8 @@ const MildDipConfigSchema = z.object({
    * after close is not blocked for 10m.
    */
   lossCooldownMs: z.coerce.number().int().min(0).max(86_400_000).default(60_000),
+  reentryLeaderActiveEnabled: z.boolean().default(false),
+  reentryLeaderActiveMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
   /**
    * Max successful entries per mint within rolling 24h (0 = off). Wallet-truth
    * backtest: 821/1390 re-entries were churn losses; blocking ~59% of trips
@@ -800,6 +802,15 @@ const MildDipConfigSchema = z.object({
     maxRallyIntoPeakPct: z.coerce.number().min(0).max(10_000).default(0),
     maxBounceFromTroughPct: z.coerce.number().min(0).max(10_000).default(0),
     minDumpFromPeakPct: z.coerce.number().min(0).max(100).default(0),
+    runnerRelaxEnabled: z.boolean().default(false),
+    runnerLeaderActiveMs: z.coerce.number().int().min(0).max(86_400_000).default(900_000),
+    runnerMinPairAgeHours: z.coerce.number().min(0).default(0),
+    runnerMinLiquidityUsd: z.coerce.number().min(0).default(0),
+    runnerMaxBounceFromTroughPct: z.coerce.number().min(0).max(10_000).default(0),
+    /** Runner tape cap; 0 disables the cap while runner relaxation is active. */
+    runnerMaxTapeRet1mPct: z.coerce.number().min(0).max(10_000).default(0),
+    /** Runner prior-tape cap; 0 disables the cap while runner relaxation is active. */
+    runnerMaxTapePrior5mPct: z.coerce.number().min(0).max(10_000).default(0),
     tapeMinuteGatesEnabled: z.boolean().default(false),
     minTapeRet1mPct: z.coerce.number().min(-100).max(1000).default(5),
     maxTapePrior5mPct: z.coerce.number().min(-100).max(1000).default(10),
@@ -1238,6 +1249,16 @@ export function loadMildDipConfig(): MildDipConfig {
     maxRallyIntoPeakPct: envNum('MILD_DIP_GREEN_MAX_RALLY_INTO_PEAK_PCT', 0),
     maxBounceFromTroughPct: envNum('MILD_DIP_GREEN_MAX_BOUNCE_FROM_TROUGH_PCT', 0),
     minDumpFromPeakPct: envNum('MILD_DIP_GREEN_MIN_DUMP_FROM_PEAK_PCT', 0),
+    runnerRelaxEnabled: envBool('MILD_DIP_GREEN_RUNNER_RELAX', false),
+    runnerLeaderActiveMs: envNum('MILD_DIP_GREEN_RUNNER_LEADER_ACTIVE_MS', 900_000),
+    runnerMinPairAgeHours: envNum('MILD_DIP_GREEN_RUNNER_MIN_PAIR_AGE_HOURS', 0),
+    runnerMinLiquidityUsd: envNum('MILD_DIP_GREEN_RUNNER_MIN_LIQUIDITY_USD', 0),
+    runnerMaxBounceFromTroughPct: envNum(
+      'MILD_DIP_GREEN_RUNNER_MAX_BOUNCE_FROM_TROUGH_PCT',
+      0,
+    ),
+    runnerMaxTapeRet1mPct: envNum('MILD_DIP_GREEN_RUNNER_MAX_TAPE_RET1M_PCT', 0),
+    runnerMaxTapePrior5mPct: envNum('MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT', 0),
     tapeMinuteGatesEnabled: envBool('MILD_DIP_GREEN_TAPE_GATES_ENABLED', false),
     minTapeRet1mPct: envNum('MILD_DIP_GREEN_MIN_RET1M_PCT', 5),
     maxTapePrior5mPct: envNum('MILD_DIP_GREEN_MAX_PRIOR5M_PCT', 10),
@@ -1647,6 +1668,8 @@ export function loadMildDipConfig(): MildDipConfig {
     greenRequireLeaderSeen: envBool('MILD_DIP_GREEN_REQUIRE_LEADER_SEEN', true),
     requireLeaderSeenFirstTouch: envBool('MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH', false),
     leaderSeenMemoryMs: process.env.MILD_DIP_LEADER_SEEN_MEMORY_MS ?? 0,
+    reentryLeaderActiveEnabled: envBool('MILD_DIP_REENTRY_LEADER_ACTIVE', false),
+    reentryLeaderActiveMs: process.env.MILD_DIP_REENTRY_LEADER_ACTIVE_MS ?? 900_000,
     leaderGateShadowRecord: envBool('MILD_DIP_LEADER_GATE_SHADOW_RECORD', true),
     leaderGateShadowMinIntervalMs: envNum(
       'MILD_DIP_LEADER_GATE_SHADOW_MIN_INTERVAL_MS',

@@ -31,6 +31,7 @@ import {
   readLeaderBalance,
   readLeaderBalanceForGuard,
 } from './leader-balance.js';
+import { leaderActiveNow } from './leader-active.js';
 import {
   leaderOpenBagDropReason,
   leaderOpenBagRearmDecision,
@@ -454,9 +455,24 @@ function openCount(state: MildDipState): number {
   return Object.keys(state.open).length;
 }
 
-function onCooldown(state: MildDipState, mint: string, nowMs: number): boolean {
+function onCooldown(
+  cfg: MildDipConfig,
+  state: MildDipState,
+  mint: string,
+  nowMs: number,
+  seedHit?: LeaderSeedHit | null,
+): boolean {
   const until = state.cooldownUntilMs[mint] ?? 0;
-  return until > nowMs;
+  if (until <= nowMs) return false;
+  return !leaderActiveNow({
+    gates: {
+      enabled: cfg.reentryLeaderActiveEnabled,
+      windowMs: cfg.reentryLeaderActiveMs,
+    },
+    nowMs,
+    leaderSeenAtMs: state.leaderSeenMints?.[mint] ?? null,
+    seedHitAtMs: seedHit?.lastSeenAtMs ?? null,
+  });
 }
 
 /** Sample stream prices for cooldown / open / post-exit / hot / leader-known mints. */
@@ -985,8 +1001,7 @@ async function tryFireWaitDip(
   }
   // Post-exit rebuy window: do not hold for extra −7% — fall through to direct buy.
   if (clearWaitDipForRebuyWindow(cfg, state, mint, nowMs)) return false;
-  if (onCooldown(state, mint, nowMs)) return false;
-
+  if (onCooldown(cfg, state, mint, nowMs)) return false;
   const unlimited = cfg.maxOpenPositions <= 0;
   if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
 
@@ -1245,7 +1260,7 @@ async function tryFastPathForMint(
   if (trigger === 'leader' || trigger === 'stream') {
     mildDipHotMints.note(mint, nowMs);
   }
-  if (onCooldown(state, mint, nowMs)) return false;
+  if (onCooldown(cfg, state, mint, nowMs, seedHit)) return false;
 
   const unlimited = cfg.maxOpenPositions <= 0;
   if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
@@ -2788,7 +2803,7 @@ async function wakeLeaderSeeds(
   const relookMs = cfg.leaderSeedRelookMs;
   const due = leaders.filter((hit) => {
     if (state.open[hit.mint]) return false;
-    if (onCooldown(state, hit.mint, nowMs)) return false;
+    if (onCooldown(cfg, state, hit.mint, nowMs, hit)) return false;
     const last = leaderSeedLookedAtMs.get(hit.mint) ?? 0;
     return relookMs <= 0 || nowMs - last >= relookMs;
   });
@@ -4142,7 +4157,17 @@ async function rearmLeaderOpenBags(
       nowMs,
       entry,
       maxAgeMs: gates.leaderOpenBagMaxAgeMs,
-      cooldownUntilMs: state.cooldownUntilMs[entry.mint] ?? 0,
+      cooldownUntilMs: leaderActiveNow({
+        gates: {
+          enabled: cfg.reentryLeaderActiveEnabled,
+          windowMs: cfg.reentryLeaderActiveMs,
+        },
+        nowMs,
+        leaderSeenAtMs: state.leaderSeenMints?.[entry.mint] ?? null,
+        seedHitAtMs: entry.leaderBuyAtMs,
+      })
+        ? 0
+        : state.cooldownUntilMs[entry.mint] ?? 0,
       alreadyTraded,
       leaderHolds: balanceRead.balanceRaw != null && balanceRead.balanceRaw > 0n,
       weHoldPosition: state.open[entry.mint] != null,
