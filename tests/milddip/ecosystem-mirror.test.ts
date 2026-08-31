@@ -366,7 +366,7 @@ describe('mirror PM2 apps', () => {
     expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-mirror2')).toBe(true);
   });
 
-  it('keeps own2 isolated and available only through the internal app list', () => {
+  it('keeps own2 isolated with the shared leader seed', () => {
     expect(own2).toBeDefined();
     expect(own2?.env.MILD_DIP_APP_NAME).toBe('mild-dip-own2');
     expect(own2?.env.MILD_DIP_WALLET_PUBKEY).toBe(
@@ -386,7 +386,7 @@ describe('mirror PM2 apps', () => {
       expect(own2?.env[key]).toContain('data/milddip-own2/');
     }
     expect(own2?.env.MILD_DIP_LEADER_SEED_PATH).toContain(
-      'data/milddip-own2/leader-seed-empty.json',
+      'data/milddip/leader-seed.json',
     );
     expect(own2?.env.MILD_DIP_MIRROR_ENABLED).toBe('0');
     expect(own2?.env.MILD_DIP_MIRROR_ONLY).toBe('0');
@@ -394,7 +394,9 @@ describe('mirror PM2 apps', () => {
     expect(own2?.env.MILD_DIP_STREAM_PRICE_SAMPLE).toBe('1');
     expect(own2?.env.MILD_DIP_TAPE_SHADOW_ENABLED).toBe('1');
     expect(own2?.env.MILD_DIP_GREEN_ENABLED).toBe('1');
-    expect(own2?.env.MILD_DIP_GREEN_REQUIRE_LEADER_SEEN).toBe('0');
+    expect(own2?.env.MILD_DIP_GREEN_REQUIRE_LEADER_SEEN).toBe('1');
+    expect(own2?.env.MILD_DIP_GREEN_MAX_RALLY_INTO_PEAK_PCT).toBe('20');
+    expect(own2?.env.MILD_DIP_GREEN_MAX_BOUNCE_FROM_TROUGH_PCT).toBe('25');
     expect(own2?.env.MILD_DIP_GREEN_POSITION_USD).toBe('5');
     expect(own2?.env.MILD_DIP_POSITION_USD).toBe('5');
     expect(own2?.env.MILD_DIP_SIZE_MIN_USD).toBe('5');
@@ -407,6 +409,9 @@ describe('mirror PM2 apps', () => {
     expect(own2?.env.MILD_DIP_MIRROR_LOSS_CAP_DAILY_RESET).toBe('1');
     expect(own2?.env.MILD_DIP_MIRROR_LOSS_CAP_RESET_TZ_OFFSET_MIN).toBe('180');
     expect(own2?.env.MILD_DIP_MAX_OPEN_POSITIONS).toBe('12');
+    expect(own2?.env.MILD_DIP_LEADER_SEEN_MEMORY_MS).toBe('604800000');
+    expect(own2?.env.MILD_DIP_LEADER_SEED_MAX).toBe('250');
+    expect(own2?.env.MILD_DIP_LEADER_SEED_MAX_AGE_MS).toBe('7200000');
     expect(ecosystem.apps.some((app) => app.name === 'mild-dip-own2')).toBe(true);
     expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-own2')).toBe(true);
     expect(

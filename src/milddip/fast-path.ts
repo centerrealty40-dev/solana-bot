@@ -942,6 +942,8 @@ export async function evaluateFastPathCandidate(
       {
         pc5mPct: struct.metrics.priceChange5mPct,
         pc1hPct: struct.metrics.priceChange1hPct,
+        rallyIntoPeakPct: streamWindow.rallyIntoPeakPct,
+        bounceFromTroughPct: streamWindow.bounceFromTroughPct,
         tapeRet1mPct: tapeMinute.tapeRet1mPct,
         tapePrior5mPct: tapeMinute.tapePrior5mPct,
         volume5mUsd: struct.metrics.volume5mUsd,
@@ -958,6 +960,8 @@ export async function evaluateFastPathCandidate(
         minVolume1hUsd: cfg.green.minVolume1hUsd,
         minPc5mPct: cfg.green.minPc5mPct,
         maxPc5mPct: cfg.green.maxPc5mPct,
+        maxRallyIntoPeakPct: cfg.green.maxRallyIntoPeakPct,
+        maxBounceFromTroughPct: cfg.green.maxBounceFromTroughPct,
         tapeMinuteGatesEnabled: cfg.green.tapeMinuteGatesEnabled,
         minTapeRet1mPct: cfg.green.minTapeRet1mPct,
         maxTapePrior5mPct: cfg.green.maxTapePrior5mPct,

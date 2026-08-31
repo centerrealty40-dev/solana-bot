@@ -34,6 +34,8 @@ const gates: GreenLaneGates = {
   minVolume1hUsd: 60_000,
   minPc5mPct: 14,
   maxPc5mPct: 0,
+  maxRallyIntoPeakPct: 0,
+  maxBounceFromTroughPct: 0,
   requirePc1h: true,
   minPc1hPct: 20,
   minBuys5m: 43,
@@ -263,6 +265,26 @@ describe('evaluateGreenLane', () => {
   it('supports an opt-in upper pc5m bound', () => {
     expect(evaluateGreenLane({ ...ok, pc5mPct: 40 }, { ...gates, maxPc5mPct: 40 }).pass).toBe(false);
     expect(evaluateGreenLane({ ...ok, pc5mPct: 39.9 }, { ...gates, maxPc5mPct: 40 }).pass).toBe(true);
+  });
+
+  it('caps rally and bounce while failing open when metrics are absent', () => {
+    const rally = evaluateGreenLane(
+      { ...ok, rallyIntoPeakPct: 20 },
+      { ...gates, maxRallyIntoPeakPct: 20 },
+    );
+    expect(rally.pass).toBe(false);
+    expect(rally.reasons).toContain('green_rally_into_peak=20.00');
+    expect(evaluateGreenLane({ ...ok, rallyIntoPeakPct: 19.9 }, { ...gates, maxRallyIntoPeakPct: 20 }).pass).toBe(true);
+    expect(evaluateGreenLane({ ...ok, rallyIntoPeakPct: null }, { ...gates, maxRallyIntoPeakPct: 20 }).pass).toBe(true);
+    const bounce = evaluateGreenLane(
+      { ...ok, bounceFromTroughPct: 25 },
+      { ...gates, maxBounceFromTroughPct: 25 },
+    );
+    expect(bounce.pass).toBe(false);
+    expect(bounce.reasons).toContain('green_bounce_from_trough=25.00');
+    expect(evaluateGreenLane({ ...ok, bounceFromTroughPct: 24.9 }, { ...gates, maxBounceFromTroughPct: 25 }).pass).toBe(true);
+    expect(evaluateGreenLane({ ...ok, bounceFromTroughPct: null }, { ...gates, maxBounceFromTroughPct: 25 }).pass).toBe(true);
+    expect(evaluateGreenLane({ ...ok, rallyIntoPeakPct: 99, bounceFromTroughPct: 99 }, gates).pass).toBe(true);
   });
 
   it('uses own tape minute gates and ignores Dex pc5m and maxRet1m', () => {

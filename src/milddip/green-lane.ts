@@ -51,6 +51,8 @@ export type GreenLaneGates = {
   minPc5mPct: number;
   /** 0 disables the upper bound; reject vertical moves at or above this value. */
   maxPc5mPct: number;
+  maxRallyIntoPeakPct: number;
+  maxBounceFromTroughPct: number;
   /** Use own stream minute returns instead of Dex pc5m bounds. */
   tapeMinuteGatesEnabled?: boolean;
   minTapeRet1mPct?: number;
@@ -89,6 +91,8 @@ export type GreenLaneInput = {
   pairAgeHours: number | null | undefined;
   /** Optional; skipped when absent. */
   ret1mPct?: number | null;
+  rallyIntoPeakPct?: number | null;
+  bounceFromTroughPct?: number | null;
   tapeRet1mPct?: number | null;
   tapePrior5mPct?: number | null;
 };
@@ -155,6 +159,8 @@ export function evaluateGreenLane(
   const liq = num(input.liquidityUsd);
   const buys = num(input.buys5m);
   const ret1m = num(input.ret1mPct);
+  const rallyIntoPeak = num(input.rallyIntoPeakPct);
+  const bounceFromTrough = num(input.bounceFromTroughPct);
   const tapeGatesEnabled = gates.tapeMinuteGatesEnabled === true;
   const tapeRet1m = num(input.tapeRet1mPct);
   const tapePrior5m = num(input.tapePrior5mPct);
@@ -213,6 +219,12 @@ export function evaluateGreenLane(
   }
   if (!tapeGatesEnabled && ret1m != null && ret1m > gates.maxRet1mPct) {
     fail.push(`ret1m=${ret1m.toFixed(2)}`);
+  }
+  if (gates.maxRallyIntoPeakPct > 0 && rallyIntoPeak != null && rallyIntoPeak >= gates.maxRallyIntoPeakPct) {
+    fail.push(`green_rally_into_peak=${rallyIntoPeak.toFixed(2)}`);
+  }
+  if (gates.maxBounceFromTroughPct > 0 && bounceFromTrough != null && bounceFromTrough >= gates.maxBounceFromTroughPct) {
+    fail.push(`green_bounce_from_trough=${bounceFromTrough.toFixed(2)}`);
   }
 
   if (fail.length > 0) return { pass: false, reasons: fail, turnover, buyShare };
