@@ -6061,7 +6061,11 @@ async function tryExits(
        * entry gate took it again ninety-eight seconds later, 7.7% lower, where
        * the ladder banked two rungs. One brain, not two hands.
        */
-      if (pos.lane === 'green' && cfg.greenExitHoldWouldBuyEnabled) {
+      if (
+        cfg.greenExitHoldWouldBuyEnabled &&
+        decision.reason != null &&
+        GREEN_WOULD_BUY_HOLD_REASONS.has(decision.reason)
+      ) {
         const om = readOpenMarkMetrics(mint, nowMs);
         const sw = mildDipPriceRing.streamWindowMetrics(
           mint,
@@ -6166,21 +6170,15 @@ async function tryExits(
               reentries: pos.greenExitHoldReentries ?? 0,
             });
           }
-          saveMildDipState(cfg.statePath, state);
           continue;
         }
-        if (
-          decision.reason != null &&
-          GREEN_WOULD_BUY_HOLD_REASONS.has(decision.reason)
-        ) {
-          appendMildDipJournal(cfg.journalPath, {
+        appendMildDipJournal(cfg.journalPath, {
             kind: 'green_exit_hold_declined',
             mint,
             symbol: pos.symbol,
             wouldReason: decision.reason,
             declinedBy: holdVerdict.reasons.slice(0, 4).join(','),
           });
-        }
       }
       if (cfg.exitDeferWouldBuyEnabled) {
         const om = readOpenMarkMetrics(mint, nowMs);
