@@ -554,7 +554,7 @@ export async function attemptMildDipEntry(args: {
   if (buyInFlight.has(c.mint)) return 'skip';
   if (state.open[c.mint]) return 'skip';
   if (
-    opts.mirror === true &&
+    (opts.mirror === true || cfg.leaderMirror.lossCapAllLanes) &&
     cfg.leaderMirror.lossCapUsd > 0 &&
     state.mirrorLossCapTriggeredAtMs != null
   ) {
@@ -2192,7 +2192,7 @@ export async function attemptMildDipEntry(args: {
 
   if (state.waitDipWatch?.[c.mint]) delete state.waitDipWatch[c.mint];
 
-  if (isMirror) {
+  if (isMirror || cfg.leaderMirror.lossCapAllLanes) {
     accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
   }
   const filledRaw = await fetchMintBalanceRaw(copyCfg, c.mint);

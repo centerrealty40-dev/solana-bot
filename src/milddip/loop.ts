@@ -210,6 +210,7 @@ import {
   type MildDipOpenPosition,
   type MildDipState,
   isMirrorLane,
+  lossCapCountsLane,
 } from './state.js';
 import { checkMildDipDiskSpace, runMildDipDataRetention } from './disk-hygiene.js';
 import {
@@ -321,7 +322,10 @@ const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 let lastMirrorLossCapStatusMs = 0;
 let lastMirrorLossCapEvaluationMs = 0;
 
-export function mirrorLossCapValues(state: MildDipState): {
+export function mirrorLossCapValues(
+  state: MildDipState,
+  allLanes = false,
+): {
   cashUsd: number;
   bagsUsd: number;
   bagsMarkUsd: number;
@@ -329,10 +333,10 @@ export function mirrorLossCapValues(state: MildDipState): {
 } {
   const cashUsd = state.mirrorTradingCashUsd ?? 0;
   const bagsUsd = Object.values(state.open)
-    .filter((position) => isMirrorLane(position.lane))
+    .filter((position) => lossCapCountsLane(position.lane, allLanes))
     .reduce((sum, position) => sum + Math.max(0, position.sizeUsd), 0);
   const bagsMarkUsd = Object.values(state.open)
-    .filter((position) => isMirrorLane(position.lane))
+    .filter((position) => lossCapCountsLane(position.lane, allLanes))
     .reduce((sum, position) => sum + mirrorOpenMarkValueUsd(position), 0);
   return { cashUsd, bagsUsd, bagsMarkUsd, drawdownUsd: cashUsd + bagsUsd };
 }
@@ -342,7 +346,10 @@ export function ensureMirrorLossCapBaseline(
   state: MildDipState,
   nowMs: number,
 ): void {
-  const lossCapValues = mirrorLossCapValues(state);
+  const lossCapValues = mirrorLossCapValues(
+    state,
+    cfg.leaderMirror.lossCapAllLanes,
+  );
   const result = syncMirrorLossCapBaseline({
     state,
     lossCapUsd: cfg.leaderMirror.lossCapUsd,
@@ -360,7 +367,8 @@ export function ensureMirrorLossCapBaseline(
     openBagsUsd: lossCapValues.bagsMarkUsd,
     openBagsCostUsd: lossCapValues.bagsUsd,
     openMirror: Object.values(state.open).filter(
-      (position) => isMirrorLane(position.lane),
+      (position) =>
+        lossCapCountsLane(position.lane, cfg.leaderMirror.lossCapAllLanes),
     ).length,
     baselineAtMs: nowMs,
     lossCapUsd: cfg.leaderMirror.lossCapUsd,
@@ -376,7 +384,7 @@ function maybeResetMirrorLossCapDayForLoop(
   const result = maybeResetMirrorLossCapDay({
     state,
     lossCapUsd: cfg.leaderMirror.lossCapUsd,
-    bagsUsd: mirrorLossCapValues(state).bagsUsd,
+    bagsUsd: mirrorLossCapValues(state, cfg.leaderMirror.lossCapAllLanes).bagsUsd,
     nowMs,
     tzOffsetMinutes: cfg.leaderMirror.lossCapResetTzOffsetMinutes,
     enabled: cfg.leaderMirror.lossCapDailyReset,
@@ -395,8 +403,14 @@ function maybeResetMirrorLossCapDayForLoop(
     previousDayKey: result.previousDayKey,
     dayKey: result.dayKey,
     lossCapUsd: cfg.leaderMirror.lossCapUsd,
-    openBagsUsd: mirrorLossCapValues(state).bagsMarkUsd,
-    openBagsCostUsd: mirrorLossCapValues(state).bagsUsd,
+    openBagsUsd: mirrorLossCapValues(
+      state,
+      cfg.leaderMirror.lossCapAllLanes,
+    ).bagsMarkUsd,
+    openBagsCostUsd: mirrorLossCapValues(
+      state,
+      cfg.leaderMirror.lossCapAllLanes,
+    ).bagsUsd,
     tzOffsetMinutes: cfg.leaderMirror.lossCapResetTzOffsetMinutes,
     nowMs,
   });
@@ -3488,7 +3502,10 @@ async function executeQueuedSell(args: {
     );
   }
 
-  if (isMirrorLane(pos.lane) && (sell.ok || refireSettlement != null)) {
+  if (
+    lossCapCountsLane(pos.lane, cfg.leaderMirror.lossCapAllLanes) &&
+    (sell.ok || refireSettlement != null)
+  ) {
     const cashDelta = refireSettlement
       ? refireSettlement.quoteReceivedUsd ?? 0
       : accountMirrorCashLeg(
@@ -5173,7 +5190,10 @@ async function tryExits(
 ): Promise<void> {
   ensureMirrorLossCapBaseline(cfg, state, nowMs);
   maybeResetMirrorLossCapDayForLoop(cfg, state, nowMs);
-  const lossCapValues = mirrorLossCapValues(state);
+  const lossCapValues = mirrorLossCapValues(
+    state,
+    cfg.leaderMirror.lossCapAllLanes,
+  );
   if (nowMs - lastMirrorLossCapEvaluationMs >= 5_000) {
     lastMirrorLossCapEvaluationMs = nowMs;
     maybeTriggerMirrorLossCap(cfg, state, lossCapValues.drawdownUsd, nowMs);
@@ -5197,7 +5217,8 @@ async function tryExits(
           : null,
       capTriggered: mirrorLossCapTriggered(cfg, state),
       openMirror: Object.values(state.open).filter(
-        (position) => isMirrorLane(position.lane),
+        (position) =>
+          lossCapCountsLane(position.lane, cfg.leaderMirror.lossCapAllLanes),
       ).length,
     });
   }
@@ -6450,7 +6471,7 @@ export async function runMildDipLoop(
   maybeTriggerMirrorLossCap(
     cfg,
     state,
-    mirrorLossCapValues(state).drawdownUsd,
+    mirrorLossCapValues(state, cfg.leaderMirror.lossCapAllLanes).drawdownUsd,
     Date.now(),
   );
   leaderMirrorStateHydrated = false;

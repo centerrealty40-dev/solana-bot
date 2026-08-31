@@ -5159,6 +5159,57 @@ if (mildDipBotApp) {
   );
 }
 
+if (mildDipBotApp) {
+  /**
+   * 1.11.1085 — own-discovery bot on the Helius stream; its empty leader seed
+   * keeps first-touch candidates in the GREEN-only path without leader buys.
+   */
+  PM2_APPS.push({
+    ...mildDipBotApp,
+    name: 'mild-dip-own2',
+    autostart: true,
+    env: {
+      ...mildDipBotApp.env,
+      MILD_DIP_APP_NAME: 'mild-dip-own2',
+      MILD_DIP_EXECUTION_MODE: 'live',
+      MILD_DIP_WALLET_SECRET: path.join(
+        root,
+        'data/live/copy-8zkg.keypair.json',
+      ),
+      MILD_DIP_WALLET_PUBKEY: 'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
+      MILD_DIP_JOURNAL_PATH: path.join(root, 'data/milddip-own2/journal.jsonl'),
+      MILD_DIP_TRADES_PATH: path.join(root, 'data/milddip-own2/trades.jsonl'),
+      MILD_DIP_STATE_PATH: path.join(root, 'data/milddip-own2/state.json'),
+      MILD_DIP_HOT_MINTS_PATH: path.join(root, 'data/milddip-own2/hot-mints.json'),
+      MILD_DIP_PRICE_RING_PATH: path.join(root, 'data/milddip-own2/price-ring.json'),
+      MILD_DIP_TAPE_STATE_PATH: path.join(
+        root,
+        'data/milddip-own2/tape-shadow-state.json',
+      ),
+      MILD_DIP_LEADER_SEED_PATH: path.join(
+        root,
+        'data/milddip-own2/leader-seed-empty.json',
+      ),
+      MILD_DIP_MIRROR_ENABLED: '0',
+      MILD_DIP_MIRROR_ONLY: '0',
+      MILD_DIP_GREEN_ENABLED: '1',
+      MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
+      MILD_DIP_GREEN_POSITION_USD: '5',
+      MILD_DIP_POSITION_USD: '5',
+      MILD_DIP_SIZE_MIN_USD: '5',
+      MILD_DIP_SIZE_MAX_USD: '5',
+      MILD_DIP_LOSS_CAP_ALL_LANES: '1',
+      MILD_DIP_MIRROR_LOSS_CAP_USD: '50',
+      MILD_DIP_MIRROR_LOSS_CAP_FLATTEN: '0',
+      MILD_DIP_MIRROR_LOSS_CAP_DAILY_RESET: '1',
+      MILD_DIP_MIRROR_LOSS_CAP_RESET_TZ_OFFSET_MIN: '180',
+      MILD_DIP_MAX_OPEN_POSITIONS: '12',
+      MILD_DIP_REQUIRE_LEADER_SEEN: '1',
+      MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
+    },
+  });
+}
+
 PM2_APPS.push({
   name: 'mild-dip-watchdog',
   cwd: root,
@@ -5197,6 +5248,8 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'copy-trader-8zkg-mirror',
   /** 1.11.1040 — operator permanently disabled mild-dip-bot; reload must not revive it. */
   'mild-dip-bot',
+  /** 1.11.1085 — own-discovery bot is started explicitly, not by ecosystem reload. */
+  'mild-dip-own2',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',

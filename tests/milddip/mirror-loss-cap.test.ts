@@ -11,7 +11,11 @@ import {
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { loadMildDipState, saveMildDipState } from '../../src/milddip/state.js';
+import {
+  loadMildDipState,
+  lossCapCountsLane,
+  saveMildDipState,
+} from '../../src/milddip/state.js';
 import { mirrorLossCapValues } from '../../src/milddip/loop.js';
 
 describe('mirror loss cap cash and mark accounting', () => {
@@ -52,6 +56,48 @@ describe('mirror loss cap cash and mark accounting', () => {
       bagsUsd: 150,
       bagsMarkUsd: 75,
       drawdownUsd: 0,
+    });
+  });
+
+  it('keeps the default mirror-only lane filter and supports all-lane accounting', () => {
+    const state = {
+      open: {
+        mirror: {
+          lane: 'leader_mirror',
+          sizeUsd: 100,
+          entryPriceUsd: 1,
+          lastMarkPriceUsd: 0.5,
+        },
+        green: {
+          lane: 'green',
+          sizeUsd: 25,
+          entryPriceUsd: 1,
+          lastMarkPriceUsd: 0.8,
+        },
+        dip: {
+          lane: 'dip',
+          sizeUsd: 15,
+          entryPriceUsd: 1,
+          lastMarkPriceUsd: 0.9,
+        },
+      },
+      mirrorTradingCashUsd: -100,
+    } as Parameters<typeof mirrorLossCapValues>[0];
+
+    expect(lossCapCountsLane('leader_mirror', false)).toBe(true);
+    expect(lossCapCountsLane('green', false)).toBe(false);
+    expect(lossCapCountsLane('dip', false)).toBe(false);
+    expect(mirrorLossCapValues(state)).toMatchObject({
+      bagsUsd: 100,
+      bagsMarkUsd: 50,
+      drawdownUsd: 0,
+    });
+    expect(lossCapCountsLane('green', true)).toBe(true);
+    expect(lossCapCountsLane('dip', true)).toBe(true);
+    expect(mirrorLossCapValues(state, true)).toMatchObject({
+      bagsUsd: 140,
+      bagsMarkUsd: 83.5,
+      drawdownUsd: 40,
     });
   });
 

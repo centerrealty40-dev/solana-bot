@@ -36,6 +36,7 @@ describe('mild-dip config exit schema', () => {
 
   it('defaults cross-leader averaging off and loads its settings', () => {
     const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.leaderMirror.lossCapAllLanes).toBe(false);
     expect(defaults.leaderMirror.crossLeaderAverageEnabled).toBe(false);
     expect(defaults.leaderMirror.manualAdoptEnabled).toBe(false);
     expect(defaults.leaderMirror.manualAdoptMinUsd).toBe(20);
@@ -120,6 +121,17 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.leaderMirror.sizeLiqMinUsd).toBe(11);
     expect(cfg.leaderMirror.sizeLiqMaxUsd).toBe(99);
     expect(cfg.leaderMirror.sizeLiqMaxPoolSharePct).toBe(0.15);
+  });
+
+  it('loads the optional all-lane loss-cap flag', () => {
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_LOSS_CAP_ALL_LANES: '1',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.leaderMirror.lossCapAllLanes).toBe(true);
   });
 
   it('parses configured mirror averaging and cash reconciliation settings', () => {

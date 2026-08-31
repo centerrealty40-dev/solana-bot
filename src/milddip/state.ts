@@ -246,6 +246,14 @@ export function isMirrorLane(lane: MildDipOpenPosition['lane']): boolean {
   return lane === 'leader_mirror' || lane === 'tier';
 }
 
+/** 1.11.1085 — allow own-discovery loss accounting without changing mirror defaults. */
+export function lossCapCountsLane(
+  lane: MildDipOpenPosition['lane'],
+  allLanes: boolean,
+): boolean {
+  return allLanes ? true : isMirrorLane(lane);
+}
+
 /** Last full exit — block rebuy near the same USD price (no Dex needed). */
 export type MildDipLastExit = {
   priceUsd: number;

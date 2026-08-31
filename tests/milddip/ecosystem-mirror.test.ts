@@ -17,6 +17,7 @@ const mirrorApps = ecosystem.allApps.filter((app) =>
 const mirror = mirrorApps.find((app) => app.name === 'mild-dip-mirror');
 const mirror2 = mirrorApps.find((app) => app.name === 'mild-dip-mirror2');
 const mildDip = ecosystem.allApps.find((app) => app.name === 'mild-dip-bot');
+const own2 = ecosystem.allApps.find((app) => app.name === 'mild-dip-own2');
 
 describe('mirror PM2 apps', () => {
   it('exports both mirror processes with independent leaders and shared strategy', () => {
@@ -363,5 +364,50 @@ describe('mirror PM2 apps', () => {
     expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror')).toBe(true);
     expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror2')).toBe(false);
     expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-mirror2')).toBe(true);
+  });
+
+  it('keeps own2 isolated and available only through the internal app list', () => {
+    expect(own2).toBeDefined();
+    expect(own2?.env.MILD_DIP_APP_NAME).toBe('mild-dip-own2');
+    expect(own2?.env.MILD_DIP_WALLET_PUBKEY).toBe(
+      'FxQfFTmj6xfjbzE2LcXteJMjd1KpBjMhH9nzEiijUGHX',
+    );
+    expect(own2?.env.MILD_DIP_WALLET_SECRET).toContain(
+      'data/live/copy-8zkg.keypair.json',
+    );
+    for (const key of [
+      'MILD_DIP_JOURNAL_PATH',
+      'MILD_DIP_TRADES_PATH',
+      'MILD_DIP_STATE_PATH',
+      'MILD_DIP_HOT_MINTS_PATH',
+      'MILD_DIP_PRICE_RING_PATH',
+      'MILD_DIP_TAPE_STATE_PATH',
+    ]) {
+      expect(own2?.env[key]).toContain('data/milddip-own2/');
+    }
+    expect(own2?.env.MILD_DIP_LEADER_SEED_PATH).toContain(
+      'data/milddip-own2/leader-seed-empty.json',
+    );
+    expect(own2?.env.MILD_DIP_MIRROR_ENABLED).toBe('0');
+    expect(own2?.env.MILD_DIP_MIRROR_ONLY).toBe('0');
+    expect(own2?.env.MILD_DIP_STREAM).toBe('1');
+    expect(own2?.env.MILD_DIP_STREAM_PRICE_SAMPLE).toBe('1');
+    expect(own2?.env.MILD_DIP_TAPE_SHADOW_ENABLED).toBe('1');
+    expect(own2?.env.MILD_DIP_GREEN_ENABLED).toBe('1');
+    expect(own2?.env.MILD_DIP_GREEN_REQUIRE_LEADER_SEEN).toBe('0');
+    expect(own2?.env.MILD_DIP_GREEN_POSITION_USD).toBe('5');
+    expect(own2?.env.MILD_DIP_POSITION_USD).toBe('5');
+    expect(own2?.env.MILD_DIP_SIZE_MIN_USD).toBe('5');
+    expect(own2?.env.MILD_DIP_SIZE_MAX_USD).toBe('5');
+    expect(own2?.env.MILD_DIP_LOSS_CAP_ALL_LANES).toBe('1');
+    expect(own2?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('50');
+    expect(own2?.env.MILD_DIP_MIRROR_LOSS_CAP_DAILY_RESET).toBe('1');
+    expect(own2?.env.MILD_DIP_MIRROR_LOSS_CAP_RESET_TZ_OFFSET_MIN).toBe('180');
+    expect(own2?.env.MILD_DIP_MAX_OPEN_POSITIONS).toBe('12');
+    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-own2')).toBe(false);
+    expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-own2')).toBe(true);
+    expect(
+      own2?.env.MILD_DIP_WATCHDOG_INSTANCES,
+    ).toBeUndefined();
   });
 });
