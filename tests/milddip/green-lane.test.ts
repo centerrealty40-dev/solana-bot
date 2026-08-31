@@ -484,6 +484,21 @@ describe('decideGreenExit', () => {
     expect(decideGreenExit(12, 3_600_001, trail, 12, 0)).toEqual({ shouldExit: true, reason: 'green_max_hold' });
   });
 
+  it('arms and trails from the fill rather than entry-mark slippage', () => {
+    const trail: GreenExitGates = {
+      takeProfitPct: 0,
+      stopPct: 45,
+      maxHoldMs: 3_600_000,
+      trailEnabled: true,
+      armPct: 2,
+      trailPct: 4,
+    };
+    expect(decideGreenExit(-1, 60_000, trail, 3.14, 5, -4.2, 0).shouldExit).toBe(false);
+    expect(decideGreenExit(6, 60_000, trail, 12, 5, 3, 9).reason).toBe('green_trail');
+    expect(decideGreenExit(-2, 60_000, trail, 12, 20, -2, 9).reason).not.toBe('green_trail');
+    expect(decideGreenExit(-50, 60_000, trail, 12, 20, -2, 9).reason).toBe('green_stop');
+  });
+
   it('cuts a position that has not moved by the no-move deadline', () => {
     const noMove: GreenExitGates = {
       ...g,
