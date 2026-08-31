@@ -7140,6 +7140,13 @@ export async function runMildDipLoop(
   if (cfg.streamEnabled && !cfg.leaderMirror.mirrorOnly) {
     streamHandle = startMildDipHotMintStream({
       wsUrl: cfg.streamWsUrl || null,
+      rpcHttpUrl: cfg.rpcUrl,
+      journalPath: cfg.journalPath,
+      eventDecodeEnabled: cfg.streamEventDecodeEnabled,
+      poolResolveEnabled: cfg.streamPoolResolveEnabled,
+      poolBatchSize: cfg.streamPoolBatchSize,
+      poolBatchMs: cfg.streamPoolBatchMs,
+      poolMaxQueue: cfg.streamPoolMaxQueue,
       priceSampler,
       onMint: (mint, tsMs) => {
         // Immediate fast-path — do not wait for the 5s enrich batch.
