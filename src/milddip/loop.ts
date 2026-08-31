@@ -1001,6 +1001,7 @@ async function tryFireWaitDip(
   }
   // Post-exit rebuy window: do not hold for extra −7% — fall through to direct buy.
   if (clearWaitDipForRebuyWindow(cfg, state, mint, nowMs)) return false;
+  if (onCooldown(cfg, state, mint, nowMs)) return false;
   const unlimited = cfg.maxOpenPositions <= 0;
   if (!unlimited && openCount(state) >= cfg.maxOpenPositions) return false;
 
@@ -1104,7 +1105,6 @@ async function tryFireWaitDip(
           mint,
         )
       : null;
-  if (onCooldown(cfg, state, mint, nowMs, waitSeedHit)) return false;
   const metricsForCoBuy = freshStruct?.metrics ?? watch.metrics;
   const coBuy = leaderCoBuyAlignOk(cfg, metricsForCoBuy, {
     nowMs,
