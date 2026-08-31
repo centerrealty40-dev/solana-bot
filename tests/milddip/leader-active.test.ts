@@ -23,6 +23,19 @@ describe('leader-active', () => {
     ).toBe(false);
   });
 
+  it('keeps both re-entry bypasses disabled when the feature is off', () => {
+    const leaderActive = leaderActiveNow({
+      gates: { enabled: false, windowMs: 900_000 },
+      nowMs: 1_100,
+      leaderSeenAtMs: 1_000,
+    });
+    expect(leaderActive).toBe(false);
+    expect(['rebuy_below_exit', 'cooldown_bounce'].map(() => leaderActive)).toEqual([
+      false,
+      false,
+    ]);
+  });
+
   it('ignores null, NaN, and non-positive timestamps', () => {
     expect(
       leaderActiveAtMs({

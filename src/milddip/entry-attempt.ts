@@ -226,7 +226,9 @@ const leaderGateShadowLastByMint = new Map<string, number>();
 const leaderGateShadowDeferStamps: number[] = [];
 const leaderGateShadowDeferLastByMint = new Map<string, number>();
 const cooldownLeaderBypassLastByMint = new Map<string, number>();
+const reentryLeaderBypassLastByKey = new Map<string, number>();
 const COOLDOWN_LEADER_BYPASS_JOURNAL_GAP_MS = 10_000;
+const REENTRY_LEADER_BYPASS_JOURNAL_GAP_MS = 10_000;
 
 function takeProbeSlot(cfg: MildDipConfig, nowMs: number): boolean {
   if (!probeOverrideAllowed(cfg.probeBlockedEnabled, cfg.probeBlockedUsd)) return false;
@@ -597,6 +599,31 @@ export async function attemptMildDipEntry(args: {
       });
     }
   }
+  const leaderSeenAtMs = state.leaderSeenMints?.[c.mint] ?? null;
+  const leaderActive = leaderActiveNow({
+    gates: {
+      enabled: cfg.reentryLeaderActiveEnabled,
+      windowMs: cfg.reentryLeaderActiveMs,
+    },
+    nowMs,
+    leaderSeenAtMs,
+  });
+  const journalLeaderReentryBypass = (
+    gate: 'rebuy_below_exit' | 'cooldown_bounce',
+  ): void => {
+    const key = `${c.mint}|${gate}`;
+    const previous = reentryLeaderBypassLastByKey.get(key) ?? 0;
+    if (nowMs - previous < REENTRY_LEADER_BYPASS_JOURNAL_GAP_MS) return;
+    reentryLeaderBypassLastByKey.set(key, nowMs);
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_reentry_leader_bypass',
+      gate,
+      mint: c.mint,
+      lane: opts.lane,
+      leaderSeenAgeMs: leaderSeenAtMs == null ? null : nowMs - leaderSeenAtMs,
+      windowMs: cfg.reentryLeaderActiveMs,
+    });
+  };
   if (cfg.deniedMints.includes(c.mint)) return 'skip';
   if (c.dipSource === 'green_momentum' && !cfg.green.enabled) {
     appendMildDipJournal(cfg.journalPath, {
@@ -1217,7 +1244,9 @@ export async function attemptMildDipEntry(args: {
       minBelowExitPct: cfg.rebuyBelowExitPct,
       maxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
     });
-    if (!rebuy.pass) {
+    if (!rebuy.pass && leaderActive) {
+      journalLeaderReentryBypass('rebuy_below_exit');
+    } else if (!rebuy.pass) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_rebuy_below_exit_skip',
         mint: c.mint,
@@ -1345,7 +1374,9 @@ export async function attemptMildDipEntry(args: {
       }),
       requireTrough: false,
     });
-    if (!bounce.pass) {
+    if (!bounce.pass && leaderActive) {
+      journalLeaderReentryBypass('cooldown_bounce');
+    } else if (!bounce.pass) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mild_dip_cooldown_bounce_skip',
         mint: c.mint,

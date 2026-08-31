@@ -542,6 +542,8 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_GREEN_RUNNER_MIN_PAIR_AGE_HOURS: '0.25',
         MILD_DIP_GREEN_RUNNER_MIN_LIQUIDITY_USD: '8000',
         MILD_DIP_GREEN_RUNNER_MAX_BOUNCE_FROM_TROUGH_PCT: '12',
+        MILD_DIP_GREEN_RUNNER_MAX_TAPE_RET1M_PCT: '40',
+        MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT: '30',
       },
       () => loadMildDipConfig(),
     );
@@ -552,6 +554,8 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.green.runnerMinPairAgeHours).toBe(0.25);
     expect(cfg.green.runnerMinLiquidityUsd).toBe(8_000);
     expect(cfg.green.runnerMaxBounceFromTroughPct).toBe(12);
+    expect(cfg.green.runnerMaxTapeRet1mPct).toBe(40);
+    expect(cfg.green.runnerMaxTapePrior5mPct).toBe(30);
   });
 
   it('loads mild-stabilize live lane budgets and trough settings', () => {

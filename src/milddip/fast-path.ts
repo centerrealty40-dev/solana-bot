@@ -35,11 +35,20 @@ import {
   fetchMildDipStructuralFallback,
   type StructuralFallbackSnapshot,
 } from './structural-fallback.js';
+
 import {
   evaluateTurnDumpGate,
   metricsHotDeepDumpOk,
   turnDumpKnifeBranchLive,
 } from './turn-dump.js';
+
+export function effectiveRunnerTapeCap(
+  relax: boolean,
+  runnerValue: number,
+  normalValue: number,
+): number {
+  return relax ? (runnerValue > 0 ? runnerValue : Number.POSITIVE_INFINITY) : normalValue;
+}
 
 function turnDumpArgsFromCfg(
   cfg: MildDipConfig,
@@ -933,6 +942,16 @@ export async function evaluateFastPathCandidate(
     const effMaxBounceFromTroughPct = greenRunnerRelax
       ? cfg.green.runnerMaxBounceFromTroughPct
       : cfg.green.maxBounceFromTroughPct;
+    const effMaxTapeRet1mPct = effectiveRunnerTapeCap(
+      greenRunnerRelax,
+      cfg.green.runnerMaxTapeRet1mPct,
+      cfg.green.maxTapeRet1mPct,
+    );
+    const effMaxTapePrior5mPct = effectiveRunnerTapeCap(
+      greenRunnerRelax,
+      cfg.green.runnerMaxTapePrior5mPct,
+      cfg.green.maxTapePrior5mPct,
+    );
     const dexImpulse =
       struct.metrics.priceChange5mPct != null &&
       struct.metrics.priceChange5mPct >= Math.max(cfg.green.minPc5mPct, 0);
@@ -989,7 +1008,7 @@ export async function evaluateFastPathCandidate(
         minDumpFromPeakPct: cfg.green.minDumpFromPeakPct,
         tapeMinuteGatesEnabled: cfg.green.tapeMinuteGatesEnabled,
         minTapeRet1mPct: cfg.green.minTapeRet1mPct,
-        maxTapePrior5mPct: cfg.green.maxTapePrior5mPct,
+        maxTapePrior5mPct: effMaxTapePrior5mPct,
         requirePc1h: cfg.green.requirePc1h,
         minPc1hPct: cfg.green.minPc1hPct,
         minBuys5m: cfg.green.minBuys5m,
@@ -997,7 +1016,7 @@ export async function evaluateFastPathCandidate(
         minLiquidityUsd: effMinLiquidityUsd,
         minPairAgeHours: effMinPairAgeHours,
         maxRet1mPct: cfg.green.maxRet1mPct,
-        maxTapeRet1mPct: cfg.green.maxTapeRet1mPct,
+        maxTapeRet1mPct: effMaxTapeRet1mPct,
       },
     );
     if (g.pass) {
@@ -1047,6 +1066,12 @@ export async function evaluateFastPathCandidate(
         effMinLiquidityUsd,
         effMinPairAgeHours,
         effMaxBounceFromTroughPct,
+        effMaxTapeRet1mPct: Number.isFinite(effMaxTapeRet1mPct)
+          ? effMaxTapeRet1mPct
+          : null,
+        effMaxTapePrior5mPct: Number.isFinite(effMaxTapePrior5mPct)
+          ? effMaxTapePrior5mPct
+          : null,
       });
     }
     if (greenOnly) return null;

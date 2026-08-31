@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { evaluateGreenLane, type GreenLaneGates, type GreenLaneInput } from '../../src/milddip/green-lane.js';
+import {
+  evaluateGreenLane,
+  type GreenLaneGates,
+  type GreenLaneInput,
+} from '../../src/milddip/green-lane.js';
+import { effectiveRunnerTapeCap } from '../../src/milddip/fast-path.js';
 
 const snapshot: GreenLaneInput = {
   pc5mPct: 72.01,
@@ -41,6 +46,12 @@ const sharedGates: GreenLaneGates = {
 };
 
 describe('GREEN runner relaxation', () => {
+  it('selects runner tape caps without changing normal caps', () => {
+    expect(effectiveRunnerTapeCap(false, 0, 2)).toBe(2);
+    expect(effectiveRunnerTapeCap(true, 0, 2)).toBe(Number.POSITIVE_INFINITY);
+    expect(effectiveRunnerTapeCap(true, 40, 2)).toBe(40);
+  });
+
   it('passes a fresh leader-active runner only with relaxed age, liquidity, and bounce floors', () => {
     const current = evaluateGreenLane(snapshot, sharedGates);
     expect(current.pass).toBe(false);
@@ -54,5 +65,52 @@ describe('GREEN runner relaxation', () => {
       maxBounceFromTroughPct: 0,
     });
     expect(relaxed.pass).toBe(true);
+  });
+
+  it('relaxes tape caps for the fresh leader runner without relaxing the dump gate', () => {
+    const runnerSnapshot: GreenLaneInput = {
+      ...snapshot,
+      pairAgeHours: null,
+      liquidityUsd: 21_384.69,
+      bounceFromTroughPct: 102.21,
+      tapeRet1mPct: 24.28,
+      tapePrior5mPct: 12.63,
+      dumpExtentFromPeakPct: -12.5,
+    };
+    const runnerGates: GreenLaneGates = {
+      ...sharedGates,
+      minDumpFromPeakPct: 10,
+      tapeMinuteGatesEnabled: true,
+      minTapeRet1mPct: -100,
+      minPairAgeHours: 0,
+      minLiquidityUsd: 8_000,
+      maxBounceFromTroughPct: 0,
+      maxTapeRet1mPct: Number.POSITIVE_INFINITY,
+      maxTapePrior5mPct: Number.POSITIVE_INFINITY,
+    };
+    expect(evaluateGreenLane(runnerSnapshot, runnerGates).pass).toBe(true);
+
+    const normal = evaluateGreenLane(runnerSnapshot, {
+      ...runnerGates,
+      minPairAgeHours: 1,
+      minLiquidityUsd: 20_000,
+      maxBounceFromTroughPct: 25,
+      maxTapeRet1mPct: 2,
+      maxTapePrior5mPct: 10,
+    });
+    expect(normal.pass).toBe(false);
+    expect(normal.reasons.some((reason) => reason.includes('green_pair_age_floor'))).toBe(true);
+    expect(normal.reasons.some((reason) => reason.includes('green_bounce_from_trough'))).toBe(
+      true,
+    );
+    expect(normal.reasons.some((reason) => reason.includes('tapeRet1m_max'))).toBe(true);
+    expect(normal.reasons.some((reason) => reason.includes('tapePrior5m'))).toBe(true);
+
+    const shallow = evaluateGreenLane(
+      { ...runnerSnapshot, dumpExtentFromPeakPct: -2 },
+      runnerGates,
+    );
+    expect(shallow.pass).toBe(false);
+    expect(shallow.reasons.some((reason) => reason.includes('green_dump_shallow'))).toBe(true);
   });
 });
