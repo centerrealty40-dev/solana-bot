@@ -5213,6 +5213,9 @@ if (mildDipBotApp) {
       MILD_DIP_MIRROR_LOSS_CAP_DAILY_RESET: '1',
       MILD_DIP_MIRROR_LOSS_CAP_RESET_TZ_OFFSET_MIN: '180',
       MILD_DIP_MAX_OPEN_POSITIONS: '12',
+      // GREEN exit: arm +2%, trail 4%, no-move cut at 40m,
+      // catastrophic stop −45%, max hold 60m.
+      MILD_DIP_GREEN_NO_MOVE_CUT_MS: '2400000',
       MILD_DIP_REQUIRE_LEADER_SEEN: '1',
       MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
       MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
