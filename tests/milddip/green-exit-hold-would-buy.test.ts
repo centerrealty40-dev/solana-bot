@@ -102,6 +102,33 @@ describe('green exit hold would-buy', () => {
     expect(tapeFail.reasons.some((r) => r.startsWith('tapeRet1m_max'))).toBe(true);
   });
 
+  it('falls back to Dex gates when own tape is missing', () => {
+    const fallbackGates = { ...gates, minPc5mPct: -25, maxPc5mPct: 20 };
+    const dipDex = shouldHoldGreenExitWouldBuy({
+      ...args,
+      greenGates: fallbackGates,
+      input: { ...input, pc5mPct: -13, tapeRet1mPct: null, tapePrior5mPct: null, dumpExtentFromPeakPct: -30 },
+    });
+    expect(dipDex.hold).toBe(true);
+    expect(dipDex.reasons).toContain('tape_fallback_dex');
+    const vertical = shouldHoldGreenExitWouldBuy({
+      ...args,
+      greenGates: fallbackGates,
+      input: { ...input, pc5mPct: 30, tapeRet1mPct: null, tapePrior5mPct: null },
+    });
+    expect(vertical.hold).toBe(false);
+    expect(vertical.reasons).toContain('tape_fallback_dex');
+  });
+
+  it('does not use the Dex fallback for a real tape verdict', () => {
+    const tapeFail = shouldHoldGreenExitWouldBuy({
+      ...args,
+      input: { ...input, tapeRet1mPct: 3 },
+    });
+    expect(tapeFail.hold).toBe(false);
+    expect(tapeFail.reasons).not.toContain('tape_fallback_dex');
+  });
+
   it('keeps runner-relaxed gates identical between entry and exit', () => {
     const green = {
       minLiquidityUsd: 20_000,
