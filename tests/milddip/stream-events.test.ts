@@ -1,0 +1,45 @@
+import { describe, expect, it } from 'vitest';
+import {
+  decodePoolTokenMint,
+  parseStreamEvents,
+  PUMPSWAP_POOL_OWNER,
+} from '../../src/milddip/stream-events.js';
+
+const buy =
+  'Z/RSHyz1d3cJO5VqAAAAAIfYWAcAAAAANIECAAAAAABc/90FAAAAADSBAgAAAAAA' +
+  'tQwZ9vlsAADdK7OdIAAAADSBAgAAAAAAFAAAAAAAAABFAQAAAAAAAAUAAAAAAAAAUgAAAAAAAADdegIAAAAAAJh5AgAAAAAAJEI1weLNHAseesobovFhwUi80DReNxktoHOZz4G7mUSwy2rSb+eC/d3RhFQcstuC+Nyo9FyFtKRMYrzbip3FWtvl2T2MYEBPt+28h71ygKXCaGM8h+4cNQiVl5iCSTN5tuC1n5fuOxCoG7FHfxk83g/tKl1tnJnP05SQpD5Asj9KwvjQ3Vy8l+MonBl8tQYqVPPZVrnOblEV+WVnqlyz5nfZFZVfiIBzHOtKdaDMlsF0+kCVxOHZlnrPxChFrmeuF/EEq0/mefM50bpYdmqCBQc49neIQy+2R7RNWBXNIjtfAAAAAAAAAAUGAAAAAAAAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAs836BgAAAAASAAAAYnV5X2V4YWN0X3F1b3RlX2luAAAAAAAAAAAAAAAAAAAAAIgTAAAAAAAAKQAAAAAAAADIQR4YBAAAAAAAAAAAAAAAASJO0UibiwMA';
+const sell =
+  'Pi83CqUD3CoJO5VqAAAAAKZ1NMoCAAAAvWnwYF5VAACmdTTKAgAAAIYYtOZTRAAAcTTlzI4BAABOy+cJFFQwALUX4gXzVQAAGQAAAAAAAAAFSe8BNwAAAAUAAAAAAAAAmw5jAAsAAACwzvIDvFUAABXAjwOxVQAAQ05lMQ9YvS6zhSUn85TMMdqNeqCvCPZQ8dDAkDq/UcE/5zOcRPC0e9crKc9JJOVY/fYHjxGW1RW6pgcY4LmjqZLuDA8rOcR/zQGOy3OwYbaonqkiACQzGNl7EWf/9Rou1Hv9U6Qv6SYWiJVNZfTAUuwDbFd0RAUL3tqGeoScpASDhHQpLmdalLQ27LCpmIlCMoqD3cYjOAKWEmfFzWEXy68RH+AHUYpwEFBZze3EYvbeLPoU0EFwDELfnpyjSIvVAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAIgTAAAAAAAATYcxgAUAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA';
+const trade =
+  'vdt/007mYe4x+0omEss1sCns47v3lgD99VdLjZa6kZfGtocgPXA/XyZPLwkAAAAAeycI+fEeAAAAootf0mq0eaapzGy/awsj62GIWjceASCsqRO+7z0TingJO5VqAAAAAHtVnMgAAAAAgGpowISLAwAp0+YXAAAAAIDSVXTzjAIA6JMUH7GOnxV02BDheOGeMGBOMXWqLkoy38hgByfRBwkAAAAAAAAAAAAAAAAAAAAA9OXF+pL6bmJyCYF1rr8W+Ay782EqBVsqOAHNYvWzGj0AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABAAAAHNlbGwBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAmTy8JAAAAAHtVnMgAAAAAKdPmFwAAAAA=';
+const baseAccount =
+  '8ZptBBGxbbz+AAA09mWSF0UTkCs9P+CQxa8xKwbfn9BrUnQPcI/k7sBPHqwvNOwf1eFlvxAneYe+TlMyF14x/2WniVi7z7Vq9GSPBpuIV/6rgYT7aH9jRhjANdrEOdwa6ztVmKDwAAAAAAGQyVFaPShvFo2UOykHcpxBzl6N7qso5SAW6xg8W/SsGNjX+Yg5lpLxDX9/K2eOIliv7E0rqpnAdUyJgqM/RjxO2C6gVhYr9iPHbsMcMYudevkyox/BAsIOjL+tOIMK0gnsQmtZ0AMAABfxBKtP5nnzOdG6WHZqggUHOPZ3iEMvtke0TVgVzSI7AADIQR4YBAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+const quoteAccount =
+  '8ZptBBGxbbz+AADSV/7qsYjy7PJ0x8DuuAXvtZ7GIOZmGAnI7O2Ou/t8cAabiFf+q4GE+2h/Y0YYwDXaxDncGus7VZig8AAAAAABeMSDg5lG9j+mScKqxtM3OkyevC+TnWnCejsvRoTgtb6iBzDAMuBNxUxuJIYpWIHHWwERT3530KNq/2voiCc0oCPYrTlQ/dSUSkxvocuBV4RSsbBVRqHl9Wr+Gs5Wy184cJNnDxKFFXLuMeCrea97QxnvfdmeFb1WpUhjBH8Jytp7jzx6GGwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==';
+
+describe('mild-dip stream event decoding', () => {
+  it('decodes pump.fun and PumpSwap logs and deduplicates results', () => {
+    expect(parseStreamEvents([`Program data: ${trade}`, `Program data: ${buy}`, `Program data: ${buy}`, `Program data: ${sell}`])).toEqual({
+      mints: ['4N7DhoNtkBis8yjtarPtouqwsayMB8qGQ3cf253Epump'],
+      pools: ['3SYEYjJRvtJDbNoPh1gho2YJtJK2g2L445cJRG6RyjAs', '5Xjee1bjKBbYF5yEsdoBFHWYgagUofpXvBH3co9GrNn4'],
+    });
+  });
+
+  it('decodes both pool token layouts and rejects malformed data', () => {
+    expect(decodePoolTokenMint(Buffer.from(baseAccount, 'base64'))).toBe(
+      'Cb8sgkM1veaDMCVPKxwQSDbm3r8dfUzmRVmiNCZypump',
+    );
+    expect(decodePoolTokenMint(Buffer.concat([Buffer.from(baseAccount, 'base64'), Buffer.alloc(16)]))).toBe(
+      'Cb8sgkM1veaDMCVPKxwQSDbm3r8dfUzmRVmiNCZypump',
+    );
+    expect(decodePoolTokenMint(Buffer.from(quoteAccount, 'base64'))).toBe(
+      '98Rir1yLorXsiNiHjTDNqDoyZrZ7CT7KwkRLN9Db8ery',
+    );
+    expect(decodePoolTokenMint(Buffer.from('bad'))).toBeNull();
+    expect(parseStreamEvents(['garbage', 'Program data: !!!'])).toEqual({
+      mints: [],
+      pools: [],
+    });
+    expect(PUMPSWAP_POOL_OWNER).toHaveLength(43);
+  });
+});

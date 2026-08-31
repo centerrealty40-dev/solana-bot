@@ -682,6 +682,11 @@ const MildDipConfigSchema = z.object({
   /** Helius/RPC logsSubscribe on pump programs → hot mint universe. */
   streamEnabled: z.boolean().default(true),
   streamWsUrl: z.string().optional(),
+  streamEventDecodeEnabled: z.boolean().default(true),
+  streamPoolResolveEnabled: z.boolean().default(true),
+  streamPoolBatchSize: z.coerce.number().int().min(1).max(100).default(100),
+  streamPoolBatchMs: z.coerce.number().int().min(50).max(60_000).default(1000),
+  streamPoolMaxQueue: z.coerce.number().int().min(1).max(100_000).default(5000),
   /** Hard skip — stables / junk mints (comma-separated env). */
   deniedMints: z.array(z.string()).default([]),
   /**
@@ -1723,6 +1728,11 @@ export function loadMildDipConfig(): MildDipConfig {
       return v === '1' || v === 'true' || v === 'yes';
     })(),
     streamWsUrl: process.env.MILD_DIP_STREAM_WS_URL?.trim() || undefined,
+    streamEventDecodeEnabled: envBool('MILD_DIP_STREAM_EVENT_DECODE_ENABLED', true),
+    streamPoolResolveEnabled: envBool('MILD_DIP_STREAM_POOL_RESOLVE_ENABLED', true),
+    streamPoolBatchSize: envNum('MILD_DIP_STREAM_POOL_BATCH_SIZE', 100),
+    streamPoolBatchMs: envNum('MILD_DIP_STREAM_POOL_BATCH_MS', 1000),
+    streamPoolMaxQueue: envNum('MILD_DIP_STREAM_POOL_MAX_QUEUE', 5000),
     deniedMints,
     preBuyRevalidate: (() => {
       const v = process.env.MILD_DIP_PREBUY_REVALIDATE?.trim().toLowerCase();

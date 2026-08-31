@@ -6,12 +6,16 @@
  * during cooldown so we can refuse bounce re-entries.
  */
 import { resolveLeaderStreamWsUrl } from '../copytrader/leader-stream-ws.js';
+import { resolveSolanaRpcUrl } from '../core/rpc/resolve-solana-rpc-url.js';
 import { PUMP_FUN_PROGRAM_ID } from '../parser/pumpfun.js';
 import { PUMP_SWAP_AMM_PROGRAM_ID } from '../parser/allowlisted-dex-swap.js';
 import { extractMintCandidatesFromLogs } from '../scripts/awakening/awakening-mint-from-logs.js';
 import type { StreamConfig } from '../stream/config.js';
 import { LogsWsClient } from '../stream/rpc-ws.js';
 import { mildDipHotMints } from './hot-mints.js';
+import { PoolMintResolver } from './pool-mint-resolver.js';
+import { appendMildDipJournal } from './state.js';
+import { parseStreamEvents } from './stream-events.js';
 import type { StreamPriceSampler } from './stream-price-sampler.js';
 
 export type MildDipStreamHandle = { stop: () => void };
@@ -36,9 +40,16 @@ export function mildDipStreamProgramIds(env: NodeJS.ProcessEnv = process.env): s
 export function startMildDipHotMintStream(opts?: {
   wsUrl?: string | null;
   programIds?: string[];
-  onMint?: (mint: string, tsMs: number) => void;
+  onMint?: (mint: string, tsMs: number, signature?: string) => void;
   /** When set, enqueue signature→price decode for watched mints. */
   priceSampler?: StreamPriceSampler | null;
+  rpcHttpUrl?: string;
+  journalPath?: string;
+  eventDecodeEnabled?: boolean;
+  poolResolveEnabled?: boolean;
+  poolBatchSize?: number;
+  poolBatchMs?: number;
+  poolMaxQueue?: number;
 }): MildDipStreamHandle | null {
   const wsUrl = (opts?.wsUrl ?? resolveMildDipStreamWsUrl())?.trim() || '';
   if (!wsUrl) {
@@ -49,7 +60,7 @@ export function startMildDipHotMintStream(opts?: {
   if (programIds.length === 0) return null;
 
   const cfg: StreamConfig = {
-    rpcHttpUrl: 'https://placeholder.local',
+    rpcHttpUrl: opts?.rpcHttpUrl || resolveSolanaRpcUrl() || 'https://placeholder.local',
     rpcWsUrl: wsUrl,
     programIds,
     commitment: 'confirmed',
@@ -60,18 +71,48 @@ export function startMildDipHotMintStream(opts?: {
     logEveryN: 2000,
   };
 
+  const handleMint = (mint: string, tsMs: number, signature?: string, failed = false) => {
+    mildDipHotMints.note(mint, tsMs);
+    opts?.onMint?.(mint, tsMs, signature);
+    if (!failed && opts?.priceSampler && signature) {
+      opts.priceSampler.enqueue(mint, signature, tsMs);
+    }
+  };
+  const resolver =
+    opts?.poolResolveEnabled === false
+      ? null
+      : new PoolMintResolver({
+          rpcHttpUrl: cfg.rpcHttpUrl,
+          batchSize: opts?.poolBatchSize,
+          batchIntervalMs: opts?.poolBatchMs,
+          maxQueue: opts?.poolMaxQueue,
+          onMint: (mint, tsMs, signature) => handleMint(mint, tsMs, signature),
+        });
+  const statsTimer =
+    opts?.journalPath && resolver
+      ? setInterval(() => {
+          appendMildDipJournal(opts.journalPath!, {
+            kind: 'stream_pool_resolver_stats',
+            ...resolver.stats(),
+          });
+        }, 300_000)
+      : null;
+  statsTimer?.unref?.();
+
   const client = new LogsWsClient(cfg, (n) => {
     const tsMs = Date.now();
     // 1.11.795 — still harvest mints from failed txs (mention logs). Skipping
     // the whole notification on `err` starved hot-mints / fast-path while the
     // open book was non-empty (buys only ran on stream when opens > 0).
     const mints = extractMintCandidatesFromLogs(n.logs);
-    for (const mint of mints) {
-      mildDipHotMints.note(mint, tsMs);
-      opts?.onMint?.(mint, tsMs);
-      // Price decode needs a successful swap meta — skip sampler on err txs.
-      if (!n.err && opts?.priceSampler && n.signature) {
-        opts.priceSampler.enqueue(mint, n.signature, tsMs);
+    const decoded = opts?.eventDecodeEnabled === false ? { mints: [], pools: [] } : parseStreamEvents(n.logs);
+    const allMints = new Set([...mints, ...decoded.mints]);
+    for (const mint of allMints) {
+      handleMint(mint, tsMs, n.signature, Boolean(n.err));
+    }
+    if (!n.err && resolver) {
+      for (const pool of decoded.pools) {
+        resolver.enqueue(pool, tsMs, n.signature);
       }
     }
   });
@@ -83,6 +124,8 @@ export function startMildDipHotMintStream(opts?: {
   return {
     stop: () => {
       client.stop();
+      statsTimer && clearInterval(statsTimer);
+      resolver?.stop();
       opts?.priceSampler?.stop();
     },
   };
