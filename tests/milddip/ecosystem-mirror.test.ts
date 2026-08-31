@@ -399,6 +399,9 @@ describe('mirror PM2 apps', () => {
     expect(own2?.env.MILD_DIP_POSITION_USD).toBe('5');
     expect(own2?.env.MILD_DIP_SIZE_MIN_USD).toBe('5');
     expect(own2?.env.MILD_DIP_SIZE_MAX_USD).toBe('5');
+    expect(own2?.env.MILD_DIP_LSTYLE_ENABLED).toBe('0');
+    expect(own2?.env.MILD_DIP_MINT_COOLDOWN_MS).toBe('900000');
+    expect(own2?.env.MILD_DIP_LOSS_COOLDOWN_MS).toBe('3600000');
     expect(own2?.env.MILD_DIP_LOSS_CAP_ALL_LANES).toBe('1');
     expect(own2?.env.MILD_DIP_MIRROR_LOSS_CAP_USD).toBe('50');
     expect(own2?.env.MILD_DIP_MIRROR_LOSS_CAP_DAILY_RESET).toBe('1');
