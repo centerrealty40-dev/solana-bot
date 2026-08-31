@@ -5214,6 +5214,10 @@ if (mildDipBotApp) {
       // own2 closes each bag with one full print; no partial TP ladder.
       MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
       MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT: '0',
+      // не продаём то, что тут же купили бы обратно.
+      MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY: '1',
+      MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_MS: '120000',
+      MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_REENTRIES: '2',
       MILD_DIP_RECOVER_DEFER: '0',
       MILD_DIP_EXIT_HARD_TIME_STOP_MS: '2400000',
       MILD_DIP_GREEN_POSITION_USD: '5',

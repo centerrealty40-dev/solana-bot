@@ -5,6 +5,53 @@ import { describe, expect, it } from 'vitest';
 import { loadMildDipState, mildDipStateSaveBlocked, saveMildDipState } from '../../src/milddip/state.js';
 
 describe('mild-dip state', () => {
+  it('persists nonnegative green exit hold fields and drops invalid values', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-green-hold-state-'));
+    const statePath = path.join(dir, 'state.json');
+    saveMildDipState(statePath, {
+      open: {
+        MintGreen111111111111111111111111111111111111: {
+          mint: 'MintGreen111111111111111111111111111111111111',
+          symbol: 'GREEN',
+          entryPriceUsd: 1,
+          sizeUsd: 5,
+          tokenRaw: null,
+          openedAtMs: 1_000,
+          entryPc5mPct: 0,
+          buySignature: null,
+          greenExitHoldMs: 12_000,
+          greenExitHoldAtMs: 2_000,
+          greenExitHoldReentries: 1,
+        },
+        MintInvalid111111111111111111111111111111111111: {
+          mint: 'MintInvalid111111111111111111111111111111111111',
+          symbol: 'BAD',
+          entryPriceUsd: 1,
+          sizeUsd: 5,
+          tokenRaw: null,
+          openedAtMs: 1_000,
+          entryPc5mPct: 0,
+          buySignature: null,
+          greenExitHoldMs: -1,
+          greenExitHoldAtMs: -1,
+          greenExitHoldReentries: 'bad' as unknown as number,
+        },
+      },
+      cooldownUntilMs: {},
+      updatedAtMs: 2_000,
+    });
+    const loaded = loadMildDipState(statePath);
+    expect(loaded.open.MintGreen111111111111111111111111111111111111).toMatchObject({
+      greenExitHoldMs: 12_000,
+      greenExitHoldAtMs: 2_000,
+      greenExitHoldReentries: 1,
+    });
+    expect(loaded.open.MintInvalid111111111111111111111111111111111111).not.toHaveProperty('greenExitHoldMs');
+    expect(loaded.open.MintInvalid111111111111111111111111111111111111).not.toHaveProperty('greenExitHoldAtMs');
+    expect(loaded.open.MintInvalid111111111111111111111111111111111111).not.toHaveProperty('greenExitHoldReentries');
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('persists and hydrates a mirror leader-sell intent', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-state-'));
     const statePath = path.join(dir, 'state.json');
