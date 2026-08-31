@@ -6168,6 +6168,7 @@ async function tryExits(
               heldMs: pos.greenExitHoldMs,
               budgetMs: cfg.greenExitHoldWouldBuyMaxMs,
               reentries: pos.greenExitHoldReentries ?? 0,
+              holdReasons: holdVerdict.reasons.slice(0, 4).join(','),
             });
           }
           continue;

@@ -101,5 +101,16 @@ export function shouldHoldGreenExitWouldBuy(args: {
     return { hold: false, reasons: [`metrics_stale_${Math.round(ageMs / 1000)}s`] };
   }
   const verdict = evaluateGreenLane(args.input, args.greenGates);
-  return { hold: verdict.pass, reasons: verdict.reasons };
+  if (verdict.pass) return { hold: true, reasons: verdict.reasons };
+  if (!verdict.reasons.includes('green_tape_insufficient')) {
+    return { hold: false, reasons: verdict.reasons };
+  }
+  // Own tape had no minute sample on this tick; that is missing data, not a
+  // verdict. Fall back to the gate's own Dex-based branch (pc5m bounds +
+  // maxRet1mPct) rather than releasing the exit on a data gap.
+  const fb = evaluateGreenLane(args.input, {
+    ...args.greenGates,
+    tapeMinuteGatesEnabled: false,
+  });
+  return { hold: fb.pass, reasons: ['tape_fallback_dex', ...fb.reasons] };
 }
