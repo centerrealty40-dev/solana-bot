@@ -508,10 +508,16 @@ export class MildDipPriceRing {
         failureReason,
       };
     }
+    const tapeRet1mPct = (latest.priceUsd / boundary.priceUsd - 1) * 100;
+    const priorPriceUsd = strict ? priorAnchor!.priceUsd : oldest.priceUsd;
+    const tapePrior5mPct = (boundary.priceUsd / priorPriceUsd - 1) * 100;
     return {
-      tapeRet1mPct: (latest.priceUsd / boundary.priceUsd - 1) * 100,
-      tapePrior5mPct:
-        (boundary.priceUsd / (strict ? priorAnchor!.priceUsd : oldest.priceUsd) - 1) * 100,
+      tapeRet1mPct: strict
+        ? tapeRet1mPct * 60_000 / Math.max(1, latest.tsMs - boundary.tsMs)
+        : tapeRet1mPct,
+      tapePrior5mPct: strict
+        ? tapePrior5mPct * 300_000 / Math.max(1, boundary.tsMs - priorAnchor!.tsMs)
+        : tapePrior5mPct,
       sampleCount: samples.length,
       coverageMs,
       latestSampleAgeMs,

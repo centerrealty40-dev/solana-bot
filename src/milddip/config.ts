@@ -145,6 +145,7 @@ const MildDipConfigSchema = z.object({
    * but Dex-only marks + scan blocking stretched real gaps to ~60s.
    */
   markIntervalMs: z.coerce.number().int().min(1_000).max(120_000).default(2_000),
+  tickPhaseTimeoutMs: z.coerce.number().int().min(1_000).max(600_000).default(60_000),
   /**
    * Exit marks use the price ring only (stream + entry seed). Max age of the
    * last ring print before the mark is treated as null. 0 = any age accepted.
@@ -1596,6 +1597,7 @@ export function loadMildDipConfig(): MildDipConfig {
     maxOpenPositions: process.env.MILD_DIP_MAX_OPEN_POSITIONS ?? 0,
     scanIntervalMs: process.env.MILD_DIP_SCAN_INTERVAL_MS ?? 5_000,
     markIntervalMs: process.env.MILD_DIP_MARK_INTERVAL_MS ?? 2_000,
+    tickPhaseTimeoutMs: envNum('MILD_DIP_TICK_PHASE_TIMEOUT_MS', 60_000),
     markStreamMaxAgeMs: process.env.MILD_DIP_MARK_STREAM_MAX_AGE_MS ?? 300_000,
     streamDexMaxDivergenceFactor: process.env.MILD_DIP_STREAM_DEX_MAX_DIVERGENCE_FACTOR ?? 2,
     entrySignalMarkMaxAgeMs: envNum('MILD_DIP_ENTRY_SIGNAL_MARK_MAX_AGE_MS', 0),

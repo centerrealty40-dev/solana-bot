@@ -117,6 +117,46 @@ describe('GREEN Jupiter minute refresh', () => {
     expect(greenMinuteJupiterStats(2_000_000).quoteErrors).toBe(1);
   });
 
+  it('counts gate skips separately and retries the mint on the next tick', async () => {
+    const mint = 'GreenJupiterGateSkipMintxxxxxxxxxxxxxxxxxxxx1';
+    let calls = 0;
+    const quote = async () => {
+      calls += 1;
+      return calls === 1 ? { gateSkipped: true as const } : 0.002;
+    };
+    expect(requestGreenMinuteJupiterRefresh({
+      mint,
+      nowMs: 3_000_000,
+      snapshotPriceUsd: 0.001,
+      enabled: true,
+      minGapMs: 3_000,
+      ttlMs: 600_000,
+      maxMints: 2,
+      maxInFlight: 1,
+      probeUsd: 1,
+      slippageBps: 150,
+      quote,
+    })).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(greenMinuteJupiterStats(3_000_000).gateSkipped).toBe(1);
+    expect(requestGreenMinuteJupiterRefresh({
+      mint,
+      nowMs: 3_000_001,
+      snapshotPriceUsd: 0.001,
+      enabled: true,
+      minGapMs: 3_000,
+      ttlMs: 600_000,
+      maxMints: 2,
+      maxInFlight: 1,
+      probeUsd: 1,
+      slippageBps: 150,
+      quote,
+    })).toBe(true);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(calls).toBe(2);
+    expect(greenMinuteJupiterStats(3_000_001).quoteSuccesses).toBe(1);
+  });
+
   it('uses known mint decimals and stops polling after candidate grace', async () => {
     const mint = 'GreenJupiterGraceMintxxxxxxxxxxxxxxxxxxxxxxx1';
     mildDipPriceRing.noteMintDecimals(mint, 9);

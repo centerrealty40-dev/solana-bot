@@ -15,6 +15,7 @@ import path from 'node:path';
 type GateState = {
   nextAllowedMs: number;
   pausedUntilMs: number;
+  nextBackgroundAllowedMs?: number;
 };
 
 function gateEnabled(): boolean {
@@ -51,15 +52,22 @@ function sleep(ms: number): Promise<void> {
 function readState(): GateState {
   try {
     const raw = fs.readFileSync(statePath(), 'utf8');
-    const j = JSON.parse(raw) as { nextAllowedMs?: unknown; pausedUntilMs?: unknown };
+    const j = JSON.parse(raw) as {
+      nextAllowedMs?: unknown;
+      pausedUntilMs?: unknown;
+      nextBackgroundAllowedMs?: unknown;
+    };
     const next = j?.nextAllowedMs;
     const paused = j?.pausedUntilMs;
+    const background = j?.nextBackgroundAllowedMs;
     return {
       nextAllowedMs: typeof next === 'number' && Number.isFinite(next) ? next : 0,
       pausedUntilMs: typeof paused === 'number' && Number.isFinite(paused) ? paused : 0,
+      nextBackgroundAllowedMs:
+        typeof background === 'number' && Number.isFinite(background) ? background : 0,
     };
   } catch {
-    return { nextAllowedMs: 0, pausedUntilMs: 0 };
+    return { nextAllowedMs: 0, pausedUntilMs: 0, nextBackgroundAllowedMs: 0 };
   }
 }
 
@@ -168,9 +176,59 @@ export async function acquireJupiterApiSlot(): Promise<void> {
     writeState({
       nextAllowedMs: grantAt + minGapMs,
       pausedUntilMs: state.pausedUntilMs,
+      nextBackgroundAllowedMs: state.nextBackgroundAllowedMs,
     });
   });
   if (waitMs > 0) await sleep(waitMs);
+}
+
+function backgroundMaxRps(): number {
+  const raw = process.env.JUPITER_GLOBAL_BACKGROUND_MAX_RPS?.trim();
+  if (raw) {
+    const n = Number.parseFloat(raw);
+    if (Number.isFinite(n) && n > 0) return Math.min(20, n);
+  }
+  return 3;
+}
+
+function backgroundMaxWaitMs(): number {
+  const raw = process.env.JUPITER_BACKGROUND_MAX_WAIT_MS?.trim();
+  if (raw) {
+    const n = Number.parseFloat(raw);
+    if (Number.isFinite(n) && n >= 0) return Math.min(60_000, n);
+  }
+  return 1_200;
+}
+
+/** Try to reserve a background slot without waiting behind execution traffic. */
+export async function acquireJupiterApiSlotWithPriority(
+  priority: 'execution' | 'background',
+): Promise<boolean> {
+  if (priority === 'execution') {
+    await acquireJupiterApiSlot();
+    return true;
+  }
+  if (!gateEnabled()) return true;
+  const globalGapMs = Math.ceil(1000 / maxRps());
+  const backgroundGapMs = Math.ceil(1000 / backgroundMaxRps());
+  let granted = false;
+  await withFileLock(async () => {
+    const now = Date.now();
+    const state = readState();
+    if (now < state.pausedUntilMs) return;
+    const projectedWaitMs = Math.max(0, state.nextAllowedMs - now);
+    if (projectedWaitMs > backgroundMaxWaitMs()) return;
+    const nextBackgroundAllowedMs = state.nextBackgroundAllowedMs ?? 0;
+    if (now < nextBackgroundAllowedMs) return;
+    const grantAt = Math.max(now, state.nextAllowedMs);
+    writeState({
+      nextAllowedMs: grantAt + globalGapMs,
+      pausedUntilMs: state.pausedUntilMs,
+      nextBackgroundAllowedMs: now + backgroundGapMs,
+    });
+    granted = true;
+  });
+  return granted;
 }
 
 /** Test helper — reset gate schedule. */

@@ -7656,6 +7656,40 @@ export async function runMildDipLoop(
     }
   };
 
+  const tickPhaseInFlight = new Set<string>();
+  const tickPhaseTimeout = Symbol('tick-phase-timeout');
+  const runTickPhase = async (
+    phase: string,
+    work: () => Promise<void>,
+  ): Promise<boolean> => {
+    if (tickPhaseInFlight.has(phase)) return false;
+    tickPhaseInFlight.add(phase);
+    const running = work().finally(() => tickPhaseInFlight.delete(phase));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      await Promise.race([
+        running,
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(tickPhaseTimeout), cfg.tickPhaseTimeoutMs);
+        }),
+      ]);
+      return true;
+    } catch (err) {
+      if (err !== tickPhaseTimeout) throw err;
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_tick_phase_timeout',
+        phase,
+        timeoutMs: cfg.tickPhaseTimeoutMs,
+      });
+      console.warn(
+        `[mild-dip] tick phase timeout phase=${phase} timeoutMs=${cfg.tickPhaseTimeoutMs}`,
+      );
+      return false;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  };
+
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
@@ -7787,6 +7821,7 @@ export async function runMildDipLoop(
         greenJupiterQuoteAttempts: greenJupiter.quoteAttempts,
         greenJupiterQuoteSuccesses: greenJupiter.quoteSuccesses,
         greenJupiterQuoteErrors: greenJupiter.quoteErrors,
+        greenJupiterGateSkipped: greenJupiter.gateSkipped,
         greenJupiterCapRejected: greenJupiter.capRejected,
         greenJupiterActiveMints: greenJupiter.activeMints,
         greenJupiterInFlight: greenJupiter.inFlight,
@@ -7817,15 +7852,17 @@ export async function runMildDipLoop(
         crossLeaderBuyEvents.length > 0 ||
         durableLeaderSell)
     ) {
-      await tryExits(
-        cfg,
-        state,
-        Date.now(),
-        oneshotDumpGrace,
-        dumpSellTape,
-        givebackDumpGate,
-        leaderSellFeed,
-        crossLeaderBuyFeed,
+      await runTickPhase('tryExits', () =>
+        tryExits(
+          cfg,
+          state,
+          Date.now(),
+          oneshotDumpGrace,
+          dumpSellTape,
+          givebackDumpGate,
+          leaderSellFeed,
+          crossLeaderBuyFeed,
+        ),
       );
       lastMark = Date.now();
       stats.lastMarkAtMs = lastMark;
@@ -7836,12 +7873,16 @@ export async function runMildDipLoop(
     if (nowMs - lastFeeTopupTickMs >= 30_000) {
       lastFeeTopupTickMs = nowMs;
       if (opens > 0) {
-        void maybeTopUpFeeSol(cfg, nowMs).catch((err) => {
+        void runTickPhase('maybeTopUpFeeSol', async () => {
+          await maybeTopUpFeeSol(cfg, nowMs);
+        }).catch((err) => {
           console.warn('[mild-dip] fee-sol topup tick failed', err);
         });
       } else {
         try {
-          await maybeTopUpFeeSol(cfg, nowMs);
+          await runTickPhase('maybeTopUpFeeSol', async () => {
+            await maybeTopUpFeeSol(cfg, nowMs);
+          });
         } catch (err) {
           console.warn('[mild-dip] fee-sol topup tick failed', err);
         }
@@ -7893,12 +7934,12 @@ export async function runMildDipLoop(
           }
         });
       if (opens > 0) {
-        void runDustBurn().catch((err) => {
+        void runTickPhase('runDustBurn', runDustBurn).catch((err) => {
           console.warn('[mild-dip] dustBurn tick failed', err);
         });
       } else {
         try {
-          await runDustBurn();
+          await runTickPhase('runDustBurn', runDustBurn);
         } catch (err) {
           console.warn('[mild-dip] dustBurn tick failed', err);
         }
@@ -7950,6 +7991,7 @@ export async function runMildDipLoop(
         quoteAttempts: mirrorJupiter.quoteAttempts,
         quoteSuccesses: mirrorJupiter.quoteSuccesses,
         quoteErrors: mirrorJupiter.quoteErrors,
+        gateSkipped: mirrorJupiter.gateSkipped,
         capRejected: mirrorJupiter.capRejected,
         knifeWaitWaiting: knifeWaitQuoteWaitingKeys.size,
         knifeWaitUncovered: knifeWaitQuoteUncoveredKeys.size,
@@ -8039,7 +8081,7 @@ export async function runMildDipLoop(
       lastScan = nowMs;
       stats.lastScanAtMs = lastScan;
       if (opens === 0) {
-        await tryEntries(cfg, state, nowMs);
+        await runTickPhase('tryEntries', () => tryEntries(cfg, state, nowMs));
         saveMildDipState(cfg.statePath, state);
         try {
           saveMildDipHotMints(cfg.hotMintsPath);
@@ -8049,7 +8091,7 @@ export async function runMildDipLoop(
           console.warn('[mild-dip] persist hot/price ring failed', err);
         }
       } else {
-        void tryEntries(cfg, state, Date.now())
+        void runTickPhase('tryEntries', () => tryEntries(cfg, state, Date.now()))
           .then(() => {
             saveMildDipState(cfg.statePath, state);
             try {

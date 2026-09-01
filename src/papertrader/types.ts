@@ -1302,7 +1302,8 @@ export type PriceVerifyVerdict =
         | 'http-error'
         | 'parse-error'
         | 'circuit-open'
-        | 'no-route';
+        | 'no-route'
+        | 'gate-busy';
       ts: number;
     };
 

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { fetchJupiterSwapQuoteGetJson } from '../src/core/jupiter-http.js';
+import {
+  fetchJupiterSwapQuoteGetJson,
+  fetchJupiterSwapQuoteGetResult,
+} from '../src/core/jupiter-http.js';
 
 describe('fetchJupiterSwapQuoteGetJson', () => {
   const envBackup = { ...process.env };
@@ -64,5 +67,35 @@ describe('fetchJupiterSwapQuoteGetJson', () => {
     });
     expect(j).toBeNull();
     expect(n).toBe(1);
+  });
+
+  it('returns a distinct gate-skipped result for a busy background lane', async () => {
+    const gateDir = await import('node:fs/promises').then((fs) =>
+      fs.mkdtemp('/tmp/jup-http-gate-'),
+    );
+    process.env.JUPITER_GLOBAL_RATE_LIMIT = '1';
+    process.env.JUPITER_GLOBAL_MAX_RPS = '1';
+    process.env.JUPITER_GLOBAL_BACKGROUND_MAX_RPS = '1';
+    process.env.JUPITER_BACKGROUND_MAX_WAIT_MS = '0';
+    process.env.JUPITER_GLOBAL_GATE_PATH = `${gateDir}/gate.json`;
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return new Response(JSON.stringify({ outAmount: '1' }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      });
+    });
+    const first = await fetchJupiterSwapQuoteGetResult({
+      url: 'https://example.invalid/quote',
+      timeoutMs: 5000,
+      priority: 'background',
+    });
+    const second = await fetchJupiterSwapQuoteGetResult({
+      url: 'https://example.invalid/quote',
+      timeoutMs: 5000,
+      priority: 'background',
+    });
+    expect(first.ok).toBe(true);
+    expect(second).toEqual({ ok: false, gateSkipped: true });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
   });
 });

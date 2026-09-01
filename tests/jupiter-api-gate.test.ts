@@ -4,6 +4,7 @@ import path from 'node:path';
 import os from 'node:os';
 import {
   acquireJupiterApiSlot,
+  acquireJupiterApiSlotWithPriority,
   extendJupiterApiPause,
   resetJupiterApiGateForTests,
 } from '../src/core/jupiter-api-gate.js';
@@ -52,5 +53,25 @@ describe('jupiter-api-gate', () => {
     const t0 = Date.now();
     await acquireJupiterApiSlot();
     expect(Date.now() - t0).toBeGreaterThanOrEqual(80);
+  });
+
+  it('refuses background slots during pause and when spacing is active', async () => {
+    process.env.JUPITER_GLOBAL_BACKGROUND_MAX_RPS = '1';
+    extendJupiterApiPause(Date.now() + 120);
+    expect(await acquireJupiterApiSlotWithPriority('background')).toBe(false);
+    resetJupiterApiGateForTests();
+    expect(await acquireJupiterApiSlotWithPriority('background')).toBe(true);
+    expect(await acquireJupiterApiSlotWithPriority('background')).toBe(false);
+  });
+
+  it('refuses background slots when the projected execution wait is too long', async () => {
+    process.env.JUPITER_BACKGROUND_MAX_WAIT_MS = '10';
+    await acquireJupiterApiSlot();
+    expect(await acquireJupiterApiSlotWithPriority('background')).toBe(false);
+  });
+
+  it('always grants execution through the priority API', async () => {
+    process.env.JUPITER_GLOBAL_BACKGROUND_MAX_RPS = '1';
+    expect(await acquireJupiterApiSlotWithPriority('execution')).toBe(true);
   });
 });
