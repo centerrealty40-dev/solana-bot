@@ -510,6 +510,61 @@ export function evaluateMildDipImpulseEntry(args: {
   };
 }
 
+export type OwnEntryShapeGateArgs = {
+  enabled: boolean;
+  minTurnover5mLiq: number;
+  maxPc1hPct: number;
+  volume5mUsd?: number | null;
+  liquidityUsd?: number | null;
+  priceChange1hPct?: number | null;
+};
+
+export type OwnEntryShapeGateResult = {
+  pass: boolean;
+  reasons: string[];
+  turnover5mLiq: number | null;
+  pc1hPct: number | null;
+};
+
+export function evaluateOwnEntryShapeGate(
+  args: OwnEntryShapeGateArgs,
+): OwnEntryShapeGateResult {
+  const turnover5mLiq =
+    args.volume5mUsd != null &&
+    args.liquidityUsd != null &&
+    Number.isFinite(args.volume5mUsd) &&
+    Number.isFinite(args.liquidityUsd) &&
+    args.liquidityUsd > 0
+      ? args.volume5mUsd / args.liquidityUsd
+      : null;
+  const pc1hPct =
+    args.priceChange1hPct != null && Number.isFinite(args.priceChange1hPct)
+      ? args.priceChange1hPct
+      : null;
+  if (!args.enabled) {
+    return { pass: true, reasons: [], turnover5mLiq, pc1hPct };
+  }
+  const reasons: string[] = [];
+  if (
+    args.minTurnover5mLiq > 0 &&
+    turnover5mLiq != null &&
+    turnover5mLiq < args.minTurnover5mLiq
+  ) {
+    reasons.push(
+      `turnover_below_floor turn=${turnover5mLiq.toFixed(3)}<min=${args.minTurnover5mLiq}`,
+    );
+  }
+  if (args.maxPc1hPct > 0 && pc1hPct != null && pc1hPct > args.maxPc1hPct) {
+    reasons.push('pc1h_above_cap');
+  }
+  return {
+    pass: reasons.length === 0,
+    reasons,
+    turnover5mLiq,
+    pc1hPct,
+  };
+}
+
 export function evaluateMildDipEntryRisk(args: {
   pairAgeHours: number | null | undefined;
   volume5mUsd: number | null | undefined;

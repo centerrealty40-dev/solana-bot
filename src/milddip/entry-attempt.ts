@@ -30,6 +30,7 @@ import {
   evaluateCooldownBounce,
   evaluateMildDipPreBuy,
   evaluateMildDipEntryRisk,
+  evaluateOwnEntryShapeGate,
   evaluateRebuyBelowExit,
   evaluateRebuyLiquidityDrop,
   mildDipFirstTouchCapUsd,
@@ -1202,6 +1203,31 @@ export async function attemptMildDipEntry(args: {
     return isMirror && mirrorEntryStructuralDataVetoIsTransient(entryRisk.reasons)
       ? 'exec_failed'
       : 'skip';
+  }
+
+  const ownShape = evaluateOwnEntryShapeGate({
+    enabled: !isMirror && !isLeaderStyle,
+    minTurnover5mLiq: cfg.entryOwnMinTurnover5mLiq,
+    maxPc1hPct: cfg.entryOwnMaxPc1hPct,
+    volume5mUsd: liveVolume5mUsd,
+    liquidityUsd: liveLiquidityUsd,
+    priceChange1hPct: c.metrics.priceChange1hPct,
+  });
+  if (!ownShape.pass) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_entry_shape_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      dipSource: c.dipSource,
+      lane: opts.lane,
+      turnover5mLiq: ownShape.turnover5mLiq,
+      pc1hPct: ownShape.pc1hPct,
+      minTurnover5mLiq: cfg.entryOwnMinTurnover5mLiq,
+      maxPc1hPct: cfg.entryOwnMaxPc1hPct,
+      reasons: ownShape.reasons,
+    });
+    state.cooldownUntilMs[c.mint] = nowMs + softCd;
+    return 'skip';
   }
 
   // 1.11.773 — final turn→dump choke (fresh vol/liq/pc5m when available).
