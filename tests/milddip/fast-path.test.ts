@@ -242,6 +242,15 @@ describe('fast-path helpers', () => {
     ).toBe(true);
   });
 
+  it('refreshes GREEN tape after structural fetch and journals the snapshot skew', () => {
+    const source = readFileSync(resolve('src/milddip/fast-path.ts'), 'utf8');
+    expect(source).toContain('const greenTapeNowMs = Math.max(nowMs, Date.now());');
+    expect(source).toContain('const greenTape = mildDipPriceRing.tapeMinuteMetrics(');
+    expect(source).toContain('tapeNowSkewMs: greenTapeNowMs - nowMs');
+    expect(source).toContain('tapeRet1mPct: greenTape.tapeRet1mPct');
+    expect(source).toContain('tapePrior5mPct: greenTape.tapePrior5mPct');
+  });
+
   it('1.11.790 streamDipInBandOk needs dump extent + current dd + rally', () => {
     expect(
       streamDipInBandOk({

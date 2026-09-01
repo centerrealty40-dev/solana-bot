@@ -63,12 +63,13 @@ export function recordJupiter429Event(args: {
   /** All configured retries exhausted — quote/swap still 429. */
   exhausted?: boolean;
   retriesAttempted?: number;
+  background?: boolean;
 }): void {
   const now = Date.now();
   ring.push({ ts: now, source: args.source });
   pruneRing(now);
 
-  if (args.exhausted && exhaustOn()) {
+  if (args.exhausted && !args.background && exhaustOn()) {
     const cd = exhaustCooldownMs();
     const last = lastExhaustAt.get(args.source) ?? 0;
     if (now - last >= cd) {

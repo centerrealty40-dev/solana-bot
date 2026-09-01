@@ -88,7 +88,11 @@ async function jupiterFetchWith429Policy(args: {
       });
 
       if (resp.status === 429 && j < maxR) {
-        recordJupiter429Event({ source: args.source, retriesAttempted: j + 1 });
+        recordJupiter429Event({
+          source: args.source,
+          retriesAttempted: j + 1,
+          background: priority === 'background',
+        });
         const waitMs = jupiterRateLimitWaitMs(resp.headers, backoff);
         extendJupiterApiPause(Date.now() + waitMs);
         try {
@@ -106,6 +110,7 @@ async function jupiterFetchWith429Policy(args: {
           source: args.source,
           exhausted: true,
           retriesAttempted: maxR + 1,
+          background: priority === 'background',
         });
         const waitMs = jupiterRateLimitWaitMs(resp.headers, backoff);
         extendJupiterApiPause(Date.now() + waitMs);
@@ -123,6 +128,7 @@ async function jupiterFetchWith429Policy(args: {
     source: args.source,
     exhausted: true,
     retriesAttempted: maxR + 1,
+    background: priority === 'background',
   });
   return { ok: false, status: 429 };
 }

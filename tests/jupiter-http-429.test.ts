@@ -1,8 +1,15 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { resetJupiter429MonitorForTests } from '../src/core/jupiter-429-monitor.js';
+import { notifyJupiterQuoteRateLimitExhausted } from '../src/core/telegram/jupiter-alerts.js';
 import {
   fetchJupiterSwapQuoteGetJson,
   fetchJupiterSwapQuoteGetResult,
 } from '../src/core/jupiter-http.js';
+
+vi.mock('../src/core/telegram/jupiter-alerts.js', () => ({
+  notifyJupiter429RateLimitBurst: vi.fn().mockResolvedValue(undefined),
+  notifyJupiterQuoteRateLimitExhausted: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe('fetchJupiterSwapQuoteGetJson', () => {
   const envBackup = { ...process.env };
@@ -12,6 +19,9 @@ describe('fetchJupiterSwapQuoteGetJson', () => {
     process.env = { ...envBackup };
     process.env.JUPITER_QUOTE_429_MAX_RETRIES = '1';
     process.env.JUPITER_QUOTE_429_INITIAL_BACKOFF_MS = '1';
+    process.env.JUPITER_GLOBAL_RATE_LIMIT = '0';
+    resetJupiter429MonitorForTests();
+    vi.mocked(notifyJupiterQuoteRateLimitExhausted).mockClear();
   });
 
   afterEach(() => {
@@ -97,5 +107,32 @@ describe('fetchJupiterSwapQuoteGetJson', () => {
     expect(first.ok).toBe(true);
     expect(second).toEqual({ ok: false, gateSkipped: true });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not alert on exhausted background 429, but alerts execution exhaustion', async () => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => ({
+      status: 429,
+      ok: false,
+      headers: { get: () => null as string | null },
+      text: async () => '',
+    }) as Response);
+
+    const background = await fetchJupiterSwapQuoteGetResult({
+      url: 'https://example.invalid/quote',
+      timeoutMs: 5000,
+      priority: 'background',
+    });
+    expect(background).toMatchObject({ ok: false, status: 429 });
+    expect(notifyJupiterQuoteRateLimitExhausted).not.toHaveBeenCalled();
+
+    resetJupiter429MonitorForTests();
+    process.env.JUPITER_QUOTE_429_MAX_RETRIES = '0';
+    const execution = await fetchJupiterSwapQuoteGetResult({
+      url: 'https://example.invalid/quote',
+      timeoutMs: 5000,
+      priority: 'execution',
+    });
+    expect(execution).toMatchObject({ ok: false, status: 429 });
+    expect(notifyJupiterQuoteRateLimitExhausted).toHaveBeenCalledTimes(1);
   });
 });
