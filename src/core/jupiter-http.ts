@@ -3,6 +3,7 @@ import {
   acquireJupiterApiSlotWithPriority,
   extendJupiterApiPause,
   jupiterRateLimitWaitMs,
+  noteJupiterRateLimitHeaders,
 } from './jupiter-api-gate.js';
 import { recordJupiter429Event } from './jupiter-429-monitor.js';
 
@@ -86,6 +87,7 @@ async function jupiterFetchWith429Policy(args: {
         headers: jupiterJsonHeaders(args.extraHeaders ?? {}),
         ...(args.body != null ? { body: args.body } : {}),
       });
+      noteJupiterRateLimitHeaders(resp.headers);
 
       if (resp.status === 429 && j < maxR) {
         recordJupiter429Event({

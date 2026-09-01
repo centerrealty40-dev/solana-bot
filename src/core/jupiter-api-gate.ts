@@ -8,6 +8,8 @@
  * - default: on when `JUPITER_API_KEY` is set.
  * - `JUPITER_GLOBAL_MAX_RPS` — default 8 (headroom under Developer 10 RPS).
  * - `JUPITER_GLOBAL_GATE_PATH` — state file (default `data/jupiter-api-gate.json`).
+ * - `JUPITER_GATE_HEADER_BUDGET=0` — ignore `x-ratelimit-remaining/reset` window budget.
+ * - `JUPITER_BACKGROUND_RESERVE` — window slots kept for execution (default 3).
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +18,10 @@ type GateState = {
   nextAllowedMs: number;
   pausedUntilMs: number;
   nextBackgroundAllowedMs?: number;
+  /** Requests left in the current Jupiter window (from `x-ratelimit-remaining`). */
+  windowRemaining?: number;
+  /** Window end (from `x-ratelimit-reset`, epoch ms); budget unknown after it. */
+  windowResetMs?: number;
 };
 
 function gateEnabled(): boolean {
@@ -56,19 +62,57 @@ function readState(): GateState {
       nextAllowedMs?: unknown;
       pausedUntilMs?: unknown;
       nextBackgroundAllowedMs?: unknown;
+      windowRemaining?: unknown;
+      windowResetMs?: unknown;
     };
     const next = j?.nextAllowedMs;
     const paused = j?.pausedUntilMs;
     const background = j?.nextBackgroundAllowedMs;
+    const remaining = j?.windowRemaining;
+    const reset = j?.windowResetMs;
     return {
       nextAllowedMs: typeof next === 'number' && Number.isFinite(next) ? next : 0,
       pausedUntilMs: typeof paused === 'number' && Number.isFinite(paused) ? paused : 0,
       nextBackgroundAllowedMs:
         typeof background === 'number' && Number.isFinite(background) ? background : 0,
+      windowRemaining:
+        typeof remaining === 'number' && Number.isFinite(remaining) ? remaining : undefined,
+      windowResetMs: typeof reset === 'number' && Number.isFinite(reset) ? reset : undefined,
     };
   } catch {
     return { nextAllowedMs: 0, pausedUntilMs: 0, nextBackgroundAllowedMs: 0 };
   }
+}
+
+function headerBudgetEnabled(): boolean {
+  return process.env.JUPITER_GATE_HEADER_BUDGET?.trim() !== '0';
+}
+
+function backgroundReserve(): number {
+  const raw = process.env.JUPITER_BACKGROUND_RESERVE?.trim();
+  if (raw) {
+    const n = Number.parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0) return Math.min(50, n);
+  }
+  return 3;
+}
+
+/** Window budget still meaningful: reset in the future and remaining known. */
+function windowActive(state: GateState, now: number): boolean {
+  return (
+    headerBudgetEnabled() &&
+    state.windowRemaining != null &&
+    state.windowResetMs != null &&
+    now < state.windowResetMs
+  );
+}
+
+function reserveWindowSlot(state: GateState, now: number): Partial<GateState> {
+  if (!windowActive(state, now)) return { windowRemaining: undefined, windowResetMs: undefined };
+  return {
+    windowRemaining: Math.max(0, (state.windowRemaining ?? 0) - 1),
+    windowResetMs: state.windowResetMs,
+  };
 }
 
 function writeState(state: GateState): void {
@@ -144,6 +188,44 @@ export function extendJupiterApiPause(untilMs: number): void {
   }
 }
 
+/**
+ * Record `x-ratelimit-remaining` / `x-ratelimit-reset` from a Jupiter response so the
+ * next grants wait for the window instead of running into HTTP 429.
+ */
+export function noteJupiterRateLimitHeaders(headers: Headers): void {
+  if (!gateEnabled() || !headerBudgetEnabled()) return;
+  const remainingRaw = headers.get('x-ratelimit-remaining');
+  const resetRaw = headers.get('x-ratelimit-reset');
+  if (remainingRaw == null || resetRaw == null) return;
+  const remaining = Number.parseInt(remainingRaw, 10);
+  const resetSec = Number.parseFloat(resetRaw);
+  if (!Number.isFinite(remaining) || remaining < 0 || !Number.isFinite(resetSec) || resetSec <= 0) {
+    return;
+  }
+  const resetMs = Math.round(resetSec * 1000);
+  const now = Date.now();
+  if (resetMs <= now || resetMs - now > 120_000) return;
+  try {
+    clearStaleLock();
+    const fd = fs.openSync(lockPath(), 'wx');
+    try {
+      const state = readState();
+      const stale = state.windowResetMs != null && state.windowResetMs > resetMs;
+      if (stale) return;
+      writeState({ ...state, windowRemaining: remaining, windowResetMs: resetMs });
+    } finally {
+      fs.closeSync(fd);
+      try {
+        fs.unlinkSync(lockPath());
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    /* best-effort — lock held by another process */
+  }
+}
+
 /** Parse Jupiter rate-limit headers → ms to wait (0 if slot already free). */
 export function jupiterRateLimitWaitMs(headers: Headers, fallbackMs = 1000): number {
   const reset = headers.get('x-ratelimit-reset');
@@ -171,12 +253,21 @@ export async function acquireJupiterApiSlot(): Promise<void> {
   await withFileLock(async () => {
     const now = Date.now();
     const state = readState();
-    const grantAt = Math.max(now, state.nextAllowedMs, state.pausedUntilMs);
+    const budgetExhausted = windowActive(state, now) && (state.windowRemaining ?? 0) <= 0;
+    const grantAt = Math.max(
+      now,
+      state.nextAllowedMs,
+      state.pausedUntilMs,
+      budgetExhausted ? (state.windowResetMs ?? 0) : 0,
+    );
     waitMs = Math.max(0, grantAt - now);
     writeState({
       nextAllowedMs: grantAt + minGapMs,
       pausedUntilMs: state.pausedUntilMs,
       nextBackgroundAllowedMs: state.nextBackgroundAllowedMs,
+      ...(budgetExhausted
+        ? { windowRemaining: undefined, windowResetMs: undefined }
+        : reserveWindowSlot(state, now)),
     });
   });
   if (waitMs > 0) await sleep(waitMs);
@@ -220,11 +311,13 @@ export async function acquireJupiterApiSlotWithPriority(
     if (projectedWaitMs > backgroundMaxWaitMs()) return;
     const nextBackgroundAllowedMs = state.nextBackgroundAllowedMs ?? 0;
     if (now < nextBackgroundAllowedMs) return;
+    if (windowActive(state, now) && (state.windowRemaining ?? 0) <= backgroundReserve()) return;
     const grantAt = Math.max(now, state.nextAllowedMs);
     writeState({
       nextAllowedMs: grantAt + globalGapMs,
       pausedUntilMs: state.pausedUntilMs,
       nextBackgroundAllowedMs: now + backgroundGapMs,
+      ...reserveWindowSlot(state, now),
     });
     granted = true;
   });

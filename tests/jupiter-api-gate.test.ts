@@ -6,6 +6,7 @@ import {
   acquireJupiterApiSlot,
   acquireJupiterApiSlotWithPriority,
   extendJupiterApiPause,
+  noteJupiterRateLimitHeaders,
   resetJupiterApiGateForTests,
 } from '../src/core/jupiter-api-gate.js';
 
@@ -68,6 +69,47 @@ describe('jupiter-api-gate', () => {
     process.env.JUPITER_BACKGROUND_MAX_WAIT_MS = '10';
     await acquireJupiterApiSlot();
     expect(await acquireJupiterApiSlotWithPriority('background')).toBe(false);
+  });
+
+  it('execution waits for the window reset once x-ratelimit-remaining hits 0', async () => {
+    const resetMs = Date.now() + 150;
+    noteJupiterRateLimitHeaders(
+      new Headers({
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': String(resetMs / 1000),
+      }),
+    );
+    const t0 = Date.now();
+    await acquireJupiterApiSlot();
+    expect(Date.now() - t0).toBeGreaterThanOrEqual(100);
+  });
+
+  it('background is refused while the window budget is within the execution reserve', async () => {
+    process.env.JUPITER_BACKGROUND_RESERVE = '3';
+    process.env.JUPITER_GLOBAL_BACKGROUND_MAX_RPS = '20';
+    process.env.JUPITER_BACKGROUND_MAX_WAIT_MS = '5000';
+    noteJupiterRateLimitHeaders(
+      new Headers({
+        'x-ratelimit-remaining': '4',
+        'x-ratelimit-reset': String((Date.now() + 5_000) / 1000),
+      }),
+    );
+    expect(await acquireJupiterApiSlotWithPriority('background')).toBe(true);
+    await new Promise((r) => setTimeout(r, 80));
+    expect(await acquireJupiterApiSlotWithPriority('background')).toBe(false);
+  });
+
+  it('ignores the header budget when JUPITER_GATE_HEADER_BUDGET=0', async () => {
+    process.env.JUPITER_GATE_HEADER_BUDGET = '0';
+    noteJupiterRateLimitHeaders(
+      new Headers({
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': String((Date.now() + 5_000) / 1000),
+      }),
+    );
+    const t0 = Date.now();
+    await acquireJupiterApiSlot();
+    expect(Date.now() - t0).toBeLessThan(200);
   });
 
   it('always grants execution through the priority API', async () => {
