@@ -830,16 +830,6 @@ export async function evaluateFastPathCandidate(
   const streamWindow = mildDipPriceRing.streamWindowMetrics(mint, lookbackMs, nowMs);
   const greenStreamRally = streamWindow.rallyIntoPeakPct;
   const tapeOptions = greenTapeMinuteOptions(cfg);
-  const tapeMinute = mildDipPriceRing.tapeMinuteMetrics(
-    mint,
-    nowMs,
-    60_000,
-    360_000,
-    180_000,
-    tapeOptions,
-  );
-  // Keep the pre-fetch snapshot available for non-GREEN callers and diagnostics.
-  void tapeMinute;
   // Journal / turn-dump prefer true dump extent; fall back to mark-vs-peak.
   const streamDd = streamDump ?? streamCurrentDd;
   /**
