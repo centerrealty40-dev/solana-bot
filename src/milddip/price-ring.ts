@@ -57,6 +57,7 @@ export type MildDipTapeMinuteFailureReason =
 
 export type MildDipTapeMinuteOptions = {
   strictFreshness?: boolean;
+  anchorMedianMs?: number;
   minRecentSamples?: number;
   latestMaxAgeMs?: number;
   boundaryMinAgeMs?: number;
@@ -64,6 +65,23 @@ export type MildDipTapeMinuteOptions = {
   priorAnchorMinAgeMs?: number;
   priorAnchorMaxAgeMs?: number;
 };
+
+function medianAnchorPrice(
+  samples: MildDipPriceSample[],
+  anchor: MildDipPriceSample,
+  radiusMs: number,
+): number {
+  if (!(radiusMs > 0)) return anchor.priceUsd;
+  const prices = samples
+    .filter((sample) => Math.abs(sample.tsMs - anchor.tsMs) <= radiusMs)
+    .map((sample) => sample.priceUsd)
+    .sort((a, b) => a - b);
+  if (prices.length === 0) return anchor.priceUsd;
+  const middle = Math.floor(prices.length / 2);
+  return prices.length % 2 === 1
+    ? prices[middle]!
+    : (prices[middle - 1]! + prices[middle]!) / 2;
+}
 
 export class MildDipPriceRing {
   private readonly byMint = new Map<string, MintRing>();
@@ -511,13 +529,39 @@ export class MildDipPriceRing {
     const tapeRet1mPct = (latest.priceUsd / boundary.priceUsd - 1) * 100;
     const priorPriceUsd = strict ? priorAnchor!.priceUsd : oldest.priceUsd;
     const tapePrior5mPct = (boundary.priceUsd / priorPriceUsd - 1) * 100;
+    const anchorMedianMs = Math.max(0, options?.anchorMedianMs ?? 0);
+    if (anchorMedianMs === 0) {
+      return {
+        tapeRet1mPct: strict
+          ? tapeRet1mPct * 60_000 / Math.max(1, latest.tsMs - boundary.tsMs)
+          : tapeRet1mPct,
+        tapePrior5mPct: strict
+          ? tapePrior5mPct * 300_000 / Math.max(1, boundary.tsMs - priorAnchor!.tsMs)
+          : tapePrior5mPct,
+        sampleCount: samples.length,
+        coverageMs,
+        latestSampleAgeMs,
+        failureReason: null,
+      };
+    }
+    const latestPriceUsd = medianAnchorPrice(samples, latest, anchorMedianMs);
+    const boundaryPriceUsd = medianAnchorPrice(samples, boundary, anchorMedianMs);
+    const priorAnchorPriceUsd =
+      strict && priorAnchor
+        ? medianAnchorPrice(allSamples, priorAnchor, anchorMedianMs)
+        : priorPriceUsd;
+    const oldestPriceUsd = medianAnchorPrice(samples, oldest, anchorMedianMs);
+    const normalizedTapeRet1mPct = (latestPriceUsd / boundaryPriceUsd - 1) * 100;
+    const normalizedTapePrior5mPct = (
+      boundaryPriceUsd / (strict ? priorAnchorPriceUsd : oldestPriceUsd) - 1
+    ) * 100;
     return {
       tapeRet1mPct: strict
-        ? tapeRet1mPct * 60_000 / Math.max(1, latest.tsMs - boundary.tsMs)
-        : tapeRet1mPct,
+        ? normalizedTapeRet1mPct * 60_000 / Math.max(1, latest.tsMs - boundary.tsMs)
+        : normalizedTapeRet1mPct,
       tapePrior5mPct: strict
-        ? tapePrior5mPct * 300_000 / Math.max(1, boundary.tsMs - priorAnchor!.tsMs)
-        : tapePrior5mPct,
+        ? normalizedTapePrior5mPct * 300_000 / Math.max(1, boundary.tsMs - priorAnchor!.tsMs)
+        : normalizedTapePrior5mPct,
       sampleCount: samples.length,
       coverageMs,
       latestSampleAgeMs,

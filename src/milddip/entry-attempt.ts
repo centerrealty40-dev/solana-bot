@@ -1208,7 +1208,7 @@ export async function attemptMildDipEntry(args: {
   const ownShape = evaluateOwnEntryShapeGate({
     enabled: !isMirror && !isLeaderStyle,
     minTurnover5mLiq: cfg.entryOwnMinTurnover5mLiq,
-    maxPc1hPct: cfg.entryOwnMaxPc1hPct,
+    maxPc1hPct: c.greenImpulse ? cfg.green.impulseMaxPc1hPct : cfg.entryOwnMaxPc1hPct,
     volume5mUsd: liveVolume5mUsd,
     liquidityUsd: liveLiquidityUsd,
     priceChange1hPct: c.metrics.priceChange1hPct,
@@ -1223,7 +1223,7 @@ export async function attemptMildDipEntry(args: {
       turnover5mLiq: ownShape.turnover5mLiq,
       pc1hPct: ownShape.pc1hPct,
       minTurnover5mLiq: cfg.entryOwnMinTurnover5mLiq,
-      maxPc1hPct: cfg.entryOwnMaxPc1hPct,
+      maxPc1hPct: c.greenImpulse ? cfg.green.impulseMaxPc1hPct : cfg.entryOwnMaxPc1hPct,
       reasons: ownShape.reasons,
     });
     state.cooldownUntilMs[c.mint] = nowMs + softCd;

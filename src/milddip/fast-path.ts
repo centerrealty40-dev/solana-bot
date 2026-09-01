@@ -215,8 +215,9 @@ export function greenTapeMinuteOptions(
         boundaryMaxAgeMs: cfg.green.tapeMinuteBoundaryMaxAgeMs,
         priorAnchorMinAgeMs: cfg.green.tapeMinutePriorAnchorMinAgeMs,
         priorAnchorMaxAgeMs: cfg.green.tapeMinutePriorAnchorMaxAgeMs,
+        anchorMedianMs: cfg.green.tapeMinuteAnchorMedianMs,
       }
-    : { strictFreshness: false };
+    : { strictFreshness: false, anchorMedianMs: cfg.green.tapeMinuteAnchorMedianMs };
 }
 
 /** Test helper. */
@@ -985,6 +986,7 @@ export async function evaluateFastPathCandidate(
         metrics: struct.metrics,
         dipSource: 'green_momentum',
         greenRunnerRelax,
+        greenImpulse: g.impulse,
         tapeRet1mPct: greenTape.tapeRet1mPct,
         tapePrior5mPct: greenTape.tapePrior5mPct,
         tapeSampleCount: greenTape.sampleCount,

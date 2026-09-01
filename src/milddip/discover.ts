@@ -117,6 +117,8 @@ export type MildDipCandidate = {
   tapeMinuteFailureReason?: string | null;
   /** Green decision passed with runner-relaxed floors (leader active in the mint). */
   greenRunnerRelax?: boolean;
+  /** Green decision passed through the sharp impulse path. */
+  greenImpulse?: boolean;
   /** Impulse metrics that were unavailable while other configured metrics passed. */
   impulseMetricsUnknown?: string[];
   structSource?: 'leader_seed' | 'dex' | 'gecko' | null;
