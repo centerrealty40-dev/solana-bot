@@ -234,6 +234,8 @@ export type MildDipExitGates = {
   mfeBankMinHoldMs: number;
   /** Minimum hold before profitable TP/trail/reclaim exits. 0 = off. */
   profitExitMinHoldMs: number;
+  /** Whether the profitable-exit minimum hold applies to TP-grid. */
+  profitExitMinHoldAppliesToTpGrid: boolean;
   /** PnL threshold that bypasses the profitable-exit minimum hold. 0 = off. */
   profitExitMinHoldBypassPnlPct: number;
   /**
@@ -921,8 +923,11 @@ export function profitExitMinHoldApplies(args: {
   reason: MildDipExitReason;
   gainPct: number;
   pnlPct: number;
+  appliesToTpGrid?: boolean;
 }): boolean {
-  if (args.reason === 'tp_grid') return args.gainPct >= 0;
+  if (args.reason === 'tp_grid') {
+    return (args.appliesToTpGrid ?? true) && args.gainPct >= 0;
+  }
   if (args.reason === 'mfe_bank_sleeve' || args.reason === 'never_arm_bounce') {
     return args.gainPct >= 0;
   }

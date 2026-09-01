@@ -5213,9 +5213,15 @@ if (mildDipBotApp) {
       MILD_DIP_GREEN_RUNNER_MAX_TAPE_RET1M_PCT: '0.5',
       MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT: '0',
       MILD_DIP_GREEN_RUNNER_ENTRY_MAX_VOL5M_TO_LIQ: '1',
-      // own2 closes each bag with one full print; no partial TP ladder.
-      MILD_DIP_EXIT_TP_GRID_STEP_PCT: '0',
-      MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT: '0',
+      // частичная фиксация: половина остатка на каждой ступени +15%, дальше трейл.
+      // откат: MILD_DIP_EXIT_TP_GRID_STEP_PCT='0', MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT='0',
+      // MILD_DIP_EXIT_PROFIT_MIN_HOLD_TP_GRID='1'.
+      MILD_DIP_EXIT_TP_GRID_STEP_PCT: '15',
+      MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT: '15',
+      MILD_DIP_EXIT_TP_GRID_SELL_FRACTION: '0.5',
+      MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER: '0.2',
+      MILD_DIP_EXIT_TP_GRID_MIN_GAP_MS: '30000',
+      MILD_DIP_EXIT_PROFIT_MIN_HOLD_TP_GRID: '0',
       // не продаём то, что тут же купили бы обратно.
       MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY: '1',
       MILD_DIP_GREEN_EXIT_HOLD_WOULD_BUY_MAX_MS: '120000',
