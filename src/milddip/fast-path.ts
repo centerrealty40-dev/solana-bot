@@ -830,14 +830,6 @@ export async function evaluateFastPathCandidate(
   const streamWindow = mildDipPriceRing.streamWindowMetrics(mint, lookbackMs, nowMs);
   const greenStreamRally = streamWindow.rallyIntoPeakPct;
   const tapeOptions = greenTapeMinuteOptions(cfg);
-  const tapeMinute = mildDipPriceRing.tapeMinuteMetrics(
-    mint,
-    nowMs,
-    60_000,
-    360_000,
-    180_000,
-    tapeOptions,
-  );
   // Journal / turn-dump prefer true dump extent; fall back to mark-vs-peak.
   const streamDd = streamDump ?? streamCurrentDd;
   /**
@@ -918,6 +910,17 @@ export async function evaluateFastPathCandidate(
    * on dip P&L.
    */
   if (cfg.green.enabled) {
+    // Dex round-trip above takes seconds; the pre-fetch tape snapshot reads as
+    // missing data even when the stream printed meanwhile.
+    const greenTapeNowMs = Math.max(nowMs, Date.now());
+    const greenTape = mildDipPriceRing.tapeMinuteMetrics(
+      mint,
+      greenTapeNowMs,
+      60_000,
+      360_000,
+      180_000,
+      tapeOptions,
+    );
     const greenRunnerRelax = leaderActiveNow({
       gates: {
         enabled: cfg.green.runnerRelaxEnabled,
@@ -963,8 +966,8 @@ export async function evaluateFastPathCandidate(
         dumpExtentFromPeakPct: streamWindow.dumpExtentFromPeakPct,
         rallyIntoPeakPct: streamWindow.rallyIntoPeakPct,
         bounceFromTroughPct: streamWindow.bounceFromTroughPct,
-        tapeRet1mPct: tapeMinute.tapeRet1mPct,
-        tapePrior5mPct: tapeMinute.tapePrior5mPct,
+        tapeRet1mPct: greenTape.tapeRet1mPct,
+        tapePrior5mPct: greenTape.tapePrior5mPct,
         volume5mUsd: struct.metrics.volume5mUsd,
         volume1hUsd: struct.metrics.volume1hUsd,
         liquidityUsd: struct.metrics.liquidityUsd,
@@ -982,11 +985,11 @@ export async function evaluateFastPathCandidate(
         metrics: struct.metrics,
         dipSource: 'green_momentum',
         greenRunnerRelax,
-        tapeRet1mPct: tapeMinute.tapeRet1mPct,
-        tapePrior5mPct: tapeMinute.tapePrior5mPct,
-        tapeSampleCount: tapeMinute.sampleCount,
-        tapeCoverageMs: tapeMinute.coverageMs,
-        tapeMinuteFailureReason: tapeMinute.failureReason,
+        tapeRet1mPct: greenTape.tapeRet1mPct,
+        tapePrior5mPct: greenTape.tapePrior5mPct,
+        tapeSampleCount: greenTape.sampleCount,
+        tapeCoverageMs: greenTape.coverageMs,
+        tapeMinuteFailureReason: greenTape.failureReason,
         structSource,
         structAgeMs,
         streamWindowSampleCount: streamWindow.sampleCount,
@@ -1004,10 +1007,11 @@ export async function evaluateFastPathCandidate(
         ...streamObservabilitySnapshot(
           mint,
           cfg.cooldownBounceLookbackMs,
-          nowMs,
+          greenTapeNowMs,
           struct.metrics.pairAgeHours,
           tapeOptions,
         ),
+        tapeNowSkewMs: greenTapeNowMs - nowMs,
         reasons: g.reasons,
         structSource,
         structAgeMs,
