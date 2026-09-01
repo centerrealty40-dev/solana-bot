@@ -8,13 +8,14 @@ import { getSolUsd } from '../papertrader/pricing.js';
 import { jupiterQuoteSellPriceUsd } from '../papertrader/pricing/price-verify.js';
 import { mildDipPriceRing } from './price-ring.js';
 
+type GateSkipped = { gateSkipped: true };
 type QuoteFn = (args: {
   mint: string;
   snapshotPriceUsd: number;
   tokenDecimals: number;
   probeUsd: number;
   slippageBps: number;
-}) => Promise<number | null>;
+}) => Promise<number | null | GateSkipped>;
 
 type ActiveCandidate = {
   lastCandidateAtMs: number;
@@ -35,6 +36,7 @@ export type GreenMinuteJupiterStats = {
   quoteAttempts: number;
   quoteSuccesses: number;
   quoteErrors: number;
+  gateSkipped: number;
   capRejected: number;
 };
 
@@ -47,6 +49,7 @@ const stats: GreenMinuteJupiterStats = {
   quoteAttempts: 0,
   quoteSuccesses: 0,
   quoteErrors: 0,
+  gateSkipped: 0,
   capRejected: 0,
 };
 
@@ -59,6 +62,7 @@ export function __resetGreenMinuteJupiterRefreshForTests(): void {
   stats.quoteAttempts = 0;
   stats.quoteSuccesses = 0;
   stats.quoteErrors = 0;
+  stats.gateSkipped = 0;
   stats.capRejected = 0;
 }
 
@@ -100,7 +104,7 @@ async function defaultQuote(args: {
   tokenDecimals: number;
   probeUsd: number;
   slippageBps: number;
-}): Promise<number | null> {
+}): Promise<number | null | GateSkipped> {
   const solUsd = getSolUsd();
   if (!(solUsd > 0)) return null;
   const verdict = await jupiterQuoteSellPriceUsd({
@@ -111,7 +115,11 @@ async function defaultQuote(args: {
     snapshotPriceUsd: args.snapshotPriceUsd,
     slippageBps: args.slippageBps,
     timeoutMs: 4_000,
+    priority: 'background',
   });
+  if (verdict.kind === 'skipped' && verdict.reason === 'gate-busy') {
+    return { gateSkipped: true };
+  }
   return verdict.kind === 'ok' && verdict.jupiterPriceUsd > 0
     ? verdict.jupiterPriceUsd
     : null;
@@ -124,13 +132,14 @@ export async function fetchGreenMinuteJupiterQuote(args: {
   slippageBps: number;
   tokenDecimals?: number;
 }): Promise<number | null> {
-  return defaultQuote({
+  const result = await defaultQuote({
     mint: args.mint,
     snapshotPriceUsd: args.snapshotPriceUsd,
     probeUsd: args.probeUsd,
     slippageBps: args.slippageBps,
     tokenDecimals: args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? 6,
   });
+  return typeof result === 'number' ? result : null;
 }
 
 /**
@@ -267,12 +276,19 @@ function startQuote(
     slippageBps: candidate.slippageBps,
   })
     .then((priceUsd) => {
-      if (!(priceUsd != null && priceUsd > 0)) {
+      if (typeof priceUsd === 'object' && priceUsd?.gateSkipped) {
+        stats.gateSkipped += 1;
+        candidate.lastAttemptAtMs = 0;
+        lastAttemptBySourceMint.delete(`${candidate.source}:${mint}`);
+        return;
+      }
+      const numericPriceUsd = typeof priceUsd === 'number' ? priceUsd : null;
+      if (!(numericPriceUsd != null && numericPriceUsd > 0)) {
         stats.quoteErrors += 1;
         return;
       }
       stats.quoteSuccesses += 1;
-      mildDipPriceRing.note(mint, priceUsd, {
+      mildDipPriceRing.note(mint, numericPriceUsd, {
         tsMs: Date.now(),
         source: candidate.source,
       });

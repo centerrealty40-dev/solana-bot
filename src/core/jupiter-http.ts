@@ -1,5 +1,6 @@
 import {
   acquireJupiterApiSlot,
+  acquireJupiterApiSlotWithPriority,
   extendJupiterApiPause,
   jupiterRateLimitWaitMs,
 } from './jupiter-api-gate.js';
@@ -49,11 +50,11 @@ async function sleepMs(ms: number): Promise<void> {
 
 export type JupiterSwapQuoteGetResult =
   | { ok: true; body: Record<string, unknown> }
-  | { ok: false; status?: number; aborted?: boolean };
+  | { ok: false; status?: number; aborted?: boolean; gateSkipped?: true };
 
 export type JupiterSwapPostResult =
   | { ok: true; swapTransaction: string }
-  | { ok: false; reason: string; status?: number; aborted?: boolean };
+  | { ok: false; reason: string; status?: number; aborted?: boolean; gateSkipped?: true };
 
 async function jupiterFetchWith429Policy(args: {
   method: 'GET' | 'POST';
@@ -62,12 +63,20 @@ async function jupiterFetchWith429Policy(args: {
   extraHeaders?: Record<string, string>;
   body?: string;
   source: 'quote' | 'swap';
-}): Promise<{ ok: true; response: Response } | { ok: false; status?: number; aborted?: boolean }> {
-  const maxR = jupiterHttp429MaxRetries();
+  priority?: 'execution' | 'background';
+}): Promise<
+  | { ok: true; response: Response }
+  | { ok: false; status?: number; aborted?: boolean; gateSkipped?: true }
+> {
+  const priority = args.priority ?? 'execution';
+  const maxR = priority === 'background' ? 0 : jupiterHttp429MaxRetries();
   let backoff = jupiterHttp429InitialBackoffMs();
 
   for (let j = 0; j <= maxR; j++) {
-    await acquireJupiterApiSlot();
+    const granted = priority === 'background'
+      ? await acquireJupiterApiSlotWithPriority('background')
+      : (await acquireJupiterApiSlot(), true);
+    if (!granted) return { ok: false, gateSkipped: true };
     const ac = new AbortController();
     const tt = setTimeout(() => ac.abort(), Math.max(500, args.timeoutMs));
     try {
@@ -126,6 +135,7 @@ export async function fetchJupiterSwapQuoteGetResult(args: {
   url: string;
   timeoutMs: number;
   extraHeaders?: Record<string, string>;
+  priority?: 'execution' | 'background';
 }): Promise<JupiterSwapQuoteGetResult> {
   const fetched = await jupiterFetchWith429Policy({
     method: 'GET',
@@ -133,9 +143,15 @@ export async function fetchJupiterSwapQuoteGetResult(args: {
     timeoutMs: args.timeoutMs,
     extraHeaders: args.extraHeaders,
     source: 'quote',
+    priority: args.priority,
   });
   if (!fetched.ok) {
-    return { ok: false, status: fetched.status, aborted: fetched.aborted };
+    return {
+      ok: false,
+      status: fetched.status,
+      aborted: fetched.aborted,
+      ...(fetched.gateSkipped ? { gateSkipped: true as const } : {}),
+    };
   }
 
   const resp = fetched.response;
@@ -161,6 +177,7 @@ export async function fetchJupiterSwapQuoteGetJson(args: {
   url: string;
   timeoutMs: number;
   extraHeaders?: Record<string, string>;
+  priority?: 'execution' | 'background';
 }): Promise<Record<string, unknown> | null> {
   const r = await fetchJupiterSwapQuoteGetResult(args);
   return r.ok ? r.body : null;
@@ -172,6 +189,7 @@ export async function fetchJupiterSwapPostResult(args: {
   timeoutMs: number;
   body: string;
   extraHeaders?: Record<string, string>;
+  priority?: 'execution' | 'background';
 }): Promise<JupiterSwapPostResult> {
   const fetched = await jupiterFetchWith429Policy({
     method: 'POST',
@@ -180,8 +198,10 @@ export async function fetchJupiterSwapPostResult(args: {
     extraHeaders: { 'content-type': 'application/json', ...(args.extraHeaders ?? {}) },
     body: args.body,
     source: 'swap',
+    priority: args.priority,
   });
   if (!fetched.ok) {
+    if (fetched.gateSkipped) return { ok: false, reason: 'gate-busy', gateSkipped: true };
     if (fetched.status === 429) return { ok: false, reason: 'swap-http-429', status: 429 };
     if (fetched.aborted) return { ok: false, reason: 'swap-timeout', aborted: true };
     return { ok: false, reason: 'swap-fetch' };

@@ -11,14 +11,20 @@ import { mildDipPriceRing } from './price-ring.js';
 
 const lastAttemptMs = new Map<string, number>();
 const inFlight = new Set<string>();
+let gateSkipped = 0;
 
 export function __resetOpenMarkJupiterRefreshForTests(): void {
   lastAttemptMs.clear();
   inFlight.clear();
+  gateSkipped = 0;
 }
 
 export function openMarkJupiterRefreshInFlightCount(): number {
   return inFlight.size;
+}
+
+export function openMarkJupiterRefreshGateSkippedCount(): number {
+  return gateSkipped;
 }
 
 /**
@@ -58,8 +64,14 @@ export function requestOpenMarkJupiterRefresh(args: {
     snapshotPriceUsd: args.snapshotPriceUsd,
     slippageBps: args.slippageBps > 0 ? args.slippageBps : 150,
     timeoutMs: 4_000,
+    priority: 'background',
   })
     .then((verdict) => {
+      if (verdict.kind === 'skipped' && verdict.reason === 'gate-busy') {
+        gateSkipped += 1;
+        lastAttemptMs.delete(mint);
+        return;
+      }
       if (verdict.kind !== 'ok' || !(verdict.jupiterPriceUsd > 0)) return;
       mildDipPriceRing.note(mint, verdict.jupiterPriceUsd, {
         tsMs: Date.now(),

@@ -46,8 +46,9 @@ export async function fetchJupiterBuyQuoteResponse(args: {
   timeoutMs: number;
   /** W7.4.1 — when set, retries + circuit (same as verify paths). */
   resilience?: QuoteResilience | null;
+  priority?: 'background';
 }): Promise<Record<string, unknown> | null> {
-  const { mint, sizeUsd, solUsd, slippageBps, timeoutMs, resilience } = args;
+  const { mint, sizeUsd, solUsd, slippageBps, timeoutMs, resilience, priority } = args;
   if (!(solUsd > 0) || !(sizeUsd > 0)) return null;
 
   const gated = gateCircuit(resilience ?? undefined);
@@ -70,6 +71,7 @@ export async function fetchJupiterBuyQuoteResponse(args: {
       okJson = await fetchJupiterSwapQuoteGetJson({
         url: urlStr,
         timeoutMs,
+        priority,
       });
       if (!okJson) {
         log.debug({ mint, attempt: attempt + 1 }, 'jupiter raw buy quote empty or http error');
@@ -128,6 +130,7 @@ type JupiterQuoteBuyOnceArgs = {
   snapshotPriceUsd: number;
   slippageBps: number;
   timeoutMs: number;
+  priority?: 'background';
 };
 
 async function jupiterQuoteBuyPriceUsdOnce(args: JupiterQuoteBuyOnceArgs): Promise<PriceVerifyVerdict> {
@@ -144,9 +147,14 @@ async function jupiterQuoteBuyPriceUsdOnce(args: JupiterQuoteBuyOnceArgs): Promi
   url.searchParams.set('asLegacyTransaction', 'false');
 
   const start = Date.now();
-  const fetched = await fetchJupiterSwapQuoteGetResult({ url: url.toString(), timeoutMs });
+  const fetched = await fetchJupiterSwapQuoteGetResult({
+    url: url.toString(),
+    timeoutMs,
+    priority: args.priority,
+  });
   const elapsed = Date.now() - start;
   if (!fetched.ok) {
+    if (fetched.gateSkipped) return { kind: 'skipped', reason: 'gate-busy', ts };
     if (fetched.aborted) {
       log.debug({ mint, elapsed }, 'jupiter quote timeout (impulse)');
       return { kind: 'skipped', reason: 'timeout', ts };
@@ -253,6 +261,7 @@ type JupiterQuoteSellOnceArgs = {
   snapshotPriceUsd: number;
   slippageBps: number;
   timeoutMs: number;
+  priority?: 'background';
 };
 
 async function jupiterQuoteSellPriceUsdOnce(args: JupiterQuoteSellOnceArgs): Promise<PriceVerifyVerdict> {
@@ -272,9 +281,14 @@ async function jupiterQuoteSellPriceUsdOnce(args: JupiterQuoteSellOnceArgs): Pro
   url.searchParams.set('asLegacyTransaction', 'false');
 
   const start = Date.now();
-  const fetched = await fetchJupiterSwapQuoteGetResult({ url: url.toString(), timeoutMs });
+  const fetched = await fetchJupiterSwapQuoteGetResult({
+    url: url.toString(),
+    timeoutMs,
+    priority: args.priority,
+  });
   const elapsed = Date.now() - start;
   if (!fetched.ok) {
+    if (fetched.gateSkipped) return { kind: 'skipped', reason: 'gate-busy', ts };
     if (fetched.aborted) {
       log.debug({ mint, elapsed }, 'jupiter sell quote timeout');
       return { kind: 'skipped', reason: 'timeout', ts };

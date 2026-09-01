@@ -142,7 +142,7 @@ describe('MildDipPriceRing', () => {
     const metrics = tape.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
       strictFreshness: true,
     });
-    expect(metrics.tapeRet1mPct).toBeCloseTo((115 / 110 - 1) * 100, 6);
+    expect(metrics.tapeRet1mPct).toBeCloseTo((115 / 110 - 1) * 100 * 60_000 / 50_000, 6);
   });
 
   it('keeps a mint alive on fresh GREEN Jupiter prints but evicts stale mints', () => {
@@ -193,8 +193,8 @@ describe('MildDipPriceRing', () => {
     const metrics = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
       strictFreshness: true,
     });
-    expect(metrics.tapeRet1mPct).toBeCloseTo((115 / 110 - 1) * 100, 6);
-    expect(metrics.tapePrior5mPct).toBeCloseTo(10, 6);
+    expect(metrics.tapeRet1mPct).toBeCloseTo((115 / 110 - 1) * 100 * 60_000 / 50_000, 6);
+    expect(metrics.tapePrior5mPct).toBeCloseTo(12.5, 6);
     expect(metrics.failureReason).toBeNull();
   });
 
@@ -210,7 +210,7 @@ describe('MildDipPriceRing', () => {
     const metrics = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
       strictFreshness: true,
     });
-    expect(metrics.tapePrior5mPct).toBeCloseTo(10, 6);
+    expect(metrics.tapePrior5mPct).toBeCloseTo(12.5, 6);
     expect(metrics.failureReason).toBeNull();
   });
 
@@ -227,7 +227,7 @@ describe('MildDipPriceRing', () => {
     const metrics = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
       strictFreshness: true,
     });
-    expect(metrics.tapePrior5mPct).toBeCloseTo(10, 6);
+    expect(metrics.tapePrior5mPct).toBeCloseTo(12.5, 6);
   });
 
   it.each([
