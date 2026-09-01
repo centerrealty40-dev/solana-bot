@@ -5942,6 +5942,7 @@ async function tryExits(
           reason: decision.reason,
           gainPct: decision.gainPct,
           pnlPct: decision.pnlPct,
+          appliesToTpGrid: cfg.exit.profitExitMinHoldAppliesToTpGrid,
         })
       ) {
         profitExitVetoed = true;

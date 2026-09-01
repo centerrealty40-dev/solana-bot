@@ -1122,6 +1122,8 @@ const MildDipConfigSchema = z.object({
     mfeBankMinHoldMs: z.coerce.number().int().min(0).max(600_000).default(0),
     /** Minimum hold before profitable TP/trail/reclaim exits. 0 = off. */
     profitExitMinHoldMs: z.coerce.number().int().min(0).max(14_400_000).default(0),
+    /** Профитный min-hold не должен блокировать частичную фиксацию TP-grid. */
+    profitExitMinHoldAppliesToTpGrid: z.boolean().default(true),
     /** PnL threshold that bypasses the profitable-exit minimum hold. 0 = off. */
     profitExitMinHoldBypassPnlPct: z.coerce.number().min(0).max(500).default(0),
     /** 1.11.955 — underwater sleeve fraction; 0 = one full-bag decision. */
@@ -1421,6 +1423,10 @@ export function loadMildDipConfig(): MildDipConfig {
     tpGridMinRemainderFraction: envNum('MILD_DIP_EXIT_TP_GRID_MIN_REMAINDER', 0.2),
     mfeBankMinHoldMs: envNum('MILD_DIP_EXIT_MFE_BANK_MIN_HOLD_MS', 0),
     profitExitMinHoldMs: envNum('MILD_DIP_EXIT_PROFIT_MIN_HOLD_MS', 0),
+    profitExitMinHoldAppliesToTpGrid: envBool(
+      'MILD_DIP_EXIT_PROFIT_MIN_HOLD_TP_GRID',
+      true,
+    ),
     profitExitMinHoldBypassPnlPct: envNum(
       'MILD_DIP_EXIT_PROFIT_MIN_HOLD_BYPASS_PNL_PCT',
       0,

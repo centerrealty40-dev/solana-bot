@@ -213,6 +213,21 @@ describe('mild-dip config exit schema', () => {
     expect(maxCfg.exit.profitExitMinHoldMs).toBe(14_400_000);
   });
 
+  it('defaults and loads whether profitable-exit min-hold applies to TP-grid', () => {
+    expect(
+      withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).exit
+        .profitExitMinHoldAppliesToTpGrid,
+    ).toBe(true);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_EXIT_PROFIT_MIN_HOLD_TP_GRID: '0',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.exit.profitExitMinHoldAppliesToTpGrid).toBe(false);
+  });
+
   it('defaults and loads the underwater hard time stop', () => {
     expect(withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).exit.hardTimeStopMs).toBe(0);
     const cfg = withConfigEnv(

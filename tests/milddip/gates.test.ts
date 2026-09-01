@@ -373,6 +373,25 @@ describe('mild-dip entry age and churn gates', () => {
       profitExitMinHoldApplies({ reason: 'tp_grid', gainPct: 20, pnlPct: 20 }),
     ).toBe(true);
     expect(
+      profitExitMinHoldApplies({
+        reason: 'tp_grid',
+        gainPct: 20,
+        pnlPct: 20,
+        appliesToTpGrid: false,
+      }),
+    ).toBe(false);
+    expect(
+      profitExitMinHoldApplies({
+        reason: 'tp_grid',
+        gainPct: 20,
+        pnlPct: 20,
+        appliesToTpGrid: true,
+      }),
+    ).toBe(true);
+    expect(
+      profitExitMinHoldApplies({ reason: 'tp_grid', gainPct: 20, pnlPct: 20 }),
+    ).toBe(true);
+    expect(
       profitExitMinHoldApplies({ reason: 'mfe_bank_sleeve', gainPct: 6, pnlPct: 6 }),
     ).toBe(true);
     expect(
