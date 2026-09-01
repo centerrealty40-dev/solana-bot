@@ -7230,6 +7230,7 @@ export async function runMildDipLoop(
       txRetryMaxAttempts: cfg.streamPriceTxRetryMaxAttempts,
       txRetryDelayMs: cfg.streamPriceTxRetryDelayMs,
       txRetryMaxAgeMs: cfg.streamPriceTxRetryMaxAgeMs,
+      minSignerNotionalUsd: cfg.streamPriceMinSignerNotionalUsd,
       shouldSample: shouldSampleTapeStreamPrice,
       /**
        * Force-fetch open bags so exit marks stay stream-fed — except green

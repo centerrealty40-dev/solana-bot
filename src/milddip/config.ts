@@ -239,6 +239,7 @@ const MildDipConfigSchema = z.object({
   streamPriceTxRetryMaxAttempts: z.coerce.number().int().min(0).max(5).default(2),
   streamPriceTxRetryDelayMs: z.coerce.number().int().min(0).max(10_000).default(400),
   streamPriceTxRetryMaxAgeMs: z.coerce.number().int().min(0).max(300_000).default(30_000),
+  streamPriceMinSignerNotionalUsd: z.coerce.number().min(0).max(100).default(5),
   /** Journal-only tape lanes; this never enters the execution path. */
   tapeShadowEnabled: z.boolean().default(false),
   tapePendingSampleMaxMints: z.coerce.number().int().min(1).max(5_000).default(64),
@@ -1851,6 +1852,10 @@ export function loadMildDipConfig(): MildDipConfig {
     streamPriceTxRetryMaxAttempts: envNum('MILD_DIP_STREAM_PRICE_TX_RETRY_MAX_ATTEMPTS', 2),
     streamPriceTxRetryDelayMs: envNum('MILD_DIP_STREAM_PRICE_TX_RETRY_DELAY_MS', 400),
     streamPriceTxRetryMaxAgeMs: envNum('MILD_DIP_STREAM_PRICE_TX_RETRY_MAX_AGE_MS', 30_000),
+    streamPriceMinSignerNotionalUsd: envNum(
+      'MILD_DIP_STREAM_PRICE_MIN_SIGNER_NOTIONAL_USD',
+      5,
+    ),
     tapeShadowEnabled: envBool('MILD_DIP_TAPE_SHADOW_ENABLED', false),
     tapePendingSampleMaxMints: envNum('MILD_DIP_TAPE_PENDING_SAMPLE_MAX_MINTS', 64),
     tapeShadowSampleMaxMints: envNum('MILD_DIP_TAPE_SHADOW_SAMPLE_MAX_MINTS', 0),

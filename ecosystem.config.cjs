@@ -5212,6 +5212,9 @@ if (mildDipBotApp) {
       MILD_DIP_GREEN_RUNNER_MAX_TAPE_RET1M_PCT: '0.5',
       MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT: '0',
       MILD_DIP_GREEN_RUNNER_ENTRY_MAX_VOL5M_TO_LIQ: '1',
+      // измерено по 562 закрытым кругам own2: ниже $20k — −$13.05; откат = 6000/8000
+      MILD_DIP_GREEN_MIN_LIQUIDITY_USD: '20000',
+      MILD_DIP_GREEN_RUNNER_MIN_LIQUIDITY_USD: '20000',
       // частичная фиксация: половина остатка на каждой ступени +15%, дальше трейл.
       // откат: MILD_DIP_EXIT_TP_GRID_STEP_PCT='0', MILD_DIP_EXIT_TP_GRID_FIRST_RUNG_PCT='0',
       // MILD_DIP_EXIT_PROFIT_MIN_HOLD_TP_GRID='1'.
