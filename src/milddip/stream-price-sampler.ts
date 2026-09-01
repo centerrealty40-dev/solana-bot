@@ -79,6 +79,7 @@ export function createStreamPriceSampler(args: {
   txRetryMaxAttempts?: number;
   txRetryDelayMs?: number;
   txRetryMaxAgeMs?: number;
+  minSignerNotionalUsd?: number;
 }): StreamPriceSampler {
   const minGap = Math.max(500, args.minGapMsPerMint ?? 2_000);
   const concurrency = Math.max(1, Math.min(8, args.concurrency ?? 3));
@@ -229,7 +230,9 @@ export function createStreamPriceSampler(args: {
 
       // 1.11.798 — balance-route fallback when SwapInsert decode misses.
       if (!noted) {
-        const balPx = mintPriceUsdFromTxMeta(tx, job.mint, solUsd);
+        const balPx = mintPriceUsdFromTxMeta(tx, job.mint, solUsd, {
+          minSignerNotionalUsd: args.minSignerNotionalUsd,
+        });
         if (balPx != null && balPx > 0) {
           if (
             !mildDipPriceRing.isPlausiblePrice(job.mint, balPx, {

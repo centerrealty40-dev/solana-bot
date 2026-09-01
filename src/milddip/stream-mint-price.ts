@@ -26,6 +26,70 @@ function rawFor(balances: TokenBal[] | null | undefined, owner: string, mint: st
   return total;
 }
 
+function rawDeltaFor(
+  post: TokenBal[] | null | undefined,
+  pre: TokenBal[] | null | undefined,
+  owner: string,
+  mint: string,
+): bigint {
+  return rawFor(post, owner, mint) - rawFor(pre, owner, mint);
+}
+
+function poolOwnerForMintDelta(
+  pre: TokenBal[],
+  post: TokenBal[],
+  mint: string,
+  baseDelta: bigint,
+  wallet: string,
+): string | null {
+  const byIndex = new Map<
+    number,
+    { pre: bigint; post: bigint; preOwner?: string; postOwner?: string }
+  >();
+  for (const [balances, side] of [
+    [pre, 'pre'],
+    [post, 'post'],
+  ] as const) {
+    for (const balance of balances) {
+      if (
+        balance?.mint !== mint ||
+        typeof balance.accountIndex !== 'number' ||
+        !Number.isInteger(balance.accountIndex) ||
+        balance.accountIndex < 0
+      ) {
+        continue;
+      }
+      const current = byIndex.get(balance.accountIndex) ?? { pre: 0n, post: 0n };
+      const raw = balance.uiTokenAmount?.amount;
+      if (raw != null) {
+        try {
+          current[side] += BigInt(String(raw));
+        } catch {
+          /* skip */
+        }
+      }
+      if (typeof balance.owner === 'string' && balance.owner) {
+        current[`${side}Owner`] = balance.owner;
+      }
+      byIndex.set(balance.accountIndex, current);
+    }
+  }
+  let bestOwner: string | null = null;
+  let bestAbs = 0n;
+  for (const entry of byIndex.values()) {
+    const delta = entry.post - entry.pre;
+    const owner = entry.postOwner ?? entry.preOwner;
+    if (!owner || owner === wallet || delta === 0n) continue;
+    if ((delta > 0n) === (baseDelta > 0n)) continue;
+    const abs = delta < 0n ? -delta : delta;
+    if (abs > bestAbs) {
+      bestAbs = abs;
+      bestOwner = owner;
+    }
+  }
+  return bestOwner;
+}
+
 function decimalsFor(balances: TokenBal[] | null | undefined, mint: string): number {
   if (!balances) return 6;
   for (const b of balances) {
@@ -86,6 +150,7 @@ export function mintPriceUsdFromTxMeta(
   tx: TxJsonParsed | null | undefined,
   mint: string,
   solUsd: number,
+  opts?: { minSignerNotionalUsd?: number },
 ): number | null {
   if (!tx || !mint || mint.length < 32 || !(solUsd > 0)) return null;
   if (tx.meta?.err != null) return null;
@@ -99,6 +164,27 @@ export function mintPriceUsdFromTxMeta(
     if (baseDelta === 0n) continue;
     const baseHuman = Number(baseDelta >= 0n ? baseDelta : -baseDelta) / scale;
     if (!(baseHuman > 0)) continue;
+
+    const poolOwner = poolOwnerForMintDelta(preB, postB, mint, baseDelta, wallet);
+    if (poolOwner) {
+      const poolWsolDelta = rawDeltaFor(postB, preB, poolOwner, WSOL);
+      const poolUsdcDelta = rawDeltaFor(postB, preB, poolOwner, USDC);
+      const poolUsdtDelta = rawDeltaFor(postB, preB, poolOwner, USDT);
+      const poolLamports = walletLamportsDelta(tx, poolOwner);
+      const poolQuotes = [
+        (Number(poolWsolDelta < 0n ? -poolWsolDelta : poolWsolDelta) / 1e9) * solUsd,
+        Number(poolUsdcDelta < 0n ? -poolUsdcDelta : poolUsdcDelta) / 1e6,
+        Number(poolUsdtDelta < 0n ? -poolUsdtDelta : poolUsdtDelta) / 1e6,
+        poolLamports != null
+          ? (Number(poolLamports < 0n ? -poolLamports : poolLamports) / 1e9) * solUsd
+          : 0,
+      ];
+      const poolQuoteUsd = poolQuotes.find((quote) => quote > 0) ?? 0;
+      if (poolQuoteUsd > 0) {
+        const px = poolQuoteUsd / baseHuman;
+        if (px > 0 && Number.isFinite(px)) return px;
+      }
+    }
 
     const wsolDelta = rawFor(postB, wallet, WSOL) - rawFor(preB, wallet, WSOL);
     const usdcDelta = rawFor(postB, wallet, USDC) - rawFor(preB, wallet, USDC);
@@ -132,7 +218,8 @@ export function mintPriceUsdFromTxMeta(
         Number(recvUsdc) / 1e6 +
         Number(recvUsdt) / 1e6;
     }
-    if (!(quoteUsd > 0)) continue;
+    const minSignerNotionalUsd = opts?.minSignerNotionalUsd ?? 5;
+    if (!(quoteUsd >= minSignerNotionalUsd) || !(quoteUsd > 0)) continue;
     const px = quoteUsd / baseHuman;
     if (px > 0 && Number.isFinite(px)) return px;
   }

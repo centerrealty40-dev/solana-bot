@@ -5,6 +5,7 @@ import { mintPriceUsdFromTxMeta } from '../../src/milddip/stream-mint-price.js';
 const MINT = 'TokenMint1111111111111111111111111111111111';
 const WSOL = 'So11111111111111111111111111111111111111112';
 const BUYER = 'BuyerWallet1111111111111111111111111111111';
+const POOL = 'PoolOwner111111111111111111111111111111111';
 
 function txBuy(args: {
   tokenRawIn: string;
@@ -75,5 +76,71 @@ describe('mintPriceUsdFromTxMeta', () => {
     const tx = txBuy({ tokenRawIn: '1000000', wsolRawOut: '100000000', lamportsSpent: 0 });
     tx.meta!.err = { InstructionError: [0, 'Custom'] };
     expect(mintPriceUsdFromTxMeta(tx, MINT, 150)).toBeNull();
+  });
+
+  it('uses the pool quote instead of signer rent and fee deltas', () => {
+    const tx = txBuy({
+      tokenRawIn: '67000000',
+      wsolRawOut: '0',
+      lamportsSpent: 1100000,
+    });
+    tx.transaction!.message!.accountKeys!.push({
+      pubkey: POOL,
+      signer: false,
+      writable: true,
+    });
+    tx.meta!.preTokenBalances!.push({
+      accountIndex: 2,
+      mint: MINT,
+      owner: POOL,
+      uiTokenAmount: { amount: '67000000', decimals: 6, uiAmount: 67 },
+    });
+    tx.meta!.postTokenBalances!.push({
+      accountIndex: 2,
+      mint: MINT,
+      owner: POOL,
+      uiTokenAmount: { amount: '0', decimals: 0, uiAmount: 0 },
+    });
+    tx.meta!.preTokenBalances!.push({
+      accountIndex: 3,
+      mint: WSOL,
+      owner: POOL,
+      uiTokenAmount: { amount: '0', decimals: 9, uiAmount: 0 },
+    });
+    tx.meta!.postTokenBalances!.push({
+      accountIndex: 3,
+      mint: WSOL,
+      owner: POOL,
+      uiTokenAmount: { amount: '75300', decimals: 9, uiAmount: 0.0000753 },
+    });
+    const px = mintPriceUsdFromTxMeta(tx, MINT, 103.26);
+    expect(px).toBeCloseTo(0.00011605, 7);
+    expect(px).not.toBeCloseTo(0.0016, 4);
+  });
+
+  it('rejects a signer-only dust quote below the fallback notional floor', () => {
+    const tx = txBuy({
+      tokenRawIn: '67000000',
+      wsolRawOut: '0',
+      lamportsSpent: 1100000,
+    });
+    tx.transaction!.message!.accountKeys!.push({
+      pubkey: POOL,
+      signer: false,
+      writable: true,
+    });
+    tx.meta!.preTokenBalances!.push({
+      accountIndex: 2,
+      mint: MINT,
+      owner: POOL,
+      uiTokenAmount: { amount: '67000000', decimals: 6, uiAmount: 67 },
+    });
+    tx.meta!.postTokenBalances!.push({
+      accountIndex: 2,
+      mint: MINT,
+      owner: POOL,
+      uiTokenAmount: { amount: '0', decimals: 0, uiAmount: 0 },
+    });
+    expect(mintPriceUsdFromTxMeta(tx, MINT, 103.26)).toBeNull();
   });
 });

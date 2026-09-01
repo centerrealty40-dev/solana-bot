@@ -182,6 +182,20 @@ describe('mild-dip config exit schema', () => {
     expect(dropped, `exit loader keys dropped by schema: ${dropped.join(', ')}`).toEqual([]);
   });
 
+  it('defaults and loads the stream signer notional floor', () => {
+    expect(
+      withConfigEnv({ ...baseEnv }, () => loadMildDipConfig()).streamPriceMinSignerNotionalUsd,
+    ).toBe(5);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_STREAM_PRICE_MIN_SIGNER_NOTIONAL_USD: '12.5',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.streamPriceMinSignerNotionalUsd).toBe(12.5);
+  });
+
   it('loads the green sleeve partial fraction from the environment', () => {
     const cfg = withConfigEnv(
       {
