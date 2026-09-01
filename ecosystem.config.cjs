@@ -5225,6 +5225,9 @@ if (mildDipBotApp) {
       MILD_DIP_GREEN_RUNNER_ENTRY_MAX_VOL5M_TO_LIQ: '1',
       MILD_DIP_ENTRY_OWN_MIN_TURNOVER: '0.3',
       MILD_DIP_ENTRY_OWN_MAX_PC1H_PCT: '50',
+      // own2 покупает по сигналу: ожидание скидки −5% давало 283 монеты/час
+      // в парковке и почти ноль входов. Откат: MILD_DIP_WAIT_DIP: '1'.
+      MILD_DIP_WAIT_DIP: '0',
       MILD_DIP_GREEN_JUPITER_MINUTE_MAX_MINTS: '18',
       MILD_DIP_GREEN_JUPITER_MINUTE_MIN_GAP_MS: '6000',
       MILD_DIP_GREEN_JUPITER_MINUTE_INTERVAL_MS: '2000',
