@@ -101,6 +101,40 @@ describe('MildDipPriceRing', () => {
     expect(metrics.coverageMs).toBe(360_000);
   });
 
+  it('uses a local median for tape anchors when configured', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'TapeAnchorMedianMintxxxxxxxxxxxxxxxxxxxxxxxx1';
+    const now = 1_000_000;
+    ring.note(mint, 100, { tsMs: now - 360_000, source: 'stream' });
+    ring.note(mint, 100, { tsMs: now - 60_000, source: 'stream' });
+    ring.note(mint, 100, { tsMs: now - 3_000, source: 'stream' });
+    ring.note(mint, 101, { tsMs: now - 2_000, source: 'stream' });
+    ring.note(mint, 500, { tsMs: now, source: 'stream' });
+
+    const raw = ring.tapeMinuteMetrics(mint, now);
+    const median = ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
+      anchorMedianMs: 8_000,
+    });
+    expect(raw.tapeRet1mPct).toBeCloseTo(400, 6);
+    expect(median.tapeRet1mPct).toBeCloseTo(1, 6);
+  });
+
+  it('keeps anchorMedianMs zero byte-identical to the default', () => {
+    const ring = new MildDipPriceRing();
+    const mint = 'TapeAnchorMedianDisabledMintxxxxxxxxxxxxxxxx1';
+    const now = 1_100_000;
+    ring.note(mint, 100, { tsMs: now - 360_000, source: 'stream' });
+    ring.note(mint, 110, { tsMs: now - 60_000, source: 'stream' });
+    ring.note(mint, 121, { tsMs: now, source: 'stream' });
+    expect(
+      ring.tapeMinuteMetrics(mint, now),
+    ).toEqual(
+      ring.tapeMinuteMetrics(mint, now, 60_000, 360_000, 180_000, {
+        anchorMedianMs: 0,
+      }),
+    );
+  });
+
   it('keeps GREEN Jupiter samples out of legacy last-price consumers', () => {
     const ring = new MildDipPriceRing();
     const mint = 'GreenJupiterSourceIsolationMintxxxxxxxxxxxx1';

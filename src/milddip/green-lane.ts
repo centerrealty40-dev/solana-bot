@@ -59,6 +59,11 @@ export type GreenLaneGates = {
   tapeMinuteGatesEnabled?: boolean;
   minTapeRet1mPct?: number;
   maxTapePrior5mPct?: number;
+  impulseEnabled?: boolean;
+  impulseMinTapeRet1mPct?: number;
+  impulseMinTapePrior5mPct?: number;
+  impulseMinTurnover5mLiq?: number;
+  impulseMinVolume5mUsd?: number;
   /** Keep the historical fail-closed behavior for missing 1h change by default. */
   requirePc1h: boolean;
   minPc1hPct: number;
@@ -103,6 +108,7 @@ export type GreenLaneInput = {
 
 export type GreenLaneVerdict = {
   pass: boolean;
+  impulse: boolean;
   /** Why it failed, or the qualifying numbers when it passed. */
   reasons: string[];
   turnover: number | null;
@@ -154,7 +160,7 @@ export function evaluateGreenLane(
   const buyShare = greenBuyShare(input.buys5m, input.sells5m);
   const fail: string[] = [];
 
-  if (!gates.enabled) return { pass: false, reasons: ['disabled'], turnover, buyShare };
+  if (!gates.enabled) return { pass: false, reasons: ['disabled'], turnover, buyShare, impulse: false };
 
   const pc5m = num(input.pc5mPct);
   const pc1h = num(input.pc1hPct);
@@ -169,6 +175,17 @@ export function evaluateGreenLane(
   const tapeGatesEnabled = gates.tapeMinuteGatesEnabled === true;
   const tapeRet1m = num(input.tapeRet1mPct);
   const tapePrior5m = num(input.tapePrior5mPct);
+  const impulse =
+    gates.impulseEnabled === true &&
+    tapeGatesEnabled &&
+    tapeRet1m != null &&
+    tapePrior5m != null &&
+    turnover != null &&
+    vol5m != null &&
+    tapeRet1m >= (gates.impulseMinTapeRet1mPct ?? 8) &&
+    tapePrior5m >= (gates.impulseMinTapePrior5mPct ?? 0) &&
+    turnover >= (gates.impulseMinTurnover5mLiq ?? 0.8) &&
+    vol5m >= (gates.impulseMinVolume5mUsd ?? 15_000);
 
   if (tapeGatesEnabled) {
     if (
@@ -180,10 +197,10 @@ export function evaluateGreenLane(
       if (tapeRet1m < (gates.minTapeRet1mPct ?? 0)) {
         fail.push(`tapeRet1m=${tapeRet1m}`);
       }
-      if (tapeRet1m > gates.maxTapeRet1mPct) {
+      if (!impulse && tapeRet1m > gates.maxTapeRet1mPct) {
         fail.push(`tapeRet1m_max=${tapeRet1m.toFixed(2)}`);
       }
-      if (tapePrior5m > (gates.maxTapePrior5mPct ?? 0)) {
+      if (!impulse && tapePrior5m > (gates.maxTapePrior5mPct ?? 0)) {
         fail.push(`tapePrior5m=${tapePrior5m}`);
       }
     }
@@ -192,7 +209,7 @@ export function evaluateGreenLane(
     if (pc5m == null || pc5m < gates.minPc5mPct) fail.push(`pc5m=${pc5m ?? 'null'}`);
     // Vertical moves (imp5 >= +40%) were the worst tape subset (median 60m
     // return −21%); keep the ceiling opt-in so existing defaults do not change.
-    if (gates.maxPc5mPct > 0 && pc5m != null && pc5m >= gates.maxPc5mPct) {
+    if (!impulse && gates.maxPc5mPct > 0 && pc5m != null && pc5m >= gates.maxPc5mPct) {
       fail.push(`pc5m_max=${pc5m}`);
     }
   }
@@ -229,42 +246,46 @@ export function evaluateGreenLane(
     fail.push(`ret1m=${ret1m.toFixed(2)}`);
   }
   const dipRequired = gates.minDumpFromPeakPct > 0;
-  if (dipRequired) {
-    if (dump == null) {
-      fail.push('green_dump_unknown');
-    } else if (Math.abs(dump) + 1e-9 < gates.minDumpFromPeakPct) {
-      fail.push(`green_dump_shallow=${dump.toFixed(2)}`);
+  if (!impulse) {
+    if (dipRequired) {
+      if (dump == null) {
+        fail.push('green_dump_unknown');
+      } else if (Math.abs(dump) + 1e-9 < gates.minDumpFromPeakPct) {
+        fail.push(`green_dump_shallow=${dump.toFixed(2)}`);
+      }
+    }
+    const dipOk =
+      dipRequired &&
+      dump != null &&
+      Math.abs(dump) + 1e-9 >= gates.minDumpFromPeakPct;
+    if (
+      !dipOk &&
+      gates.maxRallyIntoPeakPct > 0 &&
+      rallyIntoPeak != null &&
+      rallyIntoPeak >= gates.maxRallyIntoPeakPct
+    ) {
+      fail.push(`green_rally_into_peak=${rallyIntoPeak.toFixed(2)}`);
+    }
+    if (gates.maxBounceFromTroughPct > 0 && bounceFromTrough != null && bounceFromTrough >= gates.maxBounceFromTroughPct) {
+      fail.push(`green_bounce_from_trough=${bounceFromTrough.toFixed(2)}`);
     }
   }
-  const dipOk =
-    dipRequired &&
-    dump != null &&
-    Math.abs(dump) + 1e-9 >= gates.minDumpFromPeakPct;
-  if (
-    !dipOk &&
-    gates.maxRallyIntoPeakPct > 0 &&
-    rallyIntoPeak != null &&
-    rallyIntoPeak >= gates.maxRallyIntoPeakPct
-  ) {
-    fail.push(`green_rally_into_peak=${rallyIntoPeak.toFixed(2)}`);
-  }
-  if (gates.maxBounceFromTroughPct > 0 && bounceFromTrough != null && bounceFromTrough >= gates.maxBounceFromTroughPct) {
-    fail.push(`green_bounce_from_trough=${bounceFromTrough.toFixed(2)}`);
-  }
 
-  if (fail.length > 0) return { pass: false, reasons: fail, turnover, buyShare };
+  if (fail.length > 0) return { pass: false, reasons: fail, turnover, buyShare, impulse: false };
   return {
     pass: true,
     reasons: [
+      ...(impulse ? ['green_impulse'] : []),
       ...(tapeGatesEnabled
         ? [`tapeRet1m=${tapeRet1m!.toFixed(1)}`, `tapePrior5m=${tapePrior5m!.toFixed(1)}`]
         : [`pc5m=${pc5m!.toFixed(1)}`]),
       ...(pc1h == null ? [] : [`pc1h=${pc1h.toFixed(1)}`]),
-      ...(dipRequired ? [`dump=${dump!.toFixed(1)}`] : []),
+      ...(dipRequired && dump != null ? [`dump=${dump.toFixed(1)}`] : []),
       `turnover=${turnover!.toFixed(2)}`,
     ],
     turnover,
     buyShare,
+    impulse,
   };
 }
 

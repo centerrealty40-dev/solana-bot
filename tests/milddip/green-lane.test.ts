@@ -423,6 +423,97 @@ describe('evaluateGreenLane', () => {
     expect(v.reasons).toEqual(expect.arrayContaining(['tapeRet1m=4', 'tapePrior5m=11']));
   });
 
+  it('allows a qualifying impulse to bypass green shape caps', () => {
+    const impulseGates: GreenLaneGates = {
+      ...gates,
+      tapeMinuteGatesEnabled: true,
+      maxTapeRet1mPct: 20,
+      maxTapePrior5mPct: 10,
+      maxRallyIntoPeakPct: 20,
+      maxBounceFromTroughPct: 12,
+      minDumpFromPeakPct: 10,
+      impulseEnabled: true,
+      impulseMinTapeRet1mPct: 8,
+      impulseMinTapePrior5mPct: 0,
+      impulseMinTurnover5mLiq: 0.8,
+      impulseMinVolume5mUsd: 15_000,
+    };
+    const v = evaluateGreenLane(
+      {
+        ...ok,
+        volume5mUsd: 20_000,
+        tapeRet1mPct: 90,
+        tapePrior5mPct: 107,
+        bounceFromTroughPct: 127,
+        dumpExtentFromPeakPct: null,
+      },
+      impulseGates,
+    );
+    expect(v.pass).toBe(true);
+    expect(v.impulse).toBe(true);
+    expect(v.reasons).toContain('green_impulse');
+  });
+
+  it('keeps impulse risk floors mandatory', () => {
+    const impulseGates: GreenLaneGates = {
+      ...gates,
+      tapeMinuteGatesEnabled: true,
+      impulseEnabled: true,
+      maxTapePrior5mPct: 1000,
+      impulseMinTapeRet1mPct: 8,
+      impulseMinTapePrior5mPct: 0,
+      impulseMinTurnover5mLiq: 0.8,
+      impulseMinVolume5mUsd: 15_000,
+      minLiquidityUsd: 20_000,
+      maxBuyShare5m: 0.85,
+    };
+    expect(
+      evaluateGreenLane(
+        { ...ok, volume5mUsd: 20_000, liquidityUsd: 19_999, tapeRet1mPct: 90, tapePrior5mPct: 107 },
+        impulseGates,
+      ).reasons,
+    ).toContain('green_liq_floor=19999<20000');
+    expect(
+      evaluateGreenLane(
+        { ...ok, volume5mUsd: 20_000, buys5m: 90, sells5m: 10, tapeRet1mPct: 90, tapePrior5mPct: 107 },
+        impulseGates,
+      ).reasons,
+    ).toContain('buyShare=0.900');
+    expect(
+      evaluateGreenLane(
+        { ...ok, volume5mUsd: 7_000, tapeRet1mPct: 90, tapePrior5mPct: 107 },
+        impulseGates,
+      ).reasons,
+    ).toContain('turnover=0.350');
+  });
+
+  it('does not classify weak impulse tape and keeps shape caps active', () => {
+    const impulseGates: GreenLaneGates = {
+      ...gates,
+      tapeMinuteGatesEnabled: true,
+      maxTapeRet1mPct: 20,
+      maxTapePrior5mPct: 10,
+      maxBounceFromTroughPct: 12,
+      impulseEnabled: true,
+      impulseMinTapeRet1mPct: 8,
+      impulseMinTapePrior5mPct: 0,
+      impulseMinTurnover5mLiq: 0.8,
+      impulseMinVolume5mUsd: 15_000,
+    };
+    const weak = evaluateGreenLane(
+      {
+        ...ok,
+        tapeRet1mPct: 3,
+        tapePrior5mPct: -20,
+        bounceFromTroughPct: 127,
+      },
+      impulseGates,
+    );
+    expect(weak.pass).toBe(false);
+    expect(weak.impulse).toBe(false);
+    expect(weak.reasons).toContain('green_bounce_from_trough=127.00');
+  });
+
   it('selects the strong-minute profile only at the entry threshold', () => {
     const cfg = {
       green: { fastExitEnabled: true, strongRet1mPct: 40 },
