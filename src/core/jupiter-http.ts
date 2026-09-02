@@ -51,7 +51,7 @@ async function sleepMs(ms: number): Promise<void> {
 
 export type JupiterSwapQuoteGetResult =
   | { ok: true; body: Record<string, unknown> }
-  | { ok: false; status?: number; aborted?: boolean; gateSkipped?: true };
+  | { ok: false; status?: number; errorCode?: string; aborted?: boolean; gateSkipped?: true };
 
 export type JupiterSwapPostResult =
   | { ok: true; swapTransaction: string }
@@ -164,12 +164,17 @@ export async function fetchJupiterSwapQuoteGetResult(args: {
 
   const resp = fetched.response;
   if (!resp.ok) {
+    let errorCode: string | undefined;
     try {
-      await resp.text();
+      const raw = JSON.parse(await resp.text()) as unknown;
+      if (typeof raw === 'object' && raw != null && !Array.isArray(raw)) {
+        const code = (raw as Record<string, unknown>).errorCode;
+        if (typeof code === 'string') errorCode = code;
+      }
     } catch {
       /* ignore body */
     }
-    return { ok: false, status: resp.status };
+    return { ok: false, status: resp.status, ...(errorCode ? { errorCode } : {}) };
   }
 
   const raw = (await resp.json()) as unknown;

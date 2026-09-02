@@ -5196,6 +5196,9 @@ if (mildDipBotApp) {
       MILD_DIP_MIRROR_ONLY: '0',
       JUPITER_GLOBAL_MAX_RPS: '8',
       JUPITER_QUOTE_429_MAX_RETRIES: '2',
+      // Откат: LIVE_EXIT_ROUTE_PROBE_ENABLED: '0'.
+      LIVE_EXIT_ROUTE_PROBE_ENABLED: '1',
+      LIVE_EXIT_ROUTE_MISSING_TTL_MS: '600000',
       MILD_DIP_GREEN_ENABLED: '1',
       // По решению пользователя возвращаем leader-seen для own2; откат: все три ключа = '0'.
       MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '1',

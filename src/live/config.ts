@@ -293,6 +293,8 @@ const LiveOscarConfigSchema = z
      */
     liveBuyMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
     liveSellMaxPriceImpactPct: z.coerce.number().min(0).max(50).default(0),
+    liveExitRouteProbeEnabled: z.boolean().default(true),
+    liveExitRouteMissingTtlMs: z.coerce.number().int().min(60_000).max(3_600_000).default(600_000),
 
     /**
      * 1.11.502 — Chunk large live exits (partial TP, kill stop, full close) into slices
@@ -731,6 +733,12 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     const n = Number(s);
     return Number.isFinite(n) && n >= 0.01 ? Math.min(n, 50) : symCorridorPct;
   })();
+  const exitRouteMissingTtlMs = (() => {
+    const s = process.env.LIVE_EXIT_ROUTE_MISSING_TTL_MS?.trim();
+    if (!s) return 600_000;
+    const n = Number.parseInt(s, 10);
+    return Number.isFinite(n) ? Math.min(3_600_000, Math.max(60_000, n)) : 600_000;
+  })();
 
   const parsed = LiveOscarConfigSchema.safeParse({
     strategyEnabled: envBool(process.env.LIVE_STRATEGY_ENABLED, false),
@@ -909,6 +917,8 @@ export function loadLiveOscarConfig(): LiveOscarConfig {
     liveSimSlippageRetryMaxBps: process.env.LIVE_SIM_SLIPPAGE_RETRY_MAX_BPS,
     liveBuyMaxPriceImpactPct: process.env.LIVE_BUY_MAX_PRICE_IMPACT_PCT,
     liveSellMaxPriceImpactPct: process.env.LIVE_SELL_MAX_PRICE_IMPACT_PCT,
+    liveExitRouteProbeEnabled: envBool(process.env.LIVE_EXIT_ROUTE_PROBE_ENABLED, true),
+    liveExitRouteMissingTtlMs: exitRouteMissingTtlMs,
     liveExitSliceMaxUsd: process.env.LIVE_EXIT_SLICE_MAX_USD,
     liveExitSliceDelayMs: process.env.LIVE_EXIT_SLICE_DELAY_MS,
     liveExitSliceBypassBelowUsd: process.env.LIVE_EXIT_SLICE_BYPASS_BELOW_USD,
