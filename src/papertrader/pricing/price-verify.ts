@@ -159,7 +159,9 @@ async function jupiterQuoteBuyPriceUsdOnce(args: JupiterQuoteBuyOnceArgs): Promi
       log.debug({ mint, elapsed }, 'jupiter quote timeout (impulse)');
       return { kind: 'skipped', reason: 'timeout', ts };
     }
-    if (fetched.status === 400 || fetched.status === 404) {
+    if (
+      fetched.errorCode?.trim().toUpperCase() === 'NO_ROUTES_FOUND'
+    ) {
       return { kind: 'skipped', reason: 'no-route', ts };
     }
     log.debug(

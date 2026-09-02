@@ -5199,6 +5199,14 @@ if (mildDipBotApp) {
       // Откат: LIVE_EXIT_ROUTE_PROBE_ENABLED: '0'.
       LIVE_EXIT_ROUTE_PROBE_ENABLED: '1',
       LIVE_EXIT_ROUTE_MISSING_TTL_MS: '600000',
+      // Списание непродаваемых мешков и dust-burn включены; откат: оба флага = '0'.
+      MILD_DIP_UNROUTABLE_WRITEOFF_ENABLED: '1',
+      MILD_DIP_UNROUTABLE_WRITEOFF_MIN_CHECKS: '3',
+      MILD_DIP_UNROUTABLE_WRITEOFF_MIN_AGE_MS: '1800000',
+      MILD_DIP_UNROUTABLE_WRITEOFF_MAX_PER_PASS: '3',
+      MILD_DIP_UNROUTABLE_WRITEOFF_INTERVAL_MS: '600000',
+      MILD_DIP_DUST_BURN_ENABLED: '1',
+      MILD_DIP_DUST_BURN_MIN_AGE_MS: '1800000',
       MILD_DIP_GREEN_ENABLED: '1',
       // По решению пользователя снимаем leader-seen для own2; откат к leader-only: все три ключа = '1'.
       MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
