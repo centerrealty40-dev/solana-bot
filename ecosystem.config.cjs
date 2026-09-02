@@ -5310,9 +5310,15 @@ if (mildDipBotApp) {
       MILD_DIP_GREEN_NO_MOVE_CUT_MS: '2400000',
       MILD_DIP_REQUIRE_LEADER_SEEN: '1',
       MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
-      // own2 торгует только лидерские минты, поэтому пол возраста для
-      // не-лидерских снят; откат: '1'.
+      // own2 торгует только лидерские минты, поэтому полы возраста пары сняты;
+      // откат: NO_LEADER='1', GREEN='1', LEADER_SEEN='1', ENTRY='0.25',
+      // MIN='6', THICK='6'.
       MILD_DIP_MIN_PAIR_AGE_HOURS_NO_LEADER: '0',
+      MILD_DIP_GREEN_MIN_PAIR_AGE_HOURS: '0',
+      MILD_DIP_MIN_PAIR_AGE_HOURS_LEADER_SEEN: '0',
+      MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '0',
+      MILD_DIP_MIN_PAIR_AGE_HOURS: '0',
+      MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '0',
       MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
       MILD_DIP_LEADER_SEED_MAX: '250',
       MILD_DIP_LEADER_SEED_MAX_AGE_MS: '21600000',
