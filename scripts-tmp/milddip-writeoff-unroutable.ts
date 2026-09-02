@@ -72,8 +72,12 @@ for (const row of rows) {
   });
   const valueUsd =
     probe.first.kind === 'ok' ? probe.first.jupiterPriceUsd * tokenAmount : null;
+  const valueLabel =
+    probe.first.kind === 'skipped' && probe.first.reason === 'no-value'
+      ? '0 (no-value)'
+      : valueUsd ?? 'n/a';
   console.log(
-    `${row.mint} status=${probe.status} valueUsd=${valueUsd ?? 'n/a'} tokenRaw=${row.amountRaw}`,
+    `${row.mint} status=${probe.status} valueUsd=${valueLabel} tokenRaw=${row.amountRaw}`,
   );
   if (
     (probe.status !== 'unroutable' && probe.status !== 'worthless') ||
