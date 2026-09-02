@@ -48,6 +48,7 @@ const baseState = (mint = 'Mint111111111111111111111111111111111111111') =>
   }) as MildDipState;
 
 const noRoute = () => ({ kind: 'skipped' as const, reason: 'no-route' as const, ts: 1 });
+const noValue = () => ({ kind: 'skipped' as const, reason: 'no-value' as const, ts: 1 });
 const routable = () => ({
   kind: 'ok' as const,
   jupiterPriceUsd: 1,
@@ -261,6 +262,57 @@ describe('unroutable writeoff', () => {
     expect(readFileSync('/tmp/unroutable-writeoff-journal.jsonl', 'utf8')).toContain(
       '"mode":"worthless"',
     );
+  });
+
+  it('writes off after two no-value verdicts when the value criterion is enabled', async () => {
+    rmSync('/tmp/unroutable-writeoff-trades.jsonl', { force: true });
+    const state = baseState();
+    const result = await writeOffUnroutableBags({
+      cfg: baseCfg({
+        worthlessWriteoffMaxUsd: 0.1,
+        unroutableWriteoffMinChecks: 1,
+        unroutableWriteoffMinAgeMs: 0,
+      }),
+      state,
+      nowMs: 2_000_000,
+      deps: deps([noValue(), noValue()]),
+    });
+    expect(result.wroteOff).toBe(1);
+    expect(readFileSync('/tmp/unroutable-writeoff-trades.jsonl', 'utf8')).toContain(
+      'worthless_writeoff',
+    );
+  });
+
+  it('does not write off no-value when the value criterion is disabled', async () => {
+    const state = baseState();
+    const result = await writeOffUnroutableBags({
+      cfg: baseCfg({ worthlessWriteoffMaxUsd: 0 }),
+      state,
+      nowMs: 2_000_000,
+      deps: deps([noValue(), noValue()]),
+    });
+    expect(result.wroteOff).toBe(0);
+    expect(state.open).toHaveProperty(Object.keys(state.open)[0]!);
+  });
+
+  it('does not confirm no-value when the second probe is an error', async () => {
+    const state = baseState();
+    let calls = 0;
+    const result = await writeOffUnroutableBags({
+      cfg: baseCfg({ worthlessWriteoffMaxUsd: 0.1 }),
+      state,
+      nowMs: 2_000_000,
+      deps: {
+        sleep: async () => {},
+        quote: async () => {
+          calls += 1;
+          return calls === 1
+            ? noValue()
+            : { kind: 'skipped' as const, reason: 'http-error' as const, ts: 2 };
+        },
+      },
+    });
+    expect(result.wroteOff).toBe(0);
   });
 
   it('clears worthless observations above the configured value threshold', async () => {

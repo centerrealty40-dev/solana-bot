@@ -230,6 +230,27 @@ const quoteResilience = (): QuoteResilience => ({
 });
 
 describe('jupiterQuoteBuyPriceUsd', () => {
+  it('maps provider no-value errors to the no-value verdict', async () => {
+    mockJupiter(
+      {
+        error: 'Cannot compute other amount threshold',
+        errorCode: 'CANNOT_COMPUTE_OTHER_AMOUNT_THRESHOLD',
+      },
+      400,
+    );
+    const v = await jupiterQuoteBuyPriceUsd({
+      mint: mintFoo,
+      outMintDecimals: 6,
+      sizeUsd: 50,
+      solUsd: 160,
+      snapshotPriceUsd: 0.0001,
+      slippageBps: 400,
+      timeoutMs: 1500,
+      resilience: quoteResilience(),
+    });
+    expect(v).toEqual(expect.objectContaining({ kind: 'skipped', reason: 'no-value' }));
+  });
+
   it('maps HTTP 400 to no-route without tripping circuit', async () => {
     mockJupiter({ error: 'No routes found', errorCode: 'NO_ROUTES_FOUND' }, 400);
     const v = await jupiterQuoteBuyPriceUsd({

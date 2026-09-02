@@ -159,6 +159,9 @@ async function jupiterQuoteBuyPriceUsdOnce(args: JupiterQuoteBuyOnceArgs): Promi
       log.debug({ mint, elapsed }, 'jupiter quote timeout (impulse)');
       return { kind: 'skipped', reason: 'timeout', ts };
     }
+    if (fetched.errorCode?.trim().toUpperCase() === 'CANNOT_COMPUTE_OTHER_AMOUNT_THRESHOLD') {
+      return { kind: 'skipped', reason: 'no-value', ts };
+    }
     if (
       fetched.errorCode?.trim().toUpperCase() === 'NO_ROUTES_FOUND' ||
       fetched.errorCode?.trim().toUpperCase() === 'COULD_NOT_FIND_ANY_ROUTE' ||
@@ -296,6 +299,9 @@ async function jupiterQuoteSellPriceUsdOnce(args: JupiterQuoteSellOnceArgs): Pro
     if (fetched.aborted) {
       log.debug({ mint, elapsed }, 'jupiter sell quote timeout');
       return { kind: 'skipped', reason: 'timeout', ts };
+    }
+    if (fetched.errorCode?.trim().toUpperCase() === 'CANNOT_COMPUTE_OTHER_AMOUNT_THRESHOLD') {
+      return { kind: 'skipped', reason: 'no-value', ts };
     }
     if (
       fetched.errorCode?.trim().toUpperCase() === 'NO_ROUTES_FOUND' ||

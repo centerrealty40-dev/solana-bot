@@ -13,6 +13,10 @@ function isNoRoute(value: PriceVerifyVerdict): boolean {
   );
 }
 
+function isNoValue(value: PriceVerifyVerdict): boolean {
+  return value.kind === 'skipped' && value.reason === 'no-value';
+}
+
 export async function confirmUnroutableRoute(args: {
   quote: () => Promise<PriceVerifyVerdict>;
   sleep: (ms: number) => Promise<void>;
@@ -24,6 +28,18 @@ export async function confirmUnroutableRoute(args: {
     await args.sleep(args.gapMs ?? 2_000);
     const confirmation = await args.quote();
     if (isNoRoute(confirmation)) return { status: 'unroutable', first };
+    return { status: 'unknown', first };
+  }
+  if (isNoValue(first)) {
+    if (!args.isWorthless) return { status: 'unknown', first };
+    await args.sleep(args.gapMs ?? 2_000);
+    const confirmation = await args.quote();
+    if (
+      isNoValue(confirmation) ||
+      (confirmation.kind === 'ok' && args.isWorthless(confirmation))
+    ) {
+      return { status: 'worthless', first };
+    }
     return { status: 'unknown', first };
   }
   if (first.kind === 'ok') {
