@@ -5214,8 +5214,9 @@ if (mildDipBotApp) {
       MILD_DIP_DUST_BURN_ENABLED: '1',
       MILD_DIP_DUST_BURN_MIN_AGE_MS: '1800000',
       MILD_DIP_GREEN_ENABLED: '1',
-      // По решению пользователя снимаем leader-seen для own2; откат к leader-only: все три ключа = '1'.
-      MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
+      // По решению пользователя own2 покупает только минты, которые когда-либо брали лидеры;
+      // откат к открытому универсу: все три ключа = '0'.
+      MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '1',
       MILD_DIP_GREEN_TAPE_MIN_RECENT_SAMPLES: '2',
       MILD_DIP_GREEN_TAPE_LATEST_MAX_AGE_MS: '20000',
       MILD_DIP_GREEN_TAPE_BOUNDARY_MIN_AGE_MS: '45000',
@@ -5307,8 +5308,8 @@ if (mildDipBotApp) {
       // GREEN exit: arm +2%, trail 4%, no-move cut at 40m,
       // catastrophic stop −45%, max hold 60m.
       MILD_DIP_GREEN_NO_MOVE_CUT_MS: '2400000',
-      MILD_DIP_REQUIRE_LEADER_SEEN: '0',
-      MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '0',
+      MILD_DIP_REQUIRE_LEADER_SEEN: '1',
+      MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
       MILD_DIP_MIN_PAIR_AGE_HOURS_NO_LEADER: '1',
       MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
       MILD_DIP_LEADER_SEED_MAX: '250',
