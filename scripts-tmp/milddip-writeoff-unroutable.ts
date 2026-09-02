@@ -30,7 +30,18 @@ const state = loadMildDipState(cfg.statePath);
 const owner = cfg.walletPubkeyExpected?.trim();
 if (!owner || !cfg.walletSecret?.trim()) throw new Error('own2 wallet configuration is missing');
 
-const rows = await listOrphanTokenAccounts({ rpcUrl: cfg.rpcUrl, owner });
+const PROTECT_MINTS = [
+  'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',
+  'Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB',
+  '2u1tszSeqZ3qBWF3uNGPFc8TzMk2tdiwknnRMWGWjGWH',
+  'So11111111111111111111111111111111111111112',
+];
+
+const rows = await listOrphanTokenAccounts({
+  rpcUrl: cfg.rpcUrl,
+  owner,
+  protectMints: PROTECT_MINTS,
+});
 const connection = new Connection(cfg.rpcUrl, 'confirmed');
 const signer = loadLiveKeypairFromSecretEnv(cfg.walletSecret);
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
