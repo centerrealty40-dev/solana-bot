@@ -1,11 +1,18 @@
 import { Connection } from '@solana/web3.js';
 import 'dotenv/config';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import { loadLiveKeypairFromSecretEnv } from '../src/live/wallet.js';
 import { getSolUsd } from '../src/papertrader/pricing.js';
 import { jupiterQuoteSellPriceUsd } from '../src/papertrader/pricing/price-verify.js';
 import { loadMildDipConfig } from '../src/milddip/config.js';
-import { loadMildDipState, saveMildDipState, appendMildDipJournal } from '../src/milddip/state.js';
+import {
+  emptyMildDipState,
+  loadMildDipState,
+  saveMildDipState,
+  appendMildDipJournal,
+  type MildDipState,
+} from '../src/milddip/state.js';
 import { listOrphanTokenAccounts, burnAndCloseOne } from '../src/milddip/orphan-janitor.js';
 import { confirmUnroutableRoute } from '../src/milddip/unroutable-route.js';
 import { writeUsSellFill } from '../src/milddip/trade-journal.js';
@@ -26,7 +33,18 @@ for (const [key, value] of Object.entries(own2.env)) {
 
 const commit = process.argv.includes('--commit');
 const cfg = loadMildDipConfig();
-const state = loadMildDipState(cfg.statePath);
+let state: MildDipState;
+try {
+  JSON.parse(readFileSync(cfg.statePath, 'utf8'));
+  state = loadMildDipState(cfg.statePath);
+} catch (error) {
+  const detail = error instanceof Error ? error.message : String(error);
+  const message = `unable to read own2 state at ${cfg.statePath}: ${detail}`;
+  if (commit) throw new Error(`${message}; refusing destructive cleanup`);
+  console.warn(`[mild-dip] WARNING: ${message}; continuing dry-run without managed positions`);
+  state = emptyMildDipState();
+}
+const managedMints = new Set(Object.keys(state.open));
 const owner = cfg.walletPubkeyExpected?.trim();
 if (!owner || !cfg.walletSecret?.trim()) throw new Error('own2 wallet configuration is missing');
 
@@ -50,6 +68,12 @@ const worthlessMaxUsd =
   cfg.worthlessWriteoffMaxUsd > 0 ? cfg.worthlessWriteoffMaxUsd : 0.05;
 
 for (const row of rows) {
+  if (managedMints.has(row.mint)) {
+    console.log(
+      `${row.mint} status=managed valueUsd=n/a tokenRaw=${row.amountRaw} skipped=managed_by_bot`,
+    );
+    continue;
+  }
   const solUsd = getSolUsd();
   const tokenAmount = Number(row.amountRaw) / Math.pow(10, Math.max(0, row.decimals));
   const probe = await confirmUnroutableRoute({
