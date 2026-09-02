@@ -454,6 +454,77 @@ describe('evaluateGreenLane', () => {
     expect(v.reasons).toContain('green_impulse');
   });
 
+  it('rejects an impulse after the configured prior-tape cap', () => {
+    const impulseGates: GreenLaneGates = {
+      ...gates,
+      tapeMinuteGatesEnabled: true,
+      maxTapeRet1mPct: 20,
+      maxTapePrior5mPct: 80,
+      maxBounceFromTroughPct: 12,
+      impulseEnabled: true,
+      impulseMinTapeRet1mPct: 8,
+      impulseMaxTapePrior5mPct: 80,
+      impulseMinTurnover5mLiq: 0.8,
+      impulseMinVolume5mUsd: 15_000,
+    };
+    const v = evaluateGreenLane(
+      { ...ok, volume5mUsd: 20_000, tapeRet1mPct: 10, tapePrior5mPct: 1882 },
+      impulseGates,
+    );
+    expect(v.pass).toBe(false);
+    expect(v.impulse).toBe(false);
+  });
+
+  it('allows an impulse within the configured prior-tape cap', () => {
+    const v = evaluateGreenLane(
+      { ...ok, volume5mUsd: 20_000, tapeRet1mPct: 10, tapePrior5mPct: 50 },
+      {
+        ...gates,
+        tapeMinuteGatesEnabled: true,
+        maxTapePrior5mPct: 1000,
+        impulseEnabled: true,
+        impulseMinTapeRet1mPct: 8,
+        impulseMaxTapePrior5mPct: 80,
+        impulseMinTurnover5mLiq: 0.8,
+        impulseMinVolume5mUsd: 15_000,
+      },
+    );
+    expect(v.pass).toBe(true);
+    expect(v.impulse).toBe(true);
+  });
+
+  it('keeps the impulse prior-tape cap disabled at zero', () => {
+    const v = evaluateGreenLane(
+      { ...ok, volume5mUsd: 20_000, tapeRet1mPct: 10, tapePrior5mPct: 1882 },
+      {
+        ...gates,
+        tapeMinuteGatesEnabled: true,
+        maxTapePrior5mPct: 2000,
+        impulseEnabled: true,
+        impulseMinTapeRet1mPct: 8,
+        impulseMaxTapePrior5mPct: 0,
+        impulseMinTurnover5mLiq: 0.8,
+        impulseMinVolume5mUsd: 15_000,
+      },
+    );
+    expect(v.impulse).toBe(true);
+  });
+
+  it('fails closed when impulse prior tape is missing', () => {
+    const v = evaluateGreenLane(
+      { ...ok, volume5mUsd: 20_000, tapeRet1mPct: 10, tapePrior5mPct: null },
+      {
+        ...gates,
+        tapeMinuteGatesEnabled: true,
+        impulseEnabled: true,
+        impulseMaxTapePrior5mPct: 80,
+        impulseMinTurnover5mLiq: 0.8,
+        impulseMinVolume5mUsd: 15_000,
+      },
+    );
+    expect(v.impulse).toBe(false);
+  });
+
   it('keeps impulse risk floors mandatory', () => {
     const impulseGates: GreenLaneGates = {
       ...gates,

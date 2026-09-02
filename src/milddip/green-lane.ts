@@ -62,6 +62,7 @@ export type GreenLaneGates = {
   impulseEnabled?: boolean;
   impulseMinTapeRet1mPct?: number;
   impulseMinTapePrior5mPct?: number;
+  impulseMaxTapePrior5mPct?: number;
   impulseMinTurnover5mLiq?: number;
   impulseMinVolume5mUsd?: number;
   /** Keep the historical fail-closed behavior for missing 1h change by default. */
@@ -184,6 +185,8 @@ export function evaluateGreenLane(
     vol5m != null &&
     tapeRet1m >= (gates.impulseMinTapeRet1mPct ?? 8) &&
     tapePrior5m >= (gates.impulseMinTapePrior5mPct ?? 0) &&
+    (!(gates.impulseMaxTapePrior5mPct ?? 0) ||
+      tapePrior5m <= (gates.impulseMaxTapePrior5mPct ?? 0)) &&
     turnover >= (gates.impulseMinTurnover5mLiq ?? 0.8) &&
     vol5m >= (gates.impulseMinVolume5mUsd ?? 15_000);
 

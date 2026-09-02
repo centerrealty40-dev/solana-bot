@@ -574,6 +574,7 @@ describe('mild-dip config exit schema', () => {
         MILD_DIP_GREEN_RUNNER_MAX_TAPE_RET1M_PCT: '40',
         MILD_DIP_GREEN_RUNNER_MAX_TAPE_PRIOR5M_PCT: '30',
         MILD_DIP_GREEN_RUNNER_ENTRY_MAX_VOL5M_TO_LIQ: '4',
+        MILD_DIP_GREEN_IMPULSE_MAX_TAPE_PRIOR5M_PCT: '80',
       },
       () => loadMildDipConfig(),
     );
@@ -587,6 +588,7 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.green.runnerMaxTapeRet1mPct).toBe(40);
     expect(cfg.green.runnerMaxTapePrior5mPct).toBe(30);
     expect(cfg.green.runnerEntryMaxVol5mToLiq).toBe(4);
+    expect(cfg.green.impulseMaxTapePrior5mPct).toBe(80);
 
     const defaults = withConfigEnv({ ...baseEnv }, () => loadMildDipConfig());
     expect(defaults.green.runnerEntryMaxVol5mToLiq).toBe(0);
