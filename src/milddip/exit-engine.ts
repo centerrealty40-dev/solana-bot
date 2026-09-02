@@ -234,6 +234,10 @@ export function decideMarkExit(args: {
   liquidityDrainConfirmTicks?: number | null;
   /** Timestamp of the current open-mark metrics sample. */
   liquidityMetricsTsMs?: number | null;
+  /** Confirmed missing/near-zero liquidity series. */
+  liquidityDeadObserved?: boolean;
+  /** Timestamp of the latest dead-liquidity observation. */
+  liquidityDeadTsMs?: number | null;
   /** 1.11.919 — how long a refused mark may stand before we accept it. */
   markJumpConfirmMaxMs?: number;
   /** 1.11.959 — green armed quarantine blind window; 0 = off. */
@@ -804,6 +808,8 @@ export function decideMarkExit(args: {
     liquidityUsd: args.liquidityUsd ?? null,
     liquidityMetricsFresh: args.liquidityMetricsFresh === true,
     liquidityMetricsTsMs: args.liquidityMetricsTsMs ?? null,
+    liquidityDeadObserved: args.liquidityDeadObserved === true,
+    liquidityDeadTsMs: args.liquidityDeadTsMs ?? null,
     entryLiquidityUsd: pos.entryLiquidityUsd ?? null,
     liquidityDrainConfirmTicks: pos.liquidityDrainConfirmTicks ?? 0,
     liquidityDrainSampleTsMs: pos.liquidityDrainSampleTsMs ?? null,

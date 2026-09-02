@@ -1566,6 +1566,121 @@ describe('evaluateMildDipPeakGiveback (W9.1)', () => {
     expect(decision.reason).toBe('liq_drain');
   });
 
+  it('triggers on raw liquidity ratio even when depth ratio is buffered by price', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      liqDrainRatio: 0,
+      liqDrainMaxLiqRatio: 0.5,
+      liqDrainMinAgeMs: 0,
+      liqDrainConfirmTicks: 2,
+      hardStopPnlPct: 0,
+      partialGivebackPct: 0,
+      givebackPct: 100,
+    };
+    const first = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 90,
+      peakPriceUsd: 90,
+      armed: true,
+      gates,
+      heldMs: 1_000,
+      liquidityUsd: 100_000,
+      entryLiquidityUsd: 300_000,
+      liquidityMetricsFresh: true,
+      liquidityMetricsTsMs: 1_000,
+      liquidityDrainConfirmTicks: 0,
+    });
+    expect(first.shouldExit).toBe(false);
+    const second = evaluateMildDipPeakGiveback({
+      entryPriceUsd: 100,
+      markPriceUsd: 90,
+      peakPriceUsd: 90,
+      armed: true,
+      gates,
+      heldMs: 1_000,
+      liquidityUsd: 100_000,
+      entryLiquidityUsd: 300_000,
+      liquidityMetricsFresh: true,
+      liquidityMetricsTsMs: 2_000,
+      liquidityDrainConfirmTicks: first.liquidityDrainConfirmTicks,
+      liquidityDrainSampleTsMs: first.liquidityDrainSampleTsMs,
+    });
+    expect(second.shouldExit).toBe(true);
+    expect(second.reason).toBe('liq_drain');
+  });
+
+  it('does not count the same liquidity sample twice', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      liqDrainRatio: 0,
+      liqDrainMaxLiqRatio: 0.5,
+      liqDrainMinAgeMs: 0,
+      liqDrainConfirmTicks: 2,
+      hardStopPnlPct: 0,
+      partialGivebackPct: 0,
+      givebackPct: 100,
+    };
+    const args = {
+      entryPriceUsd: 100,
+      markPriceUsd: 90,
+      peakPriceUsd: 90,
+      armed: true,
+      gates,
+      heldMs: 1_000,
+      liquidityUsd: 100_000,
+      entryLiquidityUsd: 300_000,
+      liquidityMetricsFresh: true,
+      liquidityMetricsTsMs: 1_000,
+    };
+    const first = evaluateMildDipPeakGiveback({ ...args, liquidityDrainConfirmTicks: 0 });
+    const second = evaluateMildDipPeakGiveback({
+      ...args,
+      liquidityDrainConfirmTicks: first.liquidityDrainConfirmTicks,
+      liquidityDrainSampleTsMs: first.liquidityDrainSampleTsMs,
+    });
+    expect(second.shouldExit).toBe(false);
+    expect(second.liquidityDrainConfirmTicks).toBe(1);
+  });
+
+  it('confirms dead liquidity outside numeric-liquidity freshness checks', () => {
+    const gates: MildDipExitGates = {
+      ...exitGates,
+      liqDrainRatio: 0,
+      liqDrainMaxLiqRatio: 0,
+      liqAbsFloorUsd: 0,
+      liqDrainMinAgeMs: 0,
+      liqDrainConfirmTicks: 2,
+      hardStopPnlPct: 0,
+      partialGivebackPct: 0,
+      givebackPct: 100,
+    };
+    const base = {
+      entryPriceUsd: 100,
+      markPriceUsd: 90,
+      peakPriceUsd: 90,
+      armed: true,
+      gates,
+      heldMs: 1_000,
+      liquidityUsd: null,
+      liquidityMetricsFresh: false,
+      liquidityDeadObserved: true,
+      liquidityDeadTsMs: 2_000,
+    };
+    const first = evaluateMildDipPeakGiveback({
+      ...base,
+      liquidityDrainConfirmTicks: 0,
+    });
+    expect(first.shouldExit).toBe(false);
+    const second = evaluateMildDipPeakGiveback({
+      ...base,
+      liquidityDeadTsMs: 3_000,
+      liquidityDrainConfirmTicks: first.liquidityDrainConfirmTicks,
+      liquidityDrainSampleTsMs: first.liquidityDrainSampleTsMs,
+    });
+    expect(second.shouldExit).toBe(true);
+    expect(second.reason).toBe('liq_drain');
+  });
+
   it('does not mark a cap when the legacy bounce already allows the exit', () => {
     const decision = decideSoftLossExit({
       gates: {

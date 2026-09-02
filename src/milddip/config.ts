@@ -1074,6 +1074,7 @@ const MildDipConfigSchema = z.object({
     minMarketCapUsd: z.number(),
     maxMarketCapUsd: z.number(),
     minPairAgeHours: z.number(),
+    minPairAgeHoursNoLeader: z.number().min(0).max(8760).default(0),
     /**
      * 1.11.905 — the age floor for a name a leader is buying. 0 = no exception.
      * Only ever lowers the floor, never raises it.
@@ -1119,10 +1120,13 @@ const MildDipConfigSchema = z.object({
     lossFillMaxSlipPct: z.coerce.number().min(0).max(100).default(0),
     /** 1.11.969 — liquidity-drain exit; 0 = off. */
     liqDrainRatio: z.coerce.number().min(0).max(10).default(0.7),
+    liqDrainMaxLiqRatio: z.coerce.number().min(0).max(1).default(0),
     liqDrainMinAgeMs: z.coerce.number().int().min(0).max(86_400_000).default(600_000),
     liqDrainConfirmTicks: z.coerce.number().int().min(0).max(48).default(2),
     liqDrainSkipArmedRunner: z.boolean().default(true),
     liqAbsFloorUsd: z.coerce.number().min(0).max(10_000_000).default(0),
+    liquidityDeadMaxUsd: z.coerce.number().min(0).max(10_000_000).default(0),
+    liquidityDeadConfirmMs: z.coerce.number().int().min(0).max(86_400_000).default(30_000),
     /** 1.11.959 — green armed quarantine blind window; 0 = off. */
     markQuarantineGreenMaxMs: z.coerce.number().int().min(0).max(120_000).default(0),
     /** 1.11.910 — the dead-set exit: volume, turnover and price all gone. */
@@ -1384,6 +1388,7 @@ export function loadMildDipConfig(): MildDipConfig {
     maxMarketCapUsd: envNum('MILD_DIP_MAX_MCAP_USD', 300_000_000),
     /** 1.11.724 — floor 30m (was 15m). Youngest bucket had worst cliffs. */
     minPairAgeHours: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS', 0.5),
+    minPairAgeHoursNoLeader: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS_NO_LEADER', 0),
     minPairAgeHoursLeaderSeen: envNum('MILD_DIP_MIN_PAIR_AGE_HOURS_LEADER_SEEN', 0),
     /** 0 = no max age cap (older pump names like CATE still eligible). */
     maxPairAgeHours: envNum('MILD_DIP_MAX_PAIR_AGE_HOURS', 0),
@@ -1433,10 +1438,13 @@ export function loadMildDipConfig(): MildDipConfig {
     profitFillMaxSlipPct: envNum('MILD_DIP_EXIT_PROFIT_FILL_MAX_SLIP_PCT', 0),
     lossFillMaxSlipPct: envNum('MILD_DIP_EXIT_LOSS_FILL_MAX_SLIP_PCT', 0),
     liqDrainRatio: envNum('MILD_DIP_EXIT_LIQ_DRAIN_RATIO', 0.7),
+    liqDrainMaxLiqRatio: envNum('MILD_DIP_EXIT_LIQ_RATIO_MAX', 0),
     liqDrainMinAgeMs: envNum('MILD_DIP_EXIT_LIQ_DRAIN_MIN_AGE_MIN', 10) * 60_000,
     liqDrainConfirmTicks: envNum('MILD_DIP_EXIT_LIQ_DRAIN_CONFIRM_TICKS', 2),
     liqDrainSkipArmedRunner: envBool('MILD_DIP_EXIT_LIQ_DRAIN_SKIP_ARMED_RUNNER', true),
     liqAbsFloorUsd: envNum('MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD', 0),
+    liquidityDeadMaxUsd: envNum('MILD_DIP_EXIT_LIQ_DEAD_MAX_USD', 0),
+    liquidityDeadConfirmMs: envNum('MILD_DIP_EXIT_LIQ_DEAD_CONFIRM_MS', 30_000),
     markQuarantineGreenMaxMs: envNum('MILD_DIP_EXIT_MARK_QUARANTINE_GREEN_MAX_MS', 0),
     deadSetVolFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_VOL_FADE_FRAC', 0),
     deadSetTurnFadeFrac: envNum('MILD_DIP_EXIT_DEAD_SET_TURN_FADE_FRAC', 0),

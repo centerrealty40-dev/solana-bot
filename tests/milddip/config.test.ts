@@ -681,10 +681,14 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.exit.liqAbsFloorUsd).toBe(0);
     const eco = readFileSync(new URL('../../ecosystem.config.cjs', import.meta.url), 'utf8');
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_RATIO: '0'");
-    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_MIN_AGE_MIN: '10'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_MIN_AGE_MIN: '0'");
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_CONFIRM_TICKS: '2'");
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_DRAIN_SKIP_ARMED_RUNNER: '1'");
     expect(eco).toContain("MILD_DIP_EXIT_LIQ_ABS_FLOOR_USD: '4000'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_RATIO_MAX: '0.5'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DEAD_MAX_USD: '1000'");
+    expect(eco).toContain("MILD_DIP_EXIT_LIQ_DEAD_CONFIRM_MS: '30000'");
+    expect(eco).toContain("MILD_DIP_MIN_PAIR_AGE_HOURS_NO_LEADER: '1'");
   });
 
   it('loads quarantine refresh and green blind-window settings', () => {

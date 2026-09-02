@@ -33,6 +33,7 @@ function stubCfg(minMcap = 50_000): MildDipConfig {
       minMarketCapUsd: minMcap,
       maxMarketCapUsd: 300_000_000,
       minPairAgeHours: 0.5,
+      minPairAgeHoursLeaderSeen: 0,
       maxPairAgeHours: 0,
       allowedDexIds: ['pumpswap', 'pumpfun', 'raydium'],
     },
@@ -508,5 +509,13 @@ describe('fast-path helpers', () => {
     }); // turn ~0.67 > 0.25 max
     expect(structuralOk(hotTurn, cfg, false, false, false)).toBe(false);
     expect(structuralOk(hotTurn, cfg, false, false, true)).toBe(true);
+  });
+
+  it('enforces the no-leader pair-age floor without changing leader-seen behavior', () => {
+    const cfg = stubCfg();
+    (cfg.entry as { minPairAgeHoursNoLeader: number }).minPairAgeHoursNoLeader = 1;
+    expect(structuralOk(stubMetrics({ pairAgeHours: 0.9 }), cfg, false)).toBe(false);
+    expect(structuralOk(stubMetrics({ pairAgeHours: 1.2 }), cfg, false)).toBe(true);
+    expect(structuralOk(stubMetrics({ pairAgeHours: 0.9 }), cfg, true)).toBe(true);
   });
 });
