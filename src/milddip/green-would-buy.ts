@@ -67,6 +67,7 @@ export function greenLaneGatesFrom(
     impulseEnabled: green.impulseEnabled,
     impulseMinTapeRet1mPct: green.impulseMinTapeRet1mPct,
     impulseMinTapePrior5mPct: green.impulseMinTapePrior5mPct,
+    impulseMaxTapePrior5mPct: green.impulseMaxTapePrior5mPct,
     impulseMinTurnover5mLiq: green.impulseMinTurnover5mLiq,
     impulseMinVolume5mUsd: green.impulseMinVolume5mUsd,
   };

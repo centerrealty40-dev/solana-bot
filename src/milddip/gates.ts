@@ -10,6 +10,13 @@
  */
 import { computeMarkLiquidityTelemetry } from './open-mark-metrics.js';
 
+export function leaderActiveMayBypassRebuyBelowExit(args: {
+  leaderActive: boolean;
+  lastExitPnlPct: number | null | undefined;
+}): boolean {
+  return args.leaderActive && !(args.lastExitPnlPct != null && args.lastExitPnlPct < 0);
+}
+
 export type MildDipCandidateMetrics = {
   priceChange5mPct: number | null;
   volume5mUsd: number | null;

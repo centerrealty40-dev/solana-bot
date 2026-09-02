@@ -33,6 +33,7 @@ import {
   evaluateOwnEntryShapeGate,
   evaluateRebuyBelowExit,
   evaluateRebuyLiquidityDrop,
+  leaderActiveMayBypassRebuyBelowExit,
   mildDipFirstTouchCapUsd,
   mildDipMirrorLeaderSizeUsd,
   mildDipLeaderMirrorEntryClipUsd,
@@ -1313,6 +1314,7 @@ export async function attemptMildDipEntry(args: {
   // Always on (incl. fast-path): do not rebuy near last exit USD price.
   if (shouldApplyDipReentryGuards(isLeaderStyle, isMirror) && cfg.rebuyBelowExitPct > 0) {
     const last = state.lastExitByMint?.[c.mint];
+    const lastExitWasLoss = last?.pnlPct != null && last.pnlPct < 0;
     const markPx = freshPx ?? entryPriceUsd;
     const rebuy = evaluateRebuyBelowExit({
       freshPriceUsd: markPx,
@@ -1322,7 +1324,10 @@ export async function attemptMildDipEntry(args: {
       minBelowExitPct: cfg.rebuyBelowExitPct,
       maxAgeMs: cfg.rebuyBelowExitMaxAgeMs,
     });
-    if (!rebuy.pass && leaderActive) {
+    if (!rebuy.pass && leaderActiveMayBypassRebuyBelowExit({
+      leaderActive,
+      lastExitPnlPct: last?.pnlPct,
+    })) {
       journalLeaderReentryBypass('rebuy_below_exit');
     } else if (!rebuy.pass) {
       appendMildDipJournal(cfg.journalPath, {
@@ -1333,6 +1338,7 @@ export async function attemptMildDipEntry(args: {
         freshPriceUsd: markPx,
         lastExitPriceUsd: last?.priceUsd ?? null,
         lastExitAtMs: last?.atMs ?? null,
+        leaderActive,
         reasons: rebuy.reasons,
       });
       /**
@@ -1348,7 +1354,6 @@ export async function attemptMildDipEntry(args: {
        * losing exit there is nothing left to price: we just held that tape and
        * it answered. Blocks after a profitable or stale exit still get probed.
        */
-      const lastExitWasLoss = last?.pnlPct != null && last.pnlPct < 0;
       if (!lastExitWasLoss && takeProbeSlot(cfg, nowMs)) {
         probeReason = 'rebuy_below_exit';
         appendMildDipJournal(cfg.journalPath, {
