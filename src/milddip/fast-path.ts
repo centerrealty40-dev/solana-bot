@@ -532,9 +532,11 @@ export function structuralOk(
 ): boolean {
   const g = cfg.entry;
   const minAge =
-    leaderSeen && g.minPairAgeHoursLeaderSeen > 0
-      ? Math.min(g.minPairAgeHoursLeaderSeen, g.minPairAgeHours)
-      : g.minPairAgeHours;
+    leaderSeen
+      ? g.minPairAgeHoursLeaderSeen > 0
+        ? Math.min(g.minPairAgeHoursLeaderSeen, g.minPairAgeHours)
+        : g.minPairAgeHours
+      : Math.max(g.minPairAgeHours, g.minPairAgeHoursNoLeader ?? 0);
   /**
    * Turnover/vol ceilings relax on fresh leader co-buy OR on our own hot-blade
    * signal (dump≥30 & turn≥0.3). The latter is how we compete on the same

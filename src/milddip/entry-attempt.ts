@@ -1133,8 +1133,14 @@ export async function attemptMildDipEntry(args: {
     defaultMinPairAgeHours: isLeaderStyle
       ? 0
       : isGreen
-        ? greenEntryRiskFloors.minPairAgeHours
-        : cfg.entryMinPairAgeHours,
+        ? Math.max(
+            greenEntryRiskFloors.minPairAgeHours,
+            leaderSeenAtMs == null ? cfg.entry.minPairAgeHoursNoLeader : 0,
+          )
+        : Math.max(
+            cfg.entryMinPairAgeHours,
+            leaderSeenAtMs == null ? cfg.entry.minPairAgeHoursNoLeader : 0,
+          ),
     defaultMinLiquidityUsd: isLeaderStyle
       ? 0
       : isGreen

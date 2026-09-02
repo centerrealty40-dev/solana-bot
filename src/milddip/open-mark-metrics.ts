@@ -9,6 +9,8 @@ export type MildDipOpenMarkMetrics = {
   volume5mUsd: number | null;
   /** 1.11.797 — pool liquidity at last Dex refresh (rebuy liq-drop baseline). */
   liquidityUsd: number | null;
+  liquidityDeadTsMs: number | null;
+  liquidityDeadFirstTsMs: number | null;
 };
 
 export type MildDipMarkLiquidityTelemetry = {
@@ -81,7 +83,30 @@ export function noteOpenMarkMetrics(
     metrics.liquidityUsd != null && Number.isFinite(metrics.liquidityUsd) && metrics.liquidityUsd > 0
       ? Number(metrics.liquidityUsd)
       : null;
-  byMint.set(mint, { tsMs, pc5mPct: pc, volume5mUsd: vol, liquidityUsd: liq });
+  const prior = byMint.get(mint);
+  const liveLiquidity = liq != null && liq > 0;
+  byMint.set(mint, {
+    tsMs,
+    pc5mPct: pc,
+    volume5mUsd: vol,
+    liquidityUsd: liq,
+    liquidityDeadTsMs: liveLiquidity ? null : prior?.liquidityDeadTsMs ?? null,
+    liquidityDeadFirstTsMs: liveLiquidity ? null : prior?.liquidityDeadFirstTsMs ?? null,
+  });
+}
+
+export function noteOpenMarkLiquidityDead(mint: string, tsMs: number): void {
+  if (!mint || mint.length < 32) return;
+  const now = tsMs > 0 && Number.isFinite(tsMs) ? tsMs : Date.now();
+  const prior = byMint.get(mint);
+  byMint.set(mint, {
+    tsMs: now,
+    pc5mPct: prior?.pc5mPct ?? null,
+    volume5mUsd: prior?.volume5mUsd ?? null,
+    liquidityUsd: null,
+    liquidityDeadTsMs: now,
+    liquidityDeadFirstTsMs: prior?.liquidityDeadFirstTsMs ?? now,
+  });
 }
 
 export function readOpenMarkMetrics(
@@ -93,6 +118,17 @@ export function readOpenMarkMetrics(
   if (!row) return null;
   if (maxAgeMs > 0 && nowMs - row.tsMs > maxAgeMs) return null;
   return row;
+}
+
+export function isOpenMarkLiquidityDead(
+  metrics: MildDipOpenMarkMetrics | null,
+  confirmMs: number,
+): boolean {
+  return (
+    metrics?.liquidityDeadTsMs != null &&
+    metrics.liquidityDeadFirstTsMs != null &&
+    metrics.liquidityDeadTsMs - metrics.liquidityDeadFirstTsMs >= confirmMs
+  );
 }
 
 export function __resetOpenMarkMetricsForTests(): void {

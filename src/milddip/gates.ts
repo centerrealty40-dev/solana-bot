@@ -75,6 +75,7 @@ export type MildDipEntryGates = {
   minMarketCapUsd: number;
   maxMarketCapUsd: number;
   minPairAgeHours: number;
+  minPairAgeHoursNoLeader?: number;
   /**
    * 1.11.905 — the age floor for a name a leader is buying, which only ever
    * lowers it. A young pair is usually unformed, but two leaders actively taking
@@ -137,6 +138,8 @@ export type MildDipExitGates = {
   lossFillMaxSlipPct?: number;
   /** 1.11.969 — price-adjusted liquidity drain threshold; 0 = off. */
   liqDrainRatio?: number;
+  /** Raw current/entry liquidity ratio threshold; 0 = off. */
+  liqDrainMaxLiqRatio?: number;
   /** Minimum hold before liquidity-drain exits; 0 = off. */
   liqDrainMinAgeMs?: number;
   /** Consecutive accepted marks required for liquidity-drain exit; 0 = off. */
@@ -145,6 +148,10 @@ export type MildDipExitGates = {
   liqDrainSkipArmedRunner?: boolean;
   /** Absolute current-liquidity floor; 0 = off. */
   liqAbsFloorUsd?: number;
+  /** Maximum liquidity considered dead for open-mark telemetry; 0 = off. */
+  liquidityDeadMaxUsd?: number;
+  /** Duration required to confirm a dead-liquidity series. */
+  liquidityDeadConfirmMs?: number;
   /** 1.11.959 — green armed quarantine blind window; 0 = off. */
   markQuarantineGreenMaxMs?: number;
   /**
@@ -1288,6 +1295,8 @@ export function evaluateMildDipPeakGiveback(args: {
   liquidityMetricsFresh?: boolean;
   /** Timestamp of the current open-mark metrics sample. */
   liquidityMetricsTsMs?: number | null;
+  liquidityDeadObserved?: boolean;
+  liquidityDeadTsMs?: number | null;
   /** Prior confirmed liquidity-drain marks on this position. */
   liquidityDrainConfirmTicks?: number | null;
   /** Timestamp of the last liquidity sample counted by the confirmer. */
@@ -1548,6 +1557,7 @@ export function evaluateMildDipPeakGiveback(args: {
     lossReclaimWaitDone,
   };
   const liqDrainRatio = gates.liqDrainRatio ?? 0;
+  const liqDrainMaxLiqRatio = gates.liqDrainMaxLiqRatio ?? 0;
   const liqDrainMinAgeMs = gates.liqDrainMinAgeMs ?? 0;
   const liqDrainConfirmTicksRequired = gates.liqDrainConfirmTicks ?? 0;
   const liqDrainSkipArmedRunner = gates.liqDrainSkipArmedRunner === true;
@@ -1577,10 +1587,17 @@ export function evaluateMildDipPeakGiveback(args: {
     args.liquidityMetricsTsMs > 0
       ? args.liquidityMetricsTsMs
       : null;
-  const liqDrainEligible =
-    (liqDrainRatio > 0 || liqAbsFloorUsd > 0) &&
+  const liqDrainCommonEligible =
+    (liqDrainRatio > 0 ||
+      liqAbsFloorUsd > 0 ||
+      liqDrainMaxLiqRatio > 0 ||
+      args.liquidityDeadObserved === true) &&
     liqDrainConfirmTicksRequired > 0 &&
     heldMs >= liqDrainMinAgeMs &&
+    gainPct < 0 &&
+    !(liqDrainSkipArmedRunner && armed && gainPct > 0);
+  const numericLiquidityEligible =
+    liqDrainCommonEligible &&
     args.liquidityMetricsFresh === true &&
     liqSampleTsMs != null &&
     args.liquidityUsd != null &&
@@ -1588,9 +1605,7 @@ export function evaluateMildDipPeakGiveback(args: {
     args.liquidityUsd > 0 &&
     args.entryLiquidityUsd != null &&
     Number.isFinite(args.entryLiquidityUsd) &&
-    args.entryLiquidityUsd > 0 &&
-    gainPct < 0 &&
-    !(liqDrainSkipArmedRunner && armed && gainPct > 0);
+    args.entryLiquidityUsd > 0;
   const ratioHit =
     liqDrainRatio > 0 &&
     liqTelemetry.depthDrainRatio != null &&
@@ -1599,21 +1614,32 @@ export function evaluateMildDipPeakGiveback(args: {
     liqAbsFloorUsd > 0 &&
     args.liquidityUsd != null &&
     args.liquidityUsd < liqAbsFloorUsd;
-  const liqDrainHit = liqDrainEligible && (ratioHit || absFloorHit);
+  const liqRatioHit =
+    liqDrainMaxLiqRatio > 0 &&
+    liqTelemetry.liqRatio != null &&
+    liqTelemetry.liqRatio < liqDrainMaxLiqRatio;
+  const deadHit = liqDrainCommonEligible && args.liquidityDeadObserved === true;
+  const liqDrainHit =
+    deadHit || (numericLiquidityEligible && (ratioHit || absFloorHit || liqRatioHit));
   const priorLiqSampleTsMs =
     args.liquidityDrainSampleTsMs != null &&
     Number.isFinite(args.liquidityDrainSampleTsMs) &&
     args.liquidityDrainSampleTsMs > 0
       ? args.liquidityDrainSampleTsMs
       : null;
-  const sameLiqSample = liqSampleTsMs != null && liqSampleTsMs === priorLiqSampleTsMs;
+  const liquidityDrainSampleCandidateTsMs = deadHit
+    ? args.liquidityDeadTsMs ?? null
+    : liqSampleTsMs;
+  const sameLiqSample =
+    liquidityDrainSampleCandidateTsMs != null &&
+    liquidityDrainSampleCandidateTsMs === priorLiqSampleTsMs;
   const liquidityDrainConfirmTicks = liqDrainHit
     ? sameLiqSample
       ? priorLiqDrainTicks
       : priorLiqDrainTicks + 1
     : 0;
   const liquidityDrainSampleTsMs = liqDrainHit && liquidityDrainConfirmTicks > 0
-    ? liqSampleTsMs ?? undefined
+    ? liquidityDrainSampleCandidateTsMs ?? undefined
     : undefined;
   hold.liquidityDrainConfirmTicks = liquidityDrainConfirmTicks;
   hold.liquidityDrainSampleTsMs = liquidityDrainSampleTsMs;

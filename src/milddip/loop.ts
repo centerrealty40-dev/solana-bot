@@ -178,6 +178,7 @@ import {
 } from './mirror-averaging.js';
 import {
   computeMarkLiquidityTelemetry,
+  isOpenMarkLiquidityDead,
   readOpenMarkMetrics,
 } from './open-mark-metrics.js';
 import { requestOpenMarkRefresh } from './open-mark-refresh.js';
@@ -593,7 +594,10 @@ function openMarkRingAgeMs(mint: string, nowMs: number): number {
 function maybeRequestOpenMarkRefresh(
   mint: string,
   nowMs: number,
-  cfg: Pick<MildDipConfig, 'markDexRefreshMs' | 'markCacheTtlMs' | 'markConcurrency' | 'entry'>,
+  cfg: Pick<
+    MildDipConfig,
+    'markDexRefreshMs' | 'markCacheTtlMs' | 'markConcurrency' | 'entry' | 'exit'
+  >,
 ): void {
   const refreshGap = cfg.markDexRefreshMs;
   if (!(refreshGap > 0)) return;
@@ -607,6 +611,7 @@ function maybeRequestOpenMarkRefresh(
     maxInFlight,
     allowedDexIds: cfg.entry.allowedDexIds,
     cacheTtlMs: cfg.markCacheTtlMs > 0 ? cfg.markCacheTtlMs : 15_000,
+    liquidityDeadMaxUsd: cfg.exit.liquidityDeadMaxUsd,
   });
 }
 
@@ -5343,6 +5348,8 @@ async function tryExits(
       pc5mPct: metrics?.pc5mPct ?? null,
       liquidityUsd: metrics?.liquidityUsd ?? null,
       liquidityMetricsTsMs: metrics?.tsMs ?? null,
+      liquidityDead: isOpenMarkLiquidityDead(metrics, cfg.exit.liquidityDeadConfirmMs),
+      liquidityDeadTsMs: metrics?.liquidityDeadTsMs ?? null,
       source,
     };
   });
@@ -5374,6 +5381,8 @@ async function tryExits(
     pc5mPct,
     liquidityUsd,
     liquidityMetricsTsMs,
+    liquidityDead,
+    liquidityDeadTsMs,
     source,
   } of markRows) {
     const pos = state.open[mint];
@@ -5688,6 +5697,8 @@ async function tryExits(
       liquidityUsd,
       liquidityMetricsFresh: liquidityUsd != null,
       liquidityMetricsTsMs,
+      liquidityDeadObserved: liquidityDead,
+      liquidityDeadTsMs,
       oneshotDumpGraceActive:
         cfg.oneshotDumpGraceEnabled && oneshotDumpGrace.isActive(mint, nowMs),
       markSource: source,

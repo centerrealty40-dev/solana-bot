@@ -4,10 +4,36 @@ import {
   openMarkRefreshInFlightCount,
   requestOpenMarkRefresh,
 } from '../../src/milddip/open-mark-refresh.js';
+import {
+  __resetOpenMarkMetricsForTests,
+  isOpenMarkLiquidityDead,
+  noteOpenMarkLiquidityDead,
+  noteOpenMarkMetrics,
+  readOpenMarkMetrics,
+} from '../../src/milddip/open-mark-metrics.js';
 
 describe('requestOpenMarkRefresh', () => {
   beforeEach(() => {
     __resetOpenMarkRefreshForTests();
+    __resetOpenMarkMetricsForTests();
+  });
+
+  it('resets a dead-liquidity series when live liquidity returns', () => {
+    const mint = 'A'.repeat(32) + 'pump';
+    noteOpenMarkLiquidityDead(mint, 1_000);
+    noteOpenMarkLiquidityDead(mint, 2_000);
+    expect(readOpenMarkMetrics(mint, 2_000)?.liquidityDeadFirstTsMs).toBe(1_000);
+    noteOpenMarkMetrics(mint, { tsMs: 3_000, liquidityUsd: 10_000 });
+    expect(readOpenMarkMetrics(mint, 3_000)?.liquidityDeadFirstTsMs).toBeNull();
+  });
+
+  it('requires the configured duration before marking liquidity dead', () => {
+    const mint = 'B'.repeat(32) + 'pump';
+    noteOpenMarkLiquidityDead(mint, 1_000);
+    noteOpenMarkLiquidityDead(mint, 2_000);
+    const metrics = readOpenMarkMetrics(mint, 2_000);
+    expect(isOpenMarkLiquidityDead(metrics, 2_001)).toBe(false);
+    expect(isOpenMarkLiquidityDead(metrics, 1_000)).toBe(true);
   });
 
   it('respects per-mint gap and max in-flight', () => {
