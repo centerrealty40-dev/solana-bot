@@ -9,6 +9,7 @@ import {
   JUPITER_SWAP_URL_DEFAULT,
   fetchJupiterSwapPostResult,
   fetchJupiterSwapQuoteGetJson,
+  fetchJupiterSwapQuoteGetResult,
 } from '../core/jupiter-http.js';
 import { WRAPPED_SOL_MINT } from '../papertrader/types.js';
 import { adaptivePriorityMaxLamports } from './adaptive-priority-fee.js';
@@ -410,6 +411,29 @@ export async function liveFetchSellQuote(args: {
     timeoutMs: args.cfg.liveJupiterQuoteTimeoutMs,
     outputMintOverride: args.outputMintOverride,
   });
+}
+
+export async function liveProbeSellRoute(args: {
+  cfg: LiveOscarConfig;
+  inputMint: string;
+  tokenAmountRaw: string;
+  slippageBps?: number;
+  outputMintOverride?: string;
+}): Promise<'routable' | 'no_route' | 'unknown'> {
+  const url = new URL(resolveLiveJupiterQuoteUrl(args.cfg));
+  url.searchParams.set('inputMint', args.inputMint);
+  url.searchParams.set('outputMint', args.outputMintOverride?.trim() || WRAPPED_SOL_MINT);
+  url.searchParams.set('amount', args.tokenAmountRaw);
+  url.searchParams.set('slippageBps', String(args.slippageBps ?? args.cfg.liveDefaultSlippageBps));
+  url.searchParams.set('onlyDirectRoutes', 'false');
+  url.searchParams.set('asLegacyTransaction', 'false');
+  const result = await fetchJupiterSwapQuoteGetResult({
+    url: url.toString(),
+    timeoutMs: args.cfg.liveJupiterQuoteTimeoutMs,
+  });
+  if (result.ok) return 'routable';
+  if (result.errorCode?.toUpperCase() === 'NO_ROUTES_FOUND') return 'no_route';
+  return 'unknown';
 }
 
 /**

@@ -7,7 +7,7 @@ import {
   isQuotePriceImpactTooHigh,
   liveBuildUnsignedSwapTx,
   liveFetchBuyQuote,
-  liveFetchSellQuote,
+  liveProbeSellRoute,
   liveSellQuoteAndPrepareSnapshot,
   tokensPerInLamportFromQuote,
 } from '../live/jupiter.js';
@@ -457,14 +457,21 @@ export async function executeLiveCopyBuy(args: {
         };
       }
       const tokenAmountRaw = typeof outRaw === 'string' ? outRaw : String(outRaw ?? '');
-      const sellQuote = await liveFetchSellQuote({
+      const routeProbe = await liveProbeSellRoute({
         cfg: liveCfg,
         inputMint: mint,
         tokenAmountRaw,
         outputMintOverride: quoteSpec.mint,
         slippageBps: currentSlippageBps,
       });
-      if (!sellQuote) {
+      if (routeProbe === 'unknown') {
+        appendCopyEvent(cfg, {
+          kind: 'buy_exit_route_probe_unknown',
+          mint,
+          symbol,
+          sizeUsd,
+        });
+      } else if (routeProbe === 'no_route') {
         markExitRouteMissing(mint, nowMs);
         appendCopyEvent(cfg, {
           kind: 'buy_exit_route_missing',
@@ -484,7 +491,7 @@ export async function executeLiveCopyBuy(args: {
           buySimRetryMaxAttempts: maxAttempts,
         };
       }
-      clearExitRouteMissing(mint);
+      else clearExitRouteMissing(mint);
     }
 
     const build = await liveBuildUnsignedSwapTx({
@@ -746,7 +753,16 @@ export async function executeLiveCopySell(args: {
       outputMintOverride: quoteSpec.mint,
     });
     if (!prep) {
-      if (liveCfg.liveExitRouteProbeEnabled) markExitRouteMissing(mint, Date.now());
+      if (liveCfg.liveExitRouteProbeEnabled) {
+        const routeProbe = await liveProbeSellRoute({
+          cfg: liveCfg,
+          inputMint: mint,
+          tokenAmountRaw: sellRaw.toString(),
+          outputMintOverride: quoteSpec.mint,
+          slippageBps: currentSlippageBps,
+        });
+        if (routeProbe === 'no_route') markExitRouteMissing(mint, Date.now());
+      }
       lastReason = 'jupiter_sell_quote_failed';
       if (attempt < maxAttempts - 1) {
         await sleep(liveCfg.liveSellSimRetryDelayMs);

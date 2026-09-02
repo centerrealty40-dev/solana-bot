@@ -135,4 +135,19 @@ describe('fetchJupiterSwapQuoteGetJson', () => {
     expect(execution).toMatchObject({ ok: false, status: 429 });
     expect(notifyJupiterQuoteRateLimitExhausted).toHaveBeenCalledTimes(1);
   });
+
+  it('surfaces the provider error code on a non-2xx quote response', async () => {
+    fetchSpy = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'No routes found', errorCode: 'NO_ROUTES_FOUND' }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    const result = await fetchJupiterSwapQuoteGetResult({
+      url: 'https://example.invalid/quote',
+      timeoutMs: 5000,
+    });
+    expect(result).toEqual({ ok: false, status: 400, errorCode: 'NO_ROUTES_FOUND' });
+  });
 });
