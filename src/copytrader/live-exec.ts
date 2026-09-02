@@ -446,6 +446,16 @@ export async function executeLiveCopyBuy(args: {
 
     if (liveCfg.liveExitRouteProbeEnabled) {
       const nowMs = Date.now();
+      if (isExitRouteMissingCached(mint, nowMs, liveCfg.liveExitRouteMissingTtlMs)) {
+        return {
+          ok: false,
+          priceUsd,
+          reason: 'exit_route_missing:cached',
+          slippageBps: currentSlippageBps,
+          buySimRetryAttempt: attempt,
+          buySimRetryMaxAttempts: maxAttempts,
+        };
+      }
       const tokenAmountRaw = typeof outRaw === 'string' ? outRaw : String(outRaw ?? '');
       const sellQuote = await liveFetchSellQuote({
         cfg: liveCfg,
