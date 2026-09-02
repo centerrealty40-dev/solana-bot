@@ -5197,7 +5197,8 @@ if (mildDipBotApp) {
       JUPITER_GLOBAL_MAX_RPS: '8',
       JUPITER_QUOTE_429_MAX_RETRIES: '2',
       MILD_DIP_GREEN_ENABLED: '1',
-      MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '0',
+      // По решению пользователя возвращаем leader-seen для own2; откат: все три ключа = '0'.
+      MILD_DIP_GREEN_REQUIRE_LEADER_SEEN: '1',
       MILD_DIP_GREEN_TAPE_MIN_RECENT_SAMPLES: '2',
       MILD_DIP_GREEN_TAPE_LATEST_MAX_AGE_MS: '20000',
       MILD_DIP_GREEN_TAPE_BOUNDARY_MIN_AGE_MS: '45000',
@@ -5287,8 +5288,8 @@ if (mildDipBotApp) {
       // GREEN exit: arm +2%, trail 4%, no-move cut at 40m,
       // catastrophic stop −45%, max hold 60m.
       MILD_DIP_GREEN_NO_MOVE_CUT_MS: '2400000',
-      MILD_DIP_REQUIRE_LEADER_SEEN: '0',
-      MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '0',
+      MILD_DIP_REQUIRE_LEADER_SEEN: '1',
+      MILD_DIP_REQUIRE_LEADER_SEEN_FIRST_TOUCH: '1',
       MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
       MILD_DIP_LEADER_SEED_MAX: '250',
       MILD_DIP_LEADER_SEED_MAX_AGE_MS: '21600000',
