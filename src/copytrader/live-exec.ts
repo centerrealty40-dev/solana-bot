@@ -7,6 +7,7 @@ import {
   isQuotePriceImpactTooHigh,
   liveBuildUnsignedSwapTx,
   liveFetchBuyQuote,
+  liveFetchSellQuote,
   liveSellQuoteAndPrepareSnapshot,
   tokensPerInLamportFromQuote,
 } from '../live/jupiter.js';
@@ -29,6 +30,11 @@ import {
 import { peekCopyQuoteBalances } from './funding-gate.js';
 import { bumpSlippageBps, multiplySlippageBps } from './slippage-bump.js';
 import { isQuoteOutRegressed, parseTokenRaw } from './quote-quality.js';
+import {
+  clearExitRouteMissing,
+  isExitRouteMissingCached,
+  markExitRouteMissing,
+} from './exit-route-guard.js';
 
 export type LiveCashFillFields = {
   quoteSpentUsd?: number;
@@ -240,6 +246,20 @@ export async function executeLiveCopyBuy(args: {
   let bestOutRaw = 0n;
   let anchorTokensPerLamport: number | null = null;
 
+  if (
+    liveCfg.liveExitRouteProbeEnabled &&
+    isExitRouteMissingCached(mint, Date.now(), liveCfg.liveExitRouteMissingTtlMs)
+  ) {
+    return {
+      ok: false,
+      priceUsd: 0,
+      reason: 'exit_route_missing:cached',
+      slippageBps: currentSlippageBps,
+      buySimRetryAttempt: 0,
+      buySimRetryMaxAttempts: maxAttempts,
+    };
+  }
+
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     const quote = await liveFetchBuyQuote({
       cfg: liveCfg,
@@ -422,6 +442,39 @@ export async function executeLiveCopyBuy(args: {
           };
         }
       }
+    }
+
+    if (liveCfg.liveExitRouteProbeEnabled) {
+      const nowMs = Date.now();
+      const tokenAmountRaw = typeof outRaw === 'string' ? outRaw : String(outRaw ?? '');
+      const sellQuote = await liveFetchSellQuote({
+        cfg: liveCfg,
+        inputMint: mint,
+        tokenAmountRaw,
+        outputMintOverride: quoteSpec.mint,
+        slippageBps: currentSlippageBps,
+      });
+      if (!sellQuote) {
+        markExitRouteMissing(mint, nowMs);
+        appendCopyEvent(cfg, {
+          kind: 'buy_exit_route_missing',
+          mint,
+          symbol,
+          kindBuy: kind,
+          leaderSignature,
+          sizeUsd,
+          tokenAmountRaw,
+        });
+        return {
+          ok: false,
+          priceUsd,
+          reason: 'exit_route_missing',
+          slippageBps: currentSlippageBps,
+          buySimRetryAttempt: attempt,
+          buySimRetryMaxAttempts: maxAttempts,
+        };
+      }
+      clearExitRouteMissing(mint);
     }
 
     const build = await liveBuildUnsignedSwapTx({
@@ -656,6 +709,13 @@ export async function executeLiveCopySell(args: {
   /** Settlement truth: callers must not trust a post-sell RPC read above this. */
   const rawFields = { tokenRawBefore: totalRaw.toString(), tokenRawSold: sellRaw.toString() };
 
+  if (
+    liveCfg.liveExitRouteProbeEnabled &&
+    isExitRouteMissingCached(mint, Date.now(), liveCfg.liveExitRouteMissingTtlMs)
+  ) {
+    return { ok: false, priceUsd: 0, reason: 'exit_route_missing:cooldown', ...rawFields };
+  }
+
   const maxAttempts = 1 + liveCfg.liveSellSimRetryAttempts;
   const slippageCap = 1 + liveCfg.liveSellSimSlippageRetryAttempts;
   let slippageClassAttempts = 0;
@@ -676,6 +736,7 @@ export async function executeLiveCopySell(args: {
       outputMintOverride: quoteSpec.mint,
     });
     if (!prep) {
+      if (liveCfg.liveExitRouteProbeEnabled) markExitRouteMissing(mint, Date.now());
       lastReason = 'jupiter_sell_quote_failed';
       if (attempt < maxAttempts - 1) {
         await sleep(liveCfg.liveSellSimRetryDelayMs);
@@ -683,6 +744,7 @@ export async function executeLiveCopySell(args: {
       }
       return { ok: false, priceUsd: 0, reason: lastReason, ...rawFields };
     }
+    if (liveCfg.liveExitRouteProbeEnabled) clearExitRouteMissing(mint);
     if (!prep.swapBuild.ok) {
       lastReason = prep.swapBuild.reason;
       if (attempt < maxAttempts - 1 && isRetryableSellPreSendError(lastReason)) {

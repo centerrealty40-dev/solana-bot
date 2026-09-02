@@ -396,6 +396,22 @@ async function httpGetSellQuote(
   });
 }
 
+export async function liveFetchSellQuote(args: {
+  cfg: LiveOscarConfig;
+  inputMint: string;
+  tokenAmountRaw: string;
+  slippageBps?: number;
+  outputMintOverride?: string;
+}): Promise<Record<string, unknown> | null> {
+  return httpGetSellQuote(resolveLiveJupiterQuoteUrl(args.cfg), {
+    inputMint: args.inputMint,
+    amountRaw: args.tokenAmountRaw,
+    slippageBps: args.slippageBps ?? args.cfg.liveDefaultSlippageBps,
+    timeoutMs: args.cfg.liveJupiterQuoteTimeoutMs,
+    outputMintOverride: args.outputMintOverride,
+  });
+}
+
 /**
  * Token → SOL quote + optional unsigned swap (W8.0-p4 sells / exits).
  * 1.11.230 — `slippageBpsOverride` для адаптивного bump'а в retry-цикле.
@@ -418,13 +434,13 @@ export async function liveSellQuoteAndPrepareSnapshot(args: {
   /** USD-pegged proceeds need no SOL mark; WSOL proceeds cannot be priced without one. */
   const needsSolUsd = !args.outputMintOverride?.trim();
   if ((needsSolUsd && !(solUsd > 0)) || !tokenAmountRaw || tokenAmountRaw === '0') return null;
-  const slippageBps = args.slippageBpsOverride ?? cfg.liveDefaultSlippageBps;
   const t0 = Date.now();
-  const quoteResponse = await httpGetSellQuote(resolveLiveJupiterQuoteUrl(cfg), {
+  const slippageBps = args.slippageBpsOverride ?? cfg.liveDefaultSlippageBps;
+  const quoteResponse = await liveFetchSellQuote({
+    cfg,
     inputMint,
-    amountRaw: tokenAmountRaw,
+    tokenAmountRaw,
     slippageBps,
-    timeoutMs: cfg.liveJupiterQuoteTimeoutMs,
     outputMintOverride: args.outputMintOverride,
   });
   const quoteAgeMs = Date.now() - t0;
