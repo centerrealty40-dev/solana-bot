@@ -5319,6 +5319,9 @@ if (mildDipBotApp) {
       MILD_DIP_ENTRY_MIN_PAIR_AGE_HOURS: '0',
       MILD_DIP_MIN_PAIR_AGE_HOURS: '0',
       MILD_DIP_THICK_MIN_PAIR_AGE_HOURS: '0',
+      // Гейт возраста выключен целиком: пока любой из порогов > 0, минт с
+      // неизвестным возрастом отбивается как missing_pair_age. Откат: '720'.
+      MILD_DIP_MAX_PAIR_AGE_HOURS: '0',
       MILD_DIP_LEADER_SEEN_MEMORY_MS: '604800000',
       MILD_DIP_LEADER_SEED_MAX: '250',
       MILD_DIP_LEADER_SEED_MAX_AGE_MS: '21600000',
