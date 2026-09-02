@@ -231,7 +231,7 @@ const quoteResilience = (): QuoteResilience => ({
 
 describe('jupiterQuoteBuyPriceUsd', () => {
   it('maps HTTP 400 to no-route without tripping circuit', async () => {
-    mockJupiter({ error: 'No routes found' }, 400);
+    mockJupiter({ error: 'No routes found', errorCode: 'NO_ROUTES_FOUND' }, 400);
     const v = await jupiterQuoteBuyPriceUsd({
       mint: mintFoo,
       outMintDecimals: 6,

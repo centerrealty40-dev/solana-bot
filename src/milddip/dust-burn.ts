@@ -12,6 +12,7 @@ import {
   type OrphanAtaRow,
 } from './orphan-janitor.js';
 import { appendMildDipJournal, type MildDipState } from './state.js';
+import { confirmUnroutableRoute } from './unroutable-route.js';
 
 type DustBurnQuote = {
   kind: 'ok' | 'unroutable' | 'unknown';
@@ -67,8 +68,6 @@ function skip(
 }
 
 const QUOTE_GAP_MS = 200;
-const UNROUTABLE_CONFIRM_GAP_MS = 2_000;
-
 async function defaultQuote(
   row: OrphanAtaRow,
   quoteFn = jupiterQuoteSellPriceUsd,
@@ -82,21 +81,8 @@ async function defaultQuote(
   }
   // jupiterQuoteSellPriceUsd sizes from usdNotional / snapshotPriceUsd; using
   // snapshotPriceUsd=1 and the human balance requests exactly the full raw balance.
-  const verdict = await quoteFn({
-    mint: row.mint,
-    tokenDecimals: row.decimals,
-    usdNotional: tokenAmount,
-    solUsd,
-    snapshotPriceUsd: 1,
-    slippageBps: 150,
-    timeoutMs: 4_000,
-  });
-  const isNoRoute = (value: typeof verdict): boolean =>
-    (value.kind === 'blocked' || value.kind === 'skipped') &&
-    value.reason === 'no-route';
-  if (isNoRoute(verdict)) {
-    await sleep(UNROUTABLE_CONFIRM_GAP_MS);
-    const confirmation = await quoteFn({
+  const quote = () =>
+    quoteFn({
       mint: row.mint,
       tokenDecimals: row.decimals,
       usdNotional: tokenAmount,
@@ -105,10 +91,10 @@ async function defaultQuote(
       slippageBps: 150,
       timeoutMs: 4_000,
     });
-    if (isNoRoute(confirmation)) return { kind: 'unroutable', quoteUsd: null };
-    return { kind: 'unknown', quoteUsd: null };
-  }
-  if (verdict.kind !== 'ok' || !(verdict.jupiterPriceUsd > 0)) {
+  const confirmed = await confirmUnroutableRoute({ quote, sleep });
+  if (confirmed.status === 'unroutable') return { kind: 'unroutable', quoteUsd: null };
+  const verdict = confirmed.first;
+  if (confirmed.status !== 'routable' || verdict.kind !== 'ok' || !(verdict.jupiterPriceUsd > 0)) {
     return { kind: 'unknown', quoteUsd: null };
   }
   const quoteUsd = verdict.jupiterPriceUsd * tokenAmount;

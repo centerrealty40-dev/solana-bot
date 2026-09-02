@@ -271,6 +271,12 @@ export type MildDipLastExit = {
   preExitTokenRaw?: string | null;
 };
 
+export type MildDipUnroutableObservation = {
+  firstSeenAtMs: number;
+  lastSeenAtMs: number;
+  checks: number;
+};
+
 export type MildDipState = {
   open: Record<string, MildDipOpenPosition>;
   /** mint → last close/attempt ms (cooldown). */
@@ -281,6 +287,8 @@ export type MildDipState = {
   recentGreenBuyMs?: number[];
   /** mint → last full-exit fill/mark price for same-price rebuy guard. */
   lastExitByMint?: Record<string, MildDipLastExit>;
+  unroutableByMint?: Record<string, MildDipUnroutableObservation>;
+  lastUnroutableWriteoffAtMs?: number;
   /**
    * 1.11.906 — mint → when a leader was last seen holding or buying it, kept for
    * as long as `leaderSeenMemoryMs`.
@@ -660,6 +668,7 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     open: {},
     cooldownUntilMs: {},
     lastExitByMint: {},
+    unroutableByMint: {},
     leaderSeenMints: {},
     knifeWatch: {},
     waitDipWatch: {},
@@ -691,6 +700,13 @@ export function loadMildDipState(
           ? parsed.cooldownUntilMs
           : {},
       lastExitByMint: sanitizeLastExitByMint(parsed.lastExitByMint),
+      unroutableByMint:
+        parsed.unroutableByMint && typeof parsed.unroutableByMint === 'object'
+          ? parsed.unroutableByMint as Record<string, MildDipUnroutableObservation>
+          : {},
+      ...(Number.isFinite(Number(parsed.lastUnroutableWriteoffAtMs))
+        ? { lastUnroutableWriteoffAtMs: Number(parsed.lastUnroutableWriteoffAtMs) }
+        : {}),
       /**
        * 1.11.909 — this loader builds a fresh object field by field, so anything
        * it does not name is dropped on every restart. The leader memory added in

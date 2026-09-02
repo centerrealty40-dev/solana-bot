@@ -197,6 +197,7 @@ import { resolveSellRemainder } from './sell-remainder.js';
 import { sweepUnmanagedOrphans } from './orphan-sweep.js';
 import { adoptManualHoldings } from './manual-adopt.js';
 import { burnDustOrphans } from './dust-burn.js';
+import { writeOffUnroutableBags } from './unroutable-writeoff.js';
 import {
   loadMildDipHotMints,
   mildDipHotMints,
@@ -7520,6 +7521,26 @@ export async function runMildDipLoop(
         );
       }
     }
+    if (cfg.unroutableWriteoffEnabled) {
+      try {
+        const written = await writeOffUnroutableBags({
+          cfg,
+          state,
+          nowMs: Date.now(),
+        });
+        if (written.checked > 0) {
+          console.log(
+            `[mild-dip] unroutableWriteoff checked=${written.checked} ` +
+              `marked=${written.markedNoRoute} wroteOff=${written.wroteOff} skipped=${written.skipped}`,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          '[mild-dip] unroutable writeoff startup failed',
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
     if (cfg.dustBurnEnabled && cfg.dustBurnMaxPerPass > 0) {
       try {
         const burned = await burnDustOrphans({
@@ -7912,6 +7933,28 @@ export async function runMildDipLoop(
           err instanceof Error ? err.message : err,
         );
       });
+    }
+    if (cfg.unroutableWriteoffEnabled) {
+      const runWriteoff = () =>
+        writeOffUnroutableBags({ cfg, state, nowMs }).then((written) => {
+          if (written.checked > 0) {
+            console.log(
+              `[mild-dip] unroutableWriteoff checked=${written.checked} ` +
+                `marked=${written.markedNoRoute} wroteOff=${written.wroteOff} skipped=${written.skipped}`,
+            );
+          }
+        });
+      if (opens > 0) {
+        void runTickPhase('runUnroutableWriteoff', runWriteoff).catch((err) => {
+          console.warn('[mild-dip] unroutable writeoff tick failed', err);
+        });
+      } else {
+        try {
+          await runTickPhase('runUnroutableWriteoff', runWriteoff);
+        } catch (err) {
+          console.warn('[mild-dip] unroutable writeoff tick failed', err);
+        }
+      }
     }
     if (
       cfg.dustBurnEnabled &&
