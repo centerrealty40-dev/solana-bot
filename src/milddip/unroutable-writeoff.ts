@@ -71,12 +71,17 @@ export async function writeOffUnroutableBags(args: {
       result.skipped += 1;
       continue;
     }
+    const tokenDecimals = mildDipPriceRing.mintDecimals(mint);
+    if (tokenDecimals == null) {
+      result.skipped += 1;
+      continue;
+    }
     const probe = await confirmUnroutableRoute({
       quote: () =>
         quote({
           mint,
           tokenRaw,
-          tokenDecimals: mildDipPriceRing.mintDecimals(mint) ?? 6,
+          tokenDecimals,
         }),
       sleep,
     });
@@ -121,7 +126,7 @@ export async function writeOffUnroutableBags(args: {
       quoteReceivedUsd: 0,
       fillPriceUsd: null,
       markPnlPct: -100,
-      costBasisUsdOverride: costUsd,
+      costBasisUsdFallback: costUsd,
       reason: 'unroutable_writeoff',
       lane: position.lane ?? 'dip',
       nowMs,

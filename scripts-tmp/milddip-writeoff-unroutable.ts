@@ -68,7 +68,7 @@ for (const row of rows) {
       sizeUsdIntent: costUsd,
       fraction: 1,
       quoteReceivedUsd: 0,
-      costBasisUsdOverride: costUsd,
+      costBasisUsdFallback: costUsd,
       markPnlPct: -100,
       reason: 'unroutable_writeoff',
       lane: position.lane ?? 'dip',

@@ -485,8 +485,8 @@ export function writeUsSellFill(args: {
   feeSolAfter?: number | null;
   txMeta?: unknown;
   quoteReceivedUsd?: number | null;
-  /** Used by non-transactional writeoffs whose persisted position is the cost source. */
-  costBasisUsdOverride?: number | null;
+  /** Used only when the hydrated trade lot is unavailable. */
+  costBasisUsdFallback?: number | null;
   fillPriceUsd?: number | null;
   markPnlPct?: number | null;
   reason?: string | null;
@@ -515,7 +515,11 @@ export function writeUsSellFill(args: {
       fraction: args.fraction,
       nowMs,
     });
-    costBasisUsd = +(args.costBasisUsdOverride ?? sold.costBasisUsd).toFixed(6);
+    const lotCostBasisUsd =
+      sold.costBasisUsd > 1e-6
+        ? sold.costBasisUsd
+        : args.costBasisUsdFallback ?? sold.costBasisUsd;
+    costBasisUsd = +lotCostBasisUsd.toFixed(6);
     cashPnlUsd = +(cash.receivedUsd - costBasisUsd).toFixed(6);
     if (sold.roundtrip) {
       roundtrip = {
@@ -527,7 +531,7 @@ export function writeUsSellFill(args: {
         symbol: args.symbol ?? null,
         ...(args.lane != null ? { lane: args.lane } : {}),
         ...sold.roundtrip,
-        ...(args.costBasisUsdOverride != null
+        ...(args.costBasisUsdFallback != null && sold.costBasisUsd <= 1e-6
           ? {
               buyCostUsd: costBasisUsd,
               sellProceedsUsd: +cash.receivedUsd.toFixed(6),

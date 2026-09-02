@@ -3,6 +3,12 @@ import { describe, expect, it } from 'vitest';
 import { writeOffUnroutableBags } from '../../src/milddip/unroutable-writeoff.js';
 import type { MildDipState } from '../../src/milddip/state.js';
 import type { MildDipConfig } from '../../src/milddip/config.js';
+import { mildDipPriceRing } from '../../src/milddip/price-ring.js';
+import {
+  resetTradeCashAttributionForTests,
+  resetTradeLotsForTests,
+  writeUsBuyFill,
+} from '../../src/milddip/trade-journal.js';
 
 const baseCfg = (overrides: Record<string, unknown> = {}): MildDipConfig =>
   ({
@@ -30,7 +36,8 @@ const position = (mint: string) => ({
 });
 
 const baseState = (mint = 'Mint111111111111111111111111111111111111111') =>
-  ({
+  (mildDipPriceRing.noteMintDecimals(mint, 6),
+  {
     open: { [mint]: position(mint) },
     cooldownUntilMs: {},
     lastExitByMint: {},
@@ -148,6 +155,47 @@ describe('unroutable writeoff', () => {
     );
   });
 
+  it('uses the hydrated lot cost and falls back only when the lot is absent', async () => {
+    rmSync('/tmp/unroutable-writeoff-trades.jsonl', { force: true });
+    resetTradeLotsForTests();
+    resetTradeCashAttributionForTests();
+    const known = baseState();
+    const mint = Object.keys(known.open)[0]!;
+    writeUsBuyFill({
+      tradesPath: '/tmp/unroutable-writeoff-trades.jsonl',
+      wallet: 'wallet',
+      mint,
+      ok: true,
+      signature: 'buy',
+      sizeUsdIntent: 7,
+      quoteSpentUsd: 7,
+      fraction: 1,
+      nowMs: 1,
+    });
+    await writeOffUnroutableBags({
+      cfg: baseCfg({ unroutableWriteoffMinChecks: 1, unroutableWriteoffMinAgeMs: 0 }),
+      state: known,
+      nowMs: 2_000_000,
+      deps: deps([noRoute(), noRoute()]),
+    });
+    const knownText = readFileSync('/tmp/unroutable-writeoff-trades.jsonl', 'utf8');
+    expect(knownText).toContain('"costBasisUsd":7');
+
+    rmSync('/tmp/unroutable-writeoff-trades.jsonl', { force: true });
+    resetTradeLotsForTests();
+    resetTradeCashAttributionForTests();
+    const missing = baseState('Missing111111111111111111111111111111111111');
+    await writeOffUnroutableBags({
+      cfg: baseCfg({ unroutableWriteoffMinChecks: 1, unroutableWriteoffMinAgeMs: 0 }),
+      state: missing,
+      nowMs: 2_000_000,
+      deps: deps([noRoute(), noRoute()]),
+    });
+    expect(readFileSync('/tmp/unroutable-writeoff-trades.jsonl', 'utf8')).toContain(
+      '"costBasisUsd":10',
+    );
+  });
+
   it('enforces the per-pass cap and interval', async () => {
     const state = baseState();
     state.open = {
@@ -155,6 +203,7 @@ describe('unroutable writeoff', () => {
       B11111111111111111111111111111111111111111: position('B11111111111111111111111111111111111111111'),
       C11111111111111111111111111111111111111111: position('C11111111111111111111111111111111111111111'),
     };
+    for (const mint of Object.keys(state.open)) mildDipPriceRing.noteMintDecimals(mint, 6);
     const result = await writeOffUnroutableBags({
       cfg: baseCfg({
         unroutableWriteoffMinChecks: 1,
