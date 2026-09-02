@@ -121,6 +121,9 @@ const MildDipConfigSchema = z.object({
   /** 1.11.993 — outer full-exit retry slippage step; 0 = disabled. */
   exitRetrySlippageStepBps: z.coerce.number().int().min(0).max(5_000).default(0),
   exitRetrySlippageMaxBps: z.coerce.number().int().min(1).max(5_000).default(800),
+  pendingExitRetryEnabled: z.boolean().default(false),
+  pendingExitRetryTtlMs: z.coerce.number().int().min(0).default(180_000),
+  pendingExitRetryMaxAttempts: z.coerce.number().int().min(0).default(20),
   /**
    * Thick-name clip (mcap/liq/age). 0 = off.
    * 1.11.841 — same $1 as base (flat book).
@@ -1618,6 +1621,9 @@ export function loadMildDipConfig(): MildDipConfig {
     stagedProfitVetoMaxMs: envNum('MILD_DIP_STAGED_PROFIT_VETO_MAX_MS', 0),
     exitRetrySlippageStepBps: envNum('MILD_DIP_EXIT_RETRY_SLIPPAGE_STEP_BPS', 0),
     exitRetrySlippageMaxBps: envNum('MILD_DIP_EXIT_RETRY_SLIPPAGE_MAX_BPS', 800),
+    pendingExitRetryEnabled: envBool('MILD_DIP_PENDING_EXIT_RETRY', false),
+    pendingExitRetryTtlMs: envNum('MILD_DIP_PENDING_EXIT_RETRY_TTL_MS', 180_000),
+    pendingExitRetryMaxAttempts: envNum('MILD_DIP_PENDING_EXIT_RETRY_MAX_ATTEMPTS', 20),
     thickPositionUsd: process.env.MILD_DIP_THICK_POSITION_USD ?? 1,
     thickMinMarketCapUsd: process.env.MILD_DIP_THICK_MIN_MCAP_USD ?? 100_000,
     thickMinLiquidityUsd: process.env.MILD_DIP_THICK_MIN_LIQUIDITY_USD ?? 50_000,

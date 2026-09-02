@@ -139,6 +139,25 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.knifeStabilizeMaxPc1hPct).toBe(0);
   });
 
+  it('defaults and loads pending exit retry settings', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.pendingExitRetryEnabled).toBe(false);
+    expect(defaults.pendingExitRetryTtlMs).toBe(180_000);
+    expect(defaults.pendingExitRetryMaxAttempts).toBe(20);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_PENDING_EXIT_RETRY: '1',
+        MILD_DIP_PENDING_EXIT_RETRY_TTL_MS: '90000',
+        MILD_DIP_PENDING_EXIT_RETRY_MAX_ATTEMPTS: '7',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.pendingExitRetryEnabled).toBe(true);
+    expect(cfg.pendingExitRetryTtlMs).toBe(90_000);
+    expect(cfg.pendingExitRetryMaxAttempts).toBe(7);
+  });
+
   it('loads the optional all-lane loss-cap flag', () => {
     const cfg = withConfigEnv(
       {

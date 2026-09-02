@@ -81,6 +81,7 @@ import {
   upsertKnifeWatch,
   type KnifeStabilizeGates,
 } from './knife-stabilize.js';
+import { pendingExitVerdict, shouldArmPendingExit } from './pending-exit.js';
 import {
   dumpFromSignalPct,
   evaluateWaitDipReady,
@@ -3755,6 +3756,9 @@ async function executeQueuedSell(args: {
       }
       live.exitRetryCount = undefined;
       live.exitRetryReason = undefined;
+      live.pendingExitReason = undefined;
+      live.pendingExitDecidedAtMs = undefined;
+      live.pendingExitAttempts = undefined;
       if (isPartial) {
         live.sizeUsd = Math.max(0, live.sizeUsd * (1 - fraction));
       }
@@ -3845,6 +3849,29 @@ async function executeQueuedSell(args: {
       nowMs,
     });
     if (!verdict.drop) {
+      let pendingExit = false;
+      let pendingExitAttempts: number | null = null;
+      if (
+        state.open[mint] &&
+        shouldArmPendingExit({
+          enabled: cfg.pendingExitRetryEnabled,
+          isPartial,
+          sellReason: reason,
+          guardReason: verdict.reason,
+        })
+      ) {
+        const live = state.open[mint]!;
+        pendingExit = true;
+        if (live.pendingExitReason !== decision.reason) {
+          live.pendingExitReason = decision.reason;
+          live.pendingExitDecidedAtMs = nowMs;
+          live.pendingExitAttempts = 1;
+        } else {
+          live.pendingExitAttempts = (live.pendingExitAttempts ?? 0) + 1;
+        }
+        pendingExitAttempts = live.pendingExitAttempts ?? null;
+        saveMildDipState(cfg.statePath, state);
+      }
       if (state.open[mint] && onchainRaw > HOLDING_DUST_RAW && raw) {
         state.open[mint]!.tokenRaw = raw;
         // A bare chain read may itself be stale-high — do not let it cap a sell.
@@ -3860,6 +3887,8 @@ async function executeQueuedSell(args: {
         onchainRaw: onchainRaw.toString(),
         pnlPct: +realizedPnl.toFixed(2),
         holdSec: Math.floor((nowMs - pos.openedAtMs) / 1000),
+        pendingExit,
+        pendingExitAttempts,
       });
       console.warn(
         `[mild-dip] sell no_token_balance but ${verdict.reason} ` +
@@ -5836,6 +5865,61 @@ async function tryExits(
             : 0,
         targetPct: cfg.exit.lossReclaimTargetPct,
       });
+    }
+
+    const pendingVerdict = pendingExitVerdict({
+      pending:
+        pos.pendingExitReason != null
+          ? {
+              reason: pos.pendingExitReason,
+              decidedAtMs: pos.pendingExitDecidedAtMs ?? nowMs,
+              attempts: pos.pendingExitAttempts ?? 0,
+            }
+          : null,
+      nowMs,
+      ttlMs: cfg.pendingExitRetryTtlMs,
+      maxAttempts: cfg.pendingExitRetryMaxAttempts,
+    });
+    if (pendingVerdict.clear) {
+      const attempts = pos.pendingExitAttempts ?? 0;
+      const decidedAtMs = pos.pendingExitDecidedAtMs ?? nowMs;
+      pos.pendingExitReason = undefined;
+      pos.pendingExitDecidedAtMs = undefined;
+      pos.pendingExitAttempts = undefined;
+      saveMildDipState(cfg.statePath, state);
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_pending_exit_expired',
+        mint,
+        symbol: pos.symbol,
+        reason: pendingVerdict.reason,
+        expiredBy: pendingVerdict.expiredBy,
+        attempts,
+        waitedMs: Math.max(0, nowMs - decidedAtMs),
+      });
+    } else if (
+      pendingVerdict.fire &&
+      !sellInFlight.has(mint) &&
+      cfg.pendingExitRetryEnabled
+    ) {
+      const decidedAtMs = pos.pendingExitDecidedAtMs ?? nowMs;
+      const attempts = pos.pendingExitAttempts ?? 0;
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_pending_exit_retry',
+        mint,
+        symbol: pos.symbol,
+        reason: pendingVerdict.reason,
+        attempts,
+        waitedMs: Math.max(0, nowMs - decidedAtMs),
+        pnlPct: +decision.pnlPct.toFixed(2),
+        markPx: decision.markPriceUsd,
+      });
+      toSell.push({
+        ...decision,
+        shouldExit: true,
+        reason: pendingVerdict.reason as NonNullable<typeof decision.reason>,
+        fraction: 1,
+      });
+      continue;
     }
 
     if (

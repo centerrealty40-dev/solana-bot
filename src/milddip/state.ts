@@ -118,6 +118,10 @@ export type MildDipOpenPosition = {
   /** 1.11.993 — consecutive failed full-exit attempts for the current reason. */
   exitRetryCount?: number;
   exitRetryReason?: string;
+  /** A full exit that failed because the post-buy token balance was not visible yet. */
+  pendingExitReason?: string;
+  pendingExitDecidedAtMs?: number;
+  pendingExitAttempts?: number;
   /** 1.11.993 — first staged-profit veto timestamp. */
   stagedProfitVetoSinceMs?: number;
   stagedProfitVetoLastJournalAtMs?: number;
