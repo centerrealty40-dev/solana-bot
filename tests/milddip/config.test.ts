@@ -123,6 +123,22 @@ describe('mild-dip config exit schema', () => {
     expect(cfg.leaderMirror.sizeLiqMaxPoolSharePct).toBe(0.15);
   });
 
+  it('loads deep knife entry controls with safe defaults', () => {
+    const defaults = withConfigEnv(baseEnv, () => loadMildDipConfig());
+    expect(defaults.knifeStabilizeDeepEntryEnabled).toBe(false);
+    expect(defaults.knifeStabilizeMaxPc1hPct).toBe(-1);
+    const cfg = withConfigEnv(
+      {
+        ...baseEnv,
+        MILD_DIP_KNIFE_STABILIZE_DEEP_ENTRY: '1',
+        MILD_DIP_KNIFE_STABILIZE_MAX_PC1H_PCT: '0',
+      },
+      () => loadMildDipConfig(),
+    );
+    expect(cfg.knifeStabilizeDeepEntryEnabled).toBe(true);
+    expect(cfg.knifeStabilizeMaxPc1hPct).toBe(0);
+  });
+
   it('loads the optional all-lane loss-cap flag', () => {
     const cfg = withConfigEnv(
       {

@@ -41,7 +41,12 @@ import {
   mildDipMicroSizeGatesForSource,
   resolveMildDipWantedSizeUsd,
 } from './gates.js';
-import { evaluateKnifeStabilizePreBuy } from './knife-stabilize.js';
+import {
+  evaluateKnifeStabilizePreBuy,
+  knifeStabilizeBypassesTurnDump,
+  knifeStabilizeDeepEntryGates,
+  knifeStabilizeMaxPc1hPct,
+} from './knife-stabilize.js';
 import { takeMildStabilizeAttemptSlot } from './mild-stabilize.js';
 import { greenExposureCapReason } from './green-lane.js';
 import { assessRugRisk } from './rug-risk.js';
@@ -858,6 +863,14 @@ export async function attemptMildDipEntry(args: {
             minDipPct: Math.min(cfg.knifeStabilizeMinDipPct, -90),
             maxDipPct: knifeMaxDip,
           }
+        : isKnife
+          ? knifeStabilizeDeepEntryGates({
+              deepEntryEnabled: cfg.knifeStabilizeDeepEntryEnabled,
+              entryMinDipPct: cfg.entry.minDipPct,
+              entryMaxDipPct: cfg.entry.maxDipPct,
+              knifeMinDipPct: cfg.knifeStabilizeMinDipPct,
+              knifeMaxDipPct: cfg.knifeStabilizeMaxDipPct,
+            })
         : cfg.entry;
 
   if (cfg.preBuyRevalidate && !isMirror && !isLeaderStyle) {
@@ -1215,7 +1228,15 @@ export async function attemptMildDipEntry(args: {
   const ownShape = evaluateOwnEntryShapeGate({
     enabled: !isMirror && !isLeaderStyle,
     minTurnover5mLiq: cfg.entryOwnMinTurnover5mLiq,
-    maxPc1hPct: c.greenImpulse ? cfg.green.impulseMaxPc1hPct : cfg.entryOwnMaxPc1hPct,
+    maxPc1hPct: c.greenImpulse
+      ? cfg.green.impulseMaxPc1hPct
+      : isKnife
+        ? knifeStabilizeMaxPc1hPct({
+            deepEntryEnabled: cfg.knifeStabilizeDeepEntryEnabled,
+            knifeMaxPc1hPct: cfg.knifeStabilizeMaxPc1hPct,
+            entryOwnMaxPc1hPct: cfg.entryOwnMaxPc1hPct,
+          })
+        : cfg.entryOwnMaxPc1hPct,
     volume5mUsd: liveVolume5mUsd,
     liquidityUsd: liveLiquidityUsd,
     priceChange1hPct: c.metrics.priceChange1hPct,
@@ -1261,7 +1282,21 @@ export async function attemptMildDipEntry(args: {
       reason: 'green_turn_dump_gate_disabled',
     });
   }
-  if (applyTurnDumpGate) {
+  const knifeTurnDumpBypass = knifeStabilizeBypassesTurnDump({
+    deepEntryEnabled: cfg.knifeStabilizeDeepEntryEnabled,
+    dipSource: c.dipSource,
+  });
+  if (knifeTurnDumpBypass) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_turn_dump_bypass',
+      mint: c.mint,
+      symbol: c.symbol,
+      dipSource: c.dipSource,
+      lane: opts.lane,
+      trigger: opts.trigger,
+      reason: 'knife_stabilize_deep_entry',
+    });
+  } else if (applyTurnDumpGate) {
     const td = evaluateTurnDumpGate({
       enabled: true,
       pc5m: entryPc5m,

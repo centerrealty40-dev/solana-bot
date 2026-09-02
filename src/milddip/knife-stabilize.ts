@@ -17,6 +17,39 @@ export type KnifeWatchEntry = {
   readyNotifiedAtMs?: number;
 };
 
+export function knifeStabilizeDeepEntryGates(args: {
+  deepEntryEnabled: boolean;
+  entryMinDipPct: number;
+  entryMaxDipPct: number;
+  knifeMinDipPct: number;
+  knifeMaxDipPct: number;
+}): { minDipPct: number; maxDipPct: number } {
+  if (!args.deepEntryEnabled) {
+    return { minDipPct: args.entryMinDipPct, maxDipPct: args.entryMaxDipPct };
+  }
+  return {
+    minDipPct: Math.min(args.knifeMinDipPct, args.entryMinDipPct),
+    maxDipPct: Math.max(args.knifeMaxDipPct, args.entryMaxDipPct),
+  };
+}
+
+export function knifeStabilizeMaxPc1hPct(args: {
+  deepEntryEnabled: boolean;
+  knifeMaxPc1hPct: number;
+  entryOwnMaxPc1hPct: number;
+}): number {
+  return args.deepEntryEnabled && args.knifeMaxPc1hPct >= 0
+    ? args.knifeMaxPc1hPct
+    : args.entryOwnMaxPc1hPct;
+}
+
+export function knifeStabilizeBypassesTurnDump(args: {
+  deepEntryEnabled: boolean;
+  dipSource: string;
+}): boolean {
+  return args.deepEntryEnabled && args.dipSource === 'knife_stabilize';
+}
+
 export type KnifeStabilizeGates = {
   enabled: boolean;
   /** Inclusive-ish deep bound — e.g. −50 ⇒ dip must be > −50. */

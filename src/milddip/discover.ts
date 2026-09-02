@@ -36,6 +36,7 @@ import { mildDipHotMints } from './hot-mints.js';
 import {
   evaluateKnifeStabilizeReady,
   isKnifeDipPct,
+  knifeStabilizeBypassesTurnDump,
   upsertKnifeWatch,
   type KnifeStabilizeGates,
   type KnifeWatchEntry,
@@ -885,7 +886,11 @@ export async function enrichAndFilterCandidates(
           // Surface knife depth for journaling / prebuy context.
           priceChange5mPct: readyWatch.knifeDipPct,
         };
-        if (!turnDumpAllowsCandidate(cfg, knifeMetrics)) {
+        const turnDumpBypass = knifeStabilizeBypassesTurnDump({
+          deepEntryEnabled: cfg.knifeStabilizeDeepEntryEnabled,
+          dipSource: 'knife_stabilize',
+        });
+        if (!turnDumpBypass && !turnDumpAllowsCandidate(cfg, knifeMetrics)) {
           return { kind: 'knife', mint, watch: readyWatch, event: undefined };
         }
         return {
@@ -903,6 +908,7 @@ export async function enrichAndFilterCandidates(
                 priceUsd: details.priceUsd,
                 reasons: ready.reasons,
                 ageMs: nowMs - readyWatch.detectedAtMs,
+                ...(turnDumpBypass ? { turnDumpBypass: true } : {}),
               }
             : undefined,
           candidate: {
