@@ -71,9 +71,10 @@ export function requestOpenMarkRefresh(args: {
       }
       if (
         (args.liquidityDeadMaxUsd ?? 0) > 0 &&
-        (details == null ||
-          (details.liquidityUsd != null &&
-            details.liquidityUsd <= (args.liquidityDeadMaxUsd ?? 0)))
+        details != null &&
+        typeof details.liquidityUsd === 'number' &&
+        Number.isFinite(details.liquidityUsd) &&
+        details.liquidityUsd <= (args.liquidityDeadMaxUsd ?? 0)
       ) {
         noteOpenMarkLiquidityDead(mint, now);
       } else if (details) {
