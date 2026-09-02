@@ -2977,7 +2977,8 @@ const PM2_APPS = [
          * trough or starts a controlled bounce (not the falling blade).
          */
         MILD_DIP_KNIFE_STABILIZE_ENABLED: '1',
-        MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT: '-50',
+        MILD_DIP_KNIFE_STABILIZE_DEEP_ENTRY: '1',
+        MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT: '-60',
         MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT: '-20',
         /**
          * 1.11.892 — 30s, not 120s. This gate sits in front of both paths, so a
@@ -2988,12 +2989,13 @@ const PM2_APPS = [
          * requirement of `QUIET_MS` with no new trough, which is the evidence
          * that applies when there is no bounce yet.
          */
-        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '30000',
+        MILD_DIP_KNIFE_STABILIZE_WAIT_MS: '45000',
         MILD_DIP_KNIFE_STABILIZE_MAX_WATCH_MS: '600000',
-        MILD_DIP_KNIFE_STABILIZE_QUIET_MS: '45000',
+        MILD_DIP_KNIFE_STABILIZE_QUIET_MS: '60000',
         MILD_DIP_KNIFE_STABILIZE_BAND_PCT: '2.5',
         MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT: '1.5',
-        MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '10',
+        MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT: '8',
+        MILD_DIP_KNIFE_STABILIZE_MAX_PC1H_PCT: '0',
         /**
          * 1.11.803 — wait-dip back ON, now *alongside* turn→dump: the formula
          * picks the mint, wait-dip picks the price. 8h CF on live buys: entering

@@ -501,6 +501,7 @@ const MildDipConfigSchema = z.object({
    * Ecosystem enables for live mild-dip-bot.
    */
   knifeStabilizeEnabled: z.boolean().default(false),
+  knifeStabilizeDeepEntryEnabled: z.boolean().default(false),
   knifeStabilizeMinDipPct: z.coerce.number().max(0).default(-50),
   knifeStabilizeMaxDipPct: z.coerce.number().max(0).default(-20),
   knifeStabilizeWaitMs: z.coerce.number().int().min(0).max(3_600_000).default(120_000),
@@ -509,6 +510,7 @@ const MildDipConfigSchema = z.object({
   knifeStabilizeBandPct: z.coerce.number().min(0).max(50).default(2.5),
   knifeStabilizeMinBouncePct: z.coerce.number().min(0).max(50).default(1.5),
   knifeStabilizeMaxBouncePct: z.coerce.number().min(0).max(50).default(10),
+  knifeStabilizeMaxPc1hPct: z.coerce.number().min(-1).max(100000).default(-1),
   /** Reject stream-derived knife evidence when Dex contradicts it. */
   knifeDexGreenVeto: z.boolean().default(false),
   /** Dex pc5m at or above this level is considered green for the veto. */
@@ -1700,6 +1702,7 @@ export function loadMildDipConfig(): MildDipConfig {
     geckoCacheMs: process.env.MILD_DIP_GECKO_CACHE_MS ?? 120_000,
     geckoPages: process.env.MILD_DIP_GECKO_PAGES ?? 1,
     knifeStabilizeEnabled: envBool('MILD_DIP_KNIFE_STABILIZE_ENABLED', false),
+    knifeStabilizeDeepEntryEnabled: envBool('MILD_DIP_KNIFE_STABILIZE_DEEP_ENTRY', false),
     knifeStabilizeMinDipPct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_DIP_PCT', -50),
     knifeStabilizeMaxDipPct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_DIP_PCT', -20),
     knifeStabilizeWaitMs: envNum('MILD_DIP_KNIFE_STABILIZE_WAIT_MS', 120_000),
@@ -1708,6 +1711,7 @@ export function loadMildDipConfig(): MildDipConfig {
     knifeStabilizeBandPct: envNum('MILD_DIP_KNIFE_STABILIZE_BAND_PCT', 2.5),
     knifeStabilizeMinBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MIN_BOUNCE_PCT', 1.5),
     knifeStabilizeMaxBouncePct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_BOUNCE_PCT', 10),
+    knifeStabilizeMaxPc1hPct: envNum('MILD_DIP_KNIFE_STABILIZE_MAX_PC1H_PCT', -1),
     knifeDexGreenVeto: envBool('MILD_DIP_KNIFE_DEX_GREEN_VETO', false),
     knifeDexGreenMinPc5m: envNum('MILD_DIP_KNIFE_DEX_GREEN_MIN_PC5M', 0),
     knifeStreamDivergenceMaxPp: envNum('MILD_DIP_KNIFE_STREAM_DIVERGENCE_MAX_PP', 40),
