@@ -46,6 +46,8 @@ const connection = new Connection(cfg.rpcUrl, 'confirmed');
 const signer = loadLiveKeypairFromSecretEnv(cfg.walletSecret);
 const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 const nowMs = Date.now();
+const worthlessMaxUsd =
+  cfg.worthlessWriteoffMaxUsd > 0 ? cfg.worthlessWriteoffMaxUsd : 0.05;
 
 for (const row of rows) {
   const solUsd = getSolUsd();
@@ -62,9 +64,21 @@ for (const row of rows) {
         timeoutMs: 4_000,
       }),
     sleep,
+    isWorthless: (value) => {
+      if (value.kind !== 'ok') return false;
+      const valueUsd = value.jupiterPriceUsd * tokenAmount;
+      return Number.isFinite(valueUsd) && valueUsd <= worthlessMaxUsd;
+    },
   });
-  console.log(`${row.mint} status=${probe.status} tokenRaw=${row.amountRaw}`);
-  if (probe.status !== 'unroutable' || !commit) continue;
+  const valueUsd =
+    probe.first.kind === 'ok' ? probe.first.jupiterPriceUsd * tokenAmount : null;
+  console.log(
+    `${row.mint} status=${probe.status} valueUsd=${valueUsd ?? 'n/a'} tokenRaw=${row.amountRaw}`,
+  );
+  if (
+    (probe.status !== 'unroutable' && probe.status !== 'worthless') ||
+    !commit
+  ) continue;
 
   const position = state.open[row.mint];
   if (position) {
@@ -81,7 +95,7 @@ for (const row of rows) {
       quoteReceivedUsd: 0,
       costBasisUsdFallback: costUsd,
       markPnlPct: -100,
-      reason: 'unroutable_writeoff',
+      reason: probe.status === 'worthless' ? 'worthless_writeoff' : 'unroutable_writeoff',
       lane: position.lane ?? 'dip',
       nowMs,
     });
@@ -101,6 +115,7 @@ for (const row of rows) {
       costUsd,
       checks: 1,
       ageMs: 0,
+      mode: probe.status === 'worthless' ? 'worthless' : 'unroutable',
       source: 'one_shot_tool',
     });
   }

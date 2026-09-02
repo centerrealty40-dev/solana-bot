@@ -469,6 +469,7 @@ const MildDipConfigSchema = z.object({
   unroutableWriteoffMinAgeMs: z.coerce.number().int().min(0).max(30 * 86_400_000).default(1_800_000),
   unroutableWriteoffMaxPerPass: z.coerce.number().int().min(1).max(100).default(3),
   unroutableWriteoffIntervalMs: z.coerce.number().int().min(60_000).max(86_400_000).default(600_000),
+  worthlessWriteoffMaxUsd: z.coerce.number().min(0).max(100).default(0),
   orphanSellMinUsd: z.coerce.number().min(0).default(0.5),
   orphanSweepIntervalMs: z.coerce.number().int().min(60_000).default(6 * 3_600_000),
   /**
@@ -1672,6 +1673,7 @@ export function loadMildDipConfig(): MildDipConfig {
     unroutableWriteoffMinAgeMs: envNum('MILD_DIP_UNROUTABLE_WRITEOFF_MIN_AGE_MS', 1_800_000),
     unroutableWriteoffMaxPerPass: envNum('MILD_DIP_UNROUTABLE_WRITEOFF_MAX_PER_PASS', 3),
     unroutableWriteoffIntervalMs: envNum('MILD_DIP_UNROUTABLE_WRITEOFF_INTERVAL_MS', 600_000),
+    worthlessWriteoffMaxUsd: envNum('MILD_DIP_WORTHLESS_WRITEOFF_MAX_USD', 0),
     orphanSellMinUsd: envNum('MILD_DIP_ORPHAN_SELL_MIN_USD', 0.5),
     orphanSweepIntervalMs: envNum('MILD_DIP_ORPHAN_SELL_INTERVAL_MS', 6 * 3_600_000),
     discoverSources: process.env.MILD_DIP_DISCOVER_SOURCES ?? 'stream,boosts,profiles',

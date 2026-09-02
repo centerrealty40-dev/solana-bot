@@ -76,6 +76,16 @@ export async function writeOffUnroutableBags(args: {
       result.skipped += 1;
       continue;
     }
+    const worthlessMaxUsd = cfg.worthlessWriteoffMaxUsd;
+    const isWorthless =
+      worthlessMaxUsd > 0
+        ? (value: PriceVerifyVerdict) => {
+            if (value.kind !== 'ok') return false;
+            const tokenAmount = Number(tokenRaw) / Math.pow(10, tokenDecimals);
+            const valueUsd = value.jupiterPriceUsd * tokenAmount;
+            return Number.isFinite(valueUsd) && valueUsd <= worthlessMaxUsd;
+          }
+        : undefined;
     const probe = await confirmUnroutableRoute({
       quote: () =>
         quote({
@@ -84,12 +94,13 @@ export async function writeOffUnroutableBags(args: {
           tokenDecimals,
         }),
       sleep,
+      isWorthless,
     });
     if (probe.status === 'routable') {
       delete observations[mint];
       continue;
     }
-    if (probe.status !== 'unroutable') {
+    if (probe.status !== 'unroutable' && probe.status !== 'worthless') {
       result.skipped += 1;
       continue;
     }
@@ -127,7 +138,7 @@ export async function writeOffUnroutableBags(args: {
       fillPriceUsd: null,
       markPnlPct: -100,
       costBasisUsdFallback: costUsd,
-      reason: 'unroutable_writeoff',
+      reason: probe.status === 'worthless' ? 'worthless_writeoff' : 'unroutable_writeoff',
       lane: position.lane ?? 'dip',
       nowMs,
     });
@@ -149,6 +160,7 @@ export async function writeOffUnroutableBags(args: {
       costUsd,
       checks: observed.checks,
       ageMs,
+      mode: probe.status === 'worthless' ? 'worthless' : 'unroutable',
     });
   }
   saveMildDipState(cfg.statePath, state);
