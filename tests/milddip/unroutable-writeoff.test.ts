@@ -18,6 +18,7 @@ const baseCfg = (overrides: Record<string, unknown> = {}): MildDipConfig =>
     unroutableWriteoffMinAgeMs: 1_800_000,
     unroutableWriteoffMaxPerPass: 3,
     unroutableWriteoffIntervalMs: 600_000,
+    worthlessWriteoffMaxUsd: 0,
     statePath: '/tmp/unroutable-writeoff-state.json',
     journalPath: '/tmp/unroutable-writeoff-journal.jsonl',
     tradesPath: '/tmp/unroutable-writeoff-trades.jsonl',
@@ -50,6 +51,17 @@ const noRoute = () => ({ kind: 'skipped' as const, reason: 'no-route' as const, 
 const routable = () => ({
   kind: 'ok' as const,
   jupiterPriceUsd: 1,
+  snapshotPriceUsd: 1,
+  slipPct: 0,
+  priceImpactPct: 0,
+  routeHops: 1,
+  source: 'jupiter' as const,
+  ageMs: 1,
+  ts: 1,
+});
+const cheap = (priceUsd: number) => ({
+  kind: 'ok' as const,
+  jupiterPriceUsd: priceUsd,
   snapshotPriceUsd: 1,
   slipPct: 0,
   priceImpactPct: 0,
@@ -226,5 +238,78 @@ describe('unroutable writeoff', () => {
       deps: deps([noRoute(), noRoute()]),
     });
     expect(again.checked).toBe(0);
+  });
+
+  it('writes off a confirmed worthless position with its mode and reason', async () => {
+    rmSync('/tmp/unroutable-writeoff-journal.jsonl', { force: true });
+    rmSync('/tmp/unroutable-writeoff-trades.jsonl', { force: true });
+    const state = baseState();
+    const result = await writeOffUnroutableBags({
+      cfg: baseCfg({
+        worthlessWriteoffMaxUsd: 0.1,
+        unroutableWriteoffMinChecks: 1,
+        unroutableWriteoffMinAgeMs: 0,
+      }),
+      state,
+      nowMs: 2_000_000,
+      deps: deps([cheap(0.01) as never, cheap(0.01) as never]),
+    });
+    expect(result.wroteOff).toBe(1);
+    expect(readFileSync('/tmp/unroutable-writeoff-trades.jsonl', 'utf8')).toContain(
+      'worthless_writeoff',
+    );
+    expect(readFileSync('/tmp/unroutable-writeoff-journal.jsonl', 'utf8')).toContain(
+      '"mode":"worthless"',
+    );
+  });
+
+  it('clears worthless observations above the configured value threshold', async () => {
+    const state = baseState();
+    const mint = Object.keys(state.open)[0]!;
+    state.unroutableByMint![mint] = { firstSeenAtMs: 1, lastSeenAtMs: 2, checks: 2 };
+    await writeOffUnroutableBags({
+      cfg: baseCfg({ worthlessWriteoffMaxUsd: 0.1 }),
+      state,
+      nowMs: 3,
+      deps: deps([cheap(1) as never]),
+    });
+    expect(state.unroutableByMint).not.toHaveProperty(mint);
+    expect(state.open).toHaveProperty(mint);
+  });
+
+  it('does not use the worthless criterion when its threshold is zero', async () => {
+    const state = baseState();
+    const result = await writeOffUnroutableBags({
+      cfg: baseCfg({
+        worthlessWriteoffMaxUsd: 0,
+        unroutableWriteoffMinChecks: 1,
+        unroutableWriteoffMinAgeMs: 0,
+      }),
+      state,
+      nowMs: 2_000_000,
+      deps: deps([cheap(0.01) as never]),
+    });
+    expect(result.wroteOff).toBe(0);
+    expect(state.open).toHaveProperty(Object.keys(state.open)[0]!);
+  });
+
+  it('treats a worthless result followed by a normal result as unknown', async () => {
+    const state = baseState();
+    let calls = 0;
+    const result = await writeOffUnroutableBags({
+      cfg: baseCfg({
+        worthlessWriteoffMaxUsd: 0.1,
+        unroutableWriteoffMinChecks: 1,
+        unroutableWriteoffMinAgeMs: 0,
+      }),
+      state,
+      nowMs: 2_000_000,
+      deps: {
+        sleep: async () => {},
+        quote: async () => (++calls === 1 ? cheap(0.01) : cheap(1)),
+      },
+    });
+    expect(result.wroteOff).toBe(0);
+    expect(result.markedNoRoute).toBe(0);
   });
 });
