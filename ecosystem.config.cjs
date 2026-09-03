@@ -5371,6 +5371,8 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'mild-dip-mirror',
   /** mild-dip-mirror2 was previously stopped; reload/watchdog must not revive it. */
   'mild-dip-mirror2',
+  /** Operator permanently disabled own2; reload/watchdog must not revive it. */
+  'mild-dip-own2',
   'live-oscar-dashboard',
   'market-spike-telegram-watch',
   'market-pullback-telegram-watch',
