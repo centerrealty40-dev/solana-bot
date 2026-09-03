@@ -351,6 +351,15 @@ describe('mirror PM2 apps', () => {
     expect(excludedAppsBlock).not.toContain("'mild-dip-mirror2',");
   });
 
+  it('keeps permanently disabled own2 out of the Oscar VPS export', () => {
+    const excludedAppsBlock = ecosystemSource.match(
+      /const OSCAR_VPS_EXCLUDED_APPS = new Set\(\[([\s\S]*?)\]\);/,
+    )?.[1];
+    expect(excludedAppsBlock).toContain("'mild-dip-own2',");
+    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-own2')).toBe(false);
+    expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-own2')).toBe(true);
+  });
+
   it('keeps both mirror processes under the watchdog', () => {
     const watchdog = ecosystem.apps.find((app) => app.name === 'mild-dip-watchdog');
     expect(watchdog?.env.MILD_DIP_WATCHDOG_INSTANCES).toBe(
@@ -448,7 +457,7 @@ describe('mirror PM2 apps', () => {
     expect(own2?.env.MILD_DIP_LEADER_SEEN_MEMORY_MS).toBe('604800000');
     expect(own2?.env.MILD_DIP_LEADER_SEED_MAX).toBe('250');
     expect(own2?.env.MILD_DIP_LEADER_SEED_MAX_AGE_MS).toBe('7200000');
-    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-own2')).toBe(true);
+    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-own2')).toBe(false);
     expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-own2')).toBe(true);
     expect(
       own2?.env.MILD_DIP_WATCHDOG_INSTANCES,
