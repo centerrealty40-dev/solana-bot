@@ -82,7 +82,37 @@ describe('mildDipLeaderMirrorSizeUsd', () => {
         rugKnife: false,
         rugKnifeClipUsd: 10,
       }),
+    ).toBe(80);
+    expect(
+      mildDipLeaderMirrorEntryClipUsd({
+        lawEnabled: false,
+        mirrorSizeUsd: 80,
+        positionUsd: 80,
+        commonSizeUsd: 12.42,
+        rugKnife: true,
+        rugKnifeClipUsd: 20,
+      }),
+    ).toBe(20);
+    expect(
+      mildDipLeaderMirrorEntryClipUsd({
+        lawEnabled: false,
+        mirrorSizeUsd: 80,
+        positionUsd: 0,
+        commonSizeUsd: 12.42,
+        rugKnife: false,
+        rugKnifeClipUsd: 10,
+      }),
     ).toBe(12.42);
+    expect(
+      mildDipLeaderMirrorEntryClipUsd({
+        lawEnabled: false,
+        mirrorSizeUsd: 100,
+        positionUsd: 100,
+        commonSizeUsd: 30,
+        rugKnife: false,
+        rugKnifeClipUsd: 10,
+      }),
+    ).toBe(100);
   });
 
   it('raises only non-tier mirror first touch to the law floor', () => {
