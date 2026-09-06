@@ -2432,7 +2432,12 @@ export function mildDipLeaderMirrorEntryClipUsd(args: {
   rugKnifeClipUsd: number;
 }): number {
   if (!args.lawEnabled) {
-    return Math.min(args.positionUsd, args.commonSizeUsd);
+    if (args.positionUsd > 0) {
+      return args.rugKnife && args.rugKnifeClipUsd > 0
+        ? Math.min(args.rugKnifeClipUsd, args.positionUsd)
+        : args.positionUsd;
+    }
+    return args.commonSizeUsd;
   }
   if (args.rugKnife && args.rugKnifeClipUsd > 0) {
     return Math.min(args.rugKnifeClipUsd, args.mirrorSizeUsd);
