@@ -236,6 +236,7 @@ import {
 } from './trade-journal.js';
 import {
   accountMirrorCashLeg,
+  externalBagSettleCashDeltaUsd,
   mirrorOpenMarkValueUsd,
   confirmLossCapObservation,
   maybeResetMirrorLossCapDay,
@@ -3980,11 +3981,31 @@ async function executeQueuedSell(args: {
       return;
     }
     if (state.open[mint]) {
+      const cashDeltaUsd = externalBagSettleCashDeltaUsd({
+        sizeUsd: pos.sizeUsd,
+        lane: pos.lane,
+        lossCapAllLanes: cfg.leaderMirror.lossCapAllLanes,
+      });
+      if (cashDeltaUsd > 0) {
+        state.mirrorTradingCashUsd =
+          (state.mirrorTradingCashUsd ?? 0) + cashDeltaUsd;
+      }
       delete state.open[mint];
       state.cooldownUntilMs[mint] = nowMs + cd.cooldownMs;
       // 1.11.783 — drop_empty was wiping the bag without lastExit → post-exit wake blind.
       noteLastExit(decision.markPriceUsd || pos.entryPriceUsd, pos.tokenRaw ?? null);
       saveMildDipState(cfg.statePath, state);
+      if (cashDeltaUsd > 0) {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mirror_external_bag_settle',
+          mint,
+          symbol: pos.symbol,
+          exitReason: decision.reason,
+          sizeUsd: pos.sizeUsd,
+          cashDeltaUsd,
+          tradingCashUsd: state.mirrorTradingCashUsd,
+        });
+      }
     }
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_drop_empty',

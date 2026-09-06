@@ -1,3 +1,8 @@
+import {
+  lossCapCountsLane,
+  type MildDipOpenPosition,
+} from './state.js';
+
 function positive(value: unknown): number | null {
   const n = Number(value);
   return Number.isFinite(n) && n > 0 ? n : null;
@@ -49,6 +54,16 @@ export function accountMirrorCashLeg(
   const delta = side === 'buy' ? buyCashDeltaUsd(event) : sellCashDeltaUsd(event);
   target.mirrorTradingCashUsd = (target.mirrorTradingCashUsd ?? 0) + delta;
   return delta;
+}
+
+export function externalBagSettleCashDeltaUsd(args: {
+  sizeUsd: number;
+  lane?: MildDipOpenPosition['lane'];
+  lossCapAllLanes: boolean;
+}): number {
+  return lossCapCountsLane(args.lane, args.lossCapAllLanes)
+    ? Math.max(0, args.sizeUsd)
+    : 0;
 }
 
 export type MirrorLossCapBaselineState = {

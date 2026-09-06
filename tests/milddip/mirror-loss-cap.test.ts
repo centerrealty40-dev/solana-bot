@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buyCashDeltaUsd,
   confirmLossCapObservation,
+  externalBagSettleCashDeltaUsd,
   mirrorOpenMarkValueUsd,
   mirrorLossCapDayKey,
   maybeResetMirrorLossCapDay,
@@ -99,6 +100,37 @@ describe('mirror loss cap cash and mark accounting', () => {
       bagsMarkUsd: 83.5,
       drawdownUsd: 40,
     });
+  });
+
+  it('settles an externally vanished bag only for loss-cap-counted lanes', () => {
+    expect(
+      externalBagSettleCashDeltaUsd({
+        sizeUsd: 203.36,
+        lane: 'leader_mirror',
+        lossCapAllLanes: false,
+      }),
+    ).toBe(203.36);
+    expect(
+      externalBagSettleCashDeltaUsd({
+        sizeUsd: -10,
+        lane: 'leader_mirror',
+        lossCapAllLanes: false,
+      }),
+    ).toBe(0);
+    expect(
+      externalBagSettleCashDeltaUsd({
+        sizeUsd: 25,
+        lane: 'green',
+        lossCapAllLanes: false,
+      }),
+    ).toBe(0);
+    expect(
+      externalBagSettleCashDeltaUsd({
+        sizeUsd: 25,
+        lane: 'green',
+        lossCapAllLanes: true,
+      }),
+    ).toBe(25);
   });
 
   it('resets the loss-cap window at the Moscow calendar boundary', () => {
