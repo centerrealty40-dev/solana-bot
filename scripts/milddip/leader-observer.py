@@ -2017,6 +2017,14 @@ class Observer:
                             "ok": True,
                             "signature": sig,
                             "sizeUsdIntent": rpc_fills.get("sizeUsd"),
+                            "tokenPreUi": pre_ui,
+                            "tokenPostUi": post_ui,
+                            "tokenDelta": delta,
+                            "sellFractionOfBag": (
+                                min(1.0, max(0.0, -delta / pre_ui))
+                                if pre_ui > 0
+                                else None
+                            ),
                             "quoteSpentUsd": None,
                             "quoteReceivedUsd": received_from_rpc,
                             "cashDeltaUsd": (

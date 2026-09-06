@@ -12,6 +12,20 @@ export function mirrorLeaderSellRetryDue(
   );
 }
 
+export function mirrorLeaderSellSettlementSucceeded(args: {
+  positionExists: boolean;
+  tokenRawBefore: unknown;
+  tokenRawAfter: unknown;
+}): boolean {
+  if (!args.positionExists) return true;
+  if (args.tokenRawBefore == null || args.tokenRawAfter == null) return false;
+  try {
+    return BigInt(String(args.tokenRawAfter)) < BigInt(String(args.tokenRawBefore));
+  } catch {
+    return false;
+  }
+}
+
 export type LeaderSellExitReason =
   | 'disabled'
   | 'wrong_lane'

@@ -73,6 +73,7 @@ describe('mild-dip state', () => {
             signature: 'sell-signature',
             leaderBlockTimeMs: 2_000,
             detectedAtMs: 3_000,
+            sellFraction: null,
             attemptCount: 1,
           },
         },

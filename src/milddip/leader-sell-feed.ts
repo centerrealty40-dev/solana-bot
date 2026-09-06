@@ -7,6 +7,7 @@ export type LeaderSellEvent = {
   blockTimeMs: number;
   fillPriceUsd: number | null;
   markPnlPct: number | null;
+  sellFraction: number | null;
 };
 
 export type LeaderSellFeedOptions = {
@@ -420,12 +421,22 @@ export function parseLeaderSellLines(
         blockTimeMs,
         fillPriceUsd: finiteNumber(row.fillPriceUsd),
         markPnlPct: finiteNumber(row.markPnlPct),
+        sellFraction: parseSellFraction(row),
       });
     } catch {
       // Append-only journals can contain a partial or malformed line.
     }
   }
   return result;
+}
+
+function parseSellFraction(row: Record<string, unknown>): number | null {
+  const direct = finiteNumber(row.sellFractionOfBag);
+  if (direct != null && direct > 0 && direct <= 1) return direct;
+  const pre = finiteNumber(row.tokenPreUi);
+  const post = finiteNumber(row.tokenPostUi);
+  if (pre == null || pre <= 0 || post == null || post < 0) return null;
+  return Math.min(1, Math.max(0, 1 - post / pre));
 }
 
 /** Read current and one rotated observer journal without the live-feed age gate. */

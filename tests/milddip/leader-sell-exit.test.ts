@@ -4,6 +4,7 @@ import {
   decideLeaderSellExit,
   isLeaderSellEventValidForPosition,
   mirrorLeaderSellRetryDue,
+  mirrorLeaderSellSettlementSucceeded,
   selectLatestValidLeaderSellEventForPosition,
   selectNewerLeaderSellEvent,
 } from '../../src/milddip/leader-sell-exit.js';
@@ -16,6 +17,7 @@ const event = {
   blockTimeMs: 100_000,
   fillPriceUsd: 1,
   markPnlPct: 5,
+  sellFraction: null,
 };
 const base = {
   enabled: true,
@@ -114,6 +116,8 @@ describe('decideLeaderSellExit', () => {
     expect(loopSource).toContain('delete pos.mirrorLeaderSellIntent');
     expect(loopSource).toContain('const leaderSellEvent = selectNewerLeaderSellEvent');
     expect(loopSource).toContain("reason: 'mirror_leader_sell'");
+    expect(loopSource).toContain('mirrorLeaderSellDoneSignatures');
+    expect(loopSource).toContain("kind: 'mirror_leader_partial_sell_before_entry'");
   });
 
   it('requires the feature and mirror lane', () => {
@@ -173,5 +177,53 @@ describe('decideLeaderSellExit', () => {
     expect(mirrorLeaderSellRetryDue(undefined, 1_000)).toBe(true);
     expect(mirrorLeaderSellRetryDue(1_000, 5_999)).toBe(false);
     expect(mirrorLeaderSellRetryDue(1_000, 6_000)).toBe(true);
+  });
+
+  it('keeps failed partial sells retryable and dedupes only after settlement', () => {
+    expect(
+      mirrorLeaderSellSettlementSucceeded({
+        positionExists: true,
+        tokenRawBefore: '100',
+        tokenRawAfter: '100',
+      }),
+    ).toBe(false);
+    expect(
+      mirrorLeaderSellSettlementSucceeded({
+        positionExists: true,
+        tokenRawBefore: '100',
+        tokenRawAfter: '40',
+      }),
+    ).toBe(true);
+    expect(
+      mirrorLeaderSellSettlementSucceeded({
+        positionExists: false,
+        tokenRawBefore: '100',
+        tokenRawAfter: null,
+      }),
+    ).toBe(true);
+    expect(
+      mirrorLeaderSellSettlementSucceeded({
+        positionExists: true,
+        tokenRawBefore: null,
+        tokenRawAfter: '40',
+      }),
+    ).toBe(false);
+    expect(loopSource).toContain(
+      'const tokenRawBefore = state.open[decision.mint]?.tokenRaw',
+    );
+    expect(loopSource).toContain('markMirrorLeaderSellDone(after, {');
+    expect(loopSource).toContain('delete after.mirrorLeaderSellIntent');
+    expect(loopSource).toContain('partial: decision.fraction < 1');
+    expect(loopSource).toContain('fraction: decision.fraction');
+    const partialEntryStart = loopSource.indexOf(
+      "kind: 'mirror_leader_partial_sell_before_entry'",
+    );
+    const fullRefusalBranchStart = loopSource.indexOf(
+      '      } else {\n        appendMildDipJournal',
+      partialEntryStart,
+    );
+    expect(
+      loopSource.slice(partialEntryStart, fullRefusalBranchStart),
+    ).not.toContain('continue;');
   });
 });

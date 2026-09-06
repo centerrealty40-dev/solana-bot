@@ -30,9 +30,45 @@ const base = {
   signature: 'sig',
   fillPriceUsd: 1.2,
   markPnlPct: 4,
+  sellFractionOfBag: 0.25,
 };
 
 describe('leader sell feed parser', () => {
+  it('prefers the direct fraction and derives it from token balances', () => {
+    const [direct] = parseLeaderSellLines(
+      [JSON.stringify(base)],
+      100_000,
+      { leaders: [leader], maxAgeMs: 60_000 },
+    );
+    expect(direct.sellFraction).toBe(0.25);
+    const [derived] = parseLeaderSellLines(
+      [
+        JSON.stringify({
+          ...base,
+          sellFractionOfBag: undefined,
+          tokenPreUi: 10,
+          tokenPostUi: 7.5,
+        }),
+      ],
+      100_000,
+      { leaders: [leader], maxAgeMs: 60_000 },
+    );
+    expect(derived.sellFraction).toBe(0.25);
+    const [missing] = parseLeaderSellLines(
+      [
+        JSON.stringify({
+          ...base,
+          sellFractionOfBag: undefined,
+          tokenPreUi: undefined,
+          tokenPostUi: undefined,
+        }),
+      ],
+      100_000,
+      { leaders: [leader], maxAgeMs: 60_000 },
+    );
+    expect(missing.sellFraction).toBeNull();
+  });
+
   it('filters event shape, configured leaders, and max age', () => {
     const stats = { staleDropped: 0 };
     expect(

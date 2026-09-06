@@ -126,9 +126,11 @@ import {
   decideLeaderSellExit,
   isLeaderSellEventValidForPosition,
   mirrorLeaderSellRetryDue,
+  mirrorLeaderSellSettlementSucceeded,
   selectLatestValidLeaderSellEventForPosition,
   selectNewerLeaderSellEvent,
 } from './leader-sell-exit.js';
+import { mirrorSellFractionFromLeader } from './leader-sell-fraction.js';
 import { recoverDeferIsCapped } from './recover-defer.js';
 import {
   bounceFromTroughPct,
@@ -276,6 +278,60 @@ import {
   HOLDING_DUST_RAW,
   verdictDropEmptyOnNoBalance,
 } from './sell-empty-guard.js';
+
+function mirrorLeaderSellAlreadyDone(
+  pos: MildDipOpenPosition,
+  event: Pick<LeaderSellEvent, 'signature' | 'blockTimeMs'>,
+): boolean {
+  if (
+    event.signature != null &&
+    (pos.mirrorLeaderSellDoneSignatures ?? []).includes(event.signature)
+  ) {
+    return true;
+  }
+  return (
+    event.signature == null &&
+    pos.mirrorLeaderSellDoneBlockTimeMs != null &&
+    event.blockTimeMs <= pos.mirrorLeaderSellDoneBlockTimeMs
+  );
+}
+
+function markMirrorLeaderSellDone(
+  pos: MildDipOpenPosition,
+  event: Pick<LeaderSellEvent, 'signature' | 'blockTimeMs'>,
+): void {
+  if (event.signature != null) {
+    const signatures = (pos.mirrorLeaderSellDoneSignatures ?? []).filter(
+      (signature) => signature !== event.signature,
+    );
+    signatures.push(event.signature);
+    pos.mirrorLeaderSellDoneSignatures = signatures.slice(-10);
+    return;
+  }
+  pos.mirrorLeaderSellDoneBlockTimeMs = Math.max(
+    pos.mirrorLeaderSellDoneBlockTimeMs ?? 0,
+    event.blockTimeMs,
+  );
+}
+
+const mirrorPartialSellBeforeEntryLastJournaled = new Map<string, number>();
+
+function shouldJournalMirrorPartialSellBeforeEntry(
+  mint: string,
+  signature: string | null,
+  blockTimeMs: number,
+  nowMs: number,
+): boolean {
+  const key = `${mint}:${signature ?? `block-${blockTimeMs}`}`;
+  const previous = mirrorPartialSellBeforeEntryLastJournaled.get(key);
+  if (previous != null && nowMs - previous < 5 * 60_000) return false;
+  mirrorPartialSellBeforeEntryLastJournaled.set(key, nowMs);
+  if (mirrorPartialSellBeforeEntryLastJournaled.size > 500) {
+    const oldest = mirrorPartialSellBeforeEntryLastJournaled.keys().next().value;
+    if (oldest) mirrorPartialSellBeforeEntryLastJournaled.delete(oldest);
+  }
+  return true;
+}
 
 function mirrorLossCapTriggered(cfg: MildDipConfig, state: MildDipState): boolean {
   return cfg.leaderMirror.lossCapUsd > 0 && state.mirrorLossCapTriggeredAtMs != null;
@@ -2265,30 +2321,57 @@ async function wakeLeaderMirrors(
       maxAgeMs: cfg.leaderMirror.leaderSellExitMaxAgeMs,
     });
     if (leaderSellDecision.shouldExit && leaderSell) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'leader_mirror_refusal',
-        mint,
-        leader: leaderSell.leader,
-        reason: 'leader_mirror_leader_sell',
-        leaderSignature: leaderSell.signature,
-        leaderSellBlockTimeMs: leaderSell.blockTimeMs,
-        leaderBuyTsMs,
-        leaderFillPriceUsd: hit.fillPriceUsd ?? null,
-        leaderSellFillPriceUsd: leaderSell.fillPriceUsd,
-        leaderSellMarkPnlPct: leaderSell.markPnlPct,
-        quotePriceUsd: null,
-        pc5m: hit.pc5m ?? null,
-        quoteGainPct: null,
-        metricSource: watch.metricSource,
+      const leaderSellFraction = mirrorSellFractionFromLeader({
+        sellFraction: leaderSell.sellFraction,
+        proportionalEnabled: cfg.leaderMirror.leaderSellProportionalEnabled,
+        minFraction: cfg.leaderMirror.leaderSellMinFraction,
+        fullFraction: cfg.leaderMirror.leaderSellFullFraction,
       });
-      leaderMirrorDecisions.set(watchKey, {
-        hitKey: watch.hitKey,
-        decidedAtMs: nowMs,
-        reason: 'leader_mirror_leader_sell',
-      });
-      leaderMirrorWatches.delete(watchKey);
-      leaderSellFeed?.remove(mint);
-      continue;
+      if (leaderSellFraction.mode !== 'full') {
+        if (
+          shouldJournalMirrorPartialSellBeforeEntry(
+            mint,
+            leaderSell.signature,
+            leaderSell.blockTimeMs,
+            nowMs,
+          )
+        ) {
+          appendMildDipJournal(cfg.journalPath, {
+            kind: 'mirror_leader_partial_sell_before_entry',
+            mint,
+            leader: leaderSell.leader,
+            signature: leaderSell.signature,
+            leaderBlockTimeMs: leaderSell.blockTimeMs,
+            leaderSellFraction: leaderSell.sellFraction,
+          });
+        }
+      } else {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_refusal',
+          mint,
+          leader: leaderSell.leader,
+          reason: 'leader_mirror_leader_sell',
+          leaderSignature: leaderSell.signature,
+          leaderSellBlockTimeMs: leaderSell.blockTimeMs,
+          leaderSellFraction: leaderSell.sellFraction,
+          leaderBuyTsMs,
+          leaderFillPriceUsd: hit.fillPriceUsd ?? null,
+          leaderSellFillPriceUsd: leaderSell.fillPriceUsd,
+          leaderSellMarkPnlPct: leaderSell.markPnlPct,
+          quotePriceUsd: null,
+          pc5m: hit.pc5m ?? null,
+          quoteGainPct: null,
+          metricSource: watch.metricSource,
+        });
+        leaderMirrorDecisions.set(watchKey, {
+          hitKey: watch.hitKey,
+          decidedAtMs: nowMs,
+          reason: 'leader_mirror_leader_sell',
+        });
+        leaderMirrorWatches.delete(watchKey);
+        leaderSellFeed?.remove(mint);
+        continue;
+      }
     }
     if (quoteKeys.has(watchKey)) {
       const quoteRequested = requestGreenMinuteJupiterRefresh({
@@ -5427,6 +5510,7 @@ async function tryExits(
           blockTimeMs: pos.mirrorLeaderSellIntent.leaderBlockTimeMs,
           fillPriceUsd: null,
           markPnlPct: null,
+          sellFraction: pos.mirrorLeaderSellIntent.sellFraction ?? null,
         },
         leader: pos.leaderMirrorLeader,
         leaderBuyTsMs: pos.leaderBuyTsMs,
@@ -5455,8 +5539,17 @@ async function tryExits(
           blockTimeMs: pos.mirrorLeaderSellIntent.leaderBlockTimeMs,
           fillPriceUsd: null,
           markPnlPct: null,
+          sellFraction: pos.mirrorLeaderSellIntent.sellFraction ?? null,
         }
       : null;
+    if (
+      durableLeaderSell &&
+      mirrorLeaderSellAlreadyDone(pos, durableLeaderSell)
+    ) {
+      delete pos.mirrorLeaderSellIntent;
+      saveMildDipState(cfg.statePath, state);
+      continue;
+    }
     const validFeedLeaderSell =
       feedLeaderSell &&
       isLeaderSellEventValidForPosition({
@@ -5465,8 +5558,9 @@ async function tryExits(
         leaderBuyTsMs: pos.leaderBuyTsMs,
         openedAtMs: pos.openedAtMs,
       })
-        ? feedLeaderSell
-        : null;
+      && !mirrorLeaderSellAlreadyDone(pos, feedLeaderSell)
+      ? feedLeaderSell
+      : null;
     const leaderSellEvent = selectNewerLeaderSellEvent(
       durableLeaderSell,
       validFeedLeaderSell,
@@ -5491,6 +5585,28 @@ async function tryExits(
       continue;
     }
     if (leaderSellDecision.shouldExit && leaderSellEvent) {
+      const sellFractionDecision = mirrorSellFractionFromLeader({
+        sellFraction: leaderSellEvent.sellFraction,
+        proportionalEnabled: cfg.leaderMirror.leaderSellProportionalEnabled,
+        minFraction: cfg.leaderMirror.leaderSellMinFraction,
+        fullFraction: cfg.leaderMirror.leaderSellFullFraction,
+      });
+      if (sellFractionDecision.mode === 'skip') {
+        markMirrorLeaderSellDone(pos, leaderSellEvent);
+        delete pos.mirrorLeaderSellIntent;
+        saveMildDipState(cfg.statePath, state);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'mirror_leader_sell_skipped_small',
+          mint,
+          symbol: pos.symbol,
+          leader: leaderSellEvent.leader,
+          signature: leaderSellEvent.signature,
+          leaderBlockTimeMs: leaderSellEvent.blockTimeMs,
+          sellFraction: leaderSellEvent.sellFraction,
+        });
+        leaderSellFeed?.remove(mint);
+        continue;
+      }
       if (
         !pos.mirrorLeaderSellIntent ||
         leaderSellEvent.blockTimeMs > pos.mirrorLeaderSellIntent.leaderBlockTimeMs
@@ -5500,6 +5616,7 @@ async function tryExits(
           signature: leaderSellEvent.signature,
           leaderBlockTimeMs: leaderSellEvent.blockTimeMs,
           detectedAtMs: nowMs,
+          sellFraction: leaderSellEvent.sellFraction,
         };
         saveMildDipState(cfg.statePath, state);
         appendMildDipJournal(cfg.journalPath, {
@@ -5510,6 +5627,8 @@ async function tryExits(
           signature: leaderSellEvent.signature,
           leaderBlockTimeMs: leaderSellEvent.blockTimeMs,
           detectedAtMs: nowMs,
+          leaderSellFraction: leaderSellEvent.sellFraction,
+          ourSellFraction: sellFractionDecision.fraction,
           source: 'live_feed',
         });
       }
@@ -5536,6 +5655,8 @@ async function tryExits(
         ourPnlPct: ourPnlPct == null ? null : +ourPnlPct.toFixed(2),
         lagMs: Math.max(0, nowMs - leaderSellEvent.blockTimeMs),
         reason: leaderSellDecision.reason,
+        leaderSellFraction: leaderSellEvent.sellFraction,
+        ourSellFraction: sellFractionDecision.fraction,
       });
       leaderSellFeed?.remove(mint);
       toSell.push({
@@ -5547,7 +5668,7 @@ async function tryExits(
         armed: pos.trailArmed === true,
         justArmed: false,
         shouldExit: true,
-        fraction: 1,
+        fraction: sellFractionDecision.fraction,
         reason: 'mirror_leader_sell',
         mfePct: 0,
         givebackPct: 0,
@@ -6644,6 +6765,7 @@ async function tryExits(
     if (sellInFlight.has(decision.mint)) return;
     if (!state.open[decision.mint]) return;
     sellInFlight.add(decision.mint);
+    const tokenRawBefore = state.open[decision.mint]?.tokenRaw;
     const intent =
       decision.reason === 'mirror_leader_sell'
         ? state.open[decision.mint]?.mirrorLeaderSellIntent
@@ -6668,7 +6790,12 @@ async function tryExits(
       await executeQueuedSell({ cfg, state, decision, nowMs: Date.now() });
     } finally {
       if (intent) {
-        const closed = !state.open[decision.mint];
+        const after = state.open[decision.mint];
+        const succeeded = mirrorLeaderSellSettlementSucceeded({
+          positionExists: after != null,
+          tokenRawBefore,
+          tokenRawAfter: after?.tokenRaw,
+        });
         const finishedAtMs = Date.now();
         const lagMs = Math.max(0, finishedAtMs - intent.leaderBlockTimeMs);
         appendMildDipJournal(cfg.journalPath, {
@@ -6680,10 +6807,12 @@ async function tryExits(
           attempt,
           sentAtMs,
           finishedAtMs,
-          ok: closed,
+          ok: succeeded,
+          partial: decision.fraction < 1,
+          fraction: decision.fraction,
           lagMs,
         });
-        if (closed) {
+        if (succeeded) {
           appendMildDipJournal(cfg.journalPath, {
             kind: 'mirror_leader_sell_success',
             mint: decision.mint,
@@ -6692,8 +6821,18 @@ async function tryExits(
             leaderBlockTimeMs: intent.leaderBlockTimeMs,
             attempt,
             sentAtMs,
+            partial: decision.fraction < 1,
+            fraction: decision.fraction,
             lagMs,
           });
+          if (decision.reason === 'mirror_leader_sell' && after) {
+            markMirrorLeaderSellDone(after, {
+              signature: intent.signature,
+              blockTimeMs: intent.leaderBlockTimeMs,
+            });
+            delete after.mirrorLeaderSellIntent;
+            saveMildDipState(cfg.statePath, state);
+          }
         }
         if (lagMs > 30_000) {
           console.warn(
@@ -6913,12 +7052,14 @@ export async function runMildDipLoop(
       ) {
         continue;
       }
+      if (mirrorLeaderSellAlreadyDone(pos, event)) continue;
       if (pos.mirrorLeaderSellIntent) continue;
       pos.mirrorLeaderSellIntent = {
         leader: event.leader,
         signature: event.signature,
         leaderBlockTimeMs: event.blockTimeMs,
         detectedAtMs: Date.now(),
+        sellFraction: event.sellFraction,
       };
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mirror_leader_sell_intent',
@@ -6928,6 +7069,13 @@ export async function runMildDipLoop(
         signature: event.signature,
         leaderBlockTimeMs: event.blockTimeMs,
         detectedAtMs: pos.mirrorLeaderSellIntent.detectedAtMs,
+        leaderSellFraction: event.sellFraction,
+        ourSellFraction: mirrorSellFractionFromLeader({
+          sellFraction: event.sellFraction,
+          proportionalEnabled: cfg.leaderMirror.leaderSellProportionalEnabled,
+          minFraction: cfg.leaderMirror.leaderSellMinFraction,
+          fullFraction: cfg.leaderMirror.leaderSellFullFraction,
+        }).fraction,
         source: 'startup_reconciliation',
       });
       changed = true;
@@ -6979,11 +7127,13 @@ export async function runMildDipLoop(
         openedAtMs: pos.openedAtMs,
       });
       if (!event) continue;
+      if (mirrorLeaderSellAlreadyDone(pos, event)) continue;
       pos.mirrorLeaderSellIntent = {
         leader: event.leader,
         signature: event.signature,
         leaderBlockTimeMs: event.blockTimeMs,
         detectedAtMs: nowMs,
+        sellFraction: event.sellFraction,
       };
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mirror_leader_sell_intent',
@@ -6994,6 +7144,13 @@ export async function runMildDipLoop(
         leaderBlockTimeMs: event.blockTimeMs,
         detectedAtMs: nowMs,
         lagMs: Math.max(0, nowMs - event.blockTimeMs),
+        leaderSellFraction: event.sellFraction,
+        ourSellFraction: mirrorSellFractionFromLeader({
+          sellFraction: event.sellFraction,
+          proportionalEnabled: cfg.leaderMirror.leaderSellProportionalEnabled,
+          minFraction: cfg.leaderMirror.leaderSellMinFraction,
+          fullFraction: cfg.leaderMirror.leaderSellFullFraction,
+        }).fraction,
         source: 'late_reconciliation',
       });
       changed = true;
@@ -7757,6 +7914,7 @@ export async function runMildDipLoop(
         signature: null,
         leaderBlockTimeMs: nowMs,
         detectedAtMs: nowMs,
+        sellFraction: null,
       };
       appendMildDipJournal(cfg.journalPath, {
         kind: 'mirror_leader_sell_intent',
@@ -7766,6 +7924,8 @@ export async function runMildDipLoop(
         signature: null,
         leaderBlockTimeMs: nowMs,
         detectedAtMs: nowMs,
+        leaderSellFraction: null,
+        ourSellFraction: 1,
         source: 'balance_reconciliation',
       });
       saveMildDipState(cfg.statePath, state);
