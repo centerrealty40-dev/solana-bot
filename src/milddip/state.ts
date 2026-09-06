@@ -247,9 +247,12 @@ export type MildDipOpenPosition = {
     signature: string | null;
     leaderBlockTimeMs: number;
     detectedAtMs: number;
+    sellFraction?: number | null;
     attemptCount?: number;
     lastAttemptAtMs?: number;
   };
+  mirrorLeaderSellDoneSignatures?: string[];
+  mirrorLeaderSellDoneBlockTimeMs?: number;
 };
 
 export function isMirrorLane(lane: MildDipOpenPosition['lane']): boolean {
@@ -515,6 +518,13 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
         signature: typeof intent.signature === 'string' ? intent.signature : null,
         leaderBlockTimeMs: Number(intent.leaderBlockTimeMs),
         detectedAtMs: Number(intent.detectedAtMs),
+        sellFraction:
+          typeof intent.sellFraction === 'number' &&
+          Number.isFinite(intent.sellFraction) &&
+          intent.sellFraction >= 0 &&
+          intent.sellFraction <= 1
+            ? intent.sellFraction
+            : null,
         ...(Number.isFinite(Number(intent.attemptCount))
           ? { attemptCount: Math.max(0, Number(intent.attemptCount)) }
           : {}),
@@ -524,6 +534,24 @@ function sanitizeOpenPositions(raw: unknown): Record<string, MildDipOpenPosition
       };
     } else {
       delete pos.mirrorLeaderSellIntent;
+    }
+    if (Array.isArray(pos.mirrorLeaderSellDoneSignatures)) {
+      pos.mirrorLeaderSellDoneSignatures = pos.mirrorLeaderSellDoneSignatures
+        .filter((signature): signature is string => typeof signature === 'string' && signature.length > 0)
+        .slice(-10);
+      if (pos.mirrorLeaderSellDoneSignatures.length === 0) {
+        delete pos.mirrorLeaderSellDoneSignatures;
+      }
+    } else {
+      delete pos.mirrorLeaderSellDoneSignatures;
+    }
+    if (
+      !Number.isFinite(Number(pos.mirrorLeaderSellDoneBlockTimeMs)) ||
+      Number(pos.mirrorLeaderSellDoneBlockTimeMs) <= 0
+    ) {
+      delete pos.mirrorLeaderSellDoneBlockTimeMs;
+    } else {
+      pos.mirrorLeaderSellDoneBlockTimeMs = Number(pos.mirrorLeaderSellDoneBlockTimeMs);
     }
     if (pos.manualAdopted !== true) delete pos.manualAdopted;
     out[mint] = pos;

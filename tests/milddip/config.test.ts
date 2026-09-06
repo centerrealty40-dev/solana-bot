@@ -960,6 +960,9 @@ describe('mild-dip mirror leader-sell exit configuration', () => {
     expect(defaults.leaderSellLateReconcileIntervalMs).toBe(30_000);
     expect(defaults.leaderSellLateReconcileWindowMs).toBe(3_600_000);
     expect(defaults.leaderSellLateReconcileTailBytes).toBe(2 * 1024 * 1024);
+    expect(defaults.leaderSellProportionalEnabled).toBe(false);
+    expect(defaults.leaderSellMinFraction).toBe(0.05);
+    expect(defaults.leaderSellFullFraction).toBe(0.9);
     const configured = withConfigEnv(
       {
         ...baseEnv,
@@ -969,6 +972,9 @@ describe('mild-dip mirror leader-sell exit configuration', () => {
         MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_INTERVAL_MS: '15000',
         MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_WINDOW_MS: '1800000',
         MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_TAIL_BYTES: '1048576',
+        MILD_DIP_MIRROR_LEADER_SELL_PROPORTIONAL: '1',
+        MILD_DIP_MIRROR_LEADER_SELL_MIN_FRACTION: '0.1',
+        MILD_DIP_MIRROR_LEADER_SELL_FULL_FRACTION: '0.8',
       },
       () => loadMildDipConfig(),
     ).leaderMirror;
@@ -978,6 +984,9 @@ describe('mild-dip mirror leader-sell exit configuration', () => {
     expect(configured.leaderSellLateReconcileIntervalMs).toBe(15_000);
     expect(configured.leaderSellLateReconcileWindowMs).toBe(1_800_000);
     expect(configured.leaderSellLateReconcileTailBytes).toBe(1_048_576);
+    expect(configured.leaderSellProportionalEnabled).toBe(true);
+    expect(configured.leaderSellMinFraction).toBe(0.1);
+    expect(configured.leaderSellFullFraction).toBe(0.8);
   });
 });
 

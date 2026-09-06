@@ -72,6 +72,9 @@ print(json.dumps({
     expect(py).toContain('leader_session_flat');
     expect(py).toContain('leader_bag_mark');
     expect(py).toContain('fillPriceUsd');
+    expect(py).toContain('tokenPreUi');
+    expect(py).toContain('tokenPostUi');
+    expect(py).toContain('sellFractionOfBag');
     expect(py).toContain('sizeUsd');
     expect(py).toContain('turn_dump_snapshot');
     expect(py).toContain('mfePct');

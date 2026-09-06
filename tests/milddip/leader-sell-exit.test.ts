@@ -16,6 +16,7 @@ const event = {
   blockTimeMs: 100_000,
   fillPriceUsd: 1,
   markPnlPct: 5,
+  sellFraction: null,
 };
 const base = {
   enabled: true,
@@ -114,6 +115,8 @@ describe('decideLeaderSellExit', () => {
     expect(loopSource).toContain('delete pos.mirrorLeaderSellIntent');
     expect(loopSource).toContain('const leaderSellEvent = selectNewerLeaderSellEvent');
     expect(loopSource).toContain("reason: 'mirror_leader_sell'");
+    expect(loopSource).toContain('mirrorLeaderSellDoneSignatures');
+    expect(loopSource).toContain("kind: 'mirror_leader_partial_sell_before_entry'");
   });
 
   it('requires the feature and mirror lane', () => {

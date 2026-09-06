@@ -911,6 +911,9 @@ const MildDipConfigSchema = z.object({
     leaderSellLateReconcileIntervalMs: z.coerce.number().int().min(1_000).default(30_000),
     leaderSellLateReconcileWindowMs: z.coerce.number().int().min(60_000).default(3_600_000),
     leaderSellLateReconcileTailBytes: z.coerce.number().int().min(64 * 1024).default(2 * 1024 * 1024),
+    leaderSellProportionalEnabled: z.boolean().default(false),
+    leaderSellMinFraction: z.coerce.number().min(0).max(1).default(0.05),
+    leaderSellFullFraction: z.coerce.number().min(0).max(1).default(0.9),
     cashReconcileIntervalMs: z.coerce.number().int().min(0).default(300_000),
     leaderSellOnlyExit: z.boolean().default(false),
     leaderBalanceGuardEnabled: z.boolean().default(true),
@@ -2077,6 +2080,18 @@ export function loadMildDipConfig(): MildDipConfig {
       leaderSellLateReconcileTailBytes: envNum(
         'MILD_DIP_MIRROR_LEADER_SELL_LATE_RECONCILE_TAIL_BYTES',
         2 * 1024 * 1024,
+      ),
+      leaderSellProportionalEnabled: envBool(
+        'MILD_DIP_MIRROR_LEADER_SELL_PROPORTIONAL',
+        false,
+      ),
+      leaderSellMinFraction: envNum(
+        'MILD_DIP_MIRROR_LEADER_SELL_MIN_FRACTION',
+        0.05,
+      ),
+      leaderSellFullFraction: envNum(
+        'MILD_DIP_MIRROR_LEADER_SELL_FULL_FRACTION',
+        0.9,
       ),
       cashReconcileIntervalMs: envNum(
         'MILD_DIP_MIRROR_CASH_RECONCILE_INTERVAL_MS',
