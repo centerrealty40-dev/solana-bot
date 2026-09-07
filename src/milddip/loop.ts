@@ -2495,7 +2495,7 @@ async function wakeLeaderMirrors(
         mint,
         reason: 'leader_mirror_exposure_cap',
         openMirror,
-        maxOpen: gates.maxOpen,
+      maxOpen: gates.maxOpen,
         pc5m: hit.pc5m ?? null,
         quoteGainPct,
         metricSource: watch.metricSource,
@@ -3343,6 +3343,16 @@ async function executeQueuedSell(args: {
   const mint = decision.mint;
   const pos = state.open[mint];
   if (!pos || !decision.reason) return;
+  if (cfg.leaderMirror.buyOnly === true && pos.lane === 'leader_mirror') {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_buy_only_sell_skip',
+      mint,
+      symbol: pos.symbol,
+      reason: 'mirror_buy_only',
+      exitReason: decision.reason,
+    });
+    return;
+  }
 
   const fraction =
     decision.fraction > 0 && decision.fraction < 1 ? decision.fraction : 1;
@@ -4829,6 +4839,7 @@ async function attemptMirrorAverage(args: {
   leaderHeld: boolean;
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
+  if (cfg.leaderMirror.buyOnly === true && pos.lane === 'leader_mirror') return;
   if (pos.manualAdopted === true) return;
   if (mildDipStateSaveBlocked()) return;
   const g = cfg.leaderMirror;
@@ -5400,7 +5411,10 @@ async function tryExits(
     });
   }
   const ordered = orderMintsForMark(state.open).filter(
-    (m) => !sellInFlight.has(m) && !buyInFlight.has(m),
+    (m) =>
+      !sellInFlight.has(m) &&
+      !buyInFlight.has(m) &&
+      !(cfg.leaderMirror.buyOnly === true && state.open[m]?.lane === 'leader_mirror'),
   );
   if (ordered.length === 0) return;
 

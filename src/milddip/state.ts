@@ -331,6 +331,7 @@ export type MildDipState = {
     { hitKey: string; decidedAtMs: number; reason: string }
   >;
   mirrorLeaderOpenBags?: Record<string, LeaderOpenBagEntry>;
+  mirrorBuyNotify?: Record<string, { buyAtMs?: number; attemptAtMs?: number }>;
   mirrorTradingCashUsd?: number;
   mirrorTradeLots?: Record<string, TradeLot>;
   mirrorCashReconcileAtMs?: number;
@@ -707,6 +708,7 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     leaderMirrorWatches: {},
     leaderMirrorDecisions: {},
     mirrorLeaderOpenBags: {},
+    mirrorBuyNotify: {},
     recentEntryMsByMint: {},
     mirrorTradingCashUsd: 0,
     mirrorTradeLots: {},
@@ -761,6 +763,26 @@ export function loadMildDipState(
         mirrorObserveMs,
       ),
       mirrorLeaderOpenBags: sanitizeLeaderOpenBags(parsed.mirrorLeaderOpenBags),
+      mirrorBuyNotify:
+        parsed.mirrorBuyNotify && typeof parsed.mirrorBuyNotify === 'object'
+          ? Object.fromEntries(
+              Object.entries(parsed.mirrorBuyNotify as Record<string, unknown>)
+                .map(([mint, value]) => {
+                  if (!value || typeof value !== 'object') return null;
+                  const row = value as Record<string, unknown>;
+                  const buyAtMs = Number(row.buyAtMs);
+                  const attemptAtMs = Number(row.attemptAtMs);
+                  return [
+                    mint,
+                    {
+                      ...(Number.isFinite(buyAtMs) && buyAtMs > 0 ? { buyAtMs } : {}),
+                      ...(Number.isFinite(attemptAtMs) && attemptAtMs > 0 ? { attemptAtMs } : {}),
+                    },
+                  ] as const;
+                })
+                .filter((row): row is readonly [string, { buyAtMs?: number; attemptAtMs?: number }] => row != null),
+            )
+          : {},
       recentEntryMsByMint: sanitizeRecentEntryMsByMint(parsed.recentEntryMsByMint),
       mirrorTradingCashUsd:
         Number.isFinite(Number(parsed.mirrorTradingCashUsd))

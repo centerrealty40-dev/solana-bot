@@ -56,6 +56,10 @@ import { validateStreamDexPrice } from './price-sanity.js';
 import { evaluateSignalPriceFreshness } from './signal-price-freshness.js';
 import { accountMirrorCashLeg } from './mirror-loss-cap.js';
 import { mirrorQuoteWithinPremiumCap } from './leader-mirror.js';
+import {
+  notifyMirrorBuyAttemptOnce,
+  notifyMirrorBuySuccessOnce,
+} from './mirror-buy-notify.js';
 
 /**
  * How fresh a ring sample must be to serve as the movement baseline. Dex marks
@@ -594,8 +598,23 @@ export async function attemptMildDipEntry(args: {
     return 'skip';
   }
   if (buyInFlight.has(c.mint)) return 'skip';
-  if (state.open[c.mint]) return 'skip';
+  const mirrorBuyOnly =
+    cfg.leaderMirror.buyOnly === true &&
+    opts.mirror === true &&
+    opts.mirrorBranch !== 'tier';
+  if (state.open[c.mint]) {
+    if (mirrorBuyOnly) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_buy_only_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: 'mirror_buy_only_have_bag',
+      });
+    }
+    return 'skip';
+  }
   if (
+    !mirrorBuyOnly &&
     (opts.mirror === true || cfg.leaderMirror.lossCapAllLanes) &&
     cfg.leaderMirror.lossCapUsd > 0 &&
     state.mirrorLossCapTriggeredAtMs != null
@@ -687,6 +706,26 @@ export async function attemptMildDipEntry(args: {
   const isTier = isMirror && opts.mirrorBranch === 'tier';
   const tierIgnoreFloors = isTier && cfg.leaderMirror.tierIgnoreStructuralFloors === true;
   const isLeaderStyle = opts.leaderStyle === true;
+  if (mirrorBuyOnly && cfg.leaderMirror.ownHoldingMaxUsd > 0) {
+    const raw = await fetchMintBalanceRaw(copyCfg, c.mint);
+    const decimals = mildDipPriceRing.mintDecimals(c.mint) ?? 6;
+    const ui = raw && /^\d+$/.test(raw) ? Number(raw) / 10 ** decimals : 0;
+    const holdingUsd = ui * c.priceUsd;
+    if (Number.isFinite(holdingUsd) && holdingUsd >= cfg.leaderMirror.ownHoldingMaxUsd) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_buy_only_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: 'mirror_buy_only_own_holding',
+        tokenRaw: raw,
+        tokenUi: ui,
+        priceUsd: c.priceUsd,
+        holdingUsd,
+        ownHoldingMaxUsd: cfg.leaderMirror.ownHoldingMaxUsd,
+      });
+      return 'skip';
+    }
+  }
   const leaderGateOk = isMirror || isLeaderStyle || leaderBuyGateOk(cfg, state, c.mint, nowMs);
   const greenLeaderGateBypass =
     !leaderGateOk && greenLeaderGateBypassAllowed(cfg, c.dipSource);
@@ -1775,6 +1814,15 @@ export async function attemptMildDipEntry(args: {
       ? { ...sizedRaw, sizeUsd: Math.min(sizedRaw.sizeUsd, cfg.probeBlockedUsd) }
       : sizedRaw;
   if (sized.stop || !(sized.sizeUsd > 0)) {
+    if (mirrorBuyOnly) {
+      await notifyMirrorBuyAttemptOnce({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: sized.reason ?? 'insufficient_funds',
+      });
+    }
     if (
       sized.reason &&
       (sized.reason !== 'usdc_exhausted' || isMirror)
@@ -2045,6 +2093,15 @@ export async function attemptMildDipEntry(args: {
         : {}),
     });
   } catch (err) {
+    if (mirrorBuyOnly) {
+      await notifyMirrorBuyAttemptOnce({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: err instanceof Error ? err.message : String(err),
+      });
+    }
     buyInFlight.delete(c.mint);
     // Buy threw — only drop reserved seat if chain is still empty (landed tx race).
     const rawAfterThrow = await fetchMintBalanceRaw(copyCfg, c.mint);
@@ -2270,6 +2327,15 @@ export async function attemptMildDipEntry(args: {
   }
 
   if (!buy.ok) {
+    if (mirrorBuyOnly) {
+      await notifyMirrorBuyAttemptOnce({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: buy.reason ?? 'swap_failed',
+      });
+    }
     let staleSignalPrice = false;
     if (buy.reason?.includes('quote_premium_too_high')) {
       const freshness = evaluateSignalPriceFreshness({
@@ -2386,8 +2452,16 @@ export async function attemptMildDipEntry(args: {
 
   if (state.waitDipWatch?.[c.mint]) delete state.waitDipWatch[c.mint];
 
-  if (isMirror || cfg.leaderMirror.lossCapAllLanes) {
+  if ((isMirror && !mirrorBuyOnly) || cfg.leaderMirror.lossCapAllLanes) {
     accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
+  } else if (mirrorBuyOnly) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mirror_buy_only_cash_accounting_bypass',
+      mint: c.mint,
+      symbol: c.symbol,
+      reason: 'loss_cap_inert_for_buy_only',
+      quoteSpentUsd: buy.quoteSpentUsd ?? sized.sizeUsd,
+    });
   }
   const filledRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
   const fillPx = buy.priceUsd || entryPriceUsd;
@@ -2450,6 +2524,15 @@ export async function attemptMildDipEntry(args: {
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });
   buyInFlight.delete(c.mint);
   saveMildDipState(cfg.statePath, state);
+  if (mirrorBuyOnly) {
+    await notifyMirrorBuySuccessOnce({
+      cfg,
+      state,
+      mint: c.mint,
+      symbol: c.symbol,
+      spentUsd: buy.quoteSpentUsd ?? sized.sizeUsd,
+    });
+  }
   resetCopyFundingCache();
   const tierTag =
     wanted.tier === 'thick' ? ' thick' : wanted.tier === 'micro' ? ' micro' : '';
@@ -2487,7 +2570,12 @@ export async function attemptMirrorFirstClipLeg(args: {
   const pos = state.open[c.mint];
   if (mildDipStateSaveBlocked()) return 'skip';
   const legs = Math.max(1, Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)));
-  if (!pos || pos.lane !== 'leader_mirror' || legs <= 1) return 'skip';
+  if (
+    !pos ||
+    pos.lane !== 'leader_mirror' ||
+    cfg.leaderMirror.buyOnly === true ||
+    legs <= 1
+  ) return 'skip';
   const filledLegs = Math.max(0, Math.floor(pos.mirrorFirstClipLegsFilled ?? 1));
   if (filledLegs >= legs || buyInFlight.has(c.mint)) return 'skip';
   const leaderFillPriceUsd =

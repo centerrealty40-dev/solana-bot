@@ -891,6 +891,12 @@ const MildDipConfigSchema = z.object({
   }),
   leaderMirror: z.object({
     enabled: z.boolean().default(false),
+    buyOnly: z.boolean().default(false),
+    leaderPreBagMaxUsd: z.coerce.number().min(0).default(0),
+    ownHoldingMaxUsd: z.coerce.number().min(0).default(0),
+    notifyBuyEnabled: z.boolean().default(false),
+    notifyBotToken: z.string().default(''),
+    notifyChatId: z.string().default(''),
     mirrorOnly: z.boolean().default(false),
     greenCopyEnabled: z.boolean().default(false),
     greenInstantEnabled: z.boolean().default(false),
@@ -2038,6 +2044,12 @@ export function loadMildDipConfig(): MildDipConfig {
     green,
     leaderMirror: {
       enabled: envBool('MILD_DIP_MIRROR_ENABLED', false),
+      buyOnly: envBool('MILD_DIP_MIRROR_BUY_ONLY', false),
+      leaderPreBagMaxUsd: envNum('MILD_DIP_MIRROR_LEADER_PREBAG_MAX_USD', 0),
+      ownHoldingMaxUsd: envNum('MILD_DIP_MIRROR_OWN_HOLDING_MAX_USD', 0),
+      notifyBuyEnabled: envBool('MILD_DIP_MIRROR_NOTIFY_BUY', false),
+      notifyBotToken: process.env.MILD_DIP_MIRROR_NOTIFY_BOT_TOKEN?.trim() ?? '',
+      notifyChatId: process.env.MILD_DIP_MIRROR_NOTIFY_CHAT_ID?.trim() ?? '',
       mirrorOnly: envBool('MILD_DIP_MIRROR_ONLY', false),
       greenCopyEnabled: envBool('MILD_DIP_MIRROR_GREEN_COPY_ENABLED', false),
       greenInstantEnabled: envBool(

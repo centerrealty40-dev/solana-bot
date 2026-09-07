@@ -1418,6 +1418,8 @@ class Observer:
         cls: str | None = None,
         block_time: int | None = None,
         is_add: bool | None = None,
+        pre_token_ui: float | None = None,
+        pre_bag_usd: float | None = None,
         dex: dict[str, Any] | None = None,
     ) -> None:
         """Atomic sidecar for mild-dip `leaders` discover source."""
@@ -1462,6 +1464,14 @@ class Observer:
             hit["blockTime"] = int(block_time)
         if is_add is not None:
             hit["isAdd"] = bool(is_add)
+        if pre_token_ui is not None:
+            hit["preTokenUi"] = pre_token_ui
+        elif prev.get("preTokenUi") is not None:
+            hit["preTokenUi"] = prev["preTokenUi"]
+        if pre_bag_usd is not None:
+            hit["preBagUsd"] = pre_bag_usd
+        elif prev.get("preBagUsd") is not None:
+            hit["preBagUsd"] = prev["preBagUsd"]
         # 1.11.775 — pass observer Dex so mild-dip can buy without re-fetch.
         if isinstance(dex, dict) and not dex.get("error"):
             for src_key, dst_key in (
@@ -2054,6 +2064,13 @@ class Observer:
                 gates = gate_fit(dex if isinstance(dex, dict) else None)
                 td = turn_dump_snapshot(dex if isinstance(dex, dict) else None)
                 fills = fill_metrics(delta, quote, dex_px)
+                pre_px_raw = fills.get("fillPriceUsd") or dex_px
+                pre_px = (
+                    float(pre_px_raw)
+                    if _finite_number(pre_px_raw, positive=True)
+                    else None
+                )
+                pre_bag_usd = pre_ui * pre_px if pre_px is not None else None
                 ts_ms = int(time.time() * 1000)
                 cls = classify(pc)
                 trade_ctx = self._trade_context(leader, mint, side, ts_ms)
@@ -2149,6 +2166,8 @@ class Observer:
                             "kind": "leader_buy_observed",
                             "isNewBag": bag_info["isNewBag"],
                             "isAdd": bag_info["isAdd"],
+                            "preTokenUi": pre_ui,
+                            "preBagUsd": pre_bag_usd,
                             "bagTokenUi": post_ui,
                             "bagEntryPriceUsd": bag.get("entryPriceUsd"),
                             "bagCostUsd": bag.get("costUsd"),
@@ -2254,6 +2273,8 @@ class Observer:
                             cls=cls,
                             block_time=block_time,
                             is_add=bool(bag_info.get("isAdd")),
+                            pre_token_ui=pre_ui,
+                            pre_bag_usd=pre_bag_usd,
                             dex=dex if isinstance(dex, dict) else None,
                         )
                     except Exception as e:

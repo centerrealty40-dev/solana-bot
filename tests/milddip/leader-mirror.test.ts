@@ -1271,6 +1271,18 @@ describe('leader mirror observation decisions', () => {
     expect(at(hit({ leader: 'other' }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_wallet' });
   });
 
+  it('uses the transaction-derived pre-bag threshold for adds', () => {
+    const threshold = { ...gates, leaderPreBagMaxUsd: 100 };
+    expect(at(hit({ isAdd: true, preBagUsd: 40 }), 101, 110_000, 100_000, threshold))
+      .toMatchObject({ action: 'buy' });
+    expect(at(hit({ isAdd: true, preBagUsd: 150 }), 101, 110_000, 100_000, threshold))
+      .toMatchObject({ action: 'skip', reason: 'leader_mirror_leader_prebag' });
+    expect(at(hit({ isAdd: true }), 101, 110_000, 100_000, threshold))
+      .toMatchObject({ action: 'skip', reason: 'leader_mirror_add' });
+    expect(at(hit({ isAdd: true, preBagUsd: 150 })))
+      .toMatchObject({ action: 'skip', reason: 'leader_mirror_add' });
+  });
+
   it('accepts either configured leader and retries soft quality refusals', () => {
     const retry = {
       ...gates,
