@@ -28,6 +28,19 @@ export async function readLeaderBalanceForGuard(
     : { balanceRaw, reason: null };
 }
 
+export async function readWalletBalanceForGuard(
+  cfg: MildDipConfig,
+  wallet: string | null | undefined,
+  mint: string,
+): Promise<LeaderBalanceGuardRead> {
+  if (!wallet) return { balanceRaw: null, reason: 'leader_missing' };
+  if (!cfg.rpcUrl) return { balanceRaw: null, reason: 'rpc_error' };
+  const balanceRaw = await fetchWalletMintBalanceRawOrNull(cfg.rpcUrl, wallet, mint);
+  return balanceRaw == null
+    ? { balanceRaw: null, reason: 'rpc_error' }
+    : { balanceRaw, reason: null };
+}
+
 export function leaderBalanceGuardReason(
   read: LeaderBalanceGuardRead,
 ): 'leader_balance_leader_missing' | 'leader_balance_rpc_error' | 'leader_balance_zero' | 'leader_balance_nonzero' {

@@ -30,7 +30,12 @@ import {
   leaderFlatReconcileDecision,
   readLeaderBalance,
   readLeaderBalanceForGuard,
+  readWalletBalanceForGuard,
 } from './leader-balance.js';
+import {
+  buyOnlyBagVerdict,
+  clearBuyOnlyPhantomBag,
+} from './buy-only-bag.js';
 import { leaderActiveNow } from './leader-active.js';
 import {
   leaderOpenBagDropReason,
@@ -4312,14 +4317,36 @@ async function rearmLeaderOpenBags(
     const entry = state.mirrorLeaderOpenBags?.[key];
     if (!entry) continue;
     if (cfg.leaderMirror.buyOnly === true && state.open[entry.mint]) {
-      appendMildDipJournal(cfg.journalPath, {
-        kind: 'leader_mirror_open_bag_rearm_skip',
-        mint: entry.mint,
-        leader: entry.leader,
-        reason: 'mirror_buy_only_have_bag',
+      const position = state.open[entry.mint]!;
+      const balanceRead = await readWalletBalanceForGuard(
+        cfg,
+        cfg.walletPubkeyExpected?.trim(),
+        entry.mint,
+      );
+      const verdict = buyOnlyBagVerdict({
+        balanceRaw: balanceRead.balanceRaw,
+        positionAgeMs: nowMs - (position.openedAtMs ?? 0),
+        minAgeMs: cfg.leaderMirror.buyOnlyPhantomMinAgeMs,
       });
-      changed = dropLeaderOpenBag(cfg, state, key, 'already_traded') || changed;
-      continue;
+      if (verdict === 'skip_have_bag' || verdict === 'skip_unknown') {
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_open_bag_rearm_skip',
+          mint: entry.mint,
+          leader: entry.leader,
+          reason:
+            verdict === 'skip_have_bag'
+              ? 'mirror_buy_only_have_bag'
+              : 'mirror_buy_only_have_bag_unverified',
+        });
+        changed = dropLeaderOpenBag(cfg, state, key, 'already_traded') || changed;
+        continue;
+      }
+      clearBuyOnlyPhantomBag({
+        cfg,
+        state,
+        mint: entry.mint,
+        nowMs,
+      });
     }
     entry.lastCheckAtMs = nowMs;
     const feedSell = leaderSellFeed?.get(entry.mint, nowMs);
