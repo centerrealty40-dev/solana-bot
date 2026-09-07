@@ -11,7 +11,12 @@ import { fetchParsedTransaction } from '../copytrader/rpc.js';
 import {
   leaderBalanceGuardReason,
   readLeaderBalanceForGuard,
+  readWalletBalanceForGuard,
 } from './leader-balance.js';
+import {
+  buyOnlyBagVerdict,
+  clearBuyOnlyPhantomBag,
+} from './buy-only-bag.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { CopyTraderConfig } from '../copytrader/config.js';
 import type { MildDipConfig } from './config.js';
@@ -637,16 +642,43 @@ export async function attemptMildDipEntry(args: {
   const existingPositionDecision = mirrorBuyOnlyExistingPositionDecision(
     state.open[c.mint] != null,
   );
-  if (existingPositionDecision === 'skip_have_bag') {
-    if (mirrorBuyOnly) {
+  if (existingPositionDecision === 'skip_have_bag' && !mirrorBuyOnly) {
+    return 'skip';
+  }
+  if (existingPositionDecision === 'skip_have_bag' && mirrorBuyOnly) {
+    const position = state.open[c.mint]!;
+    const balanceRead = await readWalletBalanceForGuard(
+      cfg,
+      cfg.walletPubkeyExpected?.trim(),
+      c.mint,
+    );
+    const verdict = buyOnlyBagVerdict({
+      balanceRaw: balanceRead.balanceRaw,
+      positionAgeMs: nowMs - (position.openedAtMs ?? 0),
+      minAgeMs: cfg.leaderMirror.buyOnlyPhantomMinAgeMs,
+    });
+    if (verdict === 'skip_have_bag' || verdict === 'skip_unknown') {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_buy_only_skip',
         mint: c.mint,
         symbol: c.symbol,
-        reason: 'mirror_buy_only_have_bag',
+        reason:
+          verdict === 'skip_have_bag'
+            ? 'mirror_buy_only_have_bag'
+            : 'mirror_buy_only_have_bag_unverified',
+        ownBalanceRaw:
+          balanceRead.balanceRaw == null
+            ? null
+            : String(balanceRead.balanceRaw),
       });
+      return 'skip';
     }
-    return 'skip';
+    clearBuyOnlyPhantomBag({
+      cfg,
+      state,
+      mint: c.mint,
+      nowMs,
+    });
   }
   if (
     !mirrorBuyOnly &&

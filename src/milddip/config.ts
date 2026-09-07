@@ -894,6 +894,7 @@ const MildDipConfigSchema = z.object({
     buyOnly: z.boolean().default(false),
     leaderPreBagMaxUsd: z.coerce.number().min(0).default(0),
     ownHoldingMaxUsd: z.coerce.number().min(0).default(0),
+    buyOnlyPhantomMinAgeMs: z.coerce.number().int().min(0).default(300_000),
     notifyBuyEnabled: z.boolean().default(false),
     notifyAttemptDelayMs: z.coerce.number().int().min(0).default(300_000),
     notifyBotToken: z.string().default(''),
@@ -2048,6 +2049,10 @@ export function loadMildDipConfig(): MildDipConfig {
       buyOnly: envBool('MILD_DIP_MIRROR_BUY_ONLY', false),
       leaderPreBagMaxUsd: envNum('MILD_DIP_MIRROR_LEADER_PREBAG_MAX_USD', 0),
       ownHoldingMaxUsd: envNum('MILD_DIP_MIRROR_OWN_HOLDING_MAX_USD', 0),
+      buyOnlyPhantomMinAgeMs: envNum(
+        'MILD_DIP_MIRROR_BUY_ONLY_PHANTOM_MIN_AGE_MS',
+        300_000,
+      ),
       notifyBuyEnabled: envBool('MILD_DIP_MIRROR_NOTIFY_BUY', false),
       notifyAttemptDelayMs: envNum(
         'MILD_DIP_MIRROR_NOTIFY_ATTEMPT_DELAY_MS',
