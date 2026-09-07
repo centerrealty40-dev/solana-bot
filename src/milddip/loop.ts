@@ -40,6 +40,7 @@ import {
   type LeaderOpenBagEntry,
 } from './leader-open-bags.js';
 import {
+  flushMirrorBuyAttemptNotifications,
   mirrorBuyCompletionSpentUsd,
   notifyMirrorBuySuccessOnce,
 } from './mirror-buy-notify.js';
@@ -8096,6 +8097,16 @@ export async function runMildDipLoop(
   const tick = async (): Promise<void> => {
     if (opts?.signal?.aborted) return;
     const nowMs = Date.now();
+    void flushMirrorBuyAttemptNotifications({
+      cfg,
+      state,
+      nowMs,
+    }).catch((err) => {
+      console.warn(
+        '[mild-dip] mirror buy attempt notification flush failed',
+        err instanceof Error ? err.message : err,
+      );
+    });
     if (
       cfg.leaderMirror.enabled &&
       cfg.leaderMirror.leaderBalanceReconcileEnabled &&

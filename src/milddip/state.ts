@@ -331,7 +331,19 @@ export type MildDipState = {
     { hitKey: string; decidedAtMs: number; reason: string }
   >;
   mirrorLeaderOpenBags?: Record<string, LeaderOpenBagEntry>;
-  mirrorBuyNotify?: Record<string, { buyAtMs?: number; attemptAtMs?: number }>;
+  mirrorBuyNotify?: Record<
+    string,
+    {
+      buyAtMs?: number;
+      attemptAtMs?: number;
+      attemptPending?: {
+        firstFailAtMs: number;
+        lastFailAtMs: number;
+        reason: string;
+        symbol?: string | null;
+      };
+    }
+  >;
   mirrorTradingCashUsd?: number;
   mirrorTradeLots?: Record<string, TradeLot>;
   mirrorCashReconcileAtMs?: number;
@@ -772,15 +784,39 @@ export function loadMildDipState(
                   const row = value as Record<string, unknown>;
                   const buyAtMs = Number(row.buyAtMs);
                   const attemptAtMs = Number(row.attemptAtMs);
+                  const pending =
+                    row.attemptPending && typeof row.attemptPending === 'object'
+                      ? (row.attemptPending as Record<string, unknown>)
+                      : null;
+                  const firstFailAtMs = Number(pending?.firstFailAtMs);
+                  const lastFailAtMs = Number(pending?.lastFailAtMs);
+                  const reason = typeof pending?.reason === 'string' ? pending.reason : '';
                   return [
                     mint,
                     {
                       ...(Number.isFinite(buyAtMs) && buyAtMs > 0 ? { buyAtMs } : {}),
                       ...(Number.isFinite(attemptAtMs) && attemptAtMs > 0 ? { attemptAtMs } : {}),
+                      ...(pending &&
+                      Number.isFinite(firstFailAtMs) &&
+                      firstFailAtMs > 0 &&
+                      Number.isFinite(lastFailAtMs) &&
+                      lastFailAtMs >= firstFailAtMs &&
+                      reason
+                        ? {
+                            attemptPending: {
+                              firstFailAtMs,
+                              lastFailAtMs,
+                              reason,
+                              ...(typeof pending.symbol === 'string'
+                                ? { symbol: pending.symbol }
+                                : {}),
+                            },
+                          }
+                        : {}),
                     },
                   ] as const;
                 })
-                .filter((row): row is readonly [string, { buyAtMs?: number; attemptAtMs?: number }] => row != null),
+                .filter((row): row is readonly [string, MildDipState['mirrorBuyNotify'] extends Record<string, infer T> ? T : never] => row != null),
             )
           : {},
       recentEntryMsByMint: sanitizeRecentEntryMsByMint(parsed.recentEntryMsByMint),

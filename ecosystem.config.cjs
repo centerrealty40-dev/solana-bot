@@ -4828,6 +4828,7 @@ function makeMirrorApp({
   leaderPreBagMaxUsd = '0',
   ownHoldingMaxUsd = '0',
   notifyBuyEnabled = false,
+  notifyAttemptDelayMs,
   telegramOnlySubtags,
 }) {
   return {
@@ -4874,6 +4875,9 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_LEADER_PREBAG_MAX_USD: leaderPreBagMaxUsd,
       MILD_DIP_MIRROR_OWN_HOLDING_MAX_USD: ownHoldingMaxUsd,
       MILD_DIP_MIRROR_NOTIFY_BUY: notifyBuyEnabled ? '1' : '0',
+      ...(notifyAttemptDelayMs != null
+        ? { MILD_DIP_MIRROR_NOTIFY_ATTEMPT_DELAY_MS: notifyAttemptDelayMs }
+        : {}),
       MILD_DIP_MIRROR_LEADER_SELL_PROPORTIONAL: buyOnly ? '0' : leaderSellProportionalEnabled,
       MILD_DIP_MIRROR_LEADER_SELL_MIN_FRACTION: leaderSellMinFraction,
       MILD_DIP_MIRROR_LEADER_SELL_FULL_FRACTION: leaderSellFullFraction,
@@ -5054,6 +5058,7 @@ if (mildDipBotApp) {
       leaderPreBagMaxUsd: '100',
       ownHoldingMaxUsd: '100',
       notifyBuyEnabled: true,
+      notifyAttemptDelayMs: '300000',
       telegramOnlySubtags: 'none',
       ownExitEnabled: false,
       exitArmPct: '2',
