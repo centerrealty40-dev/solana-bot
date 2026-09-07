@@ -15,6 +15,7 @@ import {
   snapshotTradeLots,
   writeUsBuyFill,
 } from './trade-journal.js';
+import { recordMirrorBuyOnlyMint } from './buy-only-once.js';
 import { HOLDING_DUST_RAW } from './sell-empty-guard.js';
 
 type Quote = { ok: boolean; usd: number };
@@ -154,6 +155,16 @@ export async function adoptManualHoldings(args: {
     }
     state.mirrorTradeLots = snapshotTradeLots();
     state.mirrorTradingCashUsd = (state.mirrorTradingCashUsd ?? 0) - valuation.usd;
+    if (
+      cfg.leaderMirror.buyOnly === true &&
+      recordMirrorBuyOnlyMint(state, row.mint, nowMs)
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_buy_only_mint_recorded',
+        mint: row.mint,
+        ts: nowMs,
+      });
+    }
     saveMildDipState(cfg.statePath, state);
     appendMildDipJournal(cfg.journalPath, {
       kind: 'mild_dip_manual_adopt',

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   leaderOpenBagDropReason,
+  leaderOpenBagRearmEnabled,
   leaderOpenBagRearmDecision,
   selectLeaderOpenBagRetryKeys,
   upsertLeaderOpenBag,
@@ -19,6 +20,27 @@ const entry = (overrides: Partial<LeaderOpenBagEntry> = {}): LeaderOpenBagEntry 
 });
 
 describe('leader open bags', () => {
+  it('disables buy-only rearm by default while preserving non-buy-only rearm', () => {
+    expect(
+      leaderOpenBagRearmEnabled({
+        buyOnly: true,
+        openBagRearmBuyOnly: false,
+      }),
+    ).toBe(false);
+    expect(
+      leaderOpenBagRearmEnabled({
+        buyOnly: true,
+        openBagRearmBuyOnly: true,
+      }),
+    ).toBe(true);
+    expect(
+      leaderOpenBagRearmEnabled({
+        buyOnly: false,
+        openBagRearmBuyOnly: false,
+      }),
+    ).toBe(true);
+  });
+
   it('upserts by mint and leader and evicts the oldest entry', () => {
     const store = {
       'old|leader': entry({ mint: 'old', leader: 'leader', leaderBuyAtMs: 1 }),

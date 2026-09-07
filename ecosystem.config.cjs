@@ -4827,6 +4827,8 @@ function makeMirrorApp({
   buyOnly = false,
   leaderPreBagMaxUsd = '0',
   ownHoldingMaxUsd = '0',
+  buyOnlyOncePerMint,
+  openBagRearmBuyOnly,
   notifyBuyEnabled = false,
   notifyAttemptDelayMs,
   telegramOnlySubtags,
@@ -4874,6 +4876,12 @@ function makeMirrorApp({
       MILD_DIP_MIRROR_BUY_ONLY: buyOnly ? '1' : '0',
       MILD_DIP_MIRROR_LEADER_PREBAG_MAX_USD: leaderPreBagMaxUsd,
       MILD_DIP_MIRROR_OWN_HOLDING_MAX_USD: ownHoldingMaxUsd,
+      ...(buyOnlyOncePerMint != null
+        ? { MILDDIP_LEADER_MIRROR_BUY_ONLY_ONCE_PER_MINT: buyOnlyOncePerMint }
+        : {}),
+      ...(openBagRearmBuyOnly != null
+        ? { MILDDIP_LEADER_MIRROR_OPEN_BAG_REARM_BUY_ONLY: openBagRearmBuyOnly }
+        : {}),
       MILD_DIP_MIRROR_NOTIFY_BUY: notifyBuyEnabled ? '1' : '0',
       ...(notifyAttemptDelayMs != null
         ? { MILD_DIP_MIRROR_NOTIFY_ATTEMPT_DELAY_MS: notifyAttemptDelayMs }
@@ -5057,6 +5065,8 @@ if (mildDipBotApp) {
       leaderSellProportionalEnabled: '0',
       leaderPreBagMaxUsd: '100',
       ownHoldingMaxUsd: '100',
+      buyOnlyOncePerMint: '1',
+      openBagRearmBuyOnly: '0',
       notifyBuyEnabled: true,
       notifyAttemptDelayMs: '300000',
       telegramOnlySubtags: 'none',

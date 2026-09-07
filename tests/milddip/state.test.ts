@@ -169,6 +169,24 @@ describe('mild-dip state', () => {
     fs.rmSync(dir, { recursive: true, force: true });
   });
 
+  it('persists buy-only first purchase timestamps', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-buy-only-once-state-'));
+    const statePath = path.join(dir, 'state.json');
+    const state = {
+      open: {},
+      cooldownUntilMs: {},
+      mirrorBuyOnlyBoughtMints: {
+        MintBought111111111111111111111111111111111111: 12_345,
+      },
+      updatedAtMs: 12_345,
+    };
+    saveMildDipState(statePath, state);
+    expect(loadMildDipState(statePath).mirrorBuyOnlyBoughtMints).toEqual(
+      state.mirrorBuyOnlyBoughtMints,
+    );
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+
   it('prunes stale mirror decisions and keeps only newest entries', () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'mild-dip-state-prune-'));
     const statePath = path.join(dir, 'state.json');

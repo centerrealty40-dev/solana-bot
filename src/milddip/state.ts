@@ -331,6 +331,8 @@ export type MildDipState = {
     { hitKey: string; decidedAtMs: number; reason: string }
   >;
   mirrorLeaderOpenBags?: Record<string, LeaderOpenBagEntry>;
+  /** mint → first confirmed buy timestamp for buy-only mirror mode. */
+  mirrorBuyOnlyBoughtMints?: Record<string, number>;
   mirrorBuyNotify?: Record<
     string,
     {
@@ -720,6 +722,7 @@ export function emptyMildDipState(nowMs = Date.now()): MildDipState {
     leaderMirrorWatches: {},
     leaderMirrorDecisions: {},
     mirrorLeaderOpenBags: {},
+    mirrorBuyOnlyBoughtMints: {},
     mirrorBuyNotify: {},
     recentEntryMsByMint: {},
     mirrorTradingCashUsd: 0,
@@ -775,6 +778,18 @@ export function loadMildDipState(
         mirrorObserveMs,
       ),
       mirrorLeaderOpenBags: sanitizeLeaderOpenBags(parsed.mirrorLeaderOpenBags),
+      mirrorBuyOnlyBoughtMints:
+        parsed.mirrorBuyOnlyBoughtMints &&
+        typeof parsed.mirrorBuyOnlyBoughtMints === 'object'
+          ? Object.fromEntries(
+              Object.entries(parsed.mirrorBuyOnlyBoughtMints as Record<string, unknown>)
+                .map(([mint, value]) => [mint, Number(value)] as const)
+                .filter(
+                  ([mint, ts]) =>
+                    mint.length >= 32 && Number.isFinite(ts) && ts > 0,
+                ),
+            )
+          : {},
       mirrorBuyNotify:
         parsed.mirrorBuyNotify && typeof parsed.mirrorBuyNotify === 'object'
           ? Object.fromEntries(
