@@ -5,6 +5,19 @@ import { appendMildDipJournal, saveMildDipState } from './state.js';
 
 export type MirrorBuyNotifyKind = 'success' | 'attempt';
 
+export function mirrorBuyCompletionSpentUsd(args: {
+  positionSizeUsd: number;
+  configuredLegs: number;
+  filledLegs: number;
+  windowExpired?: boolean;
+}): number | null {
+  const legs = Math.max(1, Math.min(2, Math.floor(args.configuredLegs)));
+  if (legs <= 1 || args.filledLegs >= legs || args.windowExpired === true) {
+    return args.positionSizeUsd;
+  }
+  return null;
+}
+
 function displayName(symbol: string | null | undefined, mint: string): string {
   return symbol?.trim() || mint;
 }
