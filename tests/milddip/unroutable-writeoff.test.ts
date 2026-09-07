@@ -92,6 +92,56 @@ describe('unroutable writeoff', () => {
     expect(state.open).toHaveProperty(Object.keys(state.open)[0]!);
   });
 
+  it('skips buy-only leader mirror bags before issuing a quote', async () => {
+    const mirrorMint = 'MirrorMint11111111111111111111111111111111111';
+    const state = baseState(mirrorMint);
+    state.open[mirrorMint] = { ...state.open[mirrorMint]!, lane: 'leader_mirror' };
+    let quoteCalls = 0;
+    const result = await writeOffUnroutableBags({
+      cfg: baseCfg({
+        leaderMirror: { buyOnly: true },
+        unroutableWriteoffMinChecks: 1,
+        unroutableWriteoffMinAgeMs: 0,
+      }),
+      state,
+      nowMs: 2_000_000,
+      deps: {
+        sleep: async () => {},
+        quote: async () => {
+          quoteCalls += 1;
+          return noRoute();
+        },
+      },
+    });
+    expect(result.skipped).toBe(1);
+    expect(quoteCalls).toBe(0);
+    expect(state.open[mirrorMint]).toBeDefined();
+  });
+
+  it('continues processing non-mirror positions', async () => {
+    const mint = Object.keys(baseState().open)[0]!;
+    const state = baseState(mint);
+    let quoteCalls = 0;
+    const result = await writeOffUnroutableBags({
+      cfg: baseCfg({
+        leaderMirror: { buyOnly: true },
+        unroutableWriteoffMinChecks: 1,
+        unroutableWriteoffMinAgeMs: 0,
+      }),
+      state,
+      nowMs: 2_000_000,
+      deps: {
+        sleep: async () => {},
+        quote: async () => {
+          quoteCalls += 1;
+          return noRoute();
+        },
+      },
+    });
+    expect(quoteCalls).toBeGreaterThan(0);
+    expect(result.markedNoRoute).toBe(1);
+  });
+
   it('clears an observation when the route returns', async () => {
     const state = baseState();
     const mint = Object.keys(state.open)[0]!;

@@ -16,6 +16,10 @@ import {
   selectLeaderMirrorQuoteKeys,
   type LeaderMirrorGates,
 } from '../../src/milddip/leader-mirror.js';
+import {
+  mirrorBuyOnlyExistingPositionDecision,
+  mirrorBuyOnlyHoldingDecision,
+} from '../../src/milddip/entry-attempt.js';
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import {
   mirrorEntryAttemptOutcome,
@@ -561,6 +565,51 @@ describe('mirror premium cap', () => {
         maxPremiumPct: 1,
       }),
     ).toBe(false);
+  });
+});
+
+describe('buy-only own holding gate', () => {
+  it('skips when an existing open position is present', () => {
+    expect(mirrorBuyOnlyExistingPositionDecision(true)).toBe('skip_have_bag');
+    expect(mirrorBuyOnlyExistingPositionDecision(false)).toBe('allow');
+  });
+
+  it('skips holdings at or above the threshold and allows smaller holdings', () => {
+    expect(
+      mirrorBuyOnlyHoldingDecision({
+        raw: '100000000',
+        decimals: 6,
+        priceUsd: 1,
+        maxUsd: 100,
+      }),
+    ).toBe('skip_own_holding');
+    expect(
+      mirrorBuyOnlyHoldingDecision({
+        raw: '99999999',
+        decimals: 6,
+        priceUsd: 1,
+        maxUsd: 100,
+      }),
+    ).toBe('allow');
+  });
+
+  it('allows the buy when decimals are unknown or the candidate price is invalid', () => {
+    expect(
+      mirrorBuyOnlyHoldingDecision({
+        raw: '100000000000',
+        decimals: null,
+        priceUsd: 1,
+        maxUsd: 100,
+      }),
+    ).toBe('unknown_decimals');
+    expect(
+      mirrorBuyOnlyHoldingDecision({
+        raw: '100000000',
+        decimals: 6,
+        priceUsd: Number.NaN,
+        maxUsd: 100,
+      }),
+    ).toBe('allow');
   });
 });
 
@@ -1269,6 +1318,18 @@ describe('leader mirror observation decisions', () => {
   it('rejects adds and other wallets', () => {
     expect(at(hit({ isAdd: true }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_add' });
     expect(at(hit({ leader: 'other' }))).toMatchObject({ action: 'skip', reason: 'leader_mirror_wallet' });
+  });
+
+  it('uses the transaction-derived pre-bag threshold for adds', () => {
+    const threshold = { ...gates, leaderPreBagMaxUsd: 100 };
+    expect(at(hit({ isAdd: true, preBagUsd: 40 }), 101, 110_000, 100_000, threshold))
+      .toMatchObject({ action: 'buy' });
+    expect(at(hit({ isAdd: true, preBagUsd: 150 }), 101, 110_000, 100_000, threshold))
+      .toMatchObject({ action: 'skip', reason: 'leader_mirror_leader_prebag' });
+    expect(at(hit({ isAdd: true }), 101, 110_000, 100_000, threshold))
+      .toMatchObject({ action: 'skip', reason: 'leader_mirror_add' });
+    expect(at(hit({ isAdd: true, preBagUsd: 150 })))
+      .toMatchObject({ action: 'skip', reason: 'leader_mirror_add' });
   });
 
   it('accepts either configured leader and retries soft quality refusals', () => {

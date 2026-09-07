@@ -63,6 +63,15 @@ function cooldownMs(category, subtag) {
   return Number.isFinite(v) && v > 0 ? v : 0;
 }
 
+function telegramSubtagAllowed(subtag) {
+  const raw = process.env.TELEGRAM_ONLY_SUBTAGS?.trim();
+  if (!raw) return true;
+  const allowed = new Set(
+    raw.split(',').map((value) => value.trim().toLowerCase()).filter(Boolean),
+  );
+  return allowed.has(String(subtag).trim().toLowerCase());
+}
+
 function chunk(text, max = 3800) {
   if (text.length <= max) return [text];
   const out = [];
@@ -83,6 +92,7 @@ export async function sendTagged(category, subtag, text, opts = {}) {
   if (!token || !chat) return false;
   const tag = `[${category}][${subtag}]`;
   const tagKey = `${category}.${subtag}`.toLowerCase();
+  if (!telegramSubtagAllowed(subtag)) return false;
 
   if (category !== 'ALERT' && !opts.skipQuietHours && inQuietHours()) return false;
 

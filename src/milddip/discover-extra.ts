@@ -24,6 +24,10 @@ export type LeaderSeedHit = {
   blockTime?: number;
   /** True when leader added to an existing bag. */
   isAdd?: boolean;
+  /** Transaction-derived leader holding immediately before this buy. */
+  preTokenUi?: number;
+  /** Transaction-derived pre-buy bag value at the observed fill price. */
+  preBagUsd?: number;
   class?: string;
   /**
    * 1.11.775 — Dex snapshot at observer time. Bot buys from this on leader
@@ -233,6 +237,10 @@ export function upsertLeaderSeedMint(
   else if (prev?.blockTime != null) mergedHit.blockTime = prev.blockTime;
   if (hit.isAdd != null) mergedHit.isAdd = hit.isAdd;
   else if (prev?.isAdd != null) mergedHit.isAdd = prev.isAdd;
+  if (hit.preTokenUi != null) mergedHit.preTokenUi = hit.preTokenUi;
+  else if (prev?.preTokenUi != null) mergedHit.preTokenUi = prev.preTokenUi;
+  if (hit.preBagUsd != null) mergedHit.preBagUsd = hit.preBagUsd;
+  else if (prev?.preBagUsd != null) mergedHit.preBagUsd = prev.preBagUsd;
   if (hit.class) mergedHit.class = hit.class;
   else if (prev?.class) mergedHit.class = prev.class;
   // Prefer fresher observer Dex snapshot on the new hit.

@@ -3333,7 +3333,7 @@ async function tryEntriesBody(
   }
 }
 
-async function executeQueuedSell(args: {
+export async function executeQueuedSell(args: {
   cfg: MildDipConfig;
   state: MildDipState;
   decision: MarkExitDecision;
@@ -3343,6 +3343,16 @@ async function executeQueuedSell(args: {
   const mint = decision.mint;
   const pos = state.open[mint];
   if (!pos || !decision.reason) return;
+  if (cfg.leaderMirror.buyOnly === true && pos.lane === 'leader_mirror') {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mild_dip_buy_only_sell_skip',
+      mint,
+      symbol: pos.symbol,
+      reason: 'mirror_buy_only',
+      exitReason: decision.reason,
+    });
+    return;
+  }
 
   const fraction =
     decision.fraction > 0 && decision.fraction < 1 ? decision.fraction : 1;
@@ -4280,6 +4290,16 @@ async function rearmLeaderOpenBags(
   for (const key of keys) {
     const entry = state.mirrorLeaderOpenBags?.[key];
     if (!entry) continue;
+    if (cfg.leaderMirror.buyOnly === true && state.open[entry.mint]) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_open_bag_rearm_skip',
+        mint: entry.mint,
+        leader: entry.leader,
+        reason: 'mirror_buy_only_have_bag',
+      });
+      changed = dropLeaderOpenBag(cfg, state, key, 'already_traded') || changed;
+      continue;
+    }
     entry.lastCheckAtMs = nowMs;
     const feedSell = leaderSellFeed?.get(entry.mint, nowMs);
     if (feedSell?.leader === entry.leader) {
@@ -4820,7 +4840,7 @@ async function attemptStagedEntryAdd(args: {
   }
 }
 
-async function attemptMirrorAverage(args: {
+export async function attemptMirrorAverage(args: {
   cfg: MildDipConfig;
   state: MildDipState;
   pos: MildDipOpenPosition;
@@ -4829,6 +4849,7 @@ async function attemptMirrorAverage(args: {
   leaderHeld: boolean;
 }): Promise<void> {
   const { cfg, state, pos, markPriceUsd, nowMs } = args;
+  if (cfg.leaderMirror.buyOnly === true && pos.lane === 'leader_mirror') return;
   if (pos.manualAdopted === true) return;
   if (mildDipStateSaveBlocked()) return;
   const g = cfg.leaderMirror;
@@ -5400,7 +5421,10 @@ async function tryExits(
     });
   }
   const ordered = orderMintsForMark(state.open).filter(
-    (m) => !sellInFlight.has(m) && !buyInFlight.has(m),
+    (m) =>
+      !sellInFlight.has(m) &&
+      !buyInFlight.has(m) &&
+      !(cfg.leaderMirror.buyOnly === true && state.open[m]?.lane === 'leader_mirror'),
   );
   if (ordered.length === 0) return;
 

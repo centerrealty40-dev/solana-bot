@@ -148,6 +148,8 @@ export function leaderMirrorNeedsStructuralBackfill(
 
 export type LeaderMirrorGates = {
   enabled: boolean;
+  buyOnly?: boolean;
+  leaderPreBagMaxUsd?: number;
   greenCopyEnabled: boolean;
   greenInstantEnabled?: boolean;
   greenIgnoreLiquidityFloor?: boolean;
@@ -431,7 +433,16 @@ export function evaluateLeaderMirrorObservation(args: {
   if (!leaderMirrorWalletAllowed(hit, gates.leaders)) {
     return { action: 'skip', reason: 'leader_mirror_wallet' };
   }
-  if (hit.isAdd === true) return { action: 'skip', reason: 'leader_mirror_add' };
+  if ((gates.leaderPreBagMaxUsd ?? 0) > 0) {
+    const pre = Number.isFinite(hit.preBagUsd) ? Number(hit.preBagUsd) : null;
+    if (pre == null) {
+      if (hit.isAdd === true) return { action: 'skip', reason: 'leader_mirror_add' };
+    } else if (pre >= (gates.leaderPreBagMaxUsd ?? 0)) {
+      return { action: 'skip', reason: 'leader_mirror_leader_prebag' };
+    }
+  } else if (hit.isAdd === true) {
+    return { action: 'skip', reason: 'leader_mirror_add' };
+  }
   if (!finitePositive(hit.fillPriceUsd)) {
     const blockTimeMs =
       typeof hit.blockTime === 'number' && Number.isFinite(hit.blockTime) && hit.blockTime > 0
