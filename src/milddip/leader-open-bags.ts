@@ -83,6 +83,13 @@ export type LeaderOpenBagRearmDecision =
   | 'already_traded'
   | 'cooldown';
 
+export function leaderOpenBagRearmEnabled(args: {
+  buyOnly: boolean;
+  openBagRearmBuyOnly: boolean;
+}): boolean {
+  return !args.buyOnly || args.openBagRearmBuyOnly;
+}
+
 export function leaderOpenBagRearmDecision(args: {
   nowMs: number;
   entry: LeaderOpenBagEntry;

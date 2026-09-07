@@ -39,11 +39,13 @@ import {
 import { leaderActiveNow } from './leader-active.js';
 import {
   leaderOpenBagDropReason,
+  leaderOpenBagRearmEnabled,
   leaderOpenBagRearmDecision,
   selectLeaderOpenBagRetryKeys,
   upsertLeaderOpenBag,
   type LeaderOpenBagEntry,
 } from './leader-open-bags.js';
+import { recordMirrorBuyOnlyMint } from './buy-only-once.js';
 import {
   flushMirrorBuyAttemptNotifications,
   mirrorBuyCompletionSpentUsd,
@@ -4199,6 +4201,14 @@ function trackLeaderOpenBag(
   nowMs: number,
 ): void {
   if (
+    !leaderOpenBagRearmEnabled({
+      buyOnly: cfg.leaderMirror.buyOnly === true,
+      openBagRearmBuyOnly: cfg.leaderMirror.openBagRearmBuyOnly,
+    })
+  ) {
+    return;
+  }
+  if (
     !hit.leader ||
     !(hit.fillPriceUsd && hit.fillPriceUsd > 0) ||
     !(hit.sizeUsd && hit.sizeUsd > 0)
@@ -4252,7 +4262,8 @@ function dropLeaderOpenBag(
   key: string,
   reason:
     | NonNullable<ReturnType<typeof leaderOpenBagDropReason>>
-    | 'already_traded',
+    | 'already_traded'
+    | 'buy_only_disabled',
 ): boolean {
   const entry = state.mirrorLeaderOpenBags?.[key];
   if (!entry) return false;
@@ -4294,6 +4305,19 @@ async function rearmLeaderOpenBags(
 ): Promise<number> {
   const gates = cfg.leaderMirror;
   const entries = state.mirrorLeaderOpenBags ?? {};
+  if (
+    !leaderOpenBagRearmEnabled({
+      buyOnly: gates.buyOnly === true,
+      openBagRearmBuyOnly: gates.openBagRearmBuyOnly,
+    })
+  ) {
+    let changed = false;
+    for (const key of Object.keys(entries)) {
+      changed = dropLeaderOpenBag(cfg, state, key, 'buy_only_disabled') || changed;
+    }
+    if (changed) saveMildDipState(cfg.statePath, state);
+    return 0;
+  }
   if (!gates.leaderOpenBagRetryEnabled || Object.keys(entries).length === 0) return 0;
   hydrateLeaderMirrorWatches(cfg, state, nowMs);
   const copyCfg = mildDipToCopyTraderConfig(cfg);
@@ -4625,6 +4649,17 @@ async function attemptLeaderAlignScaleIn(args: {
     }
     const live = state.open[mint];
     if (!live) return;
+    if (
+      cfg.leaderMirror.buyOnly === true &&
+      live.lane === 'leader_mirror' &&
+      recordMirrorBuyOnlyMint(state, mint, nowMs)
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_buy_only_mint_recorded',
+        mint,
+        ts: nowMs,
+      });
+    }
     if (live.lane === 'leader_mirror') {
       accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
     }
@@ -4819,6 +4854,17 @@ async function attemptStagedEntryAdd(args: {
     }
     const live = state.open[pos.mint];
     if (!live) return;
+    if (
+      cfg.leaderMirror.buyOnly === true &&
+      live.lane === 'leader_mirror' &&
+      recordMirrorBuyOnlyMint(state, pos.mint, nowMs)
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_buy_only_mint_recorded',
+        mint: pos.mint,
+        ts: nowMs,
+      });
+    }
     if (live.lane === 'leader_mirror') {
       accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
     }
@@ -5111,6 +5157,17 @@ export async function attemptMirrorAverage(args: {
     if (!buy.ok) return;
     const live = state.open[pos.mint];
     if (!live) return;
+    if (
+      cfg.leaderMirror.buyOnly === true &&
+      live.lane === 'leader_mirror' &&
+      recordMirrorBuyOnlyMint(state, pos.mint, nowMs)
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_buy_only_mint_recorded',
+        mint: pos.mint,
+        ts: nowMs,
+      });
+    }
     const addUsd =
       buy.quoteSpentUsd ?? Math.min(averageTargetUsd, sized.sizeUsd);
     const fillPx = buy.priceUsd > 0 ? buy.priceUsd : markPriceUsd;
@@ -5355,6 +5412,17 @@ async function attemptCrossLeaderAverage(args: {
     if (!buy.ok) return;
     const live = state.open[pos.mint];
     if (!live) return;
+    if (
+      cfg.leaderMirror.buyOnly === true &&
+      live.lane === 'leader_mirror' &&
+      recordMirrorBuyOnlyMint(state, pos.mint, nowMs)
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_buy_only_mint_recorded',
+        mint: pos.mint,
+        ts: nowMs,
+      });
+    }
     const addUsd = buy.quoteSpentUsd ?? Math.min(amountUsd, sized.sizeUsd);
     const fillPx = buy.priceUsd > 0 ? buy.priceUsd : markPriceUsd;
     try {

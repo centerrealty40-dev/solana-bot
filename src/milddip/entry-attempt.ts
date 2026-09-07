@@ -20,6 +20,10 @@ import {
   buyOnlyBagVerdict,
   clearBuyOnlyPhantomBag,
 } from './buy-only-bag.js';
+import {
+  mirrorBuyOnlyBoughtMintDecision,
+  recordMirrorBuyOnlyMint,
+} from './buy-only-once.js';
 import { fetchDexScreenerPairDetails } from '../papertrader/pricing/dexscreener-quote-cache.js';
 import type { CopyTraderConfig } from '../copytrader/config.js';
 import type { MildDipConfig } from './config.js';
@@ -805,6 +809,20 @@ export async function attemptMildDipEntry(args: {
   const isTier = isMirror && opts.mirrorBranch === 'tier';
   const tierIgnoreFloors = isTier && cfg.leaderMirror.tierIgnoreStructuralFloors === true;
   const isLeaderStyle = opts.leaderStyle === true;
+  if (
+    mirrorBuyOnly &&
+    cfg.leaderMirror.buyOnlyOncePerMint &&
+    mirrorBuyOnlyBoughtMintDecision(state, c.mint) === 'skip_already_bought'
+  ) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'leader_mirror_buy_only_skip',
+      mint: c.mint,
+      symbol: c.symbol,
+      reason: 'mirror_buy_only_already_bought',
+      boughtAtMs: state.mirrorBuyOnlyBoughtMints?.[c.mint],
+    });
+    return 'skip';
+  }
   if (mirrorBuyOnly && cfg.leaderMirror.ownHoldingMaxUsd > 0) {
     const holding = await fetchWalletMintHoldingOrNull(
       copyCfg.rpcUrl,
@@ -2656,6 +2674,17 @@ export async function attemptMildDipEntry(args: {
   // Seed exit mark ring so stream-only marks have a print before first swap decode.
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });
   buyInFlight.delete(c.mint);
+  if (
+    mirrorBuyOnly &&
+    mirrorLane === 'leader_mirror' &&
+    recordMirrorBuyOnlyMint(state, c.mint, nowMs)
+  ) {
+    appendMildDipJournal(cfg.journalPath, {
+      kind: 'mirror_buy_only_mint_recorded',
+      mint: c.mint,
+      ts: nowMs,
+    });
+  }
   saveMildDipState(cfg.statePath, state);
   if (mirrorBuyOnly && mirrorFirstClipLegs <= 1) {
     await notifyMirrorBuySuccessOnce({
@@ -2867,6 +2896,17 @@ export async function attemptMirrorFirstClipLeg(args: {
     if (tokenRaw && /^\d+$/.test(tokenRaw)) {
       live.tokenRaw = tokenRaw;
       live.tokenRawSettled = false;
+    }
+    if (
+      cfg.leaderMirror.buyOnly === true &&
+      live.lane === 'leader_mirror' &&
+      recordMirrorBuyOnlyMint(state, c.mint, nowMs)
+    ) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_buy_only_mint_recorded',
+        mint: c.mint,
+        ts: nowMs,
+      });
     }
     saveMildDipState(cfg.statePath, state);
     appendMildDipJournal(cfg.journalPath, {
