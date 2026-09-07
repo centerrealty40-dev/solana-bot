@@ -61,6 +61,31 @@ import {
   notifyMirrorBuySuccessOnce,
 } from './mirror-buy-notify.js';
 
+export type MirrorBuyOnlyHoldingDecision =
+  | 'allow'
+  | 'skip_own_holding'
+  | 'unknown_decimals';
+
+export function mirrorBuyOnlyHoldingDecision(args: {
+  raw: string | null | undefined;
+  decimals: number | null | undefined;
+  priceUsd: number;
+  maxUsd: number;
+}): MirrorBuyOnlyHoldingDecision {
+  if (args.decimals == null || !Number.isInteger(args.decimals) || args.decimals < 0) {
+    return 'unknown_decimals';
+  }
+  if (!(args.priceUsd > 0) || !Number.isFinite(args.priceUsd)) return 'allow';
+  const ui =
+    args.raw && /^\d+$/.test(args.raw)
+      ? Number(args.raw) / 10 ** args.decimals
+      : 0;
+  const holdingUsd = ui * args.priceUsd;
+  return Number.isFinite(holdingUsd) && holdingUsd >= args.maxUsd
+    ? 'skip_own_holding'
+    : 'allow';
+}
+
 /**
  * How fresh a ring sample must be to serve as the movement baseline. Dex marks
  * on an open bag run at a median 6.1s, so 30s is several marks of slack while
@@ -708,10 +733,25 @@ export async function attemptMildDipEntry(args: {
   const isLeaderStyle = opts.leaderStyle === true;
   if (mirrorBuyOnly && cfg.leaderMirror.ownHoldingMaxUsd > 0) {
     const raw = await fetchMintBalanceRaw(copyCfg, c.mint);
-    const decimals = mildDipPriceRing.mintDecimals(c.mint) ?? 6;
-    const ui = raw && /^\d+$/.test(raw) ? Number(raw) / 10 ** decimals : 0;
-    const holdingUsd = ui * c.priceUsd;
-    if (Number.isFinite(holdingUsd) && holdingUsd >= cfg.leaderMirror.ownHoldingMaxUsd) {
+    const decimals = mildDipPriceRing.mintDecimals(c.mint);
+    const holdingDecision = mirrorBuyOnlyHoldingDecision({
+      raw,
+      decimals,
+      priceUsd: c.priceUsd,
+      maxUsd: cfg.leaderMirror.ownHoldingMaxUsd,
+    });
+    if (holdingDecision === 'unknown_decimals') {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_buy_only_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: 'own_holding_decimals_unknown',
+        tokenRaw: raw,
+        priceUsd: c.priceUsd,
+      });
+    } else if (holdingDecision === 'skip_own_holding') {
+      const ui = raw && /^\d+$/.test(raw) ? Number(raw) / 10 ** decimals! : 0;
+      const holdingUsd = ui * c.priceUsd;
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_buy_only_skip',
         mint: c.mint,

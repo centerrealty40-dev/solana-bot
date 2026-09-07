@@ -16,6 +16,7 @@ import {
   selectLeaderMirrorQuoteKeys,
   type LeaderMirrorGates,
 } from '../../src/milddip/leader-mirror.js';
+import { mirrorBuyOnlyHoldingDecision } from '../../src/milddip/entry-attempt.js';
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import {
   mirrorEntryAttemptOutcome,
@@ -561,6 +562,46 @@ describe('mirror premium cap', () => {
         maxPremiumPct: 1,
       }),
     ).toBe(false);
+  });
+});
+
+describe('buy-only own holding gate', () => {
+  it('skips holdings at or above the threshold and allows smaller holdings', () => {
+    expect(
+      mirrorBuyOnlyHoldingDecision({
+        raw: '100000000',
+        decimals: 6,
+        priceUsd: 1,
+        maxUsd: 100,
+      }),
+    ).toBe('skip_own_holding');
+    expect(
+      mirrorBuyOnlyHoldingDecision({
+        raw: '99999999',
+        decimals: 6,
+        priceUsd: 1,
+        maxUsd: 100,
+      }),
+    ).toBe('allow');
+  });
+
+  it('allows the buy when decimals are unknown or the candidate price is invalid', () => {
+    expect(
+      mirrorBuyOnlyHoldingDecision({
+        raw: '100000000000',
+        decimals: null,
+        priceUsd: 1,
+        maxUsd: 100,
+      }),
+    ).toBe('unknown_decimals');
+    expect(
+      mirrorBuyOnlyHoldingDecision({
+        raw: '100000000',
+        decimals: 6,
+        priceUsd: Number.NaN,
+        maxUsd: 100,
+      }),
+    ).toBe('allow');
   });
 });
 

@@ -2495,7 +2495,7 @@ async function wakeLeaderMirrors(
         mint,
         reason: 'leader_mirror_exposure_cap',
         openMirror,
-      maxOpen: gates.maxOpen,
+        maxOpen: gates.maxOpen,
         pc5m: hit.pc5m ?? null,
         quoteGainPct,
         metricSource: watch.metricSource,
@@ -3333,7 +3333,7 @@ async function tryEntriesBody(
   }
 }
 
-async function executeQueuedSell(args: {
+export async function executeQueuedSell(args: {
   cfg: MildDipConfig;
   state: MildDipState;
   decision: MarkExitDecision;
@@ -4830,7 +4830,7 @@ async function attemptStagedEntryAdd(args: {
   }
 }
 
-async function attemptMirrorAverage(args: {
+export async function attemptMirrorAverage(args: {
   cfg: MildDipConfig;
   state: MildDipState;
   pos: MildDipOpenPosition;
