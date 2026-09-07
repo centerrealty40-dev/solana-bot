@@ -5414,6 +5414,8 @@ const OSCAR_VPS_EXCLUDED_APPS = new Set([
   'copy-trader-8zkg-mirror',
   /** 1.11.1040 — operator permanently disabled mild-dip-bot; reload must not revive it. */
   'mild-dip-bot',
+  /** Operator stopped the buy-only mirror lane; reload/watchdog must not revive it. */
+  'mild-dip-mirror',
   /** mild-dip-mirror2 was previously stopped; reload/watchdog must not revive it. */
   'mild-dip-mirror2',
   /** Operator permanently disabled own2; reload/watchdog must not revive it. */
