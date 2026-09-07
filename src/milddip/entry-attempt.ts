@@ -86,6 +86,12 @@ export function mirrorBuyOnlyHoldingDecision(args: {
     : 'allow';
 }
 
+export function mirrorBuyOnlyExistingPositionDecision(
+  hasOpenPosition: boolean,
+): 'allow' | 'skip_have_bag' {
+  return hasOpenPosition ? 'skip_have_bag' : 'allow';
+}
+
 /**
  * How fresh a ring sample must be to serve as the movement baseline. Dex marks
  * on an open bag run at a median 6.1s, so 30s is several marks of slack while
@@ -627,7 +633,10 @@ export async function attemptMildDipEntry(args: {
     cfg.leaderMirror.buyOnly === true &&
     opts.mirror === true &&
     opts.mirrorBranch !== 'tier';
-  if (state.open[c.mint]) {
+  const existingPositionDecision = mirrorBuyOnlyExistingPositionDecision(
+    state.open[c.mint] != null,
+  );
+  if (existingPositionDecision === 'skip_have_bag') {
     if (mirrorBuyOnly) {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_buy_only_skip',

@@ -16,7 +16,10 @@ import {
   selectLeaderMirrorQuoteKeys,
   type LeaderMirrorGates,
 } from '../../src/milddip/leader-mirror.js';
-import { mirrorBuyOnlyHoldingDecision } from '../../src/milddip/entry-attempt.js';
+import {
+  mirrorBuyOnlyExistingPositionDecision,
+  mirrorBuyOnlyHoldingDecision,
+} from '../../src/milddip/entry-attempt.js';
 import { decideMarkExit } from '../../src/milddip/exit-engine.js';
 import {
   mirrorEntryAttemptOutcome,
@@ -566,6 +569,11 @@ describe('mirror premium cap', () => {
 });
 
 describe('buy-only own holding gate', () => {
+  it('skips when an existing open position is present', () => {
+    expect(mirrorBuyOnlyExistingPositionDecision(true)).toBe('skip_have_bag');
+    expect(mirrorBuyOnlyExistingPositionDecision(false)).toBe('allow');
+  });
+
   it('skips holdings at or above the threshold and allows smaller holdings', () => {
     expect(
       mirrorBuyOnlyHoldingDecision({
