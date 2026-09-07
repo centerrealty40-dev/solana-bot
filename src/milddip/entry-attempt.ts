@@ -7,7 +7,10 @@ import {
   resetCopyFundingCache,
 } from '../copytrader/funding-gate.js';
 import { fetchMintBalanceRaw } from '../copytrader/live-exec.js';
-import { fetchParsedTransaction } from '../copytrader/rpc.js';
+import {
+  fetchParsedTransaction,
+  fetchWalletMintHoldingOrNull,
+} from '../copytrader/rpc.js';
 import {
   leaderBalanceGuardReason,
   readLeaderBalanceForGuard,
@@ -72,6 +75,12 @@ export type MirrorBuyOnlyHoldingDecision =
   | 'skip_own_holding'
   | 'unknown_decimals';
 
+export type MirrorBuyOnlyHoldingReadDecision =
+  | 'allow'
+  | 'skip_own_holding'
+  | 'own_holding_decimals_unknown'
+  | 'own_holding_unverified';
+
 export function mirrorBuyOnlyHoldingDecision(args: {
   raw: string | null | undefined;
   decimals: number | null | undefined;
@@ -90,6 +99,29 @@ export function mirrorBuyOnlyHoldingDecision(args: {
   return Number.isFinite(holdingUsd) && holdingUsd >= args.maxUsd
     ? 'skip_own_holding'
     : 'allow';
+}
+
+export function mirrorBuyOnlyHoldingReadDecision(args: {
+  holding: { raw: bigint; decimals: number | null } | null;
+  ringDecimals: number | null | undefined;
+  priceUsd: number;
+  maxUsd: number;
+}): MirrorBuyOnlyHoldingReadDecision {
+  if (args.holding == null) return 'own_holding_unverified';
+  const decimals = args.ringDecimals ?? args.holding.decimals;
+  const decision = mirrorBuyOnlyHoldingDecision({
+    raw: args.holding.raw > 0n ? args.holding.raw.toString() : null,
+    decimals,
+    priceUsd: args.priceUsd,
+    maxUsd: args.maxUsd,
+  });
+  if (decision === 'skip_own_holding') return 'skip_own_holding';
+  if (decision === 'unknown_decimals') {
+    return args.holding.raw > 0n
+      ? 'own_holding_decimals_unknown'
+      : 'allow';
+  }
+  return 'allow';
 }
 
 export function mirrorBuyOnlyExistingPositionDecision(
@@ -774,15 +806,29 @@ export async function attemptMildDipEntry(args: {
   const tierIgnoreFloors = isTier && cfg.leaderMirror.tierIgnoreStructuralFloors === true;
   const isLeaderStyle = opts.leaderStyle === true;
   if (mirrorBuyOnly && cfg.leaderMirror.ownHoldingMaxUsd > 0) {
-    const raw = await fetchMintBalanceRaw(copyCfg, c.mint);
-    const decimals = mildDipPriceRing.mintDecimals(c.mint);
-    const holdingDecision = mirrorBuyOnlyHoldingDecision({
-      raw,
-      decimals,
+    const holding = await fetchWalletMintHoldingOrNull(
+      copyCfg.rpcUrl,
+      executionWalletPubkey(copyCfg),
+      c.mint,
+    );
+    const raw = holding?.raw.toString() ?? null;
+    const holdingDecision = mirrorBuyOnlyHoldingReadDecision({
+      holding,
+      ringDecimals: mildDipPriceRing.mintDecimals(c.mint),
       priceUsd: c.priceUsd,
       maxUsd: cfg.leaderMirror.ownHoldingMaxUsd,
     });
-    if (holdingDecision === 'unknown_decimals') {
+    if (holdingDecision === 'own_holding_unverified') {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_buy_only_skip',
+        mint: c.mint,
+        symbol: c.symbol,
+        reason: 'own_holding_unverified',
+        tokenRaw: raw,
+        priceUsd: c.priceUsd,
+      });
+      return 'skip';
+    } else if (holdingDecision === 'own_holding_decimals_unknown') {
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_buy_only_skip',
         mint: c.mint,
@@ -791,8 +837,13 @@ export async function attemptMildDipEntry(args: {
         tokenRaw: raw,
         priceUsd: c.priceUsd,
       });
+      return 'skip';
     } else if (holdingDecision === 'skip_own_holding') {
-      const ui = raw && /^\d+$/.test(raw) ? Number(raw) / 10 ** decimals! : 0;
+      const decimals =
+        mildDipPriceRing.mintDecimals(c.mint) ?? holding?.decimals ?? null;
+      const ui = raw && decimals != null && /^\d+$/.test(raw)
+        ? Number(raw) / 10 ** decimals
+        : 0;
       const holdingUsd = ui * c.priceUsd;
       appendMildDipJournal(cfg.journalPath, {
         kind: 'leader_mirror_buy_only_skip',
