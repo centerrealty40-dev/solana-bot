@@ -4290,6 +4290,16 @@ async function rearmLeaderOpenBags(
   for (const key of keys) {
     const entry = state.mirrorLeaderOpenBags?.[key];
     if (!entry) continue;
+    if (cfg.leaderMirror.buyOnly === true && state.open[entry.mint]) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'leader_mirror_open_bag_rearm_skip',
+        mint: entry.mint,
+        leader: entry.leader,
+        reason: 'mirror_buy_only_have_bag',
+      });
+      changed = dropLeaderOpenBag(cfg, state, key, 'already_traded') || changed;
+      continue;
+    }
     entry.lastCheckAtMs = nowMs;
     const feedSell = leaderSellFeed?.get(entry.mint, nowMs);
     if (feedSell?.leader === entry.leader) {

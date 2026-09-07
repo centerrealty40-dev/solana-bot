@@ -66,6 +66,16 @@ export async function writeOffUnroutableBags(args: {
   const maxPerPass = Math.max(0, Math.floor(cfg.unroutableWriteoffMaxPerPass));
 
   for (const [mint, position] of Object.entries(state.open ?? {})) {
+    if (cfg.leaderMirror?.buyOnly === true && position.lane === 'leader_mirror') {
+      result.skipped += 1;
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mild_dip_unroutable_writeoff_skip',
+        mint,
+        symbol: position.symbol,
+        reason: 'mirror_buy_only',
+      });
+      continue;
+    }
     const tokenRaw = position.tokenRaw;
     if (!tokenRaw || !/^\d+$/.test(tokenRaw) || BigInt(tokenRaw) <= 0n) {
       result.skipped += 1;
