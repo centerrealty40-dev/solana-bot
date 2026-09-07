@@ -197,3 +197,43 @@ export async function fetchWalletMintBalanceRawOrNull(
   }
   return total;
 }
+
+export async function fetchWalletMintHoldingOrNull(
+  rpcUrl: string,
+  wallet: string,
+  mint: string,
+): Promise<{ raw: bigint; decimals: number | null } | null> {
+  const rows = await rpcCall<{ value?: unknown[] }>(
+    rpcUrl,
+    'getTokenAccountsByOwner',
+    [wallet, { mint }, { encoding: 'jsonParsed' }],
+    5,
+  );
+  if (rows == null) return null;
+  let total = 0n;
+  let decimals: number | null = null;
+  for (const row of rows.value ?? []) {
+    if (!row || typeof row !== 'object') continue;
+    const tokenAmount = (
+      row as {
+        account?: {
+          data?: {
+            parsed?: { info?: { tokenAmount?: { amount?: string; decimals?: number } } };
+          };
+        };
+      }
+    ).account?.data?.parsed?.info?.tokenAmount;
+    if (typeof tokenAmount?.amount === 'string' && /^\d+$/.test(tokenAmount.amount)) {
+      total += BigInt(tokenAmount.amount);
+    }
+    if (
+      decimals == null &&
+      typeof tokenAmount?.decimals === 'number' &&
+      Number.isInteger(tokenAmount.decimals) &&
+      tokenAmount.decimals >= 0
+    ) {
+      decimals = tokenAmount.decimals;
+    }
+  }
+  return { raw: total, decimals };
+}
