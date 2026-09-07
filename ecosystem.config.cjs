@@ -5103,7 +5103,7 @@ if (mildDipBotApp) {
       sizeFromLeaderMaxUsd: '100',
       sizeFromLeaderSmallMcapUsd: '40000',
       sizeFromLeaderSmallClipUsd: '100',
-      firstClipLegs: '1',
+      firstClipLegs: '2',
       // 1.11.1057 — замер закрытых сделок показал положительный эффект усреднения
       // только глубже −50%; пол vol5m $2k отсекает покупки в мёртвых малых пулах.
       averageUsd: '50',

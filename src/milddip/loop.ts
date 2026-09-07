@@ -39,6 +39,10 @@ import {
   upsertLeaderOpenBag,
   type LeaderOpenBagEntry,
 } from './leader-open-bags.js';
+import {
+  mirrorBuyCompletionSpentUsd,
+  notifyMirrorBuySuccessOnce,
+} from './mirror-buy-notify.js';
 import { maybeAlertMildDipDexLoad } from './dex-load.js';
 import {
   evaluateFastPathCandidate,
@@ -1635,6 +1639,22 @@ export function isMirrorFirstClipPending(
     position?.lane === 'leader_mirror' &&
     position.manualAdopted !== true &&
     (position.mirrorFirstClipLegsFilled ?? 1) < legs
+  );
+}
+
+export function isMirrorFirstClipWindowLive(
+  position: MildDipOpenPosition | undefined,
+  configuredLegs: number | undefined,
+  nowMs: number,
+  graceMs: number,
+): boolean {
+  return (
+    isMirrorFirstClipPending(position, configuredLegs) &&
+    nowMs -
+      mirrorFirstClipWindowBaseMs(
+        position!.openedAtMs,
+        position!.mirrorFirstClipFirstFillAtMs,
+      ) <= graceMs
   );
 }
 
@@ -5420,11 +5440,58 @@ async function tryExits(
       ).length,
     });
   }
+  let expiredBuyOnlyClipChanged = false;
+  for (const position of Object.values(state.open)) {
+    if (
+      cfg.leaderMirror.buyOnly !== true ||
+      position.lane !== 'leader_mirror' ||
+      !isMirrorFirstClipPending(position, cfg.leaderMirror.firstClipLegs) ||
+      isMirrorFirstClipWindowLive(
+        position,
+        cfg.leaderMirror.firstClipLegs,
+        nowMs,
+        cfg.leaderMirror.entryGraceMs,
+      )
+    ) {
+      continue;
+    }
+    const firstClipLegs = Math.max(
+      1,
+      Math.min(2, Math.floor(cfg.leaderMirror.firstClipLegs ?? 1)),
+    );
+    position.mirrorFirstClipLegsFilled = firstClipLegs;
+    expiredBuyOnlyClipChanged = true;
+    const completionSpentUsd = mirrorBuyCompletionSpentUsd({
+      positionSizeUsd: position.sizeUsd,
+      configuredLegs: cfg.leaderMirror.firstClipLegs ?? 1,
+      filledLegs: firstClipLegs,
+      windowExpired: true,
+    });
+    if (completionSpentUsd != null) {
+      await notifyMirrorBuySuccessOnce({
+        cfg,
+        state,
+        mint: position.mint,
+        symbol: position.symbol,
+        spentUsd: completionSpentUsd,
+      });
+    }
+  }
+  if (expiredBuyOnlyClipChanged) saveMildDipState(cfg.statePath, state);
   const ordered = orderMintsForMark(state.open).filter(
     (m) =>
       !sellInFlight.has(m) &&
       !buyInFlight.has(m) &&
-      !(cfg.leaderMirror.buyOnly === true && state.open[m]?.lane === 'leader_mirror'),
+      !(
+        cfg.leaderMirror.buyOnly === true &&
+        state.open[m]?.lane === 'leader_mirror' &&
+        !isMirrorFirstClipWindowLive(
+          state.open[m],
+          cfg.leaderMirror.firstClipLegs,
+          nowMs,
+          cfg.leaderMirror.entryGraceMs,
+        )
+      ),
   );
   if (ordered.length === 0) return;
 
@@ -5972,6 +6039,9 @@ async function tryExits(
         : undefined,
     });
     if (!decision) continue;
+    const buyOnlyFirstClipPending =
+      cfg.leaderMirror.buyOnly === true &&
+      isMirrorFirstClipPending(pos, cfg.leaderMirror.firstClipLegs);
     if (decision.markQuarantined === true) {
       maybeRequestOpenMarkJupiterRefresh(mint, nowMs, cfg, true);
     }
@@ -6065,7 +6135,8 @@ async function tryExits(
     } else if (
       pendingVerdict.fire &&
       !sellInFlight.has(mint) &&
-      cfg.pendingExitRetryEnabled
+      cfg.pendingExitRetryEnabled &&
+      !buyOnlyFirstClipPending
     ) {
       const decidedAtMs = pos.pendingExitDecidedAtMs ?? nowMs;
       const attempts = pos.pendingExitAttempts ?? 0;
@@ -6089,8 +6160,14 @@ async function tryExits(
     }
 
     if (
+      buyOnlyFirstClipPending &&
+      (decision.markQuarantined || !(decision.markPriceUsd > 0))
+    ) {
+      continue;
+    }
+    if (
       !decision.markQuarantined &&
-      !decision.shouldExit &&
+      (!decision.shouldExit || buyOnlyFirstClipPending) &&
       decision.markPriceUsd > 0 &&
       !sellInFlight.has(mint)
     ) {
@@ -6158,24 +6235,29 @@ async function tryExits(
           pos.mirrorFirstClipLegsFilled = firstClipLegs;
           saveMildDipState(cfg.statePath, state);
         }
-        await attemptMirrorAverage({
-          cfg,
-          state,
-          pos,
-          markPriceUsd: decision.markPriceUsd,
-          nowMs,
-          leaderHeld: leaderSellEvent == null,
-        });
-        await attemptCrossLeaderAverage({
-          cfg,
-          state,
-          pos,
-          markPriceUsd: decision.markPriceUsd,
-          nowMs,
-          leaderHeld: leaderSellEvent == null,
-          signal: crossLeaderBuyFeed?.get(mint, nowMs) ?? null,
-        });
+        if (!cfg.leaderMirror.buyOnly) {
+          await attemptMirrorAverage({
+            cfg,
+            state,
+            pos,
+            markPriceUsd: decision.markPriceUsd,
+            nowMs,
+            leaderHeld: leaderSellEvent == null,
+          });
+        }
+        if (!cfg.leaderMirror.buyOnly) {
+          await attemptCrossLeaderAverage({
+            cfg,
+            state,
+            pos,
+            markPriceUsd: decision.markPriceUsd,
+            nowMs,
+            leaderHeld: leaderSellEvent == null,
+            signal: crossLeaderBuyFeed?.get(mint, nowMs) ?? null,
+          });
+        }
       }
+      if (buyOnlyFirstClipPending) continue;
       if (cfg.leaderMirror.mirrorOnly) continue;
       await attemptStagedEntryAdd({
         cfg,

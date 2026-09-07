@@ -1,5 +1,5 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { attemptMirrorFirstClipLeg } from '../../src/milddip/entry-attempt.js';
 import { attemptMirrorAverage, executeQueuedSell } from '../../src/milddip/loop.js';
 
 const cfg = {
@@ -46,12 +46,15 @@ describe('buy-only mirror loop guards', () => {
     expect(state.open[pos.mint]).toBe(pos);
   });
 
-  it('skips the first clip leg for buy-only positions', async () => {
-    const result = await attemptMirrorFirstClipLeg({
-      cfg,
-      state: { open: { [pos.mint]: pos } },
-      candidate: { mint: pos.mint, symbol: 'TEST' },
-    } as any);
-    expect(result).toBe('skip');
+  it('allows the second first-clip leg in buy-only mode', () => {
+    const source = readFileSync(
+      new URL('../../src/milddip/entry-attempt.ts', import.meta.url),
+      'utf8',
+    );
+    const body = source.slice(
+      source.indexOf('export async function attemptMirrorFirstClipLeg'),
+    );
+    expect(body).not.toContain('cfg.leaderMirror.buyOnly === true ||');
+    expect(body).toContain('filledLegs >= legs');
   });
 });

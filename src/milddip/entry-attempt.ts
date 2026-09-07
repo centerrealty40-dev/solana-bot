@@ -57,6 +57,7 @@ import { evaluateSignalPriceFreshness } from './signal-price-freshness.js';
 import { accountMirrorCashLeg } from './mirror-loss-cap.js';
 import { mirrorQuoteWithinPremiumCap } from './leader-mirror.js';
 import {
+  mirrorBuyCompletionSpentUsd,
   notifyMirrorBuyAttemptOnce,
   notifyMirrorBuySuccessOnce,
 } from './mirror-buy-notify.js';
@@ -2573,7 +2574,7 @@ export async function attemptMildDipEntry(args: {
   mildDipPriceRing.note(c.mint, fillPx, { tsMs: nowMs, source: 'dex' });
   buyInFlight.delete(c.mint);
   saveMildDipState(cfg.statePath, state);
-  if (mirrorBuyOnly) {
+  if (mirrorBuyOnly && mirrorFirstClipLegs <= 1) {
     await notifyMirrorBuySuccessOnce({
       cfg,
       state,
@@ -2622,7 +2623,6 @@ export async function attemptMirrorFirstClipLeg(args: {
   if (
     !pos ||
     pos.lane !== 'leader_mirror' ||
-    cfg.leaderMirror.buyOnly === true ||
     legs <= 1
   ) return 'skip';
   const filledLegs = Math.max(0, Math.floor(pos.mirrorFirstClipLegsFilled ?? 1));
@@ -2771,7 +2771,15 @@ export async function attemptMirrorFirstClipLeg(args: {
     live.mirrorInitialClipUsd ??= spent * legs;
     live.mirrorFirstClipLegsFilled = filledLegs + 1;
     live.mirrorOriginalEntryPriceUsd ??= live.entryPriceUsd;
-    accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
+    if (cfg.leaderMirror.buyOnly === true) {
+      appendMildDipJournal(cfg.journalPath, {
+        kind: 'mirror_buy_only_cash_accounting_bypass',
+        mint: c.mint,
+        leg: live.mirrorFirstClipLegsFilled,
+      });
+    } else {
+      accountMirrorCashLeg(state, buy as unknown as Record<string, unknown>, 'buy');
+    }
     const tokenRaw = await fetchMintBalanceRaw(copyCfg, c.mint);
     if (tokenRaw && /^\d+$/.test(tokenRaw)) {
       live.tokenRaw = tokenRaw;
@@ -2790,6 +2798,20 @@ export async function attemptMirrorFirstClipLeg(args: {
       fillPriceUsd: fillPx,
       signature: buy.signature ?? null,
     });
+    const completionSpentUsd = mirrorBuyCompletionSpentUsd({
+      positionSizeUsd: live.sizeUsd,
+      configuredLegs: legs,
+      filledLegs: live.mirrorFirstClipLegsFilled,
+    });
+    if (cfg.leaderMirror.buyOnly === true && completionSpentUsd != null) {
+      await notifyMirrorBuySuccessOnce({
+        cfg,
+        state,
+        mint: c.mint,
+        symbol: c.symbol,
+        spentUsd: completionSpentUsd,
+      });
+    }
     return 'filled';
   } catch (err) {
     appendMildDipJournal(cfg.journalPath, {
