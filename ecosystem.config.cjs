@@ -4655,9 +4655,9 @@ const PM2_APPS = [
         MILD_DIP_MIN_MCAP_USD: '5000',
         MILD_DIP_MIN_LIQUIDITY_USD: '5000',
         MILD_DIP_MIN_VOLUME_5M_USD: '300',
-        /** 1.11.712 — fix 7BNax typo (was missing `j`: …UYrAC… → …UYrjAC…). */
+        /** Only the wallets `mild-dip-mirror` copies (buy-only lane). */
         LEADER_OBSERVER_LEADERS:
-          '8zkgFGVZrDLieViwqiXFCydSX6WL5hsxmUu55yBdsNsZ,7BNaxx6KdUYrjACNQZ9He26NBFoFxujQMAfNLnArLGH5,FMzF9q52CpGJttEjCAixvH5rUKeW8C9Pue6651Vnrb2c,498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma',
+          '498SWfPJisr26J4oCiZccyzReFrByNE7jsHwbm3caNma,FMzF9q52CpGJttEjCAixvH5rUKeW8C9Pue6651Vnrb2c',
         ...PM2_JUPITER_KEY_ENV,
         ...LIVE_OSCAR_HELIUS_RPC_ENV,
         ...(HELIUS_RPC_URL_PM2
