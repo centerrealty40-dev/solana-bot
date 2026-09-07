@@ -18,8 +18,31 @@ export function mirrorBuyCompletionSpentUsd(args: {
   return null;
 }
 
-function displayName(symbol: string | null | undefined, mint: string): string {
-  return symbol?.trim() || mint;
+function isUsableSymbol(symbol: string | null | undefined): symbol is string {
+  const normalized = symbol?.trim().toLowerCase() ?? '';
+  return normalized !== '' && !['unknown', '?', 'n/a'].includes(normalized);
+}
+
+export function mirrorBuyShortMint(mint: string): string {
+  return `${mint.slice(0, 6)}…${mint.slice(-4)}`;
+}
+
+export function resolveMirrorBuySymbol(
+  symbol: string | null | undefined,
+  fallbackSymbol: string | null | undefined,
+  mint: string,
+): string {
+  if (isUsableSymbol(symbol)) return symbol.trim();
+  if (isUsableSymbol(fallbackSymbol)) return fallbackSymbol.trim();
+  return mirrorBuyShortMint(mint);
+}
+
+function displayName(
+  symbol: string | null | undefined,
+  fallbackSymbol: string | null | undefined,
+  mint: string,
+): string {
+  return resolveMirrorBuySymbol(symbol, fallbackSymbol, mint);
 }
 
 export function mirrorBuyGmgnUrl(mint: string): string {
@@ -29,9 +52,10 @@ export function mirrorBuyGmgnUrl(mint: string): string {
 export function formatMirrorBuySuccess(args: {
   mint: string;
   symbol?: string | null;
+  fallbackSymbol?: string | null;
   spentUsd: number;
 }): string {
-  return `Купил ${displayName(args.symbol, args.mint)} на $${args.spentUsd.toFixed(2)}\n` +
+  return `Купил ${displayName(args.symbol, args.fallbackSymbol, args.mint)} на $${args.spentUsd.toFixed(2)}\n` +
     `<a href="${mirrorBuyGmgnUrl(args.mint)}">GMGN</a>\n` +
     `<code>${args.mint}</code>`;
 }
@@ -39,9 +63,10 @@ export function formatMirrorBuySuccess(args: {
 export function formatMirrorBuyAttempt(args: {
   mint: string;
   symbol?: string | null;
+  fallbackSymbol?: string | null;
   reason: string;
 }): string {
-  return `Была попытка купить ${displayName(args.symbol, args.mint)} — ${args.reason}\n` +
+  return `Была попытка купить ${displayName(args.symbol, args.fallbackSymbol, args.mint)} — ${args.reason}\n` +
     `<a href="${mirrorBuyGmgnUrl(args.mint)}">GMGN</a>\n` +
     `<code>${args.mint}</code>`;
 }
@@ -80,8 +105,25 @@ export async function notifyMirrorBuyAttemptOnce(args: {
   const marks = (args.state.mirrorBuyNotify ??= {});
   const mark = (marks[args.mint] ??= {});
   if (mark.attemptAtMs != null) return;
-  mark.attemptAtMs = Date.now();
+  const nowMs = Date.now();
+  const pending = mark.attemptPending;
+  mark.attemptPending = {
+    firstFailAtMs: pending?.firstFailAtMs ?? nowMs,
+    lastFailAtMs: nowMs,
+    reason: args.reason,
+    symbol: args.symbol ?? null,
+  };
   saveMildDipState(args.cfg.statePath, args.state);
+}
+
+async function sendMirrorBuyAttempt(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  mint: string;
+  symbol?: string | null;
+  reason: string;
+}): Promise<void> {
+  const fallbackSymbol = args.state.open[args.mint]?.symbol;
   const token =
     args.cfg.leaderMirror.notifyBotToken.trim() ||
     process.env.TELEGRAM_BOT_TOKEN?.trim() ||
@@ -94,7 +136,7 @@ export async function notifyMirrorBuyAttemptOnce(args: {
     appendMildDipJournal(args.cfg.journalPath, {
       kind: 'mirror_buy_notify_skipped',
       mint: args.mint,
-      symbol: args.symbol ?? null,
+      symbol: resolveMirrorBuySymbol(args.symbol, fallbackSymbol, args.mint),
       notification: 'attempt',
       reason: 'missing_telegram_config',
     });
@@ -104,15 +146,58 @@ export async function notifyMirrorBuyAttemptOnce(args: {
     await sendMirrorBuyNotification({
       token,
       chatId: chat,
-      text: formatMirrorBuyAttempt(args),
+      text: formatMirrorBuyAttempt({
+        ...args,
+        fallbackSymbol,
+      }),
     });
   } catch (err) {
     appendMildDipJournal(args.cfg.journalPath, {
       kind: 'mirror_buy_notify_error',
       mint: args.mint,
-      symbol: args.symbol ?? null,
+      symbol: resolveMirrorBuySymbol(args.symbol, fallbackSymbol, args.mint),
       notification: 'attempt',
       error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+export async function flushMirrorBuyAttemptNotifications(args: {
+  cfg: MildDipConfig;
+  state: MildDipState;
+  nowMs: number;
+}): Promise<void> {
+  if (!args.cfg.leaderMirror.notifyBuyEnabled) return;
+  const marks = args.state.mirrorBuyNotify;
+  if (!marks) return;
+  for (const [mint, mark] of Object.entries(marks)) {
+    const pending = mark.attemptPending;
+    if (!pending) continue;
+    if (mark.buyAtMs != null || args.state.open[mint]) {
+      delete mark.attemptPending;
+      appendMildDipJournal(args.cfg.journalPath, {
+        kind: 'mirror_buy_attempt_notify_dropped',
+        mint,
+        reason: 'bought',
+      });
+      saveMildDipState(args.cfg.statePath, args.state);
+      continue;
+    }
+    if (
+      args.nowMs - pending.firstFailAtMs <
+      args.cfg.leaderMirror.notifyAttemptDelayMs
+    ) {
+      continue;
+    }
+    delete mark.attemptPending;
+    mark.attemptAtMs ??= args.nowMs;
+    saveMildDipState(args.cfg.statePath, args.state);
+    await sendMirrorBuyAttempt({
+      cfg: args.cfg,
+      state: args.state,
+      mint,
+      symbol: pending.symbol,
+      reason: pending.reason,
     });
   }
 }
@@ -130,6 +215,7 @@ export async function notifyMirrorBuySuccessOnce(args: {
   if (mark.buyAtMs != null) return;
   mark.buyAtMs = Date.now();
   saveMildDipState(args.cfg.statePath, args.state);
+  const fallbackSymbol = args.state.open[args.mint]?.symbol;
   const token =
     args.cfg.leaderMirror.notifyBotToken.trim() ||
     process.env.TELEGRAM_BOT_TOKEN?.trim() ||
@@ -142,7 +228,7 @@ export async function notifyMirrorBuySuccessOnce(args: {
     appendMildDipJournal(args.cfg.journalPath, {
       kind: 'mirror_buy_notify_skipped',
       mint: args.mint,
-      symbol: args.symbol ?? null,
+      symbol: resolveMirrorBuySymbol(args.symbol, fallbackSymbol, args.mint),
       notification: 'success',
       reason: 'missing_telegram_config',
     });
@@ -152,13 +238,16 @@ export async function notifyMirrorBuySuccessOnce(args: {
     await sendMirrorBuyNotification({
       token,
       chatId: chat,
-      text: formatMirrorBuySuccess(args),
+      text: formatMirrorBuySuccess({
+        ...args,
+        fallbackSymbol,
+      }),
     });
   } catch (err) {
     appendMildDipJournal(args.cfg.journalPath, {
       kind: 'mirror_buy_notify_error',
       mint: args.mint,
-      symbol: args.symbol ?? null,
+      symbol: resolveMirrorBuySymbol(args.symbol, fallbackSymbol, args.mint),
       notification: 'success',
       error: err instanceof Error ? err.message : String(err),
     });
