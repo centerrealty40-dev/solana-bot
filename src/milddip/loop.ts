@@ -1711,7 +1711,18 @@ async function wakeLeaderMirrors(
     if (gates.leaderOpenBagRetryEnabled) {
       trackLeaderOpenBag(cfg, state, hit, nowMs);
     }
-    if (state.open[hit.mint]) continue;
+    if (state.open[hit.mint]) {
+      if (leaderMirrorOwnOpenBagSkipHitKeys.get(watchKey) !== hitKey) {
+        leaderMirrorOwnOpenBagSkipHitKeys.set(watchKey, hitKey);
+        appendMildDipJournal(cfg.journalPath, {
+          kind: 'leader_mirror_skip',
+          mint: hit.mint,
+          leader: hit.leader,
+          reason: 'own_open_bag',
+        });
+      }
+      continue;
+    }
     if (existing && existing.hitKey !== hitKey) {
       leaderMirrorWatches.set(watchKey, {
         hit,
@@ -1854,6 +1865,7 @@ async function wakeLeaderMirrors(
               snapshotPriceUsd: startedWatch?.hit.fillPriceUsd ?? 0,
               probeUsd: gates.positionUsd,
               slippageBps: cfg.slippageBps,
+              buyQuoteFallback: cfg.leaderMirror.buyOnly === true,
             });
             if (priceUsd != null) {
               mildDipPriceRing.note(mint, priceUsd, {
@@ -2426,6 +2438,7 @@ async function wakeLeaderMirrors(
         probeUsd: gates.positionUsd,
         slippageBps: cfg.slippageBps,
         source: 'leader_mirror_jupiter',
+        buyQuoteFallback: cfg.leaderMirror.buyOnly === true,
       });
       if (quoteRequested) {
         leaderMirrorQuoteLastSelectedAtMs.set(watchKey, nowMs);
@@ -4121,6 +4134,7 @@ const leaderMirrorEntryRetryAfterMs = new Map<string, number>();
 const leaderMirrorQuoteLastSelectedAtMs = new Map<string, number>();
 const leaderMirrorQuoteLastSampleTsMs = new Map<string, number>();
 const leaderMirrorQuoteSampleCount = new Map<string, number>();
+const leaderMirrorOwnOpenBagSkipHitKeys = new Map<string, string>();
 const knifeWaitQuoteWaitingKeys = new Set<string>();
 const knifeWaitQuoteUncoveredKeys = new Set<string>();
 let knifeWaitQuoteWindowStartedAtMs = 0;
@@ -4142,6 +4156,7 @@ function hydrateLeaderMirrorWatches(
   leaderMirrorQuoteLastSelectedAtMs.clear();
   leaderMirrorQuoteLastSampleTsMs.clear();
   leaderMirrorQuoteSampleCount.clear();
+  leaderMirrorOwnOpenBagSkipHitKeys.clear();
   const mirrorObserveMs = leaderMirrorObservationWindowMs(cfg.leaderMirror);
   for (const [watchKey, watch] of Object.entries(state.leaderMirrorWatches ?? {})) {
     if (watch.expiresAtMs <= nowMs || state.open[watch.hit.mint]) continue;
@@ -8524,6 +8539,8 @@ export async function runMildDipLoop(
         quoteErrors: mirrorJupiter.quoteErrors,
         gateSkipped: mirrorJupiter.gateSkipped,
         capRejected: mirrorJupiter.capRejected,
+        quoteBuyFallbackAttempts: mirrorJupiter.quoteBuyFallbackAttempts,
+        quoteBuyFallbackSuccesses: mirrorJupiter.quoteBuyFallbackSuccesses,
         knifeWaitWaiting: knifeWaitQuoteWaitingKeys.size,
         knifeWaitUncovered: knifeWaitQuoteUncoveredKeys.size,
       });

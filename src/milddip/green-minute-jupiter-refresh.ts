@@ -5,7 +5,10 @@
  * candidates are short-lived, capped, and write a distinct ring source.
  */
 import { getSolUsd } from '../papertrader/pricing.js';
-import { jupiterQuoteSellPriceUsd } from '../papertrader/pricing/price-verify.js';
+import {
+  jupiterQuoteBuyPriceUsd,
+  jupiterQuoteSellPriceUsd,
+} from '../papertrader/pricing/price-verify.js';
 import { mildDipPriceRing } from './price-ring.js';
 
 type GateSkipped = { gateSkipped: true };
@@ -15,7 +18,26 @@ type QuoteFn = (args: {
   tokenDecimals: number;
   probeUsd: number;
   slippageBps: number;
+  buyQuoteFallback?: boolean;
 }) => Promise<number | null | GateSkipped>;
+type CandidateQuoteArgs = {
+  mint: string;
+  snapshotPriceUsd: number;
+  tokenDecimals: number;
+  probeUsd: number;
+  slippageBps: number;
+  buyQuoteFallback?: boolean;
+};
+type CandidateQuoteDeps = {
+  sellQuote?: typeof jupiterQuoteSellPriceUsd;
+  buyQuote?: typeof jupiterQuoteBuyPriceUsd;
+  solUsd?: () => number;
+};
+type CandidateQuoteResolution = {
+  result: number | null | GateSkipped;
+  buyFallbackAttempted: boolean;
+  buyFallbackSuccess: boolean;
+};
 
 type ActiveCandidate = {
   lastCandidateAtMs: number;
@@ -28,6 +50,7 @@ type ActiveCandidate = {
   tokenDecimals: number;
   quote?: QuoteFn;
   source: 'green_jupiter' | 'leader_mirror_jupiter';
+  buyQuoteFallback: boolean;
 };
 
 export type GreenMinuteJupiterStats = {
@@ -38,6 +61,8 @@ export type GreenMinuteJupiterStats = {
   quoteErrors: number;
   gateSkipped: number;
   capRejected: number;
+  quoteBuyFallbackAttempts: number;
+  quoteBuyFallbackSuccesses: number;
 };
 
 const active = new Map<string, ActiveCandidate>();
@@ -51,6 +76,8 @@ const stats: GreenMinuteJupiterStats = {
   quoteErrors: 0,
   gateSkipped: 0,
   capRejected: 0,
+  quoteBuyFallbackAttempts: 0,
+  quoteBuyFallbackSuccesses: 0,
 };
 
 export function __resetGreenMinuteJupiterRefreshForTests(): void {
@@ -64,6 +91,8 @@ export function __resetGreenMinuteJupiterRefreshForTests(): void {
   stats.quoteErrors = 0;
   stats.gateSkipped = 0;
   stats.capRejected = 0;
+  stats.quoteBuyFallbackAttempts = 0;
+  stats.quoteBuyFallbackSuccesses = 0;
 }
 
 export function greenMinuteJupiterStats(
@@ -98,16 +127,21 @@ function prune(nowMs: number, ttlMs: number, source?: ActiveCandidate['source'])
   stats.inFlight = inFlight.size;
 }
 
-async function defaultQuote(args: {
-  mint: string;
-  snapshotPriceUsd: number;
-  tokenDecimals: number;
-  probeUsd: number;
-  slippageBps: number;
-}): Promise<number | null | GateSkipped> {
-  const solUsd = getSolUsd();
-  if (!(solUsd > 0)) return null;
-  const verdict = await jupiterQuoteSellPriceUsd({
+async function candidateQuotePriceUsdDetailed(
+  args: CandidateQuoteArgs,
+  deps: CandidateQuoteDeps = {},
+): Promise<CandidateQuoteResolution> {
+  const solUsd = deps.solUsd?.() ?? getSolUsd();
+  if (!(solUsd > 0)) {
+    return {
+      result: null,
+      buyFallbackAttempted: false,
+      buyFallbackSuccess: false,
+    };
+  }
+  const sellQuote = deps.sellQuote ?? jupiterQuoteSellPriceUsd;
+  const buyQuote = deps.buyQuote ?? jupiterQuoteBuyPriceUsd;
+  const verdict = await sellQuote({
     mint: args.mint,
     tokenDecimals: args.tokenDecimals,
     usdNotional: args.probeUsd,
@@ -118,11 +152,58 @@ async function defaultQuote(args: {
     priority: 'background',
   });
   if (verdict.kind === 'skipped' && verdict.reason === 'gate-busy') {
-    return { gateSkipped: true };
+    return {
+      result: { gateSkipped: true },
+      buyFallbackAttempted: false,
+      buyFallbackSuccess: false,
+    };
   }
-  return verdict.kind === 'ok' && verdict.jupiterPriceUsd > 0
-    ? verdict.jupiterPriceUsd
-    : null;
+  if (verdict.kind === 'ok' && verdict.jupiterPriceUsd > 0) {
+    return {
+      result: verdict.jupiterPriceUsd,
+      buyFallbackAttempted: false,
+      buyFallbackSuccess: false,
+    };
+  }
+  if (args.buyQuoteFallback !== true) {
+    return {
+      result: null,
+      buyFallbackAttempted: false,
+      buyFallbackSuccess: false,
+    };
+  }
+  const buyVerdict = await buyQuote({
+    mint: args.mint,
+    outMintDecimals: args.tokenDecimals,
+    sizeUsd: args.probeUsd,
+    solUsd,
+    snapshotPriceUsd: args.snapshotPriceUsd,
+    slippageBps: args.slippageBps,
+    timeoutMs: 4_000,
+    priority: 'background',
+  });
+  if (buyVerdict.kind === 'skipped' && buyVerdict.reason === 'gate-busy') {
+    return {
+      result: { gateSkipped: true },
+      buyFallbackAttempted: true,
+      buyFallbackSuccess: false,
+    };
+  }
+  return {
+    result:
+      buyVerdict.kind === 'ok' && buyVerdict.jupiterPriceUsd > 0
+        ? buyVerdict.jupiterPriceUsd
+        : null,
+    buyFallbackAttempted: true,
+    buyFallbackSuccess: buyVerdict.kind === 'ok' && buyVerdict.jupiterPriceUsd > 0,
+  };
+}
+
+export async function candidateQuotePriceUsd(
+  args: CandidateQuoteArgs,
+  deps?: CandidateQuoteDeps,
+): Promise<number | null | GateSkipped> {
+  return (await candidateQuotePriceUsdDetailed(args, deps)).result;
 }
 
 export async function fetchGreenMinuteJupiterQuote(args: {
@@ -131,15 +212,19 @@ export async function fetchGreenMinuteJupiterQuote(args: {
   probeUsd: number;
   slippageBps: number;
   tokenDecimals?: number;
+  buyQuoteFallback?: boolean;
 }): Promise<number | null> {
-  const result = await defaultQuote({
+  const resolution = await candidateQuotePriceUsdDetailed({
     mint: args.mint,
     snapshotPriceUsd: args.snapshotPriceUsd,
     probeUsd: args.probeUsd,
     slippageBps: args.slippageBps,
     tokenDecimals: args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? 6,
+    buyQuoteFallback: args.buyQuoteFallback,
   });
-  return typeof result === 'number' ? result : null;
+  stats.quoteBuyFallbackAttempts += resolution.buyFallbackAttempted ? 1 : 0;
+  stats.quoteBuyFallbackSuccesses += resolution.buyFallbackSuccess ? 1 : 0;
+  return typeof resolution.result === 'number' ? resolution.result : null;
 }
 
 /**
@@ -161,6 +246,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
   tokenDecimals?: number;
   quote?: QuoteFn;
   source?: 'green_jupiter' | 'leader_mirror_jupiter';
+  buyQuoteFallback?: boolean;
 }): boolean {
   if (!args.enabled || !args.mint || args.mint.length < 32) return false;
   if (!(args.snapshotPriceUsd > 0)) return false;
@@ -201,6 +287,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
       tokenDecimals: args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? 6,
       quote: args.quote,
       source: args.source ?? 'green_jupiter',
+      buyQuoteFallback: args.buyQuoteFallback === true,
     };
     active.set(args.mint, candidate);
   } else {
@@ -215,6 +302,7 @@ export function requestGreenMinuteJupiterRefresh(args: {
     args.tokenDecimals ?? mildDipPriceRing.mintDecimals(args.mint) ?? candidate.tokenDecimals;
   candidate.quote = args.quote;
   candidate.source = args.source ?? candidate.source;
+  candidate.buyQuoteFallback = args.buyQuoteFallback === true;
   stats.activeMints = active.size;
 
   return startQuote(args.mint, candidate, candidate.minGapMs, args.maxInFlight, args.nowMs);
@@ -267,14 +355,28 @@ function startQuote(
   inFlight.add(mint);
   stats.inFlight = inFlight.size;
   stats.quoteAttempts += 1;
-  const quote = candidate.quote ?? defaultQuote;
-  void quote({
-    mint,
-    snapshotPriceUsd: candidate.snapshotPriceUsd,
-    tokenDecimals: candidate.tokenDecimals,
-    probeUsd: candidate.probeUsd,
-    slippageBps: candidate.slippageBps,
-  })
+  const quotePromise = candidate.quote
+    ? candidate.quote({
+        mint,
+        snapshotPriceUsd: candidate.snapshotPriceUsd,
+        tokenDecimals: candidate.tokenDecimals,
+        probeUsd: candidate.probeUsd,
+        slippageBps: candidate.slippageBps,
+        buyQuoteFallback: candidate.buyQuoteFallback,
+      })
+    : candidateQuotePriceUsdDetailed({
+        mint,
+        snapshotPriceUsd: candidate.snapshotPriceUsd,
+        tokenDecimals: candidate.tokenDecimals,
+        probeUsd: candidate.probeUsd,
+        slippageBps: candidate.slippageBps,
+        buyQuoteFallback: candidate.buyQuoteFallback,
+      }).then((resolution) => {
+        stats.quoteBuyFallbackAttempts += resolution.buyFallbackAttempted ? 1 : 0;
+        stats.quoteBuyFallbackSuccesses += resolution.buyFallbackSuccess ? 1 : 0;
+        return resolution.result;
+      });
+  void quotePromise
     .then((priceUsd) => {
       if (typeof priceUsd === 'object' && priceUsd?.gateSkipped) {
         stats.gateSkipped += 1;

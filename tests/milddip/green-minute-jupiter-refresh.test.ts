@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   __resetGreenMinuteJupiterRefreshForTests,
+  candidateQuotePriceUsd,
   greenMinuteJupiterStats,
   releaseGreenMinuteJupiterRefresh,
   requestGreenMinuteJupiterRefresh,
@@ -11,6 +12,144 @@ import { mildDipPriceRing } from '../../src/milddip/price-ring.js';
 describe('GREEN Jupiter minute refresh', () => {
   beforeEach(() => {
     __resetGreenMinuteJupiterRefreshForTests();
+  });
+
+  it('prefers a successful sell-side candidate quote', async () => {
+    const buyQuote = async () => {
+      throw new Error('buy fallback should not run');
+    };
+    await expect(
+      candidateQuotePriceUsd(
+        {
+          mint: 'CandidateQuoteMintxxxxxxxxxxxxxxxxxxxxxxxx1',
+          snapshotPriceUsd: 1,
+          tokenDecimals: 6,
+          probeUsd: 1,
+          slippageBps: 50,
+          buyQuoteFallback: true,
+        },
+        {
+          solUsd: () => 100,
+          sellQuote: async () => ({
+            kind: 'ok' as const,
+            jupiterPriceUsd: 0.9,
+            snapshotPriceUsd: 1,
+            slipPct: 10,
+            priceImpactPct: 0,
+            routeHops: 1,
+            source: 'jupiter' as const,
+            ageMs: 1,
+            ts: 1,
+          }),
+          buyQuote,
+        },
+      ),
+    ).resolves.toBe(0.9);
+  });
+
+  it('does not use the buy fallback when disabled after a sell no-route', async () => {
+    let buyCalls = 0;
+    await expect(
+      candidateQuotePriceUsd(
+        {
+          mint: 'CandidateQuoteMintxxxxxxxxxxxxxxxxxxxxxxxx2',
+          snapshotPriceUsd: 1,
+          tokenDecimals: 6,
+          probeUsd: 1,
+          slippageBps: 50,
+        },
+        {
+          solUsd: () => 100,
+          sellQuote: async () => ({
+            kind: 'skipped' as const,
+            reason: 'no-route' as const,
+            ts: 1,
+          }),
+          buyQuote: async () => {
+            buyCalls += 1;
+            return {
+              kind: 'ok' as const,
+              jupiterPriceUsd: 0.8,
+              snapshotPriceUsd: 1,
+              slipPct: 20,
+              priceImpactPct: 0,
+              routeHops: 1,
+              source: 'jupiter' as const,
+              ageMs: 1,
+              ts: 1,
+            };
+          },
+        },
+      ),
+    ).resolves.toBeNull();
+    expect(buyCalls).toBe(0);
+  });
+
+  it('uses the buy fallback after a sell no-route when enabled', async () => {
+    await expect(
+      candidateQuotePriceUsd(
+        {
+          mint: 'CandidateQuoteMintxxxxxxxxxxxxxxxxxxxxxxxx3',
+          snapshotPriceUsd: 1,
+          tokenDecimals: 6,
+          probeUsd: 1,
+          slippageBps: 50,
+          buyQuoteFallback: true,
+        },
+        {
+          solUsd: () => 100,
+          sellQuote: async () => ({
+            kind: 'skipped' as const,
+            reason: 'no-route' as const,
+            ts: 1,
+          }),
+          buyQuote: async () => ({
+            kind: 'ok' as const,
+            jupiterPriceUsd: 0.8,
+            snapshotPriceUsd: 1,
+            slipPct: 20,
+            priceImpactPct: 0,
+            routeHops: 1,
+            source: 'jupiter' as const,
+            ageMs: 1,
+            ts: 1,
+          }),
+        },
+      ),
+    ).resolves.toBe(0.8);
+  });
+
+  it('returns gateSkipped from the sell side without calling the buy fallback', async () => {
+    let buyCalls = 0;
+    await expect(
+      candidateQuotePriceUsd(
+        {
+          mint: 'CandidateQuoteMintxxxxxxxxxxxxxxxxxxxxxxxx4',
+          snapshotPriceUsd: 1,
+          tokenDecimals: 6,
+          probeUsd: 1,
+          slippageBps: 50,
+          buyQuoteFallback: true,
+        },
+        {
+          solUsd: () => 100,
+          sellQuote: async () => ({
+            kind: 'skipped' as const,
+            reason: 'gate-busy' as const,
+            ts: 1,
+          }),
+          buyQuote: async () => {
+            buyCalls += 1;
+            return {
+              kind: 'skipped' as const,
+              reason: 'no-route' as const,
+              ts: 1,
+            };
+          },
+        },
+      ),
+    ).resolves.toEqual({ gateSkipped: true });
+    expect(buyCalls).toBe(0);
   });
 
   it('writes a successful bounded quote into the GREEN source', async () => {
