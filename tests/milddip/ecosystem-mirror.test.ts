@@ -346,13 +346,13 @@ describe('mirror PM2 apps', () => {
     expect(ecosystemSource).toContain("'mild-dip-mirror2',");
   });
 
-  it('keeps bot1 in the Oscar VPS export and mirror2 excluded', () => {
+  it('keeps both mirror processes excluded from the Oscar VPS export', () => {
     const excludedAppsBlock = ecosystemSource.match(
       /const OSCAR_VPS_EXCLUDED_APPS = new Set\(\[([\s\S]*?)\]\);/,
     )?.[1];
-    expect(excludedAppsBlock).not.toContain("'mild-dip-mirror',");
+    expect(excludedAppsBlock).toContain("'mild-dip-mirror',");
     expect(excludedAppsBlock).toContain("'mild-dip-mirror2',");
-    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror')).toBe(true);
+    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror')).toBe(false);
     expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror2')).toBe(false);
   });
 
@@ -372,11 +372,12 @@ describe('mirror PM2 apps', () => {
     );
   });
 
-  it('keeps the disabled dip bot internal while exporting both mirrors', () => {
+  it('keeps the disabled dip bot internal while retaining both mirrors in allApps', () => {
     expect(ecosystem.apps.some((app) => app.name === 'mild-dip-bot')).toBe(false);
     expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-bot')).toBe(true);
-    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror')).toBe(true);
+    expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror')).toBe(false);
     expect(ecosystem.apps.some((app) => app.name === 'mild-dip-mirror2')).toBe(false);
+    expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-mirror')).toBe(true);
     expect(ecosystem.allApps.some((app) => app.name === 'mild-dip-mirror2')).toBe(true);
   });
 
