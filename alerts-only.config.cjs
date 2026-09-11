@@ -2,7 +2,7 @@
  * Alerts-only PM2 profile: DEX collectors (PG snapshots) + Telegram watch-only alerts.
  * No trading lanes (live-oscar, mild-dip, dashboard, wallet intel) — nothing requiring RPC/Jupiter.
  *
- * VPS: `pm2 start ecosystem.alerts-only.cjs && pm2 save`
+ * VPS: `pm2 start alerts-only.config.cjs && pm2 save`
  * App definitions are taken from `ecosystem.config.cjs` (`allApps`, bypassing OSCAR_VPS_EXCLUDED_APPS);
  * secrets only in `.env` on the host.
  */
@@ -29,7 +29,7 @@ const apps = full.allApps
   .map((app) => ({ ...app, env: { ...app.env, ...(COLLECTOR_ENV_OVERRIDES[app.name] || {}) } }));
 const missing = [...ALERTS_ONLY_APPS].filter((name) => !apps.some((app) => app.name === name));
 if (missing.length > 0) {
-  throw new Error(`[ecosystem.alerts-only.cjs] apps missing in ecosystem.config.cjs: ${missing.join(', ')}`);
+  throw new Error(`[alerts-only.config.cjs] apps missing in ecosystem.config.cjs: ${missing.join(', ')}`);
 }
 
 module.exports = { apps };
