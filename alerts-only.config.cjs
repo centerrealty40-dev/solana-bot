@@ -17,11 +17,28 @@ const ALERTS_ONLY_APPS = new Set([
   'retrace-alert-watch',
 ]);
 
-/** Free Dexscreener/Gecko only (no RPC budget to protect) → minute bars for the watchers; no live journal to enrich. */
+/** Free Dexscreener/Gecko only; wider universe than trading defaults (~55 mints). GeckoTerminal caps at 10 pages, 30 req/min → 6 pages × 3 collectors. */
+const GECKO_TRENDING_PAGES = '6';
+const EXTRA_SEARCH_TERMS = 'sol,usdc,pump,ai,cat,dog,trump,bonk,wif,pepe';
 const COLLECTOR_ENV_OVERRIDES = {
-  'sa-raydium': { RAYDIUM_COLLECTOR_INTERVAL_MS: '60000', PAPER2_SNAPSHOT_OPENS: '0' },
-  'sa-meteora': { METEORA_COLLECTOR_INTERVAL_MS: '60000', PAPER2_SNAPSHOT_OPENS: '0' },
-  'sa-pumpswap': { PUMPSWAP_COLLECTOR_INTERVAL_MS: '60000', PAPER2_SNAPSHOT_OPENS: '0' },
+  'sa-raydium': {
+    RAYDIUM_COLLECTOR_INTERVAL_MS: '60000',
+    PAPER2_SNAPSHOT_OPENS: '0',
+    RAYDIUM_GECKO_TRENDING_PAGES: GECKO_TRENDING_PAGES,
+    RAYDIUM_DEX_SEARCH_TERMS: `raydium,solana,meme,${EXTRA_SEARCH_TERMS}`,
+  },
+  'sa-meteora': {
+    METEORA_COLLECTOR_INTERVAL_MS: '60000',
+    PAPER2_SNAPSHOT_OPENS: '0',
+    METEORA_GECKO_TRENDING_PAGES: GECKO_TRENDING_PAGES,
+    METEORA_DEX_SEARCH_TERMS: `meteora,dlmm,solana,${EXTRA_SEARCH_TERMS}`,
+  },
+  'sa-pumpswap': {
+    PUMPSWAP_COLLECTOR_INTERVAL_MS: '60000',
+    PAPER2_SNAPSHOT_OPENS: '0',
+    PUMPSWAP_GECKO_TRENDING_PAGES: GECKO_TRENDING_PAGES,
+    PUMPSWAP_DEX_SEARCH_TERMS: `pumpswap,pump swap,pump.fun solana,${EXTRA_SEARCH_TERMS}`,
+  },
 };
 
 const apps = full.allApps
