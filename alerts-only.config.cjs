@@ -40,7 +40,19 @@ const ENV_OVERRIDES = {
     PUMPSWAP_DEX_SEARCH_TERMS: `pumpswap,pump swap,pump.fun solana,${EXTRA_SEARCH_TERMS}`,
   },
   /** First-day runners dump hard; 8h (trading default) misses them. */
-  'market-spike-telegram-watch': { SPIKE_ALERT_MIN_AGE_HOURS: '4' },
+  'market-spike-telegram-watch': {
+    SPIKE_ALERT_MIN_AGE_HOURS: '4',
+    SPIKE_ALERT_MIN_MARKET_CAP_USD: '2000000',
+    SPIKE_ALERT_DUMP_TIER1_MCAP_USD: '2000000',
+    SPIKE_ALERT_DUMP_TIER1_MIN_PCT: '15',
+    SPIKE_ALERT_DUMP_TIER1_MIN_PCT_ROLLING: '15',
+    SPIKE_ALERT_DUMP_TIER2_MIN_PCT: '15',
+    SPIKE_ALERT_DUMP_TIER2_MIN_PCT_ROLLING: '15',
+    SPIKE_ALERT_DUMP_TIER3_MIN_PCT: '15',
+    SPIKE_ALERT_DUMP_TIER3_MIN_PCT_ROLLING: '15',
+  },
+  'market-pullback-telegram-watch': { PULLBACK_ALERT_MIN_MARKET_CAP_USD: '2000000' },
+  'retrace-alert-watch': { RETRACE_ALERT_MIN_MCAP_USD: '2000000' },
 };
 
 const apps = full.allApps
