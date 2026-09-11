@@ -20,7 +20,7 @@ const ALERTS_ONLY_APPS = new Set([
 /** Free Dexscreener/Gecko only; wider universe than trading defaults (~55 mints). GeckoTerminal caps at 10 pages, 30 req/min → 6 pages × 3 collectors. */
 const GECKO_TRENDING_PAGES = '6';
 const EXTRA_SEARCH_TERMS = 'sol,usdc,pump,ai,cat,dog,trump,bonk,wif,pepe';
-const COLLECTOR_ENV_OVERRIDES = {
+const ENV_OVERRIDES = {
   'sa-raydium': {
     RAYDIUM_COLLECTOR_INTERVAL_MS: '60000',
     PAPER2_SNAPSHOT_OPENS: '0',
@@ -39,11 +39,13 @@ const COLLECTOR_ENV_OVERRIDES = {
     PUMPSWAP_GECKO_TRENDING_PAGES: GECKO_TRENDING_PAGES,
     PUMPSWAP_DEX_SEARCH_TERMS: `pumpswap,pump swap,pump.fun solana,${EXTRA_SEARCH_TERMS}`,
   },
+  /** First-day runners dump hard; 8h (trading default) misses them. */
+  'market-spike-telegram-watch': { SPIKE_ALERT_MIN_AGE_HOURS: '4' },
 };
 
 const apps = full.allApps
   .filter((app) => ALERTS_ONLY_APPS.has(app.name))
-  .map((app) => ({ ...app, env: { ...app.env, ...(COLLECTOR_ENV_OVERRIDES[app.name] || {}) } }));
+  .map((app) => ({ ...app, env: { ...app.env, ...(ENV_OVERRIDES[app.name] || {}) } }));
 const missing = [...ALERTS_ONLY_APPS].filter((name) => !apps.some((app) => app.name === name));
 if (missing.length > 0) {
   throw new Error(`[alerts-only.config.cjs] apps missing in ecosystem.config.cjs: ${missing.join(', ')}`);
