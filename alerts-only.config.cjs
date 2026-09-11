@@ -51,8 +51,14 @@ const ENV_OVERRIDES = {
     SPIKE_ALERT_DUMP_TIER3_MIN_PCT: '15',
     SPIKE_ALERT_DUMP_TIER3_MIN_PCT_ROLLING: '15',
   },
-  'market-pullback-telegram-watch': { PULLBACK_ALERT_MIN_MARKET_CAP_USD: '2000000' },
-  'retrace-alert-watch': { RETRACE_ALERT_MIN_MCAP_USD: '2000000' },
+  'market-pullback-telegram-watch': {
+    PULLBACK_ALERT_MIN_MARKET_CAP_USD: '2000000',
+    PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT: '15',
+  },
+  'retrace-alert-watch': {
+    RETRACE_ALERT_MIN_MCAP_USD: '2000000',
+    RETRACE_ALERT_MIN_RETRACE_FROM_PEAK_PCT: '15',
+  },
 };
 
 const apps = full.allApps
