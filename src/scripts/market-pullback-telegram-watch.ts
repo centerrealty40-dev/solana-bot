@@ -73,6 +73,8 @@ const LATEST_FLOOR_SEC = Math.max(
 
 const MIN_RISE_PCT = Math.max(0.5, Math.min(200, envNum('PULLBACK_ALERT_MIN_RISE_PCT', 6)));
 const MIN_RETRACE_PCT = Math.max(0.5, Math.min(99, envNum('PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT', 10)));
+/** 0 = плоский порог MIN_RETRACE_PCT вместо ступеней по mcap (17/13/9%). */
+const TIERED_RETRACE_BY_MCAP = envBool('PULLBACK_ALERT_TIERED_RETRACE_BY_MCAP', true);
 
 const MIN_HOLDERS = Math.max(0, envNum('PULLBACK_ALERT_MIN_HOLDERS', 1000));
 const HOLDER_NULL_SOFT = envBool('PULLBACK_ALERT_HOLDER_NULL_SOFT', true);
@@ -489,7 +491,8 @@ function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
 
 /** Канал pullback/retrace: мин. пролив от пика (%) по ref mcap; null — ниже $1M, не слать. */
 function minRetracePctByRefMcapUsd(mcapUsd: number): number | null {
-  if (!(mcapUsd >= 1_000_000)) return null;
+  if (!(mcapUsd >= Math.max(1_000_000, MIN_MARKET_CAP_USD))) return null;
+  if (!TIERED_RETRACE_BY_MCAP) return MIN_RETRACE_PCT;
   if (mcapUsd < 4_000_000) return 17;
   if (mcapUsd < 8_000_000) return 13;
   return 9;
