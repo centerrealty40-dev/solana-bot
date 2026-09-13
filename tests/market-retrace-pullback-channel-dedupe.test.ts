@@ -77,14 +77,13 @@ describe('writeSpikeChannelDedupeEntry', () => {
   });
 });
 
-describe('isMintInChannelCooldown', () => {
-  it('blocks a second alert for the same mint with a different peak bucket within cooldown', async () => {
-    const { isMintInChannelCooldown } = await import('../src/scripts/market-retrace-pullback-channel-dedupe');
-    const now = Date.now();
-    const store = { 'MintA|100': { peakBucket: 100, sentAtMs: now - 10 * 60_000, source: 'pullback' as const } };
-    expect(isMintInChannelCooldown(store, 'MintA', now, 180 * 60_000)).toBe(true);
-    expect(isMintInChannelCooldown(store, 'MintB', now, 180 * 60_000)).toBe(false);
-    expect(isMintInChannelCooldown(store, 'MintA', now + 200 * 60_000, 180 * 60_000)).toBe(false);
-    expect(isMintInChannelCooldown(store, 'MintA', now, 0)).toBe(false);
+describe('isSameOngoingDrawdown', () => {
+  it('blocks re-alert whose peak predates an already sent alert; allows a newer peak', async () => {
+    const { isSameOngoingDrawdown } = await import('../src/scripts/market-retrace-pullback-channel-dedupe');
+    const sentAt = Date.parse('2026-09-13T09:00:00Z');
+    const store = { 'MintA|100': { peakBucket: 100, sentAtMs: sentAt, source: 'pullback' as const } };
+    expect(isSameOngoingDrawdown(store, 'MintA', new Date('2026-09-13T07:51:00Z'))).toBe(true);
+    expect(isSameOngoingDrawdown(store, 'MintA', new Date('2026-09-13T09:30:00Z'))).toBe(false);
+    expect(isSameOngoingDrawdown(store, 'MintB', new Date('2026-09-13T07:51:00Z'))).toBe(false);
   });
 });

@@ -62,6 +62,8 @@ const MIN_RETRACE_PCT = Math.max(0.5, Math.min(200, envNum('RETRACE_ALERT_MIN_RE
 const TIERED_RETRACE_BY_MCAP = envBool('RETRACE_ALERT_TIERED_RETRACE_BY_MCAP', true);
 
 const MIN_HOLDERS = Math.max(0, envNum('RETRACE_ALERT_MIN_HOLDERS', 0));
+/** Мин. оборот пула $/мин: max(volume_5m/5, volume_1h/60). */
+const MIN_VOL_PER_MIN_USD = Math.max(0, envNum('RETRACE_ALERT_MIN_VOL_PER_MIN_USD', 0));
 const HOLDER_NULL_SOFT = envBool('RETRACE_ALERT_HOLDER_NULL_SOFT', true);
 const MIN_AGE_HOURS = Math.max(0, envNum('RETRACE_ALERT_MIN_AGE_HOURS', 8));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('RETRACE_ALERT_MAX_ROWS_PER_TABLE', 800)));
@@ -155,6 +157,10 @@ function buildLatestOnlyQuery(table: DexTable): string {
   const holdersClause = HOLDER_NULL_SOFT
     ? `AND (t.holder_count IS NULL OR t.holder_count >= ${MIN_HOLDERS})`
     : `AND COALESCE(t.holder_count, 0) >= ${MIN_HOLDERS}`;
+  const volClause =
+    MIN_VOL_PER_MIN_USD > 0
+      ? `AND GREATEST(COALESCE(s.volume_5m, 0) / 5, COALESCE(s.volume_1h, 0) / 60) >= ${MIN_VOL_PER_MIN_USD}`
+      : '';
   const snapshotFilters = `
     AND s.ts > now() - (${LATEST_FLOOR_SEC} * interval '1 second')
     AND COALESCE(s.price_usd, 0) > 0
@@ -163,6 +169,7 @@ function buildLatestOnlyQuery(table: DexTable): string {
       (s.launch_ts IS NOT NULL AND s.launch_ts <= now() - interval '${MIN_AGE_HOURS} hours')
       OR (s.launch_ts IS NULL AND t.first_seen_at <= now() - interval '${MIN_AGE_HOURS} hours')
     )
+    ${volClause}
     ${mcapClause}`;
   return `
 WITH top_mints AS (

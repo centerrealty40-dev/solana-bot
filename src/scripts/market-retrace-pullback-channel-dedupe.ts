@@ -21,16 +21,6 @@ const PEAK_BUCKET_MINUTES = Math.max(
   ),
 );
 
-/** Не слать повторный откат по mint (любой пик/DEX/watcher) чаще, чем раз в N мин. 0 = выкл. */
-const MINT_COOLDOWN_MS =
-  Math.max(
-    0,
-    Math.min(
-      24 * 60,
-      Math.floor(Number(process.env.RETRACE_PULLBACK_CHANNEL_MINT_COOLDOWN_MIN ?? '180') || 0),
-    ),
-  ) * 60_000;
-
 export type RetracePullbackChannelDedupeEntry = {
   peakBucket: number;
   sentAtMs: number;
@@ -59,16 +49,19 @@ export function retracePullbackChannelEventKey(mint: string, peakTs: Date): stri
   return `${mint.trim()}|${peakBucketIndex(peakTs)}`;
 }
 
-export function isMintInChannelCooldown(
+/**
+ * Тот же откат по mint: пик нового алерта случился до уже отправленного алерта (другой локальный хай той же просадки).
+ * Новый хай, сформированный после отправки, — новый откат, не дубль.
+ */
+export function isSameOngoingDrawdown(
   store: Record<string, RetracePullbackChannelDedupeEntry>,
   mint: string,
-  nowMs: number,
-  cooldownMs: number = MINT_COOLDOWN_MS,
+  peakTs: Date,
 ): boolean {
-  if (cooldownMs <= 0) return false;
   const prefix = `${mint.trim()}|`;
+  const peakMs = peakTs.getTime();
   for (const [k, v] of Object.entries(store)) {
-    if (k.startsWith(prefix) && v.source !== 'spike' && nowMs - v.sentAtMs < cooldownMs) return true;
+    if (k.startsWith(prefix) && v.source !== 'spike' && peakMs <= v.sentAtMs) return true;
   }
   return false;
 }
@@ -154,7 +147,7 @@ export function reserveRetracePullbackChannelSlot(
     const store = readStoreSync();
     if (store[key] != null) return false;
     const nowMs = Date.now();
-    if (isMintInChannelCooldown(store, mint, nowMs)) return false;
+    if (isSameOngoingDrawdown(store, mint, peakTs)) return false;
     store[key] = {
       peakBucket: peakBucketIndex(peakTs),
       sentAtMs: nowMs,

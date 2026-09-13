@@ -58,11 +58,13 @@ const ENV_OVERRIDES = {
     /** Slow bleeds (-15% over 1-3h) are invisible to spike (1-10m windows) and rise_then_retrace (90m). */
     PULLBACK_ALERT_SIGNAL_MODE: 'local_high_retrace',
     PULLBACK_ALERT_SCAN_MINUTES: '360',
+    PULLBACK_ALERT_MIN_VOL_PER_MIN_USD: '5000',
   },
   'retrace-alert-watch': {
     RETRACE_ALERT_MIN_MCAP_USD: '2000000',
     RETRACE_ALERT_MIN_RETRACE_FROM_PEAK_PCT: '15',
     RETRACE_ALERT_TIERED_RETRACE_BY_MCAP: '0',
+    RETRACE_ALERT_MIN_VOL_PER_MIN_USD: '5000',
   },
 };
 
