@@ -76,3 +76,14 @@ describe('writeSpikeChannelDedupeEntry', () => {
     expect(store[key]?.spikeDumpPct).toBe(9.45);
   });
 });
+
+describe('isSameOngoingDrawdown', () => {
+  it('blocks re-alert whose peak predates an already sent alert; allows a newer peak', async () => {
+    const { isSameOngoingDrawdown } = await import('../src/scripts/market-retrace-pullback-channel-dedupe');
+    const sentAt = Date.parse('2026-09-13T09:00:00Z');
+    const store = { 'MintA|100': { peakBucket: 100, sentAtMs: sentAt, source: 'pullback' as const } };
+    expect(isSameOngoingDrawdown(store, 'MintA', new Date('2026-09-13T07:51:00Z'))).toBe(true);
+    expect(isSameOngoingDrawdown(store, 'MintA', new Date('2026-09-13T09:30:00Z'))).toBe(false);
+    expect(isSameOngoingDrawdown(store, 'MintB', new Date('2026-09-13T07:51:00Z'))).toBe(false);
+  });
+});

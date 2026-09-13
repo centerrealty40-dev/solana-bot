@@ -58,8 +58,12 @@ const LATEST_FLOOR_SEC = Math.max(600, Math.min(3600, SCAN_MINUTES * 60 + 300));
 const MIN_MCAP_USD = Math.max(0, envNum('RETRACE_ALERT_MIN_MCAP_USD', 1_000_000));
 const MIN_PUMP_PCT = Math.max(0.5, Math.min(200, envNum('RETRACE_ALERT_MIN_PUMP_PCT', 6)));
 const MIN_RETRACE_PCT = Math.max(0.5, Math.min(200, envNum('RETRACE_ALERT_MIN_RETRACE_FROM_PEAK_PCT', 10)));
+/** 0 = плоский порог MIN_RETRACE_PCT вместо ступеней по mcap (17/13/9%). */
+const TIERED_RETRACE_BY_MCAP = envBool('RETRACE_ALERT_TIERED_RETRACE_BY_MCAP', true);
 
 const MIN_HOLDERS = Math.max(0, envNum('RETRACE_ALERT_MIN_HOLDERS', 0));
+/** Мин. оборот пула $/мин: max(volume_5m/5, volume_1h/60). */
+const MIN_VOL_PER_MIN_USD = Math.max(0, envNum('RETRACE_ALERT_MIN_VOL_PER_MIN_USD', 0));
 const HOLDER_NULL_SOFT = envBool('RETRACE_ALERT_HOLDER_NULL_SOFT', true);
 const MIN_AGE_HOURS = Math.max(0, envNum('RETRACE_ALERT_MIN_AGE_HOURS', 8));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('RETRACE_ALERT_MAX_ROWS_PER_TABLE', 800)));
@@ -153,6 +157,10 @@ function buildLatestOnlyQuery(table: DexTable): string {
   const holdersClause = HOLDER_NULL_SOFT
     ? `AND (t.holder_count IS NULL OR t.holder_count >= ${MIN_HOLDERS})`
     : `AND COALESCE(t.holder_count, 0) >= ${MIN_HOLDERS}`;
+  const volClause =
+    MIN_VOL_PER_MIN_USD > 0
+      ? `AND GREATEST(COALESCE(s.volume_5m, 0) / 5, COALESCE(s.volume_1h, 0) / 60) >= ${MIN_VOL_PER_MIN_USD}`
+      : '';
   const snapshotFilters = `
     AND s.ts > now() - (${LATEST_FLOOR_SEC} * interval '1 second')
     AND COALESCE(s.price_usd, 0) > 0
@@ -161,6 +169,7 @@ function buildLatestOnlyQuery(table: DexTable): string {
       (s.launch_ts IS NOT NULL AND s.launch_ts <= now() - interval '${MIN_AGE_HOURS} hours')
       OR (s.launch_ts IS NULL AND t.first_seen_at <= now() - interval '${MIN_AGE_HOURS} hours')
     )
+    ${volClause}
     ${mcapClause}`;
   return `
 WITH top_mints AS (
@@ -331,7 +340,8 @@ function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
 
 /** Канал pullback/retrace: мин. пролив от пика (%) по ref mcap; null — ниже $1.5M, не слать. */
 function minRetracePctByRefMcapUsd(mcapUsd: number): number | null {
-  if (!(mcapUsd >= 1_000_000)) return null;
+  if (!(mcapUsd >= Math.max(1_000_000, MIN_MCAP_USD))) return null;
+  if (!TIERED_RETRACE_BY_MCAP) return MIN_RETRACE_PCT;
   if (mcapUsd < 4_000_000) return 17;
   if (mcapUsd < 8_000_000) return 13;
   return 9;
@@ -513,6 +523,7 @@ async function runOnePass(
       const bars = dedupeBarsSorted(raw);
       const row = buildRowWithTs(meta, dex, bars, pick);
       if (isPumpRetracePickDataGlitch(pick, meta, bars, row.refMcap)) continue;
+      if (MIN_MCAP_USD > 0 && row.refMcap + 1 < MIN_MCAP_USD) continue;
 
       const prev = merged.get(meta.base_mint);
       if (
@@ -555,6 +566,9 @@ async function runOnePass(
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {
       sent++;
+      console.log(
+        `[retrace-alert-watch][SENT] dex=${row.dex} mint=${mintKey.slice(0, 12)} sym=${row.symbol ?? '?'} retrace=${row.pick.retracePct.toFixed(2)} peak=${peakTs.toISOString()} ref_mcap=$${Math.round(row.refMcap)}`,
+      );
       lastSentPeakMsByMint.set(mintKey, peakTs.getTime());
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         sendDedupe.set(retraceAlertEventDedupeKey(row.base_mint, peakTs), Date.now());

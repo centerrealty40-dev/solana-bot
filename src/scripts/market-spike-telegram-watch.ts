@@ -963,8 +963,8 @@ export function buildAlertHtml(row: AlertRow): string {
 
   return (
     `${title.html}\n` +
-    ` ${escapeHtml(formatDisplayDt(anchorTs))} → ${escapeHtml(formatDisplayDt(endTs))}\n` +
     `Δ mcap ${escapeHtml(mcapPctHuman)}: ${escapeHtml(mcapFrom)} → ${escapeHtml(mcapTo)}\n` +
+    ` ${escapeHtml(formatDisplayDt(anchorTs))} → ${escapeHtml(formatDisplayDt(endTs))}\n` +
     `<a href="${gmgnUrl}">GMGN</a>`
   );
 }
@@ -986,8 +986,8 @@ export function buildAlertPlain(row: AlertRow): string {
 
   return (
     `${title.plain}\n` +
-    ` ${formatDisplayDt(anchorTs)} → ${formatDisplayDt(endTs)}\n` +
     `Δ mcap ${mcapPctHuman}: ${mcapFrom} → ${mcapTo}\n` +
+    ` ${formatDisplayDt(anchorTs)} → ${formatDisplayDt(endTs)}\n` +
     `GMGN (${gmgnSolTokenUrl(mint)})`
   );
 }

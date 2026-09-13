@@ -73,12 +73,16 @@ const LATEST_FLOOR_SEC = Math.max(
 
 const MIN_RISE_PCT = Math.max(0.5, Math.min(200, envNum('PULLBACK_ALERT_MIN_RISE_PCT', 6)));
 const MIN_RETRACE_PCT = Math.max(0.5, Math.min(99, envNum('PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT', 10)));
+/** 0 = плоский порог MIN_RETRACE_PCT вместо ступеней по mcap (17/13/9%). */
+const TIERED_RETRACE_BY_MCAP = envBool('PULLBACK_ALERT_TIERED_RETRACE_BY_MCAP', true);
 
 const MIN_HOLDERS = Math.max(0, envNum('PULLBACK_ALERT_MIN_HOLDERS', 1000));
 const HOLDER_NULL_SOFT = envBool('PULLBACK_ALERT_HOLDER_NULL_SOFT', true);
 const MIN_AGE_HOURS = Math.max(0, envNum('PULLBACK_ALERT_MIN_AGE_HOURS', 8));
 const MIN_LIQ_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_LIQ_USD', 0));
 const MIN_VOL_5M_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_VOL_5M_USD', 0));
+/** Мин. оборот пула $/мин: max(volume_5m/5, volume_1h/60). */
+const MIN_VOL_PER_MIN_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_VOL_PER_MIN_USD', 0));
 const MIN_MARKET_CAP_USD = Math.max(0, envNum('PULLBACK_ALERT_MIN_MARKET_CAP_USD', 1_000_000));
 const MAX_ROWS = Math.max(50, Math.min(5000, envNum('PULLBACK_ALERT_MAX_ROWS_PER_TABLE', 800)));
 const DRY_RUN = envBool('PULLBACK_ALERT_DRY_RUN', false);
@@ -174,6 +178,10 @@ function buildLatestOnlyQuery(table: DexTable): string {
     MIN_LIQ_USD > 0 ? `AND COALESCE(s.liquidity_usd, 0) >= ${MIN_LIQ_USD}` : '';
   const volClause =
     MIN_VOL_5M_USD > 0 ? `AND COALESCE(s.volume_5m, 0) >= ${MIN_VOL_5M_USD}` : '';
+  const volPerMinClause =
+    MIN_VOL_PER_MIN_USD > 0
+      ? `AND GREATEST(COALESCE(s.volume_5m, 0) / 5, COALESCE(s.volume_1h, 0) / 60) >= ${MIN_VOL_PER_MIN_USD}`
+      : '';
   const mcapClause =
     MIN_MARKET_CAP_USD > 0
       ? `AND COALESCE(s.market_cap_usd, s.fdv_usd, t.fdv_usd, 0) >= ${MIN_MARKET_CAP_USD}`
@@ -191,6 +199,7 @@ function buildLatestOnlyQuery(table: DexTable): string {
     )
     ${liqClause}
     ${volClause}
+    ${volPerMinClause}
     ${mcapClause}`;
   return `
 WITH top_mints AS (
@@ -489,7 +498,8 @@ function refMcapUsd(meta: LatestMeta, lastBarMcap: number | null): number {
 
 /** Канал pullback/retrace: мин. пролив от пика (%) по ref mcap; null — ниже $1M, не слать. */
 function minRetracePctByRefMcapUsd(mcapUsd: number): number | null {
-  if (!(mcapUsd >= 1_000_000)) return null;
+  if (!(mcapUsd >= Math.max(1_000_000, MIN_MARKET_CAP_USD))) return null;
+  if (!TIERED_RETRACE_BY_MCAP) return MIN_RETRACE_PCT;
   if (mcapUsd < 4_000_000) return 17;
   if (mcapUsd < 8_000_000) return 13;
   return 9;
@@ -676,6 +686,9 @@ async function runOnePass(
     const tg = await sendTelegram(html, 'HTML');
     if (tg.ok) {
       sent++;
+      console.log(
+        `[market-pullback-telegram-watch][SENT] dex=${dex} mint=${mint.slice(0, 12)} sym=${meta.symbol ?? '?'} retrace=${pick.retraceFromPeakPct.toFixed(2)} peak=${pick.peakTs.toISOString()} last=${pick.lastTs.toISOString()} ref_mcap=$${Math.round(refM)}`,
+      );
       lastSentPeakMsByMint.set(mint, peakMs);
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         sendDedupe.set(pullbackAlertEventDedupeKey(mint, pick.peakTs), nowMs);
@@ -689,7 +702,7 @@ async function runOnePass(
   const riseLog =
     SIGNAL_MODE === 'local_high_retrace' ? `retrace>=${MIN_RETRACE_PCT}%` : `rise>=${MIN_RISE_PCT}% retrace>=${MIN_RETRACE_PCT}%`;
   console.log(
-    `[market-pullback-telegram-watch] pass done sent=${sent} skipped=${skipped} mode=${SIGNAL_MODE} ${riseLog} minMcap=$${MIN_MARKET_CAP_USD} scan=${SCAN_MINUTES}m barAge<=${MAX_NEWER_BAR_AGE_MIN}m mintPeakDedupe=on channelDedupe=on`,
+    `[market-pullback-telegram-watch] pass done sent=${sent} skipped=${skipped} mode=${SIGNAL_MODE} ${riseLog} minMcap=$${MIN_MARKET_CAP_USD} vol/min>=$${MIN_VOL_PER_MIN_USD} scan=${SCAN_MINUTES}m barAge<=${MAX_NEWER_BAR_AGE_MIN}m mintPeakDedupe=on channelDedupe=on`,
   );
 }
 

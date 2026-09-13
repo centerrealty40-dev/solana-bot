@@ -49,6 +49,23 @@ export function retracePullbackChannelEventKey(mint: string, peakTs: Date): stri
   return `${mint.trim()}|${peakBucketIndex(peakTs)}`;
 }
 
+/**
+ * Тот же откат по mint: пик нового алерта случился до уже отправленного алерта (другой локальный хай той же просадки).
+ * Новый хай, сформированный после отправки, — новый откат, не дубль.
+ */
+export function isSameOngoingDrawdown(
+  store: Record<string, RetracePullbackChannelDedupeEntry>,
+  mint: string,
+  peakTs: Date,
+): boolean {
+  const prefix = `${mint.trim()}|`;
+  const peakMs = peakTs.getTime();
+  for (const [k, v] of Object.entries(store)) {
+    if (k.startsWith(prefix) && v.source !== 'spike' && peakMs <= v.sentAtMs) return true;
+  }
+  return false;
+}
+
 function pruneStore(store: DedupeStore, nowMs: number): void {
   const cut = nowMs - STORE_TTL_MS;
   for (const [k, v] of Object.entries(store)) {
@@ -129,9 +146,11 @@ export function reserveRetracePullbackChannelSlot(
   return withDedupeFileLock(() => {
     const store = readStoreSync();
     if (store[key] != null) return false;
+    const nowMs = Date.now();
+    if (isSameOngoingDrawdown(store, mint, peakTs)) return false;
     store[key] = {
       peakBucket: peakBucketIndex(peakTs),
-      sentAtMs: Date.now(),
+      sentAtMs: nowMs,
       source,
     };
     writeStoreSync(store);
