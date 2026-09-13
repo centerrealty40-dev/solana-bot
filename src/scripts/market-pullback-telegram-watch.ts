@@ -679,6 +679,9 @@ async function runOnePass(
     const tg = await sendTelegram(html, 'HTML');
     if (tg.ok) {
       sent++;
+      console.log(
+        `[market-pullback-telegram-watch][SENT] dex=${dex} mint=${mint.slice(0, 12)} sym=${meta.symbol ?? '?'} retrace=${pick.retraceFromPeakPct.toFixed(2)} peak=${pick.peakTs.toISOString()} last=${pick.lastTs.toISOString()} ref_mcap=$${Math.round(refM)}`,
+      );
       lastSentPeakMsByMint.set(mint, peakMs);
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         sendDedupe.set(pullbackAlertEventDedupeKey(mint, pick.peakTs), nowMs);

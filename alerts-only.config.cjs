@@ -55,6 +55,9 @@ const ENV_OVERRIDES = {
     PULLBACK_ALERT_MIN_MARKET_CAP_USD: '2000000',
     PULLBACK_ALERT_MIN_RETRACE_FROM_PEAK_PCT: '15',
     PULLBACK_ALERT_TIERED_RETRACE_BY_MCAP: '0',
+    /** Slow bleeds (-15% over 1-3h) are invisible to spike (1-10m windows) and rise_then_retrace (90m). */
+    PULLBACK_ALERT_SIGNAL_MODE: 'local_high_retrace',
+    PULLBACK_ALERT_SCAN_MINUTES: '360',
   },
   'retrace-alert-watch': {
     RETRACE_ALERT_MIN_MCAP_USD: '2000000',

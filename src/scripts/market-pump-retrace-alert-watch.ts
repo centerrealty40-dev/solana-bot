@@ -559,6 +559,9 @@ async function runOnePass(
     const ok = await sendTelegram(html, 'HTML');
     if (ok) {
       sent++;
+      console.log(
+        `[retrace-alert-watch][SENT] dex=${row.dex} mint=${mintKey.slice(0, 12)} sym=${row.symbol ?? '?'} retrace=${row.pick.retracePct.toFixed(2)} peak=${peakTs.toISOString()} ref_mcap=$${Math.round(row.refMcap)}`,
+      );
       lastSentPeakMsByMint.set(mintKey, peakTs.getTime());
       if (sendDedupe && POLL_SEND_DEDUPE_MS > 0) {
         sendDedupe.set(retraceAlertEventDedupeKey(row.base_mint, peakTs), Date.now());
