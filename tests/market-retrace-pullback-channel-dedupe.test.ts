@@ -76,3 +76,15 @@ describe('writeSpikeChannelDedupeEntry', () => {
     expect(store[key]?.spikeDumpPct).toBe(9.45);
   });
 });
+
+describe('isMintInChannelCooldown', () => {
+  it('blocks a second alert for the same mint with a different peak bucket within cooldown', async () => {
+    const { isMintInChannelCooldown } = await import('../src/scripts/market-retrace-pullback-channel-dedupe');
+    const now = Date.now();
+    const store = { 'MintA|100': { peakBucket: 100, sentAtMs: now - 10 * 60_000, source: 'pullback' as const } };
+    expect(isMintInChannelCooldown(store, 'MintA', now, 180 * 60_000)).toBe(true);
+    expect(isMintInChannelCooldown(store, 'MintB', now, 180 * 60_000)).toBe(false);
+    expect(isMintInChannelCooldown(store, 'MintA', now + 200 * 60_000, 180 * 60_000)).toBe(false);
+    expect(isMintInChannelCooldown(store, 'MintA', now, 0)).toBe(false);
+  });
+});

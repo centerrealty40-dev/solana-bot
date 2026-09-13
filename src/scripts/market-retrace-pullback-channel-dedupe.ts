@@ -21,6 +21,16 @@ const PEAK_BUCKET_MINUTES = Math.max(
   ),
 );
 
+/** Не слать повторный откат по mint (любой пик/DEX/watcher) чаще, чем раз в N мин. 0 = выкл. */
+const MINT_COOLDOWN_MS =
+  Math.max(
+    0,
+    Math.min(
+      24 * 60,
+      Math.floor(Number(process.env.RETRACE_PULLBACK_CHANNEL_MINT_COOLDOWN_MIN ?? '180') || 0),
+    ),
+  ) * 60_000;
+
 export type RetracePullbackChannelDedupeEntry = {
   peakBucket: number;
   sentAtMs: number;
@@ -47,6 +57,20 @@ export function peakBucketIndex(peakTs: Date): number {
 /** Один откат на mint в пределах PEAK_BUCKET_MINUTES. */
 export function retracePullbackChannelEventKey(mint: string, peakTs: Date): string {
   return `${mint.trim()}|${peakBucketIndex(peakTs)}`;
+}
+
+export function isMintInChannelCooldown(
+  store: Record<string, RetracePullbackChannelDedupeEntry>,
+  mint: string,
+  nowMs: number,
+  cooldownMs: number = MINT_COOLDOWN_MS,
+): boolean {
+  if (cooldownMs <= 0) return false;
+  const prefix = `${mint.trim()}|`;
+  for (const [k, v] of Object.entries(store)) {
+    if (k.startsWith(prefix) && v.source !== 'spike' && nowMs - v.sentAtMs < cooldownMs) return true;
+  }
+  return false;
 }
 
 function pruneStore(store: DedupeStore, nowMs: number): void {
@@ -129,9 +153,11 @@ export function reserveRetracePullbackChannelSlot(
   return withDedupeFileLock(() => {
     const store = readStoreSync();
     if (store[key] != null) return false;
+    const nowMs = Date.now();
+    if (isMintInChannelCooldown(store, mint, nowMs)) return false;
     store[key] = {
       peakBucket: peakBucketIndex(peakTs),
-      sentAtMs: Date.now(),
+      sentAtMs: nowMs,
       source,
     };
     writeStoreSync(store);
